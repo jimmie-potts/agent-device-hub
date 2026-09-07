@@ -90,8 +90,11 @@ host composes the same core and connects to both existing controllers.
 
 Moving the state owner is explicit and quiesced. Preserve source identities,
 session/notice state, revisions and producer configuration with a versioned
-export/import and rollback. Never run embedded and standalone owners against the
-same state simultaneously. Controller databases stay private; Windows/WSL
+export/import and rollback. Pixoo's session-source facade switches its renderer,
+browser feed and shared label/acknowledgment operations to the selected owner.
+Remote mode never starts a second local reducer; a stale feed stays visibly stale
+until recovery or explicit rollback. Never run embedded and standalone owners
+against the same state simultaneously. Controller databases stay private; Windows/WSL
 processes do not coordinate through a mounted SQLite database.
 
 Legacy Nanoleaf hooks remain available until an authorized verified cutover.
@@ -111,9 +114,11 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-Exact previews arrive only after the device rendering contracts and parity
-checks. The overview does not wait for Nanoleaf live mirroring, Lively, an ambient
-redesign or new Pixoo player UI. Those remain separately owned work.
+Exact hub previews are deferred for a future scope decision. Device rendering
+contracts and parity checks are prerequisites for any later preview issue, not
+an implicit commitment to implement previews in the first dashboard. The
+overview does not wait for Nanoleaf live mirroring, Lively, an ambient redesign
+or new Pixoo player UI. Those remain separately owned work.
 
 Evaluate Home Assistant/MQTT for ordinary new device integrations before writing
 custom transports. Adoption is deferred pending a capability assessment.
