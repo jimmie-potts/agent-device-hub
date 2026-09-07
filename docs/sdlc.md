@@ -31,10 +31,9 @@ implementation-changing decisions, and tdd for meaningful executable behavior.
 Use installed central methods; missing prerequisites are reported without local
 copies or silent replacement.
 
-The shared catalog retired github-delivery in favor of deliver-work, which
-requires explicit invocation. Use deliver-work only when the user names it;
-ordinary delivery follows this document. This naming correction does not waive
-independent reviews, CI, guarded merge, issue readback or installation authority.
+Use the shared deliver-work skill only when the user names it; ordinary delivery
+follows this document. Both paths retain independent reviews, CI, guarded merge,
+issue readback and installation authority.
 
 Refresh the repository-defined main, inspect worktrees and create
 codex/gh-<issue-number>-<slug> in an isolated worktree. One coordinator owns
