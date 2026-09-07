@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { JsonResponseTransport } from './transport.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
-import { validate } from '@jimmie-potts/device-contracts';
+import { validate, type Ticket } from '@jimmie-potts/device-contracts';
 import type { MachinePrincipal, GatewayLimits, McpHandlerOptions, McpHandler } from './types.js';
-import { boundedJson, gatewayFailure, invokeDeviceTool, isRegisteredTool, validPrincipal } from './tools.js';
+import { authorizedTools, boundedJson, gatewayFailure, invokeDeviceTool, isRegisteredTool, validPrincipal } from './tools.js';
 
 export const MCP_PROTOCOL_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18']);
 export const DEFAULT_GATEWAY_LIMITS: Readonly<GatewayLimits> = Object.freeze({ maxBodyBytes: 65536, maxResponseBytes: 1048576,
@@ -18,6 +18,12 @@ function reject(res: ServerResponse, status: number): void {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'close',
     ...(status === 401 ? { 'WWW-Authenticate': 'Bearer' } : {}), ...(status === 405 ? { Allow: 'POST, DELETE' } : {}) });
   res.end(JSON.stringify({ error: 'MCP request rejected' }));
+}
+function requestIdentity(value: unknown): Ticket | string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const args = value as Record<string, unknown>;
+  return validate('ticket', args.requestId) ? args.requestId as Ticket
+    : typeof args.request_id === 'string' && args.request_id.length <= 128 ? args.request_id : undefined;
 }
 function singleHeader(req: IncomingMessage, name: string, required = false): string | undefined {
   const values: string[] = [];
@@ -70,8 +76,8 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
   if (tools.size !== options.tools.length || tools.size > 256 || options.tools.some(tool => !isRegisteredTool(options.registry, tool))) throw new Error('Invalid registered tools');
   const list = [...tools.values()].sort((a, b) => a.name.localeCompare(b.name));
   if (Buffer.byteLength(JSON.stringify({ tools: list })) > limits.maxResponseBytes) throw new Error('Tool catalog exceeds response limit');
-  type Session = { server: Server; transport: StreamableHTTPServerTransport; principalId: string; version: string;
-    ready: boolean; requests: Set<string>; timer?: ReturnType<typeof setTimeout> };
+  type Session = { server: Server; transport: JsonResponseTransport; principalId: string; version: string;
+    ready: boolean; requests: Set<string>; calls: Set<string>; timer?: ReturnType<typeof setTimeout> };
   const sessions = new Map<string, Session>();
   let closed = false, httpActive = 0, verifications = 0, operations = 0;
   async function remove(id: string): Promise<void> {
@@ -90,13 +96,14 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
     const id = randomUUID();
     const server = new Server({ name: 'agent-device-mcp', version: '1.0.0' }, { capabilities: { tools: { listChanged: false } },
       instructions: 'Use configured device tools. Read current identity and revisions before a write. Never automatically retry an ambiguous write with a new identity. A queued or sent result is not optical verification or agent task success.' });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: () => id, enableJsonResponse: true });
-    const session: Session = { server, transport, principalId: principal.id, version, ready: false, requests: new Set() };
+    const transport = new JsonResponseTransport(id, limits.maxResponseBytes);
+    const session: Session = { server, transport, principalId: principal.id, version, ready: false, requests: new Set(), calls: new Set() };
     sessions.set(id, session);
     server.oninitialized = () => { session.ready = true; };
-    server.setRequestHandler(ListToolsRequestSchema, async request => {
+    server.setRequestHandler(ListToolsRequestSchema, async (request, extra) => {
       if (request.params?.cursor !== undefined) throw new McpError(ErrorCode.InvalidParams, 'Pagination is not supported');
-      return { tools: list };
+      const principal = extra.authInfo?.extra?.principal;
+      return { tools: validPrincipal(principal) ? authorizedTools(options.registry, list, principal) : [] };
     });
     server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       const principal = extra.authInfo?.extra?.principal;
@@ -106,17 +113,20 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
       if (request.params.task !== undefined) throw new McpError(ErrorCode.InvalidParams, 'Task execution is not supported');
       if (operations >= limits.maxInFlight) return gatewayFailure('capacity');
       operations++;
-      let dispatched = false;
-      const work = invokeDeviceTool(options.registry, tool, request.params.arguments ?? {}, principal,
-        { signal: extra.signal, maxResponseBytes: limits.maxResponseBytes / 2, onDispatch: () => { dispatched = true; } }).finally(() => { operations--; });
-      const args = request.params.arguments ?? {};
-      const requestId = validate('ticket', args.requestId) ? args.requestId as import('@jimmie-potts/device-contracts').Ticket
-        : typeof args.request_id === 'string' && args.request_id.length <= 128 ? args.request_id : undefined;
-      const result = await deadline(work, limits.requestTimeoutMs, () => gatewayFailure(dispatched && tool.annotations?.readOnlyHint !== true ? 'uncertain-result' : 'transport-failure',
-        dispatched && tool.annotations?.readOnlyHint !== true ? 'possible' : 'none', requestId));
-      if (Buffer.byteLength(JSON.stringify(result)) > limits.maxResponseBytes) return gatewayFailure('capacity',
-        dispatched && tool.annotations?.readOnlyHint !== true ? 'possible' : 'none', requestId);
-      return result;
+      const rpcId = `${typeof extra.requestId}:${extra.requestId}`;
+      session.calls.add(rpcId);
+      try {
+        let dispatched = false;
+        const work = invokeDeviceTool(options.registry, tool, request.params.arguments ?? {}, principal,
+          { signal: extra.signal, maxResponseBytes: limits.maxResponseBytes / 2, onDispatch: () => { dispatched = true; } }).finally(() => { operations--; });
+        const args = request.params.arguments ?? {};
+        const requestId = requestIdentity(args);
+        const result = await deadline(work, limits.requestTimeoutMs, () => gatewayFailure(dispatched && tool.annotations?.readOnlyHint !== true ? 'uncertain-result' : 'transport-failure',
+          dispatched && tool.annotations?.readOnlyHint !== true ? 'possible' : 'none', requestId));
+        if (Buffer.byteLength(JSON.stringify({ jsonrpc: '2.0', id: extra.requestId, result })) > limits.maxResponseBytes) return gatewayFailure('capacity',
+          dispatched && tool.annotations?.readOnlyHint !== true ? 'possible' : 'none', requestId);
+        return result;
+      } finally { session.calls.delete(rpcId); }
     });
     try { await server.connect(transport); touch(id, session); return session; }
     catch (error) { await remove(id); throw error; }
@@ -165,6 +175,13 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !boundedJson(parsed, limits.maxBodyBytes * 6)
           || parsed.jsonrpc !== '2.0' || typeof parsed.method !== 'string') throw new HttpFailure(400);
       if (closed) throw new HttpFailure(503);
+      if (parsed.id !== undefined && (!['number', 'string'].includes(typeof parsed.id)
+          || (typeof parsed.id === 'number' && !Number.isSafeInteger(parsed.id)))) throw new HttpFailure(400);
+      // Measure the same identity returned by the handler, including both serialized copies.
+      const params = parsed.params as { arguments?: unknown } | undefined;
+      const identity = parsed.method === 'tools/call' ? requestIdentity(params?.arguments) : undefined;
+      if (parsed.id !== undefined && Buffer.byteLength(JSON.stringify({ jsonrpc: '2.0', id: parsed.id,
+        result: gatewayFailure('uncertain-result', 'possible', identity ?? 'x'.repeat(128)) })) > limits.maxResponseBytes) throw new HttpFailure(429);
       const version = singleHeader(req, 'mcp-protocol-version');
       if (parsed.method === 'initialize') {
         const params = parsed.params as { protocolVersion?: string } | undefined;
@@ -181,7 +198,7 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
       request.auth = { token: '', clientId: principal.id, scopes: [...principal.credential.scopes], extra: { principal: structuredClone(principal) } };
       res.setHeader('Cache-Control', 'no-store');
       const rpcId = parsed.id === undefined ? undefined : `${typeof parsed.id}:${parsed.id}`;
-      if (rpcId !== undefined && (session.requests.has(rpcId) || !['number', 'string'].includes(typeof parsed.id)
+      if (rpcId !== undefined && ((session.requests.has(rpcId) || session.calls.has(rpcId)) || !['number', 'string'].includes(typeof parsed.id)
           || (typeof parsed.id === 'number' && !Number.isSafeInteger(parsed.id)))) throw new HttpFailure(400);
       if (rpcId !== undefined) session.requests.add(rpcId);
       try { await session.transport.handleRequest(request, res, parsed); }

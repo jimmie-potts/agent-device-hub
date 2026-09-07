@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { authorize, schema, validate } from '@jimmie-potts/device-contracts';
 import type { Request, Ticket } from '@jimmie-potts/device-contracts';
@@ -87,7 +88,12 @@ function createTool(registry: DeviceRegistry, name: string, operation: Binding['
     inputSchema = structuredClone(extension.inputSchema);
   }
   const outputSchema = structuredClone(outputBase);
-  if (extension) outputSchema.properties.data = structuredClone(extension.outputSchema);
+  if (extension) {
+    const embedded = structuredClone(extension.outputSchema);
+    // A compound schema resource preserves fragment references relative to the extension root.
+    embedded.$id ??= `urn:agent-device-mcp:output:${createHash('sha256').update(JSON.stringify(embedded)).digest('hex')}`;
+    outputSchema.properties.data = embedded;
+  }
   const tool = deepFreeze({ name, inputSchema, outputSchema,
     description: extension?.description ?? (operation === 'list' ? 'List authorized configured device IDs. No network discovery or agent/session state.'
       : operation === 'status' ? 'Read the owning controller snapshot. Unknown observation stays unknown; transmission is not visible-device verification.'
@@ -120,6 +126,22 @@ export function bindServiceTools(registry: DeviceRegistry, binding: { deviceId: 
   return Object.freeze(tools);
 }
 export function isRegisteredTool(registry: DeviceRegistry, tool: DeviceTool): boolean { return bindings.get(tool)?.registry === registry; }
+
+/** Discovery reflects the authenticated request, including the enums of generic tools. */
+export function authorizedTools(registry: DeviceRegistry, tools: readonly DeviceTool[], principal: MachinePrincipal): readonly DeviceTool[] {
+  return tools.flatMap(tool => {
+    const binding = bindings.get(tool);
+    if (!binding || binding.registry !== registry) return [];
+    const scope = binding.operation === 'power' || binding.operation === 'brightness' || binding.extension?.scope === 'control' ? 'control' : 'read';
+    const allowed = registry.list().filter(device => (binding.deviceId ? device.deviceId === binding.deviceId : !!device.service)
+      && authorize(context(principal, device.deviceId, scope).authorization).decision === 'allowed');
+    if (!allowed.length) return [];
+    if (binding.deviceId || binding.operation === 'list') return [tool];
+    const discovered = structuredClone(tool);
+    discovered.inputSchema.properties!.deviceId = { type: 'string', enum: allowed.map(device => device.deviceId) };
+    return [discovered];
+  });
+}
 
 export async function invokeDeviceTool(registry: DeviceRegistry, tool: DeviceTool, args: unknown, principal: MachinePrincipal,
   options: { signal?: AbortSignal; maxResponseBytes?: number; onDispatch?: () => void } = {}): Promise<CallToolResult> {

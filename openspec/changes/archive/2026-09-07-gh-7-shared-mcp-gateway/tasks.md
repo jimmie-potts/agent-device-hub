@@ -38,7 +38,7 @@ After these source tasks, follow docs/sdlc.md for successful current OpenSpec lo
 The default-bound status and HTTP initialization fixtures failed before their
 implementations and passed afterward. A malformed UTF-8 initialization fixture
 then reproduced replacement decoding; fatal decoding rejected the same input.
-Node 24 build/typecheck, all 48 MCP tool/protocol tests, 223 TypeScript contract
+Node 24 build/typecheck, all 63 MCP tool/protocol tests, 223 TypeScript contract
 tests, Python contract fixtures, isolated contract and MCP package installs,
 consumer examples, corruption rejection and 10 workflow fixtures passed locally.
 The MCP package includes the unchanged verified contract release. Tests use fake
@@ -46,3 +46,7 @@ services and synthetic credentials. Installed Codex/Claude and physical-device
 acceptance remain with the device repositories. Exact platform/revision receipts
 and the temporary user-approved local-validation exception stay outside the
 source commit in the delivery record and PR.
+
+Review regressions cover cancellation and response-stream cleanup, current-principal
+tool discovery, embedded output-schema references and complete JSON-RPC response
+bounds. The pinned SDK JSON lifecycle adapter is isolated and documented.

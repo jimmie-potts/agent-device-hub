@@ -189,3 +189,19 @@ test('extension-only registration supports legacy request identity and catalog r
   assert.equal(failure.structuredContent.priorEffects, 'possible'); assert.equal(failure.structuredContent.requestId, 'legacy-uncertain');
   assert.equal(JSON.stringify(failure).includes('private-path'), false);
 });
+
+test('review embedded extension output preserves local schema references', async () => {
+  const { Ajv2020 } = await import('ajv/dist/2020.js');
+  const outputSchema = { type: 'object', additionalProperties: false, $defs: { count: { type: 'integer', minimum: 0 } },
+    properties: { count: { $ref: '#/$defs/count' } }, required: ['count'] };
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { catalog: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} }, outputSchema, scope: 'read', description: 'Read count.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, invoke: async () => ({ data: { count: 2 } }),
+  } } }]);
+  const [tool] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'catalog', name: 'catalog' }] });
+  const result = await api.invokeDeviceTool(registry, tool, {}, principal());
+  assert.equal(result.isError, false);
+  const validate = new Ajv2020({ strict: true }).compile(tool.outputSchema);
+  assert.equal(validate(result.structuredContent), true, JSON.stringify(validate.errors));
+  assert.equal(validate({ kind: 'extension', data: { count: -1 } }), false);
+});

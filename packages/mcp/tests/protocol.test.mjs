@@ -218,3 +218,171 @@ for (const action of ['socket-close', 'delete', 'close', 'cancel-notification'])
   assert.equal(finished, true); assert.equal(submissions, 1);
   abort.abort(); await pending;
 });
+
+for (const action of ['cancel-notification', 'delete', 'idle-expiry', 'socket-close']) test(`review lifecycle ${action} releases HTTP capacity after owner settlement`, async t => {
+  const entered = deferred(), release = deferred(); let submissions = 0;
+  const f = await httpFixture(t, { options: { limits: { maxInFlight: action === 'idle-expiry' ? 1 : 2, sessionIdleMs: 100, requestTimeoutMs: 500 } },
+    service: { submit: async () => { submissions++; entered.resolve(); await release.promise;
+      return { kind: 'unavailable', code: 'uncertain-result', priorEffects: 'possible' }; } } });
+  let completed = 0;
+  f.server.removeAllListeners('request');
+  f.server.on('request', (req, res) => { void f.handler.handle(req, res).finally(() => { completed++; }); });
+  await f.initialize();
+  const before = completed, abort = new AbortController();
+  const pending = f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: args() }, { id: 700, signal: abort.signal }).catch(() => null);
+  await entered.promise;
+  if (action === 'cancel-notification') await f.rpc('notifications/cancelled', { requestId: 700 });
+  if (action === 'delete') await f.removeSession();
+  if (action === 'idle-expiry') await new Promise(resolve => setTimeout(resolve, 150));
+  if (action === 'socket-close') abort.abort();
+  release.resolve();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  abort.abort(); await pending;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(completed > before + (['delete', 'cancel-notification'].includes(action) ? 1 : 0), 'original HTTP handler must settle');
+  const fresh = await f.rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'recovery', version: '1' } },
+    { headers: { 'Mcp-Session-Id': undefined, 'MCP-Protocol-Version': undefined } });
+  assert.equal(fresh.status, 200); assert.equal(submissions, 1);
+});
+
+test('review successful JSON calls retain no SDK streams', async t => {
+  const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
+  const original = StreamableHTTPServerTransport.prototype.handleRequest;
+  let transport;
+  StreamableHTTPServerTransport.prototype.handleRequest = function (...args) { transport = this; return original.apply(this, args); };
+  t.after(() => { StreamableHTTPServerTransport.prototype.handleRequest = original; });
+  const f = await httpFixture(t); await f.initialize();
+  for (let i = 0; i < 100; i++) assert.equal((await f.rpc('tools/list')).status, 200);
+  assert.equal(transport._webStandardTransport._requestToStreamMapping.size, 0);
+  assert.equal(transport._webStandardTransport._streamMapping.size, 0);
+});
+
+test('review discovery uses current devices and scopes for generic and bound tools', async t => {
+  const service = { readSnapshot: async () => assert.fail('discovery cannot dispatch'), submit: async () => assert.fail('discovery cannot dispatch') };
+  const extension = { inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    outputSchema: { type: 'object', additionalProperties: false, properties: {} }, scope: 'read', description: 'Read catalog.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, invoke: async () => assert.fail('discovery cannot dispatch') };
+  const registry = api.createDeviceRegistry(['allowed-light', 'restricted-light'].map(deviceId => ({ deviceId, controllerId: 'controller', service, extensions: { catalog: extension } })));
+  const tools = [...api.createDeviceTools(registry), ...api.bindDeviceTools(registry, { deviceId: 'restricted-light', prefix: 'restricted' }),
+    ...api.bindServiceTools(registry, { deviceId: 'restricted-light', bindings: [{ extension: 'catalog', name: 'restricted_catalog' }] })];
+  let current = principal({ devices: ['allowed-light'], scopes: ['read'] });
+  const f = await httpFixture(t, { options: { registry, tools, authenticate: async () => current } }); await f.initialize();
+  let catalog = (await f.rpc('tools/list')).body.result.tools;
+  assert.deepEqual(catalog.map(tool => tool.name), ['device_list', 'device_status']);
+  assert.deepEqual(catalog.find(tool => tool.name === 'device_status').inputSchema.properties.deviceId.enum, ['allowed-light']);
+  assert.equal(JSON.stringify(catalog).includes('restricted-light'), false);
+  current = principal({ devices: [], scopes: [] });
+  assert.deepEqual((await f.rpc('tools/list')).body.result.tools, []);
+  current = principal({ devices: ['restricted-light'], scopes: ['control'] });
+  catalog = (await f.rpc('tools/list')).body.result.tools;
+  assert.deepEqual(catalog.map(tool => tool.name), ['device_brightness_set', 'device_power_set', 'restricted_brightness_set', 'restricted_power_set']);
+});
+
+test('review complete response including escaped RPC identity respects byte limit', async t => {
+  const { fixture } = await import('./helpers.mjs');
+  const setup = fixture();
+  const maxResponseBytes = Buffer.byteLength(JSON.stringify({ tools: setup.tools })) + 100;
+  const f = await httpFixture(t, { options: { limits: { maxResponseBytes } } }); await f.initialize();
+  const result = await f.rpc('tools/list', undefined, { id: '\u0000💡'.repeat(1000) });
+  assert.ok(Buffer.byteLength(JSON.stringify(result.body)) <= maxResponseBytes, 'complete JSON-RPC envelope must fit');
+  assert.ok(result.body.error || result.body.result?.isError, 'oversized catalog must return a bounded failure');
+});
+
+test('review malformed cancellation does not end another request', async t => {
+  const release = deferred(), entered = deferred();
+  const f = await httpFixture(t, { service: { submit: async () => { entered.resolve(); await release.promise;
+    return { kind: 'unavailable', code: 'uncertain-result', priorEffects: 'possible' }; } } });
+  await f.initialize();
+  const pending = f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: args() }, { id: 712 });
+  await entered.promise;
+  await f.rpc('notifications/cancelled', { requestId: 712, reason: { invalid: true } });
+  release.resolve();
+  assert.equal((await pending).body.result.structuredContent.priorEffects, 'possible');
+});
+
+test('review socket delivery releases HTTP capacity while owner retains its operation slot', async t => {
+  const release = deferred(), entered = deferred(); let submissions = 0;
+  const f = await httpFixture(t, { options: { limits: { maxInFlight: 1, requestTimeoutMs: 500 } }, service: {
+    submit: async () => { submissions++; entered.resolve(); await release.promise;
+      return { kind: 'unavailable', code: 'uncertain-result', priorEffects: 'possible' }; } } });
+  await f.initialize();
+  const abort = new AbortController();
+  const pending = f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: args() }, { id: 713, signal: abort.signal }).catch(() => null);
+  await entered.promise; abort.abort(); await pending;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal((await f.rpc('tools/call', { name: 'fixture_status', arguments: {} }, { id: 713 })).status, 400, 'live SDK handler identity cannot be reused');
+  const blocked = await f.rpc('tools/call', { name: 'fixture_status', arguments: {} });
+  assert.equal(blocked.status, 200); assert.equal(blocked.body.result.structuredContent.code, 'capacity');
+  release.resolve(); await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal((await f.rpc('tools/call', { name: 'fixture_status', arguments: {} }, { id: 713 })).body.result.structuredContent.kind, 'snapshot');
+  assert.equal(submissions, 1);
+});
+
+test('review response bounds include initialization errors and reject unrepresentable IDs before dispatch', async t => {
+  const f = await httpFixture(t, { options: { tools: [], limits: { maxResponseBytes: 1024 } } });
+  const oversizedId = await f.rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'bounded', version: '1' } },
+    { id: '\u0000💡'.repeat(1000) });
+  assert.equal(oversizedId.status, 429);
+  assert.ok(Buffer.byteLength(JSON.stringify(oversizedId.body)) <= 1024);
+  assert.equal((await f.initialize()).status, 200);
+  for (const [method, params] of [['ping', {}], ['unknown', {}], ['tools/call', { name: 'x'.repeat(2000) }], ['tools/list', { cursor: 'x'.repeat(2000) }]]) {
+    const response = await f.rpc(method, params, { id: '💡'.repeat(40) });
+    assert.ok(Buffer.byteLength(JSON.stringify(response.body)) <= 1024, method);
+  }
+});
+
+test('review oversized write envelope preserves possible effects and native request identity', async t => {
+  let submissions = 0;
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { write: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: { request_id: { type: 'string', maxLength: 128 } }, required: ['request_id'] },
+    outputSchema: { type: 'object', additionalProperties: false, properties: { message: { type: 'string', maxLength: 2000 } }, required: ['message'] },
+    scope: 'control', description: 'Synthetic app write.', annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    invoke: async () => { submissions++; return { data: { message: 'x'.repeat(1000) } }; },
+  } } }]);
+  const tools = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'write', name: 'write' }] });
+  const maxResponseBytes = Buffer.byteLength(JSON.stringify({ tools })) + 100;
+  const f = await httpFixture(t, { options: { registry, tools, limits: { maxResponseBytes } } }); await f.initialize();
+  const response = await f.rpc('tools/call', { name: 'write', arguments: { request_id: 'native-1' } }, { id: 'x'.repeat(maxResponseBytes - 1000) });
+  assert.equal(response.status, 200);
+  assert.ok(Buffer.byteLength(JSON.stringify(response.body)) <= maxResponseBytes);
+  assert.deepEqual(response.body.result.structuredContent, { kind: 'gateway-error', code: 'capacity', priorEffects: 'possible',
+    requestId: 'native-1', retry: 'never-automatically' });
+  assert.equal(submissions, 1);
+});
+
+for (const [label, identity] of [['control', '\u0000'.repeat(128)], ['unicode', '界'.repeat(128)],
+  ['ticket', { epoch: 'x'.repeat(128), sequence: Number.MAX_SAFE_INTEGER }]]) {
+  test(`review failure reservation uses actual serialized identity ${label}`, async t => {
+    const { gatewayFailure } = await import('../dist/tools.js');
+    const { validate } = await import('@jimmie-potts/device-contracts');
+    let submissions = 0;
+    const ticket = typeof identity === 'object';
+    if (ticket) assert.equal(validate('ticket', identity), true);
+    const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { write: {
+      inputSchema: { type: 'object', additionalProperties: false, properties: ticket
+        ? { requestId: { type: 'object', additionalProperties: false, properties: { epoch: { type: 'string' }, sequence: { type: 'integer' } }, required: ['epoch', 'sequence'] } }
+        : { request_id: { type: 'string', maxLength: 128 } }, required: [ticket ? 'requestId' : 'request_id'] },
+      outputSchema: { type: 'object', additionalProperties: false, properties: {} },
+      scope: 'control', description: 'Synthetic app write.',
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+      invoke: async () => { submissions++; throw new Error('Synthetic uncertain write'); },
+    } } }]);
+    const tools = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'write', name: 'write' }] });
+    const maxResponseBytes = Buffer.byteLength(JSON.stringify({ tools })) + 100;
+    const envelopeBytes = requestId => Buffer.byteLength(JSON.stringify({ jsonrpc: '2.0', id: '', result: gatewayFailure('uncertain-result', 'possible', requestId) }));
+    const oldBytes = envelopeBytes('x'.repeat(128)), actualBytes = envelopeBytes(identity);
+    assert.ok(actualBytes > oldBytes, 'fixture exceeds the previous reservation');
+    const f = await httpFixture(t, { options: { registry, tools, limits: { maxResponseBytes } } });
+    await f.initialize();
+    const arguments_ = ticket ? { requestId: identity } : { request_id: identity };
+    const response = await f.rpc('tools/call', { name: 'write', arguments: arguments_ }, { id: 'x'.repeat(maxResponseBytes - oldBytes) });
+    assert.equal(submissions, 0, `failure metadata must fit before dispatch; response was ${JSON.stringify(response.body?.error)}`);
+    assert.equal(response.status, 429);
+    assert.ok(Buffer.byteLength(JSON.stringify(response.body)) <= maxResponseBytes);
+    const admitted = await f.rpc('tools/call', { name: 'write', arguments: arguments_ }, { id: 'x'.repeat(maxResponseBytes - actualBytes - 10) });
+    assert.equal(admitted.status, 200); assert.equal(submissions, 1);
+    assert.ok(Buffer.byteLength(JSON.stringify(admitted.body)) <= maxResponseBytes);
+    assert.deepEqual(admitted.body.result.structuredContent, { kind: 'gateway-error', code: 'uncertain-result', priorEffects: 'possible',
+      requestId: identity, retry: 'never-automatically' });
+  });
+}
