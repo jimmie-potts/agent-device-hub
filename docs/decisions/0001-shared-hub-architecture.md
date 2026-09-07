@@ -2,6 +2,11 @@
 
 Status: Accepted direction; implementation pending.
 
+The repository-boundary decision below is superseded by
+[ADR 0003](0003-device-controller-monorepo.md). New controllers start in the hub
+monorepo; existing source moves remain deferred. Pixoo-first state hosting,
+runtime ownership and physical migration boundaries remain in force.
+
 The user approved documenting and planning the shared hub and initializing this
 repository. Adopt [architecture.md](../architecture.md) as the canonical
 cross-repository ownership and migration decision.

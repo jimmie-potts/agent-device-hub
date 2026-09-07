@@ -14,6 +14,12 @@ worker, geometry, Line allocation, spatial effects, Work/Quiet/Free policy,
 scene restoration and advanced wall editor. Common code must not import a
 device application's internal modules.
 
+Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
+LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
+queues. These new controllers belong in this repository. Their documentation
+exists; their implementations remain in the backlog. The shared core interprets
+agent observations once, and each controller maps shared state to its device.
+
 Shared agent methods stay in agent-skills. Hub development tooling will own the
 versioned reusable OpenSpec validation package; device repositories own adoption,
 their tests, policies and capability specifications.
@@ -73,15 +79,20 @@ browsers must not create another scheduler for physical effects.
 
 ## Repositories, packages and hosting
 
-Retain the two device repositories. Use TypeScript for new shared services and
-the React dashboard to fit the Pixoo stack; keep the Nanoleaf worker in Python.
+Use this repository as the monorepo for new controllers and shared packages,
+as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
+The existing Pixoo and Nanoleaf repositories retain ownership until separately
+delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX
+controllers and the React dashboard; keep the Nanoleaf worker in Python.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
 The proposed layout is packages/contracts, packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
-apps/hub and apps/dashboard. These are planned boundaries, not implemented
-packages. Publish versioned private artifacts when a separate consumer needs
+apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
+controller directories contain documents only; the other paths remain proposed.
+Use Node 24 and npm workspaces when executable packages are introduced.
+Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
 First, Pixoo embeds the core in its existing backend. Nanoleaf can opt into that
@@ -103,9 +114,11 @@ can cache presentation state; they do not become independent status authorities.
 Loss of the hub has a documented recovery/rollback path and never blocks agents
 or ordinary media use.
 
-A future monorepo is an option if most features routinely span the hub and
-controllers. Repository consolidation does not require combining runtimes.
-There is no repository move or device rewrite in this decision.
+Deferred [Pixoo source migration #25](https://github.com/jimmie-potts/agent-device-hub/issues/25)
+and [Nanoleaf source migration #26](https://github.com/jimmie-potts/agent-device-hub/issues/26)
+will settle provenance, active work, source ownership and package layout before
+moving code. Repository consolidation does not combine runtimes, install
+services, transfer private databases or switch the active state owner.
 
 ## Unified UI and additional devices
 
@@ -121,9 +134,41 @@ overview does not wait for Nanoleaf live mirroring, Lively, an ambient redesign
 or new Pixoo player UI. Those remain separately owned work.
 
 Evaluate Home Assistant/MQTT for ordinary new device integrations before writing
-custom transports. Adoption is deferred pending a capability assessment.
+custom transports. For LIFX, the user selected direct LAN after considering
+Home Assistant; the controller has no Home Assistant or cloud dependency.
+Broader Home Assistant/MQTT adoption remains deferred under #11.
 Generic device support does not establish custom animation fidelity. Home
 Assistant must delegate to an existing writer or use an explicit ownership handoff.
+
+## Tidbyt and LIFX delivery
+
+Automatic agent status is the first feature priority for these new controllers.
+Qualify their connections, implement fake-backed controllers, then consume the
+core initially hosted inside Pixoo. Standalone hosting remains a later state-owner
+migration. Source status integration does not wait for a dashboard or new MCP
+tools. Full installed lifecycle acceptance depends on the reversible producer
+setup in [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8).
+Existing local Codex control priorities under #4/#7 remain unchanged.
+
+Tidbyt starts with the official cloud. Keep a pure 64×32 WebP rendering boundary
+separate from connection configuration, authentication, installation identity,
+capabilities and delivery outcomes. A later Tronbyt connection reuses the renderer
+and controller queue. It is an explicit backend selection with no automatic
+failover. Moving a physical Tidbyt to Tronbyt also requires supported firmware
+and a separately authorized transition; changing a server URL alone is insufficient.
+See the [Tidbyt guide](../controllers/tidbyt/README.md) for qualification sources.
+
+LIFX starts with local LAN control. Qualify the user's exact model before physical
+acceptance; the supplied "A16" name must not be silently treated as A19. Expose
+only supported capabilities. Source development uses fake packets and configured
+neutral identities. No startup discovery or physical writes are implied by setup.
+See the [LIFX guide](../controllers/lifx/README.md).
+
+The status issues own the initial display layout, session selection, lighting
+effects, update limits, takeover/manual-control and restoration policies. Resolve
+those choices before implementation readiness. Both controllers preserve shared
+privacy and evidence semantics; neither infers success, read status or fresh
+connectivity from absent observations.
 
 ## Alternatives and consequences
 
@@ -132,13 +177,16 @@ couple new clients to Codex-specific read behavior. A single shared core avoids
 that drift, at the cost of explicit package/API compatibility and state-owner
 migration work.
 
-An immediate runtime rewrite or repository consolidation would couple this
-planning work to Windows installation, state migration and physical revalidation.
-Keeping controllers intact allows shared status and a useful UI first.
+Moving the existing controllers now would couple this bootstrap to Windows
+installation, active feature work and physical revalidation. Start new controllers
+in the monorepo and defer the existing source moves to their own issues.
 
-MCP remains reusable infrastructure with device registrations. Pixoo may retain
-an opt-in local endpoint through the same module; the future gateway adds device
-identity. Neither endpoint creates a second writer.
+MCP remains reusable infrastructure with device registrations. The reusable local
+transport and device tools in [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7)
+depend on controller contracts, independently of standalone hosting. Pixoo may
+retain an opt-in local endpoint through that module. Standalone discovery and
+agent-status tools belong to [#13](https://github.com/jimmie-potts/agent-device-hub/issues/13),
+which composes #5 and #7. Neither endpoint creates a second writer.
 
 This direction intentionally revises the older plan for independent Pixoo and
 Nanoleaf collectors. It preserves installation independence during the staged

@@ -8,6 +8,12 @@ provider contracts, APIs, state, integration or hosting, read docs/architecture.
 and the linked device contracts. docs/roadmap.md links the delivery sequence;
 GitHub issues own acceptance criteria, dependencies and status.
 
+For planning, edits or review under controllers/tidbyt or controllers/lifx,
+read that directory's README.md and AGENTS.md before working there, even when
+launched from the repository root. These directories currently contain documents
+only. Before shared package, root manifest, lockfile or CI changes, read
+docs/development.md and coordinate with the owner of concurrent shared work.
+
 This is currently a planning/bootstrap repository. Do not describe the proposed
 core, host, adapters, MCP or UI as implemented. Planning/review is read-only unless
 the user explicitly authorizes document or tracker changes. Preserve that scope;
@@ -15,8 +21,11 @@ planning writes do not authorize implementing the planned features.
 
 ## Delivery and validation
 
-Use the centrally installed github-delivery method for implementation/delivery,
-code-review for review, and writing-for-agents for persistent instructions.
+Follow docs/sdlc.md for authorized implementation/delivery. Use centrally
+installed code-review for review and writing-for-agents for instructions.
+The catalog's deliver-work method is explicit-invocation only; use it when the
+user names it, while retaining this repository's delivery gates. Do not require
+the retired github-delivery name or silently invoke its replacement.
 Compose grill-with-docs for unsettled implementation-changing decisions and tdd
 for meaningful executable behavior. Reuse the shared agent-skills catalog;
 report missing prerequisites without copying, installing or replacing skills.

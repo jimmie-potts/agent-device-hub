@@ -1,11 +1,18 @@
 # Agent device hub
 
 Shared local agent status and device integration contracts for Codex, Claude Code,
-Nanoleaf, Pixoo and future devices.
+Nanoleaf, Pixoo, Tidbyt and LIFX.
 
 This repository currently contains accepted architecture, the implementation
 backlog and development workflow tooling. No collector, runtime API, MCP server,
 dashboard or device adapter is implemented or installed.
+
+New Tidbyt and LIFX controllers will live in this monorepo. Their current
+[Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
+directories contain documentation and scoped agent instructions only. The first
+feature priority for these devices is automatic agent status. Tidbyt starts with
+the official cloud and leaves a connection boundary for future Tronbyt support;
+LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
 
 Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [the roadmap](docs/roadmap.md) for the linked delivery sequence, and
@@ -45,3 +52,7 @@ install hooks, launch agent sessions, start a personal service or operate device
 
 The first shared core can run in Pixoo's existing backend. Standalone hub hosting
 and Nanoleaf shared-input migration are separate, dependency-gated deliverables.
+Later source moves into this monorepo have separate deferred issues,
+[Pixoo #25](https://github.com/jimmie-potts/agent-device-hub/issues/25) and
+[Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
+Their current repositories retain ownership until those migrations are delivered.

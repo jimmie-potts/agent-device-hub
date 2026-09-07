@@ -25,16 +25,28 @@ next action when applicable. Remove workflow status/blocked labels on closure.
 
 ## Scope and implementation
 
-Select github-delivery for authorized delivery, code-review for review,
+Follow this workflow for authorized delivery. Select code-review for review,
 writing-for-agents for instructions, grill-with-docs for unsettled
 implementation-changing decisions, and tdd for meaningful executable behavior.
 Use installed central methods; missing prerequisites are reported without local
 copies or silent replacement.
 
+The shared catalog retired github-delivery in favor of deliver-work, which
+requires explicit invocation. Use deliver-work only when the user names it;
+ordinary delivery follows this document. This naming correction does not waive
+independent reviews, CI, guarded merge, issue readback or installation authority.
+
 Refresh the repository-defined main, inspect worktrees and create
 codex/gh-<issue-number>-<slug> in an isolated worktree. One coordinator owns
 repository/GitHub writes. Reviewers are independent and read-only. Preserve
 other sessions' worktrees, branches, installations and ownership.
+
+New Tidbyt and LIFX work belongs in this monorepo under their scoped controller
+instructions. Assign one writer per deliverable and a coordinator for changes
+to shared contracts, root manifests/lockfile and CI. Merge shared prerequisites
+before dependent work claims compatibility. A controller change validates its
+affected consumers; shared changes validate every affected controller.
+Existing Pixoo/Nanoleaf repository moves remain separate deferred issues.
 
 Features/changed contracts need an exact issue-linked OpenSpec proposal,
 capability deltas and tasks. Timing, concurrency, migration, installation and
