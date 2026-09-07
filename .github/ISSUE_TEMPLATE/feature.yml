@@ -1,0 +1,32 @@
+name: Feature or integration
+description: Define an outcome, acceptance criteria and dependencies.
+labels: ["enhancement", "status:backlog"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and scope
+      description: State the observable outcome, owning repository and exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use observable criteria and identify source, client and physical gates.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Link required issues across repositories. Distinguish conditional gates and related independent work.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification and delivery target
+      description: Name checks, fixtures, required evidence and the authorized terminal state.
+    validations:
+      required: true

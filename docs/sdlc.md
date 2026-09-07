@@ -1,0 +1,94 @@
+# Development workflow
+
+## Authority and preparation
+
+GitHub issues own requested outcomes, acceptance criteria, dependencies, status
+and delivery targets. OpenSpec owns reviewed capability scenarios and proposed
+deltas. Architecture/ADRs own lasting decisions. PRs own candidate revisions,
+reviews and CI evidence. Link to those sources instead of copying status ledgers.
+
+Planning/review stays read-only unless the user explicitly authorizes document or
+tracker writes. Those writes authorize their named artifacts, not future runtime
+implementation. A normal implementation or maintenance request includes issue
+updates, isolated work, validation, PR publication, independent review, eligible
+merge and main-CI readback. Narrower user scope prevails.
+
+Reuse existing issues. Record dependencies as full cross-repository links and
+GitHub native blocked-by relationships where supported. Distinguish required
+source prerequisites, conditional physical gates and related independent work.
+Check for cycles when changing ownership or prerequisites.
+
+Use enhancement, documentation, maintenance, hardware and deferred as descriptive
+labels. Each open delivery issue has one of status:backlog, status:ready,
+status:in-progress or status:review. Add blocked with its dependency/decision and
+next action when applicable. Remove workflow status/blocked labels on closure.
+
+## Scope and implementation
+
+Select github-delivery for authorized delivery, code-review for review,
+writing-for-agents for instructions, grill-with-docs for unsettled
+implementation-changing decisions, and tdd for meaningful executable behavior.
+Use installed central methods; missing prerequisites are reported without local
+copies or silent replacement.
+
+Refresh the repository-defined main, inspect worktrees and create
+codex/gh-<issue-number>-<slug> in an isolated worktree. One coordinator owns
+repository/GitHub writes. Reviewers are independent and read-only. Preserve
+other sessions' worktrees, branches, installations and ownership.
+
+Features/changed contracts need an exact issue-linked OpenSpec proposal,
+capability deltas and tasks. Timing, concurrency, migration, installation and
+significant design changes also need applicable design/failure/recovery work.
+Documentation/tooling with no product behavior delta needs an issue/PR and a
+recorded explanation, without invented product specs.
+
+Use npm run openspec -- <arguments> from the assigned root and an exact
+gh-<issue-number>-<slug> change under openspec/changes. Inspect active and archived
+names before creation. Initialize with init --tools none --profile core --no-animation.
+Evaluate conditional design omission against the schema and record its reason.
+
+Before product implementation, define proportionate executable tests and build/
+type checks in docs/development.md and CI. Use a meaningful failing scenario
+before its fix; imported bootstrap workflow fixtures do not establish a product
+red/green result. Do not widen scope to satisfy a test or rewrite device behavior
+as incidental cleanup.
+
+## Review and merge
+
+1. Complete authorized changes, relevant checks and applicable OpenSpec artifacts.
+   Obtain successful current sync/archive lookups; synchronize every affected spec
+   and archive on the delivery branch before final review. Incomplete tasks,
+   missing acceptance or failed lookups prevent archive.
+2. Commit the candidate and open a PR with Refs #<issue>. Record base, head,
+   merge-base, diff command, clean worktree and validation. Avoid automatic issue
+   closure before merged-revision CI.
+3. Obtain independent read-only Standards and Specification reviews of the same
+   fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
+   dispositions and reassess changed candidates. Self-review cannot authorize merge.
+4. Read all GitHub reviews/threads and current-head CI pages. Require every
+   configured job to succeed, including matrix jobs; missing, pending, skipped,
+   cancelled or failed jobs prevent merge. UI candidates also need explicit user
+   approval, renewed after UI changes.
+5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
+   tests/reviews when either commit changes. Squash only the reviewed head with
+   gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
+   Never use --admin, a background merge service or account/privacy changes.
+6. Read back the main merge revision and all its CI jobs. Close only the delivered
+   issue after its acceptance is met, clear workflow labels and verify closure.
+   Do not close future implementation or device acceptance issues with a bootstrap.
+
+The initial GitHub-generated README commit only creates the default branch.
+Subsequent bootstrap and product changes use PRs. Do not assume private-plan
+branch protection is available or absent; honor configured protections and retain
+these procedural gates.
+
+## Installation and evidence
+
+Source delivery does not install personal hooks, start a local service, launch
+agent sessions, migrate live databases or operate devices. Each requires the
+applicable explicit authorization and identified owner. Physical work additionally
+needs an explicit IP and permission for the test sequence/content replacement.
+
+Keep source/CI, installation, real-client, transport and visible-device evidence
+separate. A fake or successful HTTP command does not establish optical results.
+Preserve the owning device repository's installation and restoration rules.

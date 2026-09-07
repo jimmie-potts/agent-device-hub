@@ -1,0 +1,24 @@
+name: Bug
+description: Record a reproducible failure and its expected behavior.
+labels: ["bug", "status:backlog"]
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Failure and reproduction
+      description: Use sanitized evidence and exact versions without private agent or device data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior and acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies, verification and delivery target
+      description: Link blockers and state whether source, installation or physical verification is requested.
+    validations:
+      required: true
