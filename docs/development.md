@@ -10,8 +10,8 @@ npm run check:workflow
 npm run test:workflow
 ```
 
-Both checks must exit zero. The current specification inventory is one capability,
-controller-contracts, with its gh-4 implementation change archived.
+Both checks must exit zero. The product specification inventory is
+controller-contracts and shared-mcp-gateway once the gh-7 change is synchronized.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -25,6 +25,11 @@ GitHub CI requires Workflow checks on Ubuntu and Windows and four contract jobs,
 one for each Ubuntu/Windows and Python 3.12/3.14 combination. The contract jobs
 run build, type, both language corpora and isolated package checks. Later runtime
 and browser changes must add their own issue-appropriate checks.
+
+The configured MCP jobs run build/type, tool/service tests, loopback protocol tests
+and isolated archive-consumer checks on Ubuntu and Windows. Local validation runs
+the same commands. Keep platform coverage and delivery-specific CI exceptions in
+the external validation receipt.
 
 ## Shared tooling provenance
 
@@ -130,3 +135,23 @@ when publishing an immutable private release asset for downstream adoption.
 Python loads the module with the extracted package's python/ directory on
 PYTHONPATH; it requires the bundled relative schemas/ directory. Keep the package
 layout intact. No sibling-checkout import is supported.
+
+## Reusable MCP checks
+
+Run `npm run test:mcp`, `npm run test:mcp:protocol` and
+`npm run test:mcp:package`, in addition to the existing build/type, both-language
+contracts and workflow checks. Tests start ephemeral loopback servers and use
+synthetic authentication and fake owning services. No test discovers or contacts
+a device or launches an installed agent client.
+
+`npm run package:mcp` creates `@jimmie-potts/device-mcp` 1.0.0 under artifacts/.
+The private controller-contract archive is pinned under vendor/ with its original
+release receipt. Packaging verifies its SHA-256 before bundling it. The MCP package
+test installs outside the checkout, verifies both manifests, runs the tool/protocol
+suite and typechecks consumer examples without private-registry credentials.
+
+Pin the resulting immutable private MCP release archive and receipt in each
+consumer's vendor directory before adoption. Consumer CI then needs no new
+cross-repository secret. Keep actual MCP release source/hash receipts outside the
+reviewed commit. Read [the module guide](../packages/mcp/README.md) for the API,
+protocol matrix, SDK license and remaining installed-client/physical acceptance.

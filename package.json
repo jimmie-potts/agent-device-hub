@@ -10,17 +10,25 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit",
     "test:contracts": "npm run build && node --test packages/contracts/tests/*.test.mjs",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
-    "test:package": "npm run build && node scripts/package-contracts.mjs --test"
+    "test:package": "npm run build && node scripts/package-contracts.mjs --test",
+    "test:mcp": "npm run build && node --test packages/mcp/tests/tools.test.mjs",
+    "test:mcp:protocol": "npm run build && node --test packages/mcp/tests/protocol.test.mjs",
+    "package:mcp": "npm run build && node scripts/package-mcp.mjs",
+    "test:mcp:package": "npm run build && node scripts/package-mcp.mjs --test"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",
     "@types/node": "24.13.3",
     "ajv": "8.20.0",
     "typescript": "5.9.3"
-  }
+  },
+  "workspaces": [
+    "packages/contracts",
+    "packages/mcp"
+  ]
 }
