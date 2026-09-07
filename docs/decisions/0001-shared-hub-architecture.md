@@ -1,0 +1,20 @@
+# ADR 0001: Shared agent status with existing device controllers
+
+Status: Accepted direction; implementation pending.
+
+The user approved documenting and planning the shared hub and initializing this
+repository. Adopt [architecture.md](../architecture.md) as the canonical
+cross-repository ownership and migration decision.
+
+Implement one reusable agent-state core and versioned provider/controller
+contracts. Initially embed the core in Pixoo; introduce standalone hosting only
+through an explicit state-owner migration. Retain Nanoleaf's Windows worker and
+both device repositories. Keep provider interpretation, device rendering and
+MCP/UI commands behind their documented boundaries.
+
+A shared overview is an early client of those contracts. Exact rendering,
+advanced-editor migration, Home Assistant adoption and any repository
+consolidation remain separately qualified or deferred.
+
+The initial bootstrap and issue publication establish plans only. They neither
+change installed behavior nor satisfy the future integration acceptance criteria.

@@ -1,0 +1,25 @@
+schema: spec-driven
+context: |
+  Agent device hub currently contains accepted architecture and workflow tooling
+  only. No agent collector, shared core, controller API, MCP or UI is implemented.
+  GitHub issues own scope, acceptance, dependencies, status and delivery targets.
+  Read AGENTS.md, docs/sdlc.md, docs/architecture.md and the exact linked issue.
+  The first reusable TypeScript core may be embedded in Pixoo's existing backend;
+  standalone hosting needs an explicit one-owner migration. Nanoleaf retains
+  its Python Windows worker and both devices retain their own rendering/writers.
+  Keep activity, attention, notices, optional read evidence and freshness distinct.
+  Use allowlisted metadata, chosen labels or neutral IDs; never copy conversation
+  content or private paths. Hooks fail open and never command devices.
+  Generate no local shared skills. Source, installation, client and physical
+  verification have separate acceptance and authorization boundaries.
+rules:
+  proposal:
+    - Link the exact owning GitHub issue and affected cross-repository contracts.
+    - Use gh-<issue-number>-<slug> under this worktree's openspec/changes; inspect active and archived identities first.
+  specs:
+    - Write observable scenarios linked to issue criteria, without copying tracker status.
+  design:
+    - Evaluate schema-based design criteria; cover ownership, timing, migration, privacy, failure and recovery when affected.
+  tasks:
+    - Every task names observable evidence; use meaningful focused red-green-refactor for product behavior.
+    - Keep revision-specific reviews and CI receipts in the PR, not the reviewed commit.
