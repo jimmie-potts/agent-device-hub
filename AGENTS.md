@@ -24,8 +24,7 @@ planning writes do not authorize implementing the planned features.
 Follow docs/sdlc.md for authorized implementation/delivery. Use centrally
 installed code-review for review and writing-for-agents for instructions.
 The catalog's deliver-work method is explicit-invocation only; use it when the
-user names it, while retaining this repository's delivery gates. Do not require
-the retired github-delivery name or silently invoke its replacement.
+user names it, while retaining this repository's delivery gates.
 Compose grill-with-docs for unsettled implementation-changing decisions and tdd
 for meaningful executable behavior. Reuse the shared agent-skills catalog;
 report missing prerequisites without copying, installing or replacing skills.

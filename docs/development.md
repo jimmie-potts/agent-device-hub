@@ -46,9 +46,8 @@ outside this checkout. The workflow uses code-review, tdd,
 grill-with-docs, grilling, domain-modeling, writing-for-agents, unslop and the
 OpenSpec propose/explore/apply/update/sync/archive skills.
 
-Use [docs/sdlc.md](sdlc.md) for delivery. The catalog's retired github-delivery
-name is no longer a prerequisite. Its replacement, deliver-work, requires the
-user to invoke it explicitly and does not replace repository gates.
+Use [docs/sdlc.md](sdlc.md) for delivery. Use the shared deliver-work skill only
+when the user explicitly invokes it, while retaining repository gates.
 
 Inspect installed paths first. Provision only missing skills through the catalog
 manager when the user authorizes personal setup; preserve conflicts and the source
