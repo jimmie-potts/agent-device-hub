@@ -14,8 +14,8 @@ launched from the repository root. These directories currently contain documents
 only. Before shared package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
-This is currently a planning/bootstrap repository. Do not describe the proposed
-core, host, adapters, MCP or UI as implemented. Planning/review is read-only unless
+Controller contracts and pure TypeScript/Python conformance consumers are implemented.
+Do not describe the proposed core, host, adapters, MCP or UI as implemented. Planning/review is read-only unless
 the user explicitly authorizes document or tracker changes. Preserve that scope;
 planning writes do not authorize implementing the planned features.
 
@@ -42,7 +42,12 @@ UI changes additionally require explicit human approval of the current candidate
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
 npm run check:workflow and npm run test:workflow from the assigned worktree root.
 Both checks must exit zero; report the actual specification inventory.
-Before product implementation, add the issue-appropriate build/type/test commands
+For controller contract changes, use Node 24 and Python 3.12 or 3.14 and run
+npm run build, npm run typecheck, npm run test:contracts,
+npm run test:contracts:python and npm run test:package from the worktree root.
+All must exit zero. Read docs/controller-contract.md before changing wire values,
+reference decisions or artifacts.
+Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.
 
