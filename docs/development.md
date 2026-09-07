@@ -38,9 +38,13 @@ configuration-isolation behavior. This temporary bootstrap copy is recorded;
 ## Agent setup
 
 Use the reviewed [agent-skills catalog](https://github.com/jimmie-potts/agent-skills)
-outside this checkout. The workflow uses github-delivery, code-review, tdd,
+outside this checkout. The workflow uses code-review, tdd,
 grill-with-docs, grilling, domain-modeling, writing-for-agents, unslop and the
 OpenSpec propose/explore/apply/update/sync/archive skills.
+
+Use [docs/sdlc.md](sdlc.md) for delivery. The catalog's retired github-delivery
+name is no longer a prerequisite. Its replacement, deliver-work, requires the
+user to invoke it explicitly and does not replace repository gates.
 
 Inspect installed paths first. Provision only missing skills through the catalog
 manager when the user authorizes personal setup; preserve conflicts and the source
@@ -54,13 +58,31 @@ mechanisms. Links to docs are conditional read instructions, not automatic impor
 Verify actual discovery in a fresh authorized host session before claiming
 host compatibility. A filesystem link, static instruction exercise or CI pass
 alone does not establish live Codex/Claude loading or lifecycle events. Check
-root and any future nested launch directory independently.
+root and each nested controller launch directory independently. For controller
+work launched at the root, AGENTS.md explicitly requires reading the scoped
+README.md and AGENTS.md. Each controller CLAUDE.md imports its local AGENTS.md;
+the scoped instructions require the root rules too.
 
 Keep personal Claude/Codex settings, authentication, trust, hook files and runtime
 data outside the repository. One branch/worktree and coordinating writer owns each
 active deliverable; shared Git operations and installations still need ownership.
 
 ## Future package and controller validation
+
+The chosen development direction is Node 24, TypeScript and npm workspaces for
+new shared packages and the Tidbyt/LIFX controllers. No workspace packages or
+runtime entry points are created by the documentation bootstrap. The first
+implementing issue adds the needed manifests, package boundaries and executable
+commands to this document and CI. The migrated Nanoleaf worker remains Python;
+sharing a repository does not require a common runtime or combined process.
+
+Reserve shared contracts, root package/lockfile changes and CI for the coordinating
+writer. Work on separate deliverables uses separate worktrees, even for different
+controller directories. Reconcile the latest shared changes before validation.
+Run changed-package build/type/tests and every affected contract consumer, plus
+the repository workflow checks. A green unrelated package does not validate a
+controller. Use fake transports and temporary runtime data for source checks;
+ordinary setup must never discover or contact physical devices.
 
 [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2) owns provider qualification; [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) owns the device
 contract and cross-language fixtures. [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3) owns reusable core/package
@@ -74,3 +96,18 @@ checkout path. Changes to shared contracts must validate every affected consumer
 Installation and physical testing follow docs/sdlc.md and the owning device guide.
 No bootstrap command installs the app, changes hooks, reads live device credentials
 or sends device requests.
+
+## Instruction validation
+
+For instruction-only changes, check these branches statically and report the
+files that resolve each rule. Live host discovery requires a separately
+authorized session and must be reported separately.
+
+| Task | Expected instruction path and boundary |
+| --- | --- |
+| Root-launched Tidbyt edit | Root AGENTS.md directs the reader to controllers/tidbyt/README.md and AGENTS.md; cloud source work uses fakes. |
+| Nested LIFX launch | Ancestor/root instructions plus controllers/lifx/AGENTS.md; do not infer the exact model or scan the LAN. |
+| Claude controller work | Root CLAUDE.md imports root AGENTS.md; controller CLAUDE.md imports scoped AGENTS.md. Scoped rules require the root rules. |
+| Shared contract or lockfile edit | Read architecture, linked contracts and this guide; coordinate ownership and test every affected consumer. |
+| Request to implement a future controller | Read its exact issue and readiness decisions; bootstrap completion alone grants no implementation or installation authority. |
+| Source-only Tronbyt change | Qualify connection behavior with fakes; firmware, server installation and physical transition require separate explicit authorization. |

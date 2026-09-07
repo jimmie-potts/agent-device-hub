@@ -15,11 +15,46 @@ Conditional live/physical authorization is stated separately in the issues.
 | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) | Define versioned controller capabilities and integration APIs | [agent-device-hub#1](https://github.com/jimmie-potts/agent-device-hub/issues/1) |
 | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) | Host shared monitoring and route commands to existing controllers | [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#37](https://github.com/jimmie-potts/divoom-app-upgrade/issues/37), [codex-nanoleaf#28](https://github.com/jimmie-potts/codex-nanoleaf/issues/28), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
 | [agent-device-hub#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) | Build the unified session and device dashboard | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) |
-| [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) | Provide reusable MCP tools and a shared device gateway | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) |
+| [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) | Provide reusable local MCP transport and device tools | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
 | [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) | Package reversible shared hooks and collector ownership migration | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31), [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) |
-| [agent-device-hub#9](https://github.com/jimmie-potts/agent-device-hub/issues/9) | Verify shared status and command routing across both device integrations | [agent-device-hub#6](https://github.com/jimmie-potts/agent-device-hub/issues/6), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8), [divoom-app-upgrade#33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33), [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) |
+| [agent-device-hub#9](https://github.com/jimmie-potts/agent-device-hub/issues/9) | Verify shared status and command routing across both existing device integrations | [agent-device-hub#6](https://github.com/jimmie-potts/agent-device-hub/issues/6), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8), [agent-device-hub#13](https://github.com/jimmie-potts/agent-device-hub/issues/13), [divoom-app-upgrade#33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33), [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) |
 | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) | Publish shared OpenSpec validation tooling | [agent-device-hub#1](https://github.com/jimmie-potts/agent-device-hub/issues/1) |
 | [agent-device-hub#11](https://github.com/jimmie-potts/agent-device-hub/issues/11) | Evaluate Home Assistant and MQTT for additional device integrations | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [agent-device-hub#13](https://github.com/jimmie-potts/agent-device-hub/issues/13) | Host shared MCP discovery and agent-status tools in the standalone hub | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) |
+
+## New controllers in the monorepo
+
+[ADR 0003](decisions/0003-device-controller-monorepo.md) records the accepted
+direction. These issues prioritize automatic status for Tidbyt and LIFX without
+changing the existing local Codex control priority. Source controllers use
+fakes; hardware permissions and visible acceptance remain separate gates.
+
+| Issue | Outcome | Required issues |
+| --- | --- | --- |
+| [#14](https://github.com/jimmie-potts/agent-device-hub/issues/14) | Initialize controller documents and backlog | [#1](https://github.com/jimmie-potts/agent-device-hub/issues/1) |
+| [#15](https://github.com/jimmie-potts/agent-device-hub/issues/15) | Qualify Tidbyt cloud and Tronbyt connections | [#14](https://github.com/jimmie-potts/agent-device-hub/issues/14) |
+| [#16](https://github.com/jimmie-potts/agent-device-hub/issues/16) | Implement the Tidbyt cloud controller | [#15](https://github.com/jimmie-potts/agent-device-hub/issues/15), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#17](https://github.com/jimmie-potts/agent-device-hub/issues/17) | Qualify direct LIFX LAN control | [#14](https://github.com/jimmie-potts/agent-device-hub/issues/14) |
+| [#18](https://github.com/jimmie-potts/agent-device-hub/issues/18) | Implement the LIFX LAN controller | [#17](https://github.com/jimmie-potts/agent-device-hub/issues/17), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#19](https://github.com/jimmie-potts/agent-device-hub/issues/19) | Add Tidbyt automatic status | [#16](https://github.com/jimmie-potts/agent-device-hub/issues/16), [#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [Pixoo #31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
+| [#20](https://github.com/jimmie-potts/agent-device-hub/issues/20) | Add LIFX automatic status | [#18](https://github.com/jimmie-potts/agent-device-hub/issues/18), [#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [Pixoo #31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
+| [#21](https://github.com/jimmie-potts/agent-device-hub/issues/21) | Install and verify Tidbyt | [#19](https://github.com/jimmie-potts/agent-device-hub/issues/19), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#22](https://github.com/jimmie-potts/agent-device-hub/issues/22) | Install and verify LIFX | [#20](https://github.com/jimmie-potts/agent-device-hub/issues/20), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#23](https://github.com/jimmie-potts/agent-device-hub/issues/23) | Implement the deferred Tronbyt connection | [#15](https://github.com/jimmie-potts/agent-device-hub/issues/15), [#16](https://github.com/jimmie-potts/agent-device-hub/issues/16), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#24](https://github.com/jimmie-potts/agent-device-hub/issues/24) | Verify the deferred Tidbyt-to-Tronbyt transition | [#23](https://github.com/jimmie-potts/agent-device-hub/issues/23), [#21](https://github.com/jimmie-potts/agent-device-hub/issues/21) |
+| [#25](https://github.com/jimmie-potts/agent-device-hub/issues/25) | Plan and migrate Pixoo source later | [#14](https://github.com/jimmie-potts/agent-device-hub/issues/14), agreed future migration window |
+| [#26](https://github.com/jimmie-potts/agent-device-hub/issues/26) | Plan and migrate Nanoleaf source later | [#14](https://github.com/jimmie-potts/agent-device-hub/issues/14), agreed future migration window |
+
+The exact bulb model, Tidbyt generation, status layouts/effects and takeover/
+restoration policies remain named qualification or readiness decisions. #21/#22
+require the shared producer setup for full live lifecycle acceptance; source
+status integration only requires the core and its initial Pixoo host. #24 also
+requires explicit firmware authorization and a validated cloud baseline.
+
+Deferred source migrations reconcile active work and transfer ownership before
+moving code. They do not block current Pixoo/Nanoleaf delivery or authorize
+installed-runtime changes. New device acceptance remains in #21/#22; #9 retains
+its existing Pixoo/Nanoleaf scope.
 
 ## Device adoption
 
@@ -53,8 +88,9 @@ Conditional live/physical authorization is stated separately in the issues.
    embedded/remote session-source boundary. Verify producer and consumer route
    switching, including Pixoo rendering and acknowledgment, through cutover and
    rollback with one state owner.
-   The shared dashboard and MCP gateway depend on that host. Pixoo's local MCP
-   endpoint consumes the same reusable implementation.
+   The shared dashboard and #13's MCP host depend on that host. The reusable local
+   MCP module in #7 depends only on #4 and can serve local device integrations
+   earlier, independently of monitoring or standalone hosting.
 4. Package reversible hook/cutover tooling. Keep installation, real-client
    compatibility and each device's physical acceptance under their named owners.
 5. Run cross-repository source compatibility at a pinned revision matrix.
@@ -70,6 +106,7 @@ future hub integration.
 Shared workflow tooling is an independent package-and-adoption sequence.
 Home Assistant/MQTT evaluation remains deferred; it neither blocks local
 monitoring nor authorizes a second writer or new installation.
+LIFX's direct-LAN choice is recorded in #17 and ADR 0003.
 
 Closed foundational device issues retain their completed evidence. This plan
 does not reopen them, claim new runtime delivery, or advance active wall-map UI
