@@ -1,0 +1,143 @@
+{
+  "apiVersion": "1.0",
+  "identity": {
+    "deviceId": "light",
+    "controllerId": "controller",
+    "sourceId": "source",
+    "controllerEpoch": "runtime-1"
+  },
+  "configurationRevision": 4,
+  "generation": {
+    "epoch": "generation-1",
+    "sequence": 3
+  },
+  "nextRequestId": {
+    "epoch": "requests-1",
+    "sequence": 1
+  },
+  "cursor": {
+    "epoch": "feed-1",
+    "sequence": 3
+  },
+  "sampleClock": {
+    "domain": "controller-monotonic",
+    "epoch": "clock-1",
+    "sampledAtMs": 1000
+  },
+  "serviceHealth": "ready",
+  "capabilities": {
+    "power": {
+      "supported": true
+    },
+    "brightness": {
+      "supported": true,
+      "minimum": 0,
+      "maximum": 100
+    },
+    "media": {
+      "supported": false
+    },
+    "zones": {
+      "supported": false
+    },
+    "scenes": {
+      "supported": false
+    },
+    "preview": {
+      "supported": false
+    },
+    "modes": {
+      "supported": true,
+      "values": [
+        "Work",
+        "Quiet",
+        "Free"
+      ]
+    }
+  },
+  "limits": {
+    "maxPending": 32,
+    "maxBodyBytes": 65536,
+    "maxInFlight": 32,
+    "maxReceipts": 256,
+    "maxEvents": 32,
+    "maxStreams": 16,
+    "authenticationTimeoutMs": 5000
+  },
+  "state": {
+    "desired": {
+      "power": {
+        "status": "known",
+        "value": true
+      },
+      "brightness": {
+        "status": "known",
+        "value": 80
+      },
+      "mode": {
+        "status": "known",
+        "value": "Work"
+      }
+    },
+    "pending": [
+      {
+        "requestId": {
+          "epoch": "requests-1",
+          "sequence": 1
+        },
+        "command": {
+          "kind": "brightness.set",
+          "percent": 80
+        },
+        "generation": {
+          "epoch": "generation-1",
+          "sequence": 3
+        }
+      }
+    ],
+    "lastSuccessfulSend": {
+      "status": "known",
+      "requestId": {
+        "epoch": "requests-1",
+        "sequence": 1
+      },
+      "clock": {
+        "domain": "controller-monotonic",
+        "epoch": "clock-1",
+        "sampledAtMs": 1000
+      },
+      "operationIds": [
+        "brightness"
+      ]
+    },
+    "lastOutcome": {
+      "status": "known",
+      "receipt": {
+        "apiVersion": "1.0",
+        "controllerId": "controller",
+        "deviceId": "light",
+        "requestId": {
+          "epoch": "requests-1",
+          "sequence": 1
+        },
+        "configurationRevision": 5,
+        "generation": {
+          "epoch": "generation-1",
+          "sequence": 3
+        },
+        "outcome": "sent",
+        "priorEffects": "confirmed-transmission",
+        "completedOperations": [
+          "power"
+        ],
+        "uncertainOperations": []
+      }
+    },
+    "externalControl": {
+      "status": "unknown"
+    },
+    "observation": {
+      "status": "unknown"
+    }
+  }
+}

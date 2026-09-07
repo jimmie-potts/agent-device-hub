@@ -1,6 +1,7 @@
 # Shared architecture
 
-Status: Accepted direction; implementation remains in the linked backlog.
+Status: Accepted direction. Controller contracts and reusable MCP are implemented;
+collectors, shared agent-state runtime and standalone hosting remain in the backlog.
 
 ## Ownership
 
@@ -87,13 +88,23 @@ controllers and the React dashboard; keep the Nanoleaf worker in Python.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
-The proposed layout is packages/contracts, packages/agent-state,
+Implemented shared packages are packages/contracts and packages/mcp. The remaining
+proposed layout is packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
 apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
 controller directories contain documents only; the other paths remain proposed.
 Use Node 24 and npm workspaces when executable packages are introduced.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
+
+The MCP module exports an HTTP handler and configured service/tool registration.
+The owning application enables and mounts it; the module never opens a listener
+or starts another device writer. Shared controller tools preserve API 1.0 request
+tickets, revisions and receipts. Strict registered application extensions can use
+an existing app request_id and catalog/player result without changing that wire
+contract. Both paths retain fixed configured targets, current read/control scopes,
+bounded authentication and response delivery, and no automatic write retries.
+See [the MCP module](../packages/mcp/README.md) for its API and evidence boundary.
 
 First, Pixoo embeds the core in its existing backend. Nanoleaf can opt into that
 versioned shared feed while retaining its current Windows worker. A later hub

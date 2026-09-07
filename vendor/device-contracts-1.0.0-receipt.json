@@ -1,0 +1,11 @@
+{
+  "artifact": "@jimmie-potts/device-contracts",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "sourceRevision": "589846bcbe6a4a06ef6aaec9d2952c9f9d58dac3",
+  "reviewedHead": "f7ebf553a5450bbc0b039efe1b10818cad07cbf4",
+  "sha256": "5e0b30ac92e6e8e1e38d8249b740b565de66e3cc810a04bc6fac23e182e84e87",
+  "filename": "jimmie-potts-device-contracts-1.0.0.tgz",
+  "pr": "https://github.com/jimmie-potts/agent-device-hub/pull/28",
+  "mainCiRun": 34091097655
+}

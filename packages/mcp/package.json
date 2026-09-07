@@ -1,0 +1,24 @@
+{
+  "name": "@jimmie-potts/device-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/device-contracts": "1.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.5.4",
+    "ajv": "8.20.0"
+  },
+  "bundleDependencies": [
+    "@jimmie-potts/device-contracts"
+  ]
+}

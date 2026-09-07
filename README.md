@@ -4,8 +4,9 @@ Shared local agent status and device integration contracts for Codex, Claude Cod
 Nanoleaf, Pixoo, Tidbyt and LIFX.
 
 This repository contains versioned controller contracts with TypeScript and Python
-conformance checks, accepted architecture and development workflow tooling.
-Collectors, runtime APIs, MCP, dashboards and device adapters remain separate work.
+conformance checks, an embeddable authenticated MCP module, accepted architecture
+and development workflow tooling. Collectors, controller runtime APIs, standalone
+hosting, dashboards and device adapters remain separate work.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -38,6 +39,22 @@ OpenSpec 1.12.0 is pinned. The controller-contracts capability defines the commo
 wire protocol. Read [controller contract v1](docs/controller-contract.md) for
 fields, compatibility, packaging and downstream enforcement requirements.
 The reference evaluators perform no controller or device operations.
+
+## Reuse device MCP
+
+Read [the module guide](packages/mcp/README.md) for typed registration, fixed-device
+binding, application extensions and private archive adoption. The module delegates
+to owning controller/application services and opens no listener itself.
+
+```bash
+npm run test:mcp
+npm run test:mcp:protocol
+npm run test:mcp:package
+```
+
+These checks use fakes and loopback HTTP. Installed Codex/Claude and physical-device
+acceptance remain in the device repositories. `npm run package:mcp` builds a
+versioned private archive for a separately reviewed downstream pin.
 
 ## Development with agents
 

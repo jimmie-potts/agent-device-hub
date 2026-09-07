@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "profiles": [
+    { "name": "codex-protocol-fixture", "clientVersion": "synthetic-1", "configuration": "bearer_token_env_var", "evidence": "synthetic protocol client, not installed Codex" },
+    { "name": "claude-protocol-fixture", "clientVersion": "synthetic-1", "configuration": "headers.Authorization", "evidence": "synthetic protocol client, not installed Claude" }
+  ],
+  "protocolVersions": ["2025-11-25", "2025-06-18"]
+}
