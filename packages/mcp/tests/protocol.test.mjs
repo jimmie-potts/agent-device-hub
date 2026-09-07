@@ -31,8 +31,10 @@ test('authenticated HTTP initialization and bound tool discovery', async t => {
 
 const profiles = JSON.parse(readFileSync(new URL('../fixtures/client-profiles.json', import.meta.url)));
 for (const profile of profiles.profiles) for (const version of profiles.protocolVersions) {
-  test(`${profile.name} ${version}: initialize/discover/read/write/replay/error`, async t => {
-    const backend = owner(), f = await httpFixture(t, { service: backend.service });
+  test(`${profile.name} ${version}: initialize/discover/read/write/replay/error/authorization/cancellation`, async t => {
+    let current = principal();
+    const backend = owner(), f = await httpFixture(t, { service: backend.service, options: {
+      authenticate: async token => token === 'synthetic' ? current : null } });
     assert.equal((await f.initialize(profile, version)).body.result.protocolVersion, version);
     const listed = await f.rpc('tools/list', {});
     assert.equal(listed.status, 200); assert.equal(listed.body.result.tools.length, 3);
@@ -49,6 +51,28 @@ for (const profile of profiles.profiles) for (const version of profiles.protocol
     assert.equal(invalid.body.result.isError, true);
     assert.equal((await f.rpc('tools/call', { name: 'not_registered', arguments: {} })).body.error.code, -32602);
     assert.equal((await f.rpc('tools/list', { cursor: 'invented' })).body.error.code, -32602);
+
+    current = principal({ scopes: ['read'] });
+    const forbidden = await f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: args() });
+    assert.equal(forbidden.body.result.structuredContent.code, 'forbidden');
+    assert.equal(forbidden.body.result.structuredContent.priorEffects, 'none');
+    current = null;
+    assert.equal((await f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: args() })).status, 401);
+    assert.equal(backend.scheduled, 1);
+    current = principal();
+
+    const next = (await f.rpc('tools/call', { name: 'fixture_status', arguments: {} })).body.result.structuredContent.snapshot;
+    const nextArgs = args({ requestId: next.nextRequestId, expectedConfigurationRevision: next.configurationRevision, expectedGeneration: next.generation });
+    const cancelled = f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: nextArgs }, { id: 700, signal: AbortSignal.timeout(2000) });
+    while (backend.scheduled < 2) await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await f.rpc('notifications/cancelled', { requestId: 700 })).status, 202);
+    const ended = await cancelled;
+    assert.equal(ended.status, 204); assert.equal(ended.body, null);
+    assert.equal(backend.state.pending.length, 1, 'cancellation ends delivery while the owner retains admitted work');
+    const completed = backend.finish(next.nextRequestId.sequence);
+    assert.equal(backend.state.pending.length, 0);
+    assert.deepEqual((await f.rpc('tools/call', { name: 'fixture_brightness_set', arguments: nextArgs })).body.result.structuredContent.receipt, completed);
+    assert.equal(backend.scheduled, 2, 'cancellation and exact replay cannot schedule another command');
   });
 }
 
