@@ -3,6 +3,27 @@
 Status: Accepted direction. Controller contracts and reusable MCP are implemented;
 collectors, shared agent-state runtime and standalone hosting remain in the backlog.
 
+## Product direction and vocabulary
+
+[ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted
+local-first assistant direction. Preserve the Codex-first milestone before
+general device controls and Apple Music integration. Container migration and
+remote voice access remain later work.
+
+The assistant is the conversational client of available services and tools.
+An automation rule is an explicitly accepted event-to-action policy that can
+run without an open conversation.
+
+A playback session represents a selected media player's observed content,
+playback state and supported controls. It is distinct from an agent session.
+A track-change event represents an observed content transition.
+Audio measurements represent sampled levels or frequency information;
+track metadata and decorative animations are not audio measurements.
+
+These terms describe responsibility boundaries. Concrete schemas, freshness,
+command behavior and presentation policies belong in their owning contracts
+and issue-linked specifications.
+
 ## Ownership
 
 The hub owns provider qualification, shared event/session contracts, one
