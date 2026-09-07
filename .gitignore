@@ -1,6 +1,9 @@
 .local/
 node_modules/
 dist/
+artifacts/
+__pycache__/
+*.pyc
 coverage/
 test-results/
 playwright-report/

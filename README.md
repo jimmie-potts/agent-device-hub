@@ -3,9 +3,9 @@
 Shared local agent status and device integration contracts for Codex, Claude Code,
 Nanoleaf, Pixoo, Tidbyt and LIFX.
 
-This repository currently contains accepted architecture, the implementation
-backlog and development workflow tooling. No collector, runtime API, MCP server,
-dashboard or device adapter is implemented or installed.
+This repository contains versioned controller contracts with TypeScript and Python
+conformance checks, accepted architecture and development workflow tooling.
+Collectors, runtime APIs, MCP, dashboards and device adapters remain separate work.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -19,18 +19,25 @@ Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [development](docs/development.md) for setup. GitHub issues own scope, acceptance,
 dependencies and status. A completed bootstrap is not a working device integration.
 
-## Validate the bootstrap
+## Validate the contracts
 
 Use Node 24 and npm from the repository root:
 
 ```bash
 npm ci
+python3 -m pip install -r requirements-contracts.txt
+npm run typecheck
+npm run test:contracts
+npm run test:contracts:python
+npm run test:package
 npm run check:workflow
 npm run test:workflow
 ```
 
-OpenSpec 1.12.0 is pinned. The specification inventory is intentionally empty.
-The fixture suite exercises the validation tooling, not agent or device behavior.
+OpenSpec 1.12.0 is pinned. The controller-contracts capability defines the common
+wire protocol. Read [controller contract v1](docs/controller-contract.md) for
+fields, compatibility, packaging and downstream enforcement requirements.
+The reference evaluators perform no controller or device operations.
 
 ## Development with agents
 

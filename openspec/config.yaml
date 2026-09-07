@@ -1,7 +1,8 @@
 schema: spec-driven
 context: |
-  Agent device hub currently contains accepted architecture and workflow tooling
-  only. No agent collector, shared core, controller API, MCP or UI is implemented.
+  Agent device hub contains controller contract schemas, TypeScript/Python reference
+  consumers, accepted architecture and workflow tooling. No agent collector,
+  shared core, controller API, MCP or UI is implemented.
   GitHub issues own scope, acceptance, dependencies, status and delivery targets.
   Read AGENTS.md, docs/sdlc.md, docs/architecture.md and the exact linked issue.
   The first reusable TypeScript core may be embedded in Pixoo's existing backend;

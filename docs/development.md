@@ -1,6 +1,6 @@
 # Development setup
 
-## Bootstrap commands
+## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root:
 
@@ -10,9 +10,8 @@ npm run check:workflow
 npm run test:workflow
 ```
 
-Both checks must exit zero. The current specification inventory is zero
-capabilities, zero active changes and zero archived changes. That is a valid
-bootstrap, not an implemented behavior baseline.
+Both checks must exit zero. The current specification inventory is one capability,
+controller-contracts, with its gh-4 implementation change archived.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -22,10 +21,10 @@ skill integrations or run a global OpenSpec installation.
 For a WSL sandbox with a read-only npm cache, use a writable temporary cache.
 Keep dependency caches, browser binaries and all runtime state outside source.
 
-GitHub CI runs Workflow checks on ubuntu-latest and windows-latest. Both execute
-npm ci and the two workflow commands. Product tests/build/type/browser checks
-must be introduced with their implementing issues and become required jobs;
-these bootstrap checks do not validate agent or device behavior.
+GitHub CI requires Workflow checks on Ubuntu and Windows and four contract jobs,
+one for each Ubuntu/Windows and Python 3.12/3.14 combination. The contract jobs
+run build, type, both language corpora and isolated package checks. Later runtime
+and browser changes must add their own issue-appropriate checks.
 
 ## Shared tooling provenance
 
@@ -67,7 +66,7 @@ Keep personal Claude/Codex settings, authentication, trust, hook files and runti
 data outside the repository. One branch/worktree and coordinating writer owns each
 active deliverable; shared Git operations and installations still need ownership.
 
-## Future package and controller validation
+## Package and controller validation
 
 The chosen development direction is Node 24, TypeScript and npm workspaces for
 new shared packages and the Tidbyt/LIFX controllers. No workspace packages or
@@ -111,3 +110,23 @@ authorized session and must be reported separately.
 | Shared contract or lockfile edit | Read architecture, linked contracts and this guide; coordinate ownership and test every affected consumer. |
 | Request to implement a future controller | Read its exact issue and readiness decisions; bootstrap completion alone grants no implementation or installation authority. |
 | Source-only Tronbyt change | Qualify connection behavior with fakes; firmware, server installation and physical transition require separate explicit authorization. |
+
+## Controller contract checks
+
+Use Node 24 and Python 3.12 or 3.14 from the worktree root. After npm ci, install
+Python dependencies in an isolated environment with
+`python3 -m pip install -r requirements-contracts.txt`.
+
+Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
+`npm run test:contracts:python` and `npm run test:package`. Every command must
+exit zero. Both languages execute the same 134 schema and 86 semantic cases.
+The package check installs a newly built archive into a temporary consumer,
+checks every manifest hash, imports the named package, and runs both full corpora.
+It requires npm dependency access and creates no device or controller service.
+
+`npm run package:contracts` writes the versioned archive and SHA-256 sidecar under
+ignored artifacts/. Record the source commit and checksum outside that commit
+when publishing an immutable private release asset for downstream adoption.
+Python loads the module with the extracted package's python/ directory on
+PYTHONPATH; it requires the bundled relative schemas/ directory. Keep the package
+layout intact. No sibling-checkout import is supported.
