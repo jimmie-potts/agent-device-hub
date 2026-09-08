@@ -60,6 +60,7 @@ No product service or hardware test is needed for this document.
 
 ```bash
 python3 docs/work-guide/work/build_guide.py
+python3 docs/work-guide/work/test_maintenance.py
 node docs/work-guide/work/check_guide.cjs
 ```
 
