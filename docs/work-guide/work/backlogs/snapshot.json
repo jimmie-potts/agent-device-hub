@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-08T21:59:07.089967+00:00",
-  "refreshedAt": "2026-09-08T21:59:14.548955+00:00",
+  "startedAt": "2026-09-08T22:38:39.906125+00:00",
+  "refreshedAt": "2026-09-08T22:38:48.041871+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 60,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        62
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -19,7 +19,7 @@
           "number": 2,
           "state": "CLOSED",
           "commentPages": [
-            2
+            3
           ]
         },
         {
@@ -70,10 +70,10 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 21,
+      "openIssues": 20,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        21
+        20
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -96,6 +96,13 @@
           ]
         },
         {
+          "number": 29,
+          "state": "CLOSED",
+          "commentPages": [
+            2
+          ]
+        },
+        {
           "number": 46,
           "state": "OPEN",
           "commentPages": [
@@ -105,7 +112,7 @@
       ]
     }
   },
-  "openIssues": 106,
+  "openIssues": 105,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }
