@@ -1,5 +1,28 @@
 # Guide maintenance history
 
+## 2026-09-08: Hub #2 source closure reconciliation
+
+Hub #2 source merged in PR #74 at `855bd3787803dad7245f29e88c758659f6e4eda4`.
+All twelve merged-main CI jobs passed in run 34283142367. Lifecycle contract
+1.0.0 has a released archive, checksum and source receipt; a fresh download
+passed all manifest hashes. GitHub records #2 as completed. Its automatic closure
+at merge preceded main-CI readback because completion prose accidentally used a
+closing keyword. The coordinator verified the remaining gates before releasing
+any dependent implementation.
+
+Refresh the three repository histories and backlogs from paginated GitHub reads.
+Retain closed #2 as a referenced source baseline, remove it from open coverage
+and roadmap membership, and update the shared Codex guidance and next-work
+recommendation for early measured budgets and Pixoo contract adoption. This
+is guide synchronization with no new product behavior or OpenSpec delta.
+
+Add PR #74's lifecycle-contract history caption. Preserve roadmap coordinates,
+edges, connector routing, architecture definitions and companion viewers. Hub
+#73 remains reserved at revision `7464b9e669c7150f780b334a3429c5f30a89b438`,
+HTML SHA-256 `8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`.
+The refreshed history and membership do not replace that evaluation input.
+Validation and current-candidate human approval are recorded in this follow-up PR.
+
 ## 2026-09-08: Hub #2 lifecycle contract candidate
 
 Coordinator: the Hub #2 prerequisite-batch root. Update the shared Codex section

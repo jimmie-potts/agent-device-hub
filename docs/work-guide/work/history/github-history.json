@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-08T05:40:06.848958+00:00",
- "source": "gh api read-only: pulls?state=all, issues?state=all, commits on default branch",
+ "fetchedAt": "2026-09-08T21:59:57.681768+00:00",
+ "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-08T01:17:12Z",
+   "pushedAt": "2026-09-08T21:58:25Z",
    "defaultBranch": "main",
-   "headSha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
-   "mainCommitCount": 6,
+   "headSha": "855bd3787803dad7245f29e88c758659f6e4eda4",
+   "mainCommitCount": 8,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "855bd3787803dad7245f29e88c758659f6e4eda4",
+     "date": "2026-09-08T21:54:36Z",
+     "message": "Qualify and version shared agent lifecycle metadata (#74)"
+    },
+    {
+     "sha": "edfb94dcc06f437bd7a53365bd77284a7dcb16c5",
+     "date": "2026-09-08T17:14:04Z",
+     "message": "Keep the cross-project work guide in the SDLC (#72)"
+    },
     {
      "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
      "date": "2026-09-07T21:46:24Z",
@@ -81,6 +91,22 @@
      "createdAt": "2026-09-07T21:39:40Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/34",
      "base": "main"
+    },
+    {
+     "number": 72,
+     "title": "Keep the cross-project work guide in the SDLC",
+     "mergedAt": "2026-09-08T17:14:04Z",
+     "createdAt": "2026-09-08T16:19:27Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/72",
+     "base": "main"
+    },
+    {
+     "number": 74,
+     "title": "Qualify and version shared agent lifecycle metadata",
+     "mergedAt": "2026-09-08T21:54:36Z",
+     "createdAt": "2026-09-08T21:47:24Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/74",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -131,26 +157,44 @@
      "createdAt": "2026-09-07T21:37:55Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+    },
+    {
+     "number": 2,
+     "title": "Qualify and version the shared agent lifecycle contract",
+     "closedAt": "2026-09-08T21:54:37Z",
+     "createdAt": "2026-09-07T02:21:58Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
     }
    ],
    "openIssueCount": 60,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-08T02:35:20Z"
+    "2026-09-08T18:06:58Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
-    "2026-09-08": 12
+    "2026-09-08": 13
    }
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-07T19:36:20Z",
+   "pushedAt": "2026-09-08T17:14:19Z",
    "defaultBranch": "main",
-   "headSha": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
-   "mainCommitCount": 18,
+   "headSha": "ea3b95661352f927aceaf92b62d74660978c201f",
+   "mainCommitCount": 20,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "ea3b95661352f927aceaf92b62d74660978c201f",
+     "date": "2026-09-08T17:14:16Z",
+     "message": "Require shared work guide maintenance during delivery (#51)"
+    },
+    {
+     "sha": "6d78b66851c6df05b2018256ed18ff530a860fcf",
+     "date": "2026-09-08T06:07:45Z",
+     "message": "docs: record Windows and WSL Nanoleaf acceptance (#50)"
+    },
     {
      "sha": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
      "date": "2026-09-07T19:36:20Z",
@@ -346,6 +390,22 @@
      "createdAt": "2026-09-07T18:03:01Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/40",
      "base": "main"
+    },
+    {
+     "number": 50,
+     "title": "Record Windows and WSL Nanoleaf acceptance",
+     "mergedAt": "2026-09-08T06:07:45Z",
+     "createdAt": "2026-09-08T05:58:02Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/50",
+     "base": "main"
+    },
+    {
+     "number": 51,
+     "title": "Maintain the shared work guide with each delivery",
+     "mergedAt": "2026-09-08T17:14:16Z",
+     "createdAt": "2026-09-08T16:20:01Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/51",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -429,9 +489,17 @@
      "createdAt": "2026-09-07T03:58:53Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/33"
+    },
+    {
+     "number": 34,
+     "title": "Verify local Codex control of the Nanoleaf lights",
+     "closedAt": "2026-09-08T06:10:39Z",
+     "createdAt": "2026-09-07T03:58:54Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
     }
    ],
-   "openIssueCount": 26,
+   "openIssueCount": 25,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-07T20:09:12Z"
@@ -444,12 +512,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-08T03:00:22Z",
+   "pushedAt": "2026-09-08T17:14:33Z",
    "defaultBranch": "main",
-   "headSha": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
-   "mainCommitCount": 16,
+   "headSha": "d51ce01dbe7be66322f58f333465d49f405bdd6d",
+   "mainCommitCount": 17,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "d51ce01dbe7be66322f58f333465d49f405bdd6d",
+     "date": "2026-09-08T17:14:29Z",
+     "message": "Require shared work guide maintenance during delivery (#51)"
+    },
     {
      "sha": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
      "date": "2026-09-08T03:00:22Z",
@@ -651,6 +724,14 @@
      "createdAt": "2026-09-08T02:29:07Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/50",
      "base": "main"
+    },
+    {
+     "number": 51,
+     "title": "Maintain the shared work guide with each delivery",
+     "mergedAt": "2026-09-08T17:14:29Z",
+     "createdAt": "2026-09-08T16:20:02Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/51",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -776,15 +857,16 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26"
     }
    ],
-   "openIssueCount": 20,
+   "openIssueCount": 21,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
-    "2026-09-07T17:16:03Z"
+    "2026-09-08T21:16:18Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-05": 18,
     "2026-09-06": 3,
-    "2026-09-07": 14
+    "2026-09-07": 14,
+    "2026-09-08": 1
    }
   }
  }

@@ -1,4 +1,4 @@
-#2 [OPEN] Qualify and version the shared agent lifecycle contract
+#2 [CLOSED] Qualify and version the shared agent lifecycle contract
 #3 [OPEN] Implement the reusable agent-state core and provider emitters
 #4 [CLOSED] Define versioned controller capabilities and integration APIs
 #5 [OPEN] Host shared monitoring and route commands to existing controllers
