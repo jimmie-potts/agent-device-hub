@@ -15,6 +15,7 @@ def summary_ns(values):
     }
 
 import argparse
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
@@ -168,7 +169,7 @@ def profile(tasks, bursts, warmups):
                     operations.extend(durations)
                     makespans.append(elapsed)
         wall, cpu = time.perf_counter_ns() - wall_start, time.process_time_ns() - cpu_start
-        with sqlite3.connect(state / 'status.sqlite') as database:
+        with closing(sqlite3.connect(state / 'status.sqlite')) as database:
             rows = database.execute('SELECT id, turn, status FROM sessions ORDER BY id').fetchall()
         expected = sorted((f'synthetic-session-{task}', f'synthetic-turn-{warmups + bursts - 1}', 'working') for task in range(tasks))
         if rows != expected:

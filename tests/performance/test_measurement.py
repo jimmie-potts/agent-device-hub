@@ -72,6 +72,33 @@ class WorkerTests(unittest.TestCase):
         value['operationNs'][0] = True
         self.assertFalse(admission.validate_worker(value, 1, 2, 0))
 
+    def test_profile_closes_every_sqlite_connection(self):
+        import admission
+        import subprocess
+        program = """
+import sys, sqlite3
+sys.path.insert(0, sys.argv[1])
+import admission
+original = sqlite3.connect
+connections = []
+class TrackedConnection(sqlite3.Connection):
+    closed = False
+    def close(self):
+        self.closed = True
+        return super().close()
+def tracked(*args, **kwargs):
+    kwargs['factory'] = TrackedConnection
+    connection = original(*args, **kwargs)
+    connections.append(connection)
+    return connection
+sqlite3.connect = tracked
+admission.profile(1, 2, 0)
+assert connections and all(connection.closed for connection in connections), 'sqlite-connection-leaked'
+"""
+        result = subprocess.run([sys.executable, '-B', '-c', program, str(Path(admission.__file__).parent)],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_guard_denies_operations_before_effect(self):
         import admission
         import subprocess

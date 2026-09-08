@@ -115,7 +115,7 @@ each and each no-descendant worker to a default 120 seconds, maximum 600. Extra
 output, timeout and failure remain failed repetitions with fixed diagnostics.
 Those are measurement-tool bounds, not frozen product budgets.
 
-`npm run test:performance` runs 13 focused checks and a disposable external
+`npm run test:performance` runs 14 focused checks and a disposable external
 consumer check on both real validators. That check rejects a modified installed
 corpus and an added Python module that would shadow jsonschema. It uses npm's existing cache offline after the normal `npm ci`; it does
 not fetch or install personal runtimes.
@@ -129,9 +129,9 @@ local source work ran concurrently; no controlled or matched host claim applies.
 
 | Boundary | Raw warm samples | Observed p95 | Observed p99 |
 | --- | ---: | ---: | ---: |
-| Real legacy admission, 1 task, pooled 3 repeats | 300 | 0.550 ms | 0.672 ms, provisional |
-| Real legacy admission, 10 tasks, pooled 3 repeats | 3,000 | 80.559 ms | 105.876 ms |
-| Real legacy admission, 50 tasks, pooled 3 repeats | 15,000 | 331.975 ms | 637.631 ms |
+| Real legacy admission, 1 task, pooled 3 repeats | 300 | 0.470 ms | 0.627 ms, provisional |
+| Real legacy admission, 10 tasks, pooled 3 repeats | 3,000 | 80.580 ms | 105.862 ms |
+| Real legacy admission, 50 tasks, pooled 3 repeats | 15,000 | 335.198 ms | 734.136 ms |
 | Released Python validation, each of 3 repeats | 3,300 | 0.374-0.376 ms | 0.423-0.458 ms |
 | Released Node validation, each of 3 repeats | 3,300 | 0.013-0.013 ms | 0.028-0.033 ms |
 
