@@ -16,7 +16,7 @@ REPO_NAME = {'H': 'agent-device-hub', 'N': 'codex-nanoleaf', 'P': 'divoom-app-up
 REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
 # Delivered baselines worth naming on the history chart (repo key, PR number, caption).
 MILESTONES = {
-    ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
+    ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
     ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings',
     ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
 }
@@ -27,7 +27,7 @@ SLOTS = ['Now · ready or independent', 'Next', 'After the Codex milestone', 'La
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance', issues=['P12'], guide='local-acceptance', ready=True),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'H2', 'H3', 'P29', 'P31', 'P37', 'P32', 'P33', 'N29', 'N49', 'P30', 'H5', 'H8', 'H6', 'H13', 'H30', 'H9', 'P34', 'N30'], guide='shared-codex', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'H3', 'P29', 'P31', 'P37', 'P32', 'P33', 'N29', 'N49', 'P30', 'H5', 'H8', 'H6', 'H13', 'H30', 'H9', 'P34', 'N30'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48', 'H49'], guide='assistant-access', main=True),
