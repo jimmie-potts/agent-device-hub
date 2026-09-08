@@ -1,0 +1,5 @@
+work/*.png
+work/*.pdf
+work/guide-verification.json
+work/architecture/rendered/*.png
+work/architecture/rendered/*.visual-check.*

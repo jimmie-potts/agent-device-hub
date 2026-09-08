@@ -80,3 +80,9 @@ Later source moves into this monorepo have separate deferred issues,
 [Pixoo #25](https://github.com/jimmie-potts/agent-device-hub/issues/25) and
 [Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
 Their current repositories retain ownership until those migrations are delivered.
+
+## Cross-project work guide
+
+The [work guide](docs/work-guide/README.md) contains the remaining-work map,
+delivery history and architecture diagrams for Hub, Nanoleaf and Pixoo. Its
+generator and source snapshots live here and are maintained with each delivery.

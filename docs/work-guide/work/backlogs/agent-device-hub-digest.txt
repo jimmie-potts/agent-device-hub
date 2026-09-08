@@ -1,0 +1,62 @@
+#2 [OPEN] Qualify and version the shared agent lifecycle contract
+#3 [OPEN] Implement the reusable agent-state core and provider emitters
+#4 [CLOSED] Define versioned controller capabilities and integration APIs
+#5 [OPEN] Host shared monitoring and route commands to existing controllers
+#6 [OPEN] Build the shared Codex-integration frontend
+#7 [CLOSED] Provide reusable local MCP transport and device tools
+#8 [OPEN] Package reversible shared hooks and collector ownership migration
+#9 [OPEN] Verify shared status and command routing across both device integrations
+#10 [OPEN] Publish shared OpenSpec validation tooling
+#11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
+#13 [OPEN] Host shared MCP discovery and agent-status tools in the standalone hub
+#15 [OPEN] Qualify Tidbyt cloud and Tronbyt connections
+#16 [OPEN] Implement the Tidbyt cloud controller
+#17 [OPEN] Qualify direct LIFX LAN control
+#18 [OPEN] Implement the LIFX LAN controller
+#19 [OPEN] Add automatic agent status to Tidbyt
+#20 [OPEN] Add automatic agent status to LIFX
+#21 [OPEN] Install and verify Tidbyt agent status
+#22 [OPEN] Install and verify LIFX agent status
+#23 [OPEN] Implement the deferred Tronbyt connection
+#24 [OPEN] Verify the deferred Tidbyt-to-Tronbyt transition
+#25 [OPEN] Plan and migrate Pixoo into the hub monorepo
+#26 [OPEN] Plan and migrate Nanoleaf into the hub monorepo
+#30 [OPEN] Qualify latency and failure isolation for shared Codex monitoring
+#31 [OPEN] Define agent-independent device controls after Codex integration acceptance
+#32 [OPEN] Deliver Codex-first shared monitoring and integration controls
+#35 [OPEN] Track future personal assistant, music and hosting work
+#36 [OPEN] Connect Windows Apple Music playback to the hub
+#37 [OPEN] Add now-playing and music controls to the shared UI and Codex tools
+#38 [OPEN] Show Apple Music now-playing cards on Pixoo and Tidbyt
+#39 [OPEN] Add song-change lighting effects and qualify Nanoleaf music scenes
+#40 [OPEN] Configure music participation and alert interruption per device
+#41 [OPEN] Qualify audio capture and music visualizers for lights and displays
+#42 [OPEN] Package and qualify the hub for always-on Docker hosting on the PC
+#43 [OPEN] Qualify a portable Nanoleaf runtime and reversible Windows worker migration
+#44 [OPEN] Plan dedicated server hardware and migration from the PC
+#45 [OPEN] Run approved alert and device automation rules independently of conversation
+#46 [OPEN] Add a conversational assistant using shared device and automation tools
+#47 [OPEN] Add phone access with tap-to-talk after local delivery
+#48 [OPEN] Explore ambient and wearable voice access after phone tap-to-talk
+#49 [OPEN] Explore personal-service connectors beyond device control
+#50 [OPEN] Document PC and desk lighting and initialize the implementation backlog
+#51 [OPEN] Qualify Corsair RAM and H150i lighting through iCUE
+#52 [OPEN] Qualify Lian Li Strimer control while preserving L-Connect 3
+#53 [OPEN] Implement the PC lighting controller with a qualified Corsair adapter
+#54 [OPEN] Add the qualified Strimer adapter to the PC lighting controller
+#55 [OPEN] Add shared automatic agent status to qualified PC lighting targets
+#56 [OPEN] Expose qualified PC lighting controls through shared UI and MCP services
+#57 [OPEN] Install and verify Corsair PC lighting status and restoration
+#58 [OPEN] Install and verify Strimer lighting handoff and restoration
+#60 [OPEN] Qualify Varmilo VA108M-RGB lighting through supported interfaces
+#61 [OPEN] Add a qualified Varmilo keyboard adapter to PC lighting
+#62 [OPEN] Install and verify Varmilo keyboard status without affecting typing
+#63 [OPEN] Document desktop controls, control profiles and desk presets
+#64 [OPEN] Qualify 8BitDo controls and Wispr hold-to-dictate mappings
+#65 [OPEN] Implement local Wispr and Codex controls for 8BitDo
+#66 [OPEN] Install and verify 8BitDo Wispr and Codex shortcuts
+#67 [OPEN] Implement Work, Free and Quiet desk preset coordination
+#68 [OPEN] Bind Big B to desk preset cycling with visible results
+#69 [OPEN] Verify desk preset switching, manual handoff and restoration
+#70 [OPEN] Add customizable button mappings and saved control profiles
+#71 [OPEN] Add Music desk presets after playback and participation qualification

@@ -1,0 +1,376 @@
+{
+ "schema_version": 1,
+ "diagram_type": "architecture",
+ "meta": {
+  "title": "Planned shared system and ownership boundaries",
+  "quality_profile": "showcase",
+  "views": [
+   {
+    "id": "observe",
+    "label": "Observation path",
+    "focus": [
+     "providers",
+     "emitters",
+     "core",
+     "feed",
+     "pixoo",
+     "nanoleaf",
+     "tidbyt",
+     "lifx",
+     "pclight"
+    ],
+    "note": "One shared interpretation, many device projections."
+   },
+   {
+    "id": "command",
+    "label": "Command path",
+    "focus": [
+     "clients",
+     "routing",
+     "contracts",
+     "pixoo",
+     "nanoleaf"
+    ],
+    "note": "Explicit requests are routed to existing command owners."
+   }
+  ]
+ },
+ "layout": {
+  "mode": "grid",
+  "origin": [
+   40,
+   40
+  ],
+  "cols": 5,
+  "cellW": 150,
+  "cellH": 62,
+  "gapX": 60,
+  "gapY": 112
+ },
+ "components": [
+  {
+   "id": "providers",
+   "type": "external",
+   "label": "Agent providers",
+   "sublabel": "Codex · Claude Code",
+   "row": 0,
+   "col": 0,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "emitters",
+   "type": "security",
+   "label": "Bounded emitters",
+   "sublabel": "allowlisted · fail-open",
+   "row": 0,
+   "col": 1,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned"
+  },
+  {
+   "id": "core",
+   "type": "backend",
+   "label": "Agent-state core",
+   "sublabel": "one authoritative owner",
+   "row": 0,
+   "col": 2,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned · inside Pixoo first"
+  },
+  {
+   "id": "feed",
+   "type": "messagebus",
+   "label": "Versioned feed",
+   "sublabel": "snapshots · resync",
+   "row": 0,
+   "col": 3,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned"
+  },
+  {
+   "id": "pixoo",
+   "type": "backend",
+   "label": "Pixoo controller",
+   "sublabel": "media · 64×64 · Monitor/Media",
+   "row": 1,
+   "col": 0,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "nanoleaf",
+   "type": "backend",
+   "label": "Nanoleaf controller",
+   "sublabel": "Windows worker · Work/Quiet/Free",
+   "row": 1,
+   "col": 1,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "tidbyt",
+   "type": "cloud",
+   "label": "Tidbyt controller",
+   "sublabel": "cloud · 64×32 renderer",
+   "row": 1,
+   "col": 2,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned"
+  },
+  {
+   "id": "lifx",
+   "type": "backend",
+   "label": "LIFX controller",
+   "sublabel": "direct LAN",
+   "row": 1,
+   "col": 3,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned"
+  },
+  {
+   "id": "pclight",
+   "type": "backend",
+   "label": "PC lighting",
+   "sublabel": "Corsair first",
+   "row": 1,
+   "col": 4,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned · Strimer/Varmilo optional"
+  },
+  {
+   "id": "clients",
+   "type": "frontend",
+   "label": "Clients",
+   "sublabel": "dashboard · MCP · desk presets",
+   "row": 2,
+   "col": 0,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned"
+  },
+  {
+   "id": "routing",
+   "type": "security",
+   "label": "Registered routing",
+   "sublabel": "authenticated · per-device queues",
+   "row": 2,
+   "col": 1,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "planned host"
+  },
+  {
+   "id": "contracts",
+   "type": "database",
+   "label": "Contracts + device-mcp",
+   "sublabel": "controller v1 · MCP 1.0.0",
+   "row": 2,
+   "col": 2,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "implemented"
+  }
+ ],
+ "boundaries": [
+  {
+   "kind": "region",
+   "label": "Shared runtime in agent-device-hub (planned)",
+   "wraps": [
+    "emitters",
+    "core",
+    "feed"
+   ]
+  },
+  {
+   "kind": "security-group",
+   "label": "Existing repositories: own writer, private state",
+   "wraps": [
+    "pixoo",
+    "nanoleaf"
+   ]
+  },
+  {
+   "kind": "region",
+   "label": "New controllers in agent-device-hub (planned)",
+   "wraps": [
+    "tidbyt",
+    "lifx",
+    "pclight"
+   ]
+  }
+ ],
+ "connections": [
+  {
+   "id": "obs",
+   "from": "providers",
+   "to": "emitters",
+   "label": "observations",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 60
+  },
+  {
+   "id": "submit",
+   "from": "emitters",
+   "to": "core",
+   "label": "bounded submit",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 60
+  },
+  {
+   "id": "publish",
+   "from": "core",
+   "to": "feed",
+   "label": "revisions",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "proj-pixoo",
+   "from": "feed",
+   "to": "pixoo",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "proj-nano",
+   "from": "feed",
+   "to": "nanoleaf",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "proj-tidbyt",
+   "from": "feed",
+   "to": "tidbyt",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "proj-lifx",
+   "from": "feed",
+   "to": "lifx",
+   "label": "projection to each controller",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDy": 98
+  },
+  {
+   "id": "proj-pc",
+   "from": "feed",
+   "to": "pclight",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top"
+  },
+  {
+   "id": "req",
+   "from": "clients",
+   "to": "routing",
+   "label": "commands",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "cmd-pixoo",
+   "from": "routing",
+   "to": "pixoo",
+   "label": "native command",
+   "variant": "security",
+   "fromSide": "top",
+   "toSide": "bottom",
+   "labelDy": -18
+  },
+  {
+   "id": "cmd-nano",
+   "from": "routing",
+   "to": "nanoleaf",
+   "label": "native command",
+   "variant": "security",
+   "fromSide": "top",
+   "toSide": "bottom",
+   "labelDx": 52,
+   "labelDy": -18
+  },
+  {
+   "id": "contract-routing",
+   "from": "contracts",
+   "to": "routing",
+   "label": "validates",
+   "variant": "dashed",
+   "fromSide": "left",
+   "toSide": "right",
+   "labelDy": 26
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Observation path (planned)",
+   "items": [
+    "Provider hooks report allowlisted lifecycle metadata and fail open",
+    "The core interprets observations once; controllers only project state",
+    "The core runs inside Pixoo first; the standalone hub composes the same core"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Command path",
+   "items": [
+    "Dashboard, MCP and desk presets send explicit requests",
+    "Registered routing sends each command to its existing owner",
+    "Per-device queues: an offline device cannot stall another"
+   ]
+  },
+  {
+   "dot": "emerald",
+   "title": "Ownership",
+   "items": [
+    "Each physical device has one designated writer and private state",
+    "Contracts and device-mcp are implemented; collectors, core, host and new controllers are backlog"
+   ]
+  }
+ ]
+}

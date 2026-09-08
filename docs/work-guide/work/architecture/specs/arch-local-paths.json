@@ -1,0 +1,406 @@
+{
+ "schema_version": 1,
+ "diagram_type": "architecture",
+ "meta": {
+  "title": "Implemented local command paths",
+  "quality_profile": "showcase",
+  "views": [
+   {
+    "id": "pixoo-route",
+    "label": "Pixoo route",
+    "focus": [
+     "codex",
+     "pixooMcp",
+     "pixooSvc",
+     "pixooQueue",
+     "pixooDev",
+     "browser"
+    ],
+    "note": "Codex and the browser reach the same owning services and one queue."
+   },
+   {
+    "id": "nanoleaf-route",
+    "label": "Nanoleaf route",
+    "focus": [
+     "codex",
+     "nanoHost",
+     "nanoRoute",
+     "nanoApi",
+     "nanoWorker",
+     "nanoState",
+     "lights"
+    ],
+    "note": "The MCP host forwards controller-v1 requests; the Windows worker keeps the writes."
+   },
+   {
+    "id": "shared-library",
+    "label": "Shared library",
+    "focus": [
+     "mcpPkg",
+     "pixooMcp",
+     "nanoRoute",
+     "nanoHost"
+    ],
+    "note": "Reusable code, separately owned hosts."
+   }
+  ]
+ },
+ "layout": {
+  "mode": "grid",
+  "origin": [
+   40,
+   40
+  ],
+  "cols": 4,
+  "cellW": 170,
+  "cellH": 62,
+  "gapX": 90,
+  "gapY": 58
+ },
+ "components": [
+  {
+   "id": "browser",
+   "type": "frontend",
+   "label": "Pixoo browser UI",
+   "sublabel": "same HTTP API and services",
+   "row": 0,
+   "col": 2,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "codex",
+   "type": "external",
+   "label": "Local Codex",
+   "sublabel": "MCP client · Windows or WSL",
+   "row": 1,
+   "col": 0,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "pixooMcp",
+   "type": "security",
+   "label": "Pixoo /mcp route",
+   "sublabel": "bearer · Host/Origin checks",
+   "row": 1,
+   "col": 1,
+   "size": [
+    170,
+    62
+   ],
+   "tag": "optional"
+  },
+  {
+   "id": "pixooSvc",
+   "type": "backend",
+   "label": "ControlService",
+   "sublabel": "catalog · player · request ledger",
+   "row": 1,
+   "col": 2,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "pixooQueue",
+   "type": "messagebus",
+   "label": "Adapter queue",
+   "sublabel": "serialized · one writer",
+   "row": 1,
+   "col": 3,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "mcpPkg",
+   "type": "backend",
+   "label": "device-mcp 1.0.0",
+   "sublabel": "library: tools + transport",
+   "row": 2,
+   "col": 1,
+   "size": [
+    170,
+    62
+   ],
+   "tag": "no listener · no writer"
+  },
+  {
+   "id": "pixooDev",
+   "type": "external",
+   "label": "Pixoo 64×64",
+   "sublabel": "simulator default · explicit device",
+   "row": 2,
+   "col": 3,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "nanoHost",
+   "type": "security",
+   "label": "Nanoleaf MCP host",
+   "sublabel": "Node · loopback /mcp",
+   "row": 3,
+   "col": 0,
+   "size": [
+    170,
+    62
+   ],
+   "tag": "optional"
+  },
+  {
+   "id": "nanoRoute",
+   "type": "backend",
+   "label": "Route",
+   "sublabel": "windows-http or wsl-helper",
+   "row": 3,
+   "col": 1,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "nanoApi",
+   "type": "security",
+   "label": "Windows controller API",
+   "sublabel": "/controller/v1 · bearer",
+   "row": 3,
+   "col": 2,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "nanoWorker",
+   "type": "backend",
+   "label": "Windows light worker",
+   "sublabel": "existing owner of writes",
+   "row": 3,
+   "col": 3,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "nanoState",
+   "type": "database",
+   "label": "Private SQLite",
+   "sublabel": "Windows only · never mounted",
+   "row": 4,
+   "col": 2,
+   "size": [
+    170,
+    62
+   ]
+  },
+  {
+   "id": "lights",
+   "type": "external",
+   "label": "Nanoleaf Lines",
+   "sublabel": "configured LAN device",
+   "row": 5,
+   "col": 3,
+   "size": [
+    170,
+    62
+   ]
+  }
+ ],
+ "boundaries": [
+  {
+   "kind": "region",
+   "label": "Pixoo backend process (divoom-app-upgrade)",
+   "wraps": [
+    "pixooMcp",
+    "pixooSvc",
+    "pixooQueue"
+   ]
+  },
+  {
+   "kind": "security-group",
+   "label": "Windows host (codex-nanoleaf) keeps writes and private state",
+   "wraps": [
+    "nanoApi",
+    "nanoWorker",
+    "nanoState"
+   ]
+  }
+ ],
+ "connections": [
+  {
+   "id": "codex-pixoo",
+   "from": "codex",
+   "to": "pixooMcp",
+   "label": "app tools",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "pixoo-mcp-svc",
+   "from": "pixooMcp",
+   "to": "pixooSvc",
+   "label": "request_id",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "browser-svc",
+   "from": "browser",
+   "to": "pixooSvc",
+   "label": "HTTP · SSE",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 44,
+   "labelDy": 24
+  },
+  {
+   "id": "svc-queue",
+   "from": "pixooSvc",
+   "to": "pixooQueue",
+   "label": "player · display",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "queue-dev",
+   "from": "pixooQueue",
+   "to": "pixooDev",
+   "label": "upload · control",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 56,
+   "labelDy": 24
+  },
+  {
+   "id": "pkg-pixoo",
+   "from": "mcpPkg",
+   "to": "pixooMcp",
+   "label": "imports",
+   "variant": "dashed",
+   "fromSide": "top",
+   "toSide": "bottom",
+   "labelDx": 34
+  },
+  {
+   "id": "pkg-nano",
+   "from": "mcpPkg",
+   "to": "nanoRoute",
+   "label": "imports",
+   "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 34,
+   "labelDy": 24
+  },
+  {
+   "id": "codex-nano",
+   "from": "codex",
+   "to": "nanoHost",
+   "label": "status · mode_set",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 60,
+   "labelDy": 24
+  },
+  {
+   "id": "nano-route",
+   "from": "nanoHost",
+   "to": "nanoRoute",
+   "label": "controller v1",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": -18
+  },
+  {
+   "id": "route-api",
+   "from": "nanoRoute",
+   "to": "nanoApi",
+   "label": "loopback HTTP",
+   "variant": "security",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "api-worker",
+   "from": "nanoApi",
+   "to": "nanoWorker",
+   "label": "queued work",
+   "variant": "emphasis",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 26
+  },
+  {
+   "id": "api-state",
+   "from": "nanoApi",
+   "to": "nanoState",
+   "label": "receipts",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 36,
+   "labelDy": 24
+  },
+  {
+   "id": "worker-lights",
+   "from": "nanoWorker",
+   "to": "lights",
+   "label": "transmit",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 36,
+   "labelDy": 24
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Pixoo path (implemented)",
+   "items": [
+    "Strict application extensions carry the native string request_id",
+    "ControlService, catalog, player and the shared HTTP/MCP ledger",
+    "One serialized adapter queue; simulator unless device mode is selected"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Nanoleaf path (implemented)",
+   "items": [
+    "Controller-v1 envelope: requestId, expectedConfigurationRevision, expectedGeneration",
+    "Windows uses direct loopback HTTP; WSL uses the configured Windows Python helper",
+    "Neither route opens the Windows SQLite database"
+   ]
+  },
+  {
+   "dot": "slate",
+   "title": "Shared library",
+   "items": [
+    "device-mcp registers tools and validates transport",
+    "It opens no listener and starts no device writer",
+    "Host ownership stays with each application"
+   ]
+  }
+ ]
+}

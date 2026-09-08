@@ -1,0 +1,256 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "Nanoleaf command admission, replay and cancellation",
+  "quality_profile": "showcase",
+  "column_fit": "spread",
+  "viewBox": [
+   1070,
+   1148
+  ],
+  "views": [
+   {
+    "id": "happy",
+    "label": "Admit and send",
+    "focus": [
+     "codex",
+     "host",
+     "api",
+     "worker",
+     "device"
+    ],
+    "note": "One identity, one queued write."
+   },
+   {
+    "id": "alt",
+    "label": "Rejections",
+    "focus": [
+     "host",
+     "api",
+     "worker"
+    ],
+    "note": "Replay, conflict, expiry and cancellation."
+   }
+  ]
+ },
+ "participants": [
+  {
+   "id": "codex",
+   "type": "external",
+   "label": "Local Codex",
+   "sublabel": "MCP client"
+  },
+  {
+   "id": "host",
+   "type": "security",
+   "label": "Nanoleaf MCP host",
+   "sublabel": "Node · no second ledger"
+  },
+  {
+   "id": "api",
+   "type": "security",
+   "label": "Windows controller API",
+   "sublabel": "/controller/v1"
+  },
+  {
+   "id": "worker",
+   "type": "backend",
+   "label": "Windows worker",
+   "sublabel": "owns light writes"
+  },
+  {
+   "id": "device",
+   "type": "external",
+   "label": "Nanoleaf Lines",
+   "sublabel": "LAN device"
+  }
+ ],
+ "segments": [
+  {
+   "from": 178,
+   "label": "Read first",
+   "to": 364
+  },
+  {
+   "from": 368,
+   "label": "Admit one command",
+   "to": 730
+  },
+  {
+   "from": 734,
+   "label": "Alternatives at admission",
+   "to": 920
+  },
+  {
+   "from": 924,
+   "label": "Alternatives after admission",
+   "to": 1066
+  }
+ ],
+ "messages": [
+  {
+   "from": "codex",
+   "to": "host",
+   "y": 210,
+   "label": "nanoleaf_status",
+   "variant": "emphasis"
+  },
+  {
+   "from": "host",
+   "to": "api",
+   "y": 254,
+   "label": "GET snapshot (bearer, exact Host)",
+   "variant": "security"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 298,
+   "label": "snapshot: nextRequestId · configurationRevision · generation",
+   "variant": "return"
+  },
+  {
+   "from": "host",
+   "to": "codex",
+   "y": 342,
+   "label": "status (desired · pending · unknown observation)",
+   "variant": "return"
+  },
+  {
+   "from": "codex",
+   "to": "host",
+   "y": 400,
+   "label": "nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}",
+   "variant": "emphasis"
+  },
+  {
+   "from": "host",
+   "to": "api",
+   "y": 444,
+   "label": "POST /controller/v1/commands",
+   "variant": "security",
+   "note": "authentication and scope are checked before replay lookup"
+  },
+  {
+   "from": "api",
+   "to": "worker",
+   "y": 488,
+   "label": "queue mode work (identity reserved atomically; revision and generation validated)",
+   "variant": "emphasis"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 532,
+   "label": "202 receipt: queued",
+   "variant": "return"
+  },
+  {
+   "from": "host",
+   "to": "codex",
+   "y": 576,
+   "label": "receipt (queued is not visible light)",
+   "variant": "return"
+  },
+  {
+   "from": "worker",
+   "to": "device",
+   "y": 620,
+   "label": "transmit after a second generation check",
+   "variant": "emphasis"
+  },
+  {
+   "from": "device",
+   "to": "worker",
+   "y": 664,
+   "label": "transport acknowledgment",
+   "variant": "return"
+  },
+  {
+   "from": "worker",
+   "to": "api",
+   "y": 708,
+   "label": "sent (transport evidence only)",
+   "variant": "dashed"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 766,
+   "label": "exact duplicate → original receipt, no new write",
+   "variant": "return"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 810,
+   "label": "changed payload → 409 request-conflict",
+   "variant": "return"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 854,
+   "label": "expired identity → 410 request-expired",
+   "variant": "return"
+  },
+  {
+   "from": "api",
+   "to": "host",
+   "y": 898,
+   "label": "stale revision/generation → 409 before any effect",
+   "variant": "return"
+  },
+  {
+   "from": "worker",
+   "to": "api",
+   "y": 956,
+   "label": "superseded generation → cancelled, prior effects retained",
+   "variant": "dashed"
+  },
+  {
+   "from": "worker",
+   "to": "api",
+   "y": 1000,
+   "label": "partial or uncertain → priorEffects possible; request held",
+   "variant": "dashed"
+  },
+  {
+   "from": "host",
+   "to": "codex",
+   "y": 1044,
+   "label": "delivery timeout after dispatch → original requestId + possible effects",
+   "variant": "return",
+   "note": "no replacement identity and no automatic retry"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Two tools only",
+   "items": [
+    "nanoleaf_status and nanoleaf_mode_set; modes Work, Quiet, Free",
+    "No power, arbitrary brightness, scenes or zones in this binding"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Identity discipline",
+   "items": [
+    "Status issues nextRequestId; clients never mint identities",
+    "Duplicates join, conflicts reject, expired identities reject",
+    "Superseded work cancels; a second generation check runs right before side effects"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Evidence limits",
+   "items": [
+    "sent is transport evidence, not optical proof",
+    "MCP disconnection alone does not stop admitted controller work",
+    "Failed or uncertain machine modes are held until a fresh explicit request"
+   ]
+  }
+ ]
+}

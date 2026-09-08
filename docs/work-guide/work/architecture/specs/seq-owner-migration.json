@@ -1,0 +1,208 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "Embedded core to standalone owner",
+  "quality_profile": "showcase",
+  "column_fit": "spread",
+  "viewBox": [
+   1070,
+   972
+  ]
+ },
+ "participants": [
+  {
+   "id": "operator",
+   "type": "external",
+   "label": "Operator",
+   "sublabel": "explicit authorization"
+  },
+  {
+   "id": "tooling",
+   "type": "security",
+   "label": "Migration tooling",
+   "sublabel": "H8 runbook"
+  },
+  {
+   "id": "pixoo",
+   "type": "backend",
+   "label": "Pixoo embedded owner",
+   "sublabel": "session-source facade"
+  },
+  {
+   "id": "hub",
+   "type": "backend",
+   "label": "Standalone hub owner",
+   "sublabel": "same core, new host"
+  },
+  {
+   "id": "producers",
+   "type": "external",
+   "label": "Producers",
+   "sublabel": "provider hooks"
+  },
+  {
+   "id": "consumers",
+   "type": "frontend",
+   "label": "Consumers",
+   "sublabel": "renderer · Nanoleaf feed"
+  }
+ ],
+ "segments": [
+  {
+   "from": 178,
+   "label": "Quiesce",
+   "to": 320
+  },
+  {
+   "from": 324,
+   "label": "Export, import, validate",
+   "to": 554
+  },
+  {
+   "from": 558,
+   "label": "Switch and resync",
+   "to": 788
+  },
+  {
+   "from": 792,
+   "label": "Rollback (only after quiescing the new owner)",
+   "to": 890
+  }
+ ],
+ "messages": [
+  {
+   "from": "operator",
+   "to": "tooling",
+   "y": 210,
+   "label": "authorize migration (named owner)",
+   "variant": "emphasis"
+  },
+  {
+   "from": "tooling",
+   "to": "pixoo",
+   "y": 254,
+   "label": "quiesce selected route and old owner",
+   "variant": "security"
+  },
+  {
+   "from": "tooling",
+   "to": "producers",
+   "y": 298,
+   "label": "pause ingestion (hooks stay fail-open)",
+   "variant": "security"
+  },
+  {
+   "from": "tooling",
+   "to": "pixoo",
+   "y": 356,
+   "label": "versioned export: source/session/notice identity + revisions",
+   "variant": "emphasis"
+  },
+  {
+   "from": "pixoo",
+   "to": "tooling",
+   "y": 400,
+   "label": "export bundle",
+   "variant": "return"
+  },
+  {
+   "from": "tooling",
+   "to": "hub",
+   "y": 444,
+   "label": "import bundle",
+   "variant": "emphasis"
+  },
+  {
+   "from": "hub",
+   "to": "tooling",
+   "y": 488,
+   "label": "validated: identities, revisions, notices unchanged",
+   "variant": "return"
+  },
+  {
+   "from": "tooling",
+   "to": "pixoo",
+   "y": 532,
+   "label": "keep old reducer inactive; facade → remote owner",
+   "variant": "security",
+   "note": "remote mode never starts a second local reducer"
+  },
+  {
+   "from": "tooling",
+   "to": "producers",
+   "y": 590,
+   "label": "switch producer endpoint",
+   "variant": "emphasis"
+  },
+  {
+   "from": "tooling",
+   "to": "consumers",
+   "y": 634,
+   "label": "switch consumer endpoint",
+   "variant": "emphasis"
+  },
+  {
+   "from": "consumers",
+   "to": "hub",
+   "y": 678,
+   "label": "authoritative snapshot / resync",
+   "variant": "default"
+  },
+  {
+   "from": "hub",
+   "to": "consumers",
+   "y": 722,
+   "label": "snapshot (no replayed effects)",
+   "variant": "return"
+  },
+  {
+   "from": "producers",
+   "to": "hub",
+   "y": 766,
+   "label": "resume ingestion",
+   "variant": "default"
+  },
+  {
+   "from": "tooling",
+   "to": "hub",
+   "y": 824,
+   "label": "quiesce new owner",
+   "variant": "dashed"
+  },
+  {
+   "from": "tooling",
+   "to": "pixoo",
+   "y": 868,
+   "label": "reactivate embedded owner; endpoints back",
+   "variant": "dashed"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "One owner at a time",
+   "items": [
+    "Embedded and standalone owners never run against one state",
+    "A stale feed stays visibly stale until recovery or rollback"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "What moves",
+   "items": [
+    "Identities, session/notice state, revisions and producer configuration",
+    "Pixoo’s facade switches renderer, feed, label and acknowledgment operations to the selected owner"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Owned elsewhere",
+   "items": [
+    "Exact design: Hub #5/#8 and Pixoo #31 — no transfer algorithm or command is invented here",
+    "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
+    "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
+   ]
+  }
+ ]
+}

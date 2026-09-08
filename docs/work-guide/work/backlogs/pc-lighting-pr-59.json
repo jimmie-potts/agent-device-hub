@@ -1,0 +1,2584 @@
+{
+  "pullRequest": {
+    "number": 59,
+    "title": "docs: plan PC and desk lighting integrations and backlog",
+    "body": "PC and desk lighting lacked a documented integration path and implementation backlog. Add a controller guide, architecture and roadmap links for Corsair RAM and supported H150i lighting, optional Lian Li Strimer, and the Varmilo VA108M-RGB keyboard. Preserve iCUE, L-Connect 3 and normal keyboard behavior, with one writer per lighting target.\n\nVarmilo starts with whole-keyboard shared agent status through an existing supported interface. If none qualifies, its integration stays deferred. Per-key displays, custom protocol research, simulated keypress control and firmware replacement are excluded. Keyboard support does not block Corsair or Strimer delivery; Strimer does not block Corsair.\n\nRefs #50. The eleven future skeletons #51-#58 and #60-#62 remain open for refinement before implementation. The existing guide #35 links them. Keyboard participation in shared status #55 and controls #56 conditionally requires #61, without making either shared issue depend on keyboard delivery.\n\n## Validation\n\n- Node 24.20.0: `npm run check:workflow` and `npm run test:workflow` passed, including all 10 tests. Dependencies were installed with `npm ci` for the preceding documentation candidate; manifests and lockfile are unchanged.\n- Checked 25 local Markdown links and `git diff --check`.\n- Read back the updated issues and verified every native prerequisite relationship in their transitive graph in both directions: 29 issues, 52 edges, no cycles. Seven edges belong to the three new keyboard issues.\n- Existing OpenSpec inventory: two capabilities, zero active changes and two archived changes, all applicable validation passed. This change has no product behavior or contract delta, so it introduces no OpenSpec change, runtime package, service or installation.\n\n## Review comparison\n\nBase and merge-base: `a7b1aa0476c2f3e0561b5d53dbc8395353180d60`.\nCandidate head: `baf2b0bc2eb2b7839afe98175d8f3c686e5860c4`.\nDiff: `git diff a7b1aa0476c2f3e0561b5d53dbc8395353180d60...baf2b0bc2eb2b7839afe98175d8f3c686e5860c4`.\n\nIndependent read-only Standards and Specification reviews both found no issues against this exact comparison. The worktree is clean. Standards review checked repository rules, ownership, contract and evidence boundaries, and the linked vendor/OpenRGB claims. Specification review reconciled both eleven-row documentation dependency tables against the issue graph and accepted scope.\n\n## CI and device evidence\n\nGitHub refused to start all eight jobs in each current-head workflow: [PR run](https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304) and [branch run](https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337). All sixteen jobs have zero executed steps. Annotations report failed account payments or a spending limit requiring an increase. This is an account execution blocker, not a failed test assertion.\n\nMerge remains blocked by `AGENTS.md` and `docs/sdlc.md`. Resolve the GitHub billing/spending restriction, rerun both workflows, and refresh current base/head/reviews. Merge only after every configured job succeeds, using the guarded squash procedure. Verify all merged-revision main CI jobs before closing #50. No merge or account-setting change was performed.\n\nHardware evidence is limited to user-supplied model information, application screenshots, historical records and read-only generic Windows inventory. Keyboard automation compatibility remains unverified. Source, installation, real-client, transport, visible-light and typing/restoration evidence remain separate. This PR does not operate hardware or alter installed software.\n",
+    "state": "open",
+    "merged": false,
+    "merged_at": null,
+    "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+    "updated_at": "2026-09-08T01:21:31Z"
+  },
+  "head": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+  "commitStatuses": [],
+  "statusPageSizes": [
+    0
+  ],
+  "checkRuns": {
+    "total_count": 16,
+    "check_runs": [
+      {
+        "id": 101905803317,
+        "name": "MCP on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oNQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "3f08a829-3ddc-557b-9e54-c318520abdbe",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803317",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803317",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803317",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:20Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803317/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803297,
+        "name": "MCP on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oIQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "55895bac-4280-5dfc-81e1-7e3642838e3a",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803297",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803297",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803297",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:19Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803297/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803289,
+        "name": "Workflow checks on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oGQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "c78a0c04-b897-5d59-acae-f8d49387dd0b",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803289",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803289",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803289",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:19Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803289/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803285,
+        "name": "Contracts Python 3.12 on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oFQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "66cab2f6-4f61-5198-9a3d-80c95e72e237",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803285",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803285",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803285",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:20Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803285/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803283,
+        "name": "Contracts Python 3.14 on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oEw",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "5637113d-4e6b-5c2a-85dc-6225882c8f73",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803283",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803283",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803283",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:22Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803283/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803264,
+        "name": "Contracts Python 3.12 on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8oAA",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "46933d9d-bb03-51a3-b473-44d26a84361f",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803264",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803264",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803264",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:19Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803264/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803248,
+        "name": "Workflow checks on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8n8A",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "61534694-84bd-5100-8d90-5db03e4ef3bf",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803248",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803248",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803248",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:19Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803248/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905803121,
+        "name": "Contracts Python 3.14 on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8ncQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "b6c6b8bc-b490-5e8f-a941-2ff9c61665b4",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803121",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803121",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176141304/job/101905803121",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:17Z",
+        "completed_at": "2026-09-08T01:17:19Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905803121/annotations"
+        },
+        "check_suite": {
+          "id": 92578658699
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905797004,
+        "name": "Contracts Python 3.14 on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PjA",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "1d6becb8-2d98-5169-a2d7-d114068242fb",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905797004",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905797004",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905797004",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905797004/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796953,
+        "name": "Workflow checks on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PWQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "82780696-75d3-50c6-b4b5-7ba5b02ad4cc",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796953",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796953",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796953",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796953/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796936,
+        "name": "MCP on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PSA",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "fa01c3ad-95b9-5844-a33d-38ec2dce38f9",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796936",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796936",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796936",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796936/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796911,
+        "name": "MCP on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PLw",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "b7461457-f35c-5744-9029-7d30b3690671",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796911",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796911",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796911",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796911/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796909,
+        "name": "Contracts Python 3.12 on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PLQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "ef1dfeab-5165-5982-b0ea-0babc4470549",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796909",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796909",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796909",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:18Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796909/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796893,
+        "name": "Contracts Python 3.14 on ubuntu-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8PHQ",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "ae4551a1-3822-5748-8a22-ec7e4caca746",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796893",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796893",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796893",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796893/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796837,
+        "name": "Contracts Python 3.12 on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8O5Q",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "2a80982a-6519-5737-8d9d-11d22786ddee",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796837",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796837",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796837",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796837/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 101905796759,
+        "name": "Workflow checks on windows-latest",
+        "node_id": "CR_kwDOUQqyGs8AAAAXug8Olw",
+        "head_sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+        "external_id": "1b0f50e5-c391-5160-9216-1104bad49ac3",
+        "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796759",
+        "html_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796759",
+        "details_url": "https://github.com/jimmie-potts/agent-device-hub/actions/runs/34176139337/job/101905796759",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-09-08T01:17:15Z",
+        "completed_at": "2026-09-08T01:17:17Z",
+        "output": {
+          "title": null,
+          "summary": null,
+          "text": null,
+          "annotations_count": 1,
+          "annotations_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/check-runs/101905796759/annotations"
+        },
+        "check_suite": {
+          "id": 92578653521
+        },
+        "app": {
+          "id": 15368,
+          "client_id": "Iv1.05c79e9ad1f6bdfa",
+          "slug": "github-actions",
+          "node_id": "MDM6QXBwMTUzNjg=",
+          "owner": {
+            "login": "github",
+            "id": 9919,
+            "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+            "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+            "gravatar_id": "",
+            "url": "https://api.github.com/users/github",
+            "html_url": "https://github.com/github",
+            "followers_url": "https://api.github.com/users/github/followers",
+            "following_url": "https://api.github.com/users/github/following{/other_user}",
+            "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+            "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+            "organizations_url": "https://api.github.com/users/github/orgs",
+            "repos_url": "https://api.github.com/users/github/repos",
+            "events_url": "https://api.github.com/users/github/events{/privacy}",
+            "received_events_url": "https://api.github.com/users/github/received_events",
+            "type": "Organization",
+            "user_view_type": "public",
+            "site_admin": false
+          },
+          "name": "GitHub Actions",
+          "description": "Automate your workflow from idea to production",
+          "external_url": "https://help.github.com/en/actions",
+          "html_url": "https://github.com/apps/github-actions",
+          "created_at": "2018-07-30T09:30:17Z",
+          "updated_at": "2026-06-18T16:17:48Z",
+          "permissions": {
+            "actions": "write",
+            "administration": "read",
+            "artifact_metadata": "write",
+            "attestations": "write",
+            "checks": "write",
+            "code_quality": "write",
+            "contents": "write",
+            "copilot_requests": "write",
+            "deployments": "write",
+            "discussions": "write",
+            "drives": "write",
+            "issues": "write",
+            "merge_queues": "write",
+            "metadata": "read",
+            "models": "read",
+            "packages": "write",
+            "pages": "write",
+            "pull_requests": "write",
+            "repository_hooks": "write",
+            "repository_projects": "write",
+            "security_events": "write",
+            "statuses": "write",
+            "vulnerability_alerts": "read"
+          },
+          "events": [
+            "branch_protection_rule",
+            "check_run",
+            "check_suite",
+            "create",
+            "delete",
+            "deployment",
+            "deployment_status",
+            "discussion",
+            "discussion_comment",
+            "fork",
+            "gollum",
+            "issues",
+            "issue_comment",
+            "label",
+            "merge_group",
+            "milestone",
+            "page_build",
+            "public",
+            "pull_request",
+            "pull_request_review",
+            "pull_request_review_comment",
+            "push",
+            "registry_package",
+            "release",
+            "repository",
+            "repository_dispatch",
+            "status",
+            "watch",
+            "workflow_dispatch",
+            "workflow_run"
+          ]
+        },
+        "pull_requests": [
+          {
+            "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/pulls/59",
+            "id": 4468701621,
+            "number": 59,
+            "head": {
+              "ref": "codex/gh-50-pc-lighting-docs",
+              "sha": "baf2b0bc2eb2b7839afe98175d8f3c686e5860c4",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            },
+            "base": {
+              "ref": "main",
+              "sha": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+              "repo": {
+                "id": 1359655450,
+                "url": "https://api.github.com/repos/jimmie-potts/agent-device-hub",
+                "name": "agent-device-hub"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": [
+    {
+      "checkRunId": 101905803317,
+      "name": "MCP on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803297,
+      "name": "MCP on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803289,
+      "name": "Workflow checks on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803285,
+      "name": "Contracts Python 3.12 on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803283,
+      "name": "Contracts Python 3.14 on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803264,
+      "name": "Contracts Python 3.12 on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803248,
+      "name": "Workflow checks on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905803121,
+      "name": "Contracts Python 3.14 on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905797004,
+      "name": "Contracts Python 3.14 on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796953,
+      "name": "Workflow checks on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796936,
+      "name": "MCP on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796911,
+      "name": "MCP on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796909,
+      "name": "Contracts Python 3.12 on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796893,
+      "name": "Contracts Python 3.14 on ubuntu-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796837,
+      "name": "Contracts Python 3.12 on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    },
+    {
+      "checkRunId": 101905796759,
+      "name": "Workflow checks on windows-latest",
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/jimmie-potts/agent-device-hub/blob/baf2b0bc2eb2b7839afe98175d8f3c686e5860c4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ],
+      "pageSizes": [
+        1
+      ]
+    }
+  ]
+}

@@ -95,3 +95,13 @@ Use the centrally installed unslop skill as the final editorial pass on
 commentary, responses, documentation and authorized GitHub prose. Preserve facts,
 commands, contracts, citations and evidence. If unavailable, report it and
 continue without fetching, copying or installing it.
+
+## Work guide maintenance
+
+For every authorized delivery or planning change, read
+[the guide maintenance procedure](docs/work-guide/README.md). Update the affected
+inputs, regenerate the HTML and record the result in `docs/work-guide/updates.md`
+before completion. Record a specific no-impact reason when no represented fact
+changes. For cross-repository work, identify the coordinator and linked hub
+companion PR; pending synchronization remains explicit in the completion report.
+Read-only tasks do not authorize writes.
