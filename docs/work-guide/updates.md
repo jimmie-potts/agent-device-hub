@@ -1,5 +1,24 @@
 # Guide maintenance history
 
+## 2026-09-08: Pixoo #12 physical evidence and open timing qualification
+
+Coordinator: the Pixoo #12 delivery root. The owner confirmed controls, recovery
+and continued alternation through a 60-minute, 119-transition soak, with only
+accepted flashing defect #52. Screen-on returning native GIFs is a separately
+accepted limitation; explicit Resume restored the selected still. The variable
+timing experiment did not establish asymmetric visible timing, and the application
+retains its uniform-500-ms profile. The owner paused further visual testing.
+Issue #12 remains open; draft Pixoo PR #54 contains the compatibility fix and
+dated evidence. No acceptance deferral, source merge or installation is claimed.
+
+Reconcile the guide onto the Pixoo #29 companion baseline, refresh the three
+backlogs and update local acceptance guidance. Preserve history, architecture
+evidence, roadmap geometry and the reserved Hub #73 input. Correct the singular
+issue label found during browser inspection. This is documentation synchronization
+without a product behavior or OpenSpec change. Candidate validation and the
+linked companion PR belong in the delivery receipt; synchronization remains
+pending until that PR merges.
+
 ## 2026-09-08: Pixoo #29 contract adoption companion
 
 Pixoo #29 source merged in Pixoo PR #53 at

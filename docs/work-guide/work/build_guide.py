@@ -32,11 +32,13 @@ GUIDES = [
          headers=['Work', 'Issues', 'Remaining work'], rows=[
              ['Completed / Local Codex → Nanoleaf', '[[N34]]', 'Completed through Nanoleaf PR #50. The closing receipt records installation, actual Windows/WSL routes, physical observations and restoration under its scoped hosted-CI exception.'],
              ['Completed / Local Codex → Pixoo', '[[P26]]', 'Completed baseline, excluded from remaining-work counts. Reviewed delivery through Pixoo PR #50 records installed WSL-client checks, physical controls, restoration and credential revocation.'],
-             ['Pixoo reliability', '[[P12]]', 'Physical playback, restart/recovery, and an approved soak trial.'],
+             ['Pixoo reliability', '[[P12]]', 'Controls, recovery and the one-hour soak have owner observations. Variable GIF timing remains unverified; further visual tests are paused and final delivery is pending.'],
          ], notes=[
              'The <a href="https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5580156676" target="_blank" rel="noopener noreferrer">September 8 Nanoleaf closing receipt</a> records completed local acceptance and restoration. Its hosted-CI exception applies only to that delivery; shared monitoring remains separate.',
              'The <a href="https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5578479319" target="_blank" rel="noopener noreferrer">Pixoo closing evidence</a> records restored and visually confirmed brightness and screen power. Unknown prior artwork was not restored. Its local PR/main validation exception does not apply automatically to other work.',
-             '[[P12]] has broader reliability criteria. It can proceed separately from local MCP acceptance and does not require remote browser access.'
+             '[[P12]] has broader reliability criteria. It can proceed separately from local MCP acceptance and does not require remote browser access.',
+             'The September 8 soak completed 60 minutes and 119 ordered transitions with no backend error or recovery event. The owner confirmed continued alternation through the end with only the accepted flashing defect [[P52]]. Screen-on can return native GIFs while playback stays paused; the owner accepted this limitation and verified explicit Resume restores the selected item.',
+             'The variable-timing experiment did not establish different visible frame durations. The application retains its uniform-500-ms profile. The owner paused further visual testing; the variable-timing criterion remains open. Backend timings do not establish precise visible cadence. <a href="https://github.com/jimmie-potts/divoom-app-upgrade/pull/54" target="_blank" rel="noopener noreferrer">Pixoo draft PR #54</a> contains the source compatibility fix and dated evidence; source delivery and guide synchronization remain pending.'
          ]),
     dict(id='shared-codex', short='Shared Codex integration', title='Deliver shared Codex monitoring and integration controls', phase='Main development path',
          intro='[[H32]] is the existing guide for this milestone. This is the main cross-project development sequence.',
@@ -222,7 +224,7 @@ for index, guide in enumerate(GUIDES, 1):
     rows = ''.join('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{render(cell)}</td>' for n, cell in enumerate(row)) + '</tr>' for row in guide['rows'])
     notes = ''.join(f'<p>{render(note)}</p>' for note in guide['notes'])
     sections.append(f'''<details class="guide" id="{guide_id}" data-count="{count}" data-primary="{' '.join(coverage[guide_id])}" open>
-      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} issues</span><span class="chevron" aria-hidden="true">−</span></summary>
+      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} {'issue' if count == 1 else 'issues'}</span><span class="chevron" aria-hidden="true">−</span></summary>
       <div class="guide-body"><p class="intro">{render(guide['intro'])}</p>
       <table><caption class="sr-only">{guide['title']}: work, issues, and dependencies</caption><thead><tr>{headings}</tr></thead><tbody>{rows}</tbody></table>
       <div class="guide-notes">{notes}</div><a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>''')
@@ -371,7 +373,7 @@ JS = '''
      if (saved) { restore(saved); saved = null; }
      count = guides.length; issues = guides.reduce((n, g) => n + Number(g.dataset.count), 0); diagrams = figures.length;
    }
-   result.textContent = `${plural(count, 'guide')} · ${issues} issues in these guides · ${plural(diagrams, 'diagram')}`;
+   result.textContent = `${plural(count, 'guide')} · ${plural(issues, 'issue')} in these guides · ${plural(diagrams, 'diagram')}`;
    clear.hidden = !query; empty.hidden = count > 0 || diagrams > 0;
  }
  search.addEventListener('input', filter);
