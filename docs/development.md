@@ -168,3 +168,13 @@ on Ubuntu/Windows with both Python versions. Tests use synthetic metadata only.
 `npm run package:lifecycle` builds the private archive with a file-hash manifest;
 record its source revision and archive hash externally after reviewed delivery.
 No command installs hooks, launches a client or contacts a device.
+
+## Early performance measurement tooling
+
+`npm run test:performance` uses Python 3.12 or 3.14 to check measurement
+statistics, pinned source verification, isolated legacy admission and bounded
+worker failure handling. The existing lifecycle Linux/Windows Python matrix
+also runs this command; all previous jobs and checks remain required. The
+tests use synthetic state and do not establish installed-client, full hook,
+helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
+for actual profile commands and pending budget gates.

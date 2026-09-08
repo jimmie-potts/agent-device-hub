@@ -23,7 +23,8 @@
     "test:lifecycle": "npm run build && node --test packages/lifecycle-contracts/tests/*.test.mjs",
     "test:lifecycle:python": "python3 scripts/check-lifecycle.py",
     "package:lifecycle": "npm run build && node scripts/package-lifecycle.mjs",
-    "test:lifecycle:package": "npm run build && node scripts/package-lifecycle.mjs --test"
+    "test:lifecycle:package": "npm run build && node scripts/package-lifecycle.mjs --test",
+    "test:performance": "python scripts/check-performance.py && node scripts/check-performance-validators.mjs"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",
