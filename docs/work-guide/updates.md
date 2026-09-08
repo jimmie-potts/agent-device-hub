@@ -1,5 +1,19 @@
 # Guide maintenance history
 
+## 2026-09-08: Pixoo #29 contract adoption companion
+
+This companion follows Pixoo #29 source adoption of the released Hub lifecycle
+contract 1.0.0. The Pixoo candidate adds the pinned archive/source receipt,
+shared conformance consumption and consumer requirements. Runtime state,
+embedding, monitoring UI and devices remain their separately owned deliveries.
+
+Before this companion becomes ready, reconcile Pixoo's verified source merge,
+main CI and issue state with guide coverage, history and the shared Codex
+narrative. No future closure is recorded in generated inputs. Preserve the
+reserved Hub #73 historical revision and hash; no connector routing change or
+evaluation is authorized. The user explicitly exempts this work-guide document
+from human approval; independent reviews, CI and guarded merge still apply.
+
 ## 2026-09-08: Hub #2 source closure reconciliation
 
 Hub #2 source merged in PR #74 at `855bd3787803dad7245f29e88c758659f6e4eda4`.
