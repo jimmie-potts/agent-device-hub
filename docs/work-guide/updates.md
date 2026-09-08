@@ -2,17 +2,25 @@
 
 ## 2026-09-08: Pixoo #29 contract adoption companion
 
-This companion follows Pixoo #29 source adoption of the released Hub lifecycle
-contract 1.0.0. The Pixoo candidate adds the pinned archive/source receipt,
-shared conformance consumption and consumer requirements. Runtime state,
-embedding, monitoring UI and devices remain their separately owned deliveries.
+Pixoo #29 source merged in Pixoo PR #53 at
+`459968ef11a8fb4558b3c76411e14d4564d6929f`. All five merged-main jobs passed
+in run 34286521529 before the issue was closed as completed. The released
+lifecycle archive and source/hash receipt are pinned; all 81 upstream cases
+pass through its installed validator. Consumer documents define source
+requirements while runtime state, embedding, UI and devices remain future work.
 
-Before this companion becomes ready, reconcile Pixoo's verified source merge,
-main CI and issue state with guide coverage, history and the shared Codex
-narrative. No future closure is recorded in generated inputs. Preserve the
-reserved Hub #73 historical revision and hash; no connector routing change or
-evaluation is authorized. The user explicitly exempts this work-guide document
-from human approval; independent reviews, CI and guarded merge still apply.
+This Hub companion refreshes all three repository backlogs and histories,
+retains P29 as a closed reference, removes it from remaining-work coverage and
+roadmap membership, and updates the shared Codex narrative and recommendation.
+Hub #30's current in-progress/blocked state remains explicit; its early budgets
+are not delivered. No product behavior or OpenSpec delta applies here.
+
+A new history caption records Pixoo PR #53. Roadmap geometry, connector routing,
+architecture definitions and companion viewers are unchanged. Hub #73 remains
+reserved at revision `7464b9e669c7150f780b334a3429c5f30a89b438` and HTML
+SHA-256 `8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`.
+The user exempts this work-guide document from human approval; independent
+reviews, CI and guarded merges remain required. Validation belongs in the PR.
 
 ## 2026-09-08: Hub #2 source closure reconciliation
 
