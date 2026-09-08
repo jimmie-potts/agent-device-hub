@@ -23,3 +23,11 @@ For UI changes, record approval of the current candidate.
 
 Verify all configured current-head PR jobs, guarded merge and merged-revision
 main CI before issue closure.
+
+## Work guide
+
+- [ ] Reviewed the cross-project guide and added an entry to `docs/work-guide/updates.md`.
+- [ ] Updated affected inputs and generated output, or explained why no represented fact changed.
+- [ ] Recorded build/browser results as applicable and any pending post-merge synchronization.
+
+For device-repository work, link the coordinated hub guide PR and its status.

@@ -1,0 +1,656 @@
+[
+  {
+    "number": 11,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Provide explicit authenticated HTTPS LAN access",
+    "body": "## Outcome\nProvide explicit authenticated HTTPS LAN access.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 8-10. Preserve its evidence boundaries. This issue delivers the scoped portion of M5; other milestone work stays in linked issues.\n\n## Acceptance criteria\n- [ ] Keep loopback default. Enable LAN only with authenticated sessions, trusted HTTPS, host/origin allowlists and CSRF/DNS-rebinding protections; never wildcard CORS.\n- [ ] Keep credentials out of URLs/logs/source and device addresses constrained. Test unauthorized/cross-origin/replayed requests and arbitrary outgoing targets.\n- [ ] Document secure desktop/phone setup, guest-Wi-Fi isolation, and Windows/WSL routing separately from device errors. No automatic firewall/router changes or direct internet exposure.\n- [ ] Validate two authenticated browser clients and persistence across refresh. Actual phone and Pixoo verification remains M6; no claim of PWA install/offline support.\n\n## Dependencies\n- #10\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n\n## Deferral decision\nThe user chose to keep the application localhost-only and postpone authenticated HTTPS LAN access. Revisit this issue when access from a phone or another computer is requested. Its acceptance criteria remain outstanding; do not enable LAN access without completing them. No application or host configuration changes were made.\n\n## Priority and access decision\nDeferred for mobile or another-computer browser access. Local Codex controls retain their own machine-client authentication in #24; deferring this issue does not disable that requirement. [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns future browser acceptance. Local #12/#26 acceptance does not depend on this issue.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/11",
+    "updatedAt": "2026-09-07T04:00:52Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": {
+      "url": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/milestones/6",
+      "html_url": "https://github.com/jimmie-potts/divoom-app-upgrade/milestone/6",
+      "labels_url": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/milestones/6/labels",
+      "id": 17675237,
+      "node_id": "MI_kwDOUPpzg84BDbPl",
+      "number": 6,
+      "title": "M5: Deployment and security",
+      "description": "M5 from the September 5, 2026 handoff. Source delivery and physical evidence are recorded separately.",
+      "creator": {
+        "login": "jimmie-potts",
+        "id": 49133657,
+        "node_id": "MDQ6VXNlcjQ5MTMzNjU3",
+        "avatar_url": "https://avatars.githubusercontent.com/u/49133657?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/jimmie-potts",
+        "html_url": "https://github.com/jimmie-potts",
+        "followers_url": "https://api.github.com/users/jimmie-potts/followers",
+        "following_url": "https://api.github.com/users/jimmie-potts/following{/other_user}",
+        "gists_url": "https://api.github.com/users/jimmie-potts/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/jimmie-potts/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/jimmie-potts/subscriptions",
+        "organizations_url": "https://api.github.com/users/jimmie-potts/orgs",
+        "repos_url": "https://api.github.com/users/jimmie-potts/repos",
+        "events_url": "https://api.github.com/users/jimmie-potts/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/jimmie-potts/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "open_issues": 2,
+      "closed_issues": 0,
+      "state": "open",
+      "created_at": "2026-09-05T22:02:30Z",
+      "updated_at": "2026-09-05T22:08:55Z",
+      "due_on": null,
+      "closed_at": null
+    },
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 12,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Validate local physical playback, recovery, and soak reliability",
+    "body": "## Outcome\nValidate local physical playback, recovery, and soak reliability.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 9-11. Preserve its evidence boundaries. This issue delivers the scoped portion of M6; other milestone work stays in linked issues.\n\n## Acceptance criteria\n- [ ] Obtain user approval for display-changing tests and a normal-cadence soak. Capture model/firmware and tested profile without committing private identifiers.\n- [ ] Observe 30-second image dwell, numbered GIFs at several total-play counts, effective variable timing, upload gaps and play-boundary error; agree tolerances with the user.\n- [ ] Validate pause/resume restart, skip during loading, stop, brightness, screen off/on, user-assisted disconnect/reconnect and server restart without stale commands.\n- [ ] Run a user-approved soak of at least 60 minutes AND 100 transitions; report latency distribution, artifacts, freezes/recoveries and server resource growth.\n- [ ] Record dated user-observed local playback results and source revision in hardware-validation documentation. Authenticated phone access and continued playback after phone close/lock are preserved in [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) and do not block this local acceptance issue.\n- [ ] Report every check pass/fail/blocked. Keep this issue open if hardware acceptance is pending; describe simulator-only completion as software complete with hardware verification pending.\n\n## Dependencies\n- #4\n- [divoom-app-upgrade#42](https://github.com/jimmie-potts/divoom-app-upgrade/issues/42) for physical adapter integration in the application.\n- #10 for local startup/operations.\n\n## Verification approach\nRecord dated device/user observations and separate automated source checks as specified above. No hardware actions are authorized by issue creation.\n\n## Delivery target\nSource plus separately authorized physical acceptance.\n\n## Priority and access decision\nPrioritize local playback and recovery; perform the normal-cadence soak only after the user approves its schedule and limits. Local Codex command-path acceptance is #26 and can complete independently of this broad soak. Remote browser acceptance is deferred in [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43); #11 is no longer a prerequisite here.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12",
+    "updatedAt": "2026-09-07T03:59:02Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": {
+      "url": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/milestones/7",
+      "html_url": "https://github.com/jimmie-potts/divoom-app-upgrade/milestone/7",
+      "labels_url": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/milestones/7/labels",
+      "id": 17675238,
+      "node_id": "MI_kwDOUPpzg84BDbPm",
+      "number": 7,
+      "title": "M6: Physical acceptance",
+      "description": "M6 from the September 5, 2026 handoff. Source delivery and physical evidence are recorded separately.",
+      "creator": {
+        "login": "jimmie-potts",
+        "id": 49133657,
+        "node_id": "MDQ6VXNlcjQ5MTMzNjU3",
+        "avatar_url": "https://avatars.githubusercontent.com/u/49133657?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/jimmie-potts",
+        "html_url": "https://github.com/jimmie-potts",
+        "followers_url": "https://api.github.com/users/jimmie-potts/followers",
+        "following_url": "https://api.github.com/users/jimmie-potts/following{/other_user}",
+        "gists_url": "https://api.github.com/users/jimmie-potts/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/jimmie-potts/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/jimmie-potts/subscriptions",
+        "organizations_url": "https://api.github.com/users/jimmie-potts/orgs",
+        "repos_url": "https://api.github.com/users/jimmie-potts/repos",
+        "events_url": "https://api.github.com/users/jimmie-potts/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/jimmie-potts/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "open_issues": 1,
+      "closed_issues": 1,
+      "state": "open",
+      "created_at": "2026-09-05T22:02:30Z",
+      "updated_at": "2026-09-07T17:38:00Z",
+      "due_on": null,
+      "closed_at": null
+    },
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": true
+  },
+  {
+    "number": 13,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Add timezone-aware playlist schedules",
+    "body": "## Outcome\nAdd timezone-aware playlist schedules.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 12. Preserve its evidence boundaries. This is follow-on work outside the MVP.\n\n## Acceptance criteria\n- [ ] Define manual precedence, timezone/DST/restart behavior and no replay of missed triggers before implementation.\n- [ ] Deferred beyond the MVP; settle scope, observable acceptance and dependencies before marking ready.\n\n## Dependencies\n- #12\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/13",
+    "updatedAt": "2026-09-05T22:08:57Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 14,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Validate Docker and ARM64 always-on deployment",
+    "body": "## Outcome\nValidate Docker and ARM64 always-on deployment.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 12. Preserve its evidence boundaries. This is follow-on work outside the MVP.\n\n## Acceptance criteria\n- [ ] Test persistent volumes and ARM64/native dependencies before claiming Raspberry Pi support.\n- [ ] Deferred beyond the MVP; settle scope, observable acceptance and dependencies before marking ready.\n\n## Dependencies\n- #12\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/14",
+    "updatedAt": "2026-09-05T22:08:58Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 15,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Plan playlist portability and UI convenience features",
+    "body": "## Outcome\nPlan playlist portability and UI convenience features.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 12. Preserve its evidence boundaries. This is follow-on work outside the MVP.\n\n## Acceptance criteria\n- [ ] Define versioned export/import and organization; evaluate installable PWA only after secure-context testing.\n- [ ] Deferred beyond the MVP; settle scope, observable acceptance and dependencies before marking ready.\n\n## Dependencies\n- #12\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/15",
+    "updatedAt": "2026-09-05T22:08:59Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 16,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Investigate supported transition improvements",
+    "body": "## Outcome\nInvestigate supported transition improvements.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 12. Preserve its evidence boundaries. This is follow-on work outside the MVP.\n\n## Acceptance criteria\n- [ ] Only pursue if observed upload interruptions warrant it; verify supported transport/timing/persistence without assumed SD-card changes.\n- [ ] Deferred beyond the MVP; settle scope, observable acceptance and dependencies before marking ready.\n\n## Dependencies\n- #12\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/16",
+    "updatedAt": "2026-09-05T22:09:00Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 17,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Connect ChatGPT to the local MCP server through a private tunnel",
+    "body": "## Shared-hub ownership\nKeep remote connectivity deferred. Reuse [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) through a qualified Pixoo-local endpoint or explicitly selected hub gateway. Document the deployment before implementation. A tunnel is not needed for local hooks, monitoring or the unified local UI.\n\n## Outcome\nConnect ChatGPT web to the local Pixoo application's MCP tools through an authenticated private connection.\n\n## Scope and source\nRefine the existing remote-control backlog issue for the requested ChatGPT integration. Reuse the MCP endpoint from #24 and its shared application services. Prefer OpenAI Secure MCP Tunnel, with a client running beside the local backend and reaching OpenAI through outbound HTTPS. The local app and Pixoo remain private.\n\nThis is follow-on work outside the mixed-playlist MVP. #11 continues to own authenticated browser LAN access; [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns remote browser acceptance and #12 owns local physical playback/soak. Neither a LAN listener nor completion of physical soak testing is required to develop this outbound MCP path. Public plugin distribution, general remote browser control, and other VPN/hosting options remain outside this implementation slice.\n\nOfficial documentation checked September 6, 2026: [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels), [ChatGPT developer mode](https://developers.openai.com/api/docs/guides/developer-mode), and [MCP](https://learn.chatgpt.com/docs/extend/mcp). Recheck these sources when implementation starts.\n\n## Acceptance criteria\n- [ ] Resolve the connection/authentication design before marking ready. Document target ChatGPT developer-mode availability, Platform tunnel permissions and organization/workspace association, runtime credential handling, and how the tunnel authenticates to the local MCP endpoint. If the supported route is unavailable, record the exact missing prerequisite and proposed alternative for user decision.\n- [ ] Provide the source/configuration templates and runbook needed to connect a developer-mode app to the running backend through the selected private tunnel. Reuse the same MCP tools and backend queue as Codex; the bridge never talks directly to the Pixoo or launches another device-writing backend.\n- [ ] Preserve loopback defaults and require an explicitly configured endpoint and credentials. Expose only the intended MCP path through the tunnel, not the rest of the web server or private media directory. Verify the bridge can authenticate locally without weakening the local MCP access checks.\n- [ ] Define and test authorization at both the remote connection and local app boundary. Keep runtime keys, local credentials, private IPs, and media paths out of Git, URLs, tool results, and routine logs. Treat read-only/write annotations as client guidance, with server authorization enforced independently.\n- [ ] Document start, health/readiness checks, failure diagnosis, credential rotation/revocation, disconnect, and cleanup. A stopped or revoked tunnel rejects new remote work; local app use continues. Reconnect must not blindly replay uncertain writes.\n- [ ] Document that the host/backend/tunnel must remain running for ChatGPT calls. Client disconnection does not own or stop playback. Keep app deployment and persistent host startup aligned with #10 without adding an always-on installation to source delivery.\n- [ ] Provide a simulator-only end-to-end runbook for tool discovery, approved writes, failures, and disconnect/reconnect. Actual ChatGPT account setup and live client/device evidence are completed in [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44), with unavailable access recorded there rather than claimed from mocks.\n- [ ] Prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, design, and ADR for the transport/auth boundary before implementation. Do not add public ingress or change router/firewall settings as an automatic fallback.\n\nPlanned OpenSpec change: `gh-17-chatgpt-private-mcp`.\n\n## Verification approach\nUse isolated test credentials, a local MCP test server/client, and a fake tunnel transport where practical to verify target restriction, authentication, disconnects, revocation, and duplicate-request behavior. Separate tests of our wrapper/configuration from claims about the external tunnel service. Source tests must pass without external accounts or a device.\n\nRun Node 24 `npm ci` and all repository checks applicable to changed source, HTTP/startup behavior, and OpenSpec artifacts, including `npm run check` and `npm run test:browser` for application changes. Require all configured PR/main CI. Live ChatGPT setup and acceptance belong to [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44).\n\n## Dependencies\n- #24 for the authenticated local MCP endpoint.\n- Verified target account/workspace permissions and a settled transport/auth design before readiness.\n\nAdditional shared prerequisites:\n- [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7)\n\n## Related work\n#25 adds media/playlist tools and can proceed independently of this connection work. #10 supplies shared deployment guidance when available; this issue owns tunnel-specific lifecycle instructions. [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44) owns remote client/device verification and depends on this issue. The former #12 prerequisite is replaced by #24 because source delivery of an outbound MCP connection does not require phone/LAN or soak acceptance.\n\n## Delivery target\nSource-only. Account registration, key creation, tunnel installation, personal app configuration, and hardware actions require the later explicitly authorized setup/acceptance work.\n\n## Priority and access decision\nDeferred until the user selects remote access. Local Codex delivery and #26 acceptance proceed independently. No tunnel, remote account, or browser LAN authentication is required for local MCP source work.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/17",
+    "updatedAt": "2026-09-07T04:00:51Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 18,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Assess authorized cloud-gallery import",
+    "body": "## Outcome\nAssess authorized cloud-gallery import.\n\n## Scope and source\n[September 5 handoff](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/reference/2026-09-05-agent-handoff.md), sections 12. Preserve its evidence boundaries. This is follow-on work outside the MVP.\n\n## Acceptance criteria\n- [ ] Require separate authorization and licensing, credentials and API-stability assessment before implementation.\n- [ ] Deferred beyond the MVP; settle scope, observable acceptance and dependencies before marking ready.\n\n## Dependencies\n- #12\n\n## Verification approach\nUse focused unit/integration/browser checks appropriate to the criteria, actual red/green evidence for executable changes, and the repository CI. No hardware or installation side effects are authorized by issue creation.\n\n## Delivery target\nSource-only.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/18",
+    "updatedAt": "2026-09-05T22:09:02Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 26,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Verify local Codex control on the Pixoo",
+    "body": "## Shared-hub ownership\nVerify interactive Pixoo commands through the shared MCP module and configured endpoint. Reuse common fixtures from [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7). #34 owns observational monitoring; [agent-device-hub#9](https://github.com/jimmie-potts/agent-device-hub/issues/9) owns cross-repository source compatibility.\n\n## Outcome\nDemonstrate that local Codex can control the configured Pixoo through the same application backend, and retain reproducible evidence.\n\n## Scope and source\nVerify the delivered MCP tools in the actual local Codex client, then perform separately authorized physical checks. The September 6 bounded smoke evidence in #4 is the protocol baseline; it does not prove MCP or application integration.\n\n#12 retains broad local physical playback timing, recovery, and soak acceptance. [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns future browser LAN acceptance; [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44) owns future ChatGPT web acceptance. This issue owns the additional local Codex command path, client approval behavior, and integration installation evidence.\n\n## Acceptance criteria\n- [ ] Identify the installation/test owner, source revision, actual local Codex clients, host/network path, and rollback steps before setup. Keep configuration and credentials outside Git; use WSL as the primary existing workflow and record reachability failures without silently switching hosts.\n- [ ] In local Codex, discover and exercise status, brightness, screen control, media selection, playlist start, and playback controls against simulator fixtures. Record tool inputs/results and confirm write classification and the selected approval policy.\n- [ ] Before physical calls, obtain the exact private device IP and explicit permission for the test sequence and display replacement. Record initial brightness/screen state and restoration limits. Use synthetic or separately authorized existing media within the supported profile.\n- [ ] From local Codex, observe a read-only status/probe, approved brightness and screen changes, one still/short animation, and a short playlist with pause/resume/skip/stop. Record user-visible results separately from transport acknowledgments and estimated timing. Restore known brightness/screen settings; do not promise restoration of unknown prior artwork.\n- [ ] Verify browser and MCP callers share one backend/queue, screen-off pauses advancement, screen-on does not resume, and playback continues after the chat disconnects. A failed or stale request must not produce a later unexpected command.\n- [ ] Disable the integration and verify access is revoked while ordinary local app use remains available. Document local service startup and shutdown without changing router/firewall settings.\n- [ ] Record dated, redacted pass/fail/blocked results and source revision in the repository's hardware-validation documentation, linking this issue and the originating feature issues. Leave missing client or physical observations open; simulator and source success cannot close this acceptance issue.\n\n## Verification approach\nUse the runbooks from #24 and #25. Keep real client, installation, transport, and physical/user evidence separate. No soak or crash-limit experiment is included. Reuse the current source/CI evidence; run applicable checks again only for resulting source or documentation changes. Any implementation defect returns to a scoped source fix and its required checks.\n\n## Dependencies\n- [divoom-app-upgrade#42](https://github.com/jimmie-potts/divoom-app-upgrade/issues/42) for application-integrated physical control.\n- #24 for local MCP status/display control.\n- #25 for media and playlist tools.\n- #4 for the bounded protocol baseline.\n- Future explicit installation and physical-test authorization, named owner, available local client, and configured device.\n\n## Related work\n#12 remains a separate acceptance obligation; completion here does not close it.\n\n## Delivery target\nIncludes installation and its verification plus explicitly authorized physical-device verification. This backlog entry records the required future gates; it does not itself authorize installation, account changes, or hardware actions.\n\n## Priority and access decision\nLocal Codex control is the current delivery priority. Phone, mobile browser, ChatGPT web, and another-computer access are future goals. Keep native-client authentication, explicit targets, and one existing device writer. Local client access may use the existing same-machine Windows/WSL route and does not prohibit the owning controller from reaching its configured LAN device. The ChatGPT checks moved to [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44). Unavailable remote clients/account access cannot block this local issue. Keep separately authorized local-client installation and user-observed physical checks open until complete.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26",
+    "updatedAt": "2026-09-08T03:05:50Z",
+    "closedAt": "2026-09-08T03:05:48Z",
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "hardware"
+      },
+      {
+        "name": "priority:high"
+      }
+    ],
+    "milestone": null,
+    "comments": [
+      {
+        "body": "Pixoo source prerequisites #42, #24 and #25 are closed after reviewed merges and local main checks. The final source is `9d87928a5e3a1311a7621df21441f76acf473c20` from PR #49. WSL remains the primary workflow.\n\nThe owner supplied the exact device address privately. A concrete setup, backup, rollback and bounded physical sequence is prepared in the coordinating task. It still requires explicit setup and device-operation approval. No personal client configuration, installed service or physical device has been changed by this delivery.\n\nKeep this acceptance issue open with its existing backlog/blocked labels until authorization, actual client checks and user-visible observations are complete. Hosted Actions credits remain covered by the approved local PR/main validation exception. Source fixtures do not establish installed or physical acceptance.\n",
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5575285709",
+        "createdAt": "2026-09-07T20:18:53Z",
+        "updatedAt": "2026-09-07T20:18:53Z"
+      },
+      {
+        "body": "The user explicitly approved the prepared setup, backup/rollback and bounded physical acceptance sequence in the coordinating task. This coordinator owns execution and evidence. Setup/client fixture checks are underway; no physical result is claimed. Device addresses and credentials stay private. Required visible observations and any setup limitations will remain explicit.",
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5575565061",
+        "createdAt": "2026-09-07T20:56:45Z",
+        "updatedAt": "2026-09-07T20:56:45Z"
+      },
+      {
+        "body": "Acceptance is blocked by the current execution host. The updated profile still blocks Windows interop and the native Windows tool workspace path; it also denied the actual Codex CLI connection to chatgpt.com because the domain is not on the sandbox allowlist. The user's explicit setup/device approval remains valid.\n\nPixoo synthetic media and playlist preparation succeeded. Earlier actual WSL Codex status/catalog reads passed; the new control session recorded no tool calls before the host denial. Temporary credentials are revoked. No Nanoleaf upgrade or physical device operation occurred. Source delivery remains complete. Resume acceptance after host network/Windows execution access is repaired; required client and visual observations remain open.",
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5575657679",
+        "createdAt": "2026-09-07T21:09:45Z",
+        "updatedAt": "2026-09-07T21:09:45Z"
+      },
+      {
+        "body": "Resumed the authorized acceptance handoff. Current main remains `9d87928a5e3a1311a7621df21441f76acf473c20`; all 276 tracked files match the qualified runtime copy. The ten completed source stories were not repeated.\n\nInstalled WSL Codex 0.153.4 completed all eight tools against the existing simulator fixtures: 20 calls, including 15 successful writes. Status verified screen-off pause and screen-on non-resume. A separate confirmed start/disconnect showed playback continuing under the backend; a new Codex client read the same retained session. Live annotations and browser/API/MCP identity checks passed. Desktop/mobile UI inspection found no clear rendering issue or page error. Temporary principals were revoked with HTTP 401, ordinary HTTP health remained available, and all owned simulator hosts stopped.\n\nPhysical acceptance remains pending current user visual readiness, initial visible state and restoration information. Existing setup/physical authorization and the local PR/main validation exception remain valid. No physical test command or persistent client configuration change was performed. Keep this issue open and blocked until its remaining observations and final repository evidence pass.\n",
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5577651392",
+        "createdAt": "2026-09-08T01:22:47Z",
+        "updatedAt": "2026-09-08T01:22:47Z"
+      },
+      {
+        "body": "Delivered through PR #50 at `e777fe4d244a491f45e40aea77bcb7a0f767e119`. Independent Standards and Specification reviewers approved the exact candidate; the merged tree matches that reviewed tree.\n\nPost-merge checks passed on Node 24 in native Linux and Windows: lint, typecheck, 270 application tests and 10 workflow tests on each host, with strict validation of 11 specs and 12 archived changes. Linux Chromium passed all 52 desktop/mobile browser tests. All 276 tracked files matched the Windows validation copy. Hosted main runs and checks were absent; local PR/main validation follows the owner's explicit Actions-credit exception.\n\nThe dated hardware record covers the installed WSL client, approval-policy evidence, shared backend/queue, physical controls, disconnect/reconnect, restoration and credential revocation. The owner accepted brief loading flashes during repeated GIF uploads. Known brightness and screen power were restored and visually confirmed; unknown prior artwork was not restored. Temporary credentials were revoked and owned test hosts stopped.\n\nAll #26 acceptance conditions are complete. Broader soak and recovery acceptance remains with #12; this does not close that separate work.\n",
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5578479319",
+        "createdAt": "2026-09-08T03:05:48Z",
+        "updatedAt": "2026-09-08T03:05:48Z"
+      }
+    ],
+    "commentCount": 5,
+    "commentsRefreshed": true
+  },
+  {
+    "number": 29,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Adopt qualified shared monitoring contracts in Pixoo",
+    "body": "## Outcome\nUse the hub's qualified agent vocabulary and schemas as the Pixoo monitoring contract.\n\n## Scope\nShared provider qualification now belongs to [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2). This issue owns Pixoo consumer requirements and compatibility, without another provider mapping or state reducer.\n\n## Acceptance criteria\n- [ ] Pin the shared runtime schemas/fixtures and document the required-client capability matrix and supported contract versions for local Codex Desktop/CLI and Claude Code.\n- [ ] Map shared activity, continuing questions, blocked attention, turn-ended notices, acknowledgment and freshness into Pixoo's dashboard/browser requirements. A turn end proves neither success nor readership.\n- [ ] Preserve separate sessions in the same project and only attributable children. Unsupported parent relationships/counts stay unknown.\n- [ ] Allow user-chosen labels or neutral IDs only; exclude prompts, auto-copied titles, tool content, credentials and private paths from monitoring payloads, storage, errors and diagnostics.\n- [ ] Define missing-version/unsupported-signal handling and consume shared fixtures rather than maintaining independent provider adapters.\n- [ ] Document initial hosting in the existing Pixoo backend, later explicit state-owner migration, separate MCP/device ownership and legacy Nanoleaf compatibility until verified cutover.\n- [ ] Create docs/agent-monitoring-vocabulary.md as a Pixoo mapping linked to the canonical hub vocabulary and docs/agent-monitoring.md for consumer behavior; keep product and ADR pointers current without claiming implementation.\n- [ ] Prepare issue-linked OpenSpec consumer scenarios. Live-client/physical acceptance belongs to #34; source work changes no personal settings.\n\n## Dependencies\n- [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2)\n- [divoom-app-upgrade#2](https://github.com/jimmie-potts/divoom-app-upgrade/issues/2)\n- [divoom-app-upgrade#3](https://github.com/jimmie-potts/divoom-app-upgrade/issues/3)\n\n## Verification\nUse the repository's canonical checks, inspect all linked decisions and issue records, and retain independent review and current PR/main CI evidence. No application behavior is implemented by planning/bootstrap.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nBefore implementation, prepare the exact issue-linked OpenSpec change at openspec/changes/gh-29-shared-monitor-contract/. Verify the identity and applicable design requirements first.\n\n## Priority and access decision\nPlanned after the local Codex control path. Shared monitoring, standalone hosting, collector migration, and the unified dashboard remain useful follow-on work; none is a prerequisite for the reusable local MCP module or device-local Codex acceptance. Preserve the existing behavior until any separately authorized migration.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Map the Codex-first frontend's task, attention, freshness, user-label and monitor-acknowledgment requirements to the hub vocabulary. Preserve existing Claude source-compatibility criteria and keep installed-provider evidence separate.\n- [ ] Record the source-versus-host distinction explicitly: shared event/state code stays in the hub repository and is consumed as a released package; this repository owns Pixoo composition, rendering, monitor policy and its device writer.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29",
+    "updatedAt": "2026-09-07T20:14:15Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 30,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Compare Pixoo dashboard frame and text update methods",
+    "body": "## Outcome\nChoose a supported Pixoo64 dashboard update method and configurable cadence using measured display behavior.\n\n## Scope and source\nCompare complete single-frame redraws with separately updated device-rendered text/items. Use synthetic agent-status layouts and bounded experiments. Three seconds is a provisional experiment setting, not a requirement or an official device limit.\n\nPlanning sources: [Divoom API guide](https://divoom.com/blogs/app-guide/pixoo-64-api-beginner-guide), [vendor documentation portal](https://docin.divoom-gz.com/web/#/5/23), [Pixoo64 examples](https://github.com/Pbatch/Pixoo64), [pixoo_api protocol notes](https://github.com/Grayda/pixoo_api/blob/main/NOTES.md), and [pixoo-rest changelog](https://github.com/4ch1m/pixoo-rest/blob/master/CHANGELOG.md). These are starting points for qualification, not guarantees of current firmware behavior. The vendor command pages were not retrievable during planning.\n\n## Acceptance criteria\n- [ ] Document both candidate protocols, command and payload limits supported by evidence, font/layout constraints, clear/reset behavior, and known uncertainties. Do not assume SD-card storage, firmware changes, general frame-rate limits, or capabilities beyond the documented and observed profile.\n- [ ] Provide an opt-in comparison tool using the existing device adapter and serialized operation queue. Offline/fake mode is the default. It accepts an explicit target only through the established protocol-tool configuration, bounds run duration/retries/traffic, and cannot run alongside another device writer.\n- [ ] Prepare synthetic 64×64 cases containing a summary strip, four rows, state/provider icons, short labels, subagent counts, attention totals, overflow pages, and rapid state changes. Test complete frames and text/item updates only where supported. Coalesce bursts to the latest picture instead of replaying obsolete pictures.\n- [ ] Before any physical command, identify the test owner, source revision, exact authorized IP, known device model/firmware, test sequence, and permission to replace content. Record current screen/brightness state and restoration limits. Do not reuse old smoke-test authorization.\n- [ ] Measure event-to-visible latency, loading/blanking interruptions, readability, stale-item clearing, burst behavior, and recovery for each supported candidate on the actual display. Distinguish HTTP acknowledgments from visible changes. Record cadence settings and the bounded measurement sample; do not describe a small test as a universal device limit.\n- [ ] Check browser preview fidelity for the candidate method. Device fonts and overlays must be reproducible for an exact 64×64 preview. If they cannot be reproduced, reject that candidate for the agreed exact-preview requirement or return the requirement conflict for a decision.\n- [ ] Record the selected method, configurable default cadence, and rejected alternatives with evidence. Unsupported text/item commands are a valid negative result, not a reason to send guessed commands. If neither method meets the dashboard requirements, report a blocked feasibility result and the required next decision.\n- [ ] Update `docs/protocol-spike.md` with the bounded procedure and `docs/hardware-validation.md` with dated, redacted results. Record the rendering decision in the monitoring ADR when available, otherwise a scoped ADR using the next free number. Keep device identifiers and runtime data out of Git.\n\n## Dependencies\n- #3 supplies the adapter and fake queue; #4 supplies the bounded HTTP protocol baseline.\n- Synthetic comparison does not depend on a running agent monitor, MCP, or playlist UI.\n- #16 remains related general transition research. Its deferred scope and #12 dependency are not prerequisites for this bounded dashboard experiment.\n- Physical completion requires future explicit authorization, a named test owner, and the configured Pixoo64.\n\n## Related monitoring work\n#32 can deliver its pure renderer and simulator preview independently. #33 consumes this issue's measured transport decision. #34 verifies the integrated result with actual agent clients.\n\n## Verification approach\nValidate payload construction, bounded runs, coalescing, serialization, failure handling, and default fake mode without hardware. Follow `docs/protocol-spike.md` for separately authorized physical stages. Store source/CI, transport, and visible-device results separately.\nUse isolated runtime data and the deterministic fake device. For executable changes, retain focused red/green evidence and run Node 24 `npm ci` and `npm run check`. For HTTP, UI, or startup changes, install Playwright Chromium and run `npm run test:browser`. OpenSpec/workflow changes also require `npm run check:workflow` and `npm run test:workflow`. No real account or display is needed for source checks.\n\n## Delivery target\nIncludes explicitly authorized physical-device verification. Source/tooling can be delivered first; the issue remains open until the required physical comparison and decision are recorded. Issue publication does not authorize installation or device commands.\n\n## Planning and delivery\nBefore implementation, prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, and applicable design using the local planning root `openspec/changes/`. GitHub owns acceptance and delivery status; the specification owns capability scenarios. Follow [the repository SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md), including isolated work, independent review, and current PR/main CI. This publication authorizes backlog records only.\n\nPlanned OpenSpec change: `gh-30-dashboard-rendering-qualification`.\nLocal planning root: `openspec/changes/gh-30-dashboard-rendering-qualification/`. Check active and archived changes for collisions before creating it.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/30",
+    "updatedAt": "2026-09-07T00:56:56Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 31,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Embed the shared agent-state service in the Pixoo backend",
+    "body": "## Outcome\nHost shared agent monitoring once inside the existing backend and expose it to Pixoo and compatible consumers.\n\n## Scope\nCompose [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3) and [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) in the delivered HTTP/storage boundaries. This replaces a Pixoo-specific collector/reducer and creates no second backend, SSE stack, player or writer.\n\n## Acceptance criteria\n- [ ] Pin and embed shared core/provider packages with one state-owner identity and private persistent storage outside Git. Keep existing device/library storage under its owner.\n- [ ] Expose bounded authenticated ingestion and versioned session snapshots/change feeds using shared validation and existing HTTP/SSE. Preserve Host/Origin/native-client auth, payload/time/queue limits and replay identity.\n- [ ] Delegate normalization, reduction, deduplication, late events, child rollup, freshness, retention and restart to the shared core; verify integration with its fixtures.\n- [ ] Preserve five-minute uncertainty independent of collector health, 24-hour/10,000-event diagnostic retention, user-chosen labels and durable notices. Old-turn events cannot restore cleared notices.\n- [ ] Expose protected label/filter and monitor-acknowledgment operations without marking chats read, approving work or inferring successful completion. Enforce the privacy allowlist before admission and persistence.\n- [ ] Collect in Monitor and Media without device writes or agent blocking. Producer failures remain fail-open.\n- [ ] Expose a versioned export/import and quiesce boundary for [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5). Provide one session-source facade that can select the embedded owner or a remote shared owner; route downstream renderer/browser snapshots, changes and shared label/acknowledgment operations through it. Remote mode does not start a local reducer or write shared agent state. Verify cutover/rollback with unchanged identities, revisions and notices, stale-feed handling and no automatic second-owner fallback; embedded and standalone owners cannot write concurrently or reopen the same cross-platform database.\n- [ ] Keep startup simulator-only. Package examples and docs/agent-monitoring.md without installing hooks or changing the existing Nanoleaf installation.\n- [ ] Exercise duplicates/prior turns, unavailable children, restart/migration, interrupted writes, privacy canaries, retention and reconnect with isolated state and fake time.\n\n## Dependencies\n- [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29)\n- [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3)\n- [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4)\n- [divoom-app-upgrade#6](https://github.com/jimmie-potts/divoom-app-upgrade/issues/6)\n- [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8)\n\n## Verification\nUse the repository's canonical checks, inspect all linked decisions and issue records, and retain independent review and current PR/main CI evidence. No application behavior is implemented by planning/bootstrap.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nBefore implementation, prepare the exact issue-linked OpenSpec change at openspec/changes/gh-31-shared-monitor-host/. Verify the identity and applicable design requirements first.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Expose the shared feed to Nanoleaf and other configured consumers without making their updates depend on the physical Pixoo, its browser being open, or Media/Monitor mode. A stalled consumer cannot delay other consumers or hook admission.\n- [ ] Keep the reusable engine in the hub repository and consume a verified release artifact. The existing Pixoo process is the initial host; standalone migration replaces the selected host, not the shared implementation.\n- [ ] Keep frontend/renderer reads, filters, labels and acknowledgment behind the selected session-source facade. Test the same operations against embedded and remote hosts, and report host loss without starting another state owner.\n- [ ] Measure the embedded feed and Windows/WSL route against the early baseline/budget artifact in [performance qualification](https://github.com/jimmie-potts/agent-device-hub/issues/30).\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/31",
+    "updatedAt": "2026-09-07T20:14:21Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 32,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Render the 64×64 agent monitoring dashboard and preview",
+    "body": "## Shared-hub ownership\nConsume shared session state through #31. Keep the 64x64 renderer and pagination in Pixoo. Shared clients may consume its rendition contract. #30 conditionally gates physical transport, not pure rendering.\n\n## Outcome\nTurn monitoring state into a readable, deterministic 64×64 dashboard that can be previewed and tested without a physical display.\n\n## Scope and source\nBuild the layout and rendering service over normalized session state. Keep layout and pagination independent of provider hooks and device transport. Provide a canonical pixel preview and the layout data needed to evaluate the qualified device-rendering method.\n\n## Acceptance criteria\n- [ ] Render a summary strip and four compact top-level session rows per page, with provider/state icons, user-chosen short labels, attributable active-subagent counts, and clear unknown/uncertain indicators. Do not use color as the only state distinction.\n- [ ] Put sessions needing attention first and keep ordering stable within a priority group. Distinguish a question while work continues from a blocked approval/input request. Keep the attention total visible on every page, including overflow pages.\n- [ ] Rotate overflow pages every ten seconds using an injectable clock. Clamp the current page when sessions or filters change; cover empty, one-page, and overflow states without flicker or skipped rows caused by unstable sorting.\n- [ ] Render retained turn-ended notices according to the state service. Preserve them across restart/dismissal scenarios and new turns without treating them as successful task completion. Show observation freshness separately from collector health.\n- [ ] Produce a deterministic 64×64 pixel buffer and browser preview from the same layout state. Specify truncation and unsupported-character fallback for short labels. Full labels and precise timestamps are available to the browser controls, outside the constrained display rows.\n- [ ] Coalesce state bursts to the newest snapshot and bound pending rendering work. Obsolete generations cannot publish a later preview or device result. Rendering cadence is configurable and independent of the ten-second page interval; three seconds is only a provisional experiment value.\n- [ ] Keep pure rendering and simulator output usable while hardware qualification is pending. A transport-specific optimization must preserve the agreed layout and exact preview. Do not claim native-font fidelity or physical timing from pixel fixtures.\n- [ ] Document layout rules and preview examples with synthetic data in `docs/agent-monitoring.md`. Add the issue-linked dashboard capability scenarios before implementation.\n\n## Dependencies\n- #31 supplies validated session snapshots and freshness/notice semantics.\n- #3 supplies the delivered fake device boundary.\n- #30 informs later device transport selection. It does not block the pure renderer and simulator preview delivered here.\n\n## Related monitoring work\n#30 qualifies physical update methods. #33 integrates browser and device display ownership. #34 verifies the installed result.\n\n## Verification approach\nUse deterministic pixel fixtures and fake-clock behavior tests for priority/stable sorting, page rotation, clipping, unknown values, subagent counts, attention totals, stale observations, and coalescing. Inspect synthetic previews at native resolution and enlarged nearest-neighbor scale. Physical readability remains a separate acceptance gate.\nUse isolated runtime data and the deterministic fake device. For executable changes, retain focused red/green evidence and run Node 24 `npm ci` and `npm run check`. For HTTP, UI, or startup changes, install Playwright Chromium and run `npm run test:browser`. OpenSpec/workflow changes also require `npm run check:workflow` and `npm run test:workflow`. No real account or display is needed for source checks.\n\n## Delivery target\nSource-only, including simulator rendering and preview. This issue does not select an unqualified physical protocol or send display commands.\n\n## Planning and delivery\nBefore implementation, prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, and applicable design using the local planning root `openspec/changes/`. GitHub owns acceptance and delivery status; the specification owns capability scenarios. Follow [the repository SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md), including isolated work, independent review, and current PR/main CI. This publication authorizes backlog records only.\n\nPlanned OpenSpec change: `gh-32-agent-dashboard-renderer`.\nLocal planning root: `openspec/changes/gh-32-agent-dashboard-renderer/`. Check active and archived changes for collisions before creating it.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Treat this as the Pixoo device renderer for Codex task integration. The shared browser application belongs to Hub #6; reuse layout/preview contracts rather than creating another provider interpreter.\n- [ ] Verify bursts and overflow with bounded rendering work, current-state resync and no obsolete frame publication. Preserve the physical cadence qualification and existing preview fidelity boundary.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/32",
+    "updatedAt": "2026-09-07T20:14:26Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 33,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Add monitor controls and shared Monitor/Media display ownership",
+    "body": "## Shared-hub ownership\nUse #31's embedded/remote session-source facade for monitor rendering, browser state and shared label/acknowledgment operations, and expose effective Monitor/Media capabilities through [divoom-app-upgrade#37](https://github.com/jimmie-potts/divoom-app-upgrade/issues/37). Pixoo keeps mode policy, renderer, player and its serialized writer. Hub/browser/MCP clients use those commands. [agent-device-hub#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) independently owns the shared overview.\n\n## Outcome\nLet the user manage agent monitoring in the app and choose whether the Pixoo displays monitoring or media, with one backend controlling all writes.\n\n## Scope and source\nExtend the existing browser, HTTP/SSE services, and player. Integrate the dashboard's selected device-rendering method only after qualification. Hooks continue observing in both display modes.\n\n## Acceptance criteria\n- [ ] Add a monitor panel with full session labels, provider/state, timestamps and observation age, collector health, short-label editing, project/session filters, retained-notice dismissal, and an exact 64×64 preview. Make filter effects and empty results clear. Apply the selected monitor view consistently to preview and display.\n- [ ] Label assignment is an explicit user action. Do not automatically copy prompts, titles, tool output, or private paths. Retained-notice dismissal changes monitor state only and cannot mark a chat read, approve an action, or close a GitHub issue.\n- [ ] Expose explicit Monitor and Media modes. Entering Monitor pauses playlist advancement. Starting media selects Media. Leaving Monitor leaves the playlist paused until the user explicitly resumes or starts media. Starting a media item/playlist is explicit playback intent.\n- [ ] Keep collecting agent events in either mode. Questions, approvals, turn ends, and errors never take over Media mode or send unsolicited monitor alerts to the display.\n- [ ] Route browser, player, dashboard, HTTP, and any MCP device operations through the same backend adapter and serialized operation queue. Mode switches invalidate obsolete generations, timers, and pending picture updates; a late completion cannot reclaim display ownership.\n- [ ] Use the rendering method and measured configurable cadence from the qualification issue. Coalesce updates to the latest desired view. Screen-off pauses/cancels display work according to #7; screen-on alone does not resume playback or trigger an unrequested monitor refresh.\n- [ ] On backend restart, retain the chosen view/mode and paused playback context, mark previously active sessions uncertain, and wait for explicit display activation before new physical writes. Bound reconnect retries and never replay missed dashboard pictures or old mode transitions.\n- [ ] Extend #8's validated commands, request IDs, revision handling, authoritative snapshots, and sequence-aware SSE reconnect/resync. Reject stale updates and conflicting duplicate commands. Preserve loopback defaults and the existing authenticated access boundaries; no generic raw-device endpoint.\n- [ ] Keep normal startup simulator-only. Document mode switching, paused playback, preview fidelity, recovery, and display ownership in `docs/agent-monitoring.md`, with affected product/ADR/OpenSpec links.\n\n## Dependencies\n- #31 and #32 provide session state and layout.\n- #30 must resolve the supported method/cadence before final device integration is accepted. Browser and simulator work can proceed while those measurements are pending.\n- #7 owns playback, generations, pause/resume, screen control, and recovery.\n- #8 owns shared HTTP/SSE and command semantics; #9 owns the app UI being extended.\n- #24 can later expose monitor controls through MCP. MCP and #17 are not prerequisites.\n\nAdditional shared prerequisites:\n- [divoom-app-upgrade#37](https://github.com/jimmie-potts/divoom-app-upgrade/issues/37)\n\n## Related monitoring work\nPersonal setup and end-to-end client/device acceptance belong to #34. This issue does not expand the existing MCP issues.\n\n## Verification approach\nVerify that the monitor view and shared label/acknowledgment operations continue through #31's owner cutover and rollback without creating local agent-state authority. Use browser tests with synthetic sessions and fake-device integration tests covering mode changes during upload, event bursts, attention during Media, explicit resume, screen-off/on, reconnect, restart, stale SSE, duplicate requests, and multiple clients. Prove one writer and no delayed upload from an obsolete mode.\nUse isolated runtime data and the deterministic fake device. For executable changes, retain focused red/green evidence and run Node 24 `npm ci` and `npm run check`. For HTTP, UI, or startup changes, install Playwright Chromium and run `npm run test:browser`. OpenSpec/workflow changes also require `npm run check:workflow` and `npm run test:workflow`. No real account or display is needed for source checks.\n\n## Delivery target\nSource-only. Physical qualification is a prerequisite for the final transport choice, not permission to operate the display during this issue. Installed-client and end-to-end physical acceptance remain separate.\n\n## Planning and delivery\nBefore implementation, prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, and applicable design using the local planning root `openspec/changes/`. GitHub owns acceptance and delivery status; the specification owns capability scenarios. Follow [the repository SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md), including isolated work, independent review, and current PR/main CI. This publication authorizes backlog records only.\n\nPlanned OpenSpec change: `gh-33-agent-monitor-controls`.\nLocal planning root: `openspec/changes/gh-33-agent-monitor-controls/`. Check active and archived changes for collisions before creating it.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Own the Pixoo integration operations used by both the existing app and Hub #6: monitor view/filter configuration, selected integration mode and effective participation. Shared user labels and notice acknowledgment still belong to the selected state owner.\n- [ ] Expose a finite protected versioned extension or existing compatible API for these operations through the controller boundary in #37. Preserve request/revision identity, replay/conflict behavior and sanitized snapshots; do not silently widen released shared device API v1.\n- [ ] Verify the shared frontend adapter with capability, current/pending mode, filter and conflict fixtures. Choosing Media is explicit non-participation in monitor presentation while collection continues; task events cannot take it over. The new frontend need not implement a general media-library/player UI for this goal.\n- [ ] Keep existing app controls and local MCP media delivery intact. This issue adds integration controls and preserves playback ownership; it does not absorb a later general device-control frontend.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/33",
+    "updatedAt": "2026-09-07T20:14:32Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 34,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Package and verify Codex and Claude monitoring on the Pixoo",
+    "body": "## Shared-hub ownership\nConsume setup/migration tooling from [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8). This issue owns Pixoo packaging/runbook integration and real-client/physical acceptance, without another installer. Preserve legacy Nanoleaf until explicit verified shared-input cutover. [codex-nanoleaf#30](https://github.com/jimmie-potts/codex-nanoleaf/issues/30) owns Nanoleaf acceptance.\n\n## Outcome\nInstall the monitor reversibly on the existing Windows/WSL setup and demonstrate trustworthy monitoring from local Codex Desktop, Codex CLI, and Claude Code to the Pixoo64.\n\n## Scope and source\nIntegrate the shared setup/removal tooling and deliver the Pixoo operator runbook, then record separately authorized installation, real-client, and physical acceptance. Preserve unrelated hooks and permission policies, and preserve legacy Nanoleaf until an explicitly selected, verified migration to shared input. Remote/cloud agents, ChatGPT connectivity, and MCP controls are outside this issue.\n\n## Acceptance criteria\n- [ ] Reuse shared reversible setup, inspection, and removal commands with a reviewable configuration diff, backups outside Git, and fixture-tested idempotence. Preserve unrelated hook entries and the Nanoleaf integration. Removal deletes only owned entries and does not replace unrelated configuration changed since installation.\n- [ ] Document version prerequisites, trust/approval steps required by each client, start/stop, credentials, host-to-WSL reachability, troubleshooting, and rollback in `docs/agent-monitoring.md`. Monitoring setup cannot weaken agent permissions, alter router/firewall settings, or silently move the workflow to another host.\n- [ ] Before installation or live testing, identify the owner, source revision and CI evidence, actual client versions, intended configuration changes, and rollback steps; obtain explicit authorization. Keep personal configuration, identifiers, payloads, credentials, and runtime state outside Git.\n- [ ] In each of Codex Desktop, Codex CLI, and Claude Code, verify a new turn, working state, supported question/approval distinctions, turn-ended notice, new-turn clearing, explicit monitor dismissal, interruption/end, and available subagent rollup against the capability matrix. Record unsupported signals and test gaps without inventing coverage. Required-client gaps remain open.\n- [ ] Verify two concurrent sessions in the same project stay separate. Exercise collector outage, failed hook delivery, duplicate/delayed events, five-minute uncertainty, and backend restart. Agent actions must proceed independently of the monitor, and an active collector must not make stale session observations look fresh.\n- [ ] Verify current state/labels/notices survive restart and diagnostic cleanup at 24 hours or 10,000 events. Use synthetic privacy canaries to confirm prompts, transcripts, tool arguments/output, auto-copied titles, and secrets never appear in transmitted monitoring payloads, persisted state, logs, or the dashboard.\n- [ ] Before physical testing, obtain the exact device IP and explicit permission for the test sequence and display replacement, identify the test owner, and record model/firmware and restoration limits. Use synthetic sessions and media for repeatable cases. Prior smoke-test or rendering-comparison consent is not blanket consent for this test.\n- [ ] Observe the selected method/cadence on the Pixoo: four-row layout, icons/short labels, attention total on every page, ten-second overflow paging, uncertainty, notices, native-size readability, and the exact preview. Record visible timing/loading interruptions separately from HTTP acknowledgment.\n- [ ] Verify Monitor pauses playlist advancement; Media remains selected during hook activity; returning from Monitor leaves playback paused until explicit resume/start. Exercise mode changes during uploads, display loss/reconnect, and screen-off/on without stale picture replay or competing writers.\n- [ ] Before cutover, verify existing Nanoleaf hooks still work with the monitor enabled, unavailable, and removed. After explicitly authorized cutover, verify shared input and rollback without duplicate ingestion. Disable/remove the monitor and confirm producer access is revoked, unrelated hooks remain, and ordinary app use continues. Restore known screen/brightness settings within the recorded limits.\n- [ ] Record dated, redacted pass/fail/blocked results in `docs/hardware-validation.md` and the operator guide, with source revision and exact tested client/device profile. Separate source/CI, installation, real-client, transport, and visible-device evidence. Keep missing required observations open.\n\n## Dependencies\n- #29, #31, #32, #30, and #33 must be delivered for their respective acceptance stages.\n- #4 supplies only the bounded protocol baseline. #7-#9 supply the underlying playback and app behavior.\n- #26 verifies interactive MCP control and is separate. #12 retains broader local playback/soak acceptance; [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns deferred remote browser acceptance. Completion here closes neither.\n- Future explicit installation/test authorization, named owner, available target clients, and configured Pixoo64.\n\nAdditional shared prerequisites:\n- [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8)\n\n## Related monitoring work\nThe source sequence is #29 → #31 → #32 → #33. #30 runs as an independent rendering experiment and gates the final physical transport choice in #33.\n\n## Verification approach\nTest setup/removal against disposable Codex/Claude configuration fixtures on supported host paths before touching personal settings. Use synthetic sessions and the simulator for real-client verification first, then the approved physical sequence. Reuse current source/CI evidence; resulting source/docs changes receive the applicable repository checks and reviews. Report defects through scoped source fixes.\n\n## Delivery target\nIncludes installation and its verification plus explicitly authorized physical-device verification. Source packaging can ship first, but the issue stays open until required live-client and physical acceptance is complete. Backlog publication grants no installation, configuration, session-launch, or device-operation authority.\n\n## Planning and delivery\nBefore implementation, prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, and applicable design using the local planning root `openspec/changes/`. GitHub owns acceptance and delivery status; the specification owns capability scenarios. Follow [the repository SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md), including isolated work, independent review, and current PR/main CI. This publication authorizes backlog records only.\n\nPlanned OpenSpec change: `gh-34-agent-monitoring-integration`.\nLocal planning root: `openspec/changes/gh-34-agent-monitoring-integration/`. Check active and archived changes for collisions before creating it.\n\n## Priority and access decision\nKeep this shared-monitoring work planned behind the local interactive Codex control path in #24/#25/#26. Monitoring, provider hooks, and migration are not prerequisites for those interactive controls.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Record a distinct Codex-first installed milestone using qualified Desktop/CLI and Windows/WSL routes. Retain the existing required Claude acceptance items separately; the Codex milestone does not falsely close unfinished issue criteria.\n- [ ] After Hub #6 is delivered and the concrete trial is authorized, operate labels/filters, notice acknowledgment and Monitor/Media integration controls from the shared frontend. Confirm the same task state reaches Pixoo and Nanoleaf, an unavailable consumer does not stall the other, and general device-control features are not part of this trial.\n- [ ] Record physical event-to-visible behavior separately from the source/transport numbers in [performance qualification](https://github.com/jimmie-potts/agent-device-hub/issues/30); preserve the established cadence/readability and restore limits.\n\n### Additional required dependencies\n- [Hub #6](https://github.com/jimmie-potts/agent-device-hub/issues/6) for the added shared-frontend acceptance stage; existing packaging and source rehearsal can proceed earlier.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/34",
+    "updatedAt": "2026-09-07T20:14:45Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 37,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Expose the Pixoo controller through the shared device API",
+    "body": "## Outcome\nAllow the hub to inspect and command Pixoo through the existing backend and serialized writer.\n\n## Scope\nImplement the shared controller contract over delivered [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8) services. No new protocol writer, media engine, agent reducer or generic raw-device endpoint.\n\n## Acceptance criteria\n- [ ] Publish configured identity/capabilities and desired/pending/last-sent/uncertain state using [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), with unavailable physical telemetry explicit in simulator mode.\n- [ ] Delegate all capability commands to existing player/library/device services, preserving request/revision identity, cancellation, generation rules and possible prior effects.\n- [ ] Expose a bounded authenticated machine-client API and resumable snapshots/events while preserving current browser/Origin validation and loopback defaults.\n- [ ] Map media, brightness, screen and later Monitor/Media operations only when supported. Unsupported capabilities stay unavailable; screen-on alone does not resume playback.\n- [ ] Prove multiple hub/browser/MCP clients share the same adapter and queue, cannot choose destination IPs/paths, and cannot replay obsolete or ambiguous writes.\n- [ ] Add a fake-backed compatibility suite usable by hub CI. Keep normal startup simulator-only; installation and physical tests remain separately authorized.\n\n## Dependencies\n- [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4)\n- [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8)\n\n## Verification\nShared contract fixtures, typed API/auth/replay/concurrency tests, npm run check and browser tests for affected API/startup behavior.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nBefore implementation, prepare the exact issue-linked OpenSpec change at openspec/changes/gh-37-hub-controller-api/. Verify the identity and applicable design requirements first.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Provide a stable protected controller boundary for Hub #5/#6; mode/filter integration extensions arrive through #33 without a dependency cycle. Advertise an extension only after its owning implementation is present.\n- [ ] Existing display/media capabilities may remain available to delivered local clients. The first shared frontend exposes integration-relevant controls; no general-control UI or new device feature is required here.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/37",
+    "updatedAt": "2026-09-07T20:14:38Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 38,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Adopt shared OpenSpec validation tooling",
+    "body": "## Outcome\nReplace the copied OpenSpec wrapper/validator implementation with a pinned shared package.\n\n## Scope\nConsume [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) while retaining Pixoo's scripts/command names as needed, specifications, workflow matrices and device boundaries.\n\n## Acceptance criteria\n- [ ] Pin the released artifact and preserve npm run openspec, check:workflow and test:workflow behavior from the caller's assigned worktree.\n- [ ] Remove duplicated implementation only after equivalent empty/valid/invalid/archive/configuration-isolation fixtures pass.\n- [ ] Preserve Node 24, all existing application/browser jobs and independent review/main-CI requirements.\n- [ ] Document upgrades and rollback without personal skill installation or changes to application behavior.\n\n## Dependencies\n- [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10)\n\n## Verification\nnpm ci, npm run check:workflow and npm run test:workflow on Ubuntu/Windows, plus npm run check for tooling changes.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nNo product specification delta applies to planning/bootstrap/development tooling. If implementation later changes a product contract, prepare its own issue-linked change first.\n\n## Priority and access decision\nDeferred behind local Codex control for Pixoo and Nanoleaf. Keep the existing per-repository OpenSpec checks in use. Tooling consolidation is not a prerequisite for controller contracts, local MCP source delivery, or local acceptance.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/38",
+    "updatedAt": "2026-09-07T04:00:54Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 43,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Verify authenticated phone and other-computer browser access",
+    "body": "## Outcome\nVerify remote browser control when the user chooses to enable it. This future acceptance work is split from #12 so local operation and physical playback can be accepted independently.\n\n## Acceptance criteria\n- [ ] Complete #11's authenticated HTTPS LAN access and identify the installation/test owner, source revision, intended phone and second-computer browsers, network path, and rollback before separately authorized setup.\n- [ ] Verify trusted HTTPS, sign-in/session behavior, unauthorized access rejection, and simultaneous authenticated phone/desktop browser state using #11's accepted security design. Preserve local-only defaults until explicitly enabled.\n- [ ] Test actual authenticated phone LAN access, close/lock the phone and observe continued playback. Record dated user-observed results and source revision in hardware-validation documentation.\n- [ ] Verify the second computer's supported browser controls, state refresh, disconnect/reconnect, and credential revocation without replaying stale commands or creating a second writer.\n- [ ] Obtain an exact configured device IP and permission for any physical/display-changing sequence. Separate simulator, browser, transport, and visual results; keep unavailable client/hardware observations open.\n- [ ] Disable remote access and verify local app/Codex operation remains available. Do not change router/firewall settings as an automatic setup step.\n\n## Dependencies\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/11 for authenticated HTTPS browser access.\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/12 for the local physical application baseline.\n\n## Priority and delivery target\nDeferred until the user selects mobile or another-computer access. Local Codex and local hardware acceptance do not depend on this issue. Includes separately authorized installation, real-client and physical acceptance; issue publication grants none of those actions.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/43",
+    "updatedAt": "2026-09-07T03:58:52Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "deferred"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 44,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Verify ChatGPT web MCP control and physical Pixoo acceptance",
+    "body": "## Outcome\nVerify the private ChatGPT web path after local Codex control. These remote-client checks were split from #26 and remain outstanding.\n\n## Scope and priority\nDeferred future goal. #26 owns local Codex setup and physical control. #12 owns local playback/recovery/soak; [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns authenticated remote browser acceptance. None waits on this issue.\n\n## Acceptance criteria\n- [ ] Identify the installation/test owner, source revision, actual Codex/ChatGPT clients, host/network path, target account access, and rollback steps before setup. Keep configuration and credentials outside Git; use WSL as the primary existing workflow and record reachability failures without silently switching hosts.\n- [ ] Read the local Codex baseline from #26 and record any changed source/client versions. Remote acceptance does not reopen or block already completed local acceptance.\n- [ ] In ChatGPT web, connect through the private route from #17 and exercise the same simulator operations. Verify unauthorized/disconnected access fails, tool errors are understandable, and reconnect does not replay old mutations. Record any plan, permission, or client limitation precisely.\n- [ ] Before physical calls, obtain the exact private device IP and explicit permission for the test sequence and display replacement. Record initial brightness/screen state and restoration limits. Use synthetic or separately authorized existing media within the supported profile.\n- [ ] From ChatGPT web, observe a read-only status/probe, approved brightness and screen changes, one still/short animation, and a short playlist with pause/resume/skip/stop. Record user-visible results separately from transport acknowledgments and estimated timing. Restore known brightness/screen settings; do not promise restoration of unknown prior artwork.\n- [ ] Verify browser and MCP callers share one backend/queue, screen-off pauses advancement, screen-on does not resume, and playback continues after the chat disconnects. A failed or stale request must not produce a later unexpected command.\n- [ ] Disable the integration and verify access is revoked while ordinary local app use remains available. Document service/tunnel startup and shutdown without changing router/firewall settings.\n- [ ] Record dated, redacted pass/fail/blocked results and source revision in the repository's hardware-validation documentation, linking this issue and the originating feature issues. Leave missing client or physical observations open; simulator and source success cannot close this acceptance issue.\n\n\n## Dependencies\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/17 for the private ChatGPT connection.\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/24 and https://github.com/jimmie-potts/divoom-app-upgrade/issues/25 for the shared delivered tools.\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/26 for the local Codex/client/device baseline, including opt-in physical application integration.\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/4 for the bounded protocol baseline.\n- Future explicit installation/test authorization, named owner, available clients/account permissions, and configured device.\n\n## Verification and delivery target\nUse #17/#24/#25 runbooks. Separate source/CI, account setup, actual client, transport, and physical/user evidence. No soak or crash-limit experiment is included. Reuse current CI evidence; source/docs fixes follow their scoped delivery checks. Missing ChatGPT access stays open here and does not block local Codex acceptance. Publication grants no installation, account changes, or device operation.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/44",
+    "updatedAt": "2026-09-07T03:58:53Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "blocked"
+      },
+      {
+        "name": "deferred"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 46,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Bound CI runtime and remove duplicate branch-push checks",
+    "body": "## Outcome and scope\n\nRetain full PR and main validation while removing redundant feature-branch push runs, cancelling obsolete revisions of the same PR, and bounding stalled jobs.\n\nChange `.github/workflows/ci.yml` only, plus a directly affected documentation correction if necessary. This issue does not consolidate jobs.\n\n## Acceptance criteria\n\n- [ ] Retain existing `pull_request` event coverage and set `push.branches: [main]`. Do not add PR path filters or draft exemptions.\n- [ ] Add the workflow-level concurrency block below. Different PRs and separate main pushes remain independent.\n- [ ] Set `timeout-minutes: 10` on `workflow`, `application`, and `browser`, covering every matrix expansion.\n- [ ] Preserve all five jobs: workflow checks on Ubuntu and Windows; application lint/typecheck/tests on both OSes; Simulator browser checks on Ubuntu.\n- [ ] Preserve all existing build behavior, commands, job IDs/names, action pins, caches, permissions, and failure semantics.\n- [ ] With Node 24, run `npm ci`, `npm run check:workflow`, and `npm run test:workflow`; inspect the effective five-job expansion. If application/tooling commands change, also run `npm run check`. Run browser checks locally when required by changed files or an identified evidence gap.\n- [ ] Both independent review axes, all five current-head PR jobs, guarded merge, and all five merged-revision main jobs pass.\n\n```yaml\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}\n  cancel-in-progress: true\n```\n\n## Dependencies and boundaries\n\nNo product dependency. This is the second primary CI-efficiency item in the agreed sequence; the order limits CI churn rather than imposing a technical dependency. Refresh current main and concurrent issue/PR ownership before implementation.\n\nKeep all application/browser coverage and OS combinations. Job consolidation remains a separately selected backlog item. No runner migration, browser caching, coverage reduction, or broad path exclusions.\n\n## Delivery and current blocker\n\nSource-only maintenance. Ticket creation does not start implementation. The Actions allowance is reported exhausted; local preparation is possible, but merge and closure require successful hosted validation. The temporary local-validation exception for the separate device delivery batch does not replace this ticket's hosted gates.\n\nFor later authorized implementation, use the canonical `$deliver-work` entry point for this exact issue, preserving the repository SDLC requirements where older documentation names retired skills. Verify installed skill availability, refresh main and issue/PR ownership, and use an isolated issue branch. Obtain independent Standards and Specification reviews against the same committed comparison. Require all current-head PR jobs, a guarded squash merge, and all merged-revision main jobs before closure. Missing hosted checks leave the PR open with its actual blocker. Do not repeatedly rerun blocked jobs or change billing, privacy, runners, coverage, or protections.\n\nThis changes CI scheduling and bounds only; no product specification delta is expected. Record that rationale in the PR. Preserve concurrent delivery work and refresh affected evidence if main advances.\n\n## Evidence\n\nUse existing Actions-aware workflow validation and inspect actual trigger/group/matrix configuration. Record same-PR grouping, different-PR isolation, independent main pushes, and absence of sibling matrix cancellation. Observe the real PR and natural revisions; if no overlapping revisions occur, state that live cancellation was not observed. Do not manufacture empty commits, deliberately hang a paid job, or add a permanent test suite that only mirrors YAML. Post-change usage comparisons must distinguish observed runner time from billing and need not delay closure for a statistically representative sample.\n\n## References\n\n[Workflow](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/.github/workflows/ci.yml) · [SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md)\n\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46",
+    "updatedAt": "2026-09-07T17:14:25Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "maintenance"
+      },
+      {
+        "name": "status:ready"
+      },
+      {
+        "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": true
+  },
+  {
+    "number": 47,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Consolidate workflow and application setup without dropping checks",
+    "body": "## Outcome and status\n\nOptional backlog work. Reduce repeated checkout, Node setup, and dependency installation while retaining every validation command on its existing operating system.\n\nDepends on #46 being delivered. After that, inspect representative current runs and select this item only if setup savings justify changing the job layout. Creation does not select or start implementation.\n\n## Scope and acceptance criteria\n\n- [ ] Move `check:workflow` and `test:workflow` into the application matrix job on each OS, reusing that job's checkout, Node setup, and `npm ci`.\n- [ ] Remove the separate workflow matrix and retain the browser job. Five expanded jobs become three; both Ubuntu and Windows still execute every former workflow and application check.\n- [ ] Preserve application/browser check names where possible, ordinary failure propagation, browser coverage, action pins, permissions, caches, runtime setup, and existing build behavior.\n- [ ] Preserve #46's PR/main triggers, PR-specific cancellation, and ten-minute bounds.\n- [ ] Before editing, map every old check name to its surviving job and inspect protections, rulesets, delivery scripts, and documentation that consume job names. Define the transition validation before deleting jobs.\n- [ ] Any required-check setting change has separate authorization and verified access. If the transition cannot preserve required gates, leave this ticket pending and retain #46's completed improvements. The candidate cannot waive its own approval gates.\n- [ ] Every former validation command succeeds on its existing OS in the surviving jobs. A command skipped after an earlier failure is not successful validation.\n- [ ] Canonical local checks, both independent review axes, every applicable current-head PR job, guarded squash merge, and every merged-revision main job pass before closure.\n\n## Validation and delivery\n\nRun `npm run check` and the existing browser gate with documented prerequisites. Inspect the effective three-job expansion and command placement. Retain the mapping and actual per-OS command evidence in the PR; update directly affected job-name consumers in the same scoped change. Do not introduce an aggregate test framework or reduce coverage.\n\nFor later selected delivery, use the canonical `$deliver-work` entry point for this exact issue, the current repository SDLC, and an isolated branch from refreshed main. Obtain independent Standards and Specification reviews against the same committed comparison. Preserve other issue owners and reacquire affected evidence when main or the candidate changes.\n\nSource-only tooling; record why no product spec delta applies. Hosted validation remains required. If Actions cannot execute, local checks and review can prepare a PR, but cannot establish merge eligibility or ticket completion. No account changes or runner migration are included.\n\n## References\n\n[Prerequisite #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46) · [Workflow](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/.github/workflows/ci.yml) · [SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md)\n\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/47",
+    "updatedAt": "2026-09-07T17:16:03Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "maintenance"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "deferred"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  }
+]

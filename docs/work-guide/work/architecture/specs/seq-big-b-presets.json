@@ -1,0 +1,184 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "Big B presets, partial results and manual handoff",
+  "quality_profile": "showcase",
+  "column_fit": "spread",
+  "viewBox": [
+   1070,
+   870
+  ]
+ },
+ "participants": [
+  {
+   "id": "user",
+   "type": "external",
+   "label": "User",
+   "sublabel": "Big B · vendor app"
+  },
+  {
+   "id": "dispatcher",
+   "type": "backend",
+   "label": "Windows dispatcher",
+   "sublabel": "binding + feedback"
+  },
+  {
+   "id": "hub",
+   "type": "security",
+   "label": "Hub preset service",
+   "sublabel": "authoritative selection"
+  },
+  {
+   "id": "nanoleaf",
+   "type": "backend",
+   "label": "Nanoleaf owner",
+   "sublabel": "Work/Quiet/Free"
+  },
+  {
+   "id": "pixoo",
+   "type": "backend",
+   "label": "Pixoo owner",
+   "sublabel": "Monitor/Media"
+  }
+ ],
+ "segments": [
+  {
+   "from": 178,
+   "label": "Fresh press, one transition",
+   "to": 540
+  },
+  {
+   "from": 544,
+   "label": "Manual change stays until the next explicit preset",
+   "to": 686
+  },
+  {
+   "from": 690,
+   "label": "No replay",
+   "to": 788
+  }
+ ],
+ "messages": [
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 210,
+   "label": "fresh Big B press",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "hub",
+   "y": 254,
+   "label": "request next preset (Work → Free → Quiet → Work) with known revision",
+   "variant": "emphasis"
+  },
+  {
+   "from": "hub",
+   "to": "nanoleaf",
+   "y": 298,
+   "label": "supported native command + requestId/revision/generation",
+   "variant": "security"
+  },
+  {
+   "from": "hub",
+   "to": "pixoo",
+   "y": 342,
+   "label": "supported native command + request_id",
+   "variant": "security"
+  },
+  {
+   "from": "nanoleaf",
+   "to": "hub",
+   "y": 386,
+   "label": "queued / sent",
+   "variant": "return"
+  },
+  {
+   "from": "pixoo",
+   "to": "hub",
+   "y": 430,
+   "label": "failed: offline (independent queue)",
+   "variant": "return"
+  },
+  {
+   "from": "hub",
+   "to": "dispatcher",
+   "y": 474,
+   "label": "selected preset + per-device results (partial)",
+   "variant": "return"
+  },
+  {
+   "from": "dispatcher",
+   "to": "user",
+   "y": 518,
+   "label": "visible feedback: requested, sent, failed, uncertain",
+   "variant": "return",
+   "note": "transport outcomes are not optical proof"
+  },
+  {
+   "from": "user",
+   "to": "nanoleaf",
+   "y": 576,
+   "label": "manual scene change in the vendor app",
+   "variant": "dashed"
+  },
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 620,
+   "label": "next fresh Big B press",
+   "variant": "emphasis"
+  },
+  {
+   "from": "hub",
+   "to": "nanoleaf",
+   "y": 664,
+   "label": "supported ownership handoff, then preset action",
+   "variant": "security"
+  },
+  {
+   "from": "dispatcher",
+   "to": "hub",
+   "y": 722,
+   "label": "startup · reconnect · profile selection → no presses replayed, no device commands",
+   "variant": "dashed"
+  },
+  {
+   "from": "hub",
+   "to": "dispatcher",
+   "y": 766,
+   "label": "hub unavailable → reported; Wispr and mouse keep working",
+   "variant": "return"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Authoritative selection",
+   "items": [
+    "The hub owns preset selection and revision; clients keep no diverging counter",
+    "Superseded requests retire through existing generation rules"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Independent results",
+   "items": [
+    "One offline device cannot stall others",
+    "A partial operation is never shown as complete",
+    "Native modes and restoration limits are preserved"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Prerequisites",
+   "items": [
+    "H67 needs H63, H32, H31, H5, Nanoleaf #49 and Pixoo #33",
+    "H68 needs H65 and H67; H69 also needs H8",
+    "Manual dispatch does not need automation engine H45; Music H71 follows H40, H68 and H36"
+   ]
+  }
+ ]
+}

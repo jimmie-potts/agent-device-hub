@@ -1,0 +1,116 @@
+{
+  "reviewedAt": "2026-09-08T04:48:37.431441+00:00",
+  "sourceRevisions": {
+    "agent-device-hub": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+    "codex-nanoleaf": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+    "divoom-app-upgrade": "e777fe4d244a491f45e40aea77bcb7a0f767e119"
+  },
+  "files": [
+    {
+      "repo": "agent-device-hub",
+      "revision": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+      "path": "docs/architecture.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a7b1aa0476c2f3e0561b5d53dbc8395353180d60/docs/architecture.md",
+      "sha256": "a1dc19d2d6b068c13a7300e6cfc61d6cb6e71b5223b6d5e33ffe076ed47c8ee3"
+    },
+    {
+      "repo": "agent-device-hub",
+      "revision": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+      "path": "docs/controller-contract.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a7b1aa0476c2f3e0561b5d53dbc8395353180d60/docs/controller-contract.md",
+      "sha256": "3cfa5bfdd74ebc5399304785b119ff1006739296688226bfbcb03e0ff92b374c"
+    },
+    {
+      "repo": "agent-device-hub",
+      "revision": "a7b1aa0476c2f3e0561b5d53dbc8395353180d60",
+      "path": "packages/mcp/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a7b1aa0476c2f3e0561b5d53dbc8395353180d60/packages/mcp/README.md",
+      "sha256": "fe5f59ea69708b18435a60a279d5a10fbde9239a76efd48046fc6fbc84946b6a"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "docs/controller-api.md",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/docs/controller-api.md",
+      "sha256": "7281445607f7b62dbd0990bdb5df4b585a9b429e069023e664bb65cdd1ec13cd"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "docs/local-mcp.md",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/docs/local-mcp.md",
+      "sha256": "fa5f35bf6ffc298630928746048d25e05809e3f746175875927f139deb4a5e8e"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "docs/hub-integration.md",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/docs/hub-integration.md",
+      "sha256": "ca4a6a878cef8d8488ef13dec4824f4405385a3cfc08a2897f98a533df242982"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "mcp/src/server.ts",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/mcp/src/server.ts",
+      "sha256": "70e6c85dc98d2ad3abe47b7ccd7ac05c08e79701a866d15372370cb02d2ac08d"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "mcp/src/transport.ts",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/mcp/src/transport.ts",
+      "sha256": "4d0b1fb601a6f5c355032d117e6de412e5386fd6419d871194fa87cd1af8f22f"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "bridge/controller_server.py",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/bridge/controller_server.py",
+      "sha256": "fc03adc9b119c18a687ca584f343eb2f739e0c17bb314060cbae26b7ec7483d5"
+    },
+    {
+      "repo": "codex-nanoleaf",
+      "revision": "3f2f33ab1d19db75b613943f7948ff44c7bc6ddc",
+      "path": "bridge/controller_state.py",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/3f2f33ab1d19db75b613943f7948ff44c7bc6ddc/bridge/controller_state.py",
+      "sha256": "ea6d8a1c627d83f5a901eebe1e72f0e54d6baa98b331d493a535418fff4cb234"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "revision": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
+      "path": "docs/local-mcp.md",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/e777fe4d244a491f45e40aea77bcb7a0f767e119/docs/local-mcp.md",
+      "sha256": "dec26180ee94fecd6262202dbdd5ae46af1619b235fb12e710caf3cc8d95acfa"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "revision": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
+      "path": "docs/playback.md",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/e777fe4d244a491f45e40aea77bcb7a0f767e119/docs/playback.md",
+      "sha256": "6047eb85ab4d540d8b05d575a15d225341b902a1410c3e2bf1d1edde010bf303"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "revision": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
+      "path": "docs/hub-integration.md",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/e777fe4d244a491f45e40aea77bcb7a0f767e119/docs/hub-integration.md",
+      "sha256": "711d0c47a919a5b0a0aaf6ae40e9323bb6b0b185ff9c28657df900098aed92a5"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "revision": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
+      "path": "apps/server/src/mcp.ts",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/e777fe4d244a491f45e40aea77bcb7a0f767e119/apps/server/src/mcp.ts",
+      "sha256": "6febb89813b1ad8928c7a8fd826ec4650b12a27603b62d2006310b0f9bd0f121"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "revision": "e777fe4d244a491f45e40aea77bcb7a0f767e119",
+      "path": "apps/server/src/mcp-tools.ts",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/e777fe4d244a491f45e40aea77bcb7a0f767e119/apps/server/src/mcp-tools.ts",
+      "sha256": "184bdf79eb68cfaab8a647e1fd364d7f728031110359755284daef431f04bfaa"
+    }
+  ],
+  "planningSource": "Existing issue snapshots in work/backlogs; no hardware investigation or product execution"
+}

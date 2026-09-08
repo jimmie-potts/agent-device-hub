@@ -1,0 +1,21 @@
+#11 [OPEN] Provide explicit authenticated HTTPS LAN access
+#12 [OPEN] Validate local physical playback, recovery, and soak reliability
+#13 [OPEN] Add timezone-aware playlist schedules
+#14 [OPEN] Validate Docker and ARM64 always-on deployment
+#15 [OPEN] Plan playlist portability and UI convenience features
+#16 [OPEN] Investigate supported transition improvements
+#17 [OPEN] Connect ChatGPT to the local MCP server through a private tunnel
+#18 [OPEN] Assess authorized cloud-gallery import
+#26 [CLOSED] Verify local Codex control on the Pixoo
+#29 [OPEN] Adopt qualified shared monitoring contracts in Pixoo
+#30 [OPEN] Compare Pixoo dashboard frame and text update methods
+#31 [OPEN] Embed the shared agent-state service in the Pixoo backend
+#32 [OPEN] Render the 64×64 agent monitoring dashboard and preview
+#33 [OPEN] Add monitor controls and shared Monitor/Media display ownership
+#34 [OPEN] Package and verify Codex and Claude monitoring on the Pixoo
+#37 [OPEN] Expose the Pixoo controller through the shared device API
+#38 [OPEN] Adopt shared OpenSpec validation tooling
+#43 [OPEN] Verify authenticated phone and other-computer browser access
+#44 [OPEN] Verify ChatGPT web MCP control and physical Pixoo acceptance
+#46 [OPEN] Bound CI runtime and remove duplicate branch-push checks
+#47 [OPEN] Consolidate workflow and application setup without dropping checks

@@ -1,0 +1,195 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "Independent Wispr and Codex input controls",
+  "quality_profile": "showcase",
+  "column_fit": "spread",
+  "viewBox": [
+   1070,
+   928
+  ]
+ },
+ "participants": [
+  {
+   "id": "user",
+   "type": "external",
+   "label": "User",
+   "sublabel": "Big A · mapped mouse"
+  },
+  {
+   "id": "dispatcher",
+   "type": "backend",
+   "label": "Windows dispatcher",
+   "sublabel": "local, no hub"
+  },
+  {
+   "id": "profile",
+   "type": "database",
+   "label": "Control profile",
+   "sublabel": "bindings + app scope"
+  },
+  {
+   "id": "wispr",
+   "type": "external",
+   "label": "Wispr Flow",
+   "sublabel": "own requirements"
+  },
+  {
+   "id": "app",
+   "type": "frontend",
+   "label": "Focused app",
+   "sublabel": "Codex or other"
+  }
+ ],
+ "segments": [
+  {
+   "from": 178,
+   "label": "Profile selection",
+   "to": 320
+  },
+  {
+   "from": 324,
+   "label": "Big A: dictation",
+   "to": 554
+  },
+  {
+   "from": 558,
+   "label": "Mouse: one Codex action",
+   "to": 700
+  },
+  {
+   "from": 704,
+   "label": "Boundaries",
+   "to": 846
+  }
+ ],
+ "messages": [
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 210,
+   "label": "select control profile",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "profile",
+   "y": 254,
+   "label": "load mappings",
+   "variant": "default"
+  },
+  {
+   "from": "profile",
+   "to": "dispatcher",
+   "y": 298,
+   "label": "bindings (zero device commands)",
+   "variant": "return"
+  },
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 356,
+   "label": "Big A press (hold)",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "wispr",
+   "y": 400,
+   "label": "invoke qualified dictation binding",
+   "variant": "emphasis"
+  },
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 444,
+   "label": "Big A release",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "wispr",
+   "y": 488,
+   "label": "release binding",
+   "variant": "emphasis"
+  },
+  {
+   "from": "wispr",
+   "to": "app",
+   "y": 532,
+   "label": "insert text — no added send action",
+   "variant": "return"
+  },
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 590,
+   "label": "fresh mapped mouse press",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "profile",
+   "y": 634,
+   "label": "resolve app scope + action",
+   "variant": "default"
+  },
+  {
+   "from": "dispatcher",
+   "to": "app",
+   "y": 678,
+   "label": "next attention task · command menu · previous task · next task",
+   "variant": "emphasis",
+   "note": "exactly one action per deliberate press"
+  },
+  {
+   "from": "dispatcher",
+   "to": "app",
+   "y": 736,
+   "label": "outside Codex → ordinary mouse behavior passes through",
+   "variant": "dashed"
+  },
+  {
+   "from": "dispatcher",
+   "to": "profile",
+   "y": 780,
+   "label": "held / repeated / stale input → no duplicate, no replay",
+   "variant": "dashed"
+  },
+  {
+   "from": "dispatcher",
+   "to": "user",
+   "y": 824,
+   "label": "Big B unavailable until its preset service exists; presses are not buffered",
+   "variant": "return"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "cyan",
+   "title": "Independent path",
+   "items": [
+    "Ships without the hub, shared monitoring, general controls or Music",
+    "Wispr keeps its own service requirements"
+   ]
+  },
+  {
+   "dot": "violet",
+   "title": "Vocabulary",
+   "items": [
+    "Control profile: controls, gestures and app scope mapped to actions",
+    "Button binding: one assignment",
+    "Desk preset: configured actions on participating devices (not used here)"
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Unverified",
+   "items": [
+    "Qualification (H64) and hardware support are not established; Retro R8 is only a candidate mouse",
+    "The first editor (H70) excludes scripts, shell execution, raw device commands and macros"
+   ]
+  }
+ ]
+}

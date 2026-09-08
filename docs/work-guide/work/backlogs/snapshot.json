@@ -1,0 +1,104 @@
+{
+  "startedAt": "2026-09-08T04:20:43.123505+00:00",
+  "refreshedAt": "2026-09-08T04:20:49.479964+00:00",
+  "staticSnapshot": true,
+  "repositories": {
+    "agent-device-hub": {
+      "openIssues": 60,
+      "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
+      "issuePageSizesIncludingPRs": [
+        61
+      ],
+      "openPRs": 1,
+      "prPageSizes": [
+        1
+      ],
+      "paginationComplete": true,
+      "directReads": [
+        {
+          "number": 50,
+          "state": "OPEN",
+          "commentPages": [
+            0
+          ]
+        },
+        {
+          "number": 4,
+          "state": "CLOSED",
+          "purpose": "Completed contract/MCP baseline"
+        },
+        {
+          "number": 7,
+          "state": "CLOSED",
+          "purpose": "Completed contract/MCP baseline"
+        }
+      ]
+    },
+    "codex-nanoleaf": {
+      "openIssues": 26,
+      "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
+      "issuePageSizesIncludingPRs": [
+        26
+      ],
+      "openPRs": 0,
+      "prPageSizes": [
+        0
+      ],
+      "paginationComplete": true,
+      "directReads": [
+        {
+          "number": 34,
+          "state": "OPEN",
+          "commentPages": [
+            6
+          ]
+        },
+        {
+          "number": 37,
+          "state": "OPEN",
+          "commentPages": [
+            0
+          ]
+        }
+      ]
+    },
+    "divoom-app-upgrade": {
+      "openIssues": 20,
+      "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
+      "issuePageSizesIncludingPRs": [
+        20
+      ],
+      "openPRs": 0,
+      "prPageSizes": [
+        0
+      ],
+      "paginationComplete": true,
+      "directReads": [
+        {
+          "number": 12,
+          "state": "OPEN",
+          "commentPages": [
+            0
+          ]
+        },
+        {
+          "number": 26,
+          "state": "CLOSED",
+          "commentPages": [
+            5
+          ]
+        },
+        {
+          "number": 46,
+          "state": "OPEN",
+          "commentPages": [
+            0
+          ]
+        }
+      ]
+    }
+  },
+  "openIssues": 106,
+  "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
+  "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
+}
