@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-09-08T04:20:43.123505+00:00",
-  "refreshedAt": "2026-09-08T04:20:49.479964+00:00",
+  "startedAt": "2026-09-08T21:22:46.833299+00:00",
+  "refreshedAt": "2026-09-08T21:23:05.804149+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 60,
+      "openIssues": 61,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        62
       ],
       "openPRs": 1,
       "prPageSizes": [
@@ -35,10 +35,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 26,
+      "openIssues": 25,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        26
+        25
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -48,9 +48,9 @@
       "directReads": [
         {
           "number": 34,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            6
+            8
           ]
         },
         {
@@ -63,10 +63,10 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 20,
+      "openIssues": 21,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        21
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -98,7 +98,7 @@
       ]
     }
   },
-  "openIssues": 106,
+  "openIssues": 107,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }

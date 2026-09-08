@@ -1,5 +1,29 @@
 # Guide maintenance history
 
+## 2026-09-08: Hub #2 lifecycle contract candidate
+
+Coordinator: the Hub #2 prerequisite-batch root. Update the shared Codex section
+for the source candidate, refresh live backlogs and reconcile primary/roadmap
+coverage. Add Hub #73 as reserved guide repair and Pixoo #52 as the separately
+owned GIF handoff defect. Reflect Nanoleaf #34's verified completed acceptance
+and retain its scoped CI exception. Current Hub/Pixoo main reruns passed; every
+new candidate still needs its own checks. Product history retains its explicitly
+dated earlier snapshot; no future merge or closure is predicted.
+
+The roadmap changes issue membership and one node label. Node positions, edges,
+connector routing, the eight architecture definitions and companion viewers
+remain unchanged. The contract introduces no runtime ownership or command-flow
+change requiring new architecture diagrams. The pinned Hub #73 revision
+`7464b9e669c7150f780b334a3429c5f30a89b438` and HTML SHA-256
+`8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`
+remain the evaluation input; regenerated guide data is not a replacement.
+
+The build, maintenance test and browser check pass for 12 guides, 107 primary
+open issues, 38 roadmap nodes and eight companion viewers. Chromium 149.0.7827.55
+checked widths 320-1440, navigation, filtering, zoom, viewers and print/PDF state
+restoration. Revision/hash and visual-review evidence belong in the PR receipt.
+Human UI approval and post-merge status reconciliation remain delivery gates.
+
 ## 2026-09-08: repository adoption candidate
 
 Repository: agent-device-hub. Move the existing three-project guide, generator,

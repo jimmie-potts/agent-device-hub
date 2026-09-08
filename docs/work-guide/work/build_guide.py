@@ -28,20 +28,20 @@ for key, (repo, _) in REPOS.items():
 
 GUIDES = [
     dict(id='local-acceptance', short='Local acceptance', title='Finish local Codex control and physical acceptance', phase='Local release',
-         intro='Pixoo local Codex acceptance is complete. Finish the remaining Nanoleaf installation and physical checks, plus the separate Pixoo reliability trial.',
+         intro='Pixoo and Nanoleaf local Codex acceptance are complete. The separate Pixoo reliability trial remains open.',
          headers=['Work', 'Issues', 'Remaining work'], rows=[
-             ['Local Codex → Nanoleaf', '[[N34]]', 'Native Windows and WSL Codex checks against synthetic Windows controllers now pass. Installation preflight, the live upgrade and physical acceptance remain open.'],
+             ['Completed / Local Codex → Nanoleaf', '[[N34]]', 'Completed through Nanoleaf PR #50. The closing receipt records installation, actual Windows/WSL routes, physical observations and restoration under its scoped hosted-CI exception.'],
              ['Completed / Local Codex → Pixoo', '[[P26]]', 'Completed baseline, excluded from remaining-work counts. Reviewed delivery through Pixoo PR #50 records installed WSL-client checks, physical controls, restoration and credential revocation.'],
              ['Pixoo reliability', '[[P12]]', 'Physical playback, restart/recovery, and an approved soak trial.'],
          ], notes=[
-             'The <a href="https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5579029843" target="_blank" rel="noopener noreferrer">September 8 Nanoleaf checkpoint</a> resolves the native Windows client startup gate. It records synthetic-controller evidence only; no live upgrade or physical command had run. Keep remaining acceptance with its existing coordinator.',
+             'The <a href="https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5580156676" target="_blank" rel="noopener noreferrer">September 8 Nanoleaf closing receipt</a> records completed local acceptance and restoration. Its hosted-CI exception applies only to that delivery; shared monitoring remains separate.',
              'The <a href="https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5578479319" target="_blank" rel="noopener noreferrer">Pixoo closing evidence</a> records restored and visually confirmed brightness and screen power. Unknown prior artwork was not restored. Its local PR/main validation exception does not apply automatically to other work.',
              '[[P12]] has broader reliability criteria. It can proceed separately from local MCP acceptance and does not require remote browser access.'
          ]),
     dict(id='shared-codex', short='Shared Codex integration', title='Deliver shared Codex monitoring and integration controls', phase='Main development path',
          intro='[[H32]] is the existing guide for this milestone. This is the main cross-project development sequence.',
          headers=['Stage', 'Owning issues', 'Result'], rows=[
-             ['01 / Qualification and budgets', '[[H2]] [[H30]]', 'Agree event semantics and measured performance limits before runtime designs settle. This is the early stage of Hub #30.'],
+             ['01 / Qualification and budgets', '[[H2]] [[H30]]', 'Hub #2 is implementing the qualified lifecycle contract and portable fixtures. Deliver it before measuring and freezing Hub #30 early budgets; neither candidate source nor documented provider support proves installed-client compatibility.'],
              ['02 / Shared state and contracts', '[[H3]] [[P29]]', 'Implement one shared interpretation of agent activity, attention, notices, and freshness.'],
              ['03 / First host and controller API', '[[P31]] [[P37]]', 'Embed shared state in Pixoo and expose its existing controller to the hub. Pixoo #37 can proceed independently of the state implementation.'],
              ['04 / Consumers and integration controls', '[[P32]] [[P33]] [[N29]] [[N49]]', 'Build the Pixoo dashboard and Monitor/Media controls, plus Nanoleaf shared input and protected settings/assignments.'],
@@ -127,6 +127,7 @@ GUIDES = [
              ['Scheduling', '[[P13]]', 'Timezone-aware playlist schedules.'],
              ['Portability and convenience', '[[P15]]', 'Playlist portability and UI convenience planning.'],
              ['Transitions', '[[P16]]', 'Qualification of supported transition improvements.'],
+             ['GIF handoff defect', '[[P52]]', 'Investigate reproduced rapid extra flashes before a still. Explicitly nonblocking for Pixoo #12; physical work needs separate authorization.'],
              ['Cloud-gallery import', '[[P18]]', 'Authorized cloud-gallery import assessment.'],
          ], notes=['Select these individually after reliability acceptance. Transition and gallery issues need feasibility findings before committing to feature implementation.']),
     dict(id='controls-music', short='Controls + music', title='Expand into general device controls and Apple Music', phase='After Codex acceptance',
@@ -164,7 +165,8 @@ GUIDES = [
              ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
-         ], notes=['At the time of review, the CI issues recorded exhausted hosted Actions allowance as a delivery blocker. Their required hosted validation remained outstanding. Shared tooling consolidation is deferred and does not block product work.']),
+             ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
+         ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
 # Stable guide IDs own coverage; guide order has no effect on issue assignments.

@@ -109,7 +109,10 @@ controllers and the React dashboard; keep the Nanoleaf worker in Python.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
-Implemented shared packages are packages/contracts and packages/mcp. The remaining
+Implemented shared packages are packages/contracts, packages/mcp and the pure
+packages/lifecycle-contracts validators. The [lifecycle contract](agent-lifecycle-contract.md)
+and [provider matrix](provider-qualification.md) establish metadata and source evidence,
+without claiming installed producer qualification. The remaining
 proposed layout is packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
 apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
