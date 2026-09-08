@@ -16,10 +16,13 @@ the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
 
 The planned [PC lighting controller](controllers/pc-lighting/README.md) covers
-Corsair RAM and supported H150i cooler lighting, plus Lian Li Strimer lighting
-where compatible. It preserves iCUE and L-Connect 3. Its directory contains a
-guide only; qualification, adapters, automatic status and physical acceptance
-remain separate future issues. Strimer does not block Corsair delivery.
+Corsair RAM and supported H150i cooler lighting, plus optional Lian Li Strimer and
+Varmilo VA108M-RGB lighting where compatible. It preserves iCUE, L-Connect 3 and
+normal keyboard behavior. Varmilo starts with whole-keyboard agent status through
+an existing supported interface; if none qualifies, integration stays deferred.
+The directory contains a guide only. Qualification, adapters, automatic status
+and physical acceptance remain future issues with separate gates for each target.
+Strimer and Varmilo do not block Corsair delivery; Varmilo does not block Strimer.
 
 Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [the roadmap](docs/roadmap.md) for the linked delivery sequence, and

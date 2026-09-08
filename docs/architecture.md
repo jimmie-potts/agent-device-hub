@@ -204,19 +204,19 @@ those choices before implementation readiness. Both controllers preserve shared
 privacy and evidence semantics; neither infers success, read status or fresh
 connectivity from absent observations.
 
-## PC tower lighting delivery
+## PC and desk lighting delivery
 
 [The PC lighting documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) records the accepted scope:
 Corsair Dominator Platinum RGB DDR5 and supported H150i ELITE LCD XT lighting,
-plus Lian Li Strimer lighting where compatible. Preserve iCUE, L-Connect 3 and
-the existing lighting setup. Qualification may use the existing MSI software
-as a Strimer synchronization route; wider motherboard/GPU lighting, cooler LCD
+plus Lian Li Strimer lighting and the Varmilo VA108M-RGB keyboard where compatible.
+Preserve iCUE, L-Connect 3 and the existing lighting and keyboard setup. Qualification
+may use the existing MSI software as a Strimer synchronization route; wider motherboard/GPU lighting, cooler LCD
 content and fan/pump control are outside this feature.
 
-"PC tower" is a user-facing group of lighting devices. The existing controller
-contract owns device identity and zone meaning; a tower grouping does not create
-another physical writer or a new wire identity. Keep one designated writer per
-target and one owner for a Strimer controller's cable outputs. Qualify vendor
+"PC lighting" groups tower devices and an optional keyboard. The existing controller
+contract owns device identity and zone meaning; the group creates no new wire
+identity. The keyboard is a separate configured lighting target with no input
+handling responsibility. Keep one designated writer per target and one owner for a Strimer controller's cable outputs. Qualify vendor
 handoff and restoration before enabling a target. Missing support stays explicit.
 
 The proposed controller belongs in controllers/pc-lighting with a Windows-local
@@ -227,15 +227,27 @@ sync handoff. OpenRGB remains research, with no automatic dependency, migration
 or competing writer. Existing Home Assistant/MQTT delegation is a qualification
 comparison; broader #11 research is not a prerequisite.
 
+Varmilo qualification is limited to existing supported vendor or maintained
+interfaces. The user selected whole-keyboard shared status first; per-key regions
+and separate sessions mapped to keys are deferred. Vendor software availability
+and generic USB IDs do not establish a supported lighting API. If none qualifies,
+record the limitation and defer the adapter. Do not introduce custom protocol
+research, simulated key shortcuts or firmware replacement. Preserve normal typing,
+key mappings, macros and lock indicators, and never capture keystrokes.
+
 Automatic status consumes the shared core initially hosted in Pixoo. It does not
 add a collector or wait for general controls, the dashboard or standalone hosting.
-Strimer has separate qualification, adapter and physical acceptance work, so its
-absence cannot block a verified Corsair release. General UI/MCP controls follow
+Strimer and Varmilo each have separate qualification, adapter and physical acceptance
+work, so neither blocks a verified Corsair release. Keyboard support also cannot
+block Strimer. Each optional target requires its own adapter before joining status
+or controls; closing a qualification issue with an unsupported result does not
+satisfy that readiness gate. General UI/MCP controls follow
 #31 and use the same owning services. Expose only established capabilities;
 arbitrary RGB/channel operations need explicit contract or typed-extension work.
 
-The [PC lighting guide](../controllers/pc-lighting/README.md) records screenshot
-and historical evidence separately from unverified SDK/physical capabilities.
+The [PC lighting guide](../controllers/pc-lighting/README.md) distinguishes screenshots,
+historical logs, user-supplied identity and inventory from unverified API/physical
+capabilities.
 Its linked issues own readiness, status policy, manual takeover and restoration.
 Source delivery adds no installed service or device operation. Full live lifecycle
 acceptance uses #8, and each physical target keeps its own evidence and permission

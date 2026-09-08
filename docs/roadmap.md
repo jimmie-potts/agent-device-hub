@@ -56,11 +56,13 @@ moving code. They do not block current Pixoo/Nanoleaf delivery or authorize
 installed-runtime changes. New device acceptance remains in #21/#22; #9 retains
 its existing Pixoo/Nanoleaf scope.
 
-## PC tower lighting
+## PC and desk lighting
 
 [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) owns documentation/backlog initialization only. The
 [PC lighting guide](../controllers/pc-lighting/README.md) records the accepted
-Corsair scope, optional Strimer route and preserved vendor applications. The
+Corsair scope, optional Strimer and Varmilo routes, and preserved vendor applications
+and keyboard behavior. Varmilo starts with whole-keyboard status through an existing
+supported interface; otherwise integration stays deferred. The
 following issues are skeletons to refine before implementation; GitHub owns
 their current readiness and acceptance.
 
@@ -74,10 +76,16 @@ their current readiness and acceptance.
 | [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) | Add later shared UI/MCP controls. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
 | [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57) | Install and verify Corsair status and restoration. | [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [#58](https://github.com/jimmie-potts/agent-device-hub/issues/58) | Install and verify Strimer handoff and restoration. | [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) | Qualify supported Varmilo VA108M-RGB lighting interfaces. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61) | Add the optional qualified Varmilo lighting adapter. | [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#62](https://github.com/jimmie-potts/agent-device-hub/issues/62) | Install and verify keyboard status, typing and restoration. | [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 
 Strimer participation in shared status or controls additionally requires
 [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54). This conditional branch does not block Corsair source
-status or [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57). General controls follow the feature and frontend
+status or [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57). Keyboard participation separately requires
+[#61](https://github.com/jimmie-potts/agent-device-hub/issues/61); it cannot block Corsair or Strimer delivery.
+An unsupported result may close [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), but the keyboard adapter
+and acceptance remain deferred. General controls follow the feature and frontend
 work selected by #31; refine those additional implementation dependencies before
 [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) is ready. Existing Codex-first work retains its priority.
 
@@ -85,7 +93,10 @@ The acceptance issues require separate installation and lighting-sequence
 authorization, confirmed SDK/USB identities or network targets as applicable,
 vendor ownership handoff and visible restoration evidence. Source dependency
 closure grants none of those permissions. Neither firmware changes nor replacing
-iCUE/L-Connect is part of this plan. No shared package, runtime or service is
+iCUE/L-Connect is part of this plan. Keyboard acceptance also verifies ordinary typing,
+key mappings and lock indicators without recording input. Per-key status, custom USB
+protocol research and simulated key control are outside the accepted scope.
+No shared package, runtime or service is
 introduced by the documentation bootstrap.
 
 ## Device adoption

@@ -1,4 +1,4 @@
-# PC lighting controller
+# PC and desk lighting controller
 
 Status: Documentation only. No package, Windows adapter, service or lighting
 control is implemented or installed here. [Documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) owns
@@ -7,9 +7,17 @@ this bootstrap; the issues below are skeletons to refine before implementation.
 ## Accepted scope
 
 Integrate Corsair Dominator Platinum RGB DDR5 memory and supported H150i ELITE
-LCD XT lighting, plus Lian Li Strimer lighting where compatible. Preserve iCUE,
-L-Connect 3 and the existing lighting setup. A verified Corsair release can
-proceed while Strimer qualification or implementation remains unresolved.
+LCD XT lighting, plus Lian Li Strimer lighting and the Varmilo VA108M-RGB keyboard
+where compatible. Preserve iCUE, L-Connect 3 and the existing lighting and keyboard
+setup. Strimer and keyboard support each have separate qualification and acceptance
+gates; neither blocks a verified Corsair release. Keyboard support does not block
+Strimer delivery either.
+
+Start the keyboard with whole-keyboard shared agent-status lighting. Per-key
+notification regions and separate agent sessions mapped to keys remain deferred.
+Qualify existing supported vendor or maintained automation interfaces. If none
+exists, document that result and defer integration. Custom USB protocol research,
+simulated key shortcuts and firmware replacement are outside the accepted path.
 
 Automatic agent status is the first feature. Consume the shared feed initially
 hosted in Pixoo and retain its single state owner. General UI/MCP lighting
@@ -19,9 +27,10 @@ this feature. An MSI route may be qualified specifically as a Strimer transport.
 
 ## Evidence and qualification
 
-The user supplied these screenshots on September 7, 2026. This is an inventory
-of application evidence, not a physical acceptance record. Private screenshots,
-device serials, local paths and vendor configuration remain outside Git.
+The user supplied the tower-lighting screenshots and keyboard model on
+September 7, 2026. The table separates application evidence, user identification
+and unresolved capabilities. It is not a physical acceptance record. Private
+screenshots, device serials, local paths and vendor configuration remain outside Git.
 
 | Candidate | Available evidence | Still to establish |
 | --- | --- | --- |
@@ -29,10 +38,14 @@ device serials, local paths and vendor configuration remain outside Git.
 | H150i ELITE LCD XT | iCUE dashboard names the cooler and lists fan channels 1-6, pump and coolant temperature. | Actual attached RGB devices and exposed lighting zones. Sensor entries do not establish six connected RGB fans or an LCD API. |
 | Strimer Plus Controller | L-Connect 3 v1.6.30 screenshot shows 24-pin and dual 8-pin configurations, effects, channels, speed, brightness and direction. | Exact controller/cable generation, firmware, connections and external API behavior. A preview does not establish visible output. |
 | MSI motherboard route | Historical logs identify an MPG B650 EDGE WIFI; Mystic Light software files were present during inspection. | Current board identity, actual Strimer sync wiring and SDK compatibility. Available RGB headers do not prove anything is connected. |
+| Varmilo VA108M-RGB | User-supplied model; official Varmilo support page lists a VA108MRGB driver. Read-only Windows inventory returned generic USB HID descriptions. | Exact model/revision and USB/interface identity, supported automation API, whole-board lighting operations, ownership and restoration. Generic HID identity does not establish Varmilo compatibility. |
 
-Windows inventory commands failed during the initial investigation. SDK discovery,
-live device control and optical output were not tested. Refresh hardware and
-software evidence in [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51) and [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52).
+Windows inventory commands failed during the initial tower investigation. A later
+read-only keyboard inventory succeeded but did not identify a Varmilo model.
+SDK discovery, live device control and optical output were not tested. Refresh
+hardware and software evidence in [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51),
+[#52](https://github.com/jimmie-potts/agent-device-hub/issues/52) and
+[#60](https://github.com/jimmie-potts/agent-device-hub/issues/60).
 
 For Corsair, qualify the official [iCUE SDK](https://corsairofficial.github.io/cue-sdk/).
 It operates through running iCUE and exposes device/LED enumeration and lighting
@@ -55,12 +68,25 @@ before custom transport work, as the architecture requires. Broader
 independent. If no qualified route preserves the setup, retain Strimer as
 unsupported/pending without switching applications or blocking Corsair.
 
+For Varmilo, the [official driver listing](https://varmilo.cn/394565-394565.html)
+is evidence of vendor software, not an automation API. The
+[OpenRGB pipeline compatibility data](https://openrgb.org/data/supported_devices_pipeline.csv)
+inspected on September 7, 2026 had no Varmilo/VA108 entry. A candidate USB ID from
+the Windows inventory also appears there as Anne Pro 2; it does not establish
+protocol compatibility and must not select that device profile. Qualification
+must establish an existing supported interface for this keyboard. Do not substitute
+VIA/QMK support from other Varmilo models, reverse engineering or key emulation.
+Keep stock firmware, normal typing, key mappings, macros and lock indicators intact;
+lighting control neither captures keystrokes nor owns keyboard input.
+
 ## Capabilities and ownership
 
-"PC tower" is a user-facing group of lighting devices, not a new physical device
-or shared wire identity. The existing controller contract owns device identity,
-capabilities and zones. Bind vendor-discovered devices to configured neutral IDs;
+"PC lighting" is a user-facing group that includes tower lights and an optional
+keyboard. The keyboard is a separate configured lighting target. This grouping
+introduces no new physical device or shared wire identity. The existing controller
+contract owns device identity, capabilities and zones. Bind vendor-discovered devices to configured neutral IDs;
 expose cable/LED zones only where the selected interface establishes them.
+The keyboard starts as one lighting target, without per-key status allocation.
 Keep one designated writer per physical target, including one owner for a
 Strimer controller's cable outputs. Vendor interfaces must provide an explicit
 control handoff; do not create competing iCUE, MSI, L-Connect or direct USB writers.
@@ -74,13 +100,14 @@ consumers use an authenticated API, never a mounted live vendor SQLite database.
 Use the [common controller contract](../../docs/controller-contract.md) and
 [reusable MCP services](../../packages/mcp/README.md). Its command set includes
 `scene.activate`, `brightness.set` and `power.set`; expose only supported
-lighting operations. Lighting off never means PC power-off or disabling cooling.
+lighting operations. Lighting off never means PC power-off, disabling cooling
+or disabling the keyboard.
 There is no generic color/RGB-frame command in v1. Any additional RGB/channel
 operation needs explicit versioned contract or typed application-extension work.
 Advanced effect editing remains in the vendor applications.
 
 Each target retains a bounded queue, cancellation and independent failure
-reporting. Strimer loss cannot stop Corsair updates. Keep desired, sent,
+reporting. Strimer or keyboard loss cannot stop other targets. Keep desired, sent,
 uncertain, externally controlled and fresh observed state separate. A successful
 SDK call is not visible-light evidence. Status/manual-control work must settle
 brightness, session selection, update limits, quiet/disabled behavior, takeover
@@ -101,10 +128,17 @@ placeholders, not implementation-ready specifications.
 | [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) | Add later shared UI/MCP controls. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
 | [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57) | Install and verify Corsair status and restoration. | [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [#58](https://github.com/jimmie-potts/agent-device-hub/issues/58) | Install and verify Strimer handoff and restoration. | [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) | Qualify supported Varmilo VA108M-RGB lighting interfaces. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61) | Add the optional qualified Varmilo lighting adapter. | [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#62](https://github.com/jimmie-potts/agent-device-hub/issues/62) | Install and verify keyboard status, typing and restoration. | [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 
 Strimer participation adds [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54) as a conditional prerequisite
 for its status/control targets; it does not gate the Corsair status or acceptance
-milestones. General controls additionally need the frontend work selected by
+milestones. Keyboard participation separately requires
+[#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), without gating Corsair or Strimer.
+Closing [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) with an unsupported result does not make
+its adapter or acceptance ready; both remain deferred. General controls
+additionally need the frontend work selected by
 [hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31); refine those
 dependencies before marking [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) ready. They do not block source status
 integration. Preserve the current Codex-first priorities and separate existing
@@ -128,6 +162,7 @@ remain separately scoped changes. No bootstrap step contacts hardware.
 Record source, Windows runtime, real-client, transport and visible results
 separately. Verify startup, vendor-app restarts, lock/unlock, sleep/resume,
 disconnects, manual override, shutdown/crash and restoration while preserving
-cooling and existing device behavior. Full live lifecycle evidence uses
+cooling, normal typing, key mappings and lock indicators. Confirm typing behavior
+with the user without recording typed content. Full live lifecycle evidence uses
 [hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). Unsupported
 targets and missing optical evidence remain explicit gaps.
