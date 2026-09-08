@@ -54,7 +54,7 @@ def refresh_repo(repo):
     assert all(i['state'] == 'OPEN' for i in issues)
     assert len({i['number'] for i in issues}) == len(issues)
     # Comments are acceptance evidence for these direct status reads.
-    targets = {'agent-device-hub': [2, 50], 'codex-nanoleaf': [34, 37], 'divoom-app-upgrade': [12, 26, 46]}[repo]
+    targets = {'agent-device-hub': [2, 50], 'codex-nanoleaf': [34, 37], 'divoom-app-upgrade': [12, 26, 29, 46]}[repo]
     direct = []
     for number in targets:
         raw = api(f'{base}/issues/{number}')

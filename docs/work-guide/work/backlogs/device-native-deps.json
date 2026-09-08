@@ -430,7 +430,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 21,
+        "totalCount": 20,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -553,38 +553,6 @@
             }
           },
           {
-            "number": 29,
-            "blockedBy": {
-              "totalCount": 3,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 3,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 2,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 2,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 30,
             "blockedBy": {
               "totalCount": 0,
@@ -632,7 +600,7 @@
                 },
                 {
                   "number": 29,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }
@@ -770,7 +738,7 @@
                 },
                 {
                   "number": 29,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }

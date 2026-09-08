@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-08T21:59:57.681768+00:00",
+ "fetchedAt": "2026-09-08T22:38:50.666086+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-08T21:58:25Z",
+   "pushedAt": "2026-09-08T22:25:57Z",
    "defaultBranch": "main",
-   "headSha": "855bd3787803dad7245f29e88c758659f6e4eda4",
-   "mainCommitCount": 8,
+   "headSha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
+   "mainCommitCount": 9,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
+     "date": "2026-09-08T22:08:02Z",
+     "message": "docs: reconcile delivered lifecycle contract in work guide (#75)"
+    },
     {
      "sha": "855bd3787803dad7245f29e88c758659f6e4eda4",
      "date": "2026-09-08T21:54:36Z",
@@ -107,9 +112,23 @@
      "createdAt": "2026-09-08T21:47:24Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/74",
      "base": "main"
+    },
+    {
+     "number": 75,
+     "title": "docs: reconcile delivered lifecycle contract in work guide",
+     "mergedAt": "2026-09-08T22:08:03Z",
+     "createdAt": "2026-09-08T22:01:51Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/75",
+     "base": "main"
     }
    ],
    "openPRs": [
+    {
+     "number": 76,
+     "title": "docs: reconcile Pixoo shared contract adoption in work guide",
+     "createdAt": "2026-09-08T22:25:59Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/76"
+    },
     {
      "number": 59,
      "title": "docs: plan PC and desk lighting integrations and backlog",
@@ -512,12 +531,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-08T17:14:33Z",
+   "pushedAt": "2026-09-08T22:33:34Z",
    "defaultBranch": "main",
-   "headSha": "d51ce01dbe7be66322f58f333465d49f405bdd6d",
-   "mainCommitCount": 17,
+   "headSha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
+   "mainCommitCount": 18,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
+     "date": "2026-09-08T22:33:34Z",
+     "message": "Adopt released shared lifecycle contract for Pixoo monitoring (#53)"
+    },
     {
      "sha": "d51ce01dbe7be66322f58f333465d49f405bdd6d",
      "date": "2026-09-08T17:14:29Z",
@@ -732,6 +756,14 @@
      "createdAt": "2026-09-08T16:20:02Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/51",
      "base": "main"
+    },
+    {
+     "number": 53,
+     "title": "Adopt released shared lifecycle contract for Pixoo monitoring",
+     "mergedAt": "2026-09-08T22:33:34Z",
+     "createdAt": "2026-09-08T22:27:04Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/53",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -855,9 +887,17 @@
      "createdAt": "2026-09-06T23:27:08Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26"
+    },
+    {
+     "number": 29,
+     "title": "Adopt qualified shared monitoring contracts in Pixoo",
+     "closedAt": "2026-09-08T22:37:50Z",
+     "createdAt": "2026-09-07T00:55:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
     }
    ],
-   "openIssueCount": 21,
+   "openIssueCount": 20,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-08T21:16:18Z"
