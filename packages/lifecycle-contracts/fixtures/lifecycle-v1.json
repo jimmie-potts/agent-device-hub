@@ -2401,6 +2401,98 @@
         }
       },
       "valid": false
+    },
+    {
+      "id": "label-trailing-newline",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "ok\n"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "label-only-newline",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "\n"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "identifier-trailing-newline",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a\n"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
     }
   ]
 }
