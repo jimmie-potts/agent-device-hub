@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib
 import importlib.metadata
+import importlib.util
 import json
 import math
 import os
@@ -59,6 +60,22 @@ def verify_files(root, files):
             raise ValueError('package-file-mismatch')
 
 
+def verify_inventory(root, expected):
+    root = Path(root).resolve(strict=True)
+    found = set()
+    for directory, folders, files in os.walk(root, followlinks=False):
+        current = Path(directory)
+        for name in folders + files:
+            if (current / name).is_symlink():
+                raise ValueError('symlinked-package-entry')
+        # npm may nest installed dependencies here. The consumer lock owns them.
+        if current == root and 'node_modules' in folders:
+            folders.remove('node_modules')
+        found.update((current / name).relative_to(root).as_posix() for name in files)
+    if found != set(expected):
+        raise ValueError('unexpected-package-entry')
+
+
 def package_path(consumer):
     return Path(consumer).resolve(strict=True) / 'node_modules/@jimmie-potts/agent-lifecycle-contracts'
 
@@ -84,6 +101,7 @@ def verify_inputs(archive, consumer):
     if (manifest['artifact'], manifest['version'], manifest['apiVersion']) != (
             '@jimmie-potts/agent-lifecycle-contracts', '1.0.0', '1.0'):
         raise ValueError('artifact-identity-mismatch')
+    verify_inventory(package, set(manifest['files']) | {'manifest.json'})
     verify_files(package, manifest['files'])
     cases = read_cases(package)
     return dict(archiveSha256=ARCHIVE_HASH, manifestSha256=MANIFEST_HASH, corpusSha256=CORPUS_HASH,
@@ -127,9 +145,15 @@ def python_worker(consumer, cycles, warmups):
         raise ValueError('unexpected-jsonschema-version')
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(package / 'python'))
+    dependency_origin = Path(importlib.metadata.distribution('jsonschema').locate_file('jsonschema/__init__.py')).resolve()
+    resolved_dependency = importlib.util.find_spec('jsonschema')
+    if resolved_dependency is None or Path(resolved_dependency.origin).resolve() != dependency_origin:
+        raise ValueError('unexpected-jsonschema-origin')
     began = time.perf_counter_ns()
     module = importlib.import_module('agent_lifecycle_contracts')
     imported = time.perf_counter_ns() - began
+    if Path(sys.modules['jsonschema'].__file__).resolve() != dependency_origin:
+        raise ValueError('unexpected-jsonschema-import')
     if (Path(module.__file__).resolve() != (package / 'python/agent_lifecycle_contracts/__init__.py').resolve()
             or module.ARTIFACT_VERSION != '1.0.0' or module.API_VERSION != '1.0'):
         raise ValueError('unexpected-validator-import')

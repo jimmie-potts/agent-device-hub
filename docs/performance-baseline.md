@@ -77,7 +77,9 @@ not controlled. Compare matched runs only after inspecting these conditions.
 `validators.py` measures the actual released 1.0.0 package in a disposable npm
 consumer. The vendored archive is the verified release asset, not a checkout
 package. The tool checks its archive hash, published manifest hash and every
-manifest file before and after each worker. It records the consumer lock hash;
+manifest file before and after each worker. Extra package files and symlinks
+are rejected, apart from npm's explicit top-level nested dependency directory.
+The Python worker also verifies the imported jsonschema distribution origin. It records the consumer lock hash;
 that lock records dependencies, but the tool does not independently hash every
 installed transitive dependency file. Use a fresh consumer from that lock.
 
@@ -115,7 +117,7 @@ Those are measurement-tool bounds, not frozen product budgets.
 
 `npm run test:performance` runs 13 focused checks and a disposable external
 consumer check on both real validators. That check rejects a modified installed
-corpus. It uses npm's existing cache offline after the normal `npm ci`; it does
+corpus and an added Python module that would shadow jsonschema. It uses npm's existing cache offline after the normal `npm ci`; it does
 not fetch or install personal runtimes.
 
 ## Recorded WSL observations
@@ -130,8 +132,8 @@ local source work ran concurrently; no controlled or matched host claim applies.
 | Real legacy admission, 1 task, pooled 3 repeats | 300 | 0.550 ms | 0.672 ms, provisional |
 | Real legacy admission, 10 tasks, pooled 3 repeats | 3,000 | 80.559 ms | 105.876 ms |
 | Real legacy admission, 50 tasks, pooled 3 repeats | 15,000 | 331.975 ms | 637.631 ms |
-| Released Python validation, each of 3 repeats | 3,300 | 0.349-0.377 ms | 0.386-0.447 ms |
-| Released Node validation, each of 3 repeats | 3,300 | 0.015-0.016 ms | 0.031-0.037 ms |
+| Released Python validation, each of 3 repeats | 3,300 | 0.374-0.376 ms | 0.423-0.458 ms |
+| Released Node validation, each of 3 repeats | 3,300 | 0.013-0.013 ms | 0.028-0.033 ms |
 
 These observations are not pass/fail thresholds. SQLite admission contention
 and process startup remain distinct from validator call cost. Pooled percentiles

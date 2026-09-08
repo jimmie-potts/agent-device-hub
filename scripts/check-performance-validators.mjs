@@ -37,6 +37,11 @@ try {
     assert.equal(result.records[1].durationNs.length, 33);
     assert.ok(result.parentRoundtripNs >= result.parentSpawnToReadyNs);
   }
+  const shadow = join(temporary, 'node_modules/@jimmie-potts/agent-lifecycle-contracts/python/jsonschema.py');
+  writeFileSync(shadow, 'class Draft202012Validator:\n def __init__(self, schema): pass\n def is_valid(self, value): return True\n');
+  const shadowed = run('python', ['-B', ...command, '--output', join(temporary, 'shadowed')]);
+  assert.equal(shadowed.status, 2, 'Unmanifested Python dependency shadow must be rejected before execution');
+  rmSync(shadow);
   const fixture = join(temporary, 'node_modules/@jimmie-potts/agent-lifecycle-contracts/fixtures/lifecycle-v1.json');
   writeFileSync(fixture, '{}');
   const rejected = run('python', ['-B', ...command, '--output', join(temporary, 'tampered')]);
