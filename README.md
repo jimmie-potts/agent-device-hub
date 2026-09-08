@@ -15,6 +15,12 @@ feature priority for these devices is automatic agent status. Tidbyt starts with
 the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
 
+The planned [PC lighting controller](controllers/pc-lighting/README.md) covers
+Corsair RAM and supported H150i cooler lighting, plus Lian Li Strimer lighting
+where compatible. It preserves iCUE and L-Connect 3. Its directory contains a
+guide only; qualification, adapters, automatic status and physical acceptance
+remain separate future issues. Strimer does not block Corsair delivery.
+
 Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [the roadmap](docs/roadmap.md) for the linked delivery sequence, and
 [development](docs/development.md) for setup. GitHub issues own scope, acceptance,

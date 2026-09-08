@@ -56,6 +56,38 @@ moving code. They do not block current Pixoo/Nanoleaf delivery or authorize
 installed-runtime changes. New device acceptance remains in #21/#22; #9 retains
 its existing Pixoo/Nanoleaf scope.
 
+## PC tower lighting
+
+[#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) owns documentation/backlog initialization only. The
+[PC lighting guide](../controllers/pc-lighting/README.md) records the accepted
+Corsair scope, optional Strimer route and preserved vendor applications. The
+following issues are skeletons to refine before implementation; GitHub owns
+their current readiness and acceptance.
+
+| Issue | Outcome | Required source prerequisites |
+| --- | --- | --- |
+| [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51) | Qualify iCUE, RAM and H150i lighting. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52) | Qualify Strimer control and L-Connect handoff. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53) | Build the PC controller and qualified Corsair adapter. | [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54) | Add the optional qualified Strimer adapter. | [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55) | Map shared agent status to qualified lighting targets. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [Pixoo #31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
+| [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) | Add later shared UI/MCP controls. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57) | Install and verify Corsair status and restoration. | [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#58](https://github.com/jimmie-potts/agent-device-hub/issues/58) | Install and verify Strimer handoff and restoration. | [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+
+Strimer participation in shared status or controls additionally requires
+[#54](https://github.com/jimmie-potts/agent-device-hub/issues/54). This conditional branch does not block Corsair source
+status or [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57). General controls follow the feature and frontend
+work selected by #31; refine those additional implementation dependencies before
+[#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) is ready. Existing Codex-first work retains its priority.
+
+The acceptance issues require separate installation and lighting-sequence
+authorization, confirmed SDK/USB identities or network targets as applicable,
+vendor ownership handoff and visible restoration evidence. Source dependency
+closure grants none of those permissions. Neither firmware changes nor replacing
+iCUE/L-Connect is part of this plan. No shared package, runtime or service is
+introduced by the documentation bootstrap.
+
 ## Device adoption
 
 | Issue | Outcome | Required issues |

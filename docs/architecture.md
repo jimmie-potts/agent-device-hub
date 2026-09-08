@@ -104,16 +104,18 @@ browsers must not create another scheduler for physical effects.
 Use this repository as the monorepo for new controllers and shared packages,
 as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
 The existing Pixoo and Nanoleaf repositories retain ownership until separately
-delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX
-controllers and the React dashboard; keep the Nanoleaf worker in Python.
+delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX/PC
+lighting controllers and the React dashboard; keep the Nanoleaf worker in Python.
+Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
 Implemented shared packages are packages/contracts and packages/mcp. The remaining
 proposed layout is packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
-apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
-controller directories contain documents only; the other paths remain proposed.
+apps/hub, apps/dashboard, controllers/tidbyt, controllers/lifx and
+controllers/pc-lighting. The controller directories contain documents only;
+the other paths remain proposed.
 Use Node 24 and npm workspaces when executable packages are introduced.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
@@ -201,6 +203,43 @@ effects, update limits, takeover/manual-control and restoration policies. Resolv
 those choices before implementation readiness. Both controllers preserve shared
 privacy and evidence semantics; neither infers success, read status or fresh
 connectivity from absent observations.
+
+## PC tower lighting delivery
+
+[The PC lighting documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) records the accepted scope:
+Corsair Dominator Platinum RGB DDR5 and supported H150i ELITE LCD XT lighting,
+plus Lian Li Strimer lighting where compatible. Preserve iCUE, L-Connect 3 and
+the existing lighting setup. Qualification may use the existing MSI software
+as a Strimer synchronization route; wider motherboard/GPU lighting, cooler LCD
+content and fan/pump control are outside this feature.
+
+"PC tower" is a user-facing group of lighting devices. The existing controller
+contract owns device identity and zone meaning; a tower grouping does not create
+another physical writer or a new wire identity. Keep one designated writer per
+target and one owner for a Strimer controller's cable outputs. Qualify vendor
+handoff and restoration before enabling a target. Missing support stays explicit.
+
+The proposed controller belongs in controllers/pc-lighting with a Windows-local
+vendor adapter, independent target queues and the shared authenticated APIs.
+iCUE SDK qualification comes first for Corsair. Strimer qualification must find
+a supported route compatible with L-Connect, including any explicit motherboard
+sync handoff. OpenRGB remains research, with no automatic dependency, migration
+or competing writer. Existing Home Assistant/MQTT delegation is a qualification
+comparison; broader #11 research is not a prerequisite.
+
+Automatic status consumes the shared core initially hosted in Pixoo. It does not
+add a collector or wait for general controls, the dashboard or standalone hosting.
+Strimer has separate qualification, adapter and physical acceptance work, so its
+absence cannot block a verified Corsair release. General UI/MCP controls follow
+#31 and use the same owning services. Expose only established capabilities;
+arbitrary RGB/channel operations need explicit contract or typed-extension work.
+
+The [PC lighting guide](../controllers/pc-lighting/README.md) records screenshot
+and historical evidence separately from unverified SDK/physical capabilities.
+Its linked issues own readiness, status policy, manual takeover and restoration.
+Source delivery adds no installed service or device operation. Full live lifecycle
+acceptance uses #8, and each physical target keeps its own evidence and permission
+gate. Windows vendor adapters remain on the PC during later hub-host migration.
 
 ## Alternatives and consequences
 
