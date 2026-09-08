@@ -398,19 +398,16 @@
   },
   {
     "number": 34,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Verify local Codex control of the Nanoleaf lights",
-    "body": "## Outcome\nDemonstrate local Codex control of the installed Nanoleaf bridge and lights through the delivered MCP bindings. Monitoring migration in #30 is separate.\n\n## Acceptance criteria\n- [ ] Identify the installation/test owner, reviewed source and CI revisions, actual Codex client/version, current Windows worker, same-machine WSL route, configuration changes, backups, and rollback. Obtain explicit setup authorization before changing personal settings or launching test sessions.\n- [ ] Exercise tool discovery, status, and supported mode/brightness controls first with a fake controller. Verify read/write classification, client approval behavior, actionable errors, and no effects from discovery/status.\n- [ ] Before physical tests, obtain the exact configured device IP and permission for the selected light sequence. Record initial mode/brightness and known restoration limits without committing private identifiers or credentials.\n- [ ] Observe supported controls through local Codex and record transport results separately from visible light behavior. Restore known state within the recorded limits. Preserve task/effect epochs, unread behavior, reservations, and scene restoration; do not treat a command acknowledgment as optical evidence.\n- [ ] Verify local editor/API/MCP callers use the same Windows worker and serialized ownership. Confirm disconnect, stale/duplicate calls, worker unavailability, and recovery cannot replay old commands or take over lights unexpectedly. Keep disruption tests bounded and authorized.\n- [ ] Disable/revoke the MCP integration and confirm ordinary local Nanoleaf behavior and unrelated hooks/settings still work. Preserve the Windows/WSL workflow and private database ownership.\n- [ ] Record dated, redacted pass/fail/blocked evidence and actual tested client/device/source versions. Required installed-client or physical gaps stay open; mocks and CI cannot close this issue.\n\n## Dependencies\n- [codex-nanoleaf#33](https://github.com/jimmie-potts/codex-nanoleaf/issues/33) for local Codex MCP bindings.\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/28 for the protected controller API.\n- Future explicit installation and light-test authorization, a named owner, available local Codex client, and configured device.\n\n## Priority and delivery target\nLocal Codex control is a priority. Phone, ChatGPT web, and other-computer access are future goals and are not acceptance requirements here. No standalone hub, shared collector migration, or monitoring acceptance is required. This issue records separately authorized installation, actual-client, and physical acceptance; backlog publication does not perform or authorize those actions.\n",
+    "body": "## Outcome\nDemonstrate local Codex control of the installed Nanoleaf bridge and lights through the delivered MCP bindings. Monitoring migration in #30 is separate.\n\n## Acceptance criteria\n- [x] Identify the installation/test owner, reviewed source and CI revisions, actual Codex client/version, current Windows worker, same-machine WSL route, configuration changes, backups, and rollback. Obtain explicit setup authorization before changing personal settings or launching test sessions.\n- [x] Exercise tool discovery, status, and supported mode/brightness controls first with a fake controller. Verify read/write classification, client approval behavior, actionable errors, and no effects from discovery/status.\n- [x] Before physical tests, obtain the exact configured device IP and permission for the selected light sequence. Record initial mode/brightness and known restoration limits without committing private identifiers or credentials.\n- [x] Observe supported controls through local Codex and record transport results separately from visible light behavior. Restore known state within the recorded limits. Preserve task/effect epochs, unread behavior, reservations, and scene restoration; do not treat a command acknowledgment as optical evidence.\n- [x] Verify local editor/API/MCP callers use the same Windows worker and serialized ownership. Confirm disconnect, stale/duplicate calls, worker unavailability, and recovery cannot replay old commands or take over lights unexpectedly. Keep disruption tests bounded and authorized.\n- [x] Disable/revoke the MCP integration and confirm ordinary local Nanoleaf behavior and unrelated hooks/settings still work. Preserve the Windows/WSL workflow and private database ownership.\n- [x] Record dated, redacted pass/fail/blocked evidence and actual tested client/device/source versions. Required installed-client or physical gaps stay open; mocks and CI cannot close this issue.\n\n## Dependencies\n- [codex-nanoleaf#33](https://github.com/jimmie-potts/codex-nanoleaf/issues/33) for local Codex MCP bindings.\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/28 for the protected controller API.\n- Future explicit installation and light-test authorization, a named owner, available local Codex client, and configured device.\n\n## Priority and delivery target\nLocal Codex control is a priority. Phone, ChatGPT web, and other-computer access are future goals and are not acceptance requirements here. No standalone hub, shared collector migration, or monitoring acceptance is required. This issue records separately authorized installation, actual-client, and physical acceptance; backlog publication does not perform or authorize those actions.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34",
-    "updatedAt": "2026-09-08T04:07:51Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-08T06:10:39Z",
+    "closedAt": "2026-09-08T06:10:39Z",
     "labels": [
       {
         "name": "enhancement"
-      },
-      {
-        "name": "status:in-progress"
       },
       {
         "name": "hardware"
@@ -456,9 +453,21 @@
         "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5579029843",
         "createdAt": "2026-09-08T04:07:50Z",
         "updatedAt": "2026-09-08T04:07:50Z"
+      },
+      {
+        "body": "The authorized Windows upgrade and bounded physical acceptance are complete. Native Windows and WSL Codex both used the installed Windows controller. The owner confirmed Work, dim steady Quiet, Free with task pulsing stopped, and restoration to Work at the original brightness. The Free observation included one steady green half-Line; the existing project fallback can retain that color. Cleanup and ordinary app continuity passed.\n\nThis coordinator is preparing the redacted evidence PR on `codex/gh-34-local-codex-acceptance`, based on `3f2f33ab1d19db75b613943f7948ff44c7bc6ddc`, in an isolated worktree. This is documentation of existing behavior, with no product or specification delta. The remaining work is evidence review, local PR/main validation under the previously approved hosted-credit exception, independent Standards and Specification review, guarded merge and final readback. Keep #34 open until those gates pass.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5579964051",
+        "createdAt": "2026-09-08T05:50:33Z",
+        "updatedAt": "2026-09-08T05:50:33Z"
+      },
+      {
+        "body": "Completed through [PR #50](https://github.com/jimmie-potts/codex-nanoleaf/pull/50), merged at `6d78b66851c6df05b2018256ed18ff530a860fcf`. The [dated acceptance record](https://github.com/jimmie-potts/codex-nanoleaf/blob/6d78b66851c6df05b2018256ed18ff530a860fcf/docs/hardware-validation.md) records the authorized installation, both actual Codex routes, synthetic failures, physical observations, restoration and cleanup. The owner's steady green half-Line observation in Free is preserved and explained by existing project fallback behavior.\n\nIndependent Standards and Specification reviews returned no findings on the same committed candidate. The merged tree is identical. Local candidate and post-merge checks passed under the previously approved hosted-CI exception; hosted PR/main jobs were read and reported as unable to start due account billing/spending restrictions. Exact platform coverage and the unchanged-tree reuse of Windows/browser results are recorded in the PR.\n\nWork at 30% was restored, temporary integration credentials revoked, owned listeners stopped and ordinary app state preserved. Deliberate live outages, soak, arbitrary controls, shared monitoring and remote clients remain outside this acceptance. No further light sequence is needed for #34.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5580156676",
+        "createdAt": "2026-09-08T06:10:38Z",
+        "updatedAt": "2026-09-08T06:10:38Z"
       }
     ],
-    "commentCount": 6,
+    "commentCount": 8,
     "commentsRefreshed": true
   },
   {

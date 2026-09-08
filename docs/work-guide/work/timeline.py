@@ -26,7 +26,7 @@ MILESTONES = {
 SLOTS = ['Now · ready or independent', 'Next', 'After the Codex milestone', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance', issues=['N34', 'P12'], guide='local-acceptance', ready=True),
+        dict(id='n-local', x=0, label='Local acceptance', issues=['P12'], guide='local-acceptance', ready=True),
         dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'H2', 'H3', 'P29', 'P31', 'P37', 'P32', 'P33', 'N29', 'N49', 'P30', 'H5', 'H8', 'H6', 'H13', 'H30', 'H9', 'P34', 'N30'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
@@ -68,7 +68,7 @@ TRACKS = [
         dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H54', 'H58', 'H61', 'H62'], guide='pc-lighting'),
     ]),
     ('Pixoo media + access', [
-        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18'], guide='pixoo-media'),
+        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52'], guide='pixoo-media'),
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
     ('Hosting + migrations', [
@@ -77,7 +77,7 @@ TRACKS = [
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='Bound CI costs', issues=['N37', 'P46'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'P46', 'H73'], guide='development-workflow'),
         dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),

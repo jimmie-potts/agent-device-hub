@@ -81,6 +81,17 @@ Later source moves into this monorepo have separate deferred issues,
 [Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
 Their current repositories retain ownership until those migrations are delivered.
 
+## Shared lifecycle metadata
+
+The [lifecycle contract](docs/agent-lifecycle-contract.md) supplies strict versioned
+schemas, shared TypeScript/Python fixtures and private archive packaging.
+[Provider qualification](docs/provider-qualification.md) separates installed
+artifact evidence from documented and live capabilities. The state reducer,
+emitters and installed-path qualification remain separate work.
+
+Run `npm run test:lifecycle`, `npm run test:lifecycle:python` and
+`npm run test:lifecycle:package` with the shared build/type checks.
+
 ## Cross-project work guide
 
 The [work guide](docs/work-guide/README.md) contains the remaining-work map,

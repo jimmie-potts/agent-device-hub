@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit",
     "test:contracts": "npm run build && node --test packages/contracts/tests/*.test.mjs",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -19,7 +19,11 @@
     "test:mcp": "npm run build && node --test packages/mcp/tests/tools.test.mjs",
     "test:mcp:protocol": "npm run build && node --test packages/mcp/tests/protocol.test.mjs",
     "package:mcp": "npm run build && node scripts/package-mcp.mjs",
-    "test:mcp:package": "npm run build && node scripts/package-mcp.mjs --test"
+    "test:mcp:package": "npm run build && node scripts/package-mcp.mjs --test",
+    "test:lifecycle": "npm run build && node --test packages/lifecycle-contracts/tests/*.test.mjs",
+    "test:lifecycle:python": "python3 scripts/check-lifecycle.py",
+    "package:lifecycle": "npm run build && node scripts/package-lifecycle.mjs",
+    "test:lifecycle:package": "npm run build && node scripts/package-lifecycle.mjs --test"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",
@@ -29,6 +33,7 @@
   },
   "workspaces": [
     "packages/contracts",
-    "packages/mcp"
+    "packages/mcp",
+    "packages/lifecycle-contracts"
   ]
 }

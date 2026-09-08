@@ -1,0 +1,2406 @@
+{
+  "format": 1,
+  "apiVersion": "1.0",
+  "cases": [
+    {
+      "id": "new-turn",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "e7b2696252524ffb2f8f8018a5bbb2275bbbaba0995fb47e5d988097797e6877"
+      }
+    },
+    {
+      "id": "session.started",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "session.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "c53fc2be3f2b4415fe5c8a196afa77b2d5113aa147a5767ee627116b0cdb162d"
+      }
+    },
+    {
+      "id": "activity.observed",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "activity.observed"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "d1c2613cee6ae1c16cf2a004a5f44fac2d156723c7f41b289859e1adf4379c27"
+      }
+    },
+    {
+      "id": "turn.ended",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.ended"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "cd4619e8ce24c5e818c803d5ddcc7a678b6d013b385fdefc26c96ceeaa5b64e0"
+      }
+    },
+    {
+      "id": "turn.interrupted",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.interrupted"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "6f095ca9bfaee48e56a83472e345804610ee462c387108a724ba6cffb538fd67"
+      }
+    },
+    {
+      "id": "runtime.ended",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "runtime.ended"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "c8b07854262aaa71d4b6f64b92702db5bba6145cf1ed1d5e5ea9ea563de0400f"
+      }
+    },
+    {
+      "id": "question.continuing-known",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "question.continuing",
+          "attention": {
+            "status": "known",
+            "id": "attention-a"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "db5f62b7b486d87e03efa7194bd63358620a5b4a42d23af19fad817e4f5deec8"
+      }
+    },
+    {
+      "id": "question.continuing-ambiguous",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "question.continuing",
+          "attention": {
+            "status": "unknown"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "8235117dc7e61016fc85a10a6bdc49d999705977162401d9c732ca1b0290fbd0"
+      }
+    },
+    {
+      "id": "attention.input-known",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.input",
+          "attention": {
+            "status": "known",
+            "id": "attention-a"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "1160c4f620923c6c001207a1baddb491a0e7f03c5cf3616293e01802fe9290c6"
+      }
+    },
+    {
+      "id": "attention.input-ambiguous",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.input",
+          "attention": {
+            "status": "unknown"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "eb23e860d3f2c51f93432b0f8de62d0ed9cbeea0ad67b0d9a59865985fb1b7a3"
+      }
+    },
+    {
+      "id": "attention.approval-known",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.approval",
+          "attention": {
+            "status": "known",
+            "id": "attention-a"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "fd0d878f85f4116b7f36cf39120040b52708cf1ab9fc7c7681fa0edc457536f9"
+      }
+    },
+    {
+      "id": "attention.approval-ambiguous",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.approval",
+          "attention": {
+            "status": "unknown"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "d415acb3a14bffc5fb46b2a7f0f1743452ae489724f7ad9a40d37d525b9592fe"
+      }
+    },
+    {
+      "id": "attention.resolved-known",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.resolved",
+          "attention": {
+            "status": "known",
+            "id": "attention-a"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "a5e85073094457f33ab3a8fed6784f6aba332f6611419865daa0f1bcdf5cabe8"
+      }
+    },
+    {
+      "id": "attention.resolved-ambiguous",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.resolved",
+          "attention": {
+            "status": "unknown"
+          }
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "22abc8f51900c0d2b27cf40986cc4b746130798349ba18ee3b11d094d359c223"
+      }
+    },
+    {
+      "id": "monitor-only-acknowledgment",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "notice.acknowledged",
+          "consumerId": "pixoo",
+          "noticeId": "notice-a"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "248ef196fe6a140230ebc85439bccfe6255b4a4ae3ebb3a92d86bf0c5109dc7f"
+      }
+    },
+    {
+      "id": "desktop-read",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "desktop",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "read"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "8751f2f7382a2f57ade3ff9263f26024df1653d8a26430237d3d0e6b5d221ee7"
+      }
+    },
+    {
+      "id": "cli-read-unsupported-read",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "read"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "desktop-unread",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "desktop",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "unread"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "8e0a4e7ad24fe3902f36d9d9e41dc7ed1b01a7906258d80592963a475d9c2a9d"
+      }
+    },
+    {
+      "id": "cli-read-unsupported-unread",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "read.observed",
+          "state": "unread"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unsupported-activity",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "activity",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "a60748ef03399c1102fa633727518cb77e538bf3e995b4f2ce00636f90d7c028"
+      }
+    },
+    {
+      "id": "unsupported-attention",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "attention",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "8252dc9cf8615a3332a5a62b48eea3b1593bd51c2067876a568b8f7e2f535c37"
+      }
+    },
+    {
+      "id": "unsupported-turn",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "turn",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "e5879f4323f9d9aae6cc9564448c8a1d4dfa0071694f5faf7c42d8d8b989b0b8"
+      }
+    },
+    {
+      "id": "unsupported-parent",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "parent",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "5510a47b69428670a434cd188b85dec8908fd1d14f225e51a988c43d8b494094"
+      }
+    },
+    {
+      "id": "unsupported-read",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "read",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "2ddd2c2e2acc3c90eb02c89d443bde42e70a95e7bfef078c7b9ddb46bb046511"
+      }
+    },
+    {
+      "id": "unsupported-ordering",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "evidence.unavailable",
+          "dimension": "ordering",
+          "reason": "unsupported"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "9cc8a2b2d94beafcf53b6fd8e3d98fead636bc4b084573d317a64900f9e79432"
+      }
+    },
+    {
+      "id": "duplicate",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "e7b2696252524ffb2f8f8018a5bbb2275bbbaba0995fb47e5d988097797e6877"
+      }
+    },
+    {
+      "id": "old-turn-late",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 2000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "occurredAtMs": 900
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "45e49bc01234974b12aeac0b3f4bbc5792c33d526d9bd5bb0d25d0122fd38709"
+      }
+    },
+    {
+      "id": "unknown-turn",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "unknown"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "5d05d16e5b4bf298563e2d437a7c25d088811ae6db7138685f0376c0dab93736"
+      }
+    },
+    {
+      "id": "native-event-id",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "eventId": "event-a"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "native",
+        "key": "8a7aee0f6e2728eef66dda67fe90d6a1c328fdadf2cb64284d553efba96512a2"
+      }
+    },
+    {
+      "id": "known-order",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "known",
+          "epoch": "epoch-a",
+          "sequence": 4
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "a6a9412bdf8284b39ba56dfff5106012b869aaead40a2309eac73fe9258060fc"
+      }
+    },
+    {
+      "id": "top-level",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "top-level"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "872e303bce3969e56ec4f8df1c544cb52dd4f2e7c38a50eeae4f91d1621b388f"
+      }
+    },
+    {
+      "id": "chosen-unicode-label",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "Desk 🟢"
+        },
+        "projectId": "project-a"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "55ec3d456175d1f27fc6f0271390e660971bf05534689d8e2ee626df8afa9f19"
+      }
+    },
+    {
+      "id": "separate-concurrent-session",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-b"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "projectId": "project-a"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "9493e58e0481525f4187960c39bbcbcd4cb3db72c7bdfb07cb31b05ca5266612"
+      }
+    },
+    {
+      "id": "evidenced-child",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "child-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "known",
+          "identity": {
+            "provider": "codex",
+            "client": "cli",
+            "hostId": "host-a",
+            "sourceId": "source-a",
+            "sessionId": "session-a"
+          }
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "be68686baf6e4b1201dd146de4c61bc89bcd4a036d58cb31d41ea1ab91c473f7"
+      }
+    },
+    {
+      "id": "claude-prompt-identity",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "claude",
+          "client": "code",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "77300f493d112fa4f2d901d6aa0406ca10a113f601d5ba507602e48b4dd9e0d6"
+      }
+    },
+    {
+      "id": "reject-prompt",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "prompt": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-transcript",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "transcript": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-toolArguments",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "toolArguments": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-toolResults",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "toolResults": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-title",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-credential",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "credential": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-cwd",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "cwd": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-privatePath",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "privatePath": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-__proto__",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "__proto__": "PRIVATE-CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-nested-identity",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a",
+          "privatePath": "PRIVATE-CANARY"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-nested-turn",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a",
+          "privatePath": "PRIVATE-CANARY"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-nested-parent",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown",
+          "privatePath": "PRIVATE-CANARY"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-nested-event",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started",
+          "privatePath": "PRIVATE-CANARY"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "reject-nested-ordering",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown",
+          "privatePath": "PRIVATE-CANARY"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-apiVersion",
+      "input": {
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-identity",
+      "input": {
+        "apiVersion": "1.0",
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-turn",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-parent",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-event",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-observedAtMs",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-ordering",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000
+      },
+      "valid": false
+    },
+    {
+      "id": "unsupported-version-2.0",
+      "input": {
+        "apiVersion": "2.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unsupported-version-1.1",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unsupported-version-1",
+      "input": {
+        "apiVersion": 1,
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "unsupported-version-None",
+      "input": {
+        "apiVersion": null,
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-clock--1",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": -1,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-clock-0.5",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 0.5,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-clock-9007199254740992",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 9007199254740992,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-clock-True",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": true,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-clock-1000",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": "1000",
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-host-0",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-host-129",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-host-13",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "/private/path",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-host-8",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host:123",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-label-69",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "provider",
+          "value": "title"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-label-70",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-label-71",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "bad\nlabel"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "no-permission-command",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "permission.allow"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "missing-attention-evidence",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "attention.input"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "provider-client-mismatch",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "claude",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "over-byte-limit",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "origin": "user",
+          "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "self-parent",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "known",
+          "identity": {
+            "provider": "codex",
+            "client": "cli",
+            "hostId": "host-a",
+            "sourceId": "source-a",
+            "sessionId": "session-a"
+          }
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "cross-provider-parent",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "known",
+          "identity": {
+            "provider": "claude",
+            "client": "code",
+            "hostId": "host-a",
+            "sourceId": "source-a",
+            "sessionId": "other"
+          }
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        }
+      },
+      "valid": false
+    }
+  ]
+}

@@ -60,3 +60,4 @@
 #69 [OPEN] Verify desk preset switching, manual handoff and restoration
 #70 [OPEN] Add customizable button mappings and saved control profiles
 #71 [OPEN] Add Music desk presets after playback and participation qualification
+#73 [OPEN] Fix diagram connectors hidden behind boxes in the work guide

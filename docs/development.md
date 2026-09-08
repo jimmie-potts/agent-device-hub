@@ -11,7 +11,8 @@ npm run test:workflow
 ```
 
 Both checks must exit zero. The product specification inventory is
-controller-contracts and shared-mcp-gateway once the gh-7 change is synchronized.
+controller-contracts, shared-mcp-gateway and agent-lifecycle-contract after
+the Hub #2 change is synchronized.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -154,3 +155,16 @@ consumer's vendor directory before adoption. Consumer CI then needs no new
 cross-repository secret. Keep actual MCP release source/hash receipts outside the
 reviewed commit. Read [the module guide](../packages/mcp/README.md) for the API,
 protocol matrix, SDK license and remaining installed-client/physical acceptance.
+
+## Agent lifecycle contract checks
+
+Hub #2 adds `packages/lifecycle-contracts`, a private versioned lifecycle schema
+and TypeScript/Python consumers. Use Node 24 and Python 3.12 or 3.14, run `npm ci`
+and install `requirements-contracts.txt` in an isolated Python environment.
+Run `npm run build`, `npm run typecheck`, `npm run test:lifecycle`,
+`npm run test:lifecycle:python` and `npm run test:lifecycle:package`, in addition
+to all existing workflow, controller-contract and MCP checks. Lifecycle CI runs
+on Ubuntu/Windows with both Python versions. Tests use synthetic metadata only.
+`npm run package:lifecycle` builds the private archive with a file-hash manifest;
+record its source revision and archive hash externally after reviewed delivery.
+No command installs hooks, launches a client or contacts a device.

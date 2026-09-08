@@ -19,3 +19,4 @@
 #44 [OPEN] Verify ChatGPT web MCP control and physical Pixoo acceptance
 #46 [OPEN] Bound CI runtime and remove duplicate branch-push checks
 #47 [OPEN] Consolidate workflow and application setup without dropping checks
+#52 [OPEN] Fix rapid extra GIF flashes before the next still image
