@@ -72,7 +72,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     for(const l of links) {assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,issueMap[l.key].state);}
     for(const id of ids) {
       const guide=page.locator(`#${id}`), owned=coverage[id];
-      assert.deepEqual((await guide.getAttribute('data-primary')).split(' '),owned);
+      assert.deepEqual((await guide.getAttribute('data-primary')).split(' ').filter(Boolean),owned);
       assert.equal(Number(await guide.getAttribute('data-count')),owned.length);
       assert.equal(Number(await page.locator(`nav a[data-guide="${id}"] .nav-count`).textContent()),owned.length);
       const refs=await guide.locator('[data-issue]').evaluateAll(es=>es.map(e=>e.dataset.issue));

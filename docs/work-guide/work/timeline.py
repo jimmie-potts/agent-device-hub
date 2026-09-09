@@ -18,7 +18,7 @@ REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
 MILESTONES = {
     ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
     ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings',
-    ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
+    ('P', 54): 'Local reliability', ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
 }
 
 # Roadmap map: ordered slots, not dates. slot 0 = ready or independent now,
@@ -26,7 +26,7 @@ MILESTONES = {
 SLOTS = ['Now · ready or independent', 'Next', 'After the Codex milestone', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance', issues=['P12'], guide='local-acceptance', ready=True),
+        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
         dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'H3', 'P31', 'P37', 'P32', 'P33', 'N29', 'N49', 'P30', 'H5', 'H8', 'H6', 'H13', 'H30', 'H9', 'P34', 'N30'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
@@ -68,7 +68,7 @@ TRACKS = [
         dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H54', 'H58', 'H61', 'H62'], guide='pc-lighting'),
     ]),
     ('Pixoo media + access', [
-        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52'], guide='pixoo-media'),
+        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52', 'P55'], guide='pixoo-media'),
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
     ('Hosting + migrations', [
@@ -199,6 +199,7 @@ def roadmap_map(issues, guides_by_id):
         repo_counts = {k: sum(i.startswith(k) for i in keys) for k in REPO_ORDER}
         chips = ' '.join(f'{REPO_LABEL[k]} {v}' for k, v in repo_counts.items() if v)
         open_keys = [k for k in keys if issues[k]['state'] == 'OPEN']
+        summary = f'{chips} · {len(open_keys)} open' if chips else f'{len(open_keys)} open'
         tip = (' · '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]} {issues[k]["title"]}' for k in keys) if len(keys) <= 4
                else f'{len(keys)} issues: ' + ', '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]}' for k in keys))
         guide = guides_by_id[node['guide']]
@@ -207,7 +208,7 @@ def roadmap_map(issues, guides_by_id):
         parts.append(f'<a class="{classes}" href="#{node["guide"]}" data-node="{node["id"]}" data-repos="{repos}" data-tip="{esc(node["label"])}" data-detail="{esc(tip)}" data-guide="{esc(guide)}" aria-label="{esc(node["label"])}: {len(open_keys)} open issues in guide {esc(guide)}. {esc(tip)}">'
                      f'<rect x="{node["cx"] - node_w / 2:.1f}" y="{node["cy"] - node_h / 2:.1f}" width="{node_w}" height="{node_h}" rx="3"/>'
                      f'<text class="node-label" x="{node["cx"]:.1f}" y="{node["cy"] - 4:.1f}" text-anchor="middle">{esc(node["label"])}</text>'
-                     f'<text class="node-meta" x="{node["cx"]:.1f}" y="{node["cy"] + 13:.1f}" text-anchor="middle">{esc(chips)} · {len(open_keys)} open</text></a>')
+                     f'<text class="node-meta" x="{node["cx"]:.1f}" y="{node["cy"] + 13:.1f}" text-anchor="middle">{esc(summary)}</text></a>')
         listed.append((node['track'], node['label'], guide, keys))
     parts.append('</svg>')
     return ''.join(parts), nodes, listed
