@@ -27,18 +27,18 @@ for key, (repo, _) in REPOS.items():
         ISSUES[f'{key}{issue["number"]}'] = issue
 
 GUIDES = [
-    dict(id='local-acceptance', short='Local acceptance', title='Finish local Codex control and physical acceptance', phase='Local release',
-         intro='Pixoo and Nanoleaf local Codex acceptance are complete. The separate Pixoo reliability trial remains open.',
+    dict(id='local-acceptance', short='Local acceptance', title='Completed local Codex control and physical acceptance', phase='Local release',
+         intro='Pixoo and Nanoleaf local Codex acceptance are complete. The Pixoo reliability observations are accepted for the current uniform-500-ms profile; variable timing has its own follow-up.',
          headers=['Work', 'Issues', 'Remaining work'], rows=[
              ['Completed / Local Codex → Nanoleaf', '[[N34]]', 'Completed through Nanoleaf PR #50. The closing receipt records installation, actual Windows/WSL routes, physical observations and restoration under its scoped hosted-CI exception.'],
              ['Completed / Local Codex → Pixoo', '[[P26]]', 'Completed baseline, excluded from remaining-work counts. Reviewed delivery through Pixoo PR #50 records installed WSL-client checks, physical controls, restoration and credential revocation.'],
-             ['Pixoo reliability', '[[P12]]', 'Controls, recovery and the one-hour soak have owner observations. Variable GIF timing remains unverified; further visual tests are paused and final delivery is pending.'],
+             ['Completed / Pixoo reliability', '[[P12]]', 'Pixoo PR #54 delivered the compatibility fix and accepted local evidence. All five merged-main jobs passed before closure. Variable timing remains unverified in [[P55]]; the current uniform-500-ms profile is unchanged.'],
          ], notes=[
              'The <a href="https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5580156676" target="_blank" rel="noopener noreferrer">September 8 Nanoleaf closing receipt</a> records completed local acceptance and restoration. Its hosted-CI exception applies only to that delivery; shared monitoring remains separate.',
              'The <a href="https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5578479319" target="_blank" rel="noopener noreferrer">Pixoo closing evidence</a> records restored and visually confirmed brightness and screen power. Unknown prior artwork was not restored. Its local PR/main validation exception does not apply automatically to other work.',
-             '[[P12]] has broader reliability criteria. It can proceed separately from local MCP acceptance and does not require remote browser access.',
+             '[[P12]] covers local physical reliability separately from local MCP acceptance. Remote browser and phone acceptance remain separate work.',
              'The September 8 soak completed 60 minutes and 119 ordered transitions with no backend error or recovery event. The owner confirmed continued alternation through the end with only the accepted flashing defect [[P52]]. Screen-on can return native GIFs while playback stays paused; the owner accepted this limitation and verified explicit Resume restores the selected item.',
-             'The variable-timing experiment did not establish different visible frame durations. The application retains its uniform-500-ms profile. The owner paused further visual testing; the variable-timing criterion remains open. Backend timings do not establish precise visible cadence. <a href="https://github.com/jimmie-potts/divoom-app-upgrade/pull/54" target="_blank" rel="noopener noreferrer">Pixoo draft PR #54</a> contains the source compatibility fix and dated evidence; source delivery and guide synchronization remain pending.'
+             'The variable-timing experiment did not establish different visible frame durations. The owner approved moving only this qualification to [[P55]], preserving the uniform-500-ms profile and the ambiguous observations. The approximate 28-second still reading remains outside the agreed 29-31-second range; two later readings were 30.3 seconds. Backend timings do not establish precise visible cadence. All physical helpers are closed; final blue 30 was owner-confirmed.'
          ]),
     dict(id='shared-codex', short='Shared Codex integration', title='Deliver shared Codex monitoring and integration controls', phase='Main development path',
          intro='[[H32]] is the existing guide for this milestone. This is the main cross-project development sequence.',
@@ -130,6 +130,7 @@ GUIDES = [
              ['Portability and convenience', '[[P15]]', 'Playlist portability and UI convenience planning.'],
              ['Transitions', '[[P16]]', 'Qualification of supported transition improvements.'],
              ['GIF handoff defect', '[[P52]]', 'Investigate reproduced rapid extra flashes before a still. Explicitly nonblocking for Pixoo #12; physical work needs separate authorization.'],
+             ['Variable GIF timing', '[[P55]]', 'Qualify asymmetric visible frame durations with a bounded measurement and control. Owner-approved deferral from Pixoo #12; preserve the current profile until evidence supports a change. Physical tests need separate authorization.'],
              ['Cloud-gallery import', '[[P18]]', 'Authorized cloud-gallery import assessment.'],
          ], notes=['Select these individually after reliability acceptance. Transition and gallery issues need feasibility findings before committing to feature implementation.']),
     dict(id='controls-music', short='Controls + music', title='Expand into general device controls and Apple Music', phase='After Codex acceptance',
@@ -196,7 +197,7 @@ for receipt in DIAGRAM_RECEIPTS['diagrams']:
     assert AD.sha256(AD.RENDERED / receipt['viewer']) == receipt['artifact']['sha256'], f"Stale viewer for {receipt['id']}"
 METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], staticSnapshot=True, openIssues=TOTAL,
                 guideCount=len(GUIDES), projectCount=len(REPOS), repositoryCounts=COUNTS,
-                primaryCoverage=coverage, completedBaselines=['P26', 'P29', 'H2', 'H4', 'H7'],
+                primaryCoverage=coverage, completedBaselines=['P12', 'P26', 'P29', 'H2', 'H4', 'H7'],
                 history=TIMELINE['meta'],
                 architecture=dict(reviewedAt=AD.SOURCES['reviewedAt'], renderedAt=DIAGRAM_RECEIPTS['renderedAt'], sourceRevisions=AD.SOURCES['sourceRevisions'],
                                   diagramCount=len(AD.DIAGRAMS), diagrams=[dict(id=d['id'], kind=d['kind'], status=d['status'], viewer=f"architecture/{d['id']}.html",
@@ -455,7 +456,7 @@ JS = '''
      const repo = chip.dataset.repo;
      chips.forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
      timeline.dataset.repo = repo;
-     timeline.querySelectorAll('svg [data-repo], svg [data-repos]').forEach(el => { const repos = (el.dataset.repos || el.dataset.repo).split(' '); el.classList.toggle('dim', repo !== 'all' && !repos.includes(repo)); });
+     timeline.querySelectorAll('svg [data-repo], svg [data-repos]').forEach(el => { const repos = (el.dataset.repos ?? el.dataset.repo ?? '').split(' ').filter(Boolean); el.classList.toggle('dim', repo !== 'all' && !repos.includes(repo)); });
    }));
  }
 })();
@@ -484,7 +485,7 @@ document = '''<!doctype html>
 <div id="empty-state" class="empty-state" hidden><h2>No matching guides or diagrams</h2><p>Try a device name, topic, or issue such as “Pixoo #37”.</p></div>
 <div class="guides">''' + ''.join(sections) + '''</div>
 <div class="guides references">''' + architecture_section + '''</div>
-<section class="recommendation" aria-labelledby="next-title"><div class="eyebrow">Suggested next source work</div><h2 id="next-title">Measure the early monitoring baseline.</h2><p>''' + render('The source contract in <strong>[[H2]]</strong> is delivered. Complete the early measured baseline and frozen budgets in <strong>[[H30]]</strong> before <strong>[[H3]]</strong>; <strong>[[P29]]</strong> has delivered its released-contract adoption. <strong>[[P37]]</strong> remains an independent option. <strong>[[N41]]</strong> is the clearest separate feature starting point. Keep remaining local device acceptance with its existing coordinator. [[H63]] documentation and [[H64]] qualification are ready for future selection; this refresh starts neither.') + '''</p><p>Some blocked labels and native dependency links lag the issue bodies. Refresh readiness when selecting each issue, especially where source prerequisites have closed.</p></section>
+<section class="recommendation" aria-labelledby="next-title"><div class="eyebrow">Suggested next source work</div><h2 id="next-title">Measure the early monitoring baseline.</h2><p>''' + render('The source contract in <strong>[[H2]]</strong> is delivered. Complete the early measured baseline and frozen budgets in <strong>[[H30]]</strong> before <strong>[[H3]]</strong>; <strong>[[P29]]</strong> has delivered its released-contract adoption. <strong>[[P37]]</strong> remains an independent option. <strong>[[N41]]</strong> is the clearest separate feature starting point. Keep later device qualification with its owning issues. [[H63]] documentation and [[H64]] qualification are ready for future selection; this refresh starts neither.') + '''</p><p>Some blocked labels and native dependency links lag the issue bodies. Refresh readiness when selecting each issue, especially where source prerequisites have closed.</p></section>
 <footer class="footer"><p>AGENT DEVICE WORK GUIDES / @@MONTH_UPPER@@<br>Source: existing GitHub planning records, refreshed @@TIMESTAMP@@.<br>This HTML refresh reads existing planning records. Earlier work created and updated those records; this refresh made no GitHub changes. Source validation, installation, real-client, transport and physical evidence remain separate. One state owner and one designated writer per device.</p><a href="#top">RETURN TO TOP ↑</a></footer>
 </main></div><script>''' + JS + '''</script></body></html>'''
 

@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-08T22:38:50.666086+00:00",
+ "fetchedAt": "2026-09-09T00:18:02.911790+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-08T22:25:57Z",
+   "pushedAt": "2026-09-08T23:50:57Z",
    "defaultBranch": "main",
-   "headSha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
-   "mainCommitCount": 9,
+   "headSha": "a5e03a031583cabab0941804df26092a51b66a46",
+   "mainCommitCount": 11,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "a5e03a031583cabab0941804df26092a51b66a46",
+     "date": "2026-09-08T23:50:57Z",
+     "message": "Record Pixoo soak acceptance and open timing qualification (#78)"
+    },
+    {
+     "sha": "3e828fdafaeea980c90f145b02a0c9621d8571c0",
+     "date": "2026-09-08T22:49:23Z",
+     "message": "docs: reconcile Pixoo shared contract adoption in work guide (#76)"
+    },
     {
      "sha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
      "date": "2026-09-08T22:08:02Z",
@@ -120,14 +130,30 @@
      "createdAt": "2026-09-08T22:01:51Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/75",
      "base": "main"
+    },
+    {
+     "number": 76,
+     "title": "docs: reconcile Pixoo shared contract adoption in work guide",
+     "mergedAt": "2026-09-08T22:49:23Z",
+     "createdAt": "2026-09-08T22:25:59Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/76",
+     "base": "main"
+    },
+    {
+     "number": 78,
+     "title": "docs: record Pixoo soak acceptance and open timing qualification",
+     "mergedAt": "2026-09-08T23:50:57Z",
+     "createdAt": "2026-09-08T23:45:16Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/78",
+     "base": "main"
     }
    ],
    "openPRs": [
     {
-     "number": 76,
-     "title": "docs: reconcile Pixoo shared contract adoption in work guide",
-     "createdAt": "2026-09-08T22:25:59Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/76"
+     "number": 77,
+     "title": "perf: prepare real early source measurements; budgets pending",
+     "createdAt": "2026-09-08T22:54:04Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77"
     },
     {
      "number": 59,
@@ -531,12 +557,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-08T22:33:34Z",
+   "pushedAt": "2026-09-09T00:14:44Z",
    "defaultBranch": "main",
-   "headSha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
-   "mainCommitCount": 18,
+   "headSha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
+   "mainCommitCount": 19,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
+     "date": "2026-09-09T00:14:44Z",
+     "message": "Validate Pixoo reliability and support configured HTTP proxies (#54)"
+    },
     {
      "sha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
      "date": "2026-09-08T22:33:34Z",
@@ -764,6 +795,14 @@
      "createdAt": "2026-09-08T22:27:04Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/53",
      "base": "main"
+    },
+    {
+     "number": 54,
+     "title": "Validate Pixoo reliability and support configured HTTP proxies",
+     "mergedAt": "2026-09-09T00:14:44Z",
+     "createdAt": "2026-09-08T22:50:31Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/54",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -895,18 +934,27 @@
      "createdAt": "2026-09-07T00:55:03Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
+    },
+    {
+     "number": 12,
+     "title": "Validate local physical playback, recovery, and soak reliability",
+     "closedAt": "2026-09-09T00:17:43Z",
+     "createdAt": "2026-09-05T22:08:56Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
     }
    ],
    "openIssueCount": 20,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
-    "2026-09-08T21:16:18Z"
+    "2026-09-09T00:07:22Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-05": 18,
     "2026-09-06": 3,
     "2026-09-07": 14,
-    "2026-09-08": 1
+    "2026-09-08": 1,
+    "2026-09-09": 1
    }
   }
  }

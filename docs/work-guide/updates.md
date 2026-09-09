@@ -1,5 +1,35 @@
 # Guide maintenance history
 
+## 2026-09-09 UTC: Pixoo #12 approved acceptance and timing follow-up
+
+Coordinator: the Pixoo #12 delivery root. The owner approved moving only effective
+variable GIF timing to Pixoo #55. The uniform-500-ms application profile stays
+unchanged. The ambiguous A/B/control observations, approximate out-of-tolerance
+still reading, accepted flashing defect #52 and screen-retention limitation remain
+in the dated hardware evidence. No further visual test is part of closeout.
+
+Pixoo PR #54 merged at `7c1204fd2516df86c706bae7c9498a5ee1bb749b`
+after independent Standards and Specification reviews and all five PR jobs passed.
+All five merged-main jobs passed in run `34294175210` before #12 was closed as
+completed at 00:17:43 UTC on September 9. Source and scoped physical acceptance
+are complete; this companion reconciles the final guide status.
+
+This companion follows the earlier evidence checkpoint in hub PR #78. Refresh
+all three backlogs and histories, retain closed baselines as references, move
+variable timing into the Pixoo media guide and reconcile roadmap membership.
+The completed local-acceptance guide now owns zero open issues. The browser
+check initially treated its empty membership as one blank ID; normalize empty
+membership while retaining exact coverage assertions. The next browser run
+exposed a repository-filter error on the same empty node; handle its empty
+repository set and omit the empty prefix in its roadmap count. Preserve node positions, connector routing,
+architecture sources and the eight viewers. Hub #73's reserved evaluation input remains revision
+`7464b9e669c7150f780b334a3429c5f30a89b438`, HTML SHA-256
+`8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`.
+No product behavior or OpenSpec delta applies. The existing user exemption for
+this work-guide document removes only human approval; independent reviews,
+all configured CI jobs and guarded merges remain required. Candidate validation
+and the companion PR link belong in the delivery receipt.
+
 ## 2026-09-08: Pixoo #12 physical evidence and open timing qualification
 
 Coordinator: the Pixoo #12 delivery root. The owner confirmed controls, recovery

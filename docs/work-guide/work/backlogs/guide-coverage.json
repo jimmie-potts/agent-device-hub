@@ -1,7 +1,5 @@
 {
-  "local-acceptance": [
-    "P12"
-  ],
+  "local-acceptance": [],
   "shared-codex": [
     "H32",
     "H3",
@@ -63,7 +61,8 @@
     "P15",
     "P16",
     "P18",
-    "P52"
+    "P52",
+    "P55"
   ],
   "controls-music": [
     "H31",
