@@ -1,5 +1,28 @@
 # Guide maintenance history
 
+## 2026-09-09 UTC: Nanoleaf Prism delivery candidate
+
+Coordinator: the Nanoleaf Prism delivery root. Record the accepted dependency
+sequence Nanoleaf #52, #53 and #26 in the presentation guide and roadmap.
+Connector source validation is underway in Nanoleaf PR #56. Keep crystal
+rendering and luminous labels pending their reviewed source delivery and current
+UI approval. Tray artwork and physical-light changes are outside this delivery.
+
+Refresh the paginated backlog snapshot and reconcile primary coverage for all
+110 open issues, including the separately planned fresh Linux source #54 and
+installed acceptance #55. Those stages reuse the wall UI and do not block Prism
+component preparation. Hub #80 records the separate public hosting work. This
+companion changes no runtime ownership or command flow, so the eight architecture
+definitions and their pinned evidence remain unchanged. Hub #73 retains its
+reserved diagram-repair scope and evaluation input.
+
+Regenerate the guide from its owning inputs. Add hosted execution of the existing
+build, maintenance and browser checks with screenshot/PDF receipts because the
+local browser cannot create its required socket. No product behavior or OpenSpec
+delta is needed. Candidate checks, independent reviews, exact hashes and UI
+approval belong in the PR receipt. Public guide publication is not part of this
+source-delivery request.
+
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
 Coordinator: the public-guide delivery root. The user selected public access.

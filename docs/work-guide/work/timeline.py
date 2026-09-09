@@ -47,11 +47,16 @@ TRACKS = [
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf rendering + displays', [
-        dict(id='n-np-fix', x=0, label='Map fix · external scenes', issues=['N26', 'N21'], guide='nanoleaf-presentation'),
+        dict(id='n-np-fix', x=0, label='External scenes', issues=['N21'], guide='nanoleaf-presentation'),
         dict(id='n-np-render', x=1, label='Rendering + live renderer', issues=['N15', 'N17'], guide='nanoleaf-presentation'),
         dict(id='n-np-custom', x=2, label='Palettes + effects', issues=['N18', 'N19', 'N20'], guide='nanoleaf-presentation'),
         dict(id='n-np-lively', x=3, label='Lively prototype', issues=['N10', 'N11', 'N12', 'N13', 'N14'], guide='nanoleaf-presentation'),
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
+    ]),
+    ('Prism wall artwork', [
+        dict(id='n-prism-geometry', x=0, label='Connector geometry', issues=['N52'], guide='nanoleaf-presentation'),
+        dict(id='n-prism-renderer', x=1, label='Crystal artwork + flow', issues=['N53'], guide='nanoleaf-presentation'),
+        dict(id='n-prism-numbers', x=2, label='Luminous Line numbers', issues=['N26'], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
         dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H15', 'H17'], guide='tidbyt-lifx'),
@@ -72,12 +77,14 @@ TRACKS = [
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
     ('Hosting + migrations', [
+        dict(id='n-linux-source', x=0, label='Linux source setup', issues=['N54'], guide='hosting-migrations'),
+        dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
         dict(id='n-host-port', x=3, label='Portability · dedicated server', issues=['H43', 'H44'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'P46', 'H73'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['N37', 'P46', 'H73', 'H80'], guide='development-workflow'),
         dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),

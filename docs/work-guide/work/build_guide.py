@@ -121,7 +121,7 @@ GUIDES = [
              ['Lively prototype', '[[N10]] → ([[N11]] + [[N12]]) → [[N13]] → [[N14]]', 'Qualify compatibility; add persistent addressing and inspection mode; integrate startup/recovery; then evaluate the installed prototype.'],
              ['Optional ambient presentation', '[[N16]]', 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.'],
              ['External scenes', '[[N21]]', 'Investigate external scene mirroring independently of bridge-controlled rendering.'],
-             ['Focused map correction', '[[N26]]', 'Fix number-tag clearance. The preceding layout work is closed.'],
+             ['Prism crystal artwork', '[[N52]] → [[N53]] → [[N26]]', 'Expose connector geometry, integrate the crystal components and two-second inward flow, then finish luminous numbering and clearance. Source delivery is in progress; UI candidates require human approval. Tray artwork and physical-light animation changes are excluded.'],
          ], notes=['Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring.']),
     dict(id='pixoo-media', short='Pixoo media', title='Extend Pixoo’s media and playlist experience', phase='After reliability',
          intro='These deferred features follow the physical reliability baseline in [[P12]].',
@@ -147,7 +147,7 @@ GUIDES = [
          intro='Coordinate hosting across projects while keeping source relocation separate from runtime changes.',
          headers=['Group', 'Issues', 'Sequence or boundary'], rows=[
              ['PC/container hosting', '[[H42]] [[P14]]', 'Hub builds on standalone hosting; Pixoo’s Docker/ARM64 qualification follows Pixoo #12. Coordinate networking, storage, recovery, and packaging.'],
-             ['Nanoleaf runtime portability', '[[H43]]', 'Qualify Windows dependencies and a reversible runtime migration.'],
+             ['Nanoleaf Linux installation', '[[N54]] → [[N55]] · [[H43]]', 'Prepare a fresh Linux installation reusing the current services and wall UI, then perform separately authorized installed acceptance. Existing Nanoleaf state can be left unused; preserve unrelated data and one light writer. Coordinate architecture documentation with Hub #43. Prism artwork can progress independently.'],
              ['Dedicated server', '[[H44]]', 'Choose hardware and migration requirements after measuring workloads and portability.'],
              ['Source consolidation', '[[H25]] [[H26]]', 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, and rollback decisions.'],
          ], notes=['Containerization and repository consolidation do not block the first useful local release. Moving Nanoleaf source into the hub does not establish Linux compatibility.']),
@@ -169,6 +169,7 @@ GUIDES = [
              ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
+             ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
