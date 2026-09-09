@@ -1,5 +1,26 @@
 # Guide maintenance history
 
+## 2026-09-09 UTC: Hub #80 public guide hosting
+
+Coordinator: the public-guide delivery root. The user selected public access.
+GitHub rejected Pages creation on the private hub repository because the current
+plan does not support it. Use the public `jimmie-potts/agent-device-guide`
+repository for the generated guide and eight companion viewers, with the hub
+remaining the source of maintained inputs and generated output.
+
+Add the public guide link and the publication procedure to the guide README.
+The source snapshot is hub revision
+`8064537639d7a91a66657cdbce9a63654e41b80c`, guide SHA-256
+`3004c48ff75f3cc54b59735da3bd71071d2c178f41ef6d15b4d898229473c7c3`.
+Regeneration is byte-identical. No represented product, backlog, architecture,
+history or acceptance fact changes; preserve their existing snapshot dates.
+There is no product behavior delta or OpenSpec change. Hub #73's reserved
+diagram repair remains separate.
+
+Candidate validation, both PR links, independent reviews, CI and the public
+deployment readback belong in the delivery receipt. This entry records the
+publication candidate; successful deployment must be verified separately.
+
 ## 2026-09-09 UTC: Pixoo #12 approved acceptance and timing follow-up
 
 Coordinator: the Pixoo #12 delivery root. The owner approved moving only effective

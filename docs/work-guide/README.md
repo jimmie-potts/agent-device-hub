@@ -1,7 +1,8 @@
 # Cross-project work guide
 
-Open [the HTML guide](outputs/agent-device-work-guides.html) in a browser after
-cloning this repository. GitHub's file view shows HTML source. Keep the adjacent
+Read the [public guide](https://jimmie-potts.github.io/agent-device-guide/), or open
+[the local HTML](outputs/agent-device-work-guides.html) in a browser after cloning
+this repository. GitHub's file view shows HTML source. Keep the adjacent
 `architecture` folder for the full interactive viewers. The inline diagrams,
 timeline and guide controls work in the single HTML file.
 
@@ -9,6 +10,39 @@ The hub owns this generated guide for agent-device-hub, codex-nanoleaf and
 Divoom/Pixoo. GitHub issues remain authoritative for scope and status. The HTML
 is a dated, reviewed view of those records. Its backlog, source review and
 history timestamps describe separate evidence; none means a live dashboard.
+
+## Publish the public edition
+
+The public [agent-device-guide repository](https://github.com/jimmie-potts/agent-device-guide)
+hosts the generated HTML through GitHub Pages from `main`, directory `/`.
+The hub source repository stays private. Pages on the current account plan
+requires a separate public repository. Links to private GitHub issues, PRs and
+source files still require repository access.
+
+This task's coordinator owns the hub source PR and the linked public publication
+PR. After a guide change merges and all configured main CI jobs pass:
+
+1. Use the validated output from that exact hub revision. Copy
+   `outputs/agent-device-work-guides.html` to the public repository's `index.html`
+   and copy the eight `outputs/architecture/*.html` viewers to `architecture/`.
+   Publish only these nine HTML files, `.nojekyll` and the public README.
+2. Update the public README with the hub source revision and guide SHA-256.
+   Retain the snapshot dates in the generated HTML. Do not refresh data or edit
+   generated content in the public repository.
+3. Open a public-repository PR from an isolated branch/worktree. Link the hub
+   companion PR and obtain independent Standards and Specification reviews of
+   the fixed candidate. Validate the guide and relative viewer links, confirm
+   the file allowlist and hashes, and pass all configured CI before guarded merge.
+4. GitHub Pages publishes the public repository's merged `main`. Read the
+   successful deployment and verify the unauthenticated HTTPS landing page and
+   all eight viewers against the source hashes. Record both PRs, source and
+   published revisions, and the deployment result in the delivery receipt.
+
+Copying from the private hub to the public repository is an explicit publication
+step. There is no automatic cross-repository sync or new access token. A hub
+merge alone does not update the website; report pending publication when the
+public copy has not caught up. Keep the hub guide-maintenance entry with the
+source PR, including a specific no-impact reason for hosting-only changes.
 
 ## Maintain it with each delivery
 
