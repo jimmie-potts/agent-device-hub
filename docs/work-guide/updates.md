@@ -4,7 +4,11 @@
 
 Coordinator: the Nanoleaf Prism delivery root. Record the accepted dependency
 sequence Nanoleaf #52, #53 and #26 in the presentation guide and roadmap.
-Connector source validation is underway in Nanoleaf PR #56. Keep crystal
+Connector source validation is underway in Nanoleaf PR #56.
+Independent review caught an introduced hosting dependency. Put the Linux
+#54 → #55 → Hub #43 sequence on its own row, leaving the other hosting
+nodes at their prior stages. A regression compares the new Prism/Linux edges
+with the native dependency records; it failed before this correction. Keep crystal
 rendering and luminous labels pending their reviewed source delivery and current
 UI approval. Tray artwork and physical-light changes are outside this delivery.
 

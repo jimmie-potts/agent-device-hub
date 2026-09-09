@@ -76,11 +76,14 @@ TRACKS = [
         dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52', 'P55'], guide='pixoo-media'),
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
-    ('Hosting + migrations', [
+    ('Nanoleaf Linux runtime', [
         dict(id='n-linux-source', x=0, label='Linux source setup', issues=['N54'], guide='hosting-migrations'),
         dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
+        dict(id='n-linux-portability', x=2, label='Cross-platform review', issues=['H43'], guide='hosting-migrations'),
+    ]),
+    ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
-        dict(id='n-host-port', x=3, label='Portability · dedicated server', issues=['H43', 'H44'], guide='hosting-migrations'),
+        dict(id='n-host-port', x=3, label='Dedicated server', issues=['H44'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
