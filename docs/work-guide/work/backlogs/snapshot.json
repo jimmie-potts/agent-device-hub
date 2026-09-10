@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-10T13:41:02.171335+00:00",
-  "refreshedAt": "2026-09-10T13:41:10.310008+00:00",
+  "startedAt": "2026-09-10T21:16:40.078074+00:00",
+  "refreshedAt": "2026-09-10T21:16:48.882920+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        71
+        70
       ],
-      "openPRs": 6,
+      "openPRs": 4,
       "prPageSizes": [
-        6
+        4
       ],
       "paginationComplete": true,
       "directReads": [
@@ -42,10 +42,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 28,
+      "openIssues": 25,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        30
+        27
       ],
       "openPRs": 2,
       "prPageSizes": [
@@ -55,9 +55,9 @@
       "directReads": [
         {
           "number": 26,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            5
+            7
           ]
         },
         {
@@ -76,16 +76,16 @@
         },
         {
           "number": 52,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            3
+            5
           ]
         },
         {
           "number": 53,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            7
+            9
           ]
         }
       ]
@@ -94,11 +94,11 @@
       "openIssues": 19,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        19
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -133,7 +133,7 @@
       ]
     }
   },
-  "openIssues": 113,
+  "openIssues": 110,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }
