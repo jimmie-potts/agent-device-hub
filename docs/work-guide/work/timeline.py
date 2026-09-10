@@ -114,7 +114,7 @@ def history_chart(history, snapshot_iso, issues):
         return left + plot_w * (dt - start).total_seconds() / span
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
-             '<title id="history-title">Merged pull requests per repository, September 5 to 8, 2026</title>',
+             '<title id="history-title">Merged pull requests per repository through the backlog snapshot</title>',
              f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)
