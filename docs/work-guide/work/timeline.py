@@ -54,9 +54,9 @@ TRACKS = [
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
     ]),
     ('Prism wall artwork', [
-        dict(id='n-prism-geometry', x=0, label='Connector geometry', issues=['N52'], guide='nanoleaf-presentation'),
-        dict(id='n-prism-renderer', x=1, label='Crystal artwork + flow', issues=['N53'], guide='nanoleaf-presentation'),
-        dict(id='n-prism-numbers', x=2, label='Luminous Line numbers', issues=['N26'], guide='nanoleaf-presentation'),
+        dict(id='n-prism-geometry', x=0, label='Geometry delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-renderer', x=1, label='Crystal + flow delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
         dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H15', 'H17'], guide='tidbyt-lifx'),

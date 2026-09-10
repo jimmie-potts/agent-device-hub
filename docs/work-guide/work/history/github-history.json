@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-10T13:41:13.029693+00:00",
+ "fetchedAt": "2026-09-10T21:17:01.849593+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T13:41:01Z",
+   "pushedAt": "2026-09-10T21:11:54Z",
    "defaultBranch": "main",
-   "headSha": "589f95e274fd441867910e639af29a026db51577",
-   "mainCommitCount": 17,
+   "headSha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
+   "mainCommitCount": 19,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
+     "date": "2026-09-10T21:11:53Z",
+     "message": "Document the Nanoleaf Prism delivery sequence (#82)"
+    },
+    {
+     "sha": "f15ac074260e9d974ab2d5c38162e607847e0593",
+     "date": "2026-09-10T13:44:33Z",
+     "message": "docs: reconcile verified core CI efficiency delivery (#94)"
+    },
     {
      "sha": "589f95e274fd441867910e639af29a026db51577",
      "date": "2026-09-10T13:36:32Z",
@@ -194,6 +204,14 @@
      "base": "main"
     },
     {
+     "number": 82,
+     "title": "Document the Nanoleaf Prism delivery sequence",
+     "mergedAt": "2026-09-10T21:11:54Z",
+     "createdAt": "2026-09-09T23:05:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+     "base": "main"
+    },
+    {
      "number": 89,
      "title": "Reconcile completed Pixoo CI scheduling delivery in the guide",
      "mergedAt": "2026-09-10T03:22:59Z",
@@ -224,6 +242,14 @@
      "createdAt": "2026-09-10T13:30:19Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/93",
      "base": "main"
+    },
+    {
+     "number": 94,
+     "title": "docs: reconcile verified core CI efficiency delivery",
+     "mergedAt": "2026-09-10T13:44:34Z",
+     "createdAt": "2026-09-10T13:41:02Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/94",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -242,13 +268,6 @@
      "base": "main"
     },
     {
-     "number": 82,
-     "title": "Document the Nanoleaf Prism delivery sequence",
-     "createdAt": "2026-09-09T23:05:53Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
-     "base": "main"
-    },
-    {
      "number": 84,
      "title": "Document the fresh Nanoleaf Linux runtime",
      "createdAt": "2026-09-10T00:29:55Z",
@@ -260,13 +279,6 @@
      "title": "Adopt planning and delivery checkpoints for the work guide",
      "createdAt": "2026-09-10T00:46:23Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
-     "base": "main"
-    },
-    {
-     "number": 94,
-     "title": "docs: reconcile verified core CI efficiency delivery",
-     "createdAt": "2026-09-10T13:41:02Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/94",
      "base": "main"
     }
    ],
@@ -334,7 +346,7 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T13:33:17Z",
+   "pushedAt": "2026-09-10T21:11:17Z",
    "defaultBranch": "main",
    "headSha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
    "mainCommitCount": 24,
@@ -681,6 +693,14 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/25"
     },
     {
+     "number": 26,
+     "title": "Keep map number tags clear of neighbouring Lines in rotated compact layouts",
+     "closedAt": "2026-09-10T21:16:04Z",
+     "createdAt": "2026-09-07T01:24:54Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26"
+    },
+    {
      "number": 27,
      "title": "Record shared agent-device-hub adoption and migration dependencies",
      "closedAt": "2026-09-07T02:58:25Z",
@@ -727,9 +747,25 @@
      "createdAt": "2026-09-07T17:15:37Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
+    },
+    {
+     "number": 52,
+     "title": "Expose connector geometry for the Prism wall map",
+     "closedAt": "2026-09-10T21:15:57Z",
+     "createdAt": "2026-09-09T22:08:08Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52"
+    },
+    {
+     "number": 53,
+     "title": "Integrate Prism crystal artwork and two-zone wall animation",
+     "closedAt": "2026-09-10T21:16:01Z",
+     "createdAt": "2026-09-09T22:08:21Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53"
     }
    ],
-   "openIssueCount": 28,
+   "openIssueCount": 25,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-09T22:37:08Z"
@@ -743,12 +779,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-10T13:05:36Z",
+   "pushedAt": "2026-09-10T21:10:06Z",
    "defaultBranch": "main",
-   "headSha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
-   "mainCommitCount": 20,
+   "headSha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+   "mainCommitCount": 21,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+     "date": "2026-09-10T21:10:05Z",
+     "message": "Adopt shared guide planning and delivery checkpoints (#56)"
+    },
     {
      "sha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
      "date": "2026-09-10T03:10:59Z",
@@ -996,6 +1037,14 @@
      "base": "main"
     },
     {
+     "number": 56,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:10:06Z",
+     "createdAt": "2026-09-10T00:46:39Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
+     "base": "main"
+    },
+    {
      "number": 57,
      "title": "Bound CI runtime and remove duplicate branch-push checks",
      "mergedAt": "2026-09-10T03:10:59Z",
@@ -1004,15 +1053,7 @@
      "base": "main"
     }
    ],
-   "openPRs": [
-    {
-     "number": 56,
-     "title": "Adopt shared guide planning and delivery checkpoints",
-     "createdAt": "2026-09-10T00:46:39Z",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
-     "base": "main"
-    }
-   ],
+   "openPRs": [],
    "closedIssues": [
     {
      "number": 1,

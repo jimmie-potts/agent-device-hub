@@ -1,5 +1,32 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Prism stories completed
+
+Nanoleaf #52, #53 and #26 are closed as completed after their source PRs
+#56, #58 and #60, independent reviews, approved integrated UI and all nine
+main jobs per source revision. Hub companion PR #82 merged at
+`8872be1f80f47c35b89faeab3724fedc0402e9f6`. Its tree matches the reviewed
+candidate, and all thirteen main jobs passed in runs `34530817100` and
+`34530817142`. The user approved proceeding and instructed that story/status
+guide updates require no further human approval within this delivery.
+
+This linked follow-up refreshes all three paginated backlogs and source
+histories after the authoritative closures. Remove the three completed stories
+from primary open-issue coverage and roadmap membership. Keep their references,
+delivered sequence and acceptance evidence. Record PR #82's guide-workflow
+acceptance while leaving Hub #91's final reconciliation to its separate owner.
+Preserve every concurrent maintenance entry and Hub #73's reserved input.
+
+Only source status, history and membership change. Guide controls, architecture
+ownership, command flows, definitions, source pins and all eight viewers remain
+unchanged. No product behavior or OpenSpec delta applies. The canonical build,
+both maintenance tests and six-width browser checks pass with 110 primary open
+issues, 122 linked issues and 48 roadmap nodes. Exact hashes, independent
+reviews and hosted checks are recorded in the follow-up PR.
+This guide-only reconciliation is a maintenance record and does not require a
+recursive product milestone. Installation, physical-light operations and public
+publication remain outside this source delivery.
+
 ## 2026-09-10 UTC: Prism source verification and final guide reconciliation
 
 Nanoleaf connector PR #56, renderer PR #58 and numbering PR #60 are merged.
