@@ -1,5 +1,35 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
+
+[Nanoleaf #37](https://github.com/jimmie-potts/codex-nanoleaf/issues/37)
+source merged through [PR #61](https://github.com/jimmie-potts/codex-nanoleaf/pull/61)
+at `dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa`. Both independent review axes
+were clear. All nine PR jobs passed in run `34431669004`; all nine merged-main
+jobs passed in run `34431911171`. The guarded squash merge preserved the
+reviewed workflow. Push validation now targets main, obsolete revisions of each
+PR share a concurrency group, and workflow, Python and browser jobs have
+ten-minute limits. The two MCP jobs and every existing command remain intact.
+Live overlapping-revision cancellation was not observed; no artificial overlap
+or timeout was induced. No product specification, installation or device change
+applies.
+
+The Nanoleaf delivery coordinator owns [Hub companion PR #90](https://github.com/jimmie-potts/agent-device-hub/pull/90).
+The user approved its guide candidate `c2eb905`, but main advanced before merge.
+Hub PR #89 already refreshed the overlapping backlog, primary coverage and
+history, including Nanoleaf PR #61, and corrected the timeline title. Preserve
+that newer input set and regenerate from it. The resulting HTML is byte-identical
+to main: this reconciliation adds only this delivery record. The dated snapshot
+correctly retains #37 as open at its recorded cutoff; source acceptance is
+verified and issue closure awaits this companion's merge and main-CI readback.
+No additional architecture, roadmap or UI change is needed. Preserve all eight
+viewers, existing snapshot dates and Hub #73's reserved evaluation input.
+
+Validation: guide build and maintenance regression pass; generated HTML is
+unchanged from main. Independent reviews and hosted checks for the reconciled
+candidate are recorded on PR #90. Public website publication remains outside
+this source-only delivery.
+
 ## 2026-09-10 UTC: Prism source and review checkpoint
 
 The Nanoleaf Prism coordinator reconciled connector source PR #56, merged at
