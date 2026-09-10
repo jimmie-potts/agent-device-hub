@@ -115,6 +115,7 @@ GUIDES = [
     dict(id='nanoleaf-presentation', short='Rendering + displays', title='Improve Nanoleaf rendering, customization, and persistent displays', phase='Independent experience',
          intro='There are two main paths here, plus smaller independent improvements.',
          headers=['Group', 'Issues and order', 'Dependency or boundary'], rows=[
+             ['Prism wall map', '[[N52]] → [[N53]]', 'Expose connector geometry, then integrate the approved crystal artwork and two-zone animation. This remains source work; installed acceptance is separate.'],
              ['Authoritative live rendering', '[[N15]] → [[N17]]', 'Deliver the rendering contract, then the live app renderer.'],
              ['Consistent colors', '[[N18]]', 'Add project/status palettes after rendering and Hub #2’s vocabulary.'],
              ['Effect customization', '[[N19]] [[N20]]', 'Add completion celebrations and status animations after rendering and palettes.'],
@@ -147,7 +148,7 @@ GUIDES = [
          intro='Coordinate hosting across projects while keeping source relocation separate from runtime changes.',
          headers=['Group', 'Issues', 'Sequence or boundary'], rows=[
              ['PC/container hosting', '[[H42]] [[P14]]', 'Hub builds on standalone hosting; Pixoo’s Docker/ARM64 qualification follows Pixoo #12. Coordinate networking, storage, recovery, and packaging.'],
-             ['Nanoleaf runtime portability', '[[H43]]', 'Qualify Windows dependencies and a reversible runtime migration.'],
+             ['Nanoleaf Linux runtime', '[[H43]] → [[N54]] → [[N55]]', 'Plan a fresh Linux runtime, deliver its source, then separately authorize installation and service/client/physical verification. Preserve one light writer; existing Windows services must be stopped before Linux ownership begins.'],
              ['Dedicated server', '[[H44]]', 'Choose hardware and migration requirements after measuring workloads and portability.'],
              ['Source consolidation', '[[H25]] [[H26]]', 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, and rollback decisions.'],
          ], notes=['Containerization and repository consolidation do not block the first useful local release. Moving Nanoleaf source into the hub does not establish Linux compatibility.']),
@@ -165,8 +166,11 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
-             ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
+             ['Bound CI costs and hangs', '[[N37]]; completed [[P46]]', 'Pixoo #46 merged through PR #57 with all five PR and main checks passing. Nanoleaf #37 remains open. The original sequence limited CI churn; it was not a product dependency.'],
+             ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
+             ['Guide publication checks', '[[H80]]', 'The public edition exists; complete the remaining live route and served-byte verification.'],
+             ['Guide delivery checkpoints', '[[H83]]', 'Adopt the shared planning and delivery checkpoints; source synchronization, public publication and live verification remain separate.'],
+             ['Prism guide design and publication', '[[H85]] → [[H86]] → [[H87]]', 'Approve the design, implement artwork and subtle motion, then publish and verify the existing public and local destinations. No design or installation is performed by this snapshot refresh.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),

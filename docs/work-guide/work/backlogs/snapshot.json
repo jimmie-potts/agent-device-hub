@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-09T00:17:59.398302+00:00",
-  "refreshedAt": "2026-09-09T00:18:08.356107+00:00",
+  "startedAt": "2026-09-10T03:15:19.321880+00:00",
+  "refreshedAt": "2026-09-10T03:15:26.069234+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 60,
+      "openIssues": 65,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        72
       ],
-      "openPRs": 2,
+      "openPRs": 7,
       "prPageSizes": [
-        2
+        7
       ],
       "paginationComplete": true,
       "directReads": [
@@ -42,14 +42,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 25,
+      "openIssues": 29,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        25
+        33
       ],
-      "openPRs": 0,
+      "openPRs": 4,
       "prPageSizes": [
-        0
+        4
       ],
       "paginationComplete": true,
       "directReads": [
@@ -64,20 +64,20 @@
           "number": 37,
           "state": "OPEN",
           "commentPages": [
-            0
+            3
           ]
         }
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 20,
+      "openIssues": 19,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
         20
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -104,15 +104,15 @@
         },
         {
           "number": 46,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            0
+            1
           ]
         }
       ]
     }
   },
-  "openIssues": 105,
+  "openIssues": 113,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }
