@@ -87,8 +87,8 @@ TRACKS = [
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['N37', 'P46', 'H73', 'H80'], guide='development-workflow'),
-        dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'H73', 'H80', 'H83'], guide='development-workflow'),
+        dict(id='n-dev-jobs', x=1, label='Job layout · Prism guide', issues=['P47', 'H85', 'H86', 'H87'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
 ]
@@ -124,7 +124,7 @@ def history_chart(history, snapshot_iso, issues):
         return left + plot_w * (dt - start).total_seconds() / span
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
-             '<title id="history-title">Merged pull requests per repository, September 5 to 8, 2026</title>',
+             '<title id="history-title">Merged pull requests per repository through the dated snapshot</title>',
              f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)

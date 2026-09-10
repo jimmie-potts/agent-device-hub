@@ -165,11 +165,13 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
-             ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
+             ['Bound CI costs and hangs', '[[N37]]; completed [[P46]]', 'Pixoo #46 merged through PR #57 with all five PR and main checks passing. Nanoleaf #37 remains open. The original sequence limited CI churn; it was not a product dependency.'],
+             ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
+             ['Guide publication checks', '[[H80]]', 'The public edition exists; complete the remaining live route and served-byte verification. This source guide update does not publish the website.'],
+             ['Guide delivery checkpoints', '[[H83]]', 'Adopt the shared planning and delivery checkpoints; source synchronization, public publication and live verification remain separate.'],
+             ['Prism guide design and publication', '[[H85]] → [[H86]] → [[H87]]', 'Approve the design, implement artwork and subtle motion, then publish and verify the existing public and local destinations. No design or installation is performed by this snapshot refresh.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
-             ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
