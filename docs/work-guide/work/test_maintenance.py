@@ -9,13 +9,13 @@ import unittest
 
 
 class GuideMaintenance(unittest.TestCase):
-    def test_prism_and_linux_edges_match_native_dependencies(self):
+    def test_changed_tracks_match_native_dependencies(self):
         import timeline
         source=Path(__file__).resolve().parent/'backlogs'
         native_h=json.loads((source/'hub-native-deps.json').read_text())['data']['repository']['issues']['nodes']
         native_n=json.loads((source/'device-native-deps.json').read_text())['data']['n']['issues']['nodes']
         prefixes={'jimmie-potts/codex-nanoleaf':'N','jimmie-potts/agent-device-hub':'H'}
-        starts={'N52','N53','N54','N55'}
+        starts={'N52','N53','N54','N55','H85','H86'}
         expected=set()
         for prefix,issues in [('H',native_h),('N',native_n)]:
             for issue in issues:

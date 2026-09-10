@@ -5,26 +5,34 @@
 The Nanoleaf Prism coordinator reconciled connector source PR #56, merged at
 `cdceffddb7a86c138797325e8d6b0460eb320e58` with all nine main jobs passing.
 Issue #52 stays open for this guide synchronization. Artwork PR #58 has passing
-local browser evidence and is under independent review. Numbering #26 is in
-progress against that integrated source. Hosted checks are currently blocked
-before execution by account billing restrictions; current-candidate human UI
-approval is still pending. No installation or physical-light change is recorded.
+local browser evidence and clear independent reviews. Numbering PR #60 has
+passing local checks and is under independent review against that integrated
+source. Hosted checks are blocked before execution by account billing restrictions;
+current-candidate human UI approval and Windows validation are still pending.
+No installation or physical-light change is recorded.
 
 Refresh all three paginated backlogs and histories. Reconcile primary coverage
 for 114 open issues, including newly planned Hub #83 and #85 through #87. Their
 workflow adoption and guide-specific Prism design, implementation and distribution
 remain separate deliveries. The agent-skills #33 prerequisite is an external
-reference, not part of the three-repository totals. Preserve native dependency
+reference, excluded from the three-repository totals. Preserve native dependency
 direction and record source merge dates separately from issue completion.
 Use relative track headings so the independent Prism and Linux sequences do not
 appear to wait for the shared Codex milestone solely because of their column.
 
+Independent review found that the primary hosting table used a coordination dot
+where the roadmap showed the required Nanoleaf #55 to Hub #43 dependency.
+Use the full #54 → #55 → Hub #43 sequence in both views. Extend the native-edge
+regression to the newly represented Hub #85 → #86 → #87 chain; a temporary
+inversion of #85 and #86 fails that check, while the correct sequence passes.
+
 The guide's dated source history and roadmap change. Runtime ownership and command
 flows do not, so the eight architecture definitions, source pins and viewers stay
 unchanged. Hub #73's reserved connector-repair input remains untouched. Regenerate
-the guide and run its build, maintenance and browser checks with the available
-cached Chromium headless shell. Candidate hashes, reviews and CI belong in PR #82.
-Public guide publication remains outside this task.
+the guide and run its build, maintenance and browser checks with the cached Chromium
+headless shell. Workflow checks also pass under the required Node 24 runtime.
+Candidate hashes, reviews and CI belong in PR #82. Public guide publication
+remains outside this task.
 
 ## 2026-09-09 UTC: Nanoleaf Prism delivery candidate
 

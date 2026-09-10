@@ -1,10 +1,10 @@
 {
- "fetchedAt": "2026-09-10T00:43:37.730098+00:00",
+ "fetchedAt": "2026-09-10T01:22:55.898359+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T00:35:04Z",
+   "pushedAt": "2026-09-10T00:58:18Z",
    "defaultBranch": "main",
    "headSha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
    "mainCommitCount": 13,
@@ -202,6 +202,13 @@
      "createdAt": "2026-09-10T00:29:55Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
      "base": "main"
+    },
+    {
+     "number": 88,
+     "title": "Adopt planning and delivery checkpoints for the work guide",
+     "createdAt": "2026-09-10T00:46:23Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main"
     }
    ],
    "closedIssues": [
@@ -268,7 +275,7 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T00:37:37Z",
+   "pushedAt": "2026-09-10T01:19:46Z",
    "defaultBranch": "main",
    "headSha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
    "mainCommitCount": 21,
@@ -524,6 +531,20 @@
      "createdAt": "2026-09-10T00:36:26Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58",
      "base": "main"
+    },
+    {
+     "number": 59,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "createdAt": "2026-09-10T00:46:40Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
+     "base": "main"
+    },
+    {
+     "number": 60,
+     "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
+     "createdAt": "2026-09-10T01:21:11Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
+     "base": "codex/gh-53-prism-renderer"
     }
    ],
    "closedIssues": [
@@ -630,7 +651,7 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-09T00:14:44Z",
+   "pushedAt": "2026-09-10T00:47:57Z",
    "defaultBranch": "main",
    "headSha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
    "mainCommitCount": 19,
@@ -878,7 +899,15 @@
      "base": "main"
     }
    ],
-   "openPRs": [],
+   "openPRs": [
+    {
+     "number": 56,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "createdAt": "2026-09-10T00:46:39Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
+     "base": "main"
+    }
+   ],
    "closedIssues": [
     {
      "number": 1,
