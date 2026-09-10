@@ -1,5 +1,38 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Hub #91 CI efficiency completed
+
+Hub #91 is closed as completed after the remaining guide-workflow acceptance
+passed. PR #82 merged at `8872be1f80f47c35b89faeab3724fedc0402e9f6`.
+All twelve core jobs passed in main run `34530817100`, and the guide browser job
+passed in main run `34530817142`. Its reviewed head also passed all thirteen
+jobs. Core scheduling and build-once commands were already delivered through
+PRs #92 and #93, with guide-source reconciliation in #94.
+
+Refresh the three complete backlogs and source histories after closure. Retain
+#91 through a direct acceptance read, remove its primary open-issue and roadmap
+membership, and mark the existing development-workflow row completed. Preserve
+the remaining CI/guide maintenance issues and concurrent guide changes. The
+32-to-10 full-build reduction retains every test and platform. One main sample
+fell from 814 to 664 runner-seconds and 19 to 18 rounded minutes; mixed PR
+samples do not establish monthly billing savings. Warm pip restoration was
+observed for all four OS/Python combinations in the natural #94 PR run. Live
+superseded-run cancellation remains unobserved, as allowed by #91.
+
+This closure changes no product behavior, controller ownership, command flow or
+failure boundary. It needs no product OpenSpec delta or architecture redraw;
+preserve the eight viewers, pins and architecture evidence dates. Guide-only
+reconciliation adds no product milestone. Public-site publication and live
+public-page verification are outside this source delivery.
+
+Validation: Node 24 setup, workflow checks and thirteen workflow tests passed;
+the inventory remains three specifications and three archived changes. Generation,
+four maintenance tests and browser checks passed for six viewport widths,
+search/navigation, controls, diagrams, timeline, print and all eight viewers.
+The snapshot has 108 primary open issues, 12 guides, 48 roadmap nodes and 61
+merged PR records. Generated HTML SHA-256:
+`d9f979a601032d246aa203739c80c5a7ee39768784d0cc34473d0e1644af26b9`.
+
 ## 2026-09-10 UTC: Hub #83 publication and completed status
 
 The user authorized public publication. Public guide PR #2 merged at

@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-09-10T21:55:04.245832+00:00",
-  "refreshedAt": "2026-09-10T21:55:33.450036+00:00",
+  "startedAt": "2026-09-10T22:07:04.232433+00:00",
+  "refreshedAt": "2026-09-10T22:07:11.512935+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 65,
+      "openIssues": 64,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        68
+        67
       ],
       "openPRs": 3,
       "prPageSizes": [
@@ -34,6 +34,13 @@
           "state": "CLOSED",
           "commentPages": [
             4
+          ]
+        },
+        {
+          "number": 91,
+          "state": "CLOSED",
+          "commentPages": [
+            3
           ]
         },
         {
@@ -140,7 +147,7 @@
       ]
     }
   },
-  "openIssues": 109,
+  "openIssues": 108,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }
