@@ -121,7 +121,7 @@ GUIDES = [
              ['Lively prototype', '[[N10]] → ([[N11]] + [[N12]]) → [[N13]] → [[N14]]', 'Qualify compatibility; add persistent addressing and inspection mode; integrate startup/recovery; then evaluate the installed prototype.'],
              ['Optional ambient presentation', '[[N16]]', 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.'],
              ['External scenes', '[[N21]]', 'Investigate external scene mirroring independently of bridge-controlled rendering.'],
-             ['Prism crystal artwork', '[[N52]] → [[N53]] → [[N26]]', 'Expose connector geometry, integrate the crystal components and two-second inward flow, then finish luminous numbering and clearance. Source delivery is in progress; UI candidates require human approval. Tray artwork and physical-light animation changes are excluded.'],
+             ['Prism crystal artwork', '[[N52]] → [[N53]] → [[N26]]', 'Connector geometry merged in Nanoleaf PR #56 with passing main CI; #52 remains open for guide synchronization. Crystal artwork and two-second flow are in PR #58 with passing local browser checks. Luminous numbering is in progress. Current UI approval and hosted checks remain required; the latest hosted jobs could not start because of account billing restrictions. Tray artwork and physical-light animation changes are excluded.'],
          ], notes=['Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring.']),
     dict(id='pixoo-media', short='Pixoo media', title='Extend Pixoo’s media and playlist experience', phase='After reliability',
          intro='These deferred features follow the physical reliability baseline in [[P12]].',
@@ -170,6 +170,8 @@ GUIDES = [
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
              ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],
+             ['Guide workflow checkpoints', '[[H83]]', 'Adopt the shared planning/delivery checkpoints from agent-skills #33 through the existing Hub maintenance and publication procedure. That external prerequisite is a reference and is excluded from these three-repository issue totals.'],
+             ['Guide Prism design and rollout', '[[H85]] → [[H86]] → [[H87]]', 'Approve a guide-specific design, apply artwork and subtle motion to the generated guide and viewers, then verify the existing local and public copies. This is separately planned work; the Nanoleaf source companion does not implement or publish it.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
@@ -275,7 +277,7 @@ timeline_section = f'''<details class="reference timeline" id="timeline" open>
       <section class="timeline-panel" aria-labelledby="roadmap-heading"><div class="panel-head"><h3 id="roadmap-heading">Where we're going</h3><span class="eyebrow">Ordered · not dated</span></div>
       <div class="chart-wrap roadmap-wrap">{TIMELINE['roadmap']}</div>
       <div class="chart-legend"><span class="legend-same">── order within a track</span><span class="legend-cross">┄┄ cross-track prerequisite (hover a node to highlight)</span><span class="legend-ready">▣ ready for selection now</span></div>
-      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns order stages by prerequisite: ready or independent now, next, after the shared Codex milestone, later, and deferred or conditional. They are not dates and no schedule is implied. Click a node to open its work guide.</p></section>
+      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns show relative order within each track. Arrows identify sequence and cross-track prerequisites; sharing a column does not make an independent track wait for the Codex milestone. Columns are not dates and imply no schedule. Click a node to open its work guide.</p></section>
       </div><div id="timeline-tip" class="timeline-tip" role="status" hidden></div>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
