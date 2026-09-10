@@ -144,8 +144,9 @@ source migration keep their existing owners and dependency paths.
 Use this repository as the monorepo for new controllers and shared packages,
 as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
 The existing Pixoo and Nanoleaf repositories retain ownership until separately
-delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX
-controllers and the React dashboard; keep the Nanoleaf worker in Python.
+delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX/PC
+lighting controllers and the React dashboard; keep the Nanoleaf worker in Python.
+Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
@@ -155,8 +156,9 @@ and [provider matrix](provider-qualification.md) establish metadata and source e
 without claiming installed producer qualification. The remaining
 proposed layout is packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
-apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
-controller directories contain documents only; the other paths remain proposed.
+apps/hub, apps/dashboard, controllers/tidbyt, controllers/lifx and
+controllers/pc-lighting. The controller directories contain documents only;
+the other paths remain proposed.
 Use Node 24 and npm workspaces when executable packages are introduced.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
@@ -247,6 +249,55 @@ effects, update limits, takeover/manual-control and restoration policies. Resolv
 those choices before implementation readiness. Both controllers preserve shared
 privacy and evidence semantics; neither infers success, read status or fresh
 connectivity from absent observations.
+
+## PC and desk lighting delivery
+
+[The PC lighting documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) records the accepted scope:
+Corsair Dominator Platinum RGB DDR5 and supported H150i ELITE LCD XT lighting,
+plus Lian Li Strimer lighting and the Varmilo VA108M-RGB keyboard where compatible.
+Preserve iCUE, L-Connect 3 and the existing lighting and keyboard setup. Qualification
+may use the existing MSI software as a Strimer synchronization route; wider motherboard/GPU lighting, cooler LCD
+content and fan/pump control are outside this feature.
+
+"PC lighting" groups tower devices and an optional keyboard. The existing controller
+contract owns device identity and zone meaning; the group creates no new wire
+identity. The keyboard is a separate configured lighting target with no input
+handling responsibility. Keep one designated writer per target and one owner for a Strimer controller's cable outputs. Qualify vendor
+handoff and restoration before enabling a target. Missing support stays explicit.
+
+The proposed controller belongs in controllers/pc-lighting with a Windows-local
+vendor adapter, independent target queues and the shared authenticated APIs.
+iCUE SDK qualification comes first for Corsair. Strimer qualification must find
+a supported route compatible with L-Connect, including any explicit motherboard
+sync handoff. OpenRGB remains research, with no automatic dependency, migration
+or competing writer. Existing Home Assistant/MQTT delegation is a qualification
+comparison; broader #11 research is not a prerequisite.
+
+Varmilo qualification is limited to existing supported vendor or maintained
+interfaces. The user selected whole-keyboard shared status first; per-key regions
+and separate sessions mapped to keys are deferred. Vendor software availability
+and generic USB IDs do not establish a supported lighting API. If none qualifies,
+record the limitation and defer the adapter. Do not introduce custom protocol
+research, simulated key shortcuts or firmware replacement. Preserve normal typing,
+key mappings, macros and lock indicators, and never capture keystrokes.
+
+Automatic status consumes the shared core initially hosted in Pixoo. It does not
+add a collector or wait for general controls, the dashboard or standalone hosting.
+Strimer and Varmilo each have separate qualification, adapter and physical acceptance
+work, so neither blocks a verified Corsair release. Keyboard support also cannot
+block Strimer. Each optional target requires its own adapter before joining status
+or controls; closing a qualification issue with an unsupported result does not
+satisfy that readiness gate. General UI/MCP controls follow
+#31 and use the same owning services. Expose only established capabilities;
+arbitrary RGB/channel operations need explicit contract or typed-extension work.
+
+The [PC lighting guide](../controllers/pc-lighting/README.md) distinguishes screenshots,
+historical logs, user-supplied identity and inventory from unverified API/physical
+capabilities.
+Its linked issues own readiness, status policy, manual takeover and restoration.
+Source delivery adds no installed service or device operation. Full live lifecycle
+acceptance uses #8, and each physical target keeps its own evidence and permission
+gate. Windows vendor adapters remain on the PC during later hub-host migration.
 
 ## Alternatives and consequences
 
