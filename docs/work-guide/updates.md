@@ -158,8 +158,9 @@ remain unchanged. Companion PRs: Hub #72, Nanoleaf #51, Pixoo #51.
 The candidate for [Pixoo #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46)
 limits push checks to main, groups obsolete revisions of each PR for cancellation,
 and sets ten-minute job timeouts. It retains all five checks and their commands.
-Source merge and completion remain pending successful hosted CI; GitHub reports
-an account payment/spending-limit restriction. The delivery coordinator owns
+Source merge and completion remain pending verification. Earlier hosted runs
+reported an account payment/spending-limit restriction; this candidate's runs
+started successfully. The delivery coordinator owns
 this guide companion and the Pixoo PR.
 
 No guide output changes apply to this unmerged candidate: the Engineering
