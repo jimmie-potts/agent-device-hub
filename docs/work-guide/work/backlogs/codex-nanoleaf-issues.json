@@ -300,7 +300,7 @@
     "title": "Keep map number tags clear of neighbouring Lines in rotated compact layouts",
     "body": "## Desired outcome\n\nLine numbers fit the Prism crystal style and remain easy to identify and select without overlapping neighbouring Lines. Show neutral luminous numerals for selected, highlighted, hovered, and keyboard-focused Lines, with an optional show-all control.\n\n## Scope\n\nRefine this existing number-clearance issue as part of the approved Prism work. Keep its unresolved compact-layout regression and stable-identity requirements. Do not create a duplicate numbering issue.\n\nOriginal reproduction from the #22 review in PR #24: at 90 or 270 degrees in 800×844 and 390×844 layouts, tags 6, 7, 10, and 11 sit within or close to a neighbouring Line's track. The earlier tags cleared their own selection ring but used the side away from the wall center. Keep neighbour clearance as the placement goal when replacing pill tags with luminous numerals. Use the final crystal body and selection bounds rather than assuming the old 10-unit track or 12-unit selected half-width is still correct.\n\nThe default visibility follows selected/highlighted/hovered/focused Lines. Multiple selected Lines can show their numbers at once. Show-all is a browser-local display preference, off by default; it never changes physical lights or bridge allocation. Preserve the inspector, task/project associations, pending selection state, multi-selection modifiers, and explicit Locate action. Exclude physical renumbering, a general layout editor, tray work, and service migration.\n\n## Acceptance criteria\n\n- [ ] AC1: At 1440, 800, and 390 px, every supported map rotation and flip has no numeral/label bounds intersecting a neighbouring Line's final crystal track or active selection bounds. Labels remain inside the canvas. Cover the original compact-layout regression, the show-all state, and multiple simultaneously selected/highlighted labels. Preserve the existing all-rotations overlap guard and adapt it to the final material geometry.\n- [ ] AC2: Preserve the existing 360 raw number-click cases across three widths and eight orientations, using show-all for that complete identity check. Numerals retain a legible text height of at least 11 px and no horizontal overflow. Glow cannot replace the readable numeral core or obscure nearby labels.\n- [ ] AC3: Physical numbering, stable Line IDs, click targets, and task/project/inspector associations remain unchanged across rotation, flips, mode changes, polling, and geometry refresh. Ctrl/Cmd/Shift multi-selection keeps the app's existing behavior. Connectors and decorative light layers do not intercept number or Line selection.\n- [ ] AC4: Default mode reveals a Line's numeral whenever it is selected, highlighted, hovered, or keyboard-focused. Removing one reason does not hide the numeral while another remains. Idle unselected/unhighlighted/unhovered/unfocused Lines hide their numbers; show-all reveals every number. Touch selection can reveal and retain a number without requiring hover.\n- [ ] AC5: Numerals use a neutral luminous treatment with a crisp readable core and restrained spill, visually consistent with Prism without adopting a task/status color. They remain readable in Work, Quiet, Free, and reduced motion. Keyboard focus and selected/pending state remain distinguishable. Accessible names retain stable Line numbers even when decorative numerals are hidden.\n- [ ] AC6: Hover, focus, selection, and show-all issue no light, assignment, unread, or Locate request. An interaction during assembly settles the structure and performs the intended action; it does not discard the selection or reveal stale labels. The existing explicit Locate control remains the only path for that device action.\n\n## Verification approach\n\nAll checks below are planned, not executed by this issue update.\n\n| Criteria | Planned evidence |\n| --- | --- |\n| AC1, AC2 | Extend `tests/foundation_checks.cjs` clearance checks with final label/body bounds and all supported rotations/flips. Retain the 360 click checks with show-all. Capture original failing compact poses and final screenshots; assert minimum text size, viewport containment, and no horizontal overflow. |\n| AC3, AC4 | Browser journeys for modifier multi-selection, external highlighting, hover exit while selected, focus/blur, touch selection, show-all persistence, and surviving IDs after geometry refresh. Assert stable labels and cross-view associations. |\n| AC5 | Keyboard and accessible-name assertions, mode/reduced-motion matrix, and human desktop/mobile review at final glow settings. Automated bounds do not establish visual legibility on their own. |\n| AC6 | Request spies and synthetic-state snapshots during selection/show-all and assembly interruption; assert no new device or state mutation. Retain explicit Locate tests separately. |\n\nRun `npm run test:browser`. Run `python3 scripts/check.py` if Python changes become necessary. After `npm ci` and the issue-linked OpenSpec changes, run `npm run check:workflow` and `npm run test:workflow`. Record actual commands and candidate revision during delivery, not as planning results.\n\n## Dependencies and scope references\n\n- Blocked by https://github.com/jimmie-potts/codex-nanoleaf/issues/53 for final crystal dimensions, interaction integration, and material appearance. Placement investigation can run independently; final acceptance uses the integrated Prism renderer.\n- Original prerequisite [#22](https://github.com/jimmie-potts/codex-nanoleaf/issues/22) is satisfied by [PR #24](https://github.com/jimmie-potts/codex-nanoleaf/pull/24).\n- Preserve [wall-line-identification](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/openspec/specs/wall-line-identification/spec.md) and the interaction/phase contracts of [wall-assembly-animation](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/openspec/specs/wall-assembly-animation/spec.md). Add explicit deltas for luminous styling and conditional visibility while retaining numbering and clearance guarantees.\n\n## Assessment\n\nPlanning update, 2026-09-09, current main `ea3b95661352f927aceaf92b62d74660978c201f`, original #26 reproduction and the accepted Prism selection preference.\n\n- Complexity: medium. Collision-aware placement, several visibility reasons, multi-selection, and responsive transforms must stay consistent.\n- Uncertainty: medium. The bounded investigation compares neighbour clearance in the known failing poses after final crystal bounds are available. Choose the smallest placement change that satisfies the full visibility/rotation matrix without reducing the 11 px floor.\n- Impact: medium. Regressions can misidentify a Line or make selection inaccessible; interactions must remain local and retain identity.\n- Readiness: blocked by the Prism integration. Product choices are settled. Reassess if final dimensions, interaction contracts, or supported orientations change.\n\n## Delivery target and handoff\n\nSource-only. This planning update preserves the issue's existing open state, ownership, and unrelated metadata; it starts no implementation or device operation.\n\nFuture delivery follows the current SDLC with an owned worktree, this issue's exact OpenSpec change, current checks/CI, independent Standards and Specification reviews, and human approval of the integrated UI candidate before merge. Include accessibility and visual-clearance review. The coordinator records accepted screenshots and hands over no installation or physical-light claim.\n\nShared guide synchronization is pending. The authorized follow-up must reflect this changed issue scope and record it in `docs/work-guide/updates.md` through a linked Hub companion PR under the [guide procedure](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/work-guide/README.md). This issue update does not publish repository PRs or the public guide.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26",
-    "updatedAt": "2026-09-10T13:22:15Z",
+    "updatedAt": "2026-09-10T13:41:00Z",
     "closedAt": null,
     "labels": [
       {
@@ -311,9 +311,40 @@
       }
     ],
     "milestone": null,
-    "comments": [],
-    "commentCount": 4,
-    "commentsRefreshed": false
+    "comments": [
+      {
+        "body": "Coordinator: Codex Prism delivery, continuing the owner-authorized #52/#53/#26 batch. Owned worktree `/tmp/nanoleaf-prism-gh26`, branch `codex/gh-26-prism-numerals`, source base `d4ffa62b4e0406c11ec0e9d8d2881033a28f099a` from Prism PR #58. OpenSpec change `gh-26-prism-numerals`.\n\nStart numbering implementation against the integrated crystal dimensions and interaction contract that passed #53's local browser suite. The PR will be stacked on #58; final acceptance and merge remain blocked by that source, current checks and human UI approval. The bounded placement investigation passed all 48 modeled viewport/transform cases using the actual connector graph. Live DOM bounds and all 360 number clicks still require integrated browser verification.\n\nRetain the approved visibility union, neutral luminous treatment, browser-local show-all preference off by default, minimum text size, neighbour clearance, stable physical identity and passive interactions. No tray, physical renumbering, service, installation or light behavior is included. The coordinator owns repository and GitHub writes; workers return proposed files only. Hub guide companion: https://github.com/jimmie-potts/agent-device-hub/pull/82.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26#issuecomment-5610849712",
+        "createdAt": "2026-09-10T00:38:44Z",
+        "updatedAt": "2026-09-10T00:38:44Z"
+      },
+      {
+        "body": "PR #60 is open for the integrated numbering implementation at `f48ff218b4f16f585fd35ec20ea3acf395d1ecbb`, stacked on renderer PR #58 at `9bd41d73d0c4b1bd65a993ec3f394427bb316827`. The local full browser suite passes, including all 360 raw number clicks and 720 independently measured labels across the 48 viewport/rotation/flip cases. Touch, visibility unions, browser-local show-all persistence, modes, reduced motion, hidden canvases, missing assets, identity and passive actions are covered. The compact toolbar and legend also passed visual inspection and bounds checks.\n\nThe 161-test Python suite, six Node test entries, seven current specifications, eight archives and ten workflow tests pass. The exact issue-linked specifications are synchronized and archived. Separate read-only Standards and Specification reviews are underway at the committed base/head.\n\nThe issue remains blocked for source dependency #53, successful current-head hosted checks, Windows fixture execution and current-candidate human UI approval. GitHub account billing prevents jobs from starting; this host cannot start Windows PowerShell through WSL. Guide synchronization remains pending in Hub PR #82. No installation or physical-light change is claimed. After #53 merges, reconcile this stacked PR onto current main and renew affected checks and reviews.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26#issuecomment-5611236491",
+        "createdAt": "2026-09-10T01:22:26Z",
+        "updatedAt": "2026-09-10T01:22:26Z"
+      },
+      {
+        "body": "All requested Prism source work is implemented. Connector geometry #52 is already merged in PR #56 at `cdceffddb7a86c138797325e8d6b0460eb320e58`, with all nine main jobs passing. The issue remains open for linked guide synchronization.\n\nRenderer PR #58 is ready at `d978392889e408713be6a9badfbad822c38b970c`. Numbering PR #60 is ready at `fb723f2a04b7804b716ea9ed88bcef5bc44e23a0`, stacked on #58. Both have clear independent Standards and Specification reviews and all nine current-head PR jobs green, including browser and Windows upgrade fixtures. The account execution interruption has cleared. The browser failures found during delivery are resolved in the current candidates; their reproduction and correction evidence is recorded in the PRs.\n\nThe source guide companion, Hub PR #82 at `bdac1f4ee27504063366b5c7ab2d0e162db97ee4`, has clear independent reviews and all 13 current-head PR jobs green. The current integrated UI and guide are awaiting human approval under the repository UI rule. The two app PRs and guide remain open. After approval, the coordinator will refresh the dependencies and fixed comparisons, merge in order, verify main CI, reconcile guide completion facts and close only eligible source issues. No installed or physical-light work is claimed; Linux #54/#55 and public guide publication remain separate.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26#issuecomment-5611624508",
+        "createdAt": "2026-09-10T02:12:37Z",
+        "updatedAt": "2026-09-10T02:12:37Z"
+      },
+      {
+        "body": "Prism coordinator owns the serialized numbering merge checkpoint after completing renderer #53 main verification. PR #58 merged at `2944a3a0a7ce58da0a36125859d7d3f277bece76` with all nine main jobs passing. Numbering PR #60 now targets that main at candidate `91dd2a6f989b4a3ff6b619b50262c5b3c228f0ba`. Squash-ancestry reconciliation preserves the approved numbering UI and test bytes exactly; only main's seven CI configuration lines differ from approved candidate `fb723f2a04b7804b716ea9ed88bcef5bc44e23a0`. Human approval is recorded in PR #60. Current-head CI and independent review renewals are underway; no merge precedes all required gates. Guide synchronization remains in Hub PR #82.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26#issuecomment-5619373115",
+        "createdAt": "2026-09-10T13:22:13Z",
+        "updatedAt": "2026-09-10T13:22:13Z"
+      },
+      {
+        "body": "Numbering source PR #60 is verified on main at `b8b144bc8f92668688db278e9401e46e00b7c6ae`. The squash tree exactly matches reviewed and approved candidate `be818e297c7f9b6a13c40cad4bf2baa1f5cb01c7`. All nine merged-main jobs passed in [run 34483393699](https://github.com/jimmie-potts/codex-nanoleaf/actions/runs/34483393699), following all nine PR jobs in run 34482808650. Human approval, both independent reviews, the complete local browser suite and the retained negative phase-reset check are recorded in the PR.\n\nThis completes and releases the Nanoleaf serialized merge checkpoint. All three requested Prism source changes are on main. Issues #52, #53 and #26 remain open for guide synchronization in Hub PR #82. No installation, physical-light operation or public guide publication was performed.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26#issuecomment-5619633299",
+        "createdAt": "2026-09-10T13:41:00Z",
+        "updatedAt": "2026-09-10T13:41:00Z"
+      }
+    ],
+    "commentCount": 5,
+    "commentsRefreshed": true
   },
   {
     "number": 29,
@@ -738,9 +769,28 @@
       }
     ],
     "milestone": null,
-    "comments": [],
+    "comments": [
+      {
+        "body": "## Delivery claim\n\nCoordinator: Codex Prism delivery. The user authorized source delivery of #52, #53, and #26 in dependency order.\n\n- Owned worktree: `/tmp/nanoleaf-prism-gh52`\n- Branch: `codex/gh-52-prism-geometry`\n- Base: `ea3b95661352f927aceaf92b62d74660978c201f`\n- OpenSpec change: `gh-52-prism-geometry`\n- Scope: this issue's connector/cache/API contract and verification. No renderer, installation, physical-light, or Linux service changes.\n- Strategy: direct coordinator implementation; independent Standards and Specification reviews follow one frozen candidate. A separate read-only investigation covers the later renderer integration.\n- Assessment remains medium complexity, medium uncertainty, high impact. Contract fixtures, privacy canaries, cache failure tests, and concurrent readers cover the identified risk.\n- Finish line: reviewed PR, all configured current-head CI, guarded merge and main CI, issue readback, and linked Hub guide synchronization. Visible UI changes require the current candidate's human approval.\n\nThe coordinator owns repository/tracker writes and the companion Hub guide PR. Existing worktrees and other owners remain untouched.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52#issuecomment-5609737393",
+        "createdAt": "2026-09-09T22:42:56Z",
+        "updatedAt": "2026-09-09T22:42:56Z"
+      },
+      {
+        "body": "Prism delivery coordinator released the serialized merge checkpoint. PR #56 merged as `cdceffddb7a86c138797325e8d6b0460eb320e58`, verified on main with all nine jobs successful in push run 34419199684. Issue #52 remains open for linked Hub guide synchronization; no source merge remains pending here.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52#issuecomment-5610233093",
+        "createdAt": "2026-09-09T23:34:18Z",
+        "updatedAt": "2026-09-10T00:09:21Z"
+      },
+      {
+        "body": "Source implementation is verified on main. PR #56 merged as `cdceffddb7a86c138797325e8d6b0460eb320e58`; main points to that commit. Push run [34419199684](https://github.com/jimmie-potts/codex-nanoleaf/actions/runs/34419199684) passed every configured job, including Windows, browser, Python, MCP, and workflow checks.\n\nThe connector contract is available for #53 integration. This issue stays open until [Hub guide companion #82](https://github.com/jimmie-potts/agent-device-hub/pull/82) completes its synchronization gate. No installation or physical-light acceptance is claimed. The serialized source merge checkpoint is released.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52#issuecomment-5610528384",
+        "createdAt": "2026-09-10T00:05:42Z",
+        "updatedAt": "2026-09-10T00:05:42Z"
+      }
+    ],
     "commentCount": 3,
-    "commentsRefreshed": false
+    "commentsRefreshed": true
   },
   {
     "number": 53,
@@ -760,9 +810,52 @@
       }
     ],
     "milestone": null,
-    "comments": [],
+    "comments": [
+      {
+        "body": "Coordinator: Codex Prism delivery, continuing the owner-authorized #52/#53/#26 batch. Owned worktree `/tmp/nanoleaf-prism-gh53`, branch `codex/gh-53-prism-renderer`, fresh-main base `ea3b95661352f927aceaf92b62d74660978c201f`. OpenSpec change `gh-53-prism-renderer`.\n\nStart the independent component preparation allowed by this issue while #52 completes review in PR #56. Final app integration remains dependent on the validated producer contract. The coordinator owns all repository and GitHub changes; the read-only runtime worker returns a proposed component patch. The archive fingerprint is verified. High complexity, medium uncertainty/impact remain appropriate; controlled clocks, geometry/zone fixtures, interaction/security checks and hosted visual evidence cover the integration risk.\n\nScope is Prism browser source and portable asset inclusion. No tray artwork, installation, service migration, physical changes or public publication. The separate Linux work is #54/#55 and currently has no delivery claim. Guide companion: https://github.com/jimmie-potts/agent-device-hub/pull/82. Finish implementation, current checks and independent fixed-candidate Standards/Specification reviews before requesting the required human UI approval. Current coordinator reasoning is not exposed by this host; worker settings are requested settings, not verified runtime identity.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5609990162",
+        "createdAt": "2026-09-09T23:10:21Z",
+        "updatedAt": "2026-09-09T23:10:21Z"
+      },
+      {
+        "body": "The #52 source prerequisite is merged and verified on main at `cdceffddb7a86c138797325e8d6b0460eb320e58`. Its issue remains open only for shared guide synchronization. The Prism branch incorporates this producer contract through a normal merge; final app integration can proceed.\n\nThe coordinator retains this story's existing claim and source-only scope. Reusable Prism components, the sanitized adapter, local asset serving, packaging inclusion, and their focused checks are prepared. The browser wall now uses those components with its existing actions and identity. Full browser motion, interaction, resource cleanup, responsive evidence, and performance checks are next. Human approval of the current integrated UI will remain a merge gate. Linux installation #54 and its state owner remain separate.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5610528523",
+        "createdAt": "2026-09-10T00:05:43Z",
+        "updatedAt": "2026-09-10T00:05:43Z"
+      },
+      {
+        "body": "PR #58 is open at `d4ffa62b4e0406c11ec0e9d8d2881033a28f099a`, based on verified main `cdceffddb7a86c138797325e8d6b0460eb320e58`. The integrated local browser suite passes, including all 360 raw number clicks, colors and half swaps, phase retention, geometry replacement/fallback, mechanical assembly, visibility and resource cleanup. Desktop/mobile and high-DPI captures and actual/larger-fixture frame measurements were produced. The issue-linked specifications are synchronized and archived.\n\nIndependent Standards and Specification reviews of this fixed candidate are underway. Hosted validation is blocked by GitHub's account billing/spending-limit error, before any job runs. The current PR must pass all configured jobs after the account condition is resolved. Human approval of the final integrated UI and the linked Hub PR #82 remain completion gates. No installed or physical-light change is claimed.\n\nThe final crystal dimensions and stable interaction contract are now available for #26's stacked numbering implementation. Its acceptance and merge remain dependent on this source and the finished integrated candidate.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5610849207",
+        "createdAt": "2026-09-10T00:38:41Z",
+        "updatedAt": "2026-09-10T00:38:41Z"
+      },
+      {
+        "body": "All requested Prism source work is implemented. Connector geometry #52 is already merged in PR #56 at `cdceffddb7a86c138797325e8d6b0460eb320e58`, with all nine main jobs passing. The issue remains open for linked guide synchronization.\n\nRenderer PR #58 is ready at `d978392889e408713be6a9badfbad822c38b970c`. Numbering PR #60 is ready at `fb723f2a04b7804b716ea9ed88bcef5bc44e23a0`, stacked on #58. Both have clear independent Standards and Specification reviews and all nine current-head PR jobs green, including browser and Windows upgrade fixtures. The account execution interruption has cleared. The browser failures found during delivery are resolved in the current candidates; their reproduction and correction evidence is recorded in the PRs.\n\nThe source guide companion, Hub PR #82 at `bdac1f4ee27504063366b5c7ab2d0e162db97ee4`, has clear independent reviews and all 13 current-head PR jobs green. The current integrated UI and guide are awaiting human approval under the repository UI rule. The two app PRs and guide remain open. After approval, the coordinator will refresh the dependencies and fixed comparisons, merge in order, verify main CI, reconcile guide completion facts and close only eligible source issues. No installed or physical-light work is claimed; Linux #54/#55 and public guide publication remain separate.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5611624386",
+        "createdAt": "2026-09-10T02:12:36Z",
+        "updatedAt": "2026-09-10T02:12:36Z"
+      },
+      {
+        "body": "Prism delivery coordinator resumes the serialized merge checkpoint for renderer PR #58, followed by numbering PR #60 after its dependency merges. Current main is `dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa`; renderer candidate is `a943c1c37d2022c24fb81ff0bd2eedd0853471b7`. Refreshed all open in-progress/review issue discussions. Issue #37 explicitly released its source checkpoint; no competing active checkpoint was found. User approval is recorded in both PRs. The current candidate adds only the already-merged CI configuration to the approved renderer; affected reviews and all current-head PR jobs must pass before the expected-head guarded merge. The checkpoint ends after merged-main CI readback. Source-only scope and guide companion #82 remain unchanged.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5619267002",
+        "createdAt": "2026-09-10T13:14:28Z",
+        "updatedAt": "2026-09-10T13:14:28Z"
+      },
+      {
+        "body": "Renderer source PR #58 is verified on main at `2944a3a0a7ce58da0a36125859d7d3f277bece76`. The squash tree exactly matches reviewed and approved candidate `a943c1c37d2022c24fb81ff0bd2eedd0853471b7`. All nine merged-main jobs passed in push run [34481751959](https://github.com/jimmie-potts/codex-nanoleaf/actions/runs/34481751959), following all nine PR jobs. Independent Standards and Specification reviews and human approval are recorded in the PR.\n\nThe renderer merge checkpoint is complete. This coordinator now proceeds to the same delivery's numbering checkpoint in #26. This issue remains open only for linked Hub guide synchronization in PR #82. No installation or physical-light operation was performed.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5619372870",
+        "createdAt": "2026-09-10T13:22:12Z",
+        "updatedAt": "2026-09-10T13:22:12Z"
+      },
+      {
+        "body": "Tracker correction: GitHub automatically completed this issue at the PR #58 merge because the PR description contained a closing keyword inside a negative instruction. Main verification has now passed, but required guide companion #82 is still pending. Reopening the issue in review until that gate completes, and removing the trigger from the PR description. This corrects tracker state; the source merge and its verification remain complete.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53#issuecomment-5619400633",
+        "createdAt": "2026-09-10T13:24:14Z",
+        "updatedAt": "2026-09-10T13:24:14Z"
+      }
+    ],
     "commentCount": 7,
-    "commentsRefreshed": false
+    "commentsRefreshed": true
   },
   {
     "number": 54,

@@ -80,7 +80,7 @@ GUIDES = [
     dict(id='pc-lighting', short='PC + desk lighting', title='Add PC and desk lighting, starting with Corsair', phase='Future qualification and delivery',
          intro='[[H50]] owns the documentation and backlog. Corsair is the first adapter. Optional Strimer and Varmilo additions must not block Corsair; keyboard support must not block Strimer.',
          headers=['Track', 'Owning issues', 'Required work and prerequisites'], rows=[
-             ['Documentation', '[[H50]]', 'Hub PR #59 is open and unmerged. Local checks and independent reviews are recorded, but hosted CI could not execute because of account billing/spending restrictions. These integrations are not implemented.'],
+             ['Documentation', '[[H50]]', 'Hub PR #59 is open and unmerged. Local checks and independent reviews are recorded. Its latest recorded hosted attempt stopped before execution with an account billing/spending-limit error; successful current-head checks remain required. These integrations are not implemented.'],
              ['Corsair first', '[[H51]] → [[H53]] → [[H57]]', 'Qualification follows Hub #50. The controller requires Hub #51 and the completed contract baseline [[H4]]. Physical acceptance also requires shared automatic status [[H55]] and lifecycle setup [[H8]].'],
              ['Optional Strimer', '[[H52]] → [[H54]] → [[H58]]', 'Qualification follows Hub #50. The adapter requires Hub #52, Hub #53 and the contract baseline. Acceptance additionally requires Hub #55 and Hub #8. An unsupported result keeps this branch deferred.'],
              ['Shared automatic status', '[[H55]]', 'Requires the Corsair controller [[H53]], shared state [[H3]] and its first host [[P31]]. Strimer participation requires Hub #54; Varmilo requires Hub #61 and a supported interface. Neither optional adapter gates Corsair status.'],
@@ -115,14 +115,13 @@ GUIDES = [
     dict(id='nanoleaf-presentation', short='Rendering + displays', title='Improve Nanoleaf rendering, customization, and persistent displays', phase='Independent experience',
          intro='There are two main paths here, plus smaller independent improvements.',
          headers=['Group', 'Issues and order', 'Dependency or boundary'], rows=[
-             ['Prism wall map', '[[N52]] → [[N53]]', 'Expose connector geometry, then integrate the approved crystal artwork and two-zone animation. This remains source work; installed acceptance is separate.'],
              ['Authoritative live rendering', '[[N15]] → [[N17]]', 'Deliver the rendering contract, then the live app renderer.'],
              ['Consistent colors', '[[N18]]', 'Add project/status palettes after rendering and Hub #2’s vocabulary.'],
              ['Effect customization', '[[N19]] [[N20]]', 'Add completion celebrations and status animations after rendering and palettes.'],
              ['Lively prototype', '[[N10]] → ([[N11]] + [[N12]]) → [[N13]] → [[N14]]', 'Qualify compatibility; add persistent addressing and inspection mode; integrate startup/recovery; then evaluate the installed prototype.'],
              ['Optional ambient presentation', '[[N16]]', 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.'],
              ['External scenes', '[[N21]]', 'Investigate external scene mirroring independently of bridge-controlled rendering.'],
-             ['Focused map correction', '[[N26]]', 'Fix number-tag clearance. The preceding layout work is closed.'],
+             ['Prism crystal artwork', '[[N52]] → [[N53]] → [[N26]]', 'Connector geometry and crystal artwork merged in Nanoleaf PRs #56 and #58, each with all nine main jobs passing. The user approved the integrated Prism UI. Luminous numbering merged in PR #60 with all nine PR and main jobs passing. The full browser suite passed all 360 click cases and 720 label-clearance measurements after a mode-observation timing correction. All three issues remain open only for guide synchronization. Tray artwork and physical-light animation changes are excluded.'],
          ], notes=['Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring.']),
     dict(id='pixoo-media', short='Pixoo media', title='Extend Pixoo’s media and playlist experience', phase='After reliability',
          intro='These deferred features follow the physical reliability baseline in [[P12]].',
@@ -148,7 +147,7 @@ GUIDES = [
          intro='Coordinate hosting across projects while keeping source relocation separate from runtime changes.',
          headers=['Group', 'Issues', 'Sequence or boundary'], rows=[
              ['PC/container hosting', '[[H42]] [[P14]]', 'Hub builds on standalone hosting; Pixoo’s Docker/ARM64 qualification follows Pixoo #12. Coordinate networking, storage, recovery, and packaging.'],
-             ['Nanoleaf Linux runtime', '[[H43]] → [[N54]] → [[N55]]', 'Plan a fresh Linux runtime, deliver its source, then separately authorize installation and service/client/physical verification. Preserve one light writer; existing Windows services must be stopped before Linux ownership begins.'],
+             ['Nanoleaf Linux installation', '[[N54]] → [[N55]] → [[H43]]', 'Prepare a fresh Linux installation reusing the current services and wall UI, then perform separately authorized installed acceptance. Existing Nanoleaf state can be left unused; preserve unrelated data and one light writer. After installed acceptance #55, reconcile the architecture documentation in Hub #43. Prism artwork can progress independently.'],
              ['Dedicated server', '[[H44]]', 'Choose hardware and migration requirements after measuring workloads and portability.'],
              ['Source consolidation', '[[H25]] [[H26]]', 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, and rollback decisions.'],
          ], notes=['Containerization and repository consolidation do not block the first useful local release. Moving Nanoleaf source into the hub does not establish Linux compatibility.']),
@@ -169,11 +168,11 @@ GUIDES = [
              ['Bound CI costs and hangs', 'Completed [[N37]] [[P46]]', 'Pixoo #46 and Nanoleaf #37 delivered main-only push checks, PR concurrency and bounded jobs with their original validation coverage. Both issues are closed; these changes do not establish product or device acceptance.'],
              ['Hub CI efficiency', '[[H91]]', 'Core scheduling and build-once test commands merged through Hub PRs #92 and #93. Every test and platform remains. The proposed guide workflow has matching scheduling on its owner’s PR #82; its merge and hosted acceptance remain separate. Linux time improved in one sample; Windows variability prevents a per-run billing-savings claim.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
-             ['Guide publication checks', '[[H80]]', 'The public edition exists; complete the remaining live route and served-byte verification.'],
-             ['Guide delivery checkpoints', '[[H83]]', 'Adopt the shared planning and delivery checkpoints; source synchronization, public publication and live verification remain separate.'],
-             ['Prism guide design and publication', '[[H85]] → [[H86]] → [[H87]]', 'Approve the design, implement artwork and subtle motion, then publish and verify the existing public and local destinations. No design or installation is performed by this snapshot refresh.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
+             ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],
+             ['Guide workflow checkpoints', '[[H83]]', 'Adopt the shared planning/delivery checkpoints from agent-skills #33 through the existing Hub maintenance and publication procedure. That external prerequisite is a reference and is excluded from these three-repository issue totals.'],
+             ['Guide Prism design and rollout', '[[H85]] → [[H86]] → [[H87]]', 'Approve a guide-specific design, apply artwork and subtle motion to the generated guide and viewers, then verify the existing local and public copies. This is separately planned work; the Nanoleaf source companion does not implement or publish it.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
@@ -279,7 +278,7 @@ timeline_section = f'''<details class="reference timeline" id="timeline" open>
       <section class="timeline-panel" aria-labelledby="roadmap-heading"><div class="panel-head"><h3 id="roadmap-heading">Where we're going</h3><span class="eyebrow">Ordered · not dated</span></div>
       <div class="chart-wrap roadmap-wrap">{TIMELINE['roadmap']}</div>
       <div class="chart-legend"><span class="legend-same">── order within a track</span><span class="legend-cross">┄┄ cross-track prerequisite (hover a node to highlight)</span><span class="legend-ready">▣ ready for selection now</span></div>
-      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns order stages by prerequisite: ready or independent now, next, after the shared Codex milestone, later, and deferred or conditional. They are not dates and no schedule is implied. Click a node to open its work guide.</p></section>
+      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns show relative order within each track. Arrows identify sequence and cross-track prerequisites; sharing a column does not make an independent track wait for the Codex milestone. Columns are not dates and imply no schedule. Click a node to open its work guide.</p></section>
       </div><div id="timeline-tip" class="timeline-tip" role="status" hidden></div>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
