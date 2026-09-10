@@ -1,5 +1,53 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: retain the concurrent Hub #91 completion
+
+Main advanced again during PR #84's final readback. Merge
+`6e94511119ae0b9289fb34f90e09cafa956f18f6`, preserve Hub #91's completion
+and its complete `2026-09-10T22:07:11.512935+00:00` backlog snapshot, and
+regenerate the guide. The four maintenance tests and browser checks pass again;
+there are 108 primary open issues, 122 linked issues, 12 guides, 48 roadmap
+nodes, 61 merged PRs and nine diagrams. The guide SHA-256 is
+`a00a0113778c7fa0e68dab2a338a6a61b855003cc21c0439291b9b4438f9700c`.
+
+All nine architecture viewers remain unchanged. Workflow inputs are unchanged
+from this turn's passing Node 24 checks. The prior merge's CI results belong to
+that revision; the new head requires its own hosted checks and renewed reviews.
+The requested finish line remains the updated PR branch.
+
+## 2026-09-10 UTC: Hub #91 CI efficiency completed
+
+Hub #91 is closed as completed after the remaining guide-workflow acceptance
+passed. PR #82 merged at `8872be1f80f47c35b89faeab3724fedc0402e9f6`.
+All twelve core jobs passed in main run `34530817100`, and the guide browser job
+passed in main run `34530817142`. Its reviewed head also passed all thirteen
+jobs. Core scheduling and build-once commands were already delivered through
+PRs #92 and #93, with guide-source reconciliation in #94.
+
+Refresh the three complete backlogs and source histories after closure. Retain
+#91 through a direct acceptance read, remove its primary open-issue and roadmap
+membership, and mark the existing development-workflow row completed. Preserve
+the remaining CI/guide maintenance issues and concurrent guide changes. The
+32-to-10 full-build reduction retains every test and platform. One main sample
+fell from 814 to 664 runner-seconds and 19 to 18 rounded minutes; mixed PR
+samples do not establish monthly billing savings. Warm pip restoration was
+observed for all four OS/Python combinations in the natural #94 PR run. Live
+superseded-run cancellation remains unobserved, as allowed by #91.
+
+This closure changes no product behavior, controller ownership, command flow or
+failure boundary. It needs no product OpenSpec delta or architecture redraw;
+preserve the eight viewers, pins and architecture evidence dates. Guide-only
+reconciliation adds no product milestone. Public-site publication and live
+public-page verification are outside this source delivery.
+
+Validation: Node 24 setup, workflow checks and thirteen workflow tests passed;
+the inventory remains three specifications and three archived changes. Generation,
+four maintenance tests and browser checks passed for six viewport widths,
+search/navigation, controls, diagrams, timeline, print and all eight viewers.
+The snapshot has 108 primary open issues, 12 guides, 48 roadmap nodes and 61
+merged PR records. Generated HTML SHA-256:
+`d9f979a601032d246aa203739c80c5a7ee39768784d0cc34473d0e1644af26b9`.
+
 ## 2026-09-10 UTC: resolve Hub #84 conflicts after guide delivery
 
 The Hub #43 coordinator reconciles the existing PR #84 branch with main through

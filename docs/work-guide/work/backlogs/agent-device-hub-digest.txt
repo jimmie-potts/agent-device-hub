@@ -66,4 +66,4 @@
 #85 [OPEN] Approve the Prism design for the work guide and architecture viewers
 #86 [OPEN] Apply Prism artwork and subtle motion to the generated work guide
 #87 [OPEN] Publish and verify the Prism guide at existing public and local destinations
-#91 [OPEN] Reduce CI minutes while preserving all test coverage
+#91 [CLOSED] Reduce CI minutes while preserving all test coverage
