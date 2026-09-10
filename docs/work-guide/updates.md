@@ -6,13 +6,16 @@ The user approved the integrated Nanoleaf Prism UI in PRs #58 and #60 and this
 source guide in PR #82. Renderer PR #58 merged at
 `2944a3a0a7ce58da0a36125859d7d3f277bece76`, with all nine PR and main jobs
 passing. Connector PR #56 was already verified at
-`cdceffddb7a86c138797325e8d6b0460eb320e58`. Numbering PR #60 remains open.
-Its refreshed browser run passed 360 raw clicks and 720 label-clearance checks,
+`cdceffddb7a86c138797325e8d6b0460eb320e58`. Numbering PR #60 merged at
+`b8b144bc8f92668688db278e9401e46e00b7c6ae` after all nine current-head PR
+jobs passed in run `34482808650`. Main CI remains pending at this snapshot.
+Its earlier browser run passed 360 raw clicks and 720 label-clearance checks,
 then exposed an observer removed before an in-flight poll rendered Work mode.
 A delayed-poll reproduction distinguishes that test race from a failed UI mode
 change. The corrected observation retains exact phase equality and the 50 ms
-continuity boundary and rejects an injected reset. Current-head validation and
-independent review continue in PR #60. No further artwork change is introduced.
+continuity boundary and rejects an injected reset. Both renewed independent reviews are clear and the full local browser suite
+passes. Main verification continues in PR #60. No further artwork change is
+introduced.
 
 GitHub prematurely completed #53 when the PR description contained a closing
 keyword inside a negative instruction. The coordinator removed the trigger and
@@ -28,6 +31,30 @@ and the reserved Hub #73 input. These status updates change no runtime ownership
 or command flow. Regenerate through the canonical builder and run build,
 maintenance and browser checks. Exact hashes and independent review belong in
 PR #82. Public publication and installation remain separate work.
+
+Reconcile the later core CI policy from Hub PR #92 without changing its files.
+The companion guide workflow now also runs on PRs and main pushes, cancels
+superseded PR revisions and keeps its ten-minute limit. Its job steps, action
+pins, permissions, browser checks and artifact retention are unchanged. A
+focused configuration check rejects the old duplicate-trigger policy and passes
+the updated policy. Node 24 workflow validation passes three specifications,
+three archives and eleven tests. Hub #91 remains separately owned and open for
+its remaining build optimization, measurement and completion work.
+
+## 2026-09-10: Hub #91 CI scheduling candidate
+
+Coordinator: the Hub #91 delivery root. Add #91 to the development-workflow
+guide and refresh the three repository backlogs from paginated GitHub reads.
+The issue remains in progress; scheduling delivery, compilation optimization
+and measured savings are pending. This first candidate restricts core push
+checks to main, cancels superseded PR runs and bounds jobs to ten minutes.
+Every existing matrix entry and test command remains. PR #82 separately owns
+the proposed guide workflow; its scheduling must be reconciled before #91
+is complete. No product behavior or OpenSpec delta applies.
+
+Architecture ownership, diagrams and viewer files do not change. Preserve
+Hub #73's reserved input. Candidate checks and reviews belong in the PR receipt.
+Public publication and served-byte verification remain separate and pending.
 
 ## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
 

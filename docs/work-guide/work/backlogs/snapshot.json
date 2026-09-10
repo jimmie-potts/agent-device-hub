@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-10T13:29:14.942756+00:00",
-  "refreshedAt": "2026-09-10T13:29:25.025000+00:00",
+  "startedAt": "2026-09-10T13:34:21.441314+00:00",
+  "refreshedAt": "2026-09-10T13:34:29.415306+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        71
+        72
       ],
-      "openPRs": 5,
+      "openPRs": 6,
       "prPageSizes": [
-        5
+        6
       ],
       "paginationComplete": true,
       "directReads": [
@@ -45,11 +45,11 @@
       "openIssues": 28,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        31
+        30
       ],
-      "openPRs": 3,
+      "openPRs": 2,
       "prPageSizes": [
-        3
+        2
       ],
       "paginationComplete": true,
       "directReads": [

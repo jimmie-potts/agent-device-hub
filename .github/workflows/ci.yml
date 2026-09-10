@@ -1,9 +1,13 @@
 name: Checks
 on:
   push:
+    branches: [main]
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 jobs:
   workflow:
     name: Workflow checks on ${{ matrix.os }}
@@ -11,6 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +33,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ['3.12', '3.14']
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -51,6 +57,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -72,6 +79,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python: ['3.12', '3.14']
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
