@@ -15,8 +15,11 @@ at `1b7c3f490e288674ab37914f86f59996722a5d69`. Both merged trees match their
 reviewed candidates. Main-CI outcomes are recorded separately in the delivery
 receipt. Refresh all three backlogs and histories. The Prism owners completed
 Nanoleaf #52, #53 and #26 after their source and guide gates; remove those closed
-issues from primary coverage and the remaining-work timeline, retaining their
-source history and completion narrative. This snapshot has 110 open issues.
+issues from primary coverage, retaining their source history and completion narrative.
+Reconcile concurrent Hub PR #95, including its completed Prism timeline markers
+and owner-written acceptance text. Its guide-only merge is recorded here; the
+complete 21:20 UTC snapshot already captures the same authoritative closures
+and the later Nanoleaf checkpoint merge, so preserve those dated inputs. This snapshot has 110 open issues.
 
 Architecture no-impact remains unchanged. Instruction adoption, CI scheduling
 and these status/history updates alter no represented device ownership, command
@@ -24,6 +27,32 @@ path or failure boundary. Preserve the eight viewers and their evidence dates.
 Source merges/main CI, guide synchronization, public publication and live
 verification remain separate stages. This approval does not establish public
 deployment, installed-client behavior or physical acceptance.
+## 2026-09-10 UTC: Prism stories completed
+
+Nanoleaf #52, #53 and #26 are closed as completed after their source PRs
+#56, #58 and #60, independent reviews, approved integrated UI and all nine
+main jobs per source revision. Hub companion PR #82 merged at
+`8872be1f80f47c35b89faeab3724fedc0402e9f6`. Its tree matches the reviewed
+candidate, and all thirteen main jobs passed in runs `34530817100` and
+`34530817142`. The user approved proceeding and instructed that story/status
+guide updates require no further human approval within this delivery.
+
+This linked follow-up refreshes all three paginated backlogs and source
+histories after the authoritative closures. Remove the three completed stories
+from primary open-issue coverage and roadmap membership. Keep their references,
+delivered sequence and acceptance evidence. Record PR #82's guide-workflow
+acceptance while leaving Hub #91's final reconciliation to its separate owner.
+Preserve every concurrent maintenance entry and Hub #73's reserved input.
+
+Only source status, history and membership change. Guide controls, architecture
+ownership, command flows, definitions, source pins and all eight viewers remain
+unchanged. No product behavior or OpenSpec delta applies. The canonical build,
+both maintenance tests and six-width browser checks pass with 110 primary open
+issues, 122 linked issues and 48 roadmap nodes. Exact hashes, independent
+reviews and hosted checks are recorded in the follow-up PR.
+This guide-only reconciliation is a maintenance record and does not require a
+recursive product milestone. Installation, physical-light operations and public
+publication remain outside this source delivery.
 
 ## 2026-09-10 UTC: Prism source verification and final guide reconciliation
 
