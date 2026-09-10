@@ -80,7 +80,7 @@ install hooks, launch agent sessions, start a personal service or operate device
 
 - [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) retains its media,
   persistence, playback and physical-device operation queue.
-- [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Windows
+- [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
 
 The first shared core can run in Pixoo's existing backend. Standalone hub hosting

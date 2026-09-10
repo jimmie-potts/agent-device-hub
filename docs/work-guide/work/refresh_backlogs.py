@@ -54,15 +54,22 @@ def refresh_repo(repo):
     assert all(i['state'] == 'OPEN' for i in issues)
     assert len({i['number'] for i in issues}) == len(issues)
     # Comments are acceptance evidence for these direct status reads.
-    targets = {'agent-device-hub': [2, 50, 83, 91], 'codex-nanoleaf': [26, 34, 37, 52, 53], 'divoom-app-upgrade': [12, 26, 29, 46]}[repo]
+    targets = {'agent-device-hub': [2, 50, 83, 91], 'codex-nanoleaf': [26, 34, 37, 52, 53, 54, 55], 'divoom-app-upgrade': [12, 26, 29, 46]}[repo]
     direct = []
     for number in targets:
         raw = api(f'{base}/issues/{number}')
         comments, comment_sizes = pages(f'{base}/issues/{number}/comments')
-        issue = normalize(raw, [{'body': c['body'], 'url': c['html_url'], 'createdAt': c['created_at'], 'updatedAt': c['updated_at']} for c in comments])
+        comment_rows = [{'url': c['html_url'], 'createdAt': c['created_at'], 'updatedAt': c['updated_at']} for c in comments]
+        references_only = repo == 'codex-nanoleaf' and number in (54, 55)
+        # Linux delivery comments include private coordinator metadata. Keep
+        # acceptance links in Git; inspect full comments through GitHub on demand.
+        if not references_only:
+            comment_rows = [{'body': comment['body'], **row}
+                            for row, comment in zip(comment_rows, comments)]
+        issue = normalize(raw, comment_rows)
         assert (issue['state'] == 'OPEN') == any(i['number'] == number for i in issues)
         issues = [i for i in issues if i['number'] != number] + [issue]
-        direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes})
+        direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
     if repo == 'agent-device-hub':
         for number in (4, 7):
             baseline = normalize(api(f'{base}/issues/{number}'))
@@ -113,6 +120,6 @@ if __name__ == '__main__':
             assert prerequisites['totalCount'] == len(prerequisites['nodes'])
     (DEST/'hub-native-deps.json').write_text(json.dumps({'data':{'repository':native['data']['h']}},indent=2)+'\n')
     (DEST/'device-native-deps.json').write_text(json.dumps({'data':{key:native['data'][key] for key in ('n','p')}},indent=2)+'\n')
-    snapshot = {'startedAt':started, 'refreshedAt':datetime.now(timezone.utc).isoformat(), 'staticSnapshot':True, 'repositories':repos, 'openIssues':sum(r['openIssues'] for r in repos.values()), 'statusSource':'Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.', 'commentsScope':'Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current.'}
+    snapshot = {'startedAt':started, 'refreshedAt':datetime.now(timezone.utc).isoformat(), 'staticSnapshot':True, 'repositories':repos, 'openIssues':sum(r['openIssues'] for r in repos.values()), 'statusSource':'Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.', 'commentsScope':'Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 retain comment links and timestamps only. Other issue bodies, states and labels are current.'}
     (DEST/'snapshot.json').write_text(json.dumps(snapshot,indent=2)+'\n')
     print(json.dumps(snapshot,indent=2))

@@ -1,15 +1,30 @@
 {
- "fetchedAt": "2026-09-10T22:07:18.172952+00:00",
+ "fetchedAt": "2026-09-10T23:03:12.326361+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T22:06:00Z",
+   "pushedAt": "2026-09-10T22:30:13Z",
    "defaultBranch": "main",
-   "headSha": "950f7f62d502bc1d55d0f95872a4a10c08d4a27a",
-   "mainCommitCount": 22,
+   "headSha": "f2b37b6c8db29411e34e8bcf1e73c50c47ff7fe7",
+   "mainCommitCount": 25,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "f2b37b6c8db29411e34e8bcf1e73c50c47ff7fe7",
+     "date": "2026-09-10T22:30:08Z",
+     "message": "docs: plan PC and desk lighting integrations and backlog (#59)"
+    },
+    {
+     "sha": "1cb7313838ecd80ccba4e6c8417f01712af2cc7f",
+     "date": "2026-09-10T22:24:48Z",
+     "message": "Document the fresh Nanoleaf Linux runtime (#84)"
+    },
+    {
+     "sha": "6e94511119ae0b9289fb34f90e09cafa956f18f6",
+     "date": "2026-09-10T22:13:03Z",
+     "message": "docs: reconcile completed CI efficiency work (#97)"
+    },
     {
      "sha": "950f7f62d502bc1d55d0f95872a4a10c08d4a27a",
      "date": "2026-09-10T22:06:00Z",
@@ -289,28 +304,38 @@
      "createdAt": "2026-09-10T21:59:33Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/96",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
+    {
+     "number": 97,
+     "title": "Record completed CI efficiency delivery in the guide",
+     "mergedAt": "2026-09-10T22:13:04Z",
+     "createdAt": "2026-09-10T22:09:16Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/97",
+     "base": "main"
+    },
     {
      "number": 84,
      "title": "Document the fresh Nanoleaf Linux runtime",
+     "mergedAt": "2026-09-10T22:24:49Z",
      "createdAt": "2026-09-10T00:29:55Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
      "base": "main"
     },
     {
+     "number": 59,
+     "title": "docs: plan PC and desk lighting integrations and backlog",
+     "mergedAt": "2026-09-10T22:30:08Z",
+     "createdAt": "2026-09-08T00:03:57Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+     "base": "main"
+    }
+   ],
+   "openPRs": [
+    {
      "number": 77,
      "title": "perf: prepare real early source measurements; budgets pending",
      "createdAt": "2026-09-08T22:54:04Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
-     "base": "main"
-    },
-    {
-     "number": 59,
-     "title": "docs: plan PC and desk lighting integrations and backlog",
-     "createdAt": "2026-09-08T00:03:57Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
      "base": "main"
     }
    ],
@@ -394,12 +419,17 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T21:19:56Z",
+   "pushedAt": "2026-09-10T22:56:36Z",
    "defaultBranch": "main",
-   "headSha": "1b7c3f490e288674ab37914f86f59996722a5d69",
-   "mainCommitCount": 25,
+   "headSha": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+   "mainCommitCount": 26,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+     "date": "2026-09-10T22:56:36Z",
+     "message": "Support a fresh Linux installation of the Nanoleaf services (#57)"
+    },
     {
      "sha": "1b7c3f490e288674ab37914f86f59996722a5d69",
      "date": "2026-09-10T21:19:56Z",
@@ -686,17 +716,17 @@
      "createdAt": "2026-09-10T00:46:40Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 57,
      "title": "Support a fresh Linux installation of Nanoleaf services",
+     "mergedAt": "2026-09-10T22:56:36Z",
      "createdAt": "2026-09-10T00:04:39Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
      "base": "main"
     }
    ],
+   "openPRs": [],
    "closedIssues": [
     {
      "number": 2,
@@ -817,9 +847,17 @@
      "createdAt": "2026-09-07T01:24:54Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26"
+    },
+    {
+     "number": 54,
+     "title": "Support a fresh Linux installation of the Nanoleaf services",
+     "closedAt": "2026-09-10T23:02:42Z",
+     "createdAt": "2026-09-09T22:36:42Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
     }
    ],
-   "openIssueCount": 25,
+   "openIssueCount": 24,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-09T22:37:08Z"
