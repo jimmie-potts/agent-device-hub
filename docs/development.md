@@ -22,6 +22,10 @@ skill integrations or run a global OpenSpec installation.
 For a WSL sandbox with a read-only npm cache, use a writable temporary cache.
 Keep dependency caches, browser binaries and all runtime state outside source.
 
+GitHub CI runs on pull requests and pushes to main. Superseded PR revisions
+are cancelled per workflow and PR; main revisions keep independent runs. Each
+job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
+
 GitHub CI requires Workflow checks on Ubuntu and Windows and four contract jobs,
 one for each Ubuntu/Windows and Python 3.12/3.14 combination. The contract jobs
 run build, type, both language corpora and isolated package checks. Later runtime
