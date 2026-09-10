@@ -98,6 +98,10 @@ continue without fetching, copying or installing it.
 
 ## Work guide maintenance
 
+Use `plan-work` and `deliver-work` only when explicitly invoked. Their shared
+documentation checkpoints consume the procedure below; ordinary repository
+planning and delivery also follow it within the user's authority.
+
 For every authorized delivery or planning change, read
 [the guide maintenance procedure](docs/work-guide/README.md). Update the affected
 inputs, regenerate the HTML and record the result in `docs/work-guide/updates.md`
@@ -105,3 +109,6 @@ before completion. Record a specific no-impact reason when no represented fact
 changes. For cross-repository work, identify the coordinator and linked hub
 companion PR; pending synchronization remains explicit in the completion report.
 Read-only tasks do not authorize writes.
+Keep source completion, guide synchronization, public publication and live
+verification distinct. Tracker-only planning reports the latter stages pending;
+public publication requires the user's applicable finish line.

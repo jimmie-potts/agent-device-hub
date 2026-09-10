@@ -1,10 +1,10 @@
 {
- "fetchedAt": "2026-09-10T21:17:01.849593+00:00",
+ "fetchedAt": "2026-09-10T21:20:20.542504+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T21:11:54Z",
+   "pushedAt": "2026-09-10T21:19:50Z",
    "defaultBranch": "main",
    "headSha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
    "mainCommitCount": 19,
@@ -204,14 +204,6 @@
      "base": "main"
     },
     {
-     "number": 82,
-     "title": "Document the Nanoleaf Prism delivery sequence",
-     "mergedAt": "2026-09-10T21:11:54Z",
-     "createdAt": "2026-09-09T23:05:53Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
-     "base": "main"
-    },
-    {
      "number": 89,
      "title": "Reconcile completed Pixoo CI scheduling delivery in the guide",
      "mergedAt": "2026-09-10T03:22:59Z",
@@ -250,36 +242,46 @@
      "createdAt": "2026-09-10T13:41:02Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/94",
      "base": "main"
+    },
+    {
+     "number": 82,
+     "title": "Document the Nanoleaf Prism delivery sequence",
+     "mergedAt": "2026-09-10T21:11:54Z",
+     "createdAt": "2026-09-09T23:05:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+     "base": "main"
     }
    ],
    "openPRs": [
     {
-     "number": 59,
-     "title": "docs: plan PC and desk lighting integrations and backlog",
-     "createdAt": "2026-09-08T00:03:57Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
-     "base": "main"
-    },
-    {
-     "number": 77,
-     "title": "perf: prepare real early source measurements; budgets pending",
-     "createdAt": "2026-09-08T22:54:04Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
-     "base": "main"
-    },
-    {
-     "number": 84,
-     "title": "Document the fresh Nanoleaf Linux runtime",
-     "createdAt": "2026-09-10T00:29:55Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
-     "base": "main"
+     "number": 95,
+     "title": "Record completed Nanoleaf Prism stories in the guide",
+     "createdAt": "2026-09-10T21:20:02Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95"
     },
     {
      "number": 88,
      "title": "Adopt planning and delivery checkpoints for the work guide",
      "createdAt": "2026-09-10T00:46:23Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
-     "base": "main"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88"
+    },
+    {
+     "number": 84,
+     "title": "Document the fresh Nanoleaf Linux runtime",
+     "createdAt": "2026-09-10T00:29:55Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84"
+    },
+    {
+     "number": 77,
+     "title": "perf: prepare real early source measurements; budgets pending",
+     "createdAt": "2026-09-08T22:54:04Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77"
+    },
+    {
+     "number": 59,
+     "title": "docs: plan PC and desk lighting integrations and backlog",
+     "createdAt": "2026-09-08T00:03:57Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59"
     }
    ],
    "closedIssues": [
@@ -346,12 +348,17 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T21:11:17Z",
+   "pushedAt": "2026-09-10T21:19:56Z",
    "defaultBranch": "main",
-   "headSha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
-   "mainCommitCount": 24,
+   "headSha": "1b7c3f490e288674ab37914f86f59996722a5d69",
+   "mainCommitCount": 25,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "1b7c3f490e288674ab37914f86f59996722a5d69",
+     "date": "2026-09-10T21:19:56Z",
+     "message": "Align shared guide checkpoints with explicit planning and delivery skills (#59)"
+    },
     {
      "sha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
      "date": "2026-09-10T13:33:17Z",
@@ -483,14 +490,6 @@
      "base": "main"
     },
     {
-     "number": 3,
-     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
-     "mergedAt": "2026-09-05T19:52:44Z",
-     "createdAt": "2026-09-05T18:31:19Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
-     "base": "main"
-    },
-    {
      "number": 4,
      "title": "Allow tray upgrades to preserve existing shortcuts",
      "mergedAt": "2026-09-05T18:45:04Z",
@@ -504,6 +503,14 @@
      "mergedAt": "2026-09-05T18:59:09Z",
      "createdAt": "2026-09-05T18:56:21Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/5",
+     "base": "main"
+    },
+    {
+     "number": 3,
+     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
+     "mergedAt": "2026-09-05T19:52:44Z",
+     "createdAt": "2026-09-05T18:31:19Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
      "base": "main"
     },
     {
@@ -523,14 +530,6 @@
      "base": "main"
     },
     {
-     "number": 24,
-     "title": "Restructure the wall map layout and surface status, pending edits, and mode",
-     "mergedAt": "2026-09-07T03:22:21Z",
-     "createdAt": "2026-09-07T00:57:37Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/24",
-     "base": "main"
-    },
-    {
      "number": 32,
      "title": "Document shared monitoring adoption and Windows ownership",
      "mergedAt": "2026-09-07T02:52:11Z",
@@ -539,11 +538,11 @@
      "base": "main"
     },
     {
-     "number": 35,
-     "title": "Restyle the wall map as the Neon HUD",
-     "mergedAt": "2026-09-07T05:23:46Z",
-     "createdAt": "2026-09-07T04:45:12Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/35",
+     "number": 24,
+     "title": "Restructure the wall map layout and surface status, pending edits, and mode",
+     "mergedAt": "2026-09-07T03:22:21Z",
+     "createdAt": "2026-09-07T00:57:37Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/24",
      "base": "main"
     },
     {
@@ -555,6 +554,14 @@
      "base": "main"
     },
     {
+     "number": 35,
+     "title": "Restyle the wall map as the Neon HUD",
+     "mergedAt": "2026-09-07T05:23:46Z",
+     "createdAt": "2026-09-07T04:45:12Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/35",
+     "base": "main"
+    },
+    {
      "number": 39,
      "title": "Add protected Nanoleaf controller API",
      "mergedAt": "2026-09-07T18:25:49Z",
@@ -563,19 +570,19 @@
      "base": "main"
     },
     {
-     "number": 40,
-     "title": "Animate wall assembly from a central orb",
-     "mergedAt": "2026-09-07T19:36:20Z",
-     "createdAt": "2026-09-07T18:03:01Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/40",
-     "base": "main"
-    },
-    {
      "number": 48,
      "title": "Add authenticated Windows and WSL Nanoleaf MCP bindings",
      "mergedAt": "2026-09-07T19:33:00Z",
      "createdAt": "2026-09-07T19:23:28Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/48",
+     "base": "main"
+    },
+    {
+     "number": 40,
+     "title": "Animate wall assembly from a central orb",
+     "mergedAt": "2026-09-07T19:36:20Z",
+     "createdAt": "2026-09-07T18:03:01Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/40",
      "base": "main"
     },
     {
@@ -603,6 +610,14 @@
      "base": "main"
     },
     {
+     "number": 61,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:04:28Z",
+     "createdAt": "2026-09-10T03:00:45Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "base": "main"
+    },
+    {
      "number": 58,
      "title": "Render the actual Lines layout with animated Prism crystal components",
      "mergedAt": "2026-09-10T13:17:45Z",
@@ -619,11 +634,11 @@
      "base": "main"
     },
     {
-     "number": 61,
-     "title": "Bound CI runtime and remove duplicate branch-push checks",
-     "mergedAt": "2026-09-10T03:04:28Z",
-     "createdAt": "2026-09-10T03:00:45Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "number": 59,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:19:56Z",
+     "createdAt": "2026-09-10T00:46:40Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
      "base": "main"
     }
    ],
@@ -632,15 +647,7 @@
      "number": 57,
      "title": "Support a fresh Linux installation of Nanoleaf services",
      "createdAt": "2026-09-10T00:04:39Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
-     "base": "main"
-    },
-    {
-     "number": 59,
-     "title": "Adopt shared guide planning and delivery checkpoints",
-     "createdAt": "2026-09-10T00:46:40Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
-     "base": "main"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57"
     }
    ],
    "closedIssues": [
@@ -1037,19 +1044,19 @@
      "base": "main"
     },
     {
-     "number": 56,
-     "title": "Adopt shared guide planning and delivery checkpoints",
-     "mergedAt": "2026-09-10T21:10:06Z",
-     "createdAt": "2026-09-10T00:46:39Z",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
-     "base": "main"
-    },
-    {
      "number": 57,
      "title": "Bound CI runtime and remove duplicate branch-push checks",
      "mergedAt": "2026-09-10T03:10:59Z",
      "createdAt": "2026-09-10T03:04:35Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+     "base": "main"
+    },
+    {
+     "number": 56,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:10:06Z",
+     "createdAt": "2026-09-10T00:46:39Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
      "base": "main"
     }
    ],

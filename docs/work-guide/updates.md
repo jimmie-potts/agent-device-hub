@@ -1,5 +1,32 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Hub #83 approved source integration
+
+The user approved the guide candidate and its desktop, mobile and print review.
+Reconcile later source changes while preserving its appearance and controls.
+Hub PR #82 merged at `8872be1f80f47c35b89faeab3724fedc0402e9f6` and passed
+all thirteen main jobs. Preserve its guide-workflow scheduling and dependency
+tracks, together with the core CI improvements from PRs #92 and #93. Hub #91
+keeps its separate measurement and completion owner.
+
+Pixoo companion PR #56 merged at
+`9f1c0ec75651810a441606b0c08fbdeee824c8d8`; Nanoleaf companion PR #59 merged
+at `1b7c3f490e288674ab37914f86f59996722a5d69`. Both merged trees match their
+reviewed candidates. Main-CI outcomes are recorded separately in the delivery
+receipt. Refresh all three backlogs and histories. The Prism owners completed
+Nanoleaf #52, #53 and #26 after their source and guide gates; remove those closed
+issues from primary coverage, retaining their source history and completion narrative.
+Reconcile concurrent Hub PR #95, including its completed Prism timeline markers
+and owner-written acceptance text. Its guide-only merge is recorded here; the
+complete 21:20 UTC snapshot already captures the same authoritative closures
+and the later Nanoleaf checkpoint merge, so preserve those dated inputs. This snapshot has 110 open issues.
+
+Architecture no-impact remains unchanged. Instruction adoption, CI scheduling
+and these status/history updates alter no represented device ownership, command
+path or failure boundary. Preserve the eight viewers and their evidence dates.
+Source merges/main CI, guide synchronization, public publication and live
+verification remain separate stages. This approval does not establish public
+deployment, installed-client behavior or physical acceptance.
 ## 2026-09-10 UTC: Prism stories completed
 
 Nanoleaf #52, #53 and #26 are closed as completed after their source PRs
@@ -196,6 +223,66 @@ unchanged from main. Independent reviews and hosted checks for the reconciled
 candidate are recorded on PR #90. Public website publication remains outside
 this source-only delivery.
 
+## 2026-09-10 UTC: Hub #83 conflict reconciliation and CI retry
+
+Reconcile Hub PR #88 with main revision
+`396c36aed74cf1d016564536eca13bb16f89834b`, preserving PR #89's Pixoo #46
+completion record and the newly represented Prism guide stories #85–#87.
+Refresh the paginated backlogs and merge histories, then regenerate the HTML
+from reconciled coverage, narrative and roadmap inputs. The snapshot now has
+113 primary open issues; Pixoo #46 is closed, while Nanoleaf #37 remains open
+despite its source PR #61 having merged. Native prerequisites retain
+Nanoleaf #52 -> #53 -> #26 and #54 -> #55 -> Hub #43.
+
+The linked Pixoo #56 and Nanoleaf #59 branches also incorporate their current
+main revisions, including the delivered CI scheduling changes. Preserve all
+configured jobs and retry validation on the new PR heads. Record exact heads,
+independent review and hosted outcomes in the delivery receipt. This entry
+claims no source PR merge, public publication or live acceptance for Hub #83.
+
+No represented architecture ownership, command flow or failure boundary changes.
+The eight viewers, architecture definitions, source pins and receipts remain
+unchanged. Hub #73's reserved connector evaluation and other coordinators'
+open guide work retain their ownership.
+
+## 2026-09-10 UTC: Hub #83 planning and delivery checkpoints
+
+Coordinator: the Hub #83 delivery root. Consume agent-skills #33, delivered in
+PR #36 at `ff80d247ea96a5d4c461d30a2c24148376197c7b` with both configured
+merged-main jobs passing. Align the Hub, Pixoo and Nanoleaf instruction paths
+with the canonical guide procedure and the skills' explicit invocation rule.
+Keep ordinary repository maintenance and narrower user limits intact. No
+personal skill installation or product behavior/OpenSpec change is part of this
+documentation adoption.
+
+Refresh all three backlogs and merge histories through paginated GitHub reads.
+The current plan includes Hub #83 and #80, the Nanoleaf #52 -> #53 -> #26
+acceptance sequence, and the independent #54 -> #55 -> Hub #43 Linux sequence.
+Reference the completed external agent-skills #33 prerequisite without adding it
+to the three-repository primary totals. These stories retain their actual open
+states; source delivery, installation and physical acceptance remain separate.
+
+Architecture no-impact: these checkpoints change instruction discovery, guide
+maintenance and publication evidence. They change no device writer, controller
+boundary, command path, transport or failure behavior represented in the eight
+viewers. Preserve their source pins, review dates, definitions and byte hashes.
+The roadmap membership and one new independent work track reflect current
+planning; they do not repair diagram connectors. Hub #73's reserved evaluation
+input remains revision `7464b9e669c7150f780b334a3429c5f30a89b438`, HTML SHA-256
+`8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`.
+
+Hub PR #82 remains separately owned. Use its inspected read-only guide CI job
+without altering that branch, and reconcile any target changes before merge.
+That job builds offline, checks reproducibility and captures browser/print
+evidence; it has no deployment credentials or publication step.
+
+This entry records a source candidate. Linked source/Hub PRs, current reviews,
+CI, visual approval and exact revisions belong in the delivery receipt. After
+verified merges, reconcile facts unavailable at this snapshot in a linked
+follow-up. Public publication and all nine live URL/hash checks remain separate
+stages under the user's publication authority. Hub #80 retains its existing
+initial-publication acceptance owner. No deployment or live verification is
+claimed by this maintenance entry.
 ## 2026-09-10 UTC: Prism source and review checkpoint
 
 The Nanoleaf Prism coordinator reconciled connector source PR #56, merged at
