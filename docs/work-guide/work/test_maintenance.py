@@ -85,6 +85,17 @@ class GuideMaintenance(unittest.TestCase):
                 actual.update((left,right) for left in a['issues'] for right in b['issues'] if left in starts)
         self.assertEqual(actual,expected)
 
+    def test_linux_acceptance_keeps_comment_references_without_private_content(self):
+        source = Path(__file__).resolve().parent / 'backlogs'
+        issues = json.loads((source / 'codex-nanoleaf-issues.json').read_text())
+        for number in (54, 55):
+            issue = next(row for row in issues if row['number'] == number)
+            self.assertTrue(issue['comments'], f'Keep acceptance references for #{number}')
+            for comment in issue['comments']:
+                self.assertEqual(set(comment), {'url', 'createdAt', 'updatedAt'})
+                self.assertTrue(comment['url'].startswith(
+                    f'https://github.com/jimmie-potts/codex-nanoleaf/issues/{number}#issuecomment-'))
+
     def test_later_history_preserves_reviewed_architecture(self):
         source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-maintenance-') as directory:
