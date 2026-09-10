@@ -1,5 +1,32 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Prism source verification and final guide reconciliation
+
+Nanoleaf connector PR #56, renderer PR #58 and numbering PR #60 are merged.
+Their source revisions are `cdceffddb7a86c138797325e8d6b0460eb320e58`,
+`2944a3a0a7ce58da0a36125859d7d3f277bece76` and
+`b8b144bc8f92668688db278e9401e46e00b7c6ae`. Each passed all nine required
+main jobs in runs `34419199684`, `34481751959` and `34483393699` respectively.
+The user approved the integrated UI and guide. Both independent review axes
+are clear for the app candidates. The three issues remain open only for this
+source-guide synchronization. Installation and physical acceptance are separate.
+
+Reconcile Hub PR #93 after PR #92, preserving its build-once commands, caches,
+workflow regression tests and development instructions. Both core candidates
+passed all twelve PR and main jobs. The #91 coordinator retains measurement
+and completion ownership; the proposed guide workflow is still supplied here.
+Keep all maintenance entries from concurrent deliveries and refresh the three
+backlogs and source histories. The guide records current source results without
+claiming Windows billing savings or observed overlapping-run cancellation.
+
+Guide appearance, controls and eight architecture viewers remain unchanged.
+Only factual status, source history and issue membership are reconciled. Runtime
+ownership and command flows are unchanged, so diagram definitions and pinned
+sources need no redraw. Preserve Hub #73's reserved input. Rebuild and inspect
+the guide, run maintenance/browser checks and Node 24 workflow checks, then
+renew independent review and current-head CI. Record exact receipts in PR #82.
+Public publication remains outside this delivery.
+
 ## 2026-09-10 UTC: Approved Prism UI and source merge checkpoint
 
 The user approved the integrated Nanoleaf Prism UI in PRs #58 and #60 and this
@@ -40,6 +67,29 @@ focused configuration check rejects the old duplicate-trigger policy and passes
 the updated policy. Node 24 workflow validation passes three specifications,
 three archives and eleven tests. Hub #91 remains separately owned and open for
 its remaining build optimization, measurement and completion work.
+
+## 2026-09-10: Hub #91 build-once candidate and scheduling readback
+
+Coordinator: the Hub #91 delivery root. PR #92 merged at
+`bca5b343dffef69b2eb371af683b6c8839bb2f3e`. All 12 current-head PR jobs passed
+in run `34481962695`, and all 12 main jobs passed in `34482410679`.
+An ordinary branch update produced only the PR run. Live overlapping-revision
+cancellation remains unobserved. The scheduling source is delivered; #91 stays
+open for the build-once candidate, measurements and guide-workflow reconciliation.
+
+Refresh paginated source history and backlog inputs. Record Nanoleaf #37's
+verified closure and remove it from open coverage and roadmap membership.
+The development-workflow row keeps Hub #91's remaining acceptance explicit.
+This candidate preserves every test payload and platform while reducing full
+builds from 32 to 10 per core run. Python setup caches downloads; installation
+and archive-consumer validation remain. The standalone commands still compile
+first and stop on failure. No product behavior or OpenSpec delta applies.
+
+Guide generation, maintenance and browser evidence belong in the PR receipt.
+Architecture definitions and all eight viewers are unchanged. Preserve Hub #73's
+reserved input. Public publication and live served-byte verification remain
+outside this source delivery. The proposed guide workflow still belongs to
+PR #82; this candidate does not edit another coordinator's branch.
 
 ## 2026-09-10: Hub #91 CI scheduling candidate
 
