@@ -1,5 +1,129 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Hub #83 approved source integration
+
+The user approved the refreshed guide layout and its desktop, mobile and print
+candidate. Reconcile later main changes without changing that layout or its
+controls. Preserve the delivered core CI improvements and adopt the matching
+guide-workflow scheduling from PR #82's current owner-controlled revision
+`6b22b16859204c118158d326b0d2c84383ebce05`. All browser checks, artifact uploads
+and job permissions remain intact. This does not edit that owner's branch or
+close Hub #91 on their behalf.
+
+Pixoo companion PR #56 merged at
+`9f1c0ec75651810a441606b0c08fbdeee824c8d8`; merge-tree equality was verified.
+Its main CI and the Nanoleaf companion's refreshed source gates are recorded in
+the delivery receipt. Refresh current scope and history before the Hub merge,
+including Nanoleaf's merged renderer/numeral sources and still-open acceptance
+stories. Do not infer installed or physical acceptance from those source merges.
+
+Architecture no-impact remains unchanged: instruction adoption, CI scheduling
+and these status/history updates alter no represented device ownership, command
+path or failure boundary. Preserve the eight viewers and their evidence dates.
+Guarded source merges/main CI, guide synchronization, public publication and
+live verification remain separately evidenced stages. The user approval here
+does not itself establish public deployment.
+
+## 2026-09-10: Hub #91 verified core CI delivery
+
+Coordinator: the Hub #91 delivery root. Scheduling PR #92 merged at
+`bca5b343dffef69b2eb371af683b6c8839bb2f3e`; build-once/cache PR #93 merged at
+`589f95e274fd441867910e639af29a026db51577`. Both had independent Standards
+and Specification reviews and all 12 current-head PR jobs passed. All 12 main
+jobs passed in runs `34482410679` and `34483708694`, respectively. All original
+tests and platform combinations remain. Branch updates produced PR runs without
+duplicate push runs. Runtime overlapping-revision cancellation is unobserved.
+
+The successful main samples used 814 runner-seconds before build deduplication
+and 664 afterward. Per-job rounding totals fell from 19 to 18 minutes. Linux
+fell from 262 to 176 seconds and Windows from 552 to 488. The PR samples were
+mixed: Linux improved, but Windows archive/setup variability increased time.
+These observations do not establish monthly billing savings. Full-build count
+fell from 32 to 10. Successful cold-cache jobs populated pip caches for all four
+OS/Python combinations; warm restoration remains to be observed.
+
+Refresh the paginated source history and the development-workflow row to record
+core delivery without claiming #91 is complete. The guide workflow on its
+owner's PR #82 at `c80f8bcc94f6ff2b382107baf6edbbe723e2a478` now has matching
+main-only push triggers, concurrency, timeout and preserved browser/artifact
+checks. That PR remains unmerged; its current-head and main verification are
+still required. #91 remains open for that owner-controlled acceptance.
+
+Guide generation, maintenance and browser checks pass with 113 open issues,
+54 merged PR history entries and unchanged architecture/viewer hashes. This
+follow-up records source acceptance, not product or device behavior. No OpenSpec
+delta applies. Preserve Hub #73's reserved input. Public publication and live
+served-byte verification remain outside this source delivery. This guide-only
+reconciliation need not be recursively added as a product milestone.
+
+## 2026-09-10: Hub #91 build-once candidate and scheduling readback
+
+Coordinator: the Hub #91 delivery root. PR #92 merged at
+`bca5b343dffef69b2eb371af683b6c8839bb2f3e`. All 12 current-head PR jobs passed
+in run `34481962695`, and all 12 main jobs passed in `34482410679`.
+An ordinary branch update produced only the PR run. Live overlapping-revision
+cancellation remains unobserved. The scheduling source is delivered; #91 stays
+open for the build-once candidate, measurements and guide-workflow reconciliation.
+
+Refresh paginated source history and backlog inputs. Record Nanoleaf #37's
+verified closure and remove it from open coverage and roadmap membership.
+The development-workflow row keeps Hub #91's remaining acceptance explicit.
+This candidate preserves every test payload and platform while reducing full
+builds from 32 to 10 per core run. Python setup caches downloads; installation
+and archive-consumer validation remain. The standalone commands still compile
+first and stop on failure. No product behavior or OpenSpec delta applies.
+
+Guide generation, maintenance and browser evidence belong in the PR receipt.
+Architecture definitions and all eight viewers are unchanged. Preserve Hub #73's
+reserved input. Public publication and live served-byte verification remain
+outside this source delivery. The proposed guide workflow still belongs to
+PR #82; this candidate does not edit another coordinator's branch.
+
+## 2026-09-10: Hub #91 CI scheduling candidate
+
+Coordinator: the Hub #91 delivery root. Add #91 to the development-workflow
+guide and refresh the three repository backlogs from paginated GitHub reads.
+The issue remains in progress; scheduling delivery, compilation optimization
+and measured savings are pending. This first candidate restricts core push
+checks to main, cancels superseded PR runs and bounds jobs to ten minutes.
+Every existing matrix entry and test command remains. PR #82 separately owns
+the proposed guide workflow; its scheduling must be reconciled before #91
+is complete. No product behavior or OpenSpec delta applies.
+
+Architecture ownership, diagrams and viewer files do not change. Preserve
+Hub #73's reserved input. Candidate checks and reviews belong in the PR receipt.
+Public publication and served-byte verification remain separate and pending.
+
+## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
+
+[Nanoleaf #37](https://github.com/jimmie-potts/codex-nanoleaf/issues/37)
+source merged through [PR #61](https://github.com/jimmie-potts/codex-nanoleaf/pull/61)
+at `dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa`. Both independent review axes
+were clear. All nine PR jobs passed in run `34431669004`; all nine merged-main
+jobs passed in run `34431911171`. The guarded squash merge preserved the
+reviewed workflow. Push validation now targets main, obsolete revisions of each
+PR share a concurrency group, and workflow, Python and browser jobs have
+ten-minute limits. The two MCP jobs and every existing command remain intact.
+Live overlapping-revision cancellation was not observed; no artificial overlap
+or timeout was induced. No product specification, installation or device change
+applies.
+
+The Nanoleaf delivery coordinator owns [Hub companion PR #90](https://github.com/jimmie-potts/agent-device-hub/pull/90).
+The user approved its guide candidate `c2eb905`, but main advanced before merge.
+Hub PR #89 already refreshed the overlapping backlog, primary coverage and
+history, including Nanoleaf PR #61, and corrected the timeline title. Preserve
+that newer input set and regenerate from it. The resulting HTML is byte-identical
+to main: this reconciliation adds only this delivery record. The dated snapshot
+correctly retains #37 as open at its recorded cutoff; source acceptance is
+verified and issue closure awaits this companion's merge and main-CI readback.
+No additional architecture, roadmap or UI change is needed. Preserve all eight
+viewers, existing snapshot dates and Hub #73's reserved evaluation input.
+
+Validation: guide build and maintenance regression pass; generated HTML is
+unchanged from main. Independent reviews and hosted checks for the reconciled
+candidate are recorded on PR #90. Public website publication remains outside
+this source-only delivery.
+
 ## 2026-09-10 UTC: Hub #83 conflict reconciliation and CI retry
 
 Reconcile Hub PR #88 with main revision

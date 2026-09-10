@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-10T13:05:54.428978+00:00",
-  "refreshedAt": "2026-09-10T13:06:05.203759+00:00",
+  "startedAt": "2026-09-10T21:12:12.729969+00:00",
+  "refreshedAt": "2026-09-10T21:13:26.169531+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 65,
+      "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        71
+        70
       ],
-      "openPRs": 6,
+      "openPRs": 4,
       "prPageSizes": [
-        6
+        4
       ],
       "paginationComplete": true,
       "directReads": [
@@ -42,14 +42,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 29,
+      "openIssues": 28,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        33
+        30
       ],
-      "openPRs": 4,
+      "openPRs": 2,
       "prPageSizes": [
-        4
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -62,7 +62,7 @@
         },
         {
           "number": 37,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
             4
           ]
@@ -73,11 +73,11 @@
       "openIssues": 19,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        19
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [

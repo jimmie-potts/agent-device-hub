@@ -15,7 +15,7 @@
 #30 [OPEN] Verify shared monitoring migration and Nanoleaf compatibility
 #31 [OPEN] Adopt shared OpenSpec validation tooling
 #34 [CLOSED] Verify local Codex control of the Nanoleaf lights
-#37 [OPEN] Bound CI runtime and remove duplicate branch-push checks
+#37 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
 #41 [OPEN] Introduce device-aware Nanoleaf state and geometry contracts
 #42 [OPEN] Run independent device projections through the Windows worker
 #43 [OPEN] Render task effects on NL22 Light Panels

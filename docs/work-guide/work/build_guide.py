@@ -115,7 +115,7 @@ GUIDES = [
     dict(id='nanoleaf-presentation', short='Rendering + displays', title='Improve Nanoleaf rendering, customization, and persistent displays', phase='Independent experience',
          intro='There are two main paths here, plus smaller independent improvements.',
          headers=['Group', 'Issues and order', 'Dependency or boundary'], rows=[
-             ['Prism wall map', '[[N52]] → [[N53]] → [[N26]]', 'Expose connector geometry, integrate the approved crystal artwork and two-zone animation, then verify number-tag clearance against that renderer. Source and current-candidate visual acceptance remain with their owning deliveries; installed acceptance is separate.'],
+             ['Prism wall map', '[[N52]] → [[N53]] → [[N26]]', 'Prism renderer and numeral source changes have merged. Follow the open geometry, renderer and clearance stories for remaining acceptance in dependency order. Current visual and installed acceptance remain with their owning deliveries.'],
              ['Authoritative live rendering', '[[N15]] → [[N17]]', 'Deliver the rendering contract, then the live app renderer.'],
              ['Consistent colors', '[[N18]]', 'Add project/status palettes after rendering and Hub #2’s vocabulary.'],
              ['Effect customization', '[[N19]] [[N20]]', 'Add completion celebrations and status animations after rendering and palettes.'],
@@ -166,7 +166,8 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]]; completed [[P46]]', 'Pixoo #46 merged through PR #57 with all five PR and main checks passing. Nanoleaf PR #61 has merged while #37 remains open for its completion checks. The original sequence limited CI churn; it was not a product dependency.'],
+             ['Bound CI costs and hangs', 'Completed [[N37]] [[P46]]', 'Pixoo #46 and Nanoleaf #37 delivered main-only push checks, PR concurrency and bounded jobs with their original validation coverage. Both issues are closed; these changes do not establish product or device acceptance.'],
+             ['Hub CI efficiency', '[[H91]]', 'Core scheduling and build-once test commands merged through Hub PRs #92 and #93. Every test and platform remains. The proposed guide workflow has matching scheduling on its owner’s PR #82; its merge and hosted acceptance remain separate. Linux time improved in one sample; Windows variability prevents a per-run billing-savings claim.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Prism guide design and publication', '[[H85]] → [[H86]] → [[H87]]', 'Approve the design, implement artwork and subtle motion, then publish and verify the existing public and local destinations. No design or installation is performed by this snapshot refresh.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
