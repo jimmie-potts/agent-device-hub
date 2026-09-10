@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-10T21:12:12.729969+00:00",
-  "refreshedAt": "2026-09-10T21:13:26.169531+00:00",
+  "startedAt": "2026-09-10T21:20:10.580813+00:00",
+  "refreshedAt": "2026-09-10T21:20:18.099539+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        70
+        71
       ],
-      "openPRs": 4,
+      "openPRs": 5,
       "prPageSizes": [
-        4
+        5
       ],
       "paginationComplete": true,
       "directReads": [
@@ -42,17 +42,24 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 28,
+      "openIssues": 25,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        30
+        26
       ],
-      "openPRs": 2,
+      "openPRs": 1,
       "prPageSizes": [
-        2
+        1
       ],
       "paginationComplete": true,
       "directReads": [
+        {
+          "number": 26,
+          "state": "CLOSED",
+          "commentPages": [
+            7
+          ]
+        },
         {
           "number": 34,
           "state": "CLOSED",
@@ -65,6 +72,20 @@
           "state": "CLOSED",
           "commentPages": [
             4
+          ]
+        },
+        {
+          "number": 52,
+          "state": "CLOSED",
+          "commentPages": [
+            5
+          ]
+        },
+        {
+          "number": 53,
+          "state": "CLOSED",
+          "commentPages": [
+            9
           ]
         }
       ]
@@ -112,7 +133,7 @@
       ]
     }
   },
-  "openIssues": 113,
+  "openIssues": 110,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }

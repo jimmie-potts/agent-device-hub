@@ -1,10 +1,10 @@
 {
- "fetchedAt": "2026-09-10T21:13:28.794671+00:00",
+ "fetchedAt": "2026-09-10T21:20:20.542504+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T21:11:54Z",
+   "pushedAt": "2026-09-10T21:19:50Z",
    "defaultBranch": "main",
    "headSha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
    "mainCommitCount": 19,
@@ -254,6 +254,12 @@
    ],
    "openPRs": [
     {
+     "number": 95,
+     "title": "Record completed Nanoleaf Prism stories in the guide",
+     "createdAt": "2026-09-10T21:20:02Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95"
+    },
+    {
      "number": 88,
      "title": "Adopt planning and delivery checkpoints for the work guide",
      "createdAt": "2026-09-10T00:46:23Z",
@@ -342,12 +348,17 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T21:11:17Z",
+   "pushedAt": "2026-09-10T21:19:56Z",
    "defaultBranch": "main",
-   "headSha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
-   "mainCommitCount": 24,
+   "headSha": "1b7c3f490e288674ab37914f86f59996722a5d69",
+   "mainCommitCount": 25,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "1b7c3f490e288674ab37914f86f59996722a5d69",
+     "date": "2026-09-10T21:19:56Z",
+     "message": "Align shared guide checkpoints with explicit planning and delivery skills (#59)"
+    },
     {
      "sha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
      "date": "2026-09-10T13:33:17Z",
@@ -621,15 +632,17 @@
      "createdAt": "2026-09-10T01:21:11Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 59,
      "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:19:56Z",
      "createdAt": "2026-09-10T00:46:40Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59"
-    },
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
+     "base": "main"
+    }
+   ],
+   "openPRs": [
     {
      "number": 57,
      "title": "Support a fresh Linux installation of Nanoleaf services",
@@ -687,6 +700,14 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/25"
     },
     {
+     "number": 26,
+     "title": "Keep map number tags clear of neighbouring Lines in rotated compact layouts",
+     "closedAt": "2026-09-10T21:16:04Z",
+     "createdAt": "2026-09-07T01:24:54Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26"
+    },
+    {
      "number": 27,
      "title": "Record shared agent-device-hub adoption and migration dependencies",
      "closedAt": "2026-09-07T02:58:25Z",
@@ -733,9 +754,25 @@
      "createdAt": "2026-09-07T17:15:37Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
+    },
+    {
+     "number": 52,
+     "title": "Expose connector geometry for the Prism wall map",
+     "closedAt": "2026-09-10T21:15:57Z",
+     "createdAt": "2026-09-09T22:08:08Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52"
+    },
+    {
+     "number": 53,
+     "title": "Integrate Prism crystal artwork and two-zone wall animation",
+     "closedAt": "2026-09-10T21:16:01Z",
+     "createdAt": "2026-09-09T22:08:21Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53"
     }
    ],
-   "openIssueCount": 28,
+   "openIssueCount": 25,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-09T22:37:08Z"
