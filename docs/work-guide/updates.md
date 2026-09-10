@@ -780,3 +780,36 @@ maintenance request; the existing public edition will retain its earlier bytes.
 Validation: generator, maintenance test, browser coverage/navigation/search/
 links/print checks at six viewport widths, and whitespace checks pass. The final
 revision, guide hash and independent review/CI results belong in the PR receipt.
+
+## 2026-09-10: Linux-only performance replan for Hub #30 and PR #77
+
+This planning coordinator updated Hub #30 and PR #77's existing early-stage
+OpenSpec artifacts to target the source-delivered Nanoleaf Linux hook. Native
+Windows comparison and executable forwarding no longer gate the measurements.
+The planned 1/10/50 synthetic-session profiles retain full hook return, real
+Linux worker-spawn handoff, verified isolation/descendant cleanup and reviewed
+budgets. Existing receipts remain historical preparation. No benchmarks,
+measurement implementation, CI changes, installation or device work occurred.
+
+This companion uses current main so PR #77's older guide does not replace the
+delivered Linux architecture. Updated the qualification/budget narrative and
+refreshed paginated backlog inputs. Reconciled observed Hub #54 closure out of
+primary/roadmap coverage while retaining its reference, without claiming adapter
+acceptance. Corrected the refreshed PC-lighting row to record PR #59's source
+merge while #50 remains open. Dependency relationships are unchanged by this
+replan. The history snapshot retains its own date; no new product milestone is
+claimed. The guide represents 106 primary open issues in 12 guides and 48 roadmap
+nodes. Its 65 historical merges retain their existing evidence date.
+
+Architecture no-impact: the delivered Linux ownership and command path already
+appear in the nine diagrams; changing performance qualification does not alter
+that path. Definitions, source pins, receipts and viewers remain unchanged.
+Windows CI, shared policy wording and legacy source references remain for the
+separate Linux-only cleanup and must be brought to the user. They are not
+required performance routes in #30/#77.
+
+Guide generation, five maintenance tests, Node 24 workflow checks and browser
+checks cover this candidate. Source synchronization remains pending this
+companion's reviewed merge. Public publication and live verification are outside
+the authorized planning scope. #77 remains draft and #30 remains open; this
+replan does not satisfy the early budget gate or authorize OpenSpec archive.
