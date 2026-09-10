@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-10T22:07:04.232433+00:00",
-  "refreshedAt": "2026-09-10T22:07:11.512935+00:00",
+  "startedAt": "2026-09-10T23:02:54.377084+00:00",
+  "refreshedAt": "2026-09-10T23:03:35.592655+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 64,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        67
+        65
       ],
-      "openPRs": 3,
+      "openPRs": 1,
       "prPageSizes": [
-        3
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -33,14 +33,14 @@
           "number": 83,
           "state": "CLOSED",
           "commentPages": [
-            4
+            5
           ]
         },
         {
           "number": 91,
           "state": "CLOSED",
           "commentPages": [
-            3
+            4
           ]
         },
         {
@@ -56,14 +56,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 25,
+      "openIssues": 24,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        26
+        24
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -100,6 +100,20 @@
           "state": "CLOSED",
           "commentPages": [
             10
+          ]
+        },
+        {
+          "number": 54,
+          "state": "CLOSED",
+          "commentPages": [
+            4
+          ]
+        },
+        {
+          "number": 55,
+          "state": "OPEN",
+          "commentPages": [
+            2
           ]
         }
       ]
@@ -147,7 +161,7 @@
       ]
     }
   },
-  "openIssues": 108,
+  "openIssues": 107,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }

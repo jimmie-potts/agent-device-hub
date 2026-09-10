@@ -1,5 +1,48 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Nanoleaf Linux source delivered
+
+Nanoleaf PR #57 merged as `2558df5a2fc543247b0c75898ef0260ba3ea264b`.
+Both independent reviews found no issues, and all nine PR and nine merged-main
+jobs passed. Nanoleaf #54 closed as completed after that readback. Hub PR #84
+already delivered the architecture companion. This #43 follow-up records the
+actual source outcome in the canonical architecture, roadmap and maintained
+guide. Nanoleaf #55 remains open for installed WSL, real-client and physical
+acceptance; Hub #43 remains open for that outcome and its documentation.
+
+Refresh all three backlogs through complete REST and GraphQL reads at
+`2026-09-10T23:03:35.592655+00:00` and source histories at
+`2026-09-10T23:03:12.326361+00:00`. Retain #54 as a completed reference and #55's
+operator handoff through direct reads. Remove #54 from primary open coverage
+and mark its roadmap node delivered. Preserve all concurrent PC lighting,
+Prism, CI and guide-checkpoint work.
+
+No controller ownership, command flow or failure boundary changes in this
+follow-up. It needs no product OpenSpec delta or architecture redraw. The nine
+viewers and their source pins remain the dated proposal at the recorded
+architecture review; the guide now explicitly distinguishes that historical
+view from delivered Linux source. Installed behavior remains unverified.
+
+Validation: guide generation, four maintenance tests and browser checks pass.
+Closing #54 exposed a maintenance assertion that incorrectly expected closed
+prerequisites to remain in the open-work roadmap. Its recorded failure expected
+N54 → N55 after #54 closed. The test now compares only open native blockers,
+as the adjacent ordering test already does. Native dependency evidence retains
+the closed source prerequisite. No product behavior changes.
+
+Browser verification covers six widths from 320 to 1440, all nine viewers,
+search, navigation, coverage, diagram and timeline controls, and print
+restoration, with no page errors. The desktop timeline was also inspected.
+Node 24 workflow validation passes for three specifications and three archived
+changes; thirteen workflow tests pass. The guide has 107 primary open issues,
+122 linked issues, 12 guides, 48 roadmap nodes and 65 merged PR records.
+Generated HTML SHA-256:
+`6ab5529f887d75edbe9f537477e9bda5992dadff99390583f030d6156604645b`.
+
+Public publication is outside this source wrap-up. The public repository README
+still identifies Hub source `950f7f62d502bc1d55d0f95872a4a10c08d4a27a` and eight
+viewers. This Hub follow-up does not update or verify the live public edition.
+
 ## 2026-09-10 UTC: retain the concurrent Hub #91 completion
 
 Main advanced again during PR #84's final readback. Merge

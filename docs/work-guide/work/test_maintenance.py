@@ -77,7 +77,8 @@ class GuideMaintenance(unittest.TestCase):
             for issue in issues:
                 for blocker in issue['blockedBy']['nodes']:
                     key=prefixes.get(blocker['repository']['nameWithOwner'],'?')+str(blocker['number'])
-                    if key in starts:expected.add((key,prefix+str(issue['number'])))
+                    if key in starts and blocker['state'] == 'OPEN':
+                        expected.add((key,prefix+str(issue['number'])))
         actual=set()
         for _,items in timeline.TRACKS:
             for a,b in zip(items,items[1:]):
