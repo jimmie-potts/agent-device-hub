@@ -1,5 +1,34 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Approved Prism UI and source merge checkpoint
+
+The user approved the integrated Nanoleaf Prism UI in PRs #58 and #60 and this
+source guide in PR #82. Renderer PR #58 merged at
+`2944a3a0a7ce58da0a36125859d7d3f277bece76`, with all nine PR and main jobs
+passing. Connector PR #56 was already verified at
+`cdceffddb7a86c138797325e8d6b0460eb320e58`. Numbering PR #60 remains open.
+Its refreshed browser run passed 360 raw clicks and 720 label-clearance checks,
+then exposed an observer removed before an in-flight poll rendered Work mode.
+A delayed-poll reproduction distinguishes that test race from a failed UI mode
+change. The corrected observation retains exact phase equality and the 50 ms
+continuity boundary and rejects an injected reset. Current-head validation and
+independent review continue in PR #60. No further artwork change is introduced.
+
+GitHub prematurely completed #53 when the PR description contained a closing
+keyword inside a negative instruction. The coordinator removed the trigger and
+reopened the issue until this guide gate completes. Source merge and successful
+main CI remain verified. Preserve tracker events and source dates separately.
+
+Reconcile concurrent guide PRs #89 and #90 through their owning inputs, retaining
+Pixoo #46 and Nanoleaf #37 completion and every maintenance entry. Refresh all
+three paginated backlogs and histories, including direct Prism issue evidence.
+Represent newly recorded Hub #91 as planned CI savings work. Preserve the
+approved guide layout and style, all eight architecture definitions and viewers,
+and the reserved Hub #73 input. These status updates change no runtime ownership
+or command flow. Regenerate through the canonical builder and run build,
+maintenance and browser checks. Exact hashes and independent review belong in
+PR #82. Public publication and installation remain separate work.
+
 ## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
 
 [Nanoleaf #37](https://github.com/jimmie-potts/codex-nanoleaf/issues/37)
