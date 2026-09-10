@@ -1,5 +1,71 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: resolve Hub #84 conflicts after guide delivery
+
+The Hub #43 coordinator reconciles the existing PR #84 branch with main through
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a`. Preserve the completed Prism
+stories, CI improvements, guide checkpoint adoption and publication evidence
+from main. Keep its complete backlog snapshot from
+`2026-09-10T21:55:33.450036+00:00` and history inputs unchanged. Retain PR #84's
+Linux proposal and the distinction between source work, installed acceptance and
+final architecture reconciliation under Nanoleaf #54, #55 and Hub #43.
+
+Resolve the README's publication inventory to nine viewers and ten HTML files,
+retaining the new content-inspection requirements. Keep each guide workflow row
+once and retain the delivered Prism and checkpoint timeline markers. Regenerate
+the HTML from the reconciled inputs. Architecture definitions, source receipts
+and all nine viewer files match the previous PR head `137a88d` byte for byte.
+
+The guide build, four maintenance tests, browser checks and whitespace checks
+pass. The guide contains 12 guides, 109 primary open issues, 122 linked issues,
+48 roadmap nodes, 60 merged PRs and nine diagrams. Browser checks cover widths
+320 through 1440, issue coverage, links, search, navigation, diagram and timeline
+controls, and print restoration, with no page errors. Under Node 24, workflow
+validation passes for three specifications and three archived changes; all
+13 workflow tests pass. The final guide SHA-256 is
+`4fd4ce05d0efe5b5fa24d642868b4c05363a7c911b9b07fada322c58f9458676`.
+
+The public repository README still identifies source `8499950` and eight
+viewers. PR #84's ninth viewer remains unpublished. This request updates the
+existing PR branch only. Source merge, guide publication, live verification,
+installation and physical acceptance remain outside this conflict-resolution
+step. Earlier independent reviews describe their recorded revisions and need
+renewal against the final comparison before merge.
+
+## 2026-09-10 UTC: Hub #83 publication and completed status
+
+The user authorized public publication. Public guide PR #2 merged at
+`352ac6a52f4933a2837acee2eef8b76513989644`, publishing exact Hub source
+`84999503f227284db7b8095afbcac22bafbf1d54` after all thirteen source main
+jobs passed. Both independent review axes approved the public candidate. Pages
+run `34534387078` passed all three deployment jobs. At 21:52:34 UTC, the
+unauthenticated landing page and all eight viewer URLs returned HTTP 200 and
+matched their reviewed source hashes. The landing-page SHA-256 was
+`309d517cf9171a7ff4e0c63841f4b1585e000b1c9612389b58b2fe4869c698b2`.
+
+Hub #83 closed as completed at 21:53:17 UTC. This linked follow-up refreshes the
+three paginated backlogs and histories, retains #83 through an explicit direct
+read, removes it from primary open-issue coverage, and marks its existing timeline
+node delivered. Record its completion in the development-workflow narrative.
+The unchanged external agent-skills #33 reference remains outside primary totals.
+Guide-only maintenance and publication receipts do not add product milestones.
+
+The first refresh immediately after closure encountered a closed issue in the
+GitHub open-issue response. Snapshot and coverage assertions rejected that
+unpublished candidate. A later complete REST/GraphQL refresh reconciled all
+three repositories and passed generation plus all four maintenance tests. The
+verified public edition remained intact throughout recovery.
+
+These changes affect source status and publication evidence. They change no
+runtime ownership, command flow, failure boundary, product behavior or OpenSpec
+specification. Preserve all eight architecture viewers, definitions, source pins
+and evidence dates, the guide controls and appearance, and Hub #73's reserved
+input. Hub #80 and #91 retain their separate owners. Run canonical guide and
+workflow checks, independent reviews and all configured source CI; publish the
+verified merged status snapshot and check all nine served hashes again under
+the existing publication authority. Keep each actual revision and result in the
+delivery receipt.
+
 ## 2026-09-10 UTC: Hub #83 approved source integration
 
 The user approved the guide candidate and its desktop, mobile and print review.

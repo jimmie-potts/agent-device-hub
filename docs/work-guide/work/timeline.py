@@ -92,7 +92,7 @@ TRACKS = [
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
-        dict(id='n-guide-workflow', x=0, label='Adopt shared checkpoints', issues=['H83'], guide='development-workflow'),
+        dict(id='n-guide-workflow', x=0, label='Checkpoints delivered', issues=[], guide='development-workflow'),
     ]),
     ('Guide Prism design + rollout', [
         dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),
