@@ -24,3 +24,7 @@
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Windows bridge
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
 #49 [OPEN] Expose Nanoleaf integration settings and assignments to the shared frontend
+#52 [OPEN] Expose connector geometry for the Prism wall map
+#53 [OPEN] Integrate Prism crystal artwork and two-zone wall animation
+#54 [OPEN] Support a fresh Linux installation of the Nanoleaf services
+#55 [OPEN] Install and verify the Linux Nanoleaf runtime in WSL

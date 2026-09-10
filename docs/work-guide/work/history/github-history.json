@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-09T00:18:02.911790+00:00",
+ "fetchedAt": "2026-09-10T00:43:20.126240+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-08T23:50:57Z",
+   "pushedAt": "2026-09-10T00:35:04Z",
    "defaultBranch": "main",
-   "headSha": "a5e03a031583cabab0941804df26092a51b66a46",
-   "mainCommitCount": 11,
+   "headSha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
+   "mainCommitCount": 13,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
+     "date": "2026-09-09T00:58:06Z",
+     "message": "docs: document public work-guide publication (#81)"
+    },
+    {
+     "sha": "8064537639d7a91a66657cdbce9a63654e41b80c",
+     "date": "2026-09-09T00:29:09Z",
+     "message": "Reconcile completed Pixoo reliability acceptance in work guide (#79)"
+    },
     {
      "sha": "a5e03a031583cabab0941804df26092a51b66a46",
      "date": "2026-09-08T23:50:57Z",
@@ -146,9 +156,37 @@
      "createdAt": "2026-09-08T23:45:16Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/78",
      "base": "main"
+    },
+    {
+     "number": 79,
+     "title": "docs: reconcile completed Pixoo reliability acceptance",
+     "mergedAt": "2026-09-09T00:29:09Z",
+     "createdAt": "2026-09-09T00:23:17Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/79",
+     "base": "main"
+    },
+    {
+     "number": 81,
+     "title": "docs: add public work-guide hosting and publication procedure",
+     "mergedAt": "2026-09-09T00:58:06Z",
+     "createdAt": "2026-09-09T00:54:42Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
+     "base": "main"
     }
    ],
    "openPRs": [
+    {
+     "number": 84,
+     "title": "Document the fresh Nanoleaf Linux runtime",
+     "createdAt": "2026-09-10T00:29:55Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84"
+    },
+    {
+     "number": 82,
+     "title": "Document the Nanoleaf Prism delivery sequence",
+     "createdAt": "2026-09-09T23:05:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82"
+    },
     {
      "number": 77,
      "title": "perf: prepare real early source measurements; budgets pending",
@@ -172,12 +210,12 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/1"
     },
     {
-     "number": 14,
-     "title": "Initialize Tidbyt and LIFX in the hub monorepo",
-     "closedAt": "2026-09-07T06:12:46Z",
-     "createdAt": "2026-09-07T05:47:02Z",
+     "number": 2,
+     "title": "Qualify and version the shared agent lifecycle contract",
+     "closedAt": "2026-09-08T21:54:37Z",
+     "createdAt": "2026-09-07T02:21:58Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/14"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
     },
     {
      "number": 4,
@@ -196,40 +234,47 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
     },
     {
+     "number": 14,
+     "title": "Initialize Tidbyt and LIFX in the hub monorepo",
+     "closedAt": "2026-09-07T06:12:46Z",
+     "createdAt": "2026-09-07T05:47:02Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/14"
+    },
+    {
      "number": 33,
      "title": "Document assistant direction and remove stale skill references",
      "closedAt": "2026-09-07T21:50:50Z",
      "createdAt": "2026-09-07T21:37:55Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
-    },
-    {
-     "number": 2,
-     "title": "Qualify and version the shared agent lifecycle contract",
-     "closedAt": "2026-09-08T21:54:37Z",
-     "createdAt": "2026-09-07T02:21:58Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
     }
    ],
-   "openIssueCount": 60,
+   "openIssueCount": 65,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-08T18:06:58Z"
+    "2026-09-10T00:35:07Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
-    "2026-09-08": 13
+    "2026-09-08": 13,
+    "2026-09-09": 1,
+    "2026-09-10": 4
    }
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-08T17:14:19Z",
+   "pushedAt": "2026-09-10T00:37:37Z",
    "defaultBranch": "main",
-   "headSha": "ea3b95661352f927aceaf92b62d74660978c201f",
-   "mainCommitCount": 20,
+   "headSha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
+   "mainCommitCount": 21,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
+     "date": "2026-09-09T23:57:56Z",
+     "message": "Expose validated connector geometry for Prism (#56)"
+    },
     {
      "sha": "ea3b95661352f927aceaf92b62d74660978c201f",
      "date": "2026-09-08T17:14:16Z",
@@ -451,9 +496,30 @@
      "createdAt": "2026-09-08T16:20:01Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/51",
      "base": "main"
+    },
+    {
+     "number": 56,
+     "title": "Expose validated connector geometry for Prism",
+     "mergedAt": "2026-09-09T23:57:57Z",
+     "createdAt": "2026-09-09T23:02:31Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/56",
+     "base": "main"
     }
    ],
-   "openPRs": [],
+   "openPRs": [
+    {
+     "number": 58,
+     "title": "Render the actual Lines layout with animated Prism crystal components",
+     "createdAt": "2026-09-10T00:36:26Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58"
+    },
+    {
+     "number": 57,
+     "title": "Support a fresh Linux installation of Nanoleaf services",
+     "createdAt": "2026-09-10T00:04:39Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57"
+    }
+   ],
    "closedIssues": [
     {
      "number": 2,
@@ -480,14 +546,6 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
     },
     {
-     "number": 27,
-     "title": "Record shared agent-device-hub adoption and migration dependencies",
-     "closedAt": "2026-09-07T02:58:25Z",
-     "createdAt": "2026-09-07T02:24:15Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/27"
-    },
-    {
      "number": 22,
      "title": "Restructure the wall map layout and surface status, pending edits, and mode",
      "closedAt": "2026-09-07T04:32:52Z",
@@ -512,20 +570,20 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/25"
     },
     {
+     "number": 27,
+     "title": "Record shared agent-device-hub adoption and migration dependencies",
+     "closedAt": "2026-09-07T02:58:25Z",
+     "createdAt": "2026-09-07T02:24:15Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/27"
+    },
+    {
      "number": 28,
      "title": "Expose a protected Nanoleaf controller API for local Codex and the hub",
      "closedAt": "2026-09-07T18:29:33Z",
      "createdAt": "2026-09-07T02:24:17Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/28"
-    },
-    {
-     "number": 38,
-     "title": "Animate wall assembly from a central orb",
-     "closedAt": "2026-09-07T19:38:54Z",
-     "createdAt": "2026-09-07T17:15:37Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
     },
     {
      "number": 33,
@@ -542,17 +600,26 @@
      "createdAt": "2026-09-07T03:58:54Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
+    },
+    {
+     "number": 38,
+     "title": "Animate wall assembly from a central orb",
+     "closedAt": "2026-09-07T19:38:54Z",
+     "createdAt": "2026-09-07T17:15:37Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
     }
    ],
-   "openIssueCount": 25,
+   "openIssueCount": 29,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
-    "2026-09-07T20:09:12Z"
+    "2026-09-09T22:37:08Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-05": 3,
     "2026-09-06": 7,
-    "2026-09-07": 26
+    "2026-09-07": 26,
+    "2026-09-09": 4
    }
   },
   "divoom-app-upgrade": {
@@ -880,14 +947,6 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/9"
     },
     {
-     "number": 36,
-     "title": "Record shared agent-device-hub ownership and migration dependencies",
-     "closedAt": "2026-09-07T03:01:12Z",
-     "createdAt": "2026-09-07T02:24:11Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/36"
-    },
-    {
      "number": 10,
      "title": "Deliver persistent local startup, diagnostics, and backup/restore",
      "closedAt": "2026-09-07T03:36:38Z",
@@ -896,12 +955,12 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/10"
     },
     {
-     "number": 42,
-     "title": "Integrate an opt-in physical Pixoo adapter with the local application",
-     "closedAt": "2026-09-07T17:38:00Z",
-     "createdAt": "2026-09-07T03:58:52Z",
+     "number": 12,
+     "title": "Validate local physical playback, recovery, and soak reliability",
+     "closedAt": "2026-09-09T00:17:43Z",
+     "createdAt": "2026-09-05T22:08:56Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/42"
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
     },
     {
      "number": 24,
@@ -936,12 +995,20 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
     },
     {
-     "number": 12,
-     "title": "Validate local physical playback, recovery, and soak reliability",
-     "closedAt": "2026-09-09T00:17:43Z",
-     "createdAt": "2026-09-05T22:08:56Z",
+     "number": 36,
+     "title": "Record shared agent-device-hub ownership and migration dependencies",
+     "closedAt": "2026-09-07T03:01:12Z",
+     "createdAt": "2026-09-07T02:24:11Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/36"
+    },
+    {
+     "number": 42,
+     "title": "Integrate an opt-in physical Pixoo adapter with the local application",
+     "closedAt": "2026-09-07T17:38:00Z",
+     "createdAt": "2026-09-07T03:58:52Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/42"
     }
    ],
    "openIssueCount": 20,

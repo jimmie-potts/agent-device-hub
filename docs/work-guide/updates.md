@@ -1,5 +1,44 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Hub #83 planning and delivery checkpoints
+
+Coordinator: the Hub #83 delivery root. Consume agent-skills #33, delivered in
+PR #36 at `ff80d247ea96a5d4c461d30a2c24148376197c7b` with both configured
+merged-main jobs passing. Align the Hub, Pixoo and Nanoleaf instruction paths
+with the canonical guide procedure and the skills' explicit invocation rule.
+Keep ordinary repository maintenance and narrower user limits intact. No
+personal skill installation or product behavior/OpenSpec change is part of this
+documentation adoption.
+
+Refresh all three backlogs and merge histories through paginated GitHub reads.
+The current plan includes Hub #83 and #80, the Nanoleaf #52 -> #53 -> #26
+acceptance sequence, and the independent #54 -> #55 -> Hub #43 Linux sequence.
+Reference the completed external agent-skills #33 prerequisite without adding it
+to the three-repository primary totals. These stories retain their actual open
+states; source delivery, installation and physical acceptance remain separate.
+
+Architecture no-impact: these checkpoints change instruction discovery, guide
+maintenance and publication evidence. They change no device writer, controller
+boundary, command path, transport or failure behavior represented in the eight
+viewers. Preserve their source pins, review dates, definitions and byte hashes.
+The roadmap membership and one new independent work track reflect current
+planning; they do not repair diagram connectors. Hub #73's reserved evaluation
+input remains revision `7464b9e669c7150f780b334a3429c5f30a89b438`, HTML SHA-256
+`8385675bb5dc6801de4c5f99e377caea2d281a2102ab6ce75b265bbac4cea6b3`.
+
+Hub PR #82 remains separately owned. Use its inspected read-only guide CI job
+without altering that branch, and reconcile any target changes before merge.
+That job builds offline, checks reproducibility and captures browser/print
+evidence; it has no deployment credentials or publication step.
+
+This entry records a source candidate. Linked source/Hub PRs, current reviews,
+CI, visual approval and exact revisions belong in the delivery receipt. After
+verified merges, reconcile facts unavailable at this snapshot in a linked
+follow-up. Public publication and all nine live URL/hash checks remain separate
+stages under the user's publication authority. Hub #80 retains its existing
+initial-publication acceptance owner. No deployment or live verification is
+claimed by this maintenance entry.
+
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
 Coordinator: the public-guide delivery root. The user selected public access.

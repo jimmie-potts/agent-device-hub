@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-09T00:17:59.398302+00:00",
-  "refreshedAt": "2026-09-09T00:18:08.356107+00:00",
+  "startedAt": "2026-09-10T00:28:14.498425+00:00",
+  "refreshedAt": "2026-09-10T00:28:22.807841+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 60,
+      "openIssues": 62,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        65
       ],
-      "openPRs": 2,
+      "openPRs": 3,
       "prPageSizes": [
-        2
+        3
       ],
       "paginationComplete": true,
       "directReads": [
@@ -42,14 +42,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 25,
+      "openIssues": 29,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        25
+        30
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -112,7 +112,7 @@
       ]
     }
   },
-  "openIssues": 105,
+  "openIssues": 111,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Only the listed acceptance and documentation reads include refreshed comments; other issue bodies, states and labels are current."
 }
