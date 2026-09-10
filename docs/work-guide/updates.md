@@ -83,3 +83,27 @@ new history heads differed from pinned architecture sources. Removed that
 coupling and the unconditional current-head claim. The offline regression test
 failed before the fix and passed after it. Product facts and snapshot dates
 remain unchanged. Companion PRs: Hub #72, Nanoleaf #51, Pixoo #51.
+
+## 2026-09-10: Replan Hub #30 and PR #77 for the Linux hook
+
+The early-stage plan now measures the real Linux hook from delivered Nanoleaf
+PR #57. Native Windows comparison and executable forwarding no longer block it.
+Keep repeated 1/10/50 synthetic-session profiles, real Linux worker-spawn cost,
+confinement and detached-child cleanup, and reviewed numeric budgets. Historical
+admission/validator receipts remain unchanged; no new hook measurements are
+claimed. Current CI and shared-policy Windows elements are flagged for separate
+cleanup, not removed in this planning update.
+
+The planning coordinator owns the current-main guide companion
+[Hub PR #99](https://github.com/jimmie-potts/agent-device-hub/pull/99). It refreshes
+affected inputs and generated output without replacing the newer Linux diagrams
+with this branch's older guide. Source synchronization is pending that companion's
+reviewed merge. Architecture already depicts the delivered Linux command path;
+measurement replanning changes no device owner, transport or failure boundary.
+Public publication and live verification are outside this request.
+
+Node 24 setup, workflow validation and ten workflow tests passed for the planning
+candidate: three current specifications, one active change and three archives.
+This change remains active, PR #77 remains draft and #30 stays open for later
+integrated qualification. No benchmark, runtime, CI, installation or device
+operation was performed by this replan.

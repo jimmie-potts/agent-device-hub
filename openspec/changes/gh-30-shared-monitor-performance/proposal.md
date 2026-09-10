@@ -1,24 +1,27 @@
 ## Why
 
-[Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) needs measured early evidence and numeric limits before shared-core implementation. Hub #2 has delivered the lifecycle contract; actual legacy admission and released validators can now be measured without inventing a shared feed.
+[Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) needs measured early evidence and numeric limits before shared-core implementation. Nanoleaf's fresh Linux runtime is source-delivered in [PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57); its Linux hook replaces the previous Windows/WSL comparison and executable-forwarding requirements.
 
 ## What Changes
 
-- Add reusable, bounded source measurement tools with exact source/package provenance, raw samples and explicit clock boundaries.
-- Measure the supported available Windows/WSL paths using synthetic neutral metadata and isolated native storage. Report unavailable paths and excluded boundaries as missing evidence.
-- Establish reviewed numeric latency, resource, queue and timeout budgets from matched observations before Hub #3 implementation.
-- Retain real later-stage measurements as pending. This change covers only the early stage; the overall issue remains open for integrated qualification.
+- Retain bounded source tooling, exact provenance, raw samples and explicit clock boundaries.
+- Measure the real Linux hook in Ubuntu WSL with synthetic neutral events and isolated Linux storage. Repeat comparable 1/10/50-task profiles on that route; no native Windows run or forwarding measurement is required.
+- Separate full hook return, process startup, admission/commit and background-worker handoff. Keep released Python/Node validator measurements as distinct component evidence.
+- Freeze reviewed latency, resource, queue and timeout budgets from repeatable Linux observations before Hub #3 implementation.
+- Keep integrated qualification pending until the shared feed and consumers exist. Overall #30 stays open after early delivery.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `shared-monitor-performance-baseline`: Reproducible early source measurements, evidence completeness and frozen budget requirements.
+- `shared-monitor-performance-baseline`: Reproducible Linux source measurements, evidence completeness and frozen budget requirements.
 
 ### Modified Capabilities
 
-None. No shared core, producer transport, controller behavior or installation changes are introduced.
+None in this replan. Shared contract platform wording and repository-wide CI support policy require separate reconciliation; this change does not silently revise released contracts.
 
 ## Impact
 
-Qualification tooling, tests, versioned measurement receipts, development/CI commands and performance documentation. Nanoleaf source is consumed unchanged at a pinned delivered revision; no personal state, devices or additional installed agent clients are involved. Missing Windows interop currently blocks complete matched measurements and budget acceptance, while independent Pixoo contract adoption may continue.
+The September 10 replan edits planning and performance documentation only. Existing measurement code, source pins and raw receipts remain unchanged and do not establish full Linux hook coverage. Future implementation must pin the delivered Linux source, prove isolation, then collect new evidence. Nanoleaf [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) owns installed and physical acceptance; it is not a prerequisite for isolated source measurements.
+
+Windows interop availability no longer blocks this early stage. Repository-wide Windows CI removal and CI cost reduction are separate work. Remaining Windows references in shared policy, source and historical receipts must be reported to the user, not treated as implicit permission to retain a Windows runtime requirement. [Hub companion PR #99](https://github.com/jimmie-potts/agent-device-hub/pull/99) uses current main because PR #77 predates the delivered Linux guide.

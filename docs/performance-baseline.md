@@ -2,8 +2,9 @@
 
 [Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) has an early
 measurement/budget stage before Hub #3 and later integrated qualification. This
-candidate provides admission and released-validator measurement tooling. The early stage is not
-delivered and numeric product budgets are not frozen.
+candidate retains admission and released-validator preparation. The September 10
+replan targets the delivered Linux hook; it does not implement or measure that
+route. The early stage is not delivered and numeric budgets are not frozen.
 
 ## Available source boundary
 
@@ -140,32 +141,63 @@ and process startup remain distinct from validator call cost. Pooled percentiles
 are computed from raw samples, not averages of per-repeat percentiles. A sample
 count of 1,000 or more alone does not establish tail confidence.
 
-## Windows owner evidence
+## Linux hook qualification plan
 
-Windows interop from this execution host still fails a version-only PowerShell
-probe with `UtilBindVsockAnyPort:307: socket failed 1`. This is an execution-host
-limitation, not evidence about source performance. An owner can run the same
-reviewed source and tests in an existing Windows Python 3.12/3.14 environment,
-using a fresh Windows-native temporary output directory. Record the exact tool
-revision/hash and returned receipt. Source qualification does not authorize
-installations, personal settings, hooks, extra client sessions or device actions.
+The accepted source target is Nanoleaf PR #57, merge revision
+`2558df5a2fc543247b0c75898ef0260ba3ea264b`, under its ADR 0007. Source is
+merged; installed/client/physical acceptance remains Nanoleaf #55. Isolated
+source measurements do not require that installed acceptance to finish first.
 
-The admission-only tool does not execute the native PowerShell hook route or
-the legacy WSL-to-Windows helper. Those paths need safely isolated real source
-measurements before the early-stage acceptance gate can pass. Windows hosted
-CI can validate tooling correctness; a different runner host does not supply a
-matched local Windows/WSL performance baseline.
+Future implementation must pin the complete executed Linux file set and prove
+isolation before running the actual `bridge/bridge.py hook --state-dir` route.
+Use synthetic stdin and disposable Linux state. Measure process launch through
+hook return, including parsing, admission/commit and the real Linux worker-spawn
+handoff. Bound and clean detached descendants on success and failure. Prove no
+private configuration/metadata, external network, device or Windows executable
+access. A no-op worker-launch callback cannot establish full-hook timing.
+
+Repeat the 1/10/50 synthetic-session profiles under comparable Linux load and
+runtime conditions, preserving raw samples and failures. Keep fresh-process and
+warm-state timing, component costs, hook return, burst makespan and descendant
+readiness/cleanup separate. Exercise contention, invalid input and unavailable
+state. Legacy exit/output behavior is evidence, not automatic compliance with
+the future shared producer's silent fail-open contract.
+
+No native Windows comparison, PowerShell probe, WSL-to-Windows forwarding or
+bridge repair is required. Existing source files and receipts remain unchanged
+historical preparation; the commands above still measure only their documented
+legacy admission and validator boundaries. New Linux-hook tooling and evidence
+remain to be implemented. Do not combine old and new source revisions in one
+qualified baseline.
 
 ## Outstanding early acceptance
 
-- Matched supported Windows/WSL runtime and load profiles, including real hook
-  return, process startup and helper overhead with explicit clock boundaries.
-- Reviewed numeric p95/p99, hard timeouts, CPU/memory/queue limits, cadence,
-  sampling and pass/fail tolerances based on matched evidence and no regression.
-- A frozen budget revision/hash and delivered early-stage PR with all required
-  reviews, CI and work-guide reconciliation.
+- Verified Linux source pins, confinement and detached-child cleanup.
+- Repeated comparable Linux profiles covering actual hook return, startup and
+  handoff, alongside separately reported admission and validator evidence.
+- Reviewed p95/p99, hard timeouts, CPU/memory/queue limits, cadence, sampling and
+  pass/fail tolerances. Future feed queue/cadence constraints need later integrated
+  verification and are not measurements of the legacy hook.
+- A frozen budget revision/hash, required checks/reviews and guide synchronization.
 
-Hub #3 remains gated. Final shared-feed/consumer isolation, overload/resync,
-frontend, playback/animation, embedded/standalone host, restart/rollback and
-physical qualification remain pending their real implementations. Overall
-issue #30 stays open after eventual early-stage delivery.
+Hub #3 remains gated by Linux evidence and budgets. Final shared-feed/consumer
+isolation, overload/resync, frontend, playback/animation, hosting, restart/rollback
+and physical qualification remain with later implementations and their owners.
+Overall #30 stays open after early-stage delivery.
+
+## Remaining Windows elements for separate follow-up
+
+Repository-wide Windows CI removal and CI cost reduction are outside this replan.
+The current CI matrix, development instructions, provider qualification and
+lifecycle documentation/specification retain Windows support references. The
+older OpenSpec configuration describes a Windows worker. Pinned legacy sources,
+measurement portability branches, Git attributes and raw receipts also retain
+historical Windows details. The new Nanoleaf source still contains legacy Windows
+branches, although the fresh Linux route avoids them. Report these residuals to
+the user rather than claim the repository is Windows-free. Preserve raw evidence;
+separate current support policy from historical provenance during cleanup.
+
+These residuals do not restore a Windows performance requirement to #30/#77.
+Configured hosted CI gates still apply until a separately reviewed CI change
+replaces them. No CI, runtime, package, source-pin or raw-receipt changes are
+included in this planning update.
