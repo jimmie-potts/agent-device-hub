@@ -17,13 +17,13 @@ REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
 # Delivered baselines worth naming on the history chart (repo key, PR number, caption).
 MILESTONES = {
     ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
-    ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings',
+    ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings', ('N', 56): 'Connector geometry',
     ('P', 54): 'Local reliability', ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
 }
 
-# Roadmap map: ordered slots, not dates. slot 0 = ready or independent now,
-# 1 = next, 2 = after the shared Codex milestone, 3 = later, 4 = deferred or conditional.
-SLOTS = ['Now · ready or independent', 'Next', 'After the Codex milestone', 'Later', 'Deferred · conditional']
+# Roadmap columns order each track. Cross-track prerequisites come from arrows,
+# not from the shared Codex milestone's position in a different row.
+SLOTS = ['Now · ready or independent', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
@@ -54,9 +54,9 @@ TRACKS = [
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
     ]),
     ('Prism wall artwork', [
-        dict(id='n-prism-geometry', x=0, label='Connector geometry', issues=['N52'], guide='nanoleaf-presentation'),
-        dict(id='n-prism-renderer', x=1, label='Crystal artwork + flow', issues=['N53'], guide='nanoleaf-presentation'),
-        dict(id='n-prism-numbers', x=2, label='Luminous Line numbers', issues=['N26'], guide='nanoleaf-presentation'),
+        dict(id='n-prism-geometry', x=0, label='Geometry delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-renderer', x=1, label='Crystal + flow delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
         dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H15', 'H17'], guide='tidbyt-lifx'),
@@ -87,9 +87,17 @@ TRACKS = [
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'H73', 'H80', 'H83'], guide='development-workflow'),
-        dict(id='n-dev-jobs', x=1, label='Job layout · Prism guide', issues=['P47', 'H85', 'H86', 'H87'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['H73', 'H80', 'H91'], guide='development-workflow'),
+        dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
+    ]),
+    ('Guide workflow checkpoints', [
+        dict(id='n-guide-workflow', x=0, label='Adopt shared checkpoints', issues=['H83'], guide='development-workflow'),
+    ]),
+    ('Guide Prism design + rollout', [
+        dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),
+        dict(id='n-guide-artwork', x=1, label='Guide artwork + motion', issues=['H86'], guide='development-workflow'),
+        dict(id='n-guide-publish', x=2, label='Local + public verification', issues=['H87'], guide='development-workflow'),
     ]),
 ]
 # Cross-track prerequisites (from → to). Same-track order is drawn automatically.
@@ -124,7 +132,7 @@ def history_chart(history, snapshot_iso, issues):
         return left + plot_w * (dt - start).total_seconds() / span
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
-             '<title id="history-title">Merged pull requests per repository through the dated snapshot</title>',
+             f'<title id="history-title">Merged pull requests per repository through {esc(end.strftime("%B %d, %Y"))}</title>',
              f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)

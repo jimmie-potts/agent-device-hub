@@ -31,3 +31,12 @@ main CI before issue closure.
 - [ ] Recorded build/browser results as applicable and any pending post-merge synchronization.
 
 For device-repository work, link the coordinated hub guide PR and its status.
+
+- Source/tracker completion and revision:
+- Guide-source synchronization, Hub companion and revision:
+- Public publication PR and revision, or pending/not applicable reason:
+- Live deployment, all required URLs and served-hash verification:
+- Pending stage owner and next action:
+
+Preserve the user's requested finish line. A no-impact source change still needs
+a public-currency assessment; verified current output does not need an empty PR.

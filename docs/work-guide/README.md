@@ -11,6 +11,41 @@ Divoom/Pixoo. GitHub issues remain authoritative for scope and status. The HTML
 is a dated, reviewed view of those records. Its backlog, source review and
 history timestamps describe separate evidence; none means a live dashboard.
 
+## Planning and delivery checkpoints
+
+The shared checkpoint contract was introduced by
+[agent-skills #33](https://github.com/jimmie-potts/agent-skills/issues/33) at
+[`ff80d24`](https://github.com/jimmie-potts/agent-skills/blob/ff80d247ea96a5d4c461d30a2c24148376197c7b/skills/deliver-work/references/documentation.md).
+Discover the installed canonical skills when explicitly invoked. `plan-work`
+reads the discovered `deliver-work` package's `references/documentation.md`
+without invoking delivery. Report a missing required resource; do not install or
+copy it silently. Ordinary repository maintenance follows this procedure without
+implicitly invoking either skill.
+
+At discovery, name the work source, guide coordinator, affected repositories,
+canonical inputs, requested finish line, and authorized effects. Use the existing
+task/PR evidence. A source-only or tracker-only request keeps its narrower limit;
+these instructions do not supply permission to publish the site.
+
+| Checkpoint | Required result |
+| --- | --- |
+| After authorized planning publication | Read back saved scope/dependencies, refresh affected inputs, reconcile primary coverage and roadmap order, and retain proposed architecture as planned. Tracker-only work reports guide/publication pending; read-only planning writes nothing. |
+| Before implementation and candidate review | Assess guide/architecture impact. Prepare affected inputs and regenerated output in the source candidate or linked Hub companion PR. |
+| After verified merge and acceptance updates | Reconcile actual history and saved issue state. Keep source, installation, real-client and physical acceptance distinct. Use a follow-up for facts unavailable before merge. |
+| Authorized public publication | Publish validated output from the exact merged Hub revision through the process below, then verify what unauthenticated readers receive. |
+
+One delivery coordinator owns links among device-source PRs, the Hub companion,
+and the public publication PR. Report source/tracker completion, guide-source
+synchronization, public artifact publication, and live verification separately.
+For each applicable stage give its revision/evidence or pending owner and next
+action. Required pending stages prevent full completion at the requested finish
+line, even when the source work has merged.
+
+Keep external prerequisites, including agent-skills work, as verified reference
+links. They do not join the three source repositories' primary issue totals.
+Verify their identity, state and dependency direction through the saved native
+dependency records and authoritative source receipts.
+
 ## Publish the public edition
 
 The public [agent-device-guide repository](https://github.com/jimmie-potts/agent-device-guide)
@@ -26,6 +61,9 @@ PR. After a guide change merges and all configured main CI jobs pass:
    `outputs/agent-device-work-guides.html` to the public repository's `index.html`
    and copy the nine `outputs/architecture/*.html` viewers to `architecture/`.
    Publish only these ten HTML files, `.nojekyll` and the public README.
+   Inspect their contents as well as filenames for credentials, private runtime
+   data, personal paths, and unrelated material before public copying. Repair
+   such content in the owning inputs and regenerate before renewed review.
 2. Update the public README with the hub source revision and guide SHA-256.
    Retain the snapshot dates in the generated HTML. Do not refresh data or edit
    generated content in the public repository.
@@ -37,12 +75,18 @@ PR. After a guide change merges and all configured main CI jobs pass:
    successful deployment and verify the unauthenticated HTTPS landing page and
    all nine viewers against the source hashes. Record both PRs, source and
    published revisions, and the deployment result in the delivery receipt.
+   Verify every required URL without authentication and compare every served
+   HTML file with its reviewed source hash. A repository hash, successful Pages
+   response, or representative viewer check alone is incomplete acceptance.
 
 Copying from the private hub to the public repository is an explicit publication
 step. There is no automatic cross-repository sync or new access token. A hub
 merge alone does not update the website; report pending publication when the
 public copy has not caught up. Keep the hub guide-maintenance entry with the
 source PR, including a specific no-impact reason for hosting-only changes.
+An unchanged source output can still have a stale public copy. If all required
+public revision, content and deployment evidence already matches, record that
+no-change result instead of creating an empty publication PR.
 
 ## Maintain it with each delivery
 
@@ -84,6 +128,15 @@ Updates require human or agent review; these instructions do not start a
 scheduler, run devices, deploy the guide or grant additional mutation authority.
 Concurrent deliveries rebase and reconcile the guide inputs before regenerating;
 never merge generated HTML conflicts by choosing one side blindly.
+
+A partial refresh is an unpublished candidate. Reconcile all affected inputs
+with a complete fresh snapshot and concurrent source changes, regenerate, and
+renew affected checks/reviews before publishing. Preserve the last verified
+public edition. After a timeout or failed publication, inspect authoritative PR,
+merge and deployment records before retrying; reuse verified existing effects.
+An unavailable browser, public route, or hash check leaves its acceptance pending
+with the coordinator and the exact next check. Never duplicate a PR to probe a
+timeout or add guide-only merges recursively to product milestones.
 
 ## Commands
 
