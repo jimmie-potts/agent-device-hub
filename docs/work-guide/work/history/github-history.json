@@ -1,15 +1,30 @@
 {
- "fetchedAt": "2026-09-10T03:15:33.320905+00:00",
+ "fetchedAt": "2026-09-10T13:27:40.566048+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T03:15:17Z",
+   "pushedAt": "2026-09-10T13:24:06Z",
    "defaultBranch": "main",
-   "headSha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
-   "mainCommitCount": 13,
+   "headSha": "bca5b343dffef69b2eb371af683b6c8839bb2f3e",
+   "mainCommitCount": 16,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "bca5b343dffef69b2eb371af683b6c8839bb2f3e",
+     "date": "2026-09-10T13:24:05Z",
+     "message": "ci: avoid duplicate PR runs and bound job duration (#92)"
+    },
+    {
+     "sha": "0c772c507dd5b9b6624e8ffabbf63fca86fa3c38",
+     "date": "2026-09-10T13:16:19Z",
+     "message": "Record verified Nanoleaf CI delivery alongside the merged guide refresh (#90)"
+    },
+    {
+     "sha": "396c36aed74cf1d016564536eca13bb16f89834b",
+     "date": "2026-09-10T03:22:58Z",
+     "message": "Reconcile completed Pixoo CI scheduling delivery in the guide (#89)"
+    },
     {
      "sha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
      "date": "2026-09-09T00:58:06Z",
@@ -172,23 +187,33 @@
      "createdAt": "2026-09-09T00:54:42Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
+    {
+     "number": 89,
+     "title": "Reconcile completed Pixoo CI scheduling delivery in the guide",
+     "mergedAt": "2026-09-10T03:22:59Z",
+     "createdAt": "2026-09-10T03:04:12Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89",
+     "base": "main"
+    },
     {
      "number": 90,
-     "title": "Reconcile work guide for Nanoleaf CI scheduling delivery",
+     "title": "Record verified Nanoleaf CI delivery alongside the merged guide refresh",
+     "mergedAt": "2026-09-10T13:16:19Z",
      "createdAt": "2026-09-10T03:06:44Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/90",
      "base": "main"
     },
     {
-     "number": 89,
-     "title": "Record Pixoo #46 CI guide impact",
-     "createdAt": "2026-09-10T03:04:12Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89",
+     "number": 92,
+     "title": "ci: avoid duplicate PR runs and bound job duration",
+     "mergedAt": "2026-09-10T13:24:06Z",
+     "createdAt": "2026-09-10T13:18:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/92",
      "base": "main"
-    },
+    }
+   ],
+   "openPRs": [
     {
      "number": 88,
      "title": "Adopt planning and delivery checkpoints for the work guide",
@@ -275,26 +300,31 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
     }
    ],
-   "openIssueCount": 65,
+   "openIssueCount": 66,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-10T00:35:07Z"
+    "2026-09-10T13:10:28Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
     "2026-09-08": 13,
     "2026-09-09": 1,
-    "2026-09-10": 4
+    "2026-09-10": 5
    }
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T03:04:28Z",
+   "pushedAt": "2026-09-10T13:18:49Z",
    "defaultBranch": "main",
-   "headSha": "dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa",
-   "mainCommitCount": 22,
+   "headSha": "2944a3a0a7ce58da0a36125859d7d3f277bece76",
+   "mainCommitCount": 23,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "2944a3a0a7ce58da0a36125859d7d3f277bece76",
+     "date": "2026-09-10T13:17:45Z",
+     "message": "Render the actual Lines layout with animated Prism crystal components (#58)"
+    },
     {
      "sha": "dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa",
      "date": "2026-09-10T03:04:27Z",
@@ -542,6 +572,14 @@
      "createdAt": "2026-09-10T03:00:45Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
      "base": "main"
+    },
+    {
+     "number": 58,
+     "title": "Render the actual Lines layout with animated Prism crystal components",
+     "mergedAt": "2026-09-10T13:17:45Z",
+     "createdAt": "2026-09-10T00:36:26Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -550,20 +588,13 @@
      "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
      "createdAt": "2026-09-10T01:21:11Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
-     "base": "codex/gh-53-prism-renderer"
+     "base": "main"
     },
     {
      "number": 59,
      "title": "Adopt shared guide planning and delivery checkpoints",
      "createdAt": "2026-09-10T00:46:40Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
-     "base": "main"
-    },
-    {
-     "number": 58,
-     "title": "Render the actual Lines layout with animated Prism crystal components",
-     "createdAt": "2026-09-10T00:36:26Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58",
      "base": "main"
     },
     {
@@ -662,9 +693,17 @@
      "createdAt": "2026-09-07T03:58:54Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
+    },
+    {
+     "number": 37,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "closedAt": "2026-09-10T13:20:26Z",
+     "createdAt": "2026-09-07T17:14:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/37"
     }
    ],
-   "openIssueCount": 29,
+   "openIssueCount": 28,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-09T22:37:08Z"
@@ -678,7 +717,7 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-10T03:10:59Z",
+   "pushedAt": "2026-09-10T13:05:36Z",
    "defaultBranch": "main",
    "headSha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
    "mainCommitCount": 20,

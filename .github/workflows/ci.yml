@@ -44,13 +44,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-contracts.txt
       - run: npm ci
       - run: python -m pip install -r requirements-contracts.txt
       - run: npm run build
       - run: npm run typecheck
-      - run: npm run test:contracts
+      - run: npm run test:contracts:built
       - run: npm run test:contracts:python
-      - run: npm run test:package
+      - run: npm run test:package:built
   mcp:
     name: MCP on ${{ matrix.os }}
     strategy:
@@ -68,9 +70,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck
-      - run: npm run test:mcp
-      - run: npm run test:mcp:protocol
-      - run: npm run test:mcp:package
+      - run: npm run test:mcp:built
+      - run: npm run test:mcp:protocol:built
+      - run: npm run test:mcp:package:built
 
   lifecycle:
     name: Lifecycle Python ${{ matrix.python }} on ${{ matrix.os }}
@@ -90,10 +92,12 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-contracts.txt
       - run: npm ci
       - run: python -m pip install -r requirements-contracts.txt
       - run: npm run build
       - run: npm run typecheck
-      - run: npm run test:lifecycle
+      - run: npm run test:lifecycle:built
       - run: npm run test:lifecycle:python
-      - run: npm run test:lifecycle:package
+      - run: npm run test:lifecycle:package:built
