@@ -2,6 +2,10 @@
 
 Status: Accepted direction. Controller contracts and reusable MCP are implemented;
 collectors, shared agent-state runtime and standalone hosting remain in the backlog.
+The fresh Nanoleaf Linux runtime described below is an accepted proposal under
+[Hub #43](https://github.com/jimmie-potts/agent-device-hub/issues/43). Source
+delivery is under review in [Nanoleaf PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57),
+while installed acceptance remains open under Nanoleaf #55.
 
 ## Product direction and vocabulary
 
@@ -31,10 +35,13 @@ authoritative agent-state core, common controller contracts, shared MCP
 infrastructure and the future cross-device dashboard.
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
-Monitor/Media policy and serialized device writer. Nanoleaf owns its Windows
-worker, geometry, Line allocation, spatial effects, Work/Quiet/Free policy,
-scene restoration and advanced wall editor. Common code must not import a
-device application's internal modules.
+Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
+light-writing worker, geometry, Line allocation, spatial effects,
+Work/Quiet/Free policy, scene restoration and advanced wall editor. Its current
+implemented installation runs on Windows. The proposed fresh installation moves
+those Nanoleaf processes and private state into Ubuntu WSL without transferring
+repository ownership. Common code must not import a device application's
+internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
@@ -99,6 +106,39 @@ previews. Nanoleaf timelines and Pixoo pixel buffers remain device-specific
 payloads. Renderer contracts carry clock domains, epochs and update outcomes;
 browsers must not create another scheduler for physical effects.
 
+## Proposed fresh Nanoleaf Linux runtime
+
+The accepted proposal installs the existing Nanoleaf runtime as separate Linux
+processes in Ubuntu WSL. Linux Python hooks, the CLI, the wall map and the
+controller coordinate through one SQLite database on the Linux filesystem. The
+existing on-demand Python worker remains the only process that writes to the
+Nanoleaf device. The design does not add a second writer or put runtime SQLite
+state under `/mnt/c`.
+
+The wall map listens on configurable loopback port `8765` by default. The Python
+controller listens on configurable loopback port `41231`. The Node MCP host
+listens on configurable loopback port `41230` and calls the controller directly
+over numeric-loopback HTTP at `127.0.0.1:41231`. Linux runtime commands do not
+forward through or launch Windows executables.
+
+Windows remains a client boundary. A Windows browser can open the wall map, and
+the existing configured readers can read project, title and unread JSON from the
+mounted Windows filesystem. Those metadata files are read-only inputs to Linux;
+the browser receives neither device credentials nor private SQLite state.
+
+This is a fresh installation. Existing Nanoleaf state need not move into Linux,
+and the old installation can remain unused. The source issue owns setup, service
+units and fake-backed verification. The installed-acceptance issue separately
+owns retirement of this project's Windows writer, real WSL client and service
+checks, browser reachability and physical Work/Quiet/Free observations. Until
+both issues provide their evidence, this section describes proposed behavior,
+not an installed system.
+
+This transition excludes data migration, rollback tooling, a combined daemon, a
+new hook HTTP API, shared monitoring and the Nanoleaf monorepo move. WSL service
+availability follows the WSL instance lifetime. Shared monitoring and later
+source migration keep their existing owners and dependency paths.
+
 ## Repositories, packages and hosting
 
 Use this repository as the monorepo for new controllers and shared packages,
@@ -131,8 +171,11 @@ bounded authentication and response delivery, and no automatic write retries.
 See [the MCP module](../packages/mcp/README.md) for its API and evidence boundary.
 
 First, Pixoo embeds the core in its existing backend. Nanoleaf can opt into that
-versioned shared feed while retaining its current Windows worker. A later hub
-host composes the same core and connects to both existing controllers.
+versioned shared feed while retaining its existing device worker and
+Work/Quiet/Free behavior. The current implemented route uses the Windows worker;
+the proposed fresh Linux installation moves that owner into WSL independently
+of shared monitoring. A later hub host composes the same core and connects to
+both existing controllers.
 
 Moving the state owner is explicit and quiesced. Preserve source identities,
 session/notice state, revisions and producer configuration with a versioned

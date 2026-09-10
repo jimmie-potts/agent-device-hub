@@ -24,8 +24,8 @@ PR. After a guide change merges and all configured main CI jobs pass:
 
 1. Use the validated output from that exact hub revision. Copy
    `outputs/agent-device-work-guides.html` to the public repository's `index.html`
-   and copy the eight `outputs/architecture/*.html` viewers to `architecture/`.
-   Publish only these nine HTML files, `.nojekyll` and the public README.
+   and copy the nine `outputs/architecture/*.html` viewers to `architecture/`.
+   Publish only these ten HTML files, `.nojekyll` and the public README.
 2. Update the public README with the hub source revision and guide SHA-256.
    Retain the snapshot dates in the generated HTML. Do not refresh data or edit
    generated content in the public repository.
@@ -35,7 +35,7 @@ PR. After a guide change merges and all configured main CI jobs pass:
    the file allowlist and hashes, and pass all configured CI before guarded merge.
 4. GitHub Pages publishes the public repository's merged `main`. Read the
    successful deployment and verify the unauthenticated HTTPS landing page and
-   all eight viewers against the source hashes. Record both PRs, source and
+   all nine viewers against the source hashes. Record both PRs, source and
    published revisions, and the deployment result in the delivery receipt.
 
 Copying from the private hub to the public repository is an explicit publication

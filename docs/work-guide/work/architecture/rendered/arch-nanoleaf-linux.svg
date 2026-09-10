@@ -1,0 +1,269 @@
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1045 528" role="img" lang="en" aria-labelledby="arch-nanoleaf-linux-archify-diagram-title arch-nanoleaf-linux-archify-diagram-description">
+        <title id="arch-nanoleaf-linux-archify-diagram-title">Proposed fresh Nanoleaf Linux runtime</title>
+        <desc id="arch-nanoleaf-linux-archify-diagram-description">@@DESC@@</desc>
+        <!-- Definitions -->
+        <defs>
+          <marker id="arch-nanoleaf-linux-arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+          </marker>
+          <marker id="arch-nanoleaf-linux-arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
+          </marker>
+          <marker id="arch-nanoleaf-linux-arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
+          </marker>
+          <marker id="arch-nanoleaf-linux-arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
+          </marker>
+          <pattern id="arch-nanoleaf-linux-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#arch-nanoleaf-linux-grid)" />
+
+        <!-- Boundaries (behind everything) -->
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-nanoleaf-linux-0" data-composition-frame-label="Ubuntu WSL · separate Linux processes and Linux-owned state" x="10" y="122" width="825" height="338" rx="12" class="c-region" stroke-width="1"/>
+
+        <!-- Connection paths (before components for correct z-order) -->
+        <path data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="WSL task lifecycle" data-edge-key="0" data-edge-id="arch-nanoleaf-linux-desktop-hooks" data-composition-points="515.5,104;515.5,152" d="M 515.5 104 L 515.5 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="desktop" data-edge-to="desktopJson" data-edge-label="configured files" data-edge-key="1" data-edge-id="arch-nanoleaf-linux-desktop-json" data-composition-points="440,72;322.5,72;322.5,152" d="M 440 72 L 330.5 72 Q 322.5 72 322.5 80 L 322.5 152" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="desktopJson" data-edge-to="wallMap" data-edge-label="metadata read" data-edge-key="2" data-edge-id="arch-nanoleaf-linux-json-map" data-composition-points="240,184;205,184" d="M 240 184 L 205 184" class="a-security" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-security)"/>
+        <path data-edge-from="browser" data-edge-to="wallMap" data-edge-label="HTTP :8765" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-browser-map" data-composition-points="122.5,104;122.5,152" d="M 122.5 104 L 122.5 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="lifecycle · commands" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks" data-composition-points="640,72;616,72;616,128;529.5,128;529.5,152" d="M 640 72 L 624 72 Q 616 72 616 80 L 616 120 Q 616 128 608 128 L 537.5 128 Q 529.5 128 529.5 136 L 529.5 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP :41230" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp" data-composition-points="722.5,104;722.5,152" d="M 722.5 104 L 722.5 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task state" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state" data-composition-points="522.5,216;522.5,264" d="M 522.5 216 L 522.5 264" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="task preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state" data-composition-points="122.5,216;122.5,240;416,240;416,296;440,296" d="M 122.5 216 L 122.5 232 Q 122.5 240 130.5 240 L 408 240 Q 416 240 416 248 L 416 288 Q 416 296 424 296 L 440 296" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="mcpHost" data-edge-to="controller" data-edge-label="HTTP 127.0.0.1:41231" data-edge-key="8" data-edge-id="arch-nanoleaf-linux-mcp-controller" data-composition-points="722.5,216;722.5,264" d="M 722.5 216 L 722.5 264" class="a-security" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-security)"/>
+        <path data-edge-from="controller" data-edge-to="linuxState" data-edge-label="command receipts" data-edge-key="9" data-edge-id="arch-nanoleaf-linux-controller-state" data-composition-points="640,296;605,296" d="M 640 296 L 605 296" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="controller" data-edge-to="worker" data-edge-label="start on demand" data-edge-key="10" data-edge-id="arch-nanoleaf-linux-controller-worker" data-composition-points="722.5,328;722.5,352;629,352;629,408;605,408" d="M 722.5 328 L 722.5 344 Q 722.5 352 714.5 352 L 637 352 Q 629 352 629 360 L 629 400 Q 629 408 621 408 L 605 408" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="linuxState" data-edge-to="worker" data-edge-label="shared state · lock" data-edge-key="11" data-edge-id="arch-nanoleaf-linux-state-worker" data-composition-points="522.5,328;522.5,376" d="M 522.5 328 L 522.5 376" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="worker" data-edge-to="lights" data-edge-label="one writer" data-edge-key="12" data-edge-id="arch-nanoleaf-linux-worker-lights" data-composition-points="605,408;840,408" d="M 605 408 L 840 408" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+
+        <!-- Components -->
+        <g id="arch-nanoleaf-linux-node-browser" data-node-id="arch-nanoleaf-linux-browser" data-node-label="Windows browser" tabindex="0" role="button" aria-label="Focus Windows browser, wall map client, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="wall map client" data-node-context="Architecture component">
+          <title>Windows browser · wall map client · Architecture component</title>
+          <rect x="40" y="40" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="40" y="40" width="165" height="64" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 46) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="122.5" y="70" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows browser</text>
+        <text data-detail="context" x="122.5" y="86" class="t-muted" font-size="9" text-anchor="middle">wall map client</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-desktop" data-node-id="arch-nanoleaf-linux-desktop" data-node-label="Codex Desktop" tabindex="0" role="button" aria-label="Focus Codex Desktop, Windows · tasks execute in WSL, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Windows · tasks execute in WSL" data-node-context="Architecture component">
+          <title>Codex Desktop · Windows · tasks execute in WSL · Architecture component</title>
+          <rect x="440" y="40" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="440" y="40" width="165" height="64" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(446 46) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="522.5" y="70" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Codex Desktop</text>
+        <text data-detail="context" x="522.5" y="86" class="t-muted" font-size="8.7" text-anchor="middle">Windows · tasks execute in WSL</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-cliClient" data-node-id="arch-nanoleaf-linux-cliClient" data-node-label="Codex CLI" tabindex="0" role="button" aria-label="Focus Codex CLI, Ubuntu WSL, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Ubuntu WSL" data-node-context="Architecture component">
+          <title>Codex CLI · Ubuntu WSL · Architecture component</title>
+          <rect x="640" y="40" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="640" y="40" width="165" height="64" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(646 46) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="722.5" y="70" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Codex CLI</text>
+        <text data-detail="context" x="722.5" y="86" class="t-muted" font-size="9" text-anchor="middle">Ubuntu WSL</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-wallMap" data-node-id="arch-nanoleaf-linux-wallMap" data-node-label="Python wall map" tabindex="0" role="button" aria-label="Focus Python wall map, 127.0.0.1:8765, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="127.0.0.1:8765" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Python wall map · 127.0.0.1:8765 · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+          <rect x="40" y="152" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="40" y="152" width="165" height="64" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 158) scale(0.6875)">
+            <rect x="2" y="3" width="12" height="10" rx="2"/>
+            <path d="M2 6.5h12"/>
+            <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
+            <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="122.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Python wall map</text>
+        <text data-detail="context" x="122.5" y="198" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:8765</text>
+        <text data-detail="fine" x="122.5" y="208" class="t-frontend" font-size="7" text-anchor="middle">proposed</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-desktopJson" data-node-id="arch-nanoleaf-linux-desktopJson" data-node-label="Mounted Desktop JSON" tabindex="0" role="button" aria-label="Focus Mounted Desktop JSON, project · title · unread · read-only, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="project · title · unread · read-only" data-node-context="Architecture component">
+          <title>Mounted Desktop JSON · project · title · unread · read-only · Architecture component</title>
+          <rect x="240" y="152" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="240" y="152" width="165" height="64" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(246 158) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="322.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mounted Desktop JSON</text>
+        <text data-detail="context" x="322.5" y="198" class="t-muted" font-size="7.2" text-anchor="middle">project · title · unread · read-only</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-hooksCli" data-node-id="arch-nanoleaf-linux-hooksCli" data-node-label="Linux hooks and CLI" tabindex="0" role="button" aria-label="Focus Linux hooks and CLI, Python · fail-open hooks, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · fail-open hooks" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Linux hooks and CLI · Python · fail-open hooks · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+          <rect x="440" y="152" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="440" y="152" width="165" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 158) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="522.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Linux hooks and CLI</text>
+        <text data-detail="context" x="522.5" y="198" class="t-muted" font-size="9" text-anchor="middle">Python · fail-open hooks</text>
+        <text data-detail="fine" x="522.5" y="208" class="t-backend" font-size="7" text-anchor="middle">proposed</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-mcpHost" data-node-id="arch-nanoleaf-linux-mcpHost" data-node-label="Node MCP host" tabindex="0" role="button" aria-label="Focus Node MCP host, 127.0.0.1:41230, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41230" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Node MCP host · 127.0.0.1:41230 · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+          <rect x="640" y="152" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="640" y="152" width="165" height="64" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(646 158) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="722.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Node MCP host</text>
+        <text data-detail="context" x="722.5" y="198" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:41230</text>
+        <text data-detail="fine" x="722.5" y="208" class="t-security" font-size="7" text-anchor="middle">proposed</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-linuxState" data-node-id="arch-nanoleaf-linux-linuxState" data-node-label="Linux SQLite" tabindex="0" role="button" aria-label="Focus Linux SQLite, ~/.local/share/codex-nanoleaf, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="database" data-node-sublabel="~/.local/share/codex-nanoleaf" data-node-tag="fresh state" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Linux SQLite · ~/.local/share/codex-nanoleaf · Ubuntu WSL · separate Linux processes and Linux-owned state · fresh state</title>
+          <rect x="440" y="264" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="440" y="264" width="165" height="64" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(446 270) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="522.5" y="294" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Linux SQLite</text>
+        <text data-detail="context" x="522.5" y="310" class="t-muted" font-size="9" text-anchor="middle">~/.local/share/codex-nanoleaf</text>
+        <text data-detail="fine" x="522.5" y="320" class="t-database" font-size="7" text-anchor="middle">fresh state</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-controller" data-node-id="arch-nanoleaf-linux-controller" data-node-label="Python controller" tabindex="0" role="button" aria-label="Focus Python controller, 127.0.0.1:41231 · bearer, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41231 · bearer" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Python controller · 127.0.0.1:41231 · bearer · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+          <rect x="640" y="264" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="640" y="264" width="165" height="64" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(646 270) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="722.5" y="294" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Python controller</text>
+        <text data-detail="context" x="722.5" y="310" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:41231 · bearer</text>
+        <text data-detail="fine" x="722.5" y="320" class="t-security" font-size="7" text-anchor="middle">proposed</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-worker" data-node-id="arch-nanoleaf-linux-worker" data-node-label="On-demand worker" tabindex="0" role="button" aria-label="Focus On-demand worker, Python · sole light writer, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · sole light writer" data-node-tag="existing behavior" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>On-demand worker · Python · sole light writer · Ubuntu WSL · separate Linux processes and Linux-owned state · existing behavior</title>
+          <rect x="440" y="376" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="440" y="376" width="165" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 382) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="522.5" y="406" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">On-demand worker</text>
+        <text data-detail="context" x="522.5" y="422" class="t-muted" font-size="9" text-anchor="middle">Python · sole light writer</text>
+        <text data-detail="fine" x="522.5" y="432" class="t-backend" font-size="7" text-anchor="middle">existing behavior</text>
+        </g>
+
+        <g id="arch-nanoleaf-linux-node-lights" data-node-id="arch-nanoleaf-linux-lights" data-node-label="Nanoleaf Lines" tabindex="0" role="button" aria-label="Focus Nanoleaf Lines, configured LAN device, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="configured LAN device" data-node-context="Architecture component">
+          <title>Nanoleaf Lines · configured LAN device · Architecture component</title>
+          <rect x="840" y="376" width="165" height="64" rx="6" class="c-mask"/>
+          <rect x="840" y="376" width="165" height="64" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(846 382) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="922.5" y="406" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf Lines</text>
+        <text data-detail="context" x="922.5" y="422" class="t-muted" font-size="9" text-anchor="middle">configured LAN device</text>
+        </g>
+
+        <!-- Connection labels -->
+        <g data-detail="context" data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="WSL task lifecycle" data-edge-key="0" data-edge-id="arch-nanoleaf-linux-desktop-hooks">
+          <rect x="467.3" y="108" width="96.39999999999999" height="14" rx="3" class="c-mask"/>
+          <text x="515.5" y="118" class="t-backend" font-size="8" text-anchor="middle">WSL task lifecycle</text>
+        </g>
+        <g data-detail="context" data-edge-from="desktop" data-edge-to="desktopJson" data-edge-label="configured files" data-edge-key="1" data-edge-id="arch-nanoleaf-linux-desktop-json">
+          <rect x="279.1" y="92" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="322.5" y="102" class="t-muted" font-size="8" text-anchor="middle">configured files</text>
+        </g>
+        <g data-detail="context" data-edge-from="desktopJson" data-edge-to="wallMap" data-edge-label="metadata read" data-edge-key="2" data-edge-id="arch-nanoleaf-linux-json-map">
+          <rect x="186.8" y="220" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="223" y="230" class="t-security" font-size="8" text-anchor="middle">metadata read</text>
+        </g>
+        <g data-detail="context" data-edge-from="browser" data-edge-to="wallMap" data-edge-label="HTTP :8765" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-browser-map">
+          <rect x="93.5" y="108" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="122.5" y="118" class="t-backend" font-size="8" text-anchor="middle">HTTP :8765</text>
+        </g>
+        <g data-detail="context" data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="lifecycle · commands" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks">
+          <rect x="563" y="108" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="616" y="118" class="t-backend" font-size="8" text-anchor="middle">lifecycle · commands</text>
+        </g>
+        <g data-detail="context" data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP :41230" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp">
+          <rect x="693.5" y="108" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="722.5" y="118" class="t-backend" font-size="8" text-anchor="middle">MCP :41230</text>
+        </g>
+        <g data-detail="context" data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task state" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state">
+          <rect x="493.5" y="220" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="522.5" y="230" class="t-muted" font-size="8" text-anchor="middle">task state</text>
+        </g>
+        <g data-detail="context" data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="task preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state">
+          <rect x="225.85" y="250" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="269.25" y="260" class="t-muted" font-size="8" text-anchor="middle">task preferences</text>
+        </g>
+        <g data-detail="context" data-edge-from="mcpHost" data-edge-to="controller" data-edge-label="HTTP 127.0.0.1:41231" data-edge-key="8" data-edge-id="arch-nanoleaf-linux-mcp-controller">
+          <rect x="669.5" y="220" width="106" height="14" rx="3" class="c-mask"/>
+          <text x="722.5" y="230" class="t-security" font-size="8" text-anchor="middle">HTTP 127.0.0.1:41231</text>
+        </g>
+        <g data-detail="context" data-edge-from="controller" data-edge-to="linuxState" data-edge-label="command receipts" data-edge-key="9" data-edge-id="arch-nanoleaf-linux-controller-state">
+          <rect x="579.6" y="332" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="623" y="342" class="t-muted" font-size="8" text-anchor="middle">command receipts</text>
+        </g>
+        <g data-detail="context" data-edge-from="controller" data-edge-to="worker" data-edge-label="start on demand" data-edge-key="10" data-edge-id="arch-nanoleaf-linux-controller-worker">
+          <rect x="634.75" y="356" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="675.75" y="366" class="t-backend" font-size="8" text-anchor="middle">start on demand</text>
+        </g>
+        <g data-detail="context" data-edge-from="linuxState" data-edge-to="worker" data-edge-label="shared state · lock" data-edge-key="11" data-edge-id="arch-nanoleaf-linux-state-worker">
+          <rect x="471.9" y="332" width="101.2" height="14" rx="3" class="c-mask"/>
+          <text x="522.5" y="342" class="t-muted" font-size="8" text-anchor="middle">shared state · lock</text>
+        </g>
+        <g data-detail="context" data-edge-from="worker" data-edge-to="lights" data-edge-label="one writer" data-edge-key="12" data-edge-id="arch-nanoleaf-linux-worker-lights">
+          <rect x="693" y="444" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="722" y="454" class="t-backend" font-size="8" text-anchor="middle">one writer</text>
+        </g>
+
+        <!-- Boundary labels (foreground masks keep routes out of titles) -->
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-nanoleaf-linux-0" data-composition-frame-kind="region" data-composition-frame-label="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <rect data-graph-role="structural-frame-label-mask" x="14" y="132" width="328.59999999999997" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="18" y="145" class="t-cloud" font-size="9" font-weight="600">Ubuntu WSL · separate Linux processes and Linux-owned state</text>
+        </g>
+
+        <!-- Legend -->
+        <g data-legend="" data-legend-bridge="">
+          <text x="40" y="492" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="Frontend" data-legend-x="40" data-legend-baseline="512" data-legend-width="83">
+            <rect x="40" y="503" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="512" class="t-muted" font-size="10" font-weight="500">Frontend</text>
+          </g>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Backend" data-legend-x="145" data-legend-baseline="512" data-legend-width="78">
+            <rect x="145" y="503" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="167" y="512" class="t-muted" font-size="10" font-weight="500">Backend</text>
+          </g>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="Database" data-legend-x="245" data-legend-baseline="512" data-legend-width="83">
+            <rect x="245" y="503" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
+            <text x="267" y="512" class="t-muted" font-size="10" font-weight="500">Database</text>
+          </g>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Security" data-legend-x="350" data-legend-baseline="512" data-legend-width="83">
+            <rect x="350" y="503" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
+            <text x="372" y="512" class="t-muted" font-size="10" font-weight="500">Security</text>
+          </g>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="455" data-legend-baseline="512" data-legend-width="83">
+            <rect x="455" y="503" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="477" y="512" class="t-muted" font-size="10" font-weight="500">External</text>
+          </g>
+        </g>
+      </svg>

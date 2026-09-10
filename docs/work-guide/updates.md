@@ -1,5 +1,58 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Hub #43 proposed Nanoleaf Linux runtime
+
+Coordinator: the Hub #43 documentation root. Hub #43 remains in progress and
+blocked. Nanoleaf #54 owns source and setup; its candidate is under review in
+[PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) at
+`4abafec1bf0054a39db3e472b15eb86f76824867`. Nanoleaf #55 owns installed,
+real-client and physical-light acceptance and remains blocked by #54. The source
+coordinator reports 173 Python checks plus isolated setup of the virtual
+environment, Python and Node dependencies, copied Node runtime, separate
+foreground map/controller/MCP processes, and authenticated Quiet/Work/Free MCP
+commands using fake loopback transport. This is source-candidate evidence. It
+does not mark #54 delivered and does not establish installed or physical
+behavior.
+
+Add a separate proposed Linux runtime diagram while retaining the implemented
+Windows command-path diagram. The proposal keeps Python hooks, CLI, wall map and
+controller as separate Ubuntu WSL processes sharing Linux SQLite. Node MCP calls
+the controller at numeric loopback. The on-demand worker remains the sole light
+writer; setup and the map may make bounded device reads for connection checks or
+geometry. Windows Desktop and browser clients remain, with configured project,
+title and unread JSON mounted read-only. The fresh installation excludes data
+migration, rollback tooling, a combined daemon, a new hook API, shared monitoring
+and the Nanoleaf source move.
+
+This companion changes documentation and its generated guide, with no Hub
+product behavior delta. Nanoleaf's issue-linked `gh-54-linux-fresh-install`
+specifications and ADR 0007 own the runtime contract; no Hub OpenSpec change is
+needed.
+
+Refresh all three tracker snapshots and assign Hub #43, Nanoleaf #54 and #55 to
+the hosting and migrations guide. Preserve the open Prism guide work in PR #82
+at `d086459a529b789a3572aaaedfaf9cf6f68921b4`; its coordinator still owns that
+scope. This candidate reconciles the current N52, N53, N26 and H80 guide inputs
+only so the refreshed snapshot retains complete coverage.
+
+The tracker snapshot was captured at `2026-09-09T23:48:41.091564+00:00`, before
+#54 moved to review and PR #57 opened; the dated update above records the later
+source transition without rewriting the snapshot. The source candidate adds
+local-filesystem rejection tests and platform-neutral MCP tool descriptions.
+All 39 MCP tests pass. The prior source revision passed all 18 hosted checks;
+GitHub refused to start CI for the current revision because of an account
+payment or spending-limit problem. No current-head hosted success is claimed. The architecture review pins
+Hub `2564a357ec7d1a72c5525c0f36b98287244a6e89`, Nanoleaf PR #57 head
+`4abafec1bf0054a39db3e472b15eb86f76824867` and Pixoo
+`7c1204fd2516df86c706bae7c9498a5ee1bb749b`. Archify passes all nine checks for
+each of nine viewers. The guide builds with 12 guides, 110 primary open issues
+and 44 roadmap nodes. The maintenance test and browser check pass; the browser
+checked widths 320 through 1440, diagram navigation, links, search, print state
+and external requests. The new viewer's separate Archify browser check passes
+at 1440x900 through 2048x1320. Agent inspection covered desktop, mobile and print
+captures. Human visual approval, independent review, hosted CI, merge, public
+publication and installed acceptance remain pending.
+
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
 Coordinator: the public-guide delivery root. The user selected public access.

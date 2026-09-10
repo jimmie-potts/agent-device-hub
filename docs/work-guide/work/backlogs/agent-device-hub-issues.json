@@ -869,17 +869,20 @@
     "number": 43,
     "state": "OPEN",
     "stateReason": null,
-    "title": "Qualify a portable Nanoleaf runtime and reversible Windows worker migration",
-    "body": "Explain which parts of the current Python client and Windows worker depend on Windows. Qualify what can run in Linux or Docker and what, if anything, must remain on the PC.\n\nPlan a reversible runtime migration that preserves task effects, epochs, source reservations, unread policy, preferences, scenes and the designated writer. Keep the Windows worker until that migration is verified. Coordinate implementation in the owning controller repository; the [source-repository move](https://github.com/jimmie-potts/agent-device-hub/issues/26) is separate work.\n\nPlaceholder for future refinement. Set scope, dependencies and acceptance criteria before implementation.\n\nPart of the [future-work guide](https://github.com/jimmie-potts/agent-device-hub/issues/35); follows [ADR 0004](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0004-local-first-personal-assistant.md).\n",
+    "title": "Adopt the Nanoleaf Linux runtime and update architecture documentation",
+    "body": "## Outcome and accepted decision\n\nAdopt a fresh Linux installation of the Nanoleaf runtime in Ubuntu WSL on the existing PC. Keep the separate Linux processes, shared Linux SQLite state, and existing single light writer. The accepted fresh-install scope supersedes this issue's earlier placeholder requirement for state preservation and reversible Windows migration.\n\nExisting Nanoleaf data need not be imported or preserved. Preserve unrelated applications, hooks, and Codex data. Retain Windows Desktop/browser clients and read configured Desktop JSON metadata through the mounted filesystem. Native Windows task execution is outside this transition.\n\n## Work owners and dependencies\n\n- Source implementation and installation tooling: https://github.com/jimmie-potts/codex-nanoleaf/issues/54\n- Installed services, real WSL client, and physical acceptance: https://github.com/jimmie-potts/codex-nanoleaf/issues/55\n- Canonical architecture guidance and maintained work-guide synchronization: this Hub issue, through a linked companion PR coordinated with the Nanoleaf source change.\n\nThis issue is blocked by the installed-acceptance issue, which is blocked by source delivery. Keep this issue open until both linked outcomes and documentation synchronization are complete. Hub documentation may be drafted alongside source implementation. The source issue does not wait for this issue to close.\n\n## Acceptance criteria\n\n- [ ] C1. Link the Nanoleaf source and installed-acceptance issues as the respective owners. Retain this issue until their required outcomes and documentation synchronization are complete.\n- [ ] C2. Update canonical architecture guidance and the maintained work guide through a linked Hub companion PR. Clearly distinguish proposed, source-delivered, and installed behavior.\n- [ ] C3. Show Linux hooks, wall map, and controller coordinating through Linux SQLite; the existing on-demand worker writing to Nanoleaf; and MCP communicating directly with the controller over HTTP.\n- [ ] C4. Retain Windows Desktop/browser clients and mounted JSON metadata reads in the diagrams. Remove Windows executable forwarding from the proposed Linux runtime.\n- [ ] C5. Record documentation validation results and linked source/acceptance evidence. Guide synchronization remains pending until its companion PR and required validation are complete.\n\n## Verification and delivery\n\nAll checks below are planned, not executed evidence.\n\n| Criteria | Required evidence |\n| --- | --- |\n| C1 | Read back both owning issues and native dependencies. Confirm completion evidence separately for reviewed source and installed operation, with no cycle that blocks source delivery on this coordination issue. |\n| C2 | Linked Hub companion PR with refreshed owning guide inputs, generated HTML, and a dated updates.md entry. Verify primary issue coverage and source/installed status against GitHub evidence. |\n| C3, C4 | Review diagrams and their pinned source receipts against the accepted process, database, HTTP, metadata, and device-writer paths. Inspect desktop, mobile, and print rendering using the guide procedure. |\n| C5 | Recorded documentation checks at the reviewed candidate plus source and installed-acceptance links. Never treat the source merge or a diagram as proof of installed behavior. |\n\nFollow AGENTS.md, docs/sdlc.md, and docs/work-guide/README.md. Use the installed archify skill when changing diagrams. Planned guide checks are `python3 docs/work-guide/work/build_guide.py`, `python3 docs/work-guide/work/test_maintenance.py`, and `node docs/work-guide/work/check_guide.cjs` with their documented prerequisites. Preserve independent Standards and Specification review, applicable hosted CI, and any applicable human UI approval gate. The Nanoleaf issue owns the runtime OpenSpec/design/ADR; reference it rather than defining a competing product contract here.\n\n## Scope boundaries and related work\n\n- The monorepo move at https://github.com/jimmie-potts/agent-device-hub/issues/26 is separate. Runtime ownership changes do not relocate repository ownership.\n- Shared monitoring, Docker hosting, additional devices, data migration, rollback tooling, a combined daemon, and a new hook API are excluded.\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/11 retains its broader persistent-display requirements. The Linux source issue covers only the port and URL behavior needed for this installation.\n- Preserve the future-work guide relationship at https://github.com/jimmie-potts/agent-device-hub/issues/35 and the local-first direction in [ADR 0004](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0004-local-first-personal-assistant.md).\n\nThis tracker update does not implement the services, update repository documentation, install anything, modify hooks, or operate lights. Work-guide synchronization is pending the companion PR tracked here.\n\n## Planning assessment\n\nAssessed 2026-09-09 against Nanoleaf main `ea3b95661352f927aceaf92b62d74660978c201f` and Hub main `2564a357ec7d1a72c5525c0f36b98287244a6e89`.\n\n- Complexity: medium. Coordination spans two repositories and distinguishes source delivery, installed acceptance, and documentation.\n- Uncertainty: low. The architecture decision is settled; source and installed outcomes have explicit owners and verification criteria.\n- Impact: low. This issue coordinates tracking and documentation; its children own runtime and operational consequences.\n- Readiness: completion awaits source delivery, installed acceptance, and guide synchronization. Documentation preparation can proceed alongside source work.\n- Reassess if the process/ownership design changes, source or installed evidence contradicts the plan, or guide facts drift. Preserve existing assignments and lifecycle labels; the added blocked label reflects the required completion evidence.\n\nThe overall transition is estimated at 2–4 focused engineering days, excluding review and scheduling delays. This is not an additional per-issue estimate.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43",
-    "updatedAt": "2026-09-07T21:58:20Z",
+    "updatedAt": "2026-09-09T23:20:02Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:backlog"
+        "name": "status:in-progress"
+      },
+      {
+        "name": "blocked"
       },
       {
         "name": "deferred"
@@ -887,7 +890,7 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 1,
     "commentsRefreshed": false
   },
   {
@@ -1661,6 +1664,34 @@
       },
       {
         "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 80,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Publish the cross-project work guide on GitHub Pages",
+    "body": "## Requested outcome\n\nPublish the existing cross-project HTML work guide at a public HTTPS address.\nThe user selected public access. GitHub rejected Pages creation on the private\nhub repository because the current plan does not support it.\n\nUse a separate public `jimmie-potts/agent-device-guide` repository containing the\ngenerated guide and its eight companion HTML viewers. The hub remains the\nmaintenance source. Publish reviewed output through a PR and use GitHub Pages\nfrom the public repository's main branch. Document the publication process in\nthe hub and link the companion PRs.\n\n## Acceptance criteria\n\n- [x] Public HTTPS landing page renders the current generated guide without authentication.\n- [x] All eight architecture viewers load at their relative URLs.\n- [x] Search, navigation, viewer opening and print behavior pass browser checks.\n- [ ] Published HTML hashes match the reviewed hub source revision.\n- [x] Public repository contains only the intended site files and a short README.\n- [x] Independent Standards and Specification reviews inspect the same committed comparison for each PR.\n- [x] Configured CI and Pages deployment succeed, with merged-revision readback before closure.\n- [x] Hub guide instructions and maintenance history record the publication and future update process.\n\nThis is documentation hosting with no product behavior change or OpenSpec delta.\nDevice control, installed clients and live issue refresh are outside this change.\nHub #73's diagram repair remains separately owned.\n\n## Delivery evidence\n\nHub PR https://github.com/jimmie-potts/agent-device-hub/pull/81 merged at `2564a357ec7d1a72c5525c0f36b98287244a6e89`. Both independent reviews returned no findings; all 24 push/PR jobs and all 12 merged-main jobs passed. Main CI: https://github.com/jimmie-potts/agent-device-hub/actions/runs/34297224729.\n\nPublic PR https://github.com/jimmie-potts/agent-device-guide/pull/1 merged at `aef98a4ad970504b9bb74892521b8329d08f9eca`. The reviewed and merged trees match. All nine HTML hashes match hub source `8064537639d7a91a66657cdbce9a63654e41b80c`. All three Pages jobs passed: https://github.com/jimmie-potts/agent-device-guide/actions/runs/34297158201. GitHub reports public HTTPS enforced and status built at https://jimmie-potts.github.io/agent-device-guide/.\n\nLocal Chromium validation passed all interactions at widths 320-1440. The new public hostname is blocked by this task network allowlist, including an escalated request, and the artifact download host is also blocked. Therefore live URL/browser checks and served-byte hashes remain unverified. The user confirmed: \"Yes, both open\" when asked whether the public guide and an architecture viewer open. Public landing-page access and a representative live viewer are human-verified. Every source/output hash and local viewer link passed. Automated checks of all eight live viewer URLs and served-byte hashes remain unavailable under the task network allowlist; keep this verification follow-up open for those remaining checks. No source or hosting defect has been observed.\n",
+    "url": "https://github.com/jimmie-potts/agent-device-hub/issues/80",
+    "updatedAt": "2026-09-09T01:06:39Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "documentation"
+      },
+      {
+        "name": "maintenance"
+      },
+      {
+        "name": "status:review"
+      },
+      {
+        "name": "blocked"
       }
     ],
     "milestone": null,
