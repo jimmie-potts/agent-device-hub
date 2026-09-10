@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 66,
+        "totalCount": 65,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -1256,24 +1256,6 @@
                 "hasNextPage": false
               },
               "nodes": []
-            }
-          },
-          {
-            "number": 83,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 33,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-skills"
-                  }
-                }
-              ]
             }
           },
           {

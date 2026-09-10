@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-10T21:20:20.542504+00:00",
+ "fetchedAt": "2026-09-10T21:55:35.843992+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T21:19:50Z",
+   "pushedAt": "2026-09-10T21:33:27Z",
    "defaultBranch": "main",
-   "headSha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
-   "mainCommitCount": 19,
+   "headSha": "84999503f227284db7b8095afbcac22bafbf1d54",
+   "mainCommitCount": 21,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "84999503f227284db7b8095afbcac22bafbf1d54",
+     "date": "2026-09-10T21:33:27Z",
+     "message": "Adopt planning and delivery checkpoints for the maintained guide (#88)"
+    },
+    {
+     "sha": "c860421cf6011fc2fad10a78347d2ccdcc33b5f0",
+     "date": "2026-09-10T21:27:11Z",
+     "message": "docs: reconcile completed Prism stories (#95)"
+    },
     {
      "sha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
      "date": "2026-09-10T21:11:53Z",
@@ -250,21 +260,25 @@
      "createdAt": "2026-09-09T23:05:53Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 95,
      "title": "Record completed Nanoleaf Prism stories in the guide",
+     "mergedAt": "2026-09-10T21:27:11Z",
      "createdAt": "2026-09-10T21:20:02Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95",
+     "base": "main"
     },
     {
      "number": 88,
      "title": "Adopt planning and delivery checkpoints for the work guide",
+     "mergedAt": "2026-09-10T21:33:28Z",
      "createdAt": "2026-09-10T00:46:23Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88"
-    },
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main"
+    }
+   ],
+   "openPRs": [
     {
      "number": 84,
      "title": "Document the fresh Nanoleaf Linux runtime",
@@ -332,9 +346,17 @@
      "createdAt": "2026-09-07T21:37:55Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+    },
+    {
+     "number": 83,
+     "title": "Adopt plan-work and deliver-work checkpoints for guide updates and public publication",
+     "closedAt": "2026-09-10T21:53:17Z",
+     "createdAt": "2026-09-10T00:00:23Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/83"
     }
    ],
-   "openIssueCount": 66,
+   "openIssueCount": 65,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-10T13:10:28Z"
