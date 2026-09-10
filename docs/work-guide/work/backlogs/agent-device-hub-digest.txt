@@ -62,7 +62,7 @@
 #71 [OPEN] Add Music desk presets after playback and participation qualification
 #73 [OPEN] Fix diagram connectors hidden behind boxes in the work guide
 #80 [OPEN] Publish the cross-project work guide on GitHub Pages
-#83 [OPEN] Adopt plan-work and deliver-work checkpoints for guide updates and public publication
+#83 [CLOSED] Adopt plan-work and deliver-work checkpoints for guide updates and public publication
 #85 [OPEN] Approve the Prism design for the work guide and architecture viewers
 #86 [OPEN] Apply Prism artwork and subtle motion to the generated work guide
 #87 [OPEN] Publish and verify the Prism guide at existing public and local destinations
