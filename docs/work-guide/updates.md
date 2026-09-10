@@ -50,8 +50,11 @@ and 44 roadmap nodes. The maintenance test and browser check pass; the browser
 checked widths 320 through 1440, diagram navigation, links, search, print state
 and external requests. The new viewer's separate Archify browser check passes
 at 1440x900 through 2048x1320. Agent inspection covered desktop, mobile and print
-captures. Human visual approval, independent review, hosted CI, merge, public
-publication and installed acceptance remain pending.
+captures. The existing work-guide user exemption recorded in
+[Hub PR #76](https://github.com/jimmie-potts/agent-device-hub/pull/76) and retained
+in [Hub PR #79](https://github.com/jimmie-potts/agent-device-hub/pull/79) removes
+only human approval for this document. Independent review, hosted CI, merge,
+public publication and installed acceptance remain pending.
 
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
