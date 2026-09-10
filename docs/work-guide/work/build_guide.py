@@ -167,7 +167,7 @@ GUIDES = [
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
              ['Bound CI costs and hangs', 'Completed [[N37]] [[P46]]', 'Pixoo #46 and Nanoleaf #37 delivered main-only push checks, PR concurrency and bounded jobs with their original validation coverage. Both issues are closed; these changes do not establish product or device acceptance.'],
-             ['Hub CI efficiency', '[[H91]]', 'Core scheduling merged in Hub PR #92 with all 12 PR and main jobs passing. Build-once test commands and pip caching are the second candidate; measured savings and the separately owned guide workflow scheduling remain pending.'],
+             ['Hub CI efficiency', '[[H91]]', 'Core scheduling and build-once test commands merged through Hub PRs #92 and #93. Every test and platform remains. The proposed guide workflow has matching scheduling on its owner’s PR #82; its merge and hosted acceptance remain separate. Linux time improved in one sample; Windows variability prevents a per-run billing-savings claim.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Guide publication checks', '[[H80]]', 'The public edition exists; complete the remaining live route and served-byte verification.'],
              ['Guide delivery checkpoints', '[[H83]]', 'Adopt the shared planning and delivery checkpoints; source synchronization, public publication and live verification remain separate.'],
