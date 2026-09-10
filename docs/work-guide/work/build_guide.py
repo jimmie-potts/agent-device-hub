@@ -121,7 +121,7 @@ GUIDES = [
              ['Lively prototype', '[[N10]] → ([[N11]] + [[N12]]) → [[N13]] → [[N14]]', 'Qualify compatibility; add persistent addressing and inspection mode; integrate startup/recovery; then evaluate the installed prototype.'],
              ['Optional ambient presentation', '[[N16]]', 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.'],
              ['External scenes', '[[N21]]', 'Investigate external scene mirroring independently of bridge-controlled rendering.'],
-             ['Focused map correction', '[[N26]]', 'Fix number-tag clearance. The preceding layout work is closed.'],
+             ['Prism wall map', '[[N52]] [[N53]] [[N26]]', 'Track connector geometry, crystal rendering and number-tag clearance. Source merge and final acceptance remain separate.'],
          ], notes=['Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring.']),
     dict(id='pixoo-media', short='Pixoo media', title='Extend Pixoo’s media and playlist experience', phase='After reliability',
          intro='These deferred features follow the physical reliability baseline in [[P12]].',
@@ -147,7 +147,7 @@ GUIDES = [
          intro='Coordinate hosting across projects while keeping source relocation separate from runtime changes.',
          headers=['Group', 'Issues', 'Sequence or boundary'], rows=[
              ['PC/container hosting', '[[H42]] [[P14]]', 'Hub builds on standalone hosting; Pixoo’s Docker/ARM64 qualification follows Pixoo #12. Coordinate networking, storage, recovery, and packaging.'],
-             ['Nanoleaf runtime portability', '[[H43]]', 'Qualify Windows dependencies and a reversible runtime migration.'],
+             ['Nanoleaf runtime portability', '[[H43]] [[N54]] [[N55]]', 'Track fresh Linux runtime delivery and its separate WSL installation acceptance.'],
              ['Dedicated server', '[[H44]]', 'Choose hardware and migration requirements after measuring workloads and portability.'],
              ['Source consolidation', '[[H25]] [[H26]]', 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, and rollback decisions.'],
          ], notes=['Containerization and repository consolidation do not block the first useful local release. Moving Nanoleaf source into the hub does not establish Linux compatibility.']),
@@ -165,9 +165,10 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
+             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Nanoleaf PR #61 merged the scheduling and timeout change. Issue #37 stays open for completion checks and guide synchronization. Pixoo #46 is separate; this order limits simultaneous CI changes rather than imposing a product dependency.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
+             ['Guide publication and design', '[[H80]] [[H83]] [[H85]] [[H86]] [[H87]]', 'Track public hosting, delivery checkpoints, Prism design approval, implementation and publication separately.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]

@@ -1,5 +1,27 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: Nanoleaf #37 CI scheduling companion
+
+Coordinator: the Nanoleaf #37 delivery root. Nanoleaf PR #61 merged at
+`dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa` after both independent review axes
+and all nine current-head PR jobs passed. The change limits pushes to main,
+groups superseded PR revisions and adds ten-minute bounds to workflow, Python
+and browser jobs. The two existing MCP jobs and all other coverage remain intact.
+Main CI and issue completion are recorded separately in the delivery receipt.
+Issue #37 remains open for completion checks and this guide synchronization.
+
+Refresh paginated backlog and history inputs and reconcile primary coverage for
+nine issues added since the previous snapshot. The development workflow section
+records the source merge. Presentation, hosting and guide-maintenance rows name
+the newly tracked work without claiming its completion. Roadmap positions and
+connectors, architecture sources and the eight viewers are unchanged. Hub #73's
+reserved evaluation input remains unchanged. No product specification delta or
+installation applies. Public website publication is outside this source task.
+
+Validation: guide build, maintenance regression and browser checks pass. Candidate
+revision, hosted CI and independent review evidence belong in the linked PR.
+The generated guide requires current-candidate human approval before merge.
+
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
 Coordinator: the public-guide delivery root. The user selected public access.
