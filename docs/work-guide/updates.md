@@ -218,3 +218,40 @@ new history heads differed from pinned architecture sources. Removed that
 coupling and the unconditional current-head claim. The offline regression test
 failed before the fix and passed after it. Product facts and snapshot dates
 remain unchanged. Companion PRs: Hub #72, Nanoleaf #51, Pixoo #51.
+## 2026-09-09: Pixoo #46 source completion and guide reconciliation
+
+[Pixoo #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46) completed
+through [PR #57](https://github.com/jimmie-potts/divoom-app-upgrade/pull/57) at
+`9601b60935515f4ecf5f79f1b1ab59299dd1c3de`. Both independent review axes passed.
+All five current-head PR jobs and all five merged-main jobs passed in runs
+[34431920469](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/34431920469)
+and [34432344852](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/34432344852).
+The guarded squash merge preserved the reviewed tree. The issue was then closed
+as completed and its status/blocked labels removed. Earlier account restrictions
+did not prevent this candidate's hosted checks from executing successfully.
+
+The workflow now checks pushes to main, groups obsolete revisions of each PR
+for cancellation, and sets ten-minute limits while preserving all five jobs and
+commands. Live cancellation was not observed because no natural overlapping
+revisions occurred; no timeout was deliberately induced. There is no product
+specification delta, installation or physical-device acceptance in this work.
+
+Refresh paginated backlog and history inputs, remove completed #46 from primary
+coverage and remaining roadmap issues, and record its result in Development
+workflow. The snapshot also brings nine previously unrepresented open issues
+into existing guide sections: Hub #80/#83/#85–#87 and Nanoleaf #52–#55. Those
+records remain planned work; this refresh implements none of them. Preserve
+other coordinators' open PRs and their separate source/acceptance claims.
+
+No architecture component, ownership or command-flow changes apply. Keep the
+architecture source pins, review dates, viewer bytes and connector behavior;
+update only the dated history, roadmap labels/membership, narrative and backlog.
+The history title now describes the snapshot instead of ending on September 8.
+The delivery coordinator owns [Hub PR #89](https://github.com/jimmie-potts/agent-device-hub/pull/89),
+which carries this reconciliation. Guide synchronization remains pending until
+that companion merges. Public publication is not authorized by this source-only
+maintenance request; the existing public edition will retain its earlier bytes.
+
+Validation: generator, maintenance test, browser coverage/navigation/search/
+links/print checks at six viewport widths, and whitespace checks pass. The final
+revision, guide hash and independent review/CI results belong in the PR receipt.

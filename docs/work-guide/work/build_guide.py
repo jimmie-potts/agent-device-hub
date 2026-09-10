@@ -165,8 +165,9 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
-             ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
+             ['Bound CI costs and hangs', '[[N37]]; completed [[P46]]', 'Pixoo #46 merged through PR #57 with all five PR and main checks passing. Nanoleaf #37 source merged through PR #61 with all nine PR and main jobs passing; it remains open for separately owned guide companion PR #90. The original sequence limited CI churn; it was not a product dependency.'],
+             ['Further CI savings', '[[H91]]', 'Evaluate additional CI savings while preserving test coverage. This newly recorded work remains unimplemented.'],
+             ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
              ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],

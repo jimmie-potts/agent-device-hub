@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-10T01:45:28.269861+00:00",
+ "fetchedAt": "2026-09-10T13:15:48.163669+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T01:25:05Z",
+   "pushedAt": "2026-09-10T13:14:05Z",
    "defaultBranch": "main",
-   "headSha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
-   "mainCommitCount": 13,
+   "headSha": "396c36aed74cf1d016564536eca13bb16f89834b",
+   "mainCommitCount": 14,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "396c36aed74cf1d016564536eca13bb16f89834b",
+     "date": "2026-09-10T03:22:58Z",
+     "message": "Reconcile completed Pixoo CI scheduling delivery in the guide (#89)"
+    },
     {
      "sha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
      "date": "2026-09-09T00:58:06Z",
@@ -172,6 +177,14 @@
      "createdAt": "2026-09-09T00:54:42Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
      "base": "main"
+    },
+    {
+     "number": 89,
+     "title": "Reconcile completed Pixoo CI scheduling delivery in the guide",
+     "mergedAt": "2026-09-10T03:22:59Z",
+     "createdAt": "2026-09-10T03:04:12Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -208,6 +221,13 @@
      "title": "Adopt planning and delivery checkpoints for the work guide",
      "createdAt": "2026-09-10T00:46:23Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main"
+    },
+    {
+     "number": 90,
+     "title": "Record verified Nanoleaf CI delivery alongside the merged guide refresh",
+     "createdAt": "2026-09-10T03:06:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/90",
      "base": "main"
     }
    ],
@@ -261,26 +281,31 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
     }
    ],
-   "openIssueCount": 65,
+   "openIssueCount": 66,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-10T00:35:07Z"
+    "2026-09-10T13:10:28Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
     "2026-09-08": 13,
     "2026-09-09": 1,
-    "2026-09-10": 4
+    "2026-09-10": 5
    }
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-10T01:43:52Z",
+   "pushedAt": "2026-09-10T13:12:41Z",
    "defaultBranch": "main",
-   "headSha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
-   "mainCommitCount": 21,
+   "headSha": "dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa",
+   "mainCommitCount": 22,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa",
+     "date": "2026-09-10T03:04:27Z",
+     "message": "Bound CI jobs and avoid duplicate branch push runs (#61)"
+    },
     {
      "sha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
      "date": "2026-09-09T23:57:56Z",
@@ -515,6 +540,14 @@
      "createdAt": "2026-09-09T23:02:31Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/56",
      "base": "main"
+    },
+    {
+     "number": 61,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:04:28Z",
+     "createdAt": "2026-09-10T03:00:45Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -651,12 +684,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-10T00:47:57Z",
+   "pushedAt": "2026-09-10T13:05:36Z",
    "defaultBranch": "main",
-   "headSha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
-   "mainCommitCount": 19,
+   "headSha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
+   "mainCommitCount": 20,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
+     "date": "2026-09-10T03:10:59Z",
+     "message": "Bound CI runtime and limit branch push checks (#46) (#57)"
+    },
     {
      "sha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
      "date": "2026-09-09T00:14:44Z",
@@ -897,6 +935,14 @@
      "createdAt": "2026-09-08T22:50:31Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/54",
      "base": "main"
+    },
+    {
+     "number": 57,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:10:59Z",
+     "createdAt": "2026-09-10T03:04:35Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+     "base": "main"
     }
    ],
    "openPRs": [
@@ -1044,9 +1090,17 @@
      "createdAt": "2026-09-07T03:58:52Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/42"
+    },
+    {
+     "number": 46,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "closedAt": "2026-09-10T03:15:15Z",
+     "createdAt": "2026-09-07T17:14:25Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 20,
+   "openIssueCount": 19,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-09T00:07:22Z"
