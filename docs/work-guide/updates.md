@@ -7,7 +7,8 @@ Their source revisions are `cdceffddb7a86c138797325e8d6b0460eb320e58`,
 `2944a3a0a7ce58da0a36125859d7d3f277bece76` and
 `b8b144bc8f92668688db278e9401e46e00b7c6ae`. Each passed all nine required
 main jobs in runs `34419199684`, `34481751959` and `34483393699` respectively.
-The user approved the integrated UI and guide. Both independent review axes
+The user approved the integrated app UI and an earlier guide candidate. The
+reconciled guide awaits renewed approval. Both independent review axes
 are clear for the app candidates. The three issues remain open only for this
 source-guide synchronization. Installation and physical acceptance are separate.
 
@@ -67,6 +68,38 @@ focused configuration check rejects the old duplicate-trigger policy and passes
 the updated policy. Node 24 workflow validation passes three specifications,
 three archives and eleven tests. Hub #91 remains separately owned and open for
 its remaining build optimization, measurement and completion work.
+
+## 2026-09-10: Hub #91 verified core CI delivery
+
+Coordinator: the Hub #91 delivery root. Scheduling PR #92 merged at
+`bca5b343dffef69b2eb371af683b6c8839bb2f3e`; build-once/cache PR #93 merged at
+`589f95e274fd441867910e639af29a026db51577`. Both had independent Standards
+and Specification reviews and all 12 current-head PR jobs passed. All 12 main
+jobs passed in runs `34482410679` and `34483708694`, respectively. All original
+tests and platform combinations remain. Branch updates produced PR runs without
+duplicate push runs. Runtime overlapping-revision cancellation is unobserved.
+
+The successful main samples used 814 runner-seconds before build deduplication
+and 664 afterward. Per-job rounding totals fell from 19 to 18 minutes. Linux
+fell from 262 to 176 seconds and Windows from 552 to 488. The PR samples were
+mixed: Linux improved, but Windows archive/setup variability increased time.
+These observations do not establish monthly billing savings. Full-build count
+fell from 32 to 10. Successful cold-cache jobs populated pip caches for all four
+OS/Python combinations; warm restoration remains to be observed.
+
+Refresh the paginated source history and the development-workflow row to record
+core delivery without claiming #91 is complete. The guide workflow on its
+owner's PR #82 at `c80f8bcc94f6ff2b382107baf6edbbe723e2a478` now has matching
+main-only push triggers, concurrency, timeout and preserved browser/artifact
+checks. That PR remains unmerged; its current-head and main verification are
+still required. #91 remains open for that owner-controlled acceptance.
+
+Guide generation, maintenance and browser checks pass with 113 open issues,
+54 merged PR history entries and unchanged architecture/viewer hashes. This
+follow-up records source acceptance, not product or device behavior. No OpenSpec
+delta applies. Preserve Hub #73's reserved input. Public publication and live
+served-byte verification remain outside this source delivery. This guide-only
+reconciliation need not be recursively added as a product milestone.
 
 ## 2026-09-10: Hub #91 build-once candidate and scheduling readback
 
