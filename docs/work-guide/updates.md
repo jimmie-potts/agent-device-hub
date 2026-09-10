@@ -1,26 +1,34 @@
 # Guide maintenance history
 
-## 2026-09-10 UTC: Nanoleaf #37 CI scheduling companion
+## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
 
-Coordinator: the Nanoleaf #37 delivery root. Nanoleaf PR #61 merged at
-`dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa` after both independent review axes
-and all nine current-head PR jobs passed. The change limits pushes to main,
-groups superseded PR revisions and adds ten-minute bounds to workflow, Python
-and browser jobs. The two existing MCP jobs and all other coverage remain intact.
-Main CI and issue completion are recorded separately in the delivery receipt.
-Issue #37 remains open for completion checks and this guide synchronization.
+[Nanoleaf #37](https://github.com/jimmie-potts/codex-nanoleaf/issues/37)
+source merged through [PR #61](https://github.com/jimmie-potts/codex-nanoleaf/pull/61)
+at `dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa`. Both independent review axes
+were clear. All nine PR jobs passed in run `34431669004`; all nine merged-main
+jobs passed in run `34431911171`. The guarded squash merge preserved the
+reviewed workflow. Push validation now targets main, obsolete revisions of each
+PR share a concurrency group, and workflow, Python and browser jobs have
+ten-minute limits. The two MCP jobs and every existing command remain intact.
+Live overlapping-revision cancellation was not observed; no artificial overlap
+or timeout was induced. No product specification, installation or device change
+applies.
 
-Refresh paginated backlog and history inputs and reconcile primary coverage for
-nine issues added since the previous snapshot. The development workflow section
-records the source merge. Presentation, hosting and guide-maintenance rows name
-the newly tracked work without claiming its completion. Roadmap positions and
-connectors, architecture sources and the eight viewers are unchanged. Hub #73's
-reserved evaluation input remains unchanged. No product specification delta or
-installation applies. Public website publication is outside this source task.
+The Nanoleaf delivery coordinator owns [Hub companion PR #90](https://github.com/jimmie-potts/agent-device-hub/pull/90).
+The user approved its guide candidate `c2eb905`, but main advanced before merge.
+Hub PR #89 already refreshed the overlapping backlog, primary coverage and
+history, including Nanoleaf PR #61, and corrected the timeline title. Preserve
+that newer input set and regenerate from it. The resulting HTML is byte-identical
+to main: this reconciliation adds only this delivery record. The dated snapshot
+correctly retains #37 as open at its recorded cutoff; source acceptance is
+verified and issue closure awaits this companion's merge and main-CI readback.
+No additional architecture, roadmap or UI change is needed. Preserve all eight
+viewers, existing snapshot dates and Hub #73's reserved evaluation input.
 
-Validation: guide build, maintenance regression and browser checks pass. Candidate
-revision, hosted CI and independent review evidence belong in the linked PR.
-The generated guide requires current-candidate human approval before merge.
+Validation: guide build and maintenance regression pass; generated HTML is
+unchanged from main. Independent reviews and hosted checks for the reconciled
+candidate are recorded on PR #90. Public website publication remains outside
+this source-only delivery.
 
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 
@@ -175,3 +183,40 @@ new history heads differed from pinned architecture sources. Removed that
 coupling and the unconditional current-head claim. The offline regression test
 failed before the fix and passed after it. Product facts and snapshot dates
 remain unchanged. Companion PRs: Hub #72, Nanoleaf #51, Pixoo #51.
+## 2026-09-09: Pixoo #46 source completion and guide reconciliation
+
+[Pixoo #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46) completed
+through [PR #57](https://github.com/jimmie-potts/divoom-app-upgrade/pull/57) at
+`9601b60935515f4ecf5f79f1b1ab59299dd1c3de`. Both independent review axes passed.
+All five current-head PR jobs and all five merged-main jobs passed in runs
+[34431920469](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/34431920469)
+and [34432344852](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/34432344852).
+The guarded squash merge preserved the reviewed tree. The issue was then closed
+as completed and its status/blocked labels removed. Earlier account restrictions
+did not prevent this candidate's hosted checks from executing successfully.
+
+The workflow now checks pushes to main, groups obsolete revisions of each PR
+for cancellation, and sets ten-minute limits while preserving all five jobs and
+commands. Live cancellation was not observed because no natural overlapping
+revisions occurred; no timeout was deliberately induced. There is no product
+specification delta, installation or physical-device acceptance in this work.
+
+Refresh paginated backlog and history inputs, remove completed #46 from primary
+coverage and remaining roadmap issues, and record its result in Development
+workflow. The snapshot also brings nine previously unrepresented open issues
+into existing guide sections: Hub #80/#83/#85–#87 and Nanoleaf #52–#55. Those
+records remain planned work; this refresh implements none of them. Preserve
+other coordinators' open PRs and their separate source/acceptance claims.
+
+No architecture component, ownership or command-flow changes apply. Keep the
+architecture source pins, review dates, viewer bytes and connector behavior;
+update only the dated history, roadmap labels/membership, narrative and backlog.
+The history title now describes the snapshot instead of ending on September 8.
+The delivery coordinator owns [Hub PR #89](https://github.com/jimmie-potts/agent-device-hub/pull/89),
+which carries this reconciliation. Guide synchronization remains pending until
+that companion merges. Public publication is not authorized by this source-only
+maintenance request; the existing public edition will retain its earlier bytes.
+
+Validation: generator, maintenance test, browser coverage/navigation/search/
+links/print checks at six viewport widths, and whitespace checks pass. The final
+revision, guide hash and independent review/CI results belong in the PR receipt.

@@ -47,8 +47,8 @@ TRACKS = [
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf rendering + displays', [
-        dict(id='n-np-fix', x=0, label='Map fix · external scenes', issues=['N26', 'N21', 'N52', 'N53'], guide='nanoleaf-presentation'),
-        dict(id='n-np-render', x=1, label='Rendering + live renderer', issues=['N15', 'N17'], guide='nanoleaf-presentation'),
+        dict(id='n-np-fix', x=0, label='Map fixes · Prism geometry', issues=['N26', 'N21', 'N52'], guide='nanoleaf-presentation'),
+        dict(id='n-np-render', x=1, label='Rendering · Prism artwork', issues=['N15', 'N17', 'N53'], guide='nanoleaf-presentation'),
         dict(id='n-np-custom', x=2, label='Palettes + effects', issues=['N18', 'N19', 'N20'], guide='nanoleaf-presentation'),
         dict(id='n-np-lively', x=3, label='Lively prototype', issues=['N10', 'N11', 'N12', 'N13', 'N14'], guide='nanoleaf-presentation'),
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
@@ -73,12 +73,12 @@ TRACKS = [
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
-        dict(id='n-host-port', x=3, label='Portability · dedicated server', issues=['H43', 'H44', 'N54', 'N55'], guide='hosting-migrations'),
+        dict(id='n-host-port', x=3, label='Linux · portability', issues=['H43', 'H44', 'N54', 'N55'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'P46', 'H73', 'H80', 'H83', 'H85', 'H86', 'H87'], guide='development-workflow'),
-        dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'H73', 'H80', 'H83'], guide='development-workflow'),
+        dict(id='n-dev-jobs', x=1, label='Job layout · Prism guide', issues=['P47', 'H85', 'H86', 'H87'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
 ]
@@ -114,7 +114,7 @@ def history_chart(history, snapshot_iso, issues):
         return left + plot_w * (dt - start).total_seconds() / span
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
-             '<title id="history-title">Merged pull requests per repository through the backlog snapshot</title>',
+             '<title id="history-title">Merged pull requests per repository through the dated snapshot</title>',
              f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)

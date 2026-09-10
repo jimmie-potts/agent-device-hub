@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 21,
+        "open_issues_count": 20,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 21,
+        "open_issues": 20,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 21,
+        "open_issues_count": 20,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 21,
+        "open_issues": 20,
         "watchers": 0,
         "default_branch": "main"
       }

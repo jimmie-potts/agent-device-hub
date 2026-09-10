@@ -1,10 +1,10 @@
 {
- "fetchedAt": "2026-09-10T03:05:36.872863+00:00",
+ "fetchedAt": "2026-09-10T03:15:33.320905+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-10T03:04:00Z",
+   "pushedAt": "2026-09-10T03:15:17Z",
    "defaultBranch": "main",
    "headSha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
    "mainCommitCount": 13,
@@ -176,50 +176,63 @@
    ],
    "openPRs": [
     {
+     "number": 90,
+     "title": "Reconcile work guide for Nanoleaf CI scheduling delivery",
+     "createdAt": "2026-09-10T03:06:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/90",
+     "base": "main"
+    },
+    {
      "number": 89,
      "title": "Record Pixoo #46 CI guide impact",
      "createdAt": "2026-09-10T03:04:12Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89",
+     "base": "main"
     },
     {
      "number": 88,
      "title": "Adopt planning and delivery checkpoints for the work guide",
      "createdAt": "2026-09-10T00:46:23Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main"
     },
     {
      "number": 84,
      "title": "Document the fresh Nanoleaf Linux runtime",
      "createdAt": "2026-09-10T00:29:55Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
+     "base": "main"
     },
     {
      "number": 82,
      "title": "Document the Nanoleaf Prism delivery sequence",
      "createdAt": "2026-09-09T23:05:53Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+     "base": "main"
     },
     {
      "number": 77,
      "title": "perf: prepare real early source measurements; budgets pending",
      "createdAt": "2026-09-08T22:54:04Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
+     "base": "main"
     },
     {
      "number": 59,
      "title": "docs: plan PC and desk lighting integrations and backlog",
      "createdAt": "2026-09-08T00:03:57Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+     "base": "main"
     }
    ],
    "closedIssues": [
     {
-     "number": 33,
-     "title": "Document assistant direction and remove stale skill references",
-     "closedAt": "2026-09-07T21:50:50Z",
-     "createdAt": "2026-09-07T21:37:55Z",
+     "number": 1,
+     "title": "Initialize the shared hub repository and cross-repository plan",
+     "closedAt": "2026-09-07T05:38:43Z",
+     "createdAt": "2026-09-07T02:21:57Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/1"
     },
     {
      "number": 14,
@@ -230,14 +243,6 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/14"
     },
     {
-     "number": 7,
-     "title": "Provide reusable local MCP transport and device tools",
-     "closedAt": "2026-09-07T18:35:17Z",
-     "createdAt": "2026-09-07T02:24:04Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
-    },
-    {
      "number": 4,
      "title": "Define versioned controller capabilities and integration APIs",
      "closedAt": "2026-09-07T06:33:55Z",
@@ -246,20 +251,28 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/4"
     },
     {
+     "number": 7,
+     "title": "Provide reusable local MCP transport and device tools",
+     "closedAt": "2026-09-07T18:35:17Z",
+     "createdAt": "2026-09-07T02:24:04Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
+    },
+    {
+     "number": 33,
+     "title": "Document assistant direction and remove stale skill references",
+     "closedAt": "2026-09-07T21:50:50Z",
+     "createdAt": "2026-09-07T21:37:55Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+    },
+    {
      "number": 2,
      "title": "Qualify and version the shared agent lifecycle contract",
      "closedAt": "2026-09-08T21:54:37Z",
      "createdAt": "2026-09-07T02:21:58Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
-    },
-    {
-     "number": 1,
-     "title": "Initialize the shared hub repository and cross-repository plan",
-     "closedAt": "2026-09-07T05:38:43Z",
-     "createdAt": "2026-09-07T02:21:57Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/1"
     }
    ],
    "openIssueCount": 65,
@@ -536,99 +549,39 @@
      "number": 60,
      "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
      "createdAt": "2026-09-10T01:21:11Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
+     "base": "codex/gh-53-prism-renderer"
     },
     {
      "number": 59,
      "title": "Adopt shared guide planning and delivery checkpoints",
      "createdAt": "2026-09-10T00:46:40Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
+     "base": "main"
     },
     {
      "number": 58,
      "title": "Render the actual Lines layout with animated Prism crystal components",
      "createdAt": "2026-09-10T00:36:26Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58",
+     "base": "main"
     },
     {
      "number": 57,
      "title": "Support a fresh Linux installation of Nanoleaf services",
      "createdAt": "2026-09-10T00:04:39Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
+     "base": "main"
     }
    ],
    "closedIssues": [
     {
-     "number": 38,
-     "title": "Animate wall assembly from a central orb",
-     "closedAt": "2026-09-07T19:38:54Z",
-     "createdAt": "2026-09-07T17:15:37Z",
+     "number": 2,
+     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
+     "closedAt": "2026-09-05T19:56:52Z",
+     "createdAt": "2026-09-05T17:58:03Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
-    },
-    {
-     "number": 34,
-     "title": "Verify local Codex control of the Nanoleaf lights",
-     "closedAt": "2026-09-08T06:10:39Z",
-     "createdAt": "2026-09-07T03:58:54Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
-    },
-    {
-     "number": 33,
-     "title": "Add local Codex MCP bindings for the Nanoleaf controller",
-     "closedAt": "2026-09-07T19:39:11Z",
-     "createdAt": "2026-09-07T03:58:53Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/33"
-    },
-    {
-     "number": 28,
-     "title": "Expose a protected Nanoleaf controller API for local Codex and the hub",
-     "closedAt": "2026-09-07T18:29:33Z",
-     "createdAt": "2026-09-07T02:24:17Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/28"
-    },
-    {
-     "number": 27,
-     "title": "Record shared agent-device-hub adoption and migration dependencies",
-     "closedAt": "2026-09-07T02:58:25Z",
-     "createdAt": "2026-09-07T02:24:15Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/27"
-    },
-    {
-     "number": 25,
-     "title": "Flaky Windows Python 3.14 run: test_concurrent_tasks_never_share_a_slot hits a locked SQLite file",
-     "closedAt": "2026-09-07T05:35:42Z",
-     "createdAt": "2026-09-07T01:00:46Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/25"
-    },
-    {
-     "number": 23,
-     "title": "Restyle the wall map as the Neon HUD",
-     "closedAt": "2026-09-07T05:26:09Z",
-     "createdAt": "2026-09-07T00:40:49Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/23"
-    },
-    {
-     "number": 22,
-     "title": "Restructure the wall map layout and surface status, pending edits, and mode",
-     "closedAt": "2026-09-07T04:32:52Z",
-     "createdAt": "2026-09-07T00:40:47Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/22"
-    },
-    {
-     "number": 8,
-     "title": "Support Claude Code alongside Codex with safe concurrent development",
-     "closedAt": "2026-09-05T23:55:05Z",
-     "createdAt": "2026-09-05T22:43:35Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/2"
     },
     {
      "number": 6,
@@ -639,12 +592,76 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/6"
     },
     {
-     "number": 2,
-     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
-     "closedAt": "2026-09-05T19:56:52Z",
-     "createdAt": "2026-09-05T17:58:03Z",
+     "number": 8,
+     "title": "Support Claude Code alongside Codex with safe concurrent development",
+     "closedAt": "2026-09-05T23:55:05Z",
+     "createdAt": "2026-09-05T22:43:35Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/2"
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
+    },
+    {
+     "number": 27,
+     "title": "Record shared agent-device-hub adoption and migration dependencies",
+     "closedAt": "2026-09-07T02:58:25Z",
+     "createdAt": "2026-09-07T02:24:15Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/27"
+    },
+    {
+     "number": 22,
+     "title": "Restructure the wall map layout and surface status, pending edits, and mode",
+     "closedAt": "2026-09-07T04:32:52Z",
+     "createdAt": "2026-09-07T00:40:47Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/22"
+    },
+    {
+     "number": 23,
+     "title": "Restyle the wall map as the Neon HUD",
+     "closedAt": "2026-09-07T05:26:09Z",
+     "createdAt": "2026-09-07T00:40:49Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/23"
+    },
+    {
+     "number": 25,
+     "title": "Flaky Windows Python 3.14 run: test_concurrent_tasks_never_share_a_slot hits a locked SQLite file",
+     "closedAt": "2026-09-07T05:35:42Z",
+     "createdAt": "2026-09-07T01:00:46Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/25"
+    },
+    {
+     "number": 28,
+     "title": "Expose a protected Nanoleaf controller API for local Codex and the hub",
+     "closedAt": "2026-09-07T18:29:33Z",
+     "createdAt": "2026-09-07T02:24:17Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/28"
+    },
+    {
+     "number": 38,
+     "title": "Animate wall assembly from a central orb",
+     "closedAt": "2026-09-07T19:38:54Z",
+     "createdAt": "2026-09-07T17:15:37Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
+    },
+    {
+     "number": 33,
+     "title": "Add local Codex MCP bindings for the Nanoleaf controller",
+     "closedAt": "2026-09-07T19:39:11Z",
+     "createdAt": "2026-09-07T03:58:53Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/33"
+    },
+    {
+     "number": 34,
+     "title": "Verify local Codex control of the Nanoleaf lights",
+     "closedAt": "2026-09-08T06:10:39Z",
+     "createdAt": "2026-09-07T03:58:54Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
     }
    ],
    "openIssueCount": 29,
@@ -661,12 +678,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-10T03:03:59Z",
+   "pushedAt": "2026-09-10T03:10:59Z",
    "defaultBranch": "main",
-   "headSha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
-   "mainCommitCount": 19,
+   "headSha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
+   "mainCommitCount": 20,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
+     "date": "2026-09-10T03:10:59Z",
+     "message": "Bound CI runtime and limit branch push checks (#46) (#57)"
+    },
     {
      "sha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
      "date": "2026-09-09T00:14:44Z",
@@ -907,142 +929,33 @@
      "createdAt": "2026-09-08T22:50:31Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/54",
      "base": "main"
+    },
+    {
+     "number": 57,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:10:59Z",
+     "createdAt": "2026-09-10T03:04:35Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+     "base": "main"
     }
    ],
    "openPRs": [
     {
-     "number": 57,
-     "title": "Bound CI runtime and remove duplicate branch-push checks",
-     "createdAt": "2026-09-10T03:04:35Z",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57"
-    },
-    {
      "number": 56,
      "title": "Adopt shared guide planning and delivery checkpoints",
      "createdAt": "2026-09-10T00:46:39Z",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56"
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
+     "base": "main"
     }
    ],
    "closedIssues": [
     {
-     "number": 42,
-     "title": "Integrate an opt-in physical Pixoo adapter with the local application",
-     "closedAt": "2026-09-07T17:38:00Z",
-     "createdAt": "2026-09-07T03:58:52Z",
+     "number": 1,
+     "title": "Initialize GitHub, Codex, OpenSpec, and the MVP backlog",
+     "closedAt": "2026-09-05T22:25:36Z",
+     "createdAt": "2026-09-05T22:02:32Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/42"
-    },
-    {
-     "number": 36,
-     "title": "Record shared agent-device-hub ownership and migration dependencies",
-     "closedAt": "2026-09-07T03:01:12Z",
-     "createdAt": "2026-09-07T02:24:11Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/36"
-    },
-    {
-     "number": 29,
-     "title": "Adopt qualified shared monitoring contracts in Pixoo",
-     "closedAt": "2026-09-08T22:37:50Z",
-     "createdAt": "2026-09-07T00:55:03Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
-    },
-    {
-     "number": 26,
-     "title": "Verify local Codex control on the Pixoo",
-     "closedAt": "2026-09-08T03:05:48Z",
-     "createdAt": "2026-09-06T23:27:08Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26"
-    },
-    {
-     "number": 25,
-     "title": "Add MCP media selection and playlist playback tools",
-     "closedAt": "2026-09-07T20:17:43Z",
-     "createdAt": "2026-09-06T23:27:03Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/25"
-    },
-    {
-     "number": 24,
-     "title": "Add local MCP status and display controls for Codex",
-     "closedAt": "2026-09-07T19:37:12Z",
-     "createdAt": "2026-09-06T23:26:22Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/24"
-    },
-    {
-     "number": 12,
-     "title": "Validate local physical playback, recovery, and soak reliability",
-     "closedAt": "2026-09-09T00:17:43Z",
-     "createdAt": "2026-09-05T22:08:56Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
-    },
-    {
-     "number": 10,
-     "title": "Deliver persistent local startup, diagnostics, and backup/restore",
-     "closedAt": "2026-09-07T03:36:38Z",
-     "createdAt": "2026-09-05T22:08:52Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/10"
-    },
-    {
-     "number": 9,
-     "title": "Build the responsive media library, editor, player, and settings",
-     "closedAt": "2026-09-07T02:45:51Z",
-     "createdAt": "2026-09-05T22:08:51Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/9"
-    },
-    {
-     "number": 8,
-     "title": "Expose validated media, playlist, and player APIs with SSE",
-     "closedAt": "2026-09-07T01:58:12Z",
-     "createdAt": "2026-09-05T22:08:49Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/8"
-    },
-    {
-     "number": 7,
-     "title": "Implement deterministic playlist playback and recovery",
-     "closedAt": "2026-09-07T01:05:47Z",
-     "createdAt": "2026-09-05T22:08:47Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/7"
-    },
-    {
-     "number": 6,
-     "title": "Persist media and playlists with safe reference handling",
-     "closedAt": "2026-09-07T00:03:24Z",
-     "createdAt": "2026-09-05T22:08:46Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/6"
-    },
-    {
-     "number": 5,
-     "title": "Implement bounded media decoding and immutable renditions",
-     "closedAt": "2026-09-06T23:22:57Z",
-     "createdAt": "2026-09-05T22:08:44Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/5"
-    },
-    {
-     "number": 4,
-     "title": "Verify the Pixoo protocol and run an approved hardware smoke test",
-     "closedAt": "2026-09-06T22:45:54Z",
-     "createdAt": "2026-09-05T22:08:43Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/4"
-    },
-    {
-     "number": 3,
-     "title": "Build the device interface and deterministic fake adapter",
-     "closedAt": "2026-09-06T00:20:41Z",
-     "createdAt": "2026-09-05T22:08:41Z",
-     "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/3"
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/1"
     },
     {
      "number": 2,
@@ -1053,15 +966,135 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/2"
     },
     {
-     "number": 1,
-     "title": "Initialize GitHub, Codex, OpenSpec, and the MVP backlog",
-     "closedAt": "2026-09-05T22:25:36Z",
-     "createdAt": "2026-09-05T22:02:32Z",
+     "number": 3,
+     "title": "Build the device interface and deterministic fake adapter",
+     "closedAt": "2026-09-06T00:20:41Z",
+     "createdAt": "2026-09-05T22:08:41Z",
      "stateReason": "completed",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/1"
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/3"
+    },
+    {
+     "number": 4,
+     "title": "Verify the Pixoo protocol and run an approved hardware smoke test",
+     "closedAt": "2026-09-06T22:45:54Z",
+     "createdAt": "2026-09-05T22:08:43Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/4"
+    },
+    {
+     "number": 5,
+     "title": "Implement bounded media decoding and immutable renditions",
+     "closedAt": "2026-09-06T23:22:57Z",
+     "createdAt": "2026-09-05T22:08:44Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/5"
+    },
+    {
+     "number": 6,
+     "title": "Persist media and playlists with safe reference handling",
+     "closedAt": "2026-09-07T00:03:24Z",
+     "createdAt": "2026-09-05T22:08:46Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/6"
+    },
+    {
+     "number": 7,
+     "title": "Implement deterministic playlist playback and recovery",
+     "closedAt": "2026-09-07T01:05:47Z",
+     "createdAt": "2026-09-05T22:08:47Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/7"
+    },
+    {
+     "number": 8,
+     "title": "Expose validated media, playlist, and player APIs with SSE",
+     "closedAt": "2026-09-07T01:58:12Z",
+     "createdAt": "2026-09-05T22:08:49Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/8"
+    },
+    {
+     "number": 9,
+     "title": "Build the responsive media library, editor, player, and settings",
+     "closedAt": "2026-09-07T02:45:51Z",
+     "createdAt": "2026-09-05T22:08:51Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/9"
+    },
+    {
+     "number": 36,
+     "title": "Record shared agent-device-hub ownership and migration dependencies",
+     "closedAt": "2026-09-07T03:01:12Z",
+     "createdAt": "2026-09-07T02:24:11Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/36"
+    },
+    {
+     "number": 10,
+     "title": "Deliver persistent local startup, diagnostics, and backup/restore",
+     "closedAt": "2026-09-07T03:36:38Z",
+     "createdAt": "2026-09-05T22:08:52Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/10"
+    },
+    {
+     "number": 42,
+     "title": "Integrate an opt-in physical Pixoo adapter with the local application",
+     "closedAt": "2026-09-07T17:38:00Z",
+     "createdAt": "2026-09-07T03:58:52Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/42"
+    },
+    {
+     "number": 24,
+     "title": "Add local MCP status and display controls for Codex",
+     "closedAt": "2026-09-07T19:37:12Z",
+     "createdAt": "2026-09-06T23:26:22Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/24"
+    },
+    {
+     "number": 25,
+     "title": "Add MCP media selection and playlist playback tools",
+     "closedAt": "2026-09-07T20:17:43Z",
+     "createdAt": "2026-09-06T23:27:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/25"
+    },
+    {
+     "number": 26,
+     "title": "Verify local Codex control on the Pixoo",
+     "closedAt": "2026-09-08T03:05:48Z",
+     "createdAt": "2026-09-06T23:27:08Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/26"
+    },
+    {
+     "number": 29,
+     "title": "Adopt qualified shared monitoring contracts in Pixoo",
+     "closedAt": "2026-09-08T22:37:50Z",
+     "createdAt": "2026-09-07T00:55:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
+    },
+    {
+     "number": 12,
+     "title": "Validate local physical playback, recovery, and soak reliability",
+     "closedAt": "2026-09-09T00:17:43Z",
+     "createdAt": "2026-09-05T22:08:56Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
+    },
+    {
+     "number": 46,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "closedAt": "2026-09-10T03:15:15Z",
+     "createdAt": "2026-09-07T17:14:25Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 20,
+   "openIssueCount": 19,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-09T00:07:22Z"
