@@ -77,7 +77,7 @@ TRACKS = [
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'H73', 'H80', 'H83'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'H73', 'H80', 'H83', 'H91'], guide='development-workflow'),
         dict(id='n-dev-jobs', x=1, label='Job layout · Prism guide', issues=['P47', 'H85', 'H86', 'H87'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),

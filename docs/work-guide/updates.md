@@ -1,5 +1,20 @@
 # Guide maintenance history
 
+## 2026-09-10: Hub #91 CI scheduling candidate
+
+Coordinator: the Hub #91 delivery root. Add #91 to the development-workflow
+guide and refresh the three repository backlogs from paginated GitHub reads.
+The issue remains in progress; scheduling delivery, compilation optimization
+and measured savings are pending. This first candidate restricts core push
+checks to main, cancels superseded PR runs and bounds jobs to ten minutes.
+Every existing matrix entry and test command remains. PR #82 separately owns
+the proposed guide workflow; its scheduling must be reconciled before #91
+is complete. No product behavior or OpenSpec delta applies.
+
+Architecture ownership, diagrams and viewer files do not change. Preserve
+Hub #73's reserved input. Candidate checks and reviews belong in the PR receipt.
+Public publication and served-byte verification remain separate and pending.
+
 ## 2026-09-10 UTC: Nanoleaf #37 CI scheduling delivery
 
 [Nanoleaf #37](https://github.com/jimmie-potts/codex-nanoleaf/issues/37)

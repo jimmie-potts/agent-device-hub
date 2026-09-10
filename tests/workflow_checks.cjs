@@ -164,3 +164,43 @@ test('initialization preserves personal Codex prompts with current integrations 
     assert.equal(fs.readFileSync(prompt, 'utf8'), original);
   }
 });
+
+// Parse the workflow so formatting changes do not alter the scheduling checks.
+const YAML = require('yaml');
+
+test('CI validates PRs once and retains every platform and suite', () => {
+  const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
+  assert.deepEqual(ci.on, { push: { branches: ['main'] }, pull_request: null });
+  assert.deepEqual(ci.concurrency, {
+    group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
+    'cancel-in-progress': true,
+  });
+  const suites = {
+    workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts', 'npm run test:contracts:python', 'npm run test:package'],
+    mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp', 'npm run test:mcp:protocol', 'npm run test:mcp:package'],
+    lifecycle: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:lifecycle', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package'],
+  };
+  const names = {
+    workflow: 'Workflow checks on ${{ matrix.os }}',
+    contracts: 'Contracts Python ${{ matrix.python }} on ${{ matrix.os }}',
+    mcp: 'MCP on ${{ matrix.os }}',
+    lifecycle: 'Lifecycle Python ${{ matrix.python }} on ${{ matrix.os }}',
+  };
+  assert.deepEqual(Object.keys(ci.jobs), Object.keys(suites));
+  for (const [id, runs] of Object.entries(suites)) {
+    const job = ci.jobs[id];
+    assert.equal(job.name, names[id]);
+    assert.equal(job['runs-on'], '${{ matrix.os }}');
+    assert.equal(job['timeout-minutes'], 10);
+    assert.equal(job.strategy['fail-fast'], false);
+    assert.deepEqual(job.strategy.matrix, {
+      os: ['ubuntu-latest', 'windows-latest'],
+      ...(['contracts', 'lifecycle'].includes(id) ? { python: ['3.12', '3.14'] } : {}),
+    });
+    assert.equal(job.if, undefined, 'all matrix jobs must run');
+    assert.equal(job.concurrency, undefined, 'matrix siblings must not cancel each other');
+    assert.deepEqual(job.steps.filter(step => step.run).map(step => step.run), runs);
+    assert(job.steps.every(step => step.if === undefined && !step['continue-on-error']));
+  }
+});
