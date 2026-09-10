@@ -1,5 +1,20 @@
 # Guide maintenance history
 
+## 2026-09-10 UTC: retain the concurrent Hub #91 completion
+
+Main advanced again during PR #84's final readback. Merge
+`6e94511119ae0b9289fb34f90e09cafa956f18f6`, preserve Hub #91's completion
+and its complete `2026-09-10T22:07:11.512935+00:00` backlog snapshot, and
+regenerate the guide. The four maintenance tests and browser checks pass again;
+there are 108 primary open issues, 122 linked issues, 12 guides, 48 roadmap
+nodes, 61 merged PRs and nine diagrams. The guide SHA-256 is
+`a00a0113778c7fa0e68dab2a338a6a61b855003cc21c0439291b9b4438f9700c`.
+
+All nine architecture viewers remain unchanged. Workflow inputs are unchanged
+from this turn's passing Node 24 checks. The prior merge's CI results belong to
+that revision; the new head requires its own hosted checks and renewed reviews.
+The requested finish line remains the updated PR branch.
+
 ## 2026-09-10 UTC: Hub #91 CI efficiency completed
 
 Hub #91 is closed as completed after the remaining guide-workflow acceptance
@@ -32,6 +47,38 @@ search/navigation, controls, diagrams, timeline, print and all eight viewers.
 The snapshot has 108 primary open issues, 12 guides, 48 roadmap nodes and 61
 merged PR records. Generated HTML SHA-256:
 `d9f979a601032d246aa203739c80c5a7ee39768784d0cc34473d0e1644af26b9`.
+
+## 2026-09-10 UTC: resolve Hub #84 conflicts after guide delivery
+
+The Hub #43 coordinator reconciles the existing PR #84 branch with main through
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a`. Preserve the completed Prism
+stories, CI improvements, guide checkpoint adoption and publication evidence
+from main. Keep its complete backlog snapshot from
+`2026-09-10T21:55:33.450036+00:00` and history inputs unchanged. Retain PR #84's
+Linux proposal and the distinction between source work, installed acceptance and
+final architecture reconciliation under Nanoleaf #54, #55 and Hub #43.
+
+Resolve the README's publication inventory to nine viewers and ten HTML files,
+retaining the new content-inspection requirements. Keep each guide workflow row
+once and retain the delivered Prism and checkpoint timeline markers. Regenerate
+the HTML from the reconciled inputs. Architecture definitions, source receipts
+and all nine viewer files match the previous PR head `137a88d` byte for byte.
+
+The guide build, four maintenance tests, browser checks and whitespace checks
+pass. The guide contains 12 guides, 109 primary open issues, 122 linked issues,
+48 roadmap nodes, 60 merged PRs and nine diagrams. Browser checks cover widths
+320 through 1440, issue coverage, links, search, navigation, diagram and timeline
+controls, and print restoration, with no page errors. Under Node 24, workflow
+validation passes for three specifications and three archived changes; all
+13 workflow tests pass. The final guide SHA-256 is
+`4fd4ce05d0efe5b5fa24d642868b4c05363a7c911b9b07fada322c58f9458676`.
+
+The public repository README still identifies source `8499950` and eight
+viewers. PR #84's ninth viewer remains unpublished. This request updates the
+existing PR branch only. Source merge, guide publication, live verification,
+installation and physical acceptance remain outside this conflict-resolution
+step. Earlier independent reviews describe their recorded revisions and need
+renewal against the final comparison before merge.
 
 ## 2026-09-10 UTC: Hub #83 publication and completed status
 
@@ -414,6 +461,83 @@ local browser cannot create its required socket. No product behavior or OpenSpec
 delta is needed. Candidate checks, independent reviews, exact hashes and UI
 approval belong in the PR receipt. Public guide publication is not part of this
 source-delivery request.
+
+## 2026-09-10: reconcile Hub #84 with the latest main
+
+Merge main `396c36aed74cf1d016564536eca13bb16f89834b`, delivered by Hub PR #89,
+into the existing Linux documentation candidate. Retain main's complete backlog
+snapshot from `2026-09-10T03:15:26.069234+00:00`, its history inputs and Pixoo
+#46 completion. Preserve this PR's Linux architecture, source pins, nine viewer
+files and separate source, installation and documentation owners.
+
+Resolve the generator and roadmap conflicts so Linux and Prism issues each
+appear once. Combine the duplicate Prism and public-guide rows while keeping
+the new development-workflow issues from main. Regenerate the HTML from those
+inputs. No tracker state, product contract, installed runtime or public website
+changes are part of this conflict resolution.
+
+The guide build, maintenance test, browser checks and whitespace checks pass.
+The merged guide contains 12 guides, 113 primary open issues, 121 linked issues,
+44 roadmap nodes, 48 merged PRs and nine diagrams. Backlog/history files match
+main byte for byte; architecture definitions, receipts and viewer files match
+the previous PR head. Earlier review and CI receipts describe their recorded
+revisions; the new comparison still needs current delivery checks before merge.
+
+## 2026-09-10 UTC: Hub #43 proposed Nanoleaf Linux runtime
+
+Coordinator: the Hub #43 documentation root. Hub #43 remains in progress and
+blocked. Nanoleaf #54 owns source and setup; its candidate is under review in
+[PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) at
+`4abafec1bf0054a39db3e472b15eb86f76824867`. Nanoleaf #55 owns installed,
+real-client and physical-light acceptance and remains blocked by #54. The source
+coordinator reports 173 Python checks plus isolated setup of the virtual
+environment, Python and Node dependencies, copied Node runtime, separate
+foreground map/controller/MCP processes, and authenticated Quiet/Work/Free MCP
+commands using fake loopback transport. This is source-candidate evidence. It
+does not mark #54 delivered and does not establish installed or physical
+behavior.
+
+Add a separate proposed Linux runtime diagram while retaining the implemented
+Windows command-path diagram. The proposal keeps Python hooks, CLI, wall map and
+controller as separate Ubuntu WSL processes sharing Linux SQLite. Node MCP calls
+the controller at numeric loopback. The on-demand worker remains the sole light
+writer; setup and the map may make bounded device reads for connection checks or
+geometry. Windows Desktop and browser clients remain, with configured project,
+title and unread JSON mounted read-only. The fresh installation excludes data
+migration, rollback tooling, a combined daemon, a new hook API, shared monitoring
+and the Nanoleaf source move.
+
+This companion changes documentation and its generated guide, with no Hub
+product behavior delta. Nanoleaf's issue-linked `gh-54-linux-fresh-install`
+specifications and ADR 0007 own the runtime contract; no Hub OpenSpec change is
+needed.
+
+Refresh all three tracker snapshots and assign Hub #43, Nanoleaf #54 and #55 to
+the hosting and migrations guide. Preserve the open Prism guide work in PR #82
+at `d086459a529b789a3572aaaedfaf9cf6f68921b4`; its coordinator still owns that
+scope. This candidate reconciles the current N52, N53, N26 and H80 guide inputs
+only so the refreshed snapshot retains complete coverage.
+
+The tracker snapshot was captured at `2026-09-09T23:48:41.091564+00:00`, before
+#54 moved to review and PR #57 opened; the dated update above records the later
+source transition without rewriting the snapshot. The source candidate adds
+local-filesystem rejection tests and platform-neutral MCP tool descriptions.
+All 39 MCP tests pass. The prior source revision passed all 18 hosted checks;
+GitHub refused to start CI for the current revision because of an account
+payment or spending-limit problem. No current-head hosted success is claimed. The architecture review pins
+Hub `2564a357ec7d1a72c5525c0f36b98287244a6e89`, Nanoleaf PR #57 head
+`4abafec1bf0054a39db3e472b15eb86f76824867` and Pixoo
+`7c1204fd2516df86c706bae7c9498a5ee1bb749b`. Archify passes all nine checks for
+each of nine viewers. The guide builds with 12 guides, 110 primary open issues
+and 44 roadmap nodes. The maintenance test and browser check pass; the browser
+checked widths 320 through 1440, diagram navigation, links, search, print state
+and external requests. The new viewer's separate Archify browser check passes
+at 1440x900 through 2048x1320. Agent inspection covered desktop, mobile and print
+captures. The existing work-guide user exemption recorded in
+[Hub PR #76](https://github.com/jimmie-potts/agent-device-hub/pull/76) and retained
+in [Hub PR #79](https://github.com/jimmie-potts/agent-device-hub/pull/79) removes
+only human approval for this document. Independent review, hosted CI, merge,
+public publication and installed acceptance remain pending.
 
 ## 2026-09-09 UTC: Hub #80 public guide hosting
 

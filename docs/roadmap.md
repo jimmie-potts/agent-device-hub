@@ -21,6 +21,7 @@ Conditional live/physical authorization is stated separately in the issues.
 | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) | Publish shared OpenSpec validation tooling | [agent-device-hub#1](https://github.com/jimmie-potts/agent-device-hub/issues/1) |
 | [agent-device-hub#11](https://github.com/jimmie-potts/agent-device-hub/issues/11) | Evaluate Home Assistant and MQTT for additional device integrations | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
 | [agent-device-hub#13](https://github.com/jimmie-potts/agent-device-hub/issues/13) | Host shared MCP discovery and agent-status tools in the standalone hub | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) |
+| [agent-device-hub#43](https://github.com/jimmie-potts/agent-device-hub/issues/43) | Record the proposed Nanoleaf Linux runtime in canonical architecture and the maintained guide | [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54), [codex-nanoleaf#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55), linked guide synchronization |
 
 ## New controllers in the monorepo
 
@@ -68,6 +69,8 @@ its existing Pixoo/Nanoleaf scope.
 | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) | Consume shared agent sessions while preserving Nanoleaf behavior | [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31), [codex-nanoleaf#28](https://github.com/jimmie-potts/codex-nanoleaf/issues/28) |
 | [codex-nanoleaf#30](https://github.com/jimmie-potts/codex-nanoleaf/issues/30) | Verify shared monitoring migration and Nanoleaf compatibility | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [codex-nanoleaf#31](https://github.com/jimmie-potts/codex-nanoleaf/issues/31) | Adopt shared OpenSpec validation tooling | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) |
+| [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54) | Deliver source and setup for a fresh Linux installation | Source candidate [PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) is under review; coordinate documentation with [agent-device-hub#43](https://github.com/jimmie-potts/agent-device-hub/issues/43) without waiting for it to close |
+| [codex-nanoleaf#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) | Install and verify the Linux runtime in WSL | [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54), explicit installation and physical-operation authorization |
 | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29) | Adopt qualified shared monitoring contracts in Pixoo | [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2), [divoom-app-upgrade#2](https://github.com/jimmie-potts/divoom-app-upgrade/issues/2), [divoom-app-upgrade#3](https://github.com/jimmie-potts/divoom-app-upgrade/issues/3) |
 | [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) | Embed the shared agent-state service in the Pixoo backend | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29), [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#6](https://github.com/jimmie-potts/divoom-app-upgrade/issues/6), [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8) |
 | [divoom-app-upgrade#24](https://github.com/jimmie-potts/divoom-app-upgrade/issues/24) | Add local MCP status and display controls for Codex | [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) |
@@ -111,3 +114,9 @@ LIFX's direct-LAN choice is recorded in #17 and ADR 0003.
 Closed foundational device issues retain their completed evidence. This plan
 does not reopen them, claim new runtime delivery, or advance active wall-map UI
 work as a side effect.
+
+The Nanoleaf Linux sequence is separate from shared monitoring and source
+consolidation. Nanoleaf #54 owns source and setup, Nanoleaf #55 owns installed
+and physical acceptance, and Hub #43 owns canonical architecture and work-guide
+synchronization. The proposed runtime reuses separate processes and one light
+writer; it does not add migration, rollback, a combined daemon or a new hook API.

@@ -79,7 +79,7 @@ TRACKS = [
     ('Nanoleaf Linux runtime', [
         dict(id='n-linux-source', x=0, label='Linux source setup', issues=['N54'], guide='hosting-migrations'),
         dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
-        dict(id='n-linux-portability', x=2, label='Cross-platform review', issues=['H43'], guide='hosting-migrations'),
+        dict(id='n-linux-portability', x=2, label='Architecture documentation', issues=['H43'], guide='hosting-migrations'),
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),

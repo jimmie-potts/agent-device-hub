@@ -470,6 +470,64 @@ D8 = seq(
 )
 
 # ---------------------------------------------------------------------------
+# 9. Proposed fresh Nanoleaf Linux runtime
+# ---------------------------------------------------------------------------
+SIZE9 = [165, 64]
+
+
+def c9(id, type, label, sublabel, row, col, tag=None):
+    component = {'id': id, 'type': type, 'label': label, 'sublabel': sublabel, 'row': row, 'col': col, 'size': SIZE9}
+    if tag:
+        component['tag'] = tag
+    return component
+
+
+D9 = arch(
+    'Proposed fresh Nanoleaf Linux runtime',
+    components=[
+        c9('browser', 'frontend', 'Windows browser', 'wall map client', 0, 0),
+        c9('desktop', 'external', 'Codex Desktop', 'Windows · tasks execute in WSL', 0, 2),
+        c9('cliClient', 'external', 'Codex CLI', 'Ubuntu WSL', 0, 3),
+        c9('wallMap', 'frontend', 'Python wall map', '127.0.0.1:8765', 1, 0, 'proposed'),
+        c9('desktopJson', 'database', 'Mounted Desktop JSON', 'project · title · unread · read-only', 1, 1),
+        c9('hooksCli', 'backend', 'Linux hooks and CLI', 'Python · fail-open hooks', 1, 2, 'proposed'),
+        c9('mcpHost', 'security', 'Node MCP host', '127.0.0.1:41230', 1, 3, 'proposed'),
+        c9('linuxState', 'database', 'Linux SQLite', '~/.local/share/codex-nanoleaf', 2, 2, 'fresh state'),
+        c9('controller', 'security', 'Python controller', '127.0.0.1:41231 · bearer', 2, 3, 'proposed'),
+        c9('worker', 'backend', 'On-demand worker', 'Python · sole light writer', 3, 2, 'existing behavior'),
+        c9('lights', 'external', 'Nanoleaf Lines', 'configured LAN device', 3, 4),
+    ],
+    connections=[
+        {'id': 'desktop-hooks', 'from': 'desktop', 'to': 'hooksCli', 'label': 'WSL task lifecycle', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'desktop-json', 'from': 'desktop', 'to': 'desktopJson', 'label': 'configured files', 'fromSide': 'left', 'toSide': 'top'},
+        {'id': 'json-map', 'from': 'desktopJson', 'to': 'wallMap', 'label': 'metadata read', 'variant': 'security', 'fromSide': 'left', 'toSide': 'right', 'labelAt': [223, 230]},
+        {'id': 'browser-map', 'from': 'browser', 'to': 'wallMap', 'label': 'HTTP :8765', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'cli-hooks', 'from': 'cliClient', 'to': 'hooksCli', 'label': 'lifecycle · commands', 'variant': 'emphasis', 'fromSide': 'left', 'toSide': 'top', 'labelDy': 28},
+        {'id': 'cli-mcp', 'from': 'cliClient', 'to': 'mcpHost', 'label': 'MCP :41230', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'hooks-state', 'from': 'hooksCli', 'to': 'linuxState', 'label': 'task state', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'map-state', 'from': 'wallMap', 'to': 'linuxState', 'label': 'task preferences', 'fromSide': 'bottom', 'toSide': 'left', 'labelDy': 30},
+        {'id': 'mcp-controller', 'from': 'mcpHost', 'to': 'controller', 'label': 'HTTP 127.0.0.1:41231', 'variant': 'security', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'controller-state', 'from': 'controller', 'to': 'linuxState', 'label': 'command receipts', 'fromSide': 'left', 'toSide': 'right', 'labelAt': [623, 342]},
+        {'id': 'controller-worker', 'from': 'controller', 'to': 'worker', 'label': 'start on demand', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'right', 'labelDy': 24},
+        {'id': 'state-worker', 'from': 'linuxState', 'to': 'worker', 'label': 'shared state · lock', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
+        {'id': 'worker-lights', 'from': 'worker', 'to': 'lights', 'label': 'one writer', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelAt': [722, 454]},
+    ],
+    boundaries=[
+        {'kind': 'region', 'label': 'Ubuntu WSL · separate Linux processes and Linux-owned state', 'wraps': ['wallMap', 'hooksCli', 'mcpHost', 'linuxState', 'controller', 'worker']},
+    ],
+    cards=[
+        {'dot': 'violet', 'title': 'Proposed process boundary', 'items': ['Hooks, CLI, wall map and controller coordinate through Linux SQLite', 'Node MCP calls the controller directly over numeric-loopback HTTP', 'The worker remains the sole light writer; setup and the map may read device geometry']},
+        {'dot': 'cyan', 'title': 'Windows remains a client', 'items': ['Codex Desktop tasks execute in WSL', 'The Windows browser opens the wall map', 'Configured project, title and unread JSON is mounted read-only']},
+        {'dot': 'amber', 'title': 'Evidence boundary', 'items': ['Fresh install; no data migration or rollback tooling', 'No combined daemon, new hook API, shared monitoring or source move', 'PR #57 is a source candidate; installed acceptance #55 remains open']},
+    ],
+    layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 165, 'cellH': 64, 'gapX': 35, 'gapY': 48},
+    views=[
+        {'id': 'task-state', 'label': 'Task and state path', 'focus': ['desktop', 'cliClient', 'hooksCli', 'wallMap', 'desktopJson', 'linuxState'], 'note': 'Linux processes share Linux state while mounted Desktop metadata remains read-only.'},
+        {'id': 'mcp-command', 'label': 'MCP command path', 'focus': ['cliClient', 'mcpHost', 'controller', 'linuxState', 'worker', 'lights'], 'note': 'MCP uses direct numeric-loopback HTTP; the on-demand worker keeps the device write.'},
+    ],
+)
+
+# ---------------------------------------------------------------------------
 # Guide metadata: status, explanation, boundaries, sources, related issues
 # ---------------------------------------------------------------------------
 DIAGRAMS = [
@@ -495,6 +553,17 @@ DIAGRAMS = [
                      'Each physical device has one designated writer and private state. No global mode replaces native Nanoleaf or Pixoo modes.'],
          sources=[(H, 'docs/architecture.md'), (H, 'docs/controller-contract.md'), (H, 'packages/mcp/README.md'), (N, 'docs/hub-integration.md'), (P, 'docs/hub-integration.md')],
          issues=['H2', 'H3', 'H5', 'P31', 'H15', 'H17', 'H53']),
+    dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='planned',
+         status_label='Proposed; source review and installed acceptance open', short='Nanoleaf Linux runtime',
+         summary='The accepted fresh-install proposal moves the existing Nanoleaf processes and private SQLite state into Ubuntu WSL. It keeps Windows Desktop and browser clients, direct numeric-loopback MCP transport and the existing on-demand worker as the sole light writer.',
+         reading=['Windows clients stay outside the runtime boundary. Codex Desktop tasks execute in WSL, the browser opens the wall map on port 8765, and configured project, title and unread JSON is read through the mounted filesystem without write access.',
+                  'Linux hooks, CLI, wall map and controller coordinate through Linux SQLite. The Node MCP host on port 41230 calls the Python controller directly at 127.0.0.1:41231.',
+                  'The controller starts the existing worker on demand. That worker retains the state lock and remains the sole light writer. Setup and the wall map may make bounded device reads for connection checks or geometry.'],
+        boundaries=['This is proposed architecture under [[H43]]. Nanoleaf [[N54]] owns source and setup through review candidate PR #57; [[N55]] owns installed services, real-client and physical-light acceptance.',
+                     'The installation starts with fresh Linux state. Existing Nanoleaf state need not move, and no runtime SQLite database is shared through /mnt/c.',
+                     'Data migration, rollback tooling, a combined daemon, a new hook API, shared monitoring and repository migration [[H26]] remain outside this transition.'],
+        sources=[(H, 'docs/architecture.md'), (N, 'docs/decisions/0007-linux-runtime-ownership.md'), (N, 'docs/linux-install.md'), (N, 'bridge/install_linux.py'), (N, 'bridge/README.md'), (N, 'bridge/wall_server.py')],
+         issues=['H43', 'N54', 'N55']),
     dict(id='seq-lifecycle-observation', spec=D3, kind='sequence', status='planned',
          status_label='Planned conceptual flow', short='Lifecycle observation',
          summary='A qualified provider signal passes through privacy filtering and bounded submission, is interpreted once, and reaches the device through versioned delivery, native-mode and ownership checks, device-specific rendering and a generation-checked queue.',
@@ -598,7 +667,7 @@ def extract(html_path, diagram):
     for block in re.findall(r'\[data-theme="light"\]\s*\{([^}]*)\}', style)[:1]:
         for name, value in re.findall(r'(--[A-Za-z0-9-]+)\s*:\s*([^;]+);', block):
             light[name] = value.strip()
-    # Make IDs unique per diagram so eight inline SVGs can share one document.
+    # Make IDs unique per diagram so nine inline SVGs can share one document.
     prefix = diagram['id']
     svg = re.sub(r'id="([A-Za-z0-9_-]+)"', lambda m: f'id="{prefix}-{m.group(1)}"', svg)
     svg = re.sub(r'url\(#([A-Za-z0-9_-]+)\)', lambda m: f'url(#{prefix}-{m.group(1)})', svg)
