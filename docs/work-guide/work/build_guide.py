@@ -166,8 +166,8 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]]; completed [[P46]]', 'Pixoo #46 merged through PR #57 with all five PR and main checks passing. Nanoleaf #37 remains open. The original sequence limited CI churn; it was not a product dependency.'],
-             ['Hub CI efficiency', '[[H91]]', 'Preserve every test and platform while removing duplicate PR runs, cancelling superseded revisions and building once per product job. Delivery and measured savings remain pending.'],
+             ['Bound CI costs and hangs', 'Completed [[N37]] [[P46]]', 'Pixoo #46 and Nanoleaf #37 delivered main-only push checks, PR concurrency and bounded jobs with their original validation coverage. Both issues are closed; these changes do not establish product or device acceptance.'],
+             ['Hub CI efficiency', '[[H91]]', 'Core scheduling merged in Hub PR #92 with all 12 PR and main jobs passing. Build-once test commands and pip caching are the second candidate; measured savings and the separately owned guide workflow scheduling remain pending.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Guide publication checks', '[[H80]]', 'The public edition exists; complete the remaining live route and served-byte verification.'],
              ['Guide delivery checkpoints', '[[H83]]', 'Adopt the shared planning and delivery checkpoints; source synchronization, public publication and live verification remain separate.'],

@@ -1,5 +1,28 @@
 # Guide maintenance history
 
+## 2026-09-10: Hub #91 build-once candidate and scheduling readback
+
+Coordinator: the Hub #91 delivery root. PR #92 merged at
+`bca5b343dffef69b2eb371af683b6c8839bb2f3e`. All 12 current-head PR jobs passed
+in run `34481962695`, and all 12 main jobs passed in `34482410679`.
+An ordinary branch update produced only the PR run. Live overlapping-revision
+cancellation remains unobserved. The scheduling source is delivered; #91 stays
+open for the build-once candidate, measurements and guide-workflow reconciliation.
+
+Refresh paginated source history and backlog inputs. Record Nanoleaf #37's
+verified closure and remove it from open coverage and roadmap membership.
+The development-workflow row keeps Hub #91's remaining acceptance explicit.
+This candidate preserves every test payload and platform while reducing full
+builds from 32 to 10 per core run. Python setup caches downloads; installation
+and archive-consumer validation remain. The standalone commands still compile
+first and stop on failure. No product behavior or OpenSpec delta applies.
+
+Guide generation, maintenance and browser evidence belong in the PR receipt.
+Architecture definitions and all eight viewers are unchanged. Preserve Hub #73's
+reserved input. Public publication and live served-byte verification remain
+outside this source delivery. The proposed guide workflow still belongs to
+PR #82; this candidate does not edit another coordinator's branch.
+
 ## 2026-09-10: Hub #91 CI scheduling candidate
 
 Coordinator: the Hub #91 delivery root. Add #91 to the development-workflow

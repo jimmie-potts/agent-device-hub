@@ -26,6 +26,14 @@ GitHub CI runs on pull requests and pushes to main. Superseded PR revisions
 are cancelled per workflow and PR; main revisions keep independent runs. Each
 job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
 
+Product CI jobs run `npm run build` and `npm run typecheck` once, then use
+`:built` variants of the controller, lifecycle and MCP TypeScript/package test
+commands. These variants require output freshly built in that same job. The
+existing standalone commands still build first and stop if compilation fails.
+Python commands are unchanged. Python setup caches pip downloads by runtime,
+platform and `requirements-contracts.txt`; dependency installation still runs.
+No installed dependencies or compiled output are shared between jobs.
+
 GitHub CI requires Workflow checks on Ubuntu and Windows and four contract jobs,
 one for each Ubuntu/Windows and Python 3.12/3.14 combination. The contract jobs
 run build, type, both language corpora and isolated package checks. Later runtime
