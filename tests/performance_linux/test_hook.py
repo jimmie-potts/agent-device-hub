@@ -100,3 +100,26 @@ class CleanupFailures(unittest.TestCase):
             result=self.module.run_profile(probe='timeout',timeout=.5)
         self.assertEqual(result['error'],'namespace-timeout')
         self.assertTrue(result['namespaceGone'],result)
+
+    def test_pidfd_exhaustion_aborts_before_source_execution(self):
+        import errno
+        import time
+        from unittest.mock import patch
+        started=time.monotonic()
+        with patch.object(self.module.os,'pidfd_open',side_effect=OSError(errno.EMFILE,'private-content')):
+            result=self.module.run_profile(probe='timeout',timeout=3)
+        self.assertLess(time.monotonic()-started,4)
+        self.assertEqual(result['error'],'pidfd-unavailable')
+        self.assertTrue(result['namespaceGone'],result)
+        self.assertFalse(result['startupHandshake'])
+    def test_pidfd_is_acquired_while_supervisor_waits(self):
+        import time
+        from unittest.mock import patch
+        original=self.module.os.pidfd_open
+        def delayed(pid):
+            time.sleep(.2)
+            return original(pid)
+        with patch.object(self.module.os,'pidfd_open',side_effect=delayed):
+            result=self.module.run_profile(probe='cleanup')
+        self.assertTrue(result['startupHandshake'])
+        self.assertTrue(result['detachedReaped'])

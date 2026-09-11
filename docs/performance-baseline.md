@@ -164,7 +164,7 @@ npm run test:performance:linux
 ```
 
 Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
-The eleven correctness checks take about five seconds locally. CI runs these
+The thirteen correctness checks take about five seconds locally. CI runs these
 once on Ubuntu; the 9,000-call benchmark is an explicit local command, never
 part of CI. On Ubuntu, CI loads the distribution's packaged Bubblewrap
 AppArmor profile from `apparmor-profiles`, following [Ubuntu's namespace guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007).
@@ -178,8 +178,10 @@ measurement supervisor are mounted read-only. State uses a 64 MiB disposable
 Linux tmpfs. There is no personal home, mounted host drive or external network.
 Before any hook runs, checks prove source writes fail, private mounts are
 absent and the isolated network cannot reach an external address. The parent
-opens a Linux PID handle for its own namespace init, never scans other host
-processes, and cannot target an unrelated process through PID reuse.
+holds the supervisor at a stdin startup handshake until it owns a Linux PID
+handle for that init. Allocation failure closes stdin and aborts before source
+execution. This prevents the startup-exit/PID-reuse race and avoids host process
+scans. Collection errors use bounded cleanup rather than an implicit process wait.
 
 The supervisor holds the real `notification-lock.sqlite` owner lock. The actual
 hook parses synthetic stdin, connects/commits `status.sqlite`, calls the real
@@ -270,8 +272,9 @@ Integrated qualification must prove those caps before release.
 The run used the tool bytes committed at `2467d382db2ad3a85f0adb9fdd729efa05741505`.
 Subsequent CLI exception and namespace-startup diagnostics emit only fixed
 categories. Parent cleanup now uses a PID handle to support older Bubblewrap.
-The measured supervisor, hook calls and their timing/resource windows are
-unchanged. Successful baseline cleanup was verified on the recorded host. The receipt preserves
+The startup ownership handshake precedes all source work. Hook calls and their
+timing/resource windows are unchanged; the measured tool hashes retain the
+original version rather than claiming the new startup code was measured. Successful baseline cleanup was verified on the recorded host. The receipt preserves
 the measured tool hashes. Earlier smoke and interrupted trials are retained in
 [the attempt index](performance/receipts/2026-09-10-linux-attempts.json), excluded
 from these limits because they used earlier collection/cleanup code. They are

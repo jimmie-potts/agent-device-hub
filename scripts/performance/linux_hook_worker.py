@@ -215,7 +215,12 @@ def checkpoint(record):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--tasks',type=int,default=1);parser.add_argument('--bursts',type=int,default=1)
     parser.add_argument('--failures',action='store_true');parser.add_argument('--probe',choices=['cleanup','crash','timeout','output','partial-crash'])
-    args=parser.parse_args(); checks=confinement()
+    args=parser.parse_args()
+    checkpoint({'ready':True})
+    if sys.stdin.buffer.read(1) != b'1':
+        checkpoint({'result':{'status':'failed','error':'startup-aborted'}})
+        return 1
+    checks=confinement()
     if args.probe=='output':
         while True:
             os.write(1,b'x'*4096)

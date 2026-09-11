@@ -194,7 +194,7 @@ for actual profile commands and pending budget gates.
 ## Linux hook performance qualification
 
 Run `npm run test:performance:linux` on Linux with system Python 3.12 or 3.14
-under `/usr` and the packaged `bwrap` executable available. These eleven focused
+under `/usr` and the packaged `bwrap` executable available. These thirteen focused
 checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the

@@ -70,79 +70,138 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
         # Only the namespace init PID supplied by our own bwrap is inspected.
         read_info, write_info = os.pipe()
         args[1:1] = ['--info-fd', str(write_info)]
-        streams = {}
+        streams = {'out':bytearray(), 'err':bytearray(), 'info':bytearray()}
         reason = None
         init_fd = None
-        init_seen_exited = False
-        def terminate(child):
+        init_pid = None
+        ready = False
+        released = False
+        def limits():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT, MAX_OUTPUT))
+            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        try:
+            child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, pass_fds=(write_info,), preexec_fn=limits)
+        except Exception:
+            os.close(read_info)
+            raise
+        finally:
+            os.close(write_info)
+        deadline = time.monotonic()+timeout
+        def abort():
+            # Before release, EOF asks the live supervisor to exit without ever
+            # running upstream code. This also handles pidfd allocation failure.
+            if not child.stdin.closed:
+                try:
+                    child.stdin.close()
+                except OSError:
+                    pass
             if init_fd is not None:
                 try:
                     signal.pidfd_send_signal(init_fd, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-            child.kill()
-        def limits():
-            resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT, MAX_OUTPUT))
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              pass_fds=(write_info,), preexec_fn=limits) as child:
-            os.close(write_info)
+        try:
             with os.fdopen(read_info, 'rb', buffering=0) as info, selectors.DefaultSelector() as selector:
-                for name, pipe, cap in [('out', child.stdout, MAX_OUTPUT), ('err', child.stderr, 65536), ('info', info, 4096)]:
-                    streams[name] = bytearray()
-                    selector.register(pipe, selectors.EVENT_READ, (name, cap))
-                deadline = time.monotonic() + timeout
+                for name, pipe, cap in [('out',child.stdout,MAX_OUTPUT),('err',child.stderr,65536),('info',info,4096)]:
+                    selector.register(pipe, selectors.EVENT_READ, (name,cap))
                 while selector.get_map():
                     if time.monotonic() >= deadline:
-                        reason = 'namespace-timeout'
-                        terminate(child)
+                        reason = reason or 'namespace-timeout'
+                        abort()
                         break
-                    for key, _ in selector.select(min(.1, max(0, deadline-time.monotonic()))):
-                        name, cap = key.data
-                        data = os.read(key.fd, min(4096, cap-len(streams[name])+1))
+                    for key, _ in selector.select(min(.1,max(0,deadline-time.monotonic()))):
+                        name,cap = key.data
+                        data = os.read(key.fd,min(4096,cap-len(streams[name])+1))
                         if not data:
                             selector.unregister(key.fileobj)
-                        elif len(streams[name])+len(data) > cap:
+                            continue
+                        if len(streams[name])+len(data)>cap:
                             reason = 'output-limit'
-                            terminate(child)
+                            abort()
                             break
-                        else:
-                            streams[name].extend(data)
-                            if name == 'info' and init_fd is None and not init_seen_exited:
-                                try:
-                                    setup = json.loads(streams[name])
-                                    pid = setup['child-pid']
-                                    if type(pid) is not int or pid <= 0:
-                                        raise ValueError('invalid-init-pid')
-                                    init_fd = os.pidfd_open(pid)
-                                except ProcessLookupError:
-                                    init_seen_exited = True
-                                except (ValueError, KeyError):
-                                    pass  # JSON may span multiple pipe reads.
+                        streams[name].extend(data)
                     if reason:
                         break
+                    if init_pid is None:
+                        try:
+                            setup=json.loads(streams['info'])
+                            pid=setup['child-pid']
+                            if type(pid) is not int or pid<=0:
+                                raise ValueError('invalid-init-pid')
+                            init_pid=pid
+                        except (ValueError,KeyError):
+                            pass
+                    ready=streams['out'].startswith(b'{"ready":true}\n')
+                    if ready and init_pid is not None and not released:
+                        # The supervisor waits on our open stdin until this
+                        # acquisition succeeds. Startup failure cannot race PID
+                        # reuse because no upstream code has started yet.
+                        try:
+                            init_fd=os.pidfd_open(init_pid)
+                        except OSError:
+                            reason='pidfd-unavailable'
+                            abort()
+                            # Keep collecting the supervisor's abort receipt.
+                            deadline=min(deadline,time.monotonic()+5)
+                            continue
+                        if time.monotonic() >= deadline:
+                            reason='namespace-timeout'
+                            abort()
+                            break
+                        child.stdin.write(b'1')
+                        child.stdin.close()
+                        released=True
                 try:
-                    child.wait(timeout=max(.01, deadline-time.monotonic()))
+                    child.wait(timeout=max(.01,deadline-time.monotonic()))
                 except subprocess.TimeoutExpired:
-                    reason = 'namespace-timeout'
-                    terminate(child)
-                    child.wait()
-        code = child.returncode
-        # A pidfd cannot be redirected by PID reuse. Linux tears down every
-        # namespace member when its PID 1 exits, including detached sessions.
-        gone = init_seen_exited
+                    reason=reason or 'namespace-timeout'
+                    abort()
+                    try:
+                        child.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        try:
+                            child.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            pass
+        except Exception:
+            reason=reason or 'collection-failed'
+            abort()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                try:
+                    child.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        finally:
+            if not child.stdin.closed:
+                try:
+                    child.stdin.close()
+                except OSError:
+                    pass
+            child.stdout.close()
+            child.stderr.close()
+        code=child.returncode
+        gone=False
         if init_fd is not None:
             try:
                 with selectors.DefaultSelector() as exited:
-                    exited.register(init_fd, selectors.EVENT_READ)
-                    gone = bool(exited.select(5))
+                    exited.register(init_fd,selectors.EVENT_READ)
+                    gone=bool(exited.select(5))
             finally:
                 os.close(init_fd)
+        elif ready and not released:
+            # EOF was sent before source execution. A natural bwrap exit waits
+            # for that blocked supervisor; no hook/worker could have started.
+            gone=code is not None and code>=0
         records = []
         for line in streams['out'].splitlines():
             try:
                 record = json.loads(line)
-                if isinstance(record, dict):
+                if isinstance(record, dict) and record != {'ready':True}:
                     records.append(record)
             except ValueError:
                 pass  # A truncated last record remains a failed repetition.
@@ -155,7 +214,8 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
         result['startupDiagnostic'] = startup_diagnostic(bytes(streams['err']))
         result.update(namespaceRoundtripNs=time.perf_counter_ns()-started,
                       namespaceExitCode=code, namespaceGone=gone, tasks=tasks,
-                      outputBounded=True, cleanupEvidence='owned namespace init exit verified through pidfd')
+                      outputBounded=True, startupHandshake=ready and released,
+                      cleanupEvidence='owned init pidfd exit' if init_fd is not None else 'unreleased supervisor exited after stdin EOF')
         return result
 
 def startup_diagnostic(stderr):
