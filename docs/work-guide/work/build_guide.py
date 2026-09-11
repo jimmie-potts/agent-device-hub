@@ -27,16 +27,18 @@ for key, (repo, _) in REPOS.items():
         ISSUES[f'{key}{issue["number"]}'] = issue
 
 GUIDES = [
-    dict(id='local-acceptance', short='Local acceptance', title='Finish local Codex control and physical acceptance', phase='Local release',
-         intro='Pixoo and Nanoleaf local Codex acceptance are complete. The separate Pixoo reliability trial remains open.',
+    dict(id='local-acceptance', short='Local acceptance', title='Completed local Codex control and physical acceptance', phase='Local release',
+         intro='Pixoo and Nanoleaf local Codex acceptance are complete. The Pixoo reliability observations are accepted for the current uniform-500-ms profile; variable timing has its own follow-up.',
          headers=['Work', 'Issues', 'Remaining work'], rows=[
              ['Completed / Local Codex → Nanoleaf', '[[N34]]', 'Completed through Nanoleaf PR #50. The closing receipt records installation, actual Windows/WSL routes, physical observations and restoration under its scoped hosted-CI exception.'],
              ['Completed / Local Codex → Pixoo', '[[P26]]', 'Completed baseline, excluded from remaining-work counts. Reviewed delivery through Pixoo PR #50 records installed WSL-client checks, physical controls, restoration and credential revocation.'],
-             ['Pixoo reliability', '[[P12]]', 'Physical playback, restart/recovery, and an approved soak trial.'],
+             ['Completed / Pixoo reliability', '[[P12]]', 'Pixoo PR #54 delivered the compatibility fix and accepted local evidence. All five merged-main jobs passed before closure. Variable timing remains unverified in [[P55]]; the current uniform-500-ms profile is unchanged.'],
          ], notes=[
              'The <a href="https://github.com/jimmie-potts/codex-nanoleaf/issues/34#issuecomment-5580156676" target="_blank" rel="noopener noreferrer">September 8 Nanoleaf closing receipt</a> records completed local acceptance and restoration. Its hosted-CI exception applies only to that delivery; shared monitoring remains separate.',
              'The <a href="https://github.com/jimmie-potts/divoom-app-upgrade/issues/26#issuecomment-5578479319" target="_blank" rel="noopener noreferrer">Pixoo closing evidence</a> records restored and visually confirmed brightness and screen power. Unknown prior artwork was not restored. Its local PR/main validation exception does not apply automatically to other work.',
-             '[[P12]] has broader reliability criteria. It can proceed separately from local MCP acceptance and does not require remote browser access.'
+             '[[P12]] covers local physical reliability separately from local MCP acceptance. Remote browser and phone acceptance remain separate work.',
+             'The September 8 soak completed 60 minutes and 119 ordered transitions with no backend error or recovery event. The owner confirmed continued alternation through the end with only the accepted flashing defect [[P52]]. Screen-on can return native GIFs while playback stays paused; the owner accepted this limitation and verified explicit Resume restores the selected item.',
+             'The variable-timing experiment did not establish different visible frame durations. The owner approved moving only this qualification to [[P55]], preserving the uniform-500-ms profile and the ambiguous observations. The approximate 28-second still reading remains outside the agreed 29-31-second range; two later readings were 30.3 seconds. Backend timings do not establish precise visible cadence. All physical helpers are closed; final blue 30 was owner-confirmed.'
          ]),
     dict(id='shared-codex', short='Shared Codex integration', title='Deliver shared Codex monitoring and integration controls', phase='Main development path',
          intro='[[H32]] is the existing guide for this milestone. This is the main cross-project development sequence.',
@@ -78,7 +80,7 @@ GUIDES = [
     dict(id='pc-lighting', short='PC + desk lighting', title='Add PC and desk lighting, starting with Corsair', phase='Future qualification and delivery',
          intro='[[H50]] owns the documentation and backlog. Corsair is the first adapter. Optional Strimer and Varmilo additions must not block Corsair; keyboard support must not block Strimer.',
          headers=['Track', 'Owning issues', 'Required work and prerequisites'], rows=[
-             ['Documentation', '[[H50]]', 'Hub PR #59 is open and unmerged. Local checks and independent reviews are recorded, but hosted CI could not execute because of account billing/spending restrictions. These integrations are not implemented.'],
+             ['Documentation', '[[H50]]', 'Hub PR #59 is open and unmerged. Local checks and independent reviews are recorded. Its latest recorded hosted attempt stopped before execution with an account billing/spending-limit error; successful current-head checks remain required. These integrations are not implemented.'],
              ['Corsair first', '[[H51]] → [[H53]] → [[H57]]', 'Qualification follows Hub #50. The controller requires Hub #51 and the completed contract baseline [[H4]]. Physical acceptance also requires shared automatic status [[H55]] and lifecycle setup [[H8]].'],
              ['Optional Strimer', '[[H52]] → [[H54]] → [[H58]]', 'Qualification follows Hub #50. The adapter requires Hub #52, Hub #53 and the contract baseline. Acceptance additionally requires Hub #55 and Hub #8. An unsupported result keeps this branch deferred.'],
              ['Shared automatic status', '[[H55]]', 'Requires the Corsair controller [[H53]], shared state [[H3]] and its first host [[P31]]. Strimer participation requires Hub #54; Varmilo requires Hub #61 and a supported interface. Neither optional adapter gates Corsair status.'],
@@ -119,7 +121,7 @@ GUIDES = [
              ['Lively prototype', '[[N10]] → ([[N11]] + [[N12]]) → [[N13]] → [[N14]]', 'Qualify compatibility; add persistent addressing and inspection mode; integrate startup/recovery; then evaluate the installed prototype.'],
              ['Optional ambient presentation', '[[N16]]', 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.'],
              ['External scenes', '[[N21]]', 'Investigate external scene mirroring independently of bridge-controlled rendering.'],
-             ['Focused map correction', '[[N26]]', 'Fix number-tag clearance. The preceding layout work is closed.'],
+             ['Prism crystal artwork', 'Completed [[N52]] → [[N53]] → [[N26]]', 'Connector geometry, crystal artwork with two-second inward flow, and luminous numbering are delivered through Nanoleaf PRs #56, #58 and #60. Each passed all nine main jobs, and the user approved the integrated UI. The browser suite passed 360 click cases and 720 label-clearance measurements. Hub companion PR #82 merged and passed all thirteen main jobs. All three stories are closed as completed. Installation, tray artwork, physical-light animation changes and public guide publication are separate.'],
          ], notes=['Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring.']),
     dict(id='pixoo-media', short='Pixoo media', title='Extend Pixoo’s media and playlist experience', phase='After reliability',
          intro='These deferred features follow the physical reliability baseline in [[P12]].',
@@ -128,6 +130,7 @@ GUIDES = [
              ['Portability and convenience', '[[P15]]', 'Playlist portability and UI convenience planning.'],
              ['Transitions', '[[P16]]', 'Qualification of supported transition improvements.'],
              ['GIF handoff defect', '[[P52]]', 'Investigate reproduced rapid extra flashes before a still. Explicitly nonblocking for Pixoo #12; physical work needs separate authorization.'],
+             ['Variable GIF timing', '[[P55]]', 'Qualify asymmetric visible frame durations with a bounded measurement and control. Owner-approved deferral from Pixoo #12; preserve the current profile until evidence supports a change. Physical tests need separate authorization.'],
              ['Cloud-gallery import', '[[P18]]', 'Authorized cloud-gallery import assessment.'],
          ], notes=['Select these individually after reliability acceptance. Transition and gallery issues need feasibility findings before committing to feature implementation.']),
     dict(id='controls-music', short='Controls + music', title='Expand into general device controls and Apple Music', phase='After Codex acceptance',
@@ -144,7 +147,8 @@ GUIDES = [
          intro='Coordinate hosting across projects while keeping source relocation separate from runtime changes.',
          headers=['Group', 'Issues', 'Sequence or boundary'], rows=[
              ['PC/container hosting', '[[H42]] [[P14]]', 'Hub builds on standalone hosting; Pixoo’s Docker/ARM64 qualification follows Pixoo #12. Coordinate networking, storage, recovery, and packaging.'],
-             ['Nanoleaf runtime portability', '[[H43]]', 'Qualify Windows dependencies and a reversible runtime migration.'],
+             ['Completed / Linux source', '[[N54]]', 'Nanoleaf PR #57 delivered the fresh Linux installer and separate services at 2558df5. Source checks use isolated state and fake devices. Hub PR #84 delivered the architecture companion.'],
+             ['Nanoleaf Linux installation', '[[N55]] → [[H43]]', 'Perform separately authorized installed acceptance, then reconcile the observed outcome under Hub #43. Retire this project’s Windows owner before enabling Linux. Existing Nanoleaf state can remain unused; preserve unrelated data and one light writer. Service startup, real Codex hooks, browser access and physical Work/Quiet/Free behavior remain unverified.'],
              ['Dedicated server', '[[H44]]', 'Choose hardware and migration requirements after measuring workloads and portability.'],
              ['Source consolidation', '[[H25]] [[H26]]', 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, and rollback decisions.'],
          ], notes=['Containerization and repository consolidation do not block the first useful local release. Moving Nanoleaf source into the hub does not establish Linux compatibility.']),
@@ -162,10 +166,14 @@ GUIDES = [
     dict(id='development-workflow', short='Development workflow', title='Reduce development overhead and consolidate shared tooling', phase='Maintenance',
          intro='Keep complete validation while reducing duplicate work and repeated setup.',
          headers=['Group', 'Issues', 'Order'], rows=[
-             ['Bound CI costs and hangs', '[[N37]] → [[P46]]', 'Preserve validation coverage while removing duplicate runs and bounding jobs. This order limits simultaneous CI changes; it is not a product dependency.'],
-             ['Optional Pixoo job consolidation', '[[P47]]', 'After Pixoo #46, assess whether setup savings justify changing the job layout.'],
+             ['Bound CI costs and hangs', 'Completed [[N37]] [[P46]]', 'Pixoo #46 and Nanoleaf #37 delivered main-only push checks, PR concurrency and bounded jobs with their original validation coverage. Both issues are closed; these changes do not establish product or device acceptance.'],
+             ['Hub CI efficiency', 'Completed [[H91]]', 'Hub #91 is closed after PRs #92 and #93 delivered core scheduling, build-once test commands and pip caching, and PR #82 delivered matching guide scheduling. All thirteen main jobs passed. Every test and platform remains; full core builds fell from 32 to 10. One main-run sample fell from 814 to 664 runner-seconds and 19 to 18 rounded minutes. Mixed PR samples do not establish monthly billing savings. Live superseded-run cancellation remains unobserved.'],
+             ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
+             ['Public work guide', '[[H80]]', 'Public hosting and its acceptance remain separately tracked. This source guide update does not publish the website.'],
+             ['Guide workflow checkpoints', 'Completed [[H83]]', 'Hub PR #88, Pixoo PR #56 and Nanoleaf PR #59 adopted the shared checkpoints delivered in <a href="https://github.com/jimmie-potts/agent-skills/issues/33" target="_blank" rel="noopener noreferrer">agent-skills #33</a> through the existing Hub maintenance and publication procedure. Public guide PR #2 deployed the reviewed source; its landing page and all eight viewers passed unauthenticated served-hash checks. Hub #83 is closed as completed. The external prerequisite remains a reference outside these three-repository issue totals.'],
+             ['Guide Prism design and rollout', '[[H85]] → [[H86]] → [[H87]]', 'Approve a guide-specific design, apply artwork and subtle motion to the generated guide and viewers, then verify the existing local and public copies. This is separately planned work; the Nanoleaf source companion does not implement or publish it.'],
          ], notes=['Earlier runs recorded exhausted Actions allowance. Current Hub and Pixoo main reruns passed on September 8; every new candidate still needs its own required checks. Shared tooling consolidation remains deferred.']),
 ]
 
@@ -194,7 +202,7 @@ for receipt in DIAGRAM_RECEIPTS['diagrams']:
     assert AD.sha256(AD.RENDERED / receipt['viewer']) == receipt['artifact']['sha256'], f"Stale viewer for {receipt['id']}"
 METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], staticSnapshot=True, openIssues=TOTAL,
                 guideCount=len(GUIDES), projectCount=len(REPOS), repositoryCounts=COUNTS,
-                primaryCoverage=coverage, completedBaselines=['P26', 'P29', 'H2', 'H4', 'H7'],
+                primaryCoverage=coverage, completedBaselines=['P12', 'P26', 'P29', 'H2', 'H4', 'H7'],
                 history=TIMELINE['meta'],
                 architecture=dict(reviewedAt=AD.SOURCES['reviewedAt'], renderedAt=DIAGRAM_RECEIPTS['renderedAt'], sourceRevisions=AD.SOURCES['sourceRevisions'],
                                   diagramCount=len(AD.DIAGRAMS), diagrams=[dict(id=d['id'], kind=d['kind'], status=d['status'], viewer=f"architecture/{d['id']}.html",
@@ -222,7 +230,7 @@ for index, guide in enumerate(GUIDES, 1):
     rows = ''.join('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{render(cell)}</td>' for n, cell in enumerate(row)) + '</tr>' for row in guide['rows'])
     notes = ''.join(f'<p>{render(note)}</p>' for note in guide['notes'])
     sections.append(f'''<details class="guide" id="{guide_id}" data-count="{count}" data-primary="{' '.join(coverage[guide_id])}" open>
-      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} issues</span><span class="chevron" aria-hidden="true">−</span></summary>
+      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} {'issue' if count == 1 else 'issues'}</span><span class="chevron" aria-hidden="true">−</span></summary>
       <div class="guide-body"><p class="intro">{render(guide['intro'])}</p>
       <table><caption class="sr-only">{guide['title']}: work, issues, and dependencies</caption><thead><tr>{headings}</tr></thead><tbody>{rows}</tbody></table>
       <div class="guide-notes">{notes}</div><a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>''')
@@ -250,7 +258,7 @@ for number, diagram in enumerate(AD.DIAGRAMS, 1):
 
 architecture_section = f'''<details class="reference" id="architecture" data-diagrams="{len(AD.DIAGRAMS)}" open>
       <summary><span class="guide-number">A</span><span class="guide-heading"><span class="eyebrow">Reference · not a work guide</span><h2>Architecture and sequence diagrams</h2></span><span class="guide-count">{len(AD.DIAGRAMS)} diagrams</span><span class="chevron" aria-hidden="true">−</span></summary>
-      <div class="guide-body"><p class="intro">Two system diagrams and six sequence diagrams show what is implemented today and how the planned shared system composes it. Sources were reviewed at <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time> against the pinned revisions listed on each diagram. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline; this guide itself loads nothing remote.</p>
+      <div class="guide-body"><p class="intro">Three system diagrams and six sequence diagrams show the implemented local paths, the Nanoleaf Linux installation plan, and how the planned shared system composes them. Nanoleaf PR #57 has since delivered Linux source; installation remains unverified in {render('[[N55]]')}. The unchanged architecture viewers retain their dated proposal labels and source pins. Sources were reviewed at <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time> against the pinned revisions listed on each diagram. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline; this guide itself loads nothing remote.</p>
       <div class="status-legend" aria-label="Status key"><span class="status status-implemented">Implemented source</span><span class="status status-planned">Planned composition</span><span class="status status-future">Future work</span><span class="status-note">Implemented means reviewed source at the pinned revision. It is not installed-client, transport or physical evidence.</span></div>
       <nav class="diagram-index" aria-label="Diagrams">{''.join(diagram_index)}</nav>
       {''.join(figures)}
@@ -271,7 +279,7 @@ timeline_section = f'''<details class="reference timeline" id="timeline" open>
       <section class="timeline-panel" aria-labelledby="roadmap-heading"><div class="panel-head"><h3 id="roadmap-heading">Where we're going</h3><span class="eyebrow">Ordered · not dated</span></div>
       <div class="chart-wrap roadmap-wrap">{TIMELINE['roadmap']}</div>
       <div class="chart-legend"><span class="legend-same">── order within a track</span><span class="legend-cross">┄┄ cross-track prerequisite (hover a node to highlight)</span><span class="legend-ready">▣ ready for selection now</span></div>
-      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns order stages by prerequisite: ready or independent now, next, after the shared Codex milestone, later, and deferred or conditional. They are not dates and no schedule is implied. Click a node to open its work guide.</p></section>
+      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns show relative order within each track. Arrows identify sequence and cross-track prerequisites; sharing a column does not make an independent track wait for the Codex milestone. Columns are not dates and imply no schedule. Click a node to open its work guide.</p></section>
       </div><div id="timeline-tip" class="timeline-tip" role="status" hidden></div>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
@@ -371,7 +379,7 @@ JS = '''
      if (saved) { restore(saved); saved = null; }
      count = guides.length; issues = guides.reduce((n, g) => n + Number(g.dataset.count), 0); diagrams = figures.length;
    }
-   result.textContent = `${plural(count, 'guide')} · ${issues} issues in these guides · ${plural(diagrams, 'diagram')}`;
+   result.textContent = `${plural(count, 'guide')} · ${plural(issues, 'issue')} in these guides · ${plural(diagrams, 'diagram')}`;
    clear.hidden = !query; empty.hidden = count > 0 || diagrams > 0;
  }
  search.addEventListener('input', filter);
@@ -453,7 +461,7 @@ JS = '''
      const repo = chip.dataset.repo;
      chips.forEach(c => c.setAttribute('aria-pressed', String(c === chip)));
      timeline.dataset.repo = repo;
-     timeline.querySelectorAll('svg [data-repo], svg [data-repos]').forEach(el => { const repos = (el.dataset.repos || el.dataset.repo).split(' '); el.classList.toggle('dim', repo !== 'all' && !repos.includes(repo)); });
+     timeline.querySelectorAll('svg [data-repo], svg [data-repos]').forEach(el => { const repos = (el.dataset.repos ?? el.dataset.repo ?? '').split(' ').filter(Boolean); el.classList.toggle('dim', repo !== 'all' && !repos.includes(repo)); });
    }));
  }
 })();
@@ -482,7 +490,7 @@ document = '''<!doctype html>
 <div id="empty-state" class="empty-state" hidden><h2>No matching guides or diagrams</h2><p>Try a device name, topic, or issue such as “Pixoo #37”.</p></div>
 <div class="guides">''' + ''.join(sections) + '''</div>
 <div class="guides references">''' + architecture_section + '''</div>
-<section class="recommendation" aria-labelledby="next-title"><div class="eyebrow">Suggested next source work</div><h2 id="next-title">Measure the early monitoring baseline.</h2><p>''' + render('The source contract in <strong>[[H2]]</strong> is delivered. Complete the early measured baseline and frozen budgets in <strong>[[H30]]</strong> before <strong>[[H3]]</strong>; <strong>[[P29]]</strong> has delivered its released-contract adoption. <strong>[[P37]]</strong> remains an independent option. <strong>[[N41]]</strong> is the clearest separate feature starting point. Keep remaining local device acceptance with its existing coordinator. [[H63]] documentation and [[H64]] qualification are ready for future selection; this refresh starts neither.') + '''</p><p>Some blocked labels and native dependency links lag the issue bodies. Refresh readiness when selecting each issue, especially where source prerequisites have closed.</p></section>
+<section class="recommendation" aria-labelledby="next-title"><div class="eyebrow">Suggested next source work</div><h2 id="next-title">Measure the early monitoring baseline.</h2><p>''' + render('The source contract in <strong>[[H2]]</strong> is delivered. Complete the early measured baseline and frozen budgets in <strong>[[H30]]</strong> before <strong>[[H3]]</strong>; <strong>[[P29]]</strong> has delivered its released-contract adoption. <strong>[[P37]]</strong> remains an independent option. <strong>[[N41]]</strong> is the clearest separate feature starting point. Keep later device qualification with its owning issues. [[H63]] documentation and [[H64]] qualification are ready for future selection; this refresh starts neither.') + '''</p><p>Some blocked labels and native dependency links lag the issue bodies. Refresh readiness when selecting each issue, especially where source prerequisites have closed.</p></section>
 <footer class="footer"><p>AGENT DEVICE WORK GUIDES / @@MONTH_UPPER@@<br>Source: existing GitHub planning records, refreshed @@TIMESTAMP@@.<br>This HTML refresh reads existing planning records. Earlier work created and updated those records; this refresh made no GitHub changes. Source validation, installation, real-client, transport and physical evidence remain separate. One state owner and one designated writer per device.</p><a href="#top">RETURN TO TOP ↑</a></footer>
 </main></div><script>''' + JS + '''</script></body></html>'''
 

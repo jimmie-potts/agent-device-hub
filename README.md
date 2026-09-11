@@ -15,6 +15,15 @@ feature priority for these devices is automatic agent status. Tidbyt starts with
 the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
 
+The planned [PC lighting controller](controllers/pc-lighting/README.md) covers
+Corsair RAM and supported H150i cooler lighting, plus optional Lian Li Strimer and
+Varmilo VA108M-RGB lighting where compatible. It preserves iCUE, L-Connect 3 and
+normal keyboard behavior. Varmilo starts with whole-keyboard agent status through
+an existing supported interface; if none qualifies, integration stays deferred.
+The directory contains a guide only. Qualification, adapters, automatic status
+and physical acceptance remain future issues with separate gates for each target.
+Strimer and Varmilo do not block Corsair delivery; Varmilo does not block Strimer.
+
 Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [the roadmap](docs/roadmap.md) for the linked delivery sequence, and
 [development](docs/development.md) for setup. GitHub issues own scope, acceptance,
@@ -71,7 +80,7 @@ install hooks, launch agent sessions, start a personal service or operate device
 
 - [Pixoo](https://github.com/jimmie-potts/divoom-app-upgrade) retains its media,
   persistence, playback and physical-device operation queue.
-- [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Windows
+- [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
 
 The first shared core can run in Pixoo's existing backend. Standalone hub hosting

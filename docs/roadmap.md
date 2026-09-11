@@ -21,6 +21,7 @@ Conditional live/physical authorization is stated separately in the issues.
 | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) | Publish shared OpenSpec validation tooling | [agent-device-hub#1](https://github.com/jimmie-potts/agent-device-hub/issues/1) |
 | [agent-device-hub#11](https://github.com/jimmie-potts/agent-device-hub/issues/11) | Evaluate Home Assistant and MQTT for additional device integrations | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
 | [agent-device-hub#13](https://github.com/jimmie-potts/agent-device-hub/issues/13) | Host shared MCP discovery and agent-status tools in the standalone hub | [agent-device-hub#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) |
+| [agent-device-hub#43](https://github.com/jimmie-potts/agent-device-hub/issues/43) | Reconcile the delivered Linux source and remaining installed outcome in architecture and the maintained guide | [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54), [codex-nanoleaf#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55), linked guide synchronization |
 
 ## New controllers in the monorepo
 
@@ -56,6 +57,49 @@ moving code. They do not block current Pixoo/Nanoleaf delivery or authorize
 installed-runtime changes. New device acceptance remains in #21/#22; #9 retains
 its existing Pixoo/Nanoleaf scope.
 
+## PC and desk lighting
+
+[#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) owns documentation/backlog initialization only. The
+[PC lighting guide](../controllers/pc-lighting/README.md) records the accepted
+Corsair scope, optional Strimer and Varmilo routes, and preserved vendor applications
+and keyboard behavior. Varmilo starts with whole-keyboard status through an existing
+supported interface; otherwise integration stays deferred. The
+following issues are skeletons to refine before implementation; GitHub owns
+their current readiness and acceptance.
+
+| Issue | Outcome | Required source prerequisites |
+| --- | --- | --- |
+| [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51) | Qualify iCUE, RAM and H150i lighting. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52) | Qualify Strimer control and L-Connect handoff. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53) | Build the PC controller and qualified Corsair adapter. | [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54) | Add the optional qualified Strimer adapter. | [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55) | Map shared agent status to qualified lighting targets. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [Pixoo #31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
+| [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) | Add later shared UI/MCP controls. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57) | Install and verify Corsair status and restoration. | [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#58](https://github.com/jimmie-potts/agent-device-hub/issues/58) | Install and verify Strimer handoff and restoration. | [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) | Qualify supported Varmilo VA108M-RGB lighting interfaces. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
+| [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61) | Add the optional qualified Varmilo lighting adapter. | [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
+| [#62](https://github.com/jimmie-potts/agent-device-hub/issues/62) | Install and verify keyboard status, typing and restoration. | [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+
+Strimer participation in shared status or controls additionally requires
+[#54](https://github.com/jimmie-potts/agent-device-hub/issues/54). This conditional branch does not block Corsair source
+status or [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57). Keyboard participation separately requires
+[#61](https://github.com/jimmie-potts/agent-device-hub/issues/61); it cannot block Corsair or Strimer delivery.
+An unsupported result may close [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), but the keyboard adapter
+and acceptance remain deferred. General controls follow the feature and frontend
+work selected by #31; refine those additional implementation dependencies before
+[#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) is ready. Existing Codex-first work retains its priority.
+
+The acceptance issues require separate installation and lighting-sequence
+authorization, confirmed SDK/USB identities or network targets as applicable,
+vendor ownership handoff and visible restoration evidence. Source dependency
+closure grants none of those permissions. Neither firmware changes nor replacing
+iCUE/L-Connect is part of this plan. Keyboard acceptance also verifies ordinary typing,
+key mappings and lock indicators without recording input. Per-key status, custom USB
+protocol research and simulated key control are outside the accepted scope.
+No shared package, runtime or service is
+introduced by the documentation bootstrap.
+
 ## Device adoption
 
 | Issue | Outcome | Required issues |
@@ -68,6 +112,8 @@ its existing Pixoo/Nanoleaf scope.
 | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) | Consume shared agent sessions while preserving Nanoleaf behavior | [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31), [codex-nanoleaf#28](https://github.com/jimmie-potts/codex-nanoleaf/issues/28) |
 | [codex-nanoleaf#30](https://github.com/jimmie-potts/codex-nanoleaf/issues/30) | Verify shared monitoring migration and Nanoleaf compatibility | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [codex-nanoleaf#31](https://github.com/jimmie-potts/codex-nanoleaf/issues/31) | Adopt shared OpenSpec validation tooling | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) |
+| [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54) | Deliver source and setup for a fresh Linux installation | Source merged in [PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) at `2558df5`; installed acceptance remains #55 and documentation coordination remains Hub #43 |
+| [codex-nanoleaf#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) | Install and verify the Linux runtime in WSL | [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54), explicit installation and physical-operation authorization |
 | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29) | Adopt qualified shared monitoring contracts in Pixoo | [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2), [divoom-app-upgrade#2](https://github.com/jimmie-potts/divoom-app-upgrade/issues/2), [divoom-app-upgrade#3](https://github.com/jimmie-potts/divoom-app-upgrade/issues/3) |
 | [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) | Embed the shared agent-state service in the Pixoo backend | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29), [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#6](https://github.com/jimmie-potts/divoom-app-upgrade/issues/6), [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8) |
 | [divoom-app-upgrade#24](https://github.com/jimmie-potts/divoom-app-upgrade/issues/24) | Add local MCP status and display controls for Codex | [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8), [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) |
@@ -111,3 +157,9 @@ LIFX's direct-LAN choice is recorded in #17 and ADR 0003.
 Closed foundational device issues retain their completed evidence. This plan
 does not reopen them, claim new runtime delivery, or advance active wall-map UI
 work as a side effect.
+
+The Nanoleaf Linux sequence is separate from shared monitoring and source
+consolidation. Nanoleaf #54 delivered source and setup, Nanoleaf #55 owns installed
+and physical acceptance, and Hub #43 owns canonical architecture and work-guide
+synchronization. The delivered runtime reuses separate processes and one light
+writer; it does not add migration, rollback, a combined daemon or a new hook API.

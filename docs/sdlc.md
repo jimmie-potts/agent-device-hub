@@ -67,12 +67,20 @@ as incidental cleanup.
 ## Work guide completion gate
 
 Every authorized delivery includes review of the [cross-project work guide](work-guide/README.md).
+Explicit `plan-work` and `deliver-work` use its planning, candidate, completion
+and publication checkpoints. Ordinary work follows the same project procedure
+without implicitly invoking these skills. Retain tracker-only, read-only and
+source-only limits; existing publication authority needs no repeated approval.
 Follow its maintenance procedure, update affected inputs and generated output,
 and record the outcome in `docs/work-guide/updates.md`. The PR must name changed
 sections and validation, or give a specific no-impact reason. Cross-repository
 delivery requires a linked hub companion PR and explicit synchronization status.
 Guide status must follow verified source evidence, including any post-merge
 reconciliation. Missing updates prevent a claim of fully completed delivery.
+Report guide-source synchronization, public artifact publication and live
+verification as separate stages, with evidence or a pending owner/next action.
+Check public currency even when this source change has no guide impact. A Hub
+merge is not evidence of a current public edition.
 
 ## Review and merge
 

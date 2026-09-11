@@ -1,5 +1,5 @@
 #11 [OPEN] Provide explicit authenticated HTTPS LAN access
-#12 [OPEN] Validate local physical playback, recovery, and soak reliability
+#12 [CLOSED] Validate local physical playback, recovery, and soak reliability
 #13 [OPEN] Add timezone-aware playlist schedules
 #14 [OPEN] Validate Docker and ARM64 always-on deployment
 #15 [OPEN] Plan playlist portability and UI convenience features
@@ -17,6 +17,7 @@
 #38 [OPEN] Adopt shared OpenSpec validation tooling
 #43 [OPEN] Verify authenticated phone and other-computer browser access
 #44 [OPEN] Verify ChatGPT web MCP control and physical Pixoo acceptance
-#46 [OPEN] Bound CI runtime and remove duplicate branch-push checks
+#46 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
 #47 [OPEN] Consolidate workflow and application setup without dropping checks
 #52 [OPEN] Fix rapid extra GIF flashes before the next still image
+#55 [OPEN] Qualify variable GIF frame timing on Pixoo64

@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 25,
+        "totalCount": 24,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -181,16 +181,6 @@
             }
           },
           {
-            "number": 26,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 29,
             "blockedBy": {
               "totalCount": 4,
@@ -270,16 +260,6 @@
                   }
                 }
               ]
-            }
-          },
-          {
-            "number": 37,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
             }
           },
           {
@@ -424,13 +404,31 @@
               },
               "nodes": []
             }
+          },
+          {
+            "number": 55,
+            "blockedBy": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "number": 54,
+                  "state": "CLOSED",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
+                  }
+                }
+              ]
+            }
           }
         ]
       }
     },
     "p": {
       "issues": {
-        "totalCount": 20,
+        "totalCount": 19,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -443,38 +441,6 @@
                 "hasNextPage": false
               },
               "nodes": []
-            }
-          },
-          {
-            "number": 12,
-            "blockedBy": {
-              "totalCount": 3,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 10,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 42,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 4,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                }
-              ]
             }
           },
           {
@@ -799,7 +765,7 @@
               "nodes": [
                 {
                   "number": 12,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }
@@ -861,16 +827,6 @@
             }
           },
           {
-            "number": 46,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 47,
             "blockedBy": {
               "totalCount": 0,
@@ -882,6 +838,16 @@
           },
           {
             "number": 52,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 55,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {

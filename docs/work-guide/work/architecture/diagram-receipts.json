@@ -1,6 +1,6 @@
 {
-  "renderedAt": "2026-09-08T05:57:03.042725+00:00",
-  "archify": "/home/jimmie/.claude/skills/archify",
+  "renderedAt": "2026-09-10T00:24:43.598509+00:00",
+  "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
       "id": "arch-local-paths",
@@ -23,59 +23,7 @@
         "warnings": 0
       },
       "viewer": "arch-local-paths.html",
-      "svgSha256": "754cd7e67b27ea6309e1bcc62d225256a75b099640dc58b87a8d988697a5be4b",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1349,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7.7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1477,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7.7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1477,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7.7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1505,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7.7
-          }
-        ],
-        "receipt": "rendered/arch-local-paths.visual-check.json"
-      }
+      "svgSha256": "754cd7e67b27ea6309e1bcc62d225256a75b099640dc58b87a8d988697a5be4b"
     },
     {
       "id": "arch-shared-system",
@@ -98,57 +46,30 @@
         "warnings": 0
       },
       "viewer": "arch-shared-system.html",
-      "svgSha256": "25b9e6211f7065f8b68ce50c6bcb67911948b0a387b2f3a36a05602e12724d4a",
-      "visualCheck": {
-        "status": "pass",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 900,
-            "overflowX": false,
-            "overflowY": false,
-            "ok": true,
-            "minimumProjectedNodeTextPx": 7.09
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1000,
-            "overflowX": false,
-            "overflowY": false,
-            "ok": true,
-            "minimumProjectedNodeTextPx": 7.1
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1080,
-            "overflowX": false,
-            "overflowY": false,
-            "ok": true,
-            "minimumProjectedNodeTextPx": 7.1
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1320,
-            "overflowX": false,
-            "overflowY": false,
-            "ok": true,
-            "minimumProjectedNodeTextPx": 7.1
-          }
-        ],
-        "receipt": "rendered/arch-shared-system.visual-check.json"
-      }
+      "svgSha256": "25b9e6211f7065f8b68ce50c6bcb67911948b0a387b2f3a36a05602e12724d4a"
+    },
+    {
+      "id": "arch-nanoleaf-linux",
+      "type": "architecture",
+      "status": "planned",
+      "specification": {
+        "sha256": "8e84712f77c56cfce553b6e7b415a77dc6f05bdd3403c5bc930e85fb1c315e55",
+        "bytes": 6714
+      },
+      "artifact": {
+        "sha256": "24f1e34f94b532d178f12822eabfe0dba471d3c909a41f9ab4971691408721cf",
+        "bytes": 722590
+      },
+      "validation": {
+        "checksPassed": 9,
+        "checkCount": 9,
+        "compositionProfile": "showcase",
+        "compositionStatus": "pass",
+        "errors": 0,
+        "warnings": 0
+      },
+      "viewer": "arch-nanoleaf-linux.html",
+      "svgSha256": "f94a59f2a2b4f072312519bd0c8f2e519cc3e3b6a51662605ec90121888462fa"
     },
     {
       "id": "seq-lifecycle-observation",
@@ -171,59 +92,7 @@
         "warnings": 0
       },
       "viewer": "seq-lifecycle-observation.html",
-      "svgSha256": "266cf1a5816bc5298ac4789d3962e8c98d773a26476a2dc0151ddd081d474428",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1301,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1428,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1428,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1456,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-lifecycle-observation.visual-check.json"
-      }
+      "svgSha256": "266cf1a5816bc5298ac4789d3962e8c98d773a26476a2dc0151ddd081d474428"
     },
     {
       "id": "seq-nanoleaf-command",
@@ -246,59 +115,7 @@
         "warnings": 0
       },
       "viewer": "seq-nanoleaf-command.html",
-      "svgSha256": "02ef45857e0e641c0921a43849134329378a790890ca4ce7e4e918b24ff54ce7",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1815,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1950,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1950,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1970,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-nanoleaf-command.visual-check.json"
-      }
+      "svgSha256": "02ef45857e0e641c0921a43849134329378a790890ca4ce7e4e918b24ff54ce7"
     },
     {
       "id": "seq-pixoo-playback",
@@ -321,59 +138,7 @@
         "warnings": 0
       },
       "viewer": "seq-pixoo-playback.html",
-      "svgSha256": "3e77fa304c9d0cf8a75e2efdb83c9797e6b4e6422ad1482bb4addfc96e1a7b25",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1649,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1776,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1776,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1799,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-pixoo-playback.visual-check.json"
-      }
+      "svgSha256": "3e77fa304c9d0cf8a75e2efdb83c9797e6b4e6422ad1482bb4addfc96e1a7b25"
     },
     {
       "id": "seq-desktop-input",
@@ -396,59 +161,7 @@
         "warnings": 0
       },
       "viewer": "seq-desktop-input.html",
-      "svgSha256": "98a80bb11e5562780197a186a1bd6ba11eea93ff5a1e107982b78cfc30742488",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1461,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1593,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1593,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1618,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-desktop-input.visual-check.json"
-      }
+      "svgSha256": "98a80bb11e5562780197a186a1bd6ba11eea93ff5a1e107982b78cfc30742488"
     },
     {
       "id": "seq-big-b-presets",
@@ -471,59 +184,7 @@
         "warnings": 0
       },
       "viewer": "seq-big-b-presets.html",
-      "svgSha256": "a11b61eeb86817a05a3771bdcedb70580135585676d91781069b7c53cbe31cf0",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1372,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1500,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1500,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1526,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-big-b-presets.visual-check.json"
-      }
+      "svgSha256": "a11b61eeb86817a05a3771bdcedb70580135585676d91781069b7c53cbe31cf0"
     },
     {
       "id": "seq-owner-migration",
@@ -546,75 +207,7 @@
         "warnings": 0
       },
       "viewer": "seq-owner-migration.html",
-      "svgSha256": "3a5fcad25dbf7eb93599ddfce6b9eb1b68374edc7fed2bb4fd5554dbd77ae99f",
-      "visualCheck": {
-        "status": "fail",
-        "evidenceKind": "automated-browser",
-        "visualReview": "pending",
-        "chrome": "available",
-        "diagnostics": [
-          "viewer/viewport-overflow"
-        ],
-        "viewports": [
-          {
-            "width": 1440,
-            "height": 900,
-            "theme": "light",
-            "scrollHeight": 1533,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1600,
-            "height": 1000,
-            "theme": "light",
-            "scrollHeight": 1667,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 1920,
-            "height": 1080,
-            "theme": "light",
-            "scrollHeight": 1667,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          },
-          {
-            "width": 2048,
-            "height": 1320,
-            "theme": "light",
-            "scrollHeight": 1691,
-            "overflowX": false,
-            "overflowY": true,
-            "ok": false,
-            "minimumProjectedNodeTextPx": 7
-          }
-        ],
-        "receipt": "rendered/seq-owner-migration.visual-check.json"
-      }
+      "svgSha256": "3a5fcad25dbf7eb93599ddfce6b9eb1b68374edc7fed2bb4fd5554dbd77ae99f"
     }
-  ],
-  "visualCheckSummary": {
-    "passed": [
-      "arch-shared-system"
-    ],
-    "failed": [
-      "arch-local-paths",
-      "seq-lifecycle-observation",
-      "seq-nanoleaf-command",
-      "seq-pixoo-playback",
-      "seq-desktop-input",
-      "seq-big-b-presets",
-      "seq-owner-migration"
-    ],
-    "failureCode": "viewer/viewport-overflow (vertical only) in the standalone Archify viewer at 1440x900, 1600x1000, 1920x1080 and 2048x1320; no horizontal overflow; node text stayed at or above 7px",
-    "note": "The guide embeds each diagram in its own scrollable stage with fit/zoom controls and passes its own six-width overflow checks; the standalone viewers remain usable with vertical scrolling. Perceptual review of the viewers: 1440x900 dark screenshots of arch-local-paths and seq-nanoleaf-command were inspected by the author; the rest were not individually reviewed."
-  }
+  ]
 }

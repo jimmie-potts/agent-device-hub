@@ -17,16 +17,16 @@ REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
 # Delivered baselines worth naming on the history chart (repo key, PR number, caption).
 MILESTONES = {
     ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
-    ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings',
-    ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
+    ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings', ('N', 56): 'Connector geometry',
+    ('P', 54): 'Local reliability', ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
 }
 
-# Roadmap map: ordered slots, not dates. slot 0 = ready or independent now,
-# 1 = next, 2 = after the shared Codex milestone, 3 = later, 4 = deferred or conditional.
-SLOTS = ['Now · ready or independent', 'Next', 'After the Codex milestone', 'Later', 'Deferred · conditional']
+# Roadmap columns order each track. Cross-track prerequisites come from arrows,
+# not from the shared Codex milestone's position in a different row.
+SLOTS = ['Now · ready or independent', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance', issues=['P12'], guide='local-acceptance', ready=True),
+        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
         dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'H3', 'P31', 'P37', 'P32', 'P33', 'N29', 'N49', 'P30', 'H5', 'H8', 'H6', 'H13', 'H30', 'H9', 'P34', 'N30'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
@@ -47,11 +47,16 @@ TRACKS = [
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf rendering + displays', [
-        dict(id='n-np-fix', x=0, label='Map fix · external scenes', issues=['N26', 'N21'], guide='nanoleaf-presentation'),
+        dict(id='n-np-fix', x=0, label='External scenes', issues=['N21'], guide='nanoleaf-presentation'),
         dict(id='n-np-render', x=1, label='Rendering + live renderer', issues=['N15', 'N17'], guide='nanoleaf-presentation'),
         dict(id='n-np-custom', x=2, label='Palettes + effects', issues=['N18', 'N19', 'N20'], guide='nanoleaf-presentation'),
         dict(id='n-np-lively', x=3, label='Lively prototype', issues=['N10', 'N11', 'N12', 'N13', 'N14'], guide='nanoleaf-presentation'),
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
+    ]),
+    ('Prism wall artwork', [
+        dict(id='n-prism-geometry', x=0, label='Geometry delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-renderer', x=1, label='Crystal + flow delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
         dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H15', 'H17'], guide='tidbyt-lifx'),
@@ -68,18 +73,31 @@ TRACKS = [
         dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H54', 'H58', 'H61', 'H62'], guide='pc-lighting'),
     ]),
     ('Pixoo media + access', [
-        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52'], guide='pixoo-media'),
+        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52', 'P55'], guide='pixoo-media'),
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
+    ]),
+    ('Nanoleaf Linux runtime', [
+        dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations', ready=True),
+        dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
+        dict(id='n-linux-portability', x=2, label='Architecture documentation', issues=['H43'], guide='hosting-migrations'),
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
-        dict(id='n-host-port', x=3, label='Portability · dedicated server', issues=['H43', 'H44'], guide='hosting-migrations'),
+        dict(id='n-host-port', x=3, label='Dedicated server', issues=['H44'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI costs + guide repair', issues=['N37', 'P46', 'H73'], guide='development-workflow'),
+        dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['H73', 'H80'], guide='development-workflow'),
         dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
+    ]),
+    ('Guide workflow checkpoints', [
+        dict(id='n-guide-workflow', x=0, label='Checkpoints delivered', issues=[], guide='development-workflow'),
+    ]),
+    ('Guide Prism design + rollout', [
+        dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),
+        dict(id='n-guide-artwork', x=1, label='Guide artwork + motion', issues=['H86'], guide='development-workflow'),
+        dict(id='n-guide-publish', x=2, label='Local + public verification', issues=['H87'], guide='development-workflow'),
     ]),
 ]
 # Cross-track prerequisites (from → to). Same-track order is drawn automatically.
@@ -114,7 +132,7 @@ def history_chart(history, snapshot_iso, issues):
         return left + plot_w * (dt - start).total_seconds() / span
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
-             '<title id="history-title">Merged pull requests per repository, September 5 to 8, 2026</title>',
+             f'<title id="history-title">Merged pull requests per repository through {esc(end.strftime("%B %d, %Y"))}</title>',
              f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -199,6 +217,7 @@ def roadmap_map(issues, guides_by_id):
         repo_counts = {k: sum(i.startswith(k) for i in keys) for k in REPO_ORDER}
         chips = ' '.join(f'{REPO_LABEL[k]} {v}' for k, v in repo_counts.items() if v)
         open_keys = [k for k in keys if issues[k]['state'] == 'OPEN']
+        summary = f'{chips} · {len(open_keys)} open' if chips else f'{len(open_keys)} open'
         tip = (' · '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]} {issues[k]["title"]}' for k in keys) if len(keys) <= 4
                else f'{len(keys)} issues: ' + ', '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]}' for k in keys))
         guide = guides_by_id[node['guide']]
@@ -207,7 +226,7 @@ def roadmap_map(issues, guides_by_id):
         parts.append(f'<a class="{classes}" href="#{node["guide"]}" data-node="{node["id"]}" data-repos="{repos}" data-tip="{esc(node["label"])}" data-detail="{esc(tip)}" data-guide="{esc(guide)}" aria-label="{esc(node["label"])}: {len(open_keys)} open issues in guide {esc(guide)}. {esc(tip)}">'
                      f'<rect x="{node["cx"] - node_w / 2:.1f}" y="{node["cy"] - node_h / 2:.1f}" width="{node_w}" height="{node_h}" rx="3"/>'
                      f'<text class="node-label" x="{node["cx"]:.1f}" y="{node["cy"] - 4:.1f}" text-anchor="middle">{esc(node["label"])}</text>'
-                     f'<text class="node-meta" x="{node["cx"]:.1f}" y="{node["cy"] + 13:.1f}" text-anchor="middle">{esc(chips)} · {len(open_keys)} open</text></a>')
+                     f'<text class="node-meta" x="{node["cx"]:.1f}" y="{node["cy"] + 13:.1f}" text-anchor="middle">{esc(summary)}</text></a>')
         listed.append((node['track'], node['label'], guide, keys))
     parts.append('</svg>')
     return ''.join(parts), nodes, listed

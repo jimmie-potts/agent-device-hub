@@ -21,7 +21,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
   const coverage=read('guide-coverage.json'), snapshot=read('snapshot.json');
   const receipts=JSON.parse(fs.readFileSync(path.join(root,'work/architecture/diagram-receipts.json'),'utf8')), sources=JSON.parse(fs.readFileSync(path.join(root,'work/architecture/source-receipts.json'),'utf8')), history=JSON.parse(fs.readFileSync(path.join(root,'work/history/github-history.json'),'utf8'));
   const diagramIds=receipts.diagrams.map(d=>d.id), sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-  assert.equal(diagramIds.length,8,'Eight diagrams rendered');
+  assert.equal(diagramIds.length,9,'Nine diagrams rendered');
   for(const d of receipts.diagrams){assert.equal(d.validation.checksPassed,9);assert.equal(d.validation.checkCount,9);assert.equal(d.validation.errors,0);assert.equal(d.validation.warnings,0);assert.equal(sha(path.join(root,'outputs/architecture',`${d.id}.html`)),d.artifact.sha256,`Companion viewer matches receipt for ${d.id}`);}
   const repos={H:'agent-device-hub',N:'codex-nanoleaf',P:'divoom-app-upgrade'};
   const issueMap=Object.fromEntries(Object.entries(repos).flatMap(([key,repo])=>read(`${repo}-issues.json`).map(i=>[`${key}${i.number}`,i])));
@@ -45,7 +45,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert.equal(meta.refreshedAt,snapshot.refreshedAt); assert.equal(meta.staticSnapshot,true);
     assert.equal(meta.openIssues,openKeys.length); assert.equal(meta.guideCount,count); assert.equal(meta.projectCount,Object.keys(repos).length);
     assert.deepEqual(meta.primaryCoverage,coverage); assert.equal(await page.locator('.guide').count(),count);
-    assert.equal(meta.architecture.diagramCount,8); assert.equal(meta.architecture.countedInIssueTotals,false); assert.equal(meta.architecture.reviewedAt,sources.reviewedAt); assert.deepEqual(meta.architecture.sourceRevisions,sources.sourceRevisions);
+    assert.equal(meta.architecture.diagramCount,9); assert.equal(meta.architecture.countedInIssueTotals,false); assert.equal(meta.architecture.reviewedAt,sources.reviewedAt); assert.deepEqual(meta.architecture.sourceRevisions,sources.sourceRevisions);
     assert.notEqual(meta.architecture.reviewedAt,meta.refreshedAt,'Architecture review timestamp is separate from the backlog snapshot');
     assert.equal(meta.history.historyFetchedAt,history.fetchedAt); assert.equal(meta.history.roadmapNodes,await page.locator('.roadmap .node').count());
     assert.equal(await page.locator('.reference').count(),2); assert.equal(await page.locator('#architecture.reference:not(.guide)').count(),1); assert.equal(await page.locator('#timeline.reference:not(.guide)').count(),1);
@@ -72,7 +72,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     for(const l of links) {assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,issueMap[l.key].state);}
     for(const id of ids) {
       const guide=page.locator(`#${id}`), owned=coverage[id];
-      assert.deepEqual((await guide.getAttribute('data-primary')).split(' '),owned);
+      assert.deepEqual((await guide.getAttribute('data-primary')).split(' ').filter(Boolean),owned);
       assert.equal(Number(await guide.getAttribute('data-count')),owned.length);
       assert.equal(Number(await page.locator(`nav a[data-guide="${id}"] .nav-count`).textContent()),owned.length);
       const refs=await guide.locator('[data-issue]').evaluateAll(es=>es.map(e=>e.dataset.issue));
@@ -121,7 +121,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#expand-all').click(); assert.equal(await page.locator('.guide[open]').count(),count); assert.equal(await page.locator('.reference[open]').count(),2);
     for(const id of ['pc-lighting','desktop-controls']) {await page.locator(`#${id} summary`).scrollIntoViewIfNeeded();await screenshot(`${id}-desktop`);}
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-desktop.png')});
-    for(const id of ['arch-local-paths','arch-shared-system','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-desktop.png`)});
+    for(const id of ['arch-local-paths','arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-desktop.png`)});
     // Zoom, fit and the inline viewer on one figure.
     {const fig=page.locator('#arch-local-paths'); const width=()=>fig.locator('.diagram-canvas > svg').evaluate(e=>e.getBoundingClientRect().width); const base=await width(); await fig.locator('.zoom-in').click(); await fig.locator('.zoom-in').click(); assert(await width()>base*1.4,'Zoom in widens the SVG'); assert.equal(await fig.locator('.zoom-level').textContent(),'150%'); assert.equal(await fig.locator('.diagram-stage').evaluate(e=>e.scrollWidth>e.clientWidth),true,'Zoomed diagram scrolls inside its stage'); assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Zoom never overflows the page'); for(let i=0;i<3;i++) await fig.locator('.zoom-out').click(); assert.equal(await fig.locator('.zoom-level').textContent(),'75%'); await fig.locator('.zoom-fit').click(); assert.equal(Math.round(await width()),Math.round(base)); assert.equal(await fig.locator('.zoom-level').textContent(),'100%');
      await fig.locator('.viewer-toggle').click(); const frame=fig.locator('.viewer-frame iframe'); assert.equal(await frame.count(),1); assert.equal(await frame.getAttribute('src'),'architecture/arch-local-paths.html'); let viewerFrame=null; for(let i=0;i<200&&!viewerFrame;i++){viewerFrame=page.frames().find(f=>f.url().endsWith('/architecture/arch-local-paths.html'))||null; if(!viewerFrame) await page.waitForTimeout(100);} assert(viewerFrame,'Companion viewer frame loaded from the sibling folder'); await viewerFrame.waitForSelector('svg[role="img"]',{timeout:20000}); assert((await viewerFrame.title()).includes('Implemented local command paths'),'Companion viewer title'); await fig.locator('.viewer-toggle').click(); assert.equal(await fig.locator('.viewer-frame').isVisible(),false);}
@@ -129,7 +129,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     for(const width of widths) {await page.setViewportSize({width,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`Overflow at ${width}px`);}
     await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.scrollTo(0,0));await screenshot('mobile');
     for(const id of ['pc-lighting','desktop-controls']) {await page.locator(`#${id} summary`).scrollIntoViewIfNeeded();await screenshot(`${id}-mobile`);}
-    await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-mobile.png')}); for(const id of ['arch-shared-system','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-mobile.png`)});
+    await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-mobile.png')}); for(const id of ['arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-mobile.png`)});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No page overflow with the diagrams on mobile');
     // Exercise a real PDF from filtered, mixed expansion state, plus repeated print events.
     await page.locator('#collapse-all').click();await page.locator('#local-acceptance summary').click();await page.locator('#search').fill('Wispr');
@@ -139,7 +139,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.evaluate(()=>{window.dispatchEvent(new Event('beforeprint'));window.dispatchEvent(new Event('beforeprint'));});
     assert.equal(await page.locator('.guide[open]:not([hidden])').count(),count); assert.equal(await page.locator('.reference[open]:not([hidden])').count(),2,'Print expands timeline and architecture'); assert.equal(await page.locator('.diagram:not([hidden])').count(),diagramIds.length);
     await page.emulateMedia({media:'print'});assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('.toolbar').isVisible(),false);
-    await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-print-timeline.png')}); await page.locator('#arch-local-paths').screenshot({path:path.join(root,'work/guide-print-arch-local-paths.png')}); await page.locator('#seq-nanoleaf-command').screenshot({path:path.join(root,'work/guide-print-seq-nanoleaf-command.png')});
+    await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-print-timeline.png')}); await page.locator('#arch-local-paths').screenshot({path:path.join(root,'work/guide-print-arch-local-paths.png')}); await page.locator('#arch-nanoleaf-linux').screenshot({path:path.join(root,'work/guide-print-arch-nanoleaf-linux.png')}); await page.locator('#seq-nanoleaf-command').screenshot({path:path.join(root,'work/guide-print-seq-nanoleaf-command.png')});
     assert.equal(await page.locator('.guide-body:visible').count(),count+2);
     assert.equal(await page.locator('.diagram-canvas > svg:visible').count(),diagramIds.length,'Every diagram renders in print'); assert.equal(await page.locator('.diagram-tools:visible').count(),0); assert(await page.locator('.diagram-canvas > svg').evaluateAll(es=>es.every(e=>{const r=e.getBoundingClientRect();return r.width<=e.closest('.diagram').getBoundingClientRect().width+1&&r.height<=700;})),'Diagrams fit the page width in print');
     await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));await page.emulateMedia({media:'screen'});

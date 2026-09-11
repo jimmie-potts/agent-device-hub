@@ -1,15 +1,95 @@
 {
- "fetchedAt": "2026-09-08T22:38:50.666086+00:00",
+ "fetchedAt": "2026-09-10T23:03:12.326361+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-08T22:25:57Z",
+   "pushedAt": "2026-09-10T22:30:13Z",
    "defaultBranch": "main",
-   "headSha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
-   "mainCommitCount": 9,
+   "headSha": "f2b37b6c8db29411e34e8bcf1e73c50c47ff7fe7",
+   "mainCommitCount": 25,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "f2b37b6c8db29411e34e8bcf1e73c50c47ff7fe7",
+     "date": "2026-09-10T22:30:08Z",
+     "message": "docs: plan PC and desk lighting integrations and backlog (#59)"
+    },
+    {
+     "sha": "1cb7313838ecd80ccba4e6c8417f01712af2cc7f",
+     "date": "2026-09-10T22:24:48Z",
+     "message": "Document the fresh Nanoleaf Linux runtime (#84)"
+    },
+    {
+     "sha": "6e94511119ae0b9289fb34f90e09cafa956f18f6",
+     "date": "2026-09-10T22:13:03Z",
+     "message": "docs: reconcile completed CI efficiency work (#97)"
+    },
+    {
+     "sha": "950f7f62d502bc1d55d0f95872a4a10c08d4a27a",
+     "date": "2026-09-10T22:06:00Z",
+     "message": "Record guide publication and completed checkpoint adoption (#96)"
+    },
+    {
+     "sha": "84999503f227284db7b8095afbcac22bafbf1d54",
+     "date": "2026-09-10T21:33:27Z",
+     "message": "Adopt planning and delivery checkpoints for the maintained guide (#88)"
+    },
+    {
+     "sha": "c860421cf6011fc2fad10a78347d2ccdcc33b5f0",
+     "date": "2026-09-10T21:27:11Z",
+     "message": "docs: reconcile completed Prism stories (#95)"
+    },
+    {
+     "sha": "8872be1f80f47c35b89faeab3724fedc0402e9f6",
+     "date": "2026-09-10T21:11:53Z",
+     "message": "Document the Nanoleaf Prism delivery sequence (#82)"
+    },
+    {
+     "sha": "f15ac074260e9d974ab2d5c38162e607847e0593",
+     "date": "2026-09-10T13:44:33Z",
+     "message": "docs: reconcile verified core CI efficiency delivery (#94)"
+    },
+    {
+     "sha": "589f95e274fd441867910e639af29a026db51577",
+     "date": "2026-09-10T13:36:32Z",
+     "message": "ci: build once per job and cache Python downloads (#93)"
+    },
+    {
+     "sha": "bca5b343dffef69b2eb371af683b6c8839bb2f3e",
+     "date": "2026-09-10T13:24:05Z",
+     "message": "ci: avoid duplicate PR runs and bound job duration (#92)"
+    },
+    {
+     "sha": "0c772c507dd5b9b6624e8ffabbf63fca86fa3c38",
+     "date": "2026-09-10T13:16:19Z",
+     "message": "Record verified Nanoleaf CI delivery alongside the merged guide refresh (#90)"
+    },
+    {
+     "sha": "396c36aed74cf1d016564536eca13bb16f89834b",
+     "date": "2026-09-10T03:22:58Z",
+     "message": "Reconcile completed Pixoo CI scheduling delivery in the guide (#89)"
+    },
+    {
+     "sha": "2564a357ec7d1a72c5525c0f36b98287244a6e89",
+     "date": "2026-09-09T00:58:06Z",
+     "message": "docs: document public work-guide publication (#81)"
+    },
+    {
+     "sha": "8064537639d7a91a66657cdbce9a63654e41b80c",
+     "date": "2026-09-09T00:29:09Z",
+     "message": "Reconcile completed Pixoo reliability acceptance in work guide (#79)"
+    },
+    {
+     "sha": "a5e03a031583cabab0941804df26092a51b66a46",
+     "date": "2026-09-08T23:50:57Z",
+     "message": "Record Pixoo soak acceptance and open timing qualification (#78)"
+    },
+    {
+     "sha": "3e828fdafaeea980c90f145b02a0c9621d8571c0",
+     "date": "2026-09-08T22:49:23Z",
+     "message": "docs: reconcile Pixoo shared contract adoption in work guide (#76)"
+    },
     {
      "sha": "5a7b9607ef500038f0d06f0e76cc5344c0674029",
      "date": "2026-09-08T22:08:02Z",
@@ -120,20 +200,143 @@
      "createdAt": "2026-09-08T22:01:51Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/75",
      "base": "main"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 76,
      "title": "docs: reconcile Pixoo shared contract adoption in work guide",
+     "mergedAt": "2026-09-08T22:49:23Z",
      "createdAt": "2026-09-08T22:25:59Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/76"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/76",
+     "base": "main"
+    },
+    {
+     "number": 78,
+     "title": "docs: record Pixoo soak acceptance and open timing qualification",
+     "mergedAt": "2026-09-08T23:50:57Z",
+     "createdAt": "2026-09-08T23:45:16Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/78",
+     "base": "main"
+    },
+    {
+     "number": 79,
+     "title": "docs: reconcile completed Pixoo reliability acceptance",
+     "mergedAt": "2026-09-09T00:29:09Z",
+     "createdAt": "2026-09-09T00:23:17Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/79",
+     "base": "main"
+    },
+    {
+     "number": 81,
+     "title": "docs: add public work-guide hosting and publication procedure",
+     "mergedAt": "2026-09-09T00:58:06Z",
+     "createdAt": "2026-09-09T00:54:42Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
+     "base": "main"
+    },
+    {
+     "number": 89,
+     "title": "Reconcile completed Pixoo CI scheduling delivery in the guide",
+     "mergedAt": "2026-09-10T03:22:59Z",
+     "createdAt": "2026-09-10T03:04:12Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/89",
+     "base": "main"
+    },
+    {
+     "number": 90,
+     "title": "Record verified Nanoleaf CI delivery alongside the merged guide refresh",
+     "mergedAt": "2026-09-10T13:16:19Z",
+     "createdAt": "2026-09-10T03:06:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/90",
+     "base": "main"
+    },
+    {
+     "number": 92,
+     "title": "ci: avoid duplicate PR runs and bound job duration",
+     "mergedAt": "2026-09-10T13:24:06Z",
+     "createdAt": "2026-09-10T13:18:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/92",
+     "base": "main"
+    },
+    {
+     "number": 93,
+     "title": "ci: build once per job and cache Python downloads",
+     "mergedAt": "2026-09-10T13:36:33Z",
+     "createdAt": "2026-09-10T13:30:19Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/93",
+     "base": "main"
+    },
+    {
+     "number": 94,
+     "title": "docs: reconcile verified core CI efficiency delivery",
+     "mergedAt": "2026-09-10T13:44:34Z",
+     "createdAt": "2026-09-10T13:41:02Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/94",
+     "base": "main"
+    },
+    {
+     "number": 82,
+     "title": "Document the Nanoleaf Prism delivery sequence",
+     "mergedAt": "2026-09-10T21:11:54Z",
+     "createdAt": "2026-09-09T23:05:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+     "base": "main"
+    },
+    {
+     "number": 95,
+     "title": "Record completed Nanoleaf Prism stories in the guide",
+     "mergedAt": "2026-09-10T21:27:11Z",
+     "createdAt": "2026-09-10T21:20:02Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95",
+     "base": "main"
+    },
+    {
+     "number": 88,
+     "title": "Adopt planning and delivery checkpoints for the work guide",
+     "mergedAt": "2026-09-10T21:33:28Z",
+     "createdAt": "2026-09-10T00:46:23Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main"
+    },
+    {
+     "number": 96,
+     "title": "Reconcile completed guide checkpoints and publication",
+     "mergedAt": "2026-09-10T22:06:00Z",
+     "createdAt": "2026-09-10T21:59:33Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/96",
+     "base": "main"
+    },
+    {
+     "number": 97,
+     "title": "Record completed CI efficiency delivery in the guide",
+     "mergedAt": "2026-09-10T22:13:04Z",
+     "createdAt": "2026-09-10T22:09:16Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/97",
+     "base": "main"
+    },
+    {
+     "number": 84,
+     "title": "Document the fresh Nanoleaf Linux runtime",
+     "mergedAt": "2026-09-10T22:24:49Z",
+     "createdAt": "2026-09-10T00:29:55Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
+     "base": "main"
     },
     {
      "number": 59,
      "title": "docs: plan PC and desk lighting integrations and backlog",
+     "mergedAt": "2026-09-10T22:30:08Z",
      "createdAt": "2026-09-08T00:03:57Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59"
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+     "base": "main"
+    }
+   ],
+   "openPRs": [
+    {
+     "number": 77,
+     "title": "perf: prepare real early source measurements; budgets pending",
+     "createdAt": "2026-09-08T22:54:04Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
+     "base": "main"
     }
    ],
    "closedIssues": [
@@ -184,26 +387,74 @@
      "createdAt": "2026-09-07T02:21:58Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
+    },
+    {
+     "number": 83,
+     "title": "Adopt plan-work and deliver-work checkpoints for guide updates and public publication",
+     "closedAt": "2026-09-10T21:53:17Z",
+     "createdAt": "2026-09-10T00:00:23Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/83"
+    },
+    {
+     "number": 91,
+     "title": "Reduce CI minutes while preserving all test coverage",
+     "closedAt": "2026-09-10T22:01:36Z",
+     "createdAt": "2026-09-10T13:10:28Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/91"
     }
    ],
-   "openIssueCount": 60,
+   "openIssueCount": 64,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-08T18:06:58Z"
+    "2026-09-10T13:10:28Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
-    "2026-09-08": 13
+    "2026-09-08": 13,
+    "2026-09-09": 1,
+    "2026-09-10": 5
    }
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-08T17:14:19Z",
+   "pushedAt": "2026-09-10T22:56:36Z",
    "defaultBranch": "main",
-   "headSha": "ea3b95661352f927aceaf92b62d74660978c201f",
-   "mainCommitCount": 20,
+   "headSha": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+   "mainCommitCount": 26,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+     "date": "2026-09-10T22:56:36Z",
+     "message": "Support a fresh Linux installation of the Nanoleaf services (#57)"
+    },
+    {
+     "sha": "1b7c3f490e288674ab37914f86f59996722a5d69",
+     "date": "2026-09-10T21:19:56Z",
+     "message": "Align shared guide checkpoints with explicit planning and delivery skills (#59)"
+    },
+    {
+     "sha": "b8b144bc8f92668688db278e9401e46e00b7c6ae",
+     "date": "2026-09-10T13:33:17Z",
+     "message": "Add luminous Line numbers with conditional visibility and crystal clearance (#60)"
+    },
+    {
+     "sha": "2944a3a0a7ce58da0a36125859d7d3f277bece76",
+     "date": "2026-09-10T13:17:45Z",
+     "message": "Render the actual Lines layout with animated Prism crystal components (#58)"
+    },
+    {
+     "sha": "dd5005edf8bcdaf3a7b5d999fb1f5582d10ee0aa",
+     "date": "2026-09-10T03:04:27Z",
+     "message": "Bound CI jobs and avoid duplicate branch push runs (#61)"
+    },
+    {
+     "sha": "cdceffddb7a86c138797325e8d6b0460eb320e58",
+     "date": "2026-09-09T23:57:56Z",
+     "message": "Expose validated connector geometry for Prism (#56)"
+    },
     {
      "sha": "ea3b95661352f927aceaf92b62d74660978c201f",
      "date": "2026-09-08T17:14:16Z",
@@ -425,6 +676,54 @@
      "createdAt": "2026-09-08T16:20:01Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/51",
      "base": "main"
+    },
+    {
+     "number": 56,
+     "title": "Expose validated connector geometry for Prism",
+     "mergedAt": "2026-09-09T23:57:57Z",
+     "createdAt": "2026-09-09T23:02:31Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/56",
+     "base": "main"
+    },
+    {
+     "number": 61,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:04:28Z",
+     "createdAt": "2026-09-10T03:00:45Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "base": "main"
+    },
+    {
+     "number": 58,
+     "title": "Render the actual Lines layout with animated Prism crystal components",
+     "mergedAt": "2026-09-10T13:17:45Z",
+     "createdAt": "2026-09-10T00:36:26Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/58",
+     "base": "main"
+    },
+    {
+     "number": 60,
+     "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
+     "mergedAt": "2026-09-10T13:33:17Z",
+     "createdAt": "2026-09-10T01:21:11Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
+     "base": "main"
+    },
+    {
+     "number": 59,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:19:56Z",
+     "createdAt": "2026-09-10T00:46:40Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/59",
+     "base": "main"
+    },
+    {
+     "number": 57,
+     "title": "Support a fresh Linux installation of Nanoleaf services",
+     "mergedAt": "2026-09-10T22:56:36Z",
+     "createdAt": "2026-09-10T00:04:39Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -516,27 +815,83 @@
      "createdAt": "2026-09-07T03:58:54Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/34"
+    },
+    {
+     "number": 37,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "closedAt": "2026-09-10T13:20:26Z",
+     "createdAt": "2026-09-07T17:14:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/37"
+    },
+    {
+     "number": 52,
+     "title": "Expose connector geometry for the Prism wall map",
+     "closedAt": "2026-09-10T21:15:57Z",
+     "createdAt": "2026-09-09T22:08:08Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/52"
+    },
+    {
+     "number": 53,
+     "title": "Integrate Prism crystal artwork and two-zone wall animation",
+     "closedAt": "2026-09-10T21:16:01Z",
+     "createdAt": "2026-09-09T22:08:21Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/53"
+    },
+    {
+     "number": 26,
+     "title": "Keep map number tags clear of neighbouring Lines in rotated compact layouts",
+     "closedAt": "2026-09-10T21:16:04Z",
+     "createdAt": "2026-09-07T01:24:54Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/26"
+    },
+    {
+     "number": 54,
+     "title": "Support a fresh Linux installation of the Nanoleaf services",
+     "closedAt": "2026-09-10T23:02:42Z",
+     "createdAt": "2026-09-09T22:36:42Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
     }
    ],
-   "openIssueCount": 25,
+   "openIssueCount": 24,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
-    "2026-09-07T20:09:12Z"
+    "2026-09-09T22:37:08Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-05": 3,
     "2026-09-06": 7,
-    "2026-09-07": 26
+    "2026-09-07": 26,
+    "2026-09-09": 4
    }
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-08T22:33:34Z",
+   "pushedAt": "2026-09-10T21:10:06Z",
    "defaultBranch": "main",
-   "headSha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
-   "mainCommitCount": 18,
+   "headSha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+   "mainCommitCount": 21,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+     "date": "2026-09-10T21:10:05Z",
+     "message": "Adopt shared guide planning and delivery checkpoints (#56)"
+    },
+    {
+     "sha": "9601b60935515f4ecf5f79f1b1ab59299dd1c3de",
+     "date": "2026-09-10T03:10:59Z",
+     "message": "Bound CI runtime and limit branch push checks (#46) (#57)"
+    },
+    {
+     "sha": "7c1204fd2516df86c706bae7c9498a5ee1bb749b",
+     "date": "2026-09-09T00:14:44Z",
+     "message": "Validate Pixoo reliability and support configured HTTP proxies (#54)"
+    },
     {
      "sha": "459968ef11a8fb4558b3c76411e14d4564d6929f",
      "date": "2026-09-08T22:33:34Z",
@@ -764,6 +1119,30 @@
      "createdAt": "2026-09-08T22:27:04Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/53",
      "base": "main"
+    },
+    {
+     "number": 54,
+     "title": "Validate Pixoo reliability and support configured HTTP proxies",
+     "mergedAt": "2026-09-09T00:14:44Z",
+     "createdAt": "2026-09-08T22:50:31Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/54",
+     "base": "main"
+    },
+    {
+     "number": 57,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "mergedAt": "2026-09-10T03:10:59Z",
+     "createdAt": "2026-09-10T03:04:35Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+     "base": "main"
+    },
+    {
+     "number": 56,
+     "title": "Adopt shared guide planning and delivery checkpoints",
+     "mergedAt": "2026-09-10T21:10:06Z",
+     "createdAt": "2026-09-10T00:46:39Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
+     "base": "main"
     }
    ],
    "openPRs": [],
@@ -895,18 +1274,35 @@
      "createdAt": "2026-09-07T00:55:03Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
+    },
+    {
+     "number": 12,
+     "title": "Validate local physical playback, recovery, and soak reliability",
+     "closedAt": "2026-09-09T00:17:43Z",
+     "createdAt": "2026-09-05T22:08:56Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/12"
+    },
+    {
+     "number": 46,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "closedAt": "2026-09-10T03:15:15Z",
+     "createdAt": "2026-09-07T17:14:25Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 20,
+   "openIssueCount": 19,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
-    "2026-09-08T21:16:18Z"
+    "2026-09-09T00:07:22Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-05": 18,
     "2026-09-06": 3,
     "2026-09-07": 14,
-    "2026-09-08": 1
+    "2026-09-08": 1,
+    "2026-09-09": 1
    }
   }
  }

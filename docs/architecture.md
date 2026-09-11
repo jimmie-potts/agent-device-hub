@@ -2,6 +2,12 @@
 
 Status: Accepted direction. Controller contracts and reusable MCP are implemented;
 collectors, shared agent-state runtime and standalone hosting remain in the backlog.
+The fresh Nanoleaf Linux runtime has merged source in
+[Nanoleaf PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57), revision
+`2558df5a2fc543247b0c75898ef0260ba3ea264b`. Installed acceptance remains open
+under [Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55),
+and [Hub #43](https://github.com/jimmie-potts/agent-device-hub/issues/43) retains
+coordination and documentation of that outcome.
 
 ## Product direction and vocabulary
 
@@ -31,10 +37,13 @@ authoritative agent-state core, common controller contracts, shared MCP
 infrastructure and the future cross-device dashboard.
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
-Monitor/Media policy and serialized device writer. Nanoleaf owns its Windows
-worker, geometry, Line allocation, spatial effects, Work/Quiet/Free policy,
-scene restoration and advanced wall editor. Common code must not import a
-device application's internal modules.
+Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
+light-writing worker, geometry, Line allocation, spatial effects,
+Work/Quiet/Free policy, scene restoration and advanced wall editor. The legacy
+installation runs on Windows. Delivered source supports a fresh installation of
+those Nanoleaf processes and private state in Ubuntu WSL without transferring
+repository ownership. Installed Linux behavior remains unverified under Nanoleaf
+#55. Common code must not import a device application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
@@ -99,13 +108,47 @@ previews. Nanoleaf timelines and Pixoo pixel buffers remain device-specific
 payloads. Renderer contracts carry clock domains, epochs and update outcomes;
 browsers must not create another scheduler for physical effects.
 
+## Fresh Nanoleaf Linux runtime, source delivered
+
+The delivered installer supports the existing Nanoleaf runtime as separate Linux
+processes in Ubuntu WSL. Linux Python hooks, the CLI, the wall map and the
+controller coordinate through one SQLite database on the Linux filesystem. The
+existing on-demand Python worker remains the only process that writes to the
+Nanoleaf device. The design does not add a second writer or put runtime SQLite
+state under `/mnt/c`.
+
+The wall map listens on configurable loopback port `8765` by default. The Python
+controller listens on configurable loopback port `41231`. The Node MCP host
+listens on configurable loopback port `41230` and calls the controller directly
+over numeric-loopback HTTP at `127.0.0.1:41231`. Linux runtime commands do not
+forward through or launch Windows executables.
+
+Windows remains a client boundary. A Windows browser can open the wall map, and
+the existing configured readers can read project, title and unread JSON from the
+mounted Windows filesystem. Those metadata files are read-only inputs to Linux;
+the browser receives neither device credentials nor private SQLite state.
+
+This is a fresh installation. Existing Nanoleaf state need not move into Linux,
+and the old installation can remain unused. Source issue #54 delivers setup,
+service units and verification with fake devices. The installed-acceptance issue
+separately owns retirement of this project's Windows writer, real WSL client and
+service checks, browser reachability and physical Work/Quiet/Free observations.
+This source delivery does not establish an installed Linux system. #55 must record those observations
+before Hub #43 can close.
+
+This transition excludes data migration, rollback tooling, a combined daemon, a
+new hook HTTP API, shared monitoring and the Nanoleaf monorepo move. WSL service
+availability follows the WSL instance lifetime. Shared monitoring and later
+source migration keep their existing owners and dependency paths.
+
 ## Repositories, packages and hosting
 
 Use this repository as the monorepo for new controllers and shared packages,
 as recorded in [ADR 0003](decisions/0003-device-controller-monorepo.md).
 The existing Pixoo and Nanoleaf repositories retain ownership until separately
-delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX
-controllers and the React dashboard; keep the Nanoleaf worker in Python.
+delivered migrations. Use TypeScript for new shared services, Tidbyt/LIFX/PC
+lighting controllers and the React dashboard; keep the Nanoleaf worker in Python.
+Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
@@ -115,8 +158,9 @@ and [provider matrix](provider-qualification.md) establish metadata and source e
 without claiming installed producer qualification. The remaining
 proposed layout is packages/agent-state,
 integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
-apps/hub, apps/dashboard, controllers/tidbyt and controllers/lifx. The new
-controller directories contain documents only; the other paths remain proposed.
+apps/hub, apps/dashboard, controllers/tidbyt, controllers/lifx and
+controllers/pc-lighting. The controller directories contain documents only;
+the other paths remain proposed.
 Use Node 24 and npm workspaces when executable packages are introduced.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
@@ -131,8 +175,11 @@ bounded authentication and response delivery, and no automatic write retries.
 See [the MCP module](../packages/mcp/README.md) for its API and evidence boundary.
 
 First, Pixoo embeds the core in its existing backend. Nanoleaf can opt into that
-versioned shared feed while retaining its current Windows worker. A later hub
-host composes the same core and connects to both existing controllers.
+versioned shared feed while retaining its existing device worker and
+Work/Quiet/Free behavior. The legacy route uses the Windows worker. The
+delivered fresh Linux installer supports moving that owner into WSL independently
+of shared monitoring. A later hub host composes the same core and connects to
+both existing controllers.
 
 Moving the state owner is explicit and quiesced. Preserve source identities,
 session/notice state, revisions and producer configuration with a versioned
@@ -204,6 +251,55 @@ effects, update limits, takeover/manual-control and restoration policies. Resolv
 those choices before implementation readiness. Both controllers preserve shared
 privacy and evidence semantics; neither infers success, read status or fresh
 connectivity from absent observations.
+
+## PC and desk lighting delivery
+
+[The PC lighting documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) records the accepted scope:
+Corsair Dominator Platinum RGB DDR5 and supported H150i ELITE LCD XT lighting,
+plus Lian Li Strimer lighting and the Varmilo VA108M-RGB keyboard where compatible.
+Preserve iCUE, L-Connect 3 and the existing lighting and keyboard setup. Qualification
+may use the existing MSI software as a Strimer synchronization route; wider motherboard/GPU lighting, cooler LCD
+content and fan/pump control are outside this feature.
+
+"PC lighting" groups tower devices and an optional keyboard. The existing controller
+contract owns device identity and zone meaning; the group creates no new wire
+identity. The keyboard is a separate configured lighting target with no input
+handling responsibility. Keep one designated writer per target and one owner for a Strimer controller's cable outputs. Qualify vendor
+handoff and restoration before enabling a target. Missing support stays explicit.
+
+The proposed controller belongs in controllers/pc-lighting with a Windows-local
+vendor adapter, independent target queues and the shared authenticated APIs.
+iCUE SDK qualification comes first for Corsair. Strimer qualification must find
+a supported route compatible with L-Connect, including any explicit motherboard
+sync handoff. OpenRGB remains research, with no automatic dependency, migration
+or competing writer. Existing Home Assistant/MQTT delegation is a qualification
+comparison; broader #11 research is not a prerequisite.
+
+Varmilo qualification is limited to existing supported vendor or maintained
+interfaces. The user selected whole-keyboard shared status first; per-key regions
+and separate sessions mapped to keys are deferred. Vendor software availability
+and generic USB IDs do not establish a supported lighting API. If none qualifies,
+record the limitation and defer the adapter. Do not introduce custom protocol
+research, simulated key shortcuts or firmware replacement. Preserve normal typing,
+key mappings, macros and lock indicators, and never capture keystrokes.
+
+Automatic status consumes the shared core initially hosted in Pixoo. It does not
+add a collector or wait for general controls, the dashboard or standalone hosting.
+Strimer and Varmilo each have separate qualification, adapter and physical acceptance
+work, so neither blocks a verified Corsair release. Keyboard support also cannot
+block Strimer. Each optional target requires its own adapter before joining status
+or controls; closing a qualification issue with an unsupported result does not
+satisfy that readiness gate. General UI/MCP controls follow
+#31 and use the same owning services. Expose only established capabilities;
+arbitrary RGB/channel operations need explicit contract or typed-extension work.
+
+The [PC lighting guide](../controllers/pc-lighting/README.md) distinguishes screenshots,
+historical logs, user-supplied identity and inventory from unverified API/physical
+capabilities.
+Its linked issues own readiness, status policy, manual takeover and restoration.
+Source delivery adds no installed service or device operation. Full live lifecycle
+acceptance uses #8, and each physical target keeps its own evidence and permission
+gate. Windows vendor adapters remain on the PC during later hub-host migration.
 
 ## Alternatives and consequences
 
