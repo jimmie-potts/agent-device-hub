@@ -167,7 +167,7 @@ Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
 The ten correctness checks take about five seconds locally. CI runs these
 once on Ubuntu; the 9,000-call benchmark is an explicit local command, never
 part of CI. On Ubuntu, CI loads the distribution's packaged Bubblewrap
-AppArmor profile when present, following [Ubuntu's namespace guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007).
+AppArmor profile from `apparmor-profiles`, following [Ubuntu's namespace guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007).
 Global AppArmor restrictions remain enabled. A denied namespace still fails
 qualification. No native Windows comparison or executable forwarding is needed.
 
