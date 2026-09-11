@@ -30,7 +30,7 @@ class LinuxIsolation(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         result = module.run_profile(tasks=1, bursts=2, timeout=30)
-        self.assertEqual(result['status'], 'passed')
+        self.assertEqual(result['status'], 'passed', result)
         self.assertEqual(result['samples'], 2)
         self.assertTrue(result['handoffPreflight']['passed'])
         self.assertTrue(result['handoffPreflight']['realWorkerCommand'])
@@ -59,7 +59,7 @@ class CleanupFailures(unittest.TestCase):
         self.assertTrue(result['namespaceGone'])
     def test_failure_cases_keep_results_and_no_workers(self):
         result=self.module.run_profile(failures=True)
-        self.assertEqual(result['status'],'passed')
+        self.assertEqual(result['status'],'passed',result)
         self.assertEqual(result['failureCases']['unexpectedWorkers'],0)
         for name in ('malformedInput','unavailableState','databaseContention'):
             self.assertTrue(result['failureCases'][name]['hadStderr'])

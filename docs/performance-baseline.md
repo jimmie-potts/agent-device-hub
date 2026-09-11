@@ -262,8 +262,8 @@ not implement or verify these queues, a complete Node service, or rendering.
 Integrated qualification must prove those caps before release.
 
 The run used the tool bytes committed at `2467d382db2ad3a85f0adb9fdd729efa05741505`.
-The subsequent CLI exception wrapper only emits a fixed diagnostic for setup
-failures; it does not change successful measurement paths. The receipt preserves
+Subsequent CLI exception and namespace-startup diagnostics emit only fixed
+categories; they do not change successful measurement paths. The receipt preserves
 the measured tool hashes. Earlier smoke and interrupted trials are retained in
 [the attempt index](performance/receipts/2026-09-10-linux-attempts.json), excluded
 from these limits because they used earlier collection/cleanup code. They are

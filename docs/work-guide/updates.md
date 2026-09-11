@@ -859,7 +859,7 @@ verification remain outside this request. This entry does not assert a source
 merge, installed-client compatibility, shared-feed completion or physical results.
 
 Candidate validation: generator and five maintenance tests pass. Browser checks
-pass at 320, 360, 375, 390, 768 and 1440 pixels with no errors; 106 primary open
+pass at 320, 390, 768, 900, 1000 and 1440 pixels with no errors; 106 primary open
 issues, 12 guides, 48 roadmap nodes and nine viewers remain represented.
 The refresh helper now retains closed Hub #54 as a reference so subsequent
 refreshes do not break its existing guide link; it is not counted as open or

@@ -132,10 +132,27 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
         if reason or code != 0 or not gone:
             result['status'] = 'failed'
             result['error'] = reason or ('namespace-unverified' if not gone else 'namespace-failed')
+        result['startupDiagnostic'] = startup_diagnostic(bytes(streams['err']))
         result.update(namespaceRoundtripNs=time.perf_counter_ns()-started,
                       namespaceExitCode=code, namespaceGone=gone, tasks=tasks,
                       outputBounded=True, cleanupEvidence='bwrap waited for namespace PID 1; owned init exited')
         return result
+
+def startup_diagnostic(stderr):
+    # Never export stderr or paths. These fixed categories identify missing
+    # runtime prerequisites without exposing exception content.
+    if not stderr:
+        return 'none'
+    for signature, label in ((b'error while loading shared libraries', 'missing-runtime-library'),
+                             (b'ModuleNotFoundError', 'missing-python-module'),
+                             (b'ImportError', 'python-import-failed'),
+                             (b'Permission denied', 'permission-denied'),
+                             (b'No such file or directory', 'missing-runtime-file'),
+                             (b'Unknown option', 'unsupported-bubblewrap-option'),
+                             (b'Operation not permitted', 'namespace-not-permitted')):
+        if signature in stderr:
+            return label
+    return 'namespace-stderr-present'
 
 def owned_init_exited(pid):
     deadline = time.monotonic()+5

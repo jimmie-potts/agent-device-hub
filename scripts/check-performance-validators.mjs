@@ -18,11 +18,11 @@ function run(command, args) {
   return result;
 }
 try {
-  copyFileSync(archive, join(temporary, 'contract.tgz'));
-  writeFileSync(join(temporary, 'package.json'), JSON.stringify({name: 'measurement-contract-consumer',
-    version: '1.0.0', private: true, dependencies: {'@jimmie-potts/agent-lifecycle-contracts': 'file:contract.tgz'}}));
+  copyFileSync(archive, join(temporary, 'jimmie-potts-agent-lifecycle-contracts-1.0.0.tgz'));
+  copyFileSync(join(root, 'docs/performance/receipts/validator-consumer-package.json'), join(temporary, 'package.json'));
+  copyFileSync(join(root, 'docs/performance/receipts/validator-consumer-package-lock.json'), join(temporary, 'package-lock.json'));
   assert.ok(process.env.npm_execpath, 'Run through npm run test:performance');
-  const installed = run(process.execPath, [process.env.npm_execpath, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);
+  const installed = run(process.execPath, [process.env.npm_execpath, 'ci', '--offline', '--ignore-scripts', '--no-audit', '--no-fund']);
   assert.equal(installed.status, 0, installed.stderr);
   const command = [join(root, 'scripts/performance/validators.py'), '--archive', archive,
     '--consumer', temporary, '--node', process.execPath, '--cycles', '1', '--warmups', '0', '--repeats', '1'];
