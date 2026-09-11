@@ -218,7 +218,7 @@ test('CI validates PRs once and retains every platform and suite', () => {
     assert.deepEqual(linuxSteps, id === 'workflow' ? [{
       name: 'Check isolated Linux hook qualification',
       if: "runner.os == 'Linux'",
-      run: 'command -v bwrap || sudo apt-get install -y bubblewrap\nnpm run test:performance:linux\n',
+      run: 'command -v bwrap || sudo apt-get install -y bubblewrap\nif test -f /etc/apparmor.d/bwrap-userns-restrict; then\n  sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict\nfi\nnpm run test:performance:linux\n',
     }] : []);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);

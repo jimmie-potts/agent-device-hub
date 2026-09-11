@@ -199,7 +199,9 @@ checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the
 Ubuntu workflow job; existing platform/version jobs and tests remain required.
-Hosted setup installs bubblewrap only if absent. A host that cannot create the
+Hosted setup installs bubblewrap only if absent and loads Ubuntu's packaged
+`bwrap-userns-restrict` AppArmor profile when present. It does not disable
+AppArmor or change a global namespace restriction. A host that cannot create the
 required namespaces fails this check rather than running the hook unconfined.
 
 The separate measurement command is `python3 -B scripts/performance/linux_hook.py --output <new-directory>`. Its default runs three repeats of 1,000 samples for
