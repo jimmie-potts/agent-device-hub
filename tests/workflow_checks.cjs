@@ -177,7 +177,7 @@ test('CI validates PRs once and retains every platform and suite', () => {
   });
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:package:built'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built'],
     lifecycle: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built'],
   };
@@ -214,8 +214,15 @@ test('CI validates PRs once and retains every platform and suite', () => {
     });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
     assert.equal(job.concurrency, undefined, 'matrix siblings must not cancel each other');
-    assert.deepEqual(job.steps.filter(step => step.run).map(step => step.run), runs);
-    assert(job.steps.every(step => step.if === undefined && !step['continue-on-error']));
+    const linuxSteps = job.steps.filter(step => step.name === 'Check isolated Linux hook qualification');
+    assert.deepEqual(linuxSteps, id === 'workflow' ? [{
+      name: 'Check isolated Linux hook qualification',
+      if: "runner.os == 'Linux'",
+      run: 'command -v bwrap || sudo apt-get install -y bubblewrap\nnpm run test:performance:linux\n',
+    }] : []);
+    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
+    assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
+    assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
   assert.equal(builds, 10);
 });

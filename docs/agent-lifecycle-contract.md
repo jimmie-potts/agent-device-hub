@@ -53,7 +53,7 @@ Construct only allowlisted lifecycle fields before serialization, delivery, diag
 
 Use explicit finite payload, process, queue and deadline bounds, with no unbounded retry. Drop new observations on saturation, retain a bounded loss indicator and expose later evidence loss/resynchronization without logging payloads. Device failures cannot extend producer deadlines. Provider async mode alone does not establish bounded behavior: qualify its process and queue behavior and provide an independent deadline where necessary. Synchronous-only hooks require an explicit bounded path and matched measurements. Disabled/unqualified paths remain silent and do not claim coverage.
 
-[Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) freezes measured p95/p99, hard timeouts and resource budgets before Hub #3 emitter implementation. This contract supplies no timing results. The cold/warm native Windows, native WSL and selected boundary route profiles must use the actual available paths; absent stages retain acceptance budgets with measurements pending.
+[Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) freezes measured p95/p99, hard timeouts and resource budgets before Hub #3 emitter implementation. This contract supplies no timing results. The early baseline uses the delivered Linux hook in Ubuntu WSL, with cold/warm definitions and repeated 1/10/50-task profiles. Native Windows comparisons and cross-OS forwarding measurements are not required. See [the measurement procedure](performance-baseline.md); absent integrated stages retain budgets with measurements pending.
 
 ## Compatibility and distribution
 

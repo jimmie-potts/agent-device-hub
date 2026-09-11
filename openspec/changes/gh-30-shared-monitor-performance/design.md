@@ -23,7 +23,7 @@ Repository-wide CI cleanup is separate.
 ## Decisions
 
 - Preserve existing receipts, hashes and legacy pins as historical evidence.
-  Future implementation starts from the delivered Linux revision above, verifies
+  This implementation starts from the delivered Linux revision above, verifies
   the complete executed import/child-file set and records new hashes. Do not
   relabel old admission samples as hook measurements or pool revisions.
 - Invoke the real Linux hook entrypoint with synthetic stdin and an explicit
@@ -38,7 +38,11 @@ Repository-wide CI cleanup is separate.
 - Include actual Linux worker-spawn cost in full-hook samples. Bound and reap
   detached descendants even on timeout or parent failure; a parent process-group
   kill alone is insufficient because `launch_worker` uses `start_new_session`.
-  Use isolated state and fake/no-device worker inputs behind verified confinement.
+  Hold the real notification owner lock in isolated state. The actual child
+  reaches lock contention and exits before configuration or transport. Verify
+  the child command and lock connection with an untimed audit preflight; the
+  measured runs have no audit instrumentation. Use bubblewrap namespaces and
+  a PID-1 supervisor to confine and reap detached descendants.
   A counted/no-op launch seam can measure admission only, not full hook return.
   If confinement cannot be proved, retain that evidence gap.
 - Repeat 1, 10 and 50 concurrent synthetic-session profiles under comparable
@@ -73,7 +77,7 @@ Repository-wide CI cleanup is separate.
 ## Migration Plan
 
 No installed migration applies. Update #30, this active change and the guide
-first. Later implementation proves isolation, collects Linux evidence and
+first. This delivery proves isolation, collects Linux evidence and
 freezes the reviewed budget revision/checksum. Missing Linux hook evidence or
 budgets keeps Hub #3 gated. Synchronize/archive only after early acceptance;
 overall #30 remains open for integrated qualification. No Windows bridge repair

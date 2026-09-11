@@ -80,3 +80,13 @@ class CleanupFailures(unittest.TestCase):
         self.assertEqual(result['1']['support'],'provisional')
         self.assertEqual(result['1']['summary']['n'],1)
         self.assertIsNone(result['10']['summary'])
+
+    def test_cli_errors_do_not_export_exception_content(self):
+        import contextlib
+        import io
+        from unittest.mock import patch
+        output=io.StringIO()
+        with patch.object(self.module,'main',side_effect=ValueError('private-content')), contextlib.redirect_stdout(output):
+            code=self.module.cli()
+        self.assertEqual(code,1)
+        self.assertEqual(output.getvalue().strip(),'{"status": "failed", "error": "linux-qualification-failed"}')

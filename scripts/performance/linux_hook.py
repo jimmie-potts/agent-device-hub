@@ -205,5 +205,12 @@ def main():
             if result['status']!='passed':return 1
     return 0
 
+def cli():
+    try:
+        return main()
+    except Exception:
+        print(json.dumps({'status':'failed','error':'linux-qualification-failed'}),flush=True)
+        return 1
+
 if __name__=='__main__':
-    raise SystemExit(main())
+    raise SystemExit(cli())

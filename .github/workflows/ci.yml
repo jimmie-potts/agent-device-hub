@@ -26,6 +26,11 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
+      - name: Check isolated Linux hook qualification
+        if: runner.os == 'Linux'
+        run: |
+          command -v bwrap || sudo apt-get install -y bubblewrap
+          npm run test:performance:linux
   contracts:
     name: Contracts Python ${{ matrix.python }} on ${{ matrix.os }}
     strategy:

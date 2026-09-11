@@ -2,9 +2,9 @@
 
 [Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) has an early
 measurement/budget stage before Hub #3 and later integrated qualification. This
-candidate retains admission and released-validator preparation. The September 10
-replan targets the delivered Linux hook; it does not implement or measure that
-route. The early stage is not delivered and numeric budgets are not frozen.
+candidate adds a pinned, isolated measurement of the delivered Linux hook. The
+source baseline and budget receipt below cover the early stage. Shared feed,
+consumer and physical qualification remain later work; overall #30 stays open.
 
 ## Available source boundary
 
@@ -141,53 +141,150 @@ and process startup remain distinct from validator call cost. Pooled percentiles
 are computed from raw samples, not averages of per-repeat percentiles. A sample
 count of 1,000 or more alone does not establish tail confidence.
 
-## Linux hook qualification plan
+The refreshed [September 10 Linux validator receipt](performance/receipts/2026-09-10-linux-validators.json)
+contains another 19,800 valid-case calls across three processes per language.
+Python p95 was 0.340-0.357 ms and p99 0.374-0.414 ms; Node p95 was
+0.012-0.015 ms and p99 0.026-0.031 ms. It preserves startup/import/first-call
+and resource records separately, using Python 3.14.4 and Node 24.21.0. Shared
+checks were running concurrently, so these component observations are not
+matched hook-budget comparisons and are not pooled with September 8.
 
-The accepted source target is Nanoleaf PR #57, merge revision
-`2558df5a2fc543247b0c75898ef0260ba3ea264b`, under its ADR 0007. Source is
-merged; installed/client/physical acceptance remains Nanoleaf #55. Isolated
-source measurements do not require that installed acceptance to finish first.
+## Linux hook qualification
 
-Future implementation must pin the complete executed Linux file set and prove
-isolation before running the actual `bridge/bridge.py hook --state-dir` route.
-Use synthetic stdin and disposable Linux state. Measure process launch through
-hook return, including parsing, admission/commit and the real Linux worker-spawn
-handoff. Bound and clean detached descendants on success and failure. Prove no
-private configuration/metadata, external network, device or Windows executable
-access. A no-op worker-launch callback cannot establish full-hook timing.
+The Linux input is Nanoleaf PR #57, revision
+`2558df5a2fc543247b0c75898ef0260ba3ea264b`. The exact executed files are
+`bridge.py` and `project_map.py`, pinned under `vendor/nanoleaf-linux`.
+The source selects explicit state before dispatching the hook. Its mounted
+legacy forwarding predicate cannot select the isolated `/source` location.
+Installed/client/physical acceptance remains Nanoleaf #55.
 
-Repeat the 1/10/50 synthetic-session profiles under comparable Linux load and
-runtime conditions, preserving raw samples and failures. Keep fresh-process and
-warm-state timing, component costs, hook return, burst makespan and descendant
-readiness/cleanup separate. Exercise contention, invalid input and unavailable
-state. Legacy exit/output behavior is evidence, not automatic compliance with
-the future shared producer's silent fail-open contract.
+```bash
+npm run test:performance:linux
+/usr/bin/python3 -B scripts/performance/linux_hook.py --output /tmp/hub30-linux-new-run
+```
 
-No native Windows comparison, PowerShell probe, WSL-to-Windows forwarding or
-bridge repair is required. Existing source files and receipts remain unchanged
-historical preparation; the commands above still measure only their documented
-legacy admission and validator boundaries. New Linux-hook tooling and evidence
-remain to be implemented. Do not combine old and new source revisions in one
-qualified baseline.
+Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
+The ten correctness checks take about five seconds locally. CI runs these
+once on Ubuntu; the 9,000-call benchmark is an explicit local command, never
+part of CI. No native Windows comparison or executable forwarding is needed.
 
-## Outstanding early acceptance
+The runner verifies every input before execution and copies it into a fresh
+owned source directory. Bubblewrap creates fresh PID, mount, network, IPC,
+UTS, user and cgroup namespaces. Only `/usr`, the two source files and the
+measurement supervisor are mounted read-only. State uses a 64 MiB disposable
+Linux tmpfs. There is no personal home, mounted host drive or external network.
+Before any hook runs, checks prove source writes fail, private mounts are
+absent and the isolated network cannot reach an external address. The parent
+checks only its own namespace init PID, never other host processes.
 
-- Verified Linux source pins, confinement and detached-child cleanup.
-- Repeated comparable Linux profiles covering actual hook return, startup and
-  handoff, alongside separately reported admission and validator evidence.
-- Reviewed p95/p99, hard timeouts, CPU/memory/queue limits, cadence, sampling and
-  pass/fail tolerances. Future feed queue/cadence constraints need later integrated
-  verification and are not measurements of the legacy hook.
-- A frozen budget revision/hash, required checks/reviews and guide synchronization.
+The supervisor holds the real `notification-lock.sqlite` owner lock. The actual
+hook parses synthetic stdin, connects/commits `status.sqlite`, calls the real
+`launch_worker`, and returns. The detached worker executes the pinned bridge,
+encounters the held owner lock and exits before loading controller code,
+configuration, metadata or transport. An untimed Python audit probe records
+allowlisted proof of the exact worker command and lock connection, then removes
+its synthetic status database. Timed calls have no audit instrumentation or
+replacement launch callback. Worker rendering/readiness is excluded explicitly.
 
-Hub #3 remains gated by Linux evidence and budgets. Final shared-feed/consumer
-isolation, overload/resync, frontend, playback/animation, hosting, restart/rollback
-and physical qualification remain with later implementations and their owners.
-Overall #30 stays open after early-stage delivery.
+Hook duration runs from the caller's monotonic timestamp immediately before
+`Popen` through hook exit. This includes process startup, parsing, admission,
+commit and real worker spawning. It does not include waiting for the detached
+worker. Separate measurements retain burst makespan, descendant cleanup and
+namespace roundtrip. The older admission and released-validator receipts above
+remain separate component evidence at their own pins. No subtraction of their
+numbers estimates a current hook component or crosses clock domains.
+
+Each repetition uses a fresh namespace. `firstCall` creates a new status
+database; each warm sample still starts a new hook process against existing
+state. OS caches are uncontrolled, including source cache warmed by the untimed
+probe. The default makes 1,000 warm calls per repetition, three repetitions for
+each of 1/10/50 concurrent sessions. Nearest-rank per-repeat and pooled tails
+retain raw samples. Pooled sample support is provisional unless all three
+1,000-sample repetitions pass; this sample rule is not a statistical confidence
+claim. Ambient load is recorded, not controlled.
+
+Child CPU covers first call plus warm hooks and reaped workers, excluding the
+untimed audit and later failure cases. The matching wall interval is
+`resourceWindowWallNs`; `profileWallNs` describes only the warm profile plus
+state verification. RSS is the largest child's lifetime peak in bytes, not
+combined memory, and can include the untimed preflight child. Integrated tests
+must measure total service memory separately.
+
+Each hook has a 10-second measurement watchdog and 8 KiB stdout/stderr caps.
+Each namespace has a 600-second maximum deadline, 8 MB stdout, 64 KiB stderr,
+and 4 KiB setup-output caps. Pipes are bounded while collecting. These are
+measurement-tool protections, not product budgets. PID 1 reaps detached
+children; if it exits or is killed, Linux terminates all namespace members.
+Tests cover detached sessions, namespace crash, timeout, output overflow and
+partial receipt retention. A failed repetition cannot qualify pooled results.
+Raw burst checkpoints survive supervisor failure; receipts are replaced
+atomically after each repetition.
+
+Malformed JSON, unavailable state and a held admission database lock are
+recorded separately. The legacy hook returns exit 0 and `{}` on stdout with a
+stderr diagnostic for these failures. That behavior does not satisfy the future
+shared producer's silent fail-open contract; its implementation must obey the
+released contract while meeting the timing budget.
+
+## Frozen early budgets
+
+[The budget file](performance/linux-budgets.json) pins
+[the 9,000-call receipt](performance/receipts/2026-09-10-linux-hook.json) by
+SHA-256. Every one of the nine profiles passed, with no failed hook or worker
+and verified final state. These are candidate limits until independent review,
+current-head CI, guarded merge and merged-main CI accept this version.
+
+| Concurrent sessions | p95 ceiling | p99 ceiling | Maximum hook | Child CPU per call | Largest child RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 63 ms | 65 ms | 73 ms | 116 ms | 31 MiB |
+| 10 | 82 ms | 87 ms | 123 ms | 138 ms | 31 MiB |
+| 50 | 377 ms | 396 ms | 449 ms | 243 ms | 30 MiB |
+
+The ceilings round each observed worst repetition upward to the next whole
+millisecond or MiB. There is no additional percentage tolerance. Each future
+repetition and its pooled latency must meet these limits with the same boundary,
+profile and runtime/host class. Failed calls, timeouts, missing samples and
+unverified confinement fail qualification. A later failure cannot justify
+silently raising a limit or discarding a repetition.
+
+The first-call ceiling is 61 ms. The hard hook-return deadline is 3,000 ms,
+rounding the worst isolated database-contention observation of 2,562 ms to the
+next 500 ms. That is a failure ceiling, not the healthy-path target. Each
+producer must enforce its deadline without waiting for a device. The existing
+legacy failure output is not the future producer's required silent behavior.
+
+Future consumers have explicit design caps of 128 pending events and 256 KiB
+queued bytes, with a 2 KiB event maximum, bounded loss reporting and resync.
+Rendering is capped at 20 Hz, one update per 50 ms, independent of immediate
+hook return. A service process has a 128 MiB RSS cap. These limits provide
+bounded headroom above the tested 50-event burst; the legacy measurement does
+not implement or verify these queues, a complete Node service, or rendering.
+Integrated qualification must prove those caps before release.
+
+The run used the tool bytes committed at `2467d382db2ad3a85f0adb9fdd729efa05741505`.
+The subsequent CLI exception wrapper only emits a fixed diagnostic for setup
+failures; it does not change successful measurement paths. The receipt preserves
+the measured tool hashes. Earlier smoke and interrupted trials are retained in
+[the attempt index](performance/receipts/2026-09-10-linux-attempts.json), excluded
+from these limits because they used earlier collection/cleanup code. They are
+never pooled with this run.
+
+Ambient Linux load rose with the larger profiles, from roughly 0.9 to 21.7 on
+32 logical CPUs. Host load was observed rather than controlled. Documentation
+and tracker work continued during the run; a short correctness rerun may overlap
+the final burst profile. No other full benchmark or shared build suite ran
+concurrently. The three 50-task p95 results were 366, 376 and 362 ms. This is a
+repeatable local source baseline, not matched native-Windows evidence or an
+installed-client or statistical confidence claim.
+
+Final shared-feed/consumer isolation, overload/resync, frontend,
+playback/animation, hosting, restart/rollback and physical qualification remain
+with later implementations and their owners. Overall #30 stays open after
+this early-stage delivery.
 
 ## Remaining Windows elements for separate follow-up
 
-Repository-wide Windows CI removal and CI cost reduction are outside this replan.
+Repository-wide Windows CI removal and CI cost reduction are separate from this early measurement delivery.
 The current CI matrix, development instructions, provider qualification and
 lifecycle documentation/specification retain Windows support references. The
 older OpenSpec configuration describes a Windows worker. Pinned legacy sources,
@@ -199,5 +296,6 @@ separate current support policy from historical provenance during cleanup.
 
 These residuals do not restore a Windows performance requirement to #30/#77.
 Configured hosted CI gates still apply until a separately reviewed CI change
-replaces them. No CI, runtime, package, source-pin or raw-receipt changes are
-included in this planning update.
+replaces them. This delivery adds one short Linux correctness step to the existing workflow
+job and retains all other configured gates. It does not deliver repository-wide
+Windows removal or broader CI cost reduction.

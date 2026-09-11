@@ -22,6 +22,10 @@ None in this replan. Shared contract platform wording and repository-wide CI sup
 
 ## Impact
 
-The September 10 replan edits planning and performance documentation only. Existing measurement code, source pins and raw receipts remain unchanged and do not establish full Linux hook coverage. Future implementation must pin the delivered Linux source, prove isolation, then collect new evidence. Nanoleaf [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) owns installed and physical acceptance; it is not a prerequisite for isolated source measurements.
+The user subsequently invoked deliver-work for #30/#77. This candidate adds
+verified Linux source pins, confined real hook measurements, failure/cleanup
+regressions, receipts and numeric budgets. Historical admission/validator bytes
+remain unchanged. Nanoleaf #55 owns installed and physical acceptance, which is
+not a prerequisite for isolated source measurements.
 
-Windows interop availability no longer blocks this early stage. Repository-wide Windows CI removal and CI cost reduction are separate work. Remaining Windows references in shared policy, source and historical receipts must be reported to the user, not treated as implicit permission to retain a Windows runtime requirement. [Hub companion PR #99](https://github.com/jimmie-potts/agent-device-hub/pull/99) uses current main because PR #77 predates the delivered Linux guide.
+Windows interop availability no longer blocks this early stage. Repository-wide Windows CI removal and CI cost reduction are separate work. Remaining Windows references in shared policy, source and historical receipts must be reported to the user, not treated as implicit permission to retain a Windows runtime requirement. The guide changes prepared in companion PR #99 are folded into #77 after reconciling current main, keeping one delivery candidate.

@@ -190,3 +190,22 @@ also runs this command; all previous jobs and checks remain required. The
 tests use synthetic state and do not establish installed-client, full hook,
 helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
 for actual profile commands and pending budget gates.
+
+## Linux hook performance qualification
+
+Run `npm run test:performance:linux` on Linux with system Python 3.12 or 3.14
+under `/usr` and the packaged `bwrap` executable available. These ten focused
+checks execute the pinned real hook in disposable PID/network/mount namespaces,
+verify provenance and failure retention, and test detached-child cleanup. They
+perform no timing benchmark or device operations. CI runs them once in the
+Ubuntu workflow job; existing platform/version jobs and tests remain required.
+Hosted setup installs bubblewrap only if absent. A host that cannot create the
+required namespaces fails this check rather than running the hook unconfined.
+
+The separate measurement command is `python3 -B scripts/performance/linux_hook.py --output <new-directory>`. Its default runs three repeats of 1,000 samples for
+each of the 1/10/50-session Linux profiles. Use it only for authorized measurement
+work. It retains failed repetitions and rejects existing output directories.
+The namespace mounts only read-only system runtimes and pinned source, new
+Linux state and temporary files. Parent timeout kills the namespace and the
+host verifies that its own namespace init has exited; Linux then terminates every namespace member. No personal
+configuration, Windows metadata, client sessions or physical endpoints are used.

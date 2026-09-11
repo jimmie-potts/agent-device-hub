@@ -43,7 +43,7 @@
 #51 [OPEN] Qualify Corsair RAM and H150i lighting through iCUE
 #52 [OPEN] Qualify Lian Li Strimer control while preserving L-Connect 3
 #53 [OPEN] Implement the PC lighting controller with a qualified Corsair adapter
-#54 [OPEN] Add the qualified Strimer adapter to the PC lighting controller
+#54 [CLOSED] Add the qualified Strimer adapter to the PC lighting controller
 #55 [OPEN] Add shared automatic agent status to qualified PC lighting targets
 #56 [OPEN] Expose qualified PC lighting controls through shared UI and MCP services
 #57 [OPEN] Install and verify Corsair PC lighting status and restoration

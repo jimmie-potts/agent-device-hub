@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "baselineReceipt": "receipts/2026-09-10-linux-hook.json",
+  "baselineSha256": "ce89664e3f876d7de9fb9f350c0e965e365bf013d61f746a1c017f580aac5136",
+  "measuredToolCommit": "2467d382db2ad3a85f0adb9fdd729efa05741505",
+  "sourceRevision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+  "status": "frozen-candidate-requires-independent-review-and-merge",
+  "limits": {
+    "1": {
+      "p95Ms": 63,
+      "p99Ms": 65,
+      "maxHookMs": 73,
+      "childrenCpuMsPerCall": 116,
+      "largestChildRssMiB": 31
+    },
+    "10": {
+      "p95Ms": 82,
+      "p99Ms": 87,
+      "maxHookMs": 123,
+      "childrenCpuMsPerCall": 138,
+      "largestChildRssMiB": 31
+    },
+    "50": {
+      "p95Ms": 377,
+      "p99Ms": 396,
+      "maxHookMs": 449,
+      "childrenCpuMsPerCall": 243,
+      "largestChildRssMiB": 30
+    }
+  },
+  "firstCallMs": 61,
+  "hardReturnTimeoutMs": 3000,
+  "failureMaximumObservedMs": 2561.985881,
+  "tolerance": {
+    "relativePercent": 0,
+    "latencyRoundingMs": 1,
+    "cpuRoundingMsPerCall": 1,
+    "rssRoundingMiB": 1,
+    "rule": "Every repetition and pooled latency must meet the applicable ceiling; failures, timeouts, missing samples or unverified confinement fail qualification. No post-failure relaxation or discarded repetitions."
+  },
+  "sampling": {
+    "tasks": [
+      1,
+      10,
+      50
+    ],
+    "warmCallsPerRepeat": 1000,
+    "repeatsPerProfile": 3,
+    "percentile": "nearest-rank",
+    "warmDefinition": "fresh hook process, existing synthetic state",
+    "firstDefinition": "new status database after untimed preflight, OS caches uncontrolled",
+    "comparison": "Same source boundary, synthetic profile, runtime and Linux host class; inspect load and resource evidence. Material runtime/host changes need reviewed rebaselining with old evidence retained."
+  },
+  "futureIntegratedConstraints": {
+    "status": "design constraints; integrated verification pending #3/#5/#6/#8 and consumers",
+    "pendingEventsPerConsumer": 128,
+    "pendingBytesPerConsumer": 262144,
+    "maxEventBytes": 2048,
+    "overflow": "Drop new observations at the producer; bounded loss indicator and later resync, no unbounded retry. Consumer coalescing must retain lifecycle ordering and loss evidence.",
+    "renderMaxHz": 20,
+    "renderIntervalMs": 50,
+    "serviceRssMiB": 128,
+    "rationale": "Queue covers a 50-event burst with bounded headroom; byte and service limits are explicit design constraints, not measured legacy queues or total service memory. Cadence caps rendering work independently of immediate hook return and never promises optical timing."
+  },
+  "resourceScope": "CPU sums reaped first/warm hooks and workers, excluding preflight/failure probes; RSS is largest child lifetime peak and may include preflight, not combined process memory.",
+  "reviewPolicy": "Independent Standards and Specification review plus current-head CI and merged-main CI accept this version. Change any limit only through a documented reviewed PR.",
+  "componentReceipt": {
+    "path": "receipts/2026-09-10-linux-validators.json",
+    "sha256": "87a104e9dbfff52ab72aaa7d4feba0bea6b818b1560b2188363835b3e8d4ba8f",
+    "scope": "released validators only; excludes full hook, future shared feed and devices; distinct resource/clock definitions"
+  }
+}

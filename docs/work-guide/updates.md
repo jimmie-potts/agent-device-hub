@@ -804,3 +804,63 @@ candidate: three current specifications, one active change and three archives.
 This change remains active, PR #77 remains draft and #30 stays open for later
 integrated qualification. No benchmark, runtime, CI, installation or device
 operation was performed by this replan.
+
+## 2026-09-10: Linux-only performance replan for Hub #30 and PR #77
+
+This planning coordinator updated Hub #30 and PR #77's existing early-stage
+OpenSpec artifacts to target the source-delivered Nanoleaf Linux hook. Native
+Windows comparison and executable forwarding no longer gate the measurements.
+The planned 1/10/50 synthetic-session profiles retain full hook return, real
+Linux worker-spawn handoff, verified isolation/descendant cleanup and reviewed
+budgets. Existing receipts remain historical preparation. No benchmarks,
+measurement implementation, CI changes, installation or device work occurred.
+
+This companion uses current main so PR #77's older guide does not replace the
+delivered Linux architecture. Updated the qualification/budget narrative and
+refreshed paginated backlog inputs. Reconciled observed Hub #54 closure out of
+primary/roadmap coverage while retaining its reference, without claiming adapter
+acceptance. Corrected the refreshed PC-lighting row to record PR #59's source
+merge while #50 remains open. Dependency relationships are unchanged by this
+replan. The history snapshot retains its own date; no new product milestone is
+claimed. The guide represents 106 primary open issues in 12 guides and 48 roadmap
+nodes. Its 65 historical merges retain their existing evidence date.
+
+Architecture no-impact: the delivered Linux ownership and command path already
+appear in the nine diagrams; changing performance qualification does not alter
+that path. Definitions, source pins, receipts and viewers remain unchanged.
+Windows CI, shared policy wording and legacy source references remain for the
+separate Linux-only cleanup and must be brought to the user. They are not
+required performance routes in #30/#77.
+
+Guide generation, five maintenance tests, Node 24 workflow checks and browser
+checks cover this candidate. Source synchronization remains pending this
+companion's reviewed merge. Public publication and live verification are outside
+the authorized planning scope. #77 remains draft and #30 remains open; this
+replan does not satisfy the early budget gate or authorize OpenSpec archive.
+
+## 2026-09-10: Linux hook baseline delivery candidate for #30 / #77
+
+The delivery coordinator folded PR #99's planning guide changes into #77 after
+reconciling current main. The candidate contains 9,000 real Linux hook calls
+across nine successful profiles, bounded namespace/descendant checks and numeric
+budget definitions. The guide records candidate evidence and the remaining
+review/merge/CI gates. Overall #30 remains open for integrated qualification.
+
+Refreshed the full paginated backlog after the delivery-authority update and
+regenerated the guide. Architecture has no new ownership or command flow; the
+nine existing Linux viewers remain unchanged. Current Windows CI and provider
+support wording remain separate cleanup work. The benchmark is local-only; CI
+adds one short Linux correctness step and retains its existing jobs.
+
+Guide-source synchronization awaits #77's reviewed merge. PR #99 is superseded
+as a planning companion. Record source merge history and any changed issue
+status in a follow-up after authoritative readback. Public publication and live
+verification remain outside this request. This entry does not assert a source
+merge, installed-client compatibility, shared-feed completion or physical results.
+
+Candidate validation: generator and five maintenance tests pass. Browser checks
+pass at 320, 360, 375, 390, 768 and 1440 pixels with no errors; 106 primary open
+issues, 12 guides, 48 roadmap nodes and nine viewers remain represented.
+The refresh helper now retains closed Hub #54 as a reference so subsequent
+refreshes do not break its existing guide link; it is not counted as open or
+accepted adapter work.
