@@ -194,7 +194,7 @@ for actual profile commands and pending budget gates.
 ## Linux hook performance qualification
 
 Run `npm run test:performance:linux` on Linux with system Python 3.12 or 3.14
-under `/usr` and the packaged `bwrap` executable available. These ten focused
+under `/usr` and the packaged `bwrap` executable available. These eleven focused
 checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the
@@ -210,5 +210,6 @@ each of the 1/10/50-session Linux profiles. Use it only for authorized measureme
 work. It retains failed repetitions and rejects existing output directories.
 The namespace mounts only read-only system runtimes and pinned source, new
 Linux state and temporary files. Parent timeout kills the namespace and the
-host verifies that its own namespace init has exited; Linux then terminates every namespace member. No personal
+host terminates and verifies its own namespace init through a Linux PID handle;
+Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.

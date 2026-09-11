@@ -25,6 +25,7 @@ import os
 import platform
 import resource
 import selectors
+import signal
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,15 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
         args[1:1] = ['--info-fd', str(write_info)]
         streams = {}
         reason = None
+        init_fd = None
+        init_seen_exited = False
+        def terminate(child):
+            if init_fd is not None:
+                try:
+                    signal.pidfd_send_signal(init_fd, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            child.kill()
         def limits():
             resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT, MAX_OUTPUT))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -85,7 +95,7 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
                 while selector.get_map():
                     if time.monotonic() >= deadline:
                         reason = 'namespace-timeout'
-                        child.kill()
+                        terminate(child)
                         break
                     for key, _ in selector.select(min(.1, max(0, deadline-time.monotonic()))):
                         name, cap = key.data
@@ -94,30 +104,40 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
                             selector.unregister(key.fileobj)
                         elif len(streams[name])+len(data) > cap:
                             reason = 'output-limit'
-                            child.kill()
+                            terminate(child)
                             break
                         else:
                             streams[name].extend(data)
+                            if name == 'info' and init_fd is None and not init_seen_exited:
+                                try:
+                                    setup = json.loads(streams[name])
+                                    pid = setup['child-pid']
+                                    if type(pid) is not int or pid <= 0:
+                                        raise ValueError('invalid-init-pid')
+                                    init_fd = os.pidfd_open(pid)
+                                except ProcessLookupError:
+                                    init_seen_exited = True
+                                except (ValueError, KeyError):
+                                    pass  # JSON may span multiple pipe reads.
                     if reason:
                         break
                 try:
                     child.wait(timeout=max(.01, deadline-time.monotonic()))
                 except subprocess.TimeoutExpired:
                     reason = 'namespace-timeout'
-                    child.kill()
+                    terminate(child)
                     child.wait()
         code = child.returncode
-        try:
-            namespace_info = json.loads(streams['info'])
-            init_pid = namespace_info['child-pid']
-            if type(init_pid) is not int or init_pid <= 0:
-                raise ValueError('invalid-pid')
-            # bwrap waited for namespace PID 1. The kernel terminates every
-            # namespace member when PID 1 exits, including detached sessions.
-            # Check only that exact owned PID; never enumerate host processes.
-            gone = owned_init_exited(init_pid)
-        except (ValueError, KeyError):
-            gone = False
+        # A pidfd cannot be redirected by PID reuse. Linux tears down every
+        # namespace member when its PID 1 exits, including detached sessions.
+        gone = init_seen_exited
+        if init_fd is not None:
+            try:
+                with selectors.DefaultSelector() as exited:
+                    exited.register(init_fd, selectors.EVENT_READ)
+                    gone = bool(exited.select(5))
+            finally:
+                os.close(init_fd)
         records = []
         for line in streams['out'].splitlines():
             try:
@@ -135,7 +155,7 @@ def run_profile(tasks=1,bursts=1,timeout=120,failures=False,probe=None):
         result['startupDiagnostic'] = startup_diagnostic(bytes(streams['err']))
         result.update(namespaceRoundtripNs=time.perf_counter_ns()-started,
                       namespaceExitCode=code, namespaceGone=gone, tasks=tasks,
-                      outputBounded=True, cleanupEvidence='bwrap waited for namespace PID 1; owned init exited')
+                      outputBounded=True, cleanupEvidence='owned namespace init exit verified through pidfd')
         return result
 
 def startup_diagnostic(stderr):
@@ -153,20 +173,6 @@ def startup_diagnostic(stderr):
         if signature in stderr:
             return label
     return 'namespace-stderr-present'
-
-def owned_init_exited(pid):
-    deadline = time.monotonic()+5
-    while time.monotonic() < deadline:
-        try:
-            stat = Path(f'/proc/{pid}/stat').read_text()
-        except FileNotFoundError:
-            return True
-        # A dead namespace init can remain as a zombie until its outer reaper
-        # runs. Kernel namespace teardown has already killed every member.
-        if stat.rsplit(')', 1)[1].split()[0] in ('Z', 'X'):
-            return True
-        time.sleep(.01)
-    return False
 
 def pooled(profiles, expected_repeats=3, expected_samples=1000):
     import math

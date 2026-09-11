@@ -90,3 +90,13 @@ class CleanupFailures(unittest.TestCase):
             code=self.module.cli()
         self.assertEqual(code,1)
         self.assertEqual(output.getvalue().strip(),'{"status": "failed", "error": "linux-qualification-failed"}')
+
+    def test_timeout_cleanup_does_not_depend_on_bwrap_parent_death_flag(self):
+        from unittest.mock import patch
+        original=self.module.command
+        def without_parent_death(*args,**kwargs):
+            return [arg for arg in original(*args,**kwargs) if arg!='--die-with-parent']
+        with patch.object(self.module,'command',side_effect=without_parent_death):
+            result=self.module.run_profile(probe='timeout',timeout=.5)
+        self.assertEqual(result['error'],'namespace-timeout')
+        self.assertTrue(result['namespaceGone'],result)

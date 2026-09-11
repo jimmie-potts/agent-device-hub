@@ -164,7 +164,7 @@ npm run test:performance:linux
 ```
 
 Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
-The ten correctness checks take about five seconds locally. CI runs these
+The eleven correctness checks take about five seconds locally. CI runs these
 once on Ubuntu; the 9,000-call benchmark is an explicit local command, never
 part of CI. On Ubuntu, CI loads the distribution's packaged Bubblewrap
 AppArmor profile from `apparmor-profiles`, following [Ubuntu's namespace guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007).
@@ -178,7 +178,8 @@ measurement supervisor are mounted read-only. State uses a 64 MiB disposable
 Linux tmpfs. There is no personal home, mounted host drive or external network.
 Before any hook runs, checks prove source writes fail, private mounts are
 absent and the isolated network cannot reach an external address. The parent
-checks only its own namespace init PID, never other host processes.
+opens a Linux PID handle for its own namespace init, never scans other host
+processes, and cannot target an unrelated process through PID reuse.
 
 The supervisor holds the real `notification-lock.sqlite` owner lock. The actual
 hook parses synthetic stdin, connects/commits `status.sqlite`, calls the real
@@ -217,7 +218,9 @@ Each hook has a 10-second measurement watchdog and 8 KiB stdout/stderr caps.
 Each namespace has a 600-second maximum deadline, 8 MB stdout, 64 KiB stderr,
 and 4 KiB setup-output caps. Pipes are bounded while collecting. These are
 measurement-tool protections, not product budgets. PID 1 reaps detached
-children; if it exits or is killed, Linux terminates all namespace members.
+children; on timeout the parent kills that exact init through its PID handle
+and verifies exit. Linux then terminates all namespace members, including on
+older Bubblewrap versions where killing only the wrapper is insufficient.
 Tests cover detached sessions, namespace crash, timeout, output overflow and
 partial receipt retention. A failed repetition cannot qualify pooled results.
 Raw burst checkpoints survive supervisor failure; receipts are replaced
@@ -266,7 +269,9 @@ Integrated qualification must prove those caps before release.
 
 The run used the tool bytes committed at `2467d382db2ad3a85f0adb9fdd729efa05741505`.
 Subsequent CLI exception and namespace-startup diagnostics emit only fixed
-categories; they do not change successful measurement paths. The receipt preserves
+categories. Parent cleanup now uses a PID handle to support older Bubblewrap.
+The measured supervisor, hook calls and their timing/resource windows are
+unchanged. Successful baseline cleanup was verified on the recorded host. The receipt preserves
 the measured tool hashes. Earlier smoke and interrupted trials are retained in
 [the attempt index](performance/receipts/2026-09-10-linux-attempts.json), excluded
 from these limits because they used earlier collection/cleanup code. They are
