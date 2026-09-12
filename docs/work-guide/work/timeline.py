@@ -70,7 +70,7 @@ TRACKS = [
         dict(id='n-pc-qual', x=1, label='Qualification', issues=['H51', 'H52', 'H60'], guide='pc-lighting'),
         dict(id='n-pc-ctrl', x=2, label='Corsair controller · status', issues=['H53', 'H55'], guide='pc-lighting'),
         dict(id='n-pc-accept', x=3, label='Acceptance · shared UI', issues=['H57', 'H56'], guide='pc-lighting'),
-        dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H54', 'H58', 'H61', 'H62'], guide='pc-lighting'),
+        dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H58', 'H61', 'H62'], guide='pc-lighting'),
     ]),
     ('Pixoo media + access', [
         dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52', 'P55'], guide='pixoo-media'),

@@ -30,7 +30,9 @@
     "test:mcp:protocol:built": "node --test packages/mcp/tests/protocol.test.mjs",
     "test:mcp:package:built": "node scripts/package-mcp.mjs --test",
     "test:lifecycle:built": "node --test packages/lifecycle-contracts/tests/*.test.mjs",
-    "test:lifecycle:package:built": "node scripts/package-lifecycle.mjs --test"
+    "test:lifecycle:package:built": "node scripts/package-lifecycle.mjs --test",
+    "test:performance": "python scripts/check-performance.py && node scripts/check-performance-validators.mjs",
+    "test:performance:linux": "/usr/bin/python3 -B -m unittest discover -s tests/performance_linux -v"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",

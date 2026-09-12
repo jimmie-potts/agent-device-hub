@@ -180,3 +180,36 @@ on Ubuntu/Windows with both Python versions. Tests use synthetic metadata only.
 `npm run package:lifecycle` builds the private archive with a file-hash manifest;
 record its source revision and archive hash externally after reviewed delivery.
 No command installs hooks, launches a client or contacts a device.
+
+## Early performance measurement tooling
+
+`npm run test:performance` uses Python 3.12 or 3.14 to check measurement
+statistics, pinned source verification, isolated legacy admission and bounded
+worker failure handling. The existing lifecycle Linux/Windows Python matrix
+also runs this command; all previous jobs and checks remain required. The
+tests use synthetic state and do not establish installed-client, full hook,
+helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
+for actual profile commands and pending budget gates.
+
+## Linux hook performance qualification
+
+Run `npm run test:performance:linux` on Linux with system Python 3.12 or 3.14
+under `/usr` and the packaged `bwrap` executable available. These thirteen focused
+checks execute the pinned real hook in disposable PID/network/mount namespaces,
+verify provenance and failure retention, and test detached-child cleanup. They
+perform no timing benchmark or device operations. CI runs them once in the
+Ubuntu workflow job; existing platform/version jobs and tests remain required.
+Hosted setup installs Ubuntu's `bubblewrap` and `apparmor-profiles` packages,
+then loads `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` and checks
+namespace startup before running the tests. It does not disable
+AppArmor or change a global namespace restriction. A host that cannot create the
+required namespaces fails this check rather than running the hook unconfined.
+
+The separate measurement command is `python3 -B scripts/performance/linux_hook.py --output <new-directory>`. Its default runs three repeats of 1,000 samples for
+each of the 1/10/50-session Linux profiles. Use it only for authorized measurement
+work. It retains failed repetitions and rejects existing output directories.
+The namespace mounts only read-only system runtimes and pinned source, new
+Linux state and temporary files. Parent timeout kills the namespace and the
+host terminates and verifies its own namespace init through a Linux PID handle;
+Linux then terminates every namespace member. No personal
+configuration, Windows metadata, client sessions or physical endpoints are used.

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "checksumPolicy": "Existing evidence hashes identify decompressed original bytes. Compressed hashes identify the stored gzip files.",
+  "receipts": [
+    {
+      "path": "2026-09-10-linux-hook.json.gz",
+      "role": "principal Linux hook baseline candidate",
+      "originalFilename": "2026-09-10-linux-hook.json",
+      "uncompressedBytes": 1980953,
+      "compressedBytes": 95621,
+      "uncompressedSha256": "ce89664e3f876d7de9fb9f350c0e965e365bf013d61f746a1c017f580aac5136",
+      "compressedSha256": "1f7039f96f56f92ca0a6be352b1286b355ee7325291d19e5593e1c0cea4c449e"
+    },
+    {
+      "path": "2026-09-10-linux-validators.json.gz",
+      "role": "supporting released-validator observations",
+      "originalFilename": "2026-09-10-linux-validators.json",
+      "uncompressedBytes": 428135,
+      "compressedBytes": 55827,
+      "uncompressedSha256": "87a104e9dbfff52ab72aaa7d4feba0bea6b818b1560b2188363835b3e8d4ba8f",
+      "compressedSha256": "040e2dbc38632f121c709dbcf814c66832b5b81bfecb5e45f97b3cf678841f28"
+    },
+    {
+      "path": "archive/2026-09-08-wsl-admission.json.gz",
+      "role": "historical admission-only observations",
+      "originalFilename": "2026-09-08-wsl-admission.json",
+      "uncompressedBytes": 451037,
+      "compressedBytes": 100297,
+      "uncompressedSha256": "3e380471d650cfce68d78b8bf686a1b993794cb91a0c9a54a87a090a2556e25f",
+      "compressedSha256": "ef6419316cd849ba5e7b363ba526b93fb4b8e6b3338c4c3f4e8fd9c80436158b"
+    },
+    {
+      "path": "archive/2026-09-08-wsl-validators.json.gz",
+      "role": "historical released-validator observations",
+      "originalFilename": "2026-09-08-wsl-validators.json",
+      "uncompressedBytes": 428140,
+      "compressedBytes": 61025,
+      "uncompressedSha256": "b5b09a59fa001884cd3843b7b4039d98b91a65545ca3535a9c67a577682f7625",
+      "compressedSha256": "f823aed4d4384bb5de2e12113155d02e1a4cc33592517a0cf6c5189edf3966fe"
+    },
+    {
+      "path": "archive/2026-09-10-linux-smoke.json.gz",
+      "role": "excluded preliminary smoke run",
+      "originalFilename": "2026-09-10-linux-smoke.json",
+      "uncompressedBytes": 35174,
+      "compressedBytes": 3407,
+      "uncompressedSha256": "da12525491a69dc0f6edb07edd4620a3733d9ebba3648dbf95cbe391d0ea6ac7",
+      "compressedSha256": "4269461b3ae926dbb6b6424d906ecc507078b944b49d3fdca7cf94d514c164a5"
+    },
+    {
+      "path": "archive/2026-09-10-linux-interrupted.json.gz",
+      "role": "excluded interrupted run",
+      "originalFilename": "2026-09-10-linux-interrupted.json",
+      "uncompressedBytes": 420735,
+      "compressedBytes": 32550,
+      "uncompressedSha256": "02dd39a6ad5858f754dde47a37683945d9187cdce6c89a91b32ab3a069612c4e",
+      "compressedSha256": "a1705ddc16fd610d316d43f25b5d31e63b20f9887d59812633a620079ddb97b9"
+    }
+  ]
+}

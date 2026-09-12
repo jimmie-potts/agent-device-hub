@@ -780,3 +780,108 @@ maintenance request; the existing public edition will retain its earlier bytes.
 Validation: generator, maintenance test, browser coverage/navigation/search/
 links/print checks at six viewport widths, and whitespace checks pass. The final
 revision, guide hash and independent review/CI results belong in the PR receipt.
+
+## 2026-09-10: Replan Hub #30 and PR #77 for the Linux hook
+
+The early-stage plan now measures the real Linux hook from delivered Nanoleaf
+PR #57. Native Windows comparison and executable forwarding no longer block it.
+Keep repeated 1/10/50 synthetic-session profiles, real Linux worker-spawn cost,
+confinement and detached-child cleanup, and reviewed numeric budgets. Historical
+admission/validator receipts remain unchanged; no new hook measurements are
+claimed. Current CI and shared-policy Windows elements are flagged for separate
+cleanup, not removed in this planning update.
+
+The planning coordinator owns the current-main guide companion
+[Hub PR #99](https://github.com/jimmie-potts/agent-device-hub/pull/99). It refreshes
+affected inputs and generated output without replacing the newer Linux diagrams
+with this branch's older guide. Source synchronization is pending that companion's
+reviewed merge. Architecture already depicts the delivered Linux command path;
+measurement replanning changes no device owner, transport or failure boundary.
+Public publication and live verification are outside this request.
+
+Node 24 setup, workflow validation and ten workflow tests passed for the planning
+candidate: three current specifications, one active change and three archives.
+This change remains active, PR #77 remains draft and #30 stays open for later
+integrated qualification. No benchmark, runtime, CI, installation or device
+operation was performed by this replan.
+
+## 2026-09-10: Linux-only performance replan for Hub #30 and PR #77
+
+This planning coordinator updated Hub #30 and PR #77's existing early-stage
+OpenSpec artifacts to target the source-delivered Nanoleaf Linux hook. Native
+Windows comparison and executable forwarding no longer gate the measurements.
+The planned 1/10/50 synthetic-session profiles retain full hook return, real
+Linux worker-spawn handoff, verified isolation/descendant cleanup and reviewed
+budgets. Existing receipts remain historical preparation. No benchmarks,
+measurement implementation, CI changes, installation or device work occurred.
+
+This companion uses current main so PR #77's older guide does not replace the
+delivered Linux architecture. Updated the qualification/budget narrative and
+refreshed paginated backlog inputs. Reconciled observed Hub #54 closure out of
+primary/roadmap coverage while retaining its reference, without claiming adapter
+acceptance. Corrected the refreshed PC-lighting row to record PR #59's source
+merge while #50 remains open. Dependency relationships are unchanged by this
+replan. The history snapshot retains its own date; no new product milestone is
+claimed. The guide represents 106 primary open issues in 12 guides and 48 roadmap
+nodes. Its 65 historical merges retain their existing evidence date.
+
+Architecture no-impact: the delivered Linux ownership and command path already
+appear in the nine diagrams; changing performance qualification does not alter
+that path. Definitions, source pins, receipts and viewers remain unchanged.
+Windows CI, shared policy wording and legacy source references remain for the
+separate Linux-only cleanup and must be brought to the user. They are not
+required performance routes in #30/#77.
+
+Guide generation, five maintenance tests, Node 24 workflow checks and browser
+checks cover this candidate. Source synchronization remains pending this
+companion's reviewed merge. Public publication and live verification are outside
+the authorized planning scope. #77 remains draft and #30 remains open; this
+replan does not satisfy the early budget gate or authorize OpenSpec archive.
+
+## 2026-09-10: Linux hook baseline delivery candidate for #30 / #77
+
+The delivery coordinator folded PR #99's planning guide changes into #77 after
+reconciling current main. The candidate contains 9,000 real Linux hook calls
+across nine successful profiles, bounded namespace/descendant checks and numeric
+budget definitions. The guide records candidate evidence and the remaining
+review/merge/CI gates. Overall #30 remains open for integrated qualification.
+
+Refreshed the full paginated backlog after the delivery-authority update and
+regenerated the guide. Architecture has no new ownership or command flow; the
+nine existing Linux viewers remain unchanged. Current Windows CI and provider
+support wording remain separate cleanup work. The benchmark is local-only; CI
+adds one short Linux correctness step and retains its existing jobs.
+
+Guide-source synchronization awaits #77's reviewed merge. PR #99 is superseded
+as a planning companion. Record source merge history and any changed issue
+status in a follow-up after authoritative readback. Public publication and live
+verification remain outside this request. This entry does not assert a source
+merge, installed-client compatibility, shared-feed completion or physical results.
+
+Candidate validation: generator and five maintenance tests pass. Browser checks
+pass at 320, 390, 768, 900, 1000 and 1440 pixels with no errors; 106 primary open
+issues, 12 guides, 48 roadmap nodes and nine viewers remain represented.
+The refresh helper now retains closed Hub #54 as a reference so subsequent
+refreshes do not break its existing guide link; it is not counted as open or
+accepted adapter work.
+
+Final source review and all 13 hosted checks passed at d3d17e4. The early
+performance specification was synchronized and archived after successful current
+lookups. This artifact closeout changes no fact represented in the guide: its
+candidate evidence and pending merge gates remain accurate. The generated HTML
+is unchanged, so the existing UI approval request still identifies this candidate.
+Final artifact reviews and CI must pass before merge.
+
+## 2026-09-11: Compress #77 benchmark evidence
+
+Compressed all six raw receipts without changing their decompressed bytes and
+archived the four historical or excluded runs within Git. Added a readable
+summary and checksum index; updated evidence links while preserving the consumer
+package files, measurement results and budgets. This storage-only change adds no
+product behavior or specification requirement, so no new OpenSpec change is
+needed.
+
+Guide no-impact: inspected guide inputs and found no raw receipt filename links.
+Storage changes do not alter represented results, architecture or delivery status.
+Generated HTML, snapshot dates and its pending approval remain unchanged. This
+entry records evidence maintenance, not source merge or public publication.

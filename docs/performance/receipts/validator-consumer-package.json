@@ -1,0 +1,1 @@
+{"name": "hub30-measurement-consumer", "version": "1.0.0", "private": true, "type": "module", "dependencies": {"@jimmie-potts/agent-lifecycle-contracts": "file:jimmie-potts-agent-lifecycle-contracts-1.0.0.tgz"}}

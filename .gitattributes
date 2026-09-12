@@ -1,0 +1,3 @@
+# Measurement provenance hashes cover exact bytes on Windows and Linux.
+/scripts/performance/** -text
+/docs/performance/receipts/** -text

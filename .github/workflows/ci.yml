@@ -26,6 +26,13 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
+      - name: Check isolated Linux hook qualification
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y bubblewrap apparmor-profiles
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
+          npm run test:performance:linux
   contracts:
     name: Contracts Python ${{ matrix.python }} on ${{ matrix.os }}
     strategy:
@@ -52,6 +59,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:contracts:built
       - run: npm run test:contracts:python
+      - run: npm run test:performance
       - run: npm run test:package:built
   mcp:
     name: MCP on ${{ matrix.os }}
