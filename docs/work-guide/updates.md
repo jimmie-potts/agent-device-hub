@@ -16,8 +16,9 @@ do not change; no architecture redraw is needed. Preserve the existing history
 snapshot date because this candidate records planned behavior, not a new merge.
 
 Validation: Node 24 setup succeeded; workflow validation passed for four specs
-and four archives, and all 14 workflow tests passed. The new filter regression
-failed before the YAML edits and passed afterward. Guide generation, all five
+and four archives, and all 15 workflow tests passed. The new filter regression
+failed before the YAML edits and passed afterward. The guide-job regression
+rejects removal of the maintenance-check step. Guide generation, all five
 maintenance tests and browser checks passed, with no browser errors. Retain
 screenshots, print output and the exact HTML hash in the candidate review receipt.
 Generated-output consistency is checked after committing intended output.

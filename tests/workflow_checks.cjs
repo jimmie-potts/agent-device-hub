@@ -318,3 +318,33 @@ test('the standalone wrapper runs its payload only after a successful build', (t
   assert.notEqual(bad.status, 0);
   assert.equal(fs.existsSync(path.join(directory, 'payload-ran')), false);
 });
+
+// Keep guide build, browser and retained review evidence under regression coverage.
+test('guide CI retains its validation and review artifacts', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
+  assert.deepEqual(workflow.jobs, { guide:
+     { name: 'Work guide build and browser checks',
+       'runs-on': 'ubuntu-latest',
+       'timeout-minutes': 10,
+       steps:
+        [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
+          { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
+          { uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+            with: { 'python-version': '3.12' } },
+          { run: 'python3 docs/work-guide/work/build_guide.py' },
+          { run: 'git diff --exit-code -- docs/work-guide/outputs' },
+          { run: 'python3 docs/work-guide/work/test_maintenance.py' },
+          { name: 'Prepare the pinned browser checker',
+            run:
+             'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Check the guide and capture review evidence',
+            run:
+             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
+          { uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+            with:
+             { name: 'work-guide-review',
+               path:
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n',
+               'if-no-files-found': 'error',
+               'retention-days': 14 } } ] } });
+});
