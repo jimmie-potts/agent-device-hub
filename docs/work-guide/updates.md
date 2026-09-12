@@ -1,5 +1,35 @@
 # Guide maintenance history
 
+## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
+
+PR #77 merged as `1fd353215532a5d0220b99d9b35b6da0436221cc` on
+September 12 UTC, including PR #99's guide inputs and output. PR #99 is closed
+as superseded. Updated issue #30 to record the early source baseline, link the
+merged report and budgets, and retain the open integrated acceptance criteria.
+The owner excluded further #77 CI verification from this reconciliation; this
+entry does not claim successful merged-main CI.
+
+Updated the shared Codex qualification row and next-work recommendation to use
+the merged baseline for dependent runtime designs. Refreshed all three backlog
+inventories and paginated history, recording the source merge separately from
+installed-client, device and public-publication evidence. Historical candidate
+entries below remain dated records, superseded by this closeout.
+
+The refresh also observed #100 closed after PR #101 merged. Removed it from open
+primary coverage and the remaining-work map, retained its completed reference,
+and taught the refresh helper to preserve that reference. The guide now contains
+106 primary open issues, 12 guides, 48 roadmap nodes and 68 merged PRs.
+
+Validation: guide generation and all five maintenance tests passed. Browser
+checks passed at widths 320, 390, 768, 900, 1000 and 1440, including navigation,
+search, links, timeline controls and print, with no browser errors. Generated
+output consistency and whitespace checks are recorded with the candidate PR.
+Architecture no-impact: no owner, command flow, contract or device behavior
+changed; all nine pinned viewers and architecture receipts remain unchanged.
+This is documentation/status reconciliation with no product capability delta,
+so no new OpenSpec change is needed. Current-candidate review and UI approval
+remain the documentation PR's gates. Public publication is outside this task.
+
 ## 2026-09-12 UTC: Guide-only CI candidate for Hub #100
 
 Hub #100 proposes excluding changes entirely under `docs/work-guide/` from both
