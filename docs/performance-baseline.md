@@ -6,6 +6,11 @@ candidate adds a pinned, isolated measurement of the delivered Linux hook. The
 source baseline and budget receipt below cover the early stage. Shared feed,
 consumer and physical qualification remain later work; overall #30 stays open.
 
+Receipt storage: start with the [receipt summary](performance/receipts/README.md).
+Raw observations are gzip-compressed; existing SHA-256 evidence hashes refer to
+the decompressed original bytes. The receipt index records compressed hashes
+separately. Historical and excluded runs remain in the archive subdirectory.
+
 ## Available source boundary
 
 `python scripts/performance/admission.py --output <new-directory>` measures
@@ -141,7 +146,7 @@ and process startup remain distinct from validator call cost. Pooled percentiles
 are computed from raw samples, not averages of per-repeat percentiles. A sample
 count of 1,000 or more alone does not establish tail confidence.
 
-The refreshed [September 10 Linux validator receipt](performance/receipts/2026-09-10-linux-validators.json)
+The refreshed [September 10 Linux validator receipt](performance/receipts/2026-09-10-linux-validators.json.gz)
 contains another 19,800 valid-case calls across three processes per language.
 Python p95 was 0.340-0.357 ms and p99 0.374-0.414 ms; Node p95 was
 0.012-0.015 ms and p99 0.026-0.031 ms. It preserves startup/import/first-call
@@ -237,7 +242,7 @@ released contract while meeting the timing budget.
 ## Frozen early budgets
 
 [The budget file](performance/linux-budgets.json) pins
-[the 9,000-call receipt](performance/receipts/2026-09-10-linux-hook.json) by
+[the 9,000-call receipt](performance/receipts/2026-09-10-linux-hook.json.gz) by
 SHA-256. Every one of the nine profiles passed, with no failed hook or worker
 and verified final state. These are candidate limits until independent review,
 current-head CI, guarded merge and merged-main CI accept this version.

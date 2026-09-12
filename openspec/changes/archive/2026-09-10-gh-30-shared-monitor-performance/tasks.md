@@ -19,7 +19,7 @@
 
 ## Candidate evidence
 
-Linux measurements: `docs/performance/receipts/2026-09-10-linux-hook.json`, nine
+Linux measurements: `docs/performance/receipts/2026-09-10-linux-hook.json.gz`, nine
 passing profiles and 9,000 raw calls. Complete source/tool hashes and the
 measured tool commit are in `docs/performance/linux-budgets.json`. Earlier
 smoke/interrupted attempts retain separate receipts and exclusion reasons.

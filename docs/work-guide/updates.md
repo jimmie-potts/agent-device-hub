@@ -871,3 +871,17 @@ lookups. This artifact closeout changes no fact represented in the guide: its
 candidate evidence and pending merge gates remain accurate. The generated HTML
 is unchanged, so the existing UI approval request still identifies this candidate.
 Final artifact reviews and CI must pass before merge.
+
+## 2026-09-11: Compress #77 benchmark evidence
+
+Compressed all six raw receipts without changing their decompressed bytes and
+archived the four historical or excluded runs within Git. Added a readable
+summary and checksum index; updated evidence links while preserving the consumer
+package files, measurement results and budgets. This storage-only change adds no
+product behavior or specification requirement, so no new OpenSpec change is
+needed.
+
+Guide no-impact: inspected guide inputs and found no raw receipt filename links.
+Storage changes do not alter represented results, architecture or delivery status.
+Generated HTML, snapshot dates and its pending approval remain unchanged. This
+entry records evidence maintenance, not source merge or public publication.

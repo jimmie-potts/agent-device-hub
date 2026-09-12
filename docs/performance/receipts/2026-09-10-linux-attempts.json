@@ -1,13 +1,13 @@
 {
   "attempts": [
     {
-      "receipt": "2026-09-10-linux-smoke.json",
+      "receipt": "archive/2026-09-10-linux-smoke.json.gz",
       "sha256": "da12525491a69dc0f6edb07edd4620a3733d9ebba3648dbf95cbe391d0ea6ac7",
       "qualified": false,
       "reason": "50 calls per profile, one repetition; provisional smoke check before collection fixes"
     },
     {
-      "receipt": "2026-09-10-linux-interrupted.json",
+      "receipt": "archive/2026-09-10-linux-interrupted.json.gz",
       "sha256": "02dd39a6ad5858f754dde47a37683945d9187cdce6c89a91b32ab3a069612c4e",
       "qualified": false,
       "reason": "Stopped after two completed repetitions to correct bounded output, cleanup evidence and partial-result retention"

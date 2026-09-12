@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "baselineReceipt": "receipts/2026-09-10-linux-hook.json",
+  "baselineReceipt": "receipts/2026-09-10-linux-hook.json.gz",
   "baselineSha256": "ce89664e3f876d7de9fb9f350c0e965e365bf013d61f746a1c017f580aac5136",
   "measuredToolCommit": "2467d382db2ad3a85f0adb9fdd729efa05741505",
   "sourceRevision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
@@ -65,8 +65,9 @@
   "resourceScope": "CPU sums reaped first/warm hooks and workers, excluding preflight/failure probes; RSS is largest child lifetime peak and may include preflight, not combined process memory.",
   "reviewPolicy": "Independent Standards and Specification review plus current-head CI and merged-main CI accept this version. Change any limit only through a documented reviewed PR.",
   "componentReceipt": {
-    "path": "receipts/2026-09-10-linux-validators.json",
+    "path": "receipts/2026-09-10-linux-validators.json.gz",
     "sha256": "87a104e9dbfff52ab72aaa7d4feba0bea6b818b1560b2188363835b3e8d4ba8f",
     "scope": "released validators only; excludes full hook, future shared feed and devices; distinct resource/clock definitions"
-  }
+  },
+  "receiptChecksumPolicy": "baselineSha256 and componentReceipt.sha256 hash decompressed original bytes; compressed-file hashes are in receipts/index.json."
 }
