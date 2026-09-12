@@ -33,9 +33,12 @@ Use one coordinating writer and an isolated branch/worktree per deliverable.
 Preserve other worktrees, branches, installations and their owners. Deliver
 changes through PRs. Independent read-only Standards and Specification reviewers
 must inspect the same committed base/head. Missing review, blocking findings or
-any missing/unsuccessful configured CI job prevents automatic merge. Recheck
+any missing/unsuccessful applicable CI job prevents automatic merge.
+Only changes entirely under docs/work-guide/ may use the intentional CI-filter
+exception in docs/sdlc.md; read its evidence requirements before merge or closure. Recheck
 scope, head and base before a squash merge guarded by --match-head-commit.
-Never use --admin. Read all merged-revision main CI jobs before issue closure.
+Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
+for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
 UI changes additionally require explicit human approval of the current candidate.
 
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then

@@ -2,7 +2,9 @@ name: Work guide
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/work-guide/**']
   pull_request:
+    paths-ignore: ['docs/work-guide/**']
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true

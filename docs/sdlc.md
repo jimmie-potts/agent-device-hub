@@ -95,16 +95,49 @@ merge is not evidence of a current public edition.
    fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
 4. Read all GitHub reviews/threads and current-head CI pages. Require every
-   configured job to succeed, including matrix jobs; missing, pending, skipped,
-   cancelled or failed jobs prevent merge. UI candidates also need explicit user
+   applicable configured job to succeed, including matrix jobs; missing, pending,
+   skipped, cancelled or failed jobs prevent merge except for the verified
+   guide-only filtering described below. UI candidates also need explicit user
    approval, renewed after UI changes.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
    Never use --admin, a background merge service or account/privacy changes.
-6. Read back the main merge revision and all its CI jobs. Close only the delivered
+6. Read back the main merge revision and all applicable CI jobs, or record the
+   guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
+
+### Guide-only CI exception
+
+Both Hub workflows exclude changes entirely under `docs/work-guide/`. This includes
+its generators and tests. For a guide-only PR and its main merge, the coordinator
+may accept intentionally absent runs only after recording all of the following:
+
+- The exact base/head or before/after merge revisions, the complete changed-file
+  list, and the workflow triggers at the candidate revision. Use the PR's full
+  comparison and the push's comparison separately; include deletions and both
+  paths of renames. Every path must remain under `docs/work-guide/`.
+- Successful local guide generation, generated-output consistency, maintenance
+  tests and browser checks from the exact candidate using the guide procedure.
+  Retain the HTML hash, screenshots, print check and verification receipt outside
+  Git. Validate the merged tree and repeat checks if its guide content differs.
+- GitHub event/head associations and check/run readbacks consistent with those
+  filters, plus the current protection and merge-state inspection. Missing runs
+  alone, failed API reads or a cancelled run do not establish intentional filtering.
+
+Independent Standards and Specification reviews, current-candidate human approval
+for UI changes, and guarded squash merge still apply. Required checks that remain
+pending block merge; never bypass protections or emit dummy success checks. Record
+unavailable protection reads and inspect the PR's authoritative merge/check state.
+Any changed path outside the guide folder requires all normal CI, including a
+rename out of the folder. If path scope or filter applicability is uncertain,
+retain the normal gate until resolved. Workflow/policy changes themselves receive
+full CI and cannot use their proposed exception to approve their own delivery.
+
+For issue closure and later authorized publication, the verified guide-only
+receipt replaces only the absent Hub CI evidence. All other acceptance and
+publication requirements remain in force. Record this distinction explicitly.
 
 The initial GitHub-generated README commit only creates the default branch.
 Subsequent bootstrap and product changes use PRs. Do not assume private-plan

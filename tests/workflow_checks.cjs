@@ -168,9 +168,45 @@ test('initialization preserves personal Codex prompts with current integrations 
 // Parse the workflow so formatting changes do not alter the scheduling checks.
 const YAML = require('yaml');
 
+const expectedTriggers = {
+  push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
+  pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
+};
+
+test('both workflows exclude only guide-only changes', () => {
+  const cases = [
+    ['guide addition', ['docs/work-guide/new.md'], true],
+    ['generator and test edits', ['docs/work-guide/work/build_guide.py', 'docs/work-guide/work/test_maintenance.py'], true],
+    ['output deletion', ['docs/work-guide/outputs/retired.html'], true],
+    ['source', ['docs/work-guide/updates.md', 'packages/mcp/src/server.ts'], false],
+    ['root documentation', ['docs/work-guide/updates.md', 'docs/development.md'], false],
+    ['dependency', ['docs/work-guide/updates.md', 'package-lock.json'], false],
+    ['workflow', ['docs/work-guide/README.md', '.github/workflows/ci.yml'], false],
+    ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false],
+    ['similarly named folder', ['docs/work-guides/new.md'], false],
+  ];
+  for (const file of ['ci.yml', 'work-guide.yml']) {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
+    assert.deepEqual(workflow.on, expectedTriggers, file);
+    for (const event of ['push', 'pull_request']) {
+      const patterns = workflow.on[event]['paths-ignore'];
+      // Exercise the configured simple glob against bounded path sets, not
+      // GitHub's diff generation, truncation, or hosted event scheduler.
+      for (const [name, paths, ignored] of cases) {
+        assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), ignored, `${file} ${event}: ${name}`);
+      }
+    }
+    assert.deepEqual(workflow.permissions, { contents: 'read' });
+    assert.deepEqual(workflow.concurrency, {
+      group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
+      'cancel-in-progress': true,
+    });
+  }
+});
+
 test('CI validates PRs once and retains every platform and suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
-  assert.deepEqual(ci.on, { push: { branches: ['main'] }, pull_request: null });
+  assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
     'cancel-in-progress': true,

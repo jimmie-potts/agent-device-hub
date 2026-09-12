@@ -2,7 +2,9 @@ name: Checks
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/work-guide/**']
   pull_request:
+    paths-ignore: ['docs/work-guide/**']
 permissions:
   contents: read
 concurrency:

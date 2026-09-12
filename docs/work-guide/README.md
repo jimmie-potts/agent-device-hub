@@ -55,7 +55,8 @@ requires a separate public repository. Links to private GitHub issues, PRs and
 source files still require repository access.
 
 This task's coordinator owns the hub source PR and the linked public publication
-PR. After a guide change merges and all configured main CI jobs pass:
+PR. After a guide change merges and all applicable main CI jobs pass, or the
+[guide-only CI receipt](../sdlc.md#guide-only-ci-exception) is verified:
 
 1. Use the validated output from that exact hub revision. Copy
    `outputs/agent-device-work-guides.html` to the public repository's `index.html`
@@ -117,7 +118,8 @@ the guide was updated merely because the device source merged.
    SHA-256 receipts and definitions in `work/architecture_diagrams.py`. Render
    using the centrally installed archify skill; do not install or vendor it.
    Retain implemented/planned labels and each diagram's failure boundaries.
-4. Run the commands below. Inspect desktop/mobile and print renders for diagram
+4. Run the commands below. Guide-only CI filtering does not waive these local
+   checks or the review evidence required by the [SDLC exception](../sdlc.md#guide-only-ci-exception). Inspect desktop/mobile and print renders for diagram
    changes. Commit inputs, generator, resulting HTML and viewers together.
 5. After merge/issue closure, reconcile newly confirmed history and status in a
    linked follow-up PR if those facts were unavailable before merge. This does
@@ -149,6 +151,9 @@ No product service or hardware test is needed for this document.
 python3 docs/work-guide/work/build_guide.py
 python3 docs/work-guide/work/test_maintenance.py
 node docs/work-guide/work/check_guide.cjs
+# After committing intended generated output, rebuild and require no drift:
+python3 docs/work-guide/work/build_guide.py
+git diff --exit-code -- docs/work-guide/outputs
 ```
 
 When refreshing GitHub data, use an authenticated `gh` client with read access to
