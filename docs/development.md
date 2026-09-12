@@ -26,6 +26,18 @@ GitHub CI runs on pull requests and pushes to main. Superseded PR revisions
 are cancelled per workflow and PR; main revisions keep independent runs. Each
 job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
 
+Both Hub workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and main
+pushes. Guide-only edits, including generators and tests, retain local guide
+validation under [the SDLC exception](sdlc.md#guide-only-ci-exception). Mixed
+changes run every configured job. See [GitHub's path-filter rules](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax):
+PRs use three-dot diffs and existing-branch pushes use two-dot diffs. Filtering
+considers at most 300 changed files; a larger mixed diff can miss an outside path.
+Over 1,000 commits or a diff-generation timeout causes a run. Do not rely on a
+filtered result when the complete changed-file scope is uncertain or mixed;
+retain the normal gate and split a large change when necessary. Tag pushes are
+outside the existing main-only push trigger. Static tests verify configuration;
+only hosted event evidence verifies actual scheduling.
+
 Product CI jobs run `npm run build` and `npm run typecheck` once, then use
 `:built` variants of the controller, lifecycle and MCP TypeScript/package test
 commands. These variants require output freshly built in that same job. The

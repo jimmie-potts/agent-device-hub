@@ -168,9 +168,45 @@ test('initialization preserves personal Codex prompts with current integrations 
 // Parse the workflow so formatting changes do not alter the scheduling checks.
 const YAML = require('yaml');
 
+const expectedTriggers = {
+  push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
+  pull_request: { 'paths-ignore': ['docs/work-guide/**'] },
+};
+
+test('both workflows exclude only guide-only changes', () => {
+  const cases = [
+    ['guide addition', ['docs/work-guide/new.md'], true],
+    ['generator and test edits', ['docs/work-guide/work/build_guide.py', 'docs/work-guide/work/test_maintenance.py'], true],
+    ['output deletion', ['docs/work-guide/outputs/retired.html'], true],
+    ['source', ['docs/work-guide/updates.md', 'packages/mcp/src/server.ts'], false],
+    ['root documentation', ['docs/work-guide/updates.md', 'docs/development.md'], false],
+    ['dependency', ['docs/work-guide/updates.md', 'package-lock.json'], false],
+    ['workflow', ['docs/work-guide/README.md', '.github/workflows/ci.yml'], false],
+    ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false],
+    ['similarly named folder', ['docs/work-guides/new.md'], false],
+  ];
+  for (const file of ['ci.yml', 'work-guide.yml']) {
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
+    assert.deepEqual(workflow.on, expectedTriggers, file);
+    for (const event of ['push', 'pull_request']) {
+      const patterns = workflow.on[event]['paths-ignore'];
+      // Exercise the configured simple glob against bounded path sets, not
+      // GitHub's diff generation, truncation, or hosted event scheduler.
+      for (const [name, paths, ignored] of cases) {
+        assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), ignored, `${file} ${event}: ${name}`);
+      }
+    }
+    assert.deepEqual(workflow.permissions, { contents: 'read' });
+    assert.deepEqual(workflow.concurrency, {
+      group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
+      'cancel-in-progress': true,
+    });
+  }
+});
+
 test('CI validates PRs once and retains every platform and suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
-  assert.deepEqual(ci.on, { push: { branches: ['main'] }, pull_request: null });
+  assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
     'cancel-in-progress': true,
@@ -281,4 +317,34 @@ test('the standalone wrapper runs its payload only after a successful build', (t
   const bad = invoke();
   assert.notEqual(bad.status, 0);
   assert.equal(fs.existsSync(path.join(directory, 'payload-ran')), false);
+});
+
+// Keep guide build, browser and retained review evidence under regression coverage.
+test('guide CI retains its validation and review artifacts', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
+  assert.deepEqual(workflow.jobs, { guide:
+     { name: 'Work guide build and browser checks',
+       'runs-on': 'ubuntu-latest',
+       'timeout-minutes': 10,
+       steps:
+        [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
+          { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24' } },
+          { uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+            with: { 'python-version': '3.12' } },
+          { run: 'python3 docs/work-guide/work/build_guide.py' },
+          { run: 'git diff --exit-code -- docs/work-guide/outputs' },
+          { run: 'python3 docs/work-guide/work/test_maintenance.py' },
+          { name: 'Prepare the pinned browser checker',
+            run:
+             'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
+          { name: 'Check the guide and capture review evidence',
+            run:
+             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
+          { uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
+            with:
+             { name: 'work-guide-review',
+               path:
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n',
+               'if-no-files-found': 'error',
+               'retention-days': 14 } } ] } });
 });

@@ -1,5 +1,31 @@
 # Guide maintenance history
 
+## 2026-09-12 UTC: Guide-only CI candidate for Hub #100
+
+Hub #100 proposes excluding changes entirely under `docs/work-guide/` from both
+Hub CI workflows, including guide generators and checks. Mixed changes retain
+all configured jobs. This candidate documents the narrow SDLC exception and its
+local validation, review and required-check evidence. Hosted skipping is not yet
+verified, and the issue remains open.
+
+Refresh the three repository backlogs through the existing REST/GraphQL helper.
+Add #100 to the development-workflow guide and CI/guide-maintenance timeline
+node, with exactly one primary placement. The refreshed inventory contains 107
+open issues across 12 guides. Architecture ownership and the nine pinned viewers
+do not change; no architecture redraw is needed. Preserve the existing history
+snapshot date because this candidate records planned behavior, not a new merge.
+
+Validation: Node 24 setup succeeded; workflow validation passed for four specs
+and four archives, and all 15 workflow tests passed. The new filter regression
+failed before the YAML edits and passed afterward. The guide-job regression
+rejects removal of the maintenance-check step. Guide generation, all five
+maintenance tests and browser checks passed, with no browser errors. Retain
+screenshots, print output and the exact HTML hash in the candidate review receipt.
+Generated-output consistency is checked after committing intended output.
+Independent reviews, current-candidate UI approval and hosted CI remain delivery
+gates. Guide source synchronization is included here; public publication and
+live public verification are outside #100's source-delivery scope.
+
 ## 2026-09-10 UTC: Nanoleaf Linux source delivered
 
 Nanoleaf PR #57 merged as `2558df5a2fc543247b0c75898ef0260ba3ea264b`.
