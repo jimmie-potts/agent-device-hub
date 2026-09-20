@@ -17,7 +17,11 @@ evidence. Do not equate CI with client or physical acceptance.
 
 Record base SHA, head SHA, merge-base, diff command and clean worktree.
 Record independent Standards and Specification reviews and finding dispositions.
-For UI changes, record approval of the current candidate.
+For cross-project work-guide UI and its architecture viewers, record the
+[guide exemption](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md#ui-approval-scope) and required visual/browser
+validation. Human UI approval is not required for those guide changes.
+For all other UI changes, record approval of the current candidate, including
+when the same PR changes the guide. Renew approval after changes to that other UI.
 
 ## Delivery
 

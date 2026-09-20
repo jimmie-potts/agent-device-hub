@@ -126,8 +126,15 @@ the guide was updated merely because the device source merged.
    not require recursively recording guide-only synchronization PRs as product
    milestones. Record their maintenance in `updates.md` instead.
 
-Updates require human or agent review; these instructions do not start a
-scheduler, run devices, deploy the guide or grant additional mutation authority.
+Guide UI changes, including presentation, interactions and architecture viewers,
+do not require human approval under the [SDLC UI approval scope](../sdlc.md#ui-approval-scope).
+Independent Standards and Specification reviews and the required guide checks
+still apply. Other UI in a mixed change retains its human approval requirement.
+The exception also covers verified public copies of the guide; publishing them
+still requires the separate authority and evidence described above.
+
+These instructions do not start a scheduler, run devices, deploy the guide or
+grant additional mutation authority.
 Concurrent deliveries rebase and reconcile the guide inputs before regenerating;
 never merge generated HTML conflicts by choosing one side blindly.
 
