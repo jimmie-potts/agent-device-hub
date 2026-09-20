@@ -1,0 +1,20 @@
+{
+  "name": "@jimmie-potts/agent-state",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers": {
+      "types": "./dist/providers.d.ts",
+      "import": "./dist/providers.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/agent-lifecycle-contracts": "1.0.0",
+    "ajv": "8.20.0"
+  }
+}
