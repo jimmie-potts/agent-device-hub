@@ -29,6 +29,15 @@ Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [development](docs/development.md) for setup. GitHub issues own scope, acceptance,
 dependencies and status. A completed bootstrap is not a working device integration.
 
+## System design documents
+
+Open the [BUNNY system design atlas](docs/system-design/index.html) locally for
+the HTML overview, 26 component documents and a combined reading/print view.
+GitHub shows HTML source. The atlas distinguishes delivered contracts, planned
+services and qualification work, with links to the owning issues and sources.
+Edit its HTML fragments and inventory, then follow the
+[documentation checks](docs/development.md#system-design-documents).
+
 ## Validate the contracts
 
 Use Node 24 and npm from the repository root:

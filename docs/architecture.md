@@ -9,6 +9,10 @@ under [Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55),
 and [Hub #43](https://github.com/jimmie-potts/agent-device-hub/issues/43) retains
 coordination and documentation of that outcome.
 
+The [BUNNY HTML system design](system-design/index.html) expands these boundaries
+into component documents, complete flows, deployment designs and open decisions.
+It links existing contracts and issues without replacing their authority.
+
 ## Product direction and vocabulary
 
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted

@@ -1,5 +1,31 @@
 # Development setup
 
+## System design documents
+
+The human-facing design set is HTML under `docs/system-design/`. Edit
+`source/*.html` and `design.json`, then regenerate the overview, component pages
+and complete reading view. `assets/` holds the shared style and browser behavior.
+The inventory records the originating template set and source revision receipts.
+
+```bash
+python3 docs/system-design/build.py
+python3 docs/system-design/build.py --check
+python3 docs/system-design/check.py
+node docs/system-design/check.cjs
+```
+
+The generator and static check use Python's standard library. Browser checks use
+installed Playwright/Chromium, with the same `GUIDE_PLAYWRIGHT_MODULE` and
+`GUIDE_CHROMIUM_PATH` overrides as the work guide. `BUNNY_DESIGN_RECEIPTS` selects
+an external screenshot/PDF/receipt directory; the default is a temporary folder.
+The Work guide CI job runs these document checks using its pinned browser setup.
+
+The diagram JSON is rendered by the installed archify skill. Keep its validated
+HTML and specification together. Browser screenshots and local delivery receipts
+remain outside Git. This documentation workflow starts no application, installs
+no hooks and contacts no devices. Product contracts and runtime acceptance remain
+with their existing owners. No new OpenSpec capability is introduced by the atlas.
+
 ## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root:

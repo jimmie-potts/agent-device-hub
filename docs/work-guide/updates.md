@@ -1,5 +1,45 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: BUNNY HTML system design candidate for #103
+
+Add a linked HTML overview, 26 component documents, a combined reading/print
+view and one explorable state/action diagram under `docs/system-design/`.
+The documents adapt the composable template approach from the Map Distributed
+System Design Docs task. They distinguish delivered contracts and source from
+planned modules, qualification work and optional hosting choices. Editable HTML
+fragments and a JSON inventory regenerate the reading pages without overwriting
+the authored content. No product capability or OpenSpec scenario changes.
+
+Refresh all three issue inventories through the existing REST/GraphQL helper.
+Place #103 in the development-workflow guide and its CI/documentation timeline
+node. The guide contains 12 guides, 107 primary open issues, 124 linked issues,
+48 roadmap nodes and the existing 68 merged PR records. No state owner, command
+flow, controller contract or failure boundary changes; retain all nine existing
+architecture viewers and their receipts. The additional diagram illustrates the
+same boundaries in the separate system design set.
+
+Validation: Node 24 setup and workflow validation pass for four specifications
+and four archived changes; all 15 workflow tests pass. Extend the existing CI
+regression to retain the old guide checks alongside the new document checks and
+review artifacts. Document verification passes for 28 reading pages and 1,022
+local links. Browser checks cover desktop/mobile navigation, search, no-result
+states, both themes, all component pages and print output, with no page errors
+or external requests from the reading pages. The architecture diagram passes
+all nine checks and its desktop browser containment/readability checks.
+
+Guide generation, all five maintenance tests and browser checks pass at widths
+320, 390, 768, 900, 1000 and 1440. Generated guide SHA-256:
+`b699e3652063f93ae134c75602d4fd8c6f51d6b207dc9361529d086ed656edbb`.
+The HTML overview SHA-256 is
+`7257c2ef07b650074ef86afd5b7a1d8de209893cd95b6c5fd1be66618cf7b92e`.
+Independent review, hosted CI and explicit approval of the current HTML
+candidate remain delivery gates; this entry does not claim merge or deployment.
+
+The unauthenticated public guide returned HTTP 200 with SHA-256
+`0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
+It differs from this candidate. Public publication is outside #103; source
+synchronization here does not update or verify a deployed copy of this change.
+
 ## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
 
 PR #77 merged as `1fd353215532a5d0220b99d9b35b6da0436221cc` on
