@@ -1,51 +1,99 @@
 # Guide maintenance history
 
-## 2026-09-20 UTC: Hub #3 source merged and package released
+## 2026-09-20 UTC: Complete Hub #3 release and reconcile CI acceptance
 
-[PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105) merged as
-`f550bcd6b7d3b7da0f34c90c622b343afe2b25fb`. Its tree matches the independently
-reviewed candidate. Published [agent-state 1.0.0](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0)
-with the package archive, checksum and source receipt. A fresh merged-revision
-build reproduces SHA-256
+The #3 coordinator completed source delivery after [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)
+merged at `f550bcd6b7d3b7da0f34c90c622b343afe2b25fb`. Its tree matches the
+independently reviewed candidate. Published the [agent-state 1.0.0 release](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0)
+with the reproducible archive, checksum, source receipt and final CI acceptance
+receipt. Downloaded all four assets and verified their exact bytes. A fresh build
+at the merged revision reproduces archive SHA-256
 `ae589d311e282c3356579c85507a3aa973ab7990e06e062143aeb08d8d2dcc99`.
-Downloaded all three release assets and verified their exact bytes and the tag's
-source revision. External imports, declarations, manifests, all 96 Node/process
-tests and 36 Python snapshot fixtures pass. Build/type and workflow checks pass,
-including six specifications, 34 requirements, five archives and 15 workflow tests.
+External consumers, 96 Node/process tests, 36 Python snapshot fixtures,
+build/type checks and workflow checks passed.
 
-The source acceptance checklist is complete. The initial main-CI attempt blocked
-all 13 jobs before execution because of account billing. Checks attempt 2 later
-passed 11 jobs; Ubuntu Workflow failed before Linux qualification when the cached
-bubblewrap package URL returned 404. Work guide attempt 2 passed after one retry,
-so 12 of 13 merged-revision jobs now pass. Hub #3 remains open in review and
-blocked pending complete CI acceptance. The separate Hub #107 / PR #108 task owns
-the package-index repair and further workflow changes or reruns. The release
-receipt preserves the first-attempt observation; release notes carry the updated
-status. Production host/storage adoption, installed-provider qualification and
-physical acceptance remain separate work.
+The separately owned [PR #108](https://github.com/jimmie-potts/agent-device-hub/pull/108)
+merged the owner-approved five-job Ubuntu matrix and package-index repair at
+`ed5024e94da08009f313b08a0dd0e5a1af687a25`. Read every job and its executed
+steps in [Checks](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35527760360)
+and [Work guide](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35527760350).
+All five passed, including Linux hook qualification. Product code, schemas,
+fixtures, package inputs and OpenSpec are unchanged from the released source.
+The earlier billing failures and stale apt-index failure remain historical
+evidence. Issue #3 closed as completed after these results; #107's coordinator
+also closed that issue. Coordination and Actions ownership are recorded on
+[PR #108](https://github.com/jimmie-potts/agent-device-hub/pull/108#issuecomment-5751591521).
+This guide follow-up makes no workflow changes.
 
-Updated the shared Codex row, next-work recommendation, repository snapshots and
-merge history to record the source merge and release without claiming closure.
-The complete REST/GraphQL refresh contains 108 primary open issues, 12 guides,
-50 roadmap nodes and 71 historical merges. Added the newly opened, separately
-owned Hub #107 to development-workflow coverage and an independent roadmap row.
-Its proposed five-job Ubuntu CI remains future work. PR #104 remains independent.
+[PR #109](https://github.com/jimmie-potts/agent-device-hub/pull/109) is the linked
+source-guide companion. It preserves #108's guide changes, marks #3 and #107
+completed, and retains their closed reference records. Refreshed all three open
+inventories and native dependencies, plus paginated history pinned to each
+observed main revision. The guide now represents 106 primary open issues,
+12 guides, 49 roadmap nodes, 72 merged PRs and nine architecture viewers.
+The roadmap recommends separately scoped first-host adoption in Pixoo #31;
+Hub #8 still owns installed-provider qualification. Ownership, command flows and
+architecture have not changed, so the viewer artifacts and their dated source
+receipts remain unchanged. No new OpenSpec change is needed for this closeout.
 
-Guide generation, all five maintenance tests and browser checks at widths 320,
-390, 768, 900, 1000 and 1440 pass, including navigation, search, links, timeline
-controls and print restoration, with no browser errors. Inspected desktop,
-mobile and print timeline renders. The existing dense history captions and
-mobile horizontal scrolling remain. Generated-output consistency and independent
-review evidence are recorded in the follow-up PR.
+Guide generation, all five maintenance tests and browser checks at 320, 390,
+768, 900, 1000 and 1440 pixels passed, including links, search, timeline controls,
+viewer interactions and print restoration, with no browser errors. Guide HTML
+SHA-256: `3c3f9931bae93ab2bd9333a92fc3c460e4ef857aaba1e1d53223ba2513d229df`.
+Screenshots, print output and verification receipts remain outside Git.
+Fixed-revision independent reviews, generated-output consistency and the
+[guide-only CI exception](../sdlc.md#guide-only-ci-exception) are recorded in
+PR #109 before guarded merge. Public publication remains outside this request;
+the last verified public edition records source `950f7f6` and eight viewers.
+No installation, live state, agent sessions or devices were changed.
 
-No ownership, command flow, product API or wire value changed, so no new OpenSpec
-change or architecture redraw is needed. All nine viewers and their dated source
-receipts are unchanged. This follow-up changes only `docs/work-guide/`; its
-guide-only CI exception does not satisfy Hub #3's outstanding product CI gate.
+## 2026-09-20 UTC: Five Ubuntu CI checks for Hub #107
 
-The public landing page still serves the `950f7f6` source edition, verified at
-SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
-Public publication remains outside this source-delivery wrap-up.
+The delivery coordinator prepared [Hub #107](https://github.com/jimmie-potts/agent-device-hub/issues/107)
+from main `f550bcd`, including the shared agent-state checks merged in PR #105.
+The candidate removes native Windows jobs and combines controller, lifecycle and
+agent-state validation into two Ubuntu jobs for Python 3.12 and 3.14. Workflow,
+MCP and guide checks bring the total to five. Existing Linux suites, isolated
+package consumers, performance checks, scheduling and timeout rules remain.
+This is CI/tooling maintenance without a product or wire-contract change; no new
+OpenSpec change is needed.
+
+Refreshed all three backlog inventories and native prerequisite records, added
+#107 to development-workflow primary coverage and the existing CI roadmap node,
+and regenerated the guide. Recorded PR #105's observed source merge while #3
+remains open. Kept #91's earlier thirteen-job measurements as historical evidence.
+The candidate represents 108 primary open issues, 12 guides, 49 roadmap nodes
+and nine architecture viewers. History and architecture retain their independent
+source dates. CI consolidation changes no runtime ownership, command flow or
+device boundary, so architecture sources and viewers need no changes.
+
+Local validation passed with Node 24.21.0 and Python 3.12.13/3.14.4: all 32 retained
+workflow/product command invocations, including fifteen workflow regression tests
+and thirteen isolated Linux hook checks. The five-job regression first failed
+against the old workflow with `13 !== 5`, then passed after consolidation.
+Workflow validation reports six specifications, zero active changes and five
+archives. Guide generation, all five maintenance tests and browser checks at
+320, 390, 768, 900, 1000 and 1440 pixels passed, including print and viewer checks.
+Guide SHA-256: `d4320d12979ff6488896172cf387af3114aca6a3eccd821e396317bd0a3f2cd7`.
+Screenshots and the browser receipt stay outside Git.
+
+The first hosted candidate ran exactly five jobs. Both Python versions, MCP and
+the guide passed; workflow validation passed its fifteen tests but package setup
+failed because the runner's stale apt index referenced a removed bubblewrap
+archive. Added `apt-get update` before installation, preserving the AppArmor
+profile and namespace check. The setup assertion failed before this fix and
+passed afterward. This setup correction changes no guide output or architecture.
+
+Specification review found an older next-work recommendation that still called
+PR #105 unmerged. Reconciled it with the source-merge row, regenerated the guide
+and repeated maintenance/browser checks successfully. Remaining #3 acceptance
+and closure stay separate from its verified source merge.
+
+Source synchronization is in this candidate; independent review and current-head
+and merged-main CI remain required before completion. Public publication is
+outside this request. The public repository still records source `950f7f6` and
+eight viewers, so it does not represent this candidate. No public files, personal
+installation, provider configuration or devices were changed.
 
 ## 2026-09-20 UTC: Reconcile Hub #3 with the merged guide policy
 

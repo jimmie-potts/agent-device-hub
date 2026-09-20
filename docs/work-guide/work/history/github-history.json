@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-20T17:48:36.710715+00:00",
- "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head",
+ "fetchedAt": "2026-09-20T18:13:57.635132+00:00",
+ "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head; PR #109 title read back after its closeout scope update",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-20T17:42:20Z",
+   "pushedAt": "2026-09-20T18:02:18Z",
    "defaultBranch": "main",
-   "headSha": "f550bcd6b7d3b7da0f34c90c622b343afe2b25fb",
-   "mainCommitCount": 31,
+   "headSha": "ed5024e94da08009f313b08a0dd0e5a1af687a25",
+   "mainCommitCount": 32,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "ed5024e94da08009f313b08a0dd0e5a1af687a25",
+     "date": "2026-09-20T18:02:18Z",
+     "message": "ci: consolidate validation into five Ubuntu checks (#108)"
+    },
     {
      "sha": "f550bcd6b7d3b7da0f34c90c622b343afe2b25fb",
      "date": "2026-09-20T17:42:18Z",
@@ -406,6 +411,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/105",
      "base": "main",
      "mergedAt": "2026-09-20T17:42:18Z"
+    },
+    {
+     "number": 108,
+     "title": "ci: consolidate validation into five Ubuntu checks",
+     "createdAt": "2026-09-20T17:55:15Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/108",
+     "base": "main",
+     "mergedAt": "2026-09-20T18:02:18Z"
     }
    ],
    "openPRs": [
@@ -414,6 +427,13 @@
      "title": "docs: add BUNNY HTML design atlas and service references",
      "createdAt": "2026-09-20T02:55:40Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
+     "base": "main"
+    },
+    {
+     "number": 109,
+     "title": "docs: close out agent-state delivery and CI acceptance",
+     "createdAt": "2026-09-20T17:56:43Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/109",
      "base": "main"
     }
    ],
@@ -433,6 +453,14 @@
      "createdAt": "2026-09-07T02:21:58Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
+    },
+    {
+     "number": 3,
+     "title": "Implement the reusable agent-state core and provider emitters",
+     "closedAt": "2026-09-20T18:06:51Z",
+     "createdAt": "2026-09-07T02:22:00Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
     },
     {
      "number": 4,
@@ -497,9 +525,17 @@
      "createdAt": "2026-09-12T00:52:37Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/100"
+    },
+    {
+     "number": 107,
+     "title": "Consolidate Hub CI into five Ubuntu checks",
+     "closedAt": "2026-09-20T18:05:14Z",
+     "createdAt": "2026-09-20T17:44:01Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 65,
+   "openIssueCount": 63,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-20T17:44:01Z"

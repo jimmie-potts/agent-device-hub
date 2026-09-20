@@ -1,11 +1,11 @@
 [
   {
     "number": 109,
-    "title": "docs: record agent-state release and remaining CI acceptance",
-    "body": "PR #105 merged the shared agent-state source and the versioned package is now published. The guide still describes implementation and merge as pending. This follow-up records the merge and release while keeping issue #3 open for its blocked merged-revision CI gate.\n\nRefs #3 and PR #105. Refresh the three repository snapshots and merge history, and include separately owned issue #107 in primary coverage and its own roadmap row. The snapshot contains 108 open issues, 12 guides, 50 roadmap nodes and 71 merged PRs. All nine architecture viewers and source receipts are unchanged. No product behavior, ownership or contract changes; no OpenSpec delta is needed.\n\nValidation: guide generation, five maintenance tests and browser checks at widths 320, 390, 768, 900, 1000 and 1440 pass, including links, search, navigation, timeline controls and print restoration. No browser errors. Desktop/mobile/print timeline renders were inspected; existing dense history captions and mobile horizontal scrolling remain. Post-commit regeneration produces no diff. HTML SHA-256: `e9f53eea299d33c19be12a77bce76f991196984724511b44bf24fdc1f510ecac`.\n\nComparison: base/merge-base `f550bcd6b7d3b7da0f34c90c622b343afe2b25fb`, head `685a4c1f512c21c971e7edc08b52bc9b23e4e312`, clean worktree. Both independent reviews identified the CI-status change during review. The coordinator is refreshing the narrative and tracker snapshot before renewed review of the next committed head.\n\nThis candidate changes 11 paths, all under `docs/work-guide/`. Both existing workflows exclude guide-only PRs and main pushes with `paths-ignore: ['docs/work-guide/**']`. The [guide-only CI exception](https://github.com/jimmie-potts/agent-device-hub/blob/f550bcd6b7d3b7da0f34c90c622b343afe2b25fb/docs/sdlc.md#guide-only-ci-exception) applies to this documentation follow-up only, subject to current event/check/protection readbacks. The guide UI exemption applies; independent reviews and local browser validation remain required.\n\nIssue #3's source archive, checksum and source receipt are [published](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0), pinned to merged revision `f550bcd`. All three assets were downloaded and verified. Twelve of the thirteen merged-revision jobs now pass. [Checks attempt 2](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35526714391/attempts/2) passed 11 jobs; Ubuntu Workflow failed during Linux-hook setup because the cached `bubblewrap` package URL returned 404, before qualification ran. [Work guide attempt 2](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35526714393/attempts/2) passed. The CI task in #107 / PR #108 owns the package-index repair and further Actions changes/reruns. Issue #3 remains open until the applicable merged-main checks establish acceptance. The original all-jobs billing failure is first-attempt history. This guide PR does not satisfy that product CI gate or close #3.\n\nGuide-source reconciliation is included here. Public publication remains outside this wrap-up; the public landing page was verified against the older `950f7f6` edition and SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`. Installation and physical acceptance remain separate.\n",
+    "title": "docs: close out agent-state delivery and CI acceptance",
+    "body": "Close out issue #3's source delivery after PR #105 merged and the versioned [agent-state 1.0.0 package](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0) was published. The guide records the verified release, successful main checks after PR #108, and completed issues #3 and #107. It preserves the CI task's documentation and refreshes backlog, dependency and merge-history inputs before regenerating the guide.\n\nRefs #3, PR #105, issue #107 and PR #108. This follow-up changes only `docs/work-guide/`; Actions remain owned by the CI task. Source delivery, guide-source synchronization and public website publication are separate. Public publication is outside this request.\n\nThe current reconciliation is based on main `ed5024e94da08009f313b08a0dd0e5a1af687a25`. Local guide checks and renewed independent Standards and Specification reviews will be recorded against the committed candidate. The guide-only CI exception requires exact changed paths, unchanged workflow filters, authoritative GitHub check/merge-state readbacks and a guarded squash merge.\n",
     "state": "open",
     "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/109",
-    "updated_at": "2026-09-20T18:02:02Z",
+    "updated_at": "2026-09-20T18:15:21Z",
     "draft": false,
     "head": {
       "label": "jimmie-potts:codex/gh-3-closeout",
@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 67,
+        "open_issues_count": 65,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 67,
+        "open_issues": 65,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 67,
+        "open_issues_count": 65,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 67,
+        "open_issues": 65,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -388,7 +388,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 67,
+        "open_issues_count": 65,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -398,7 +398,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 67,
+        "open_issues": 65,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -517,7 +517,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 67,
+        "open_issues_count": 65,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -527,7 +527,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 67,
+        "open_issues": 65,
         "watchers": 0,
         "default_branch": "main"
       }
