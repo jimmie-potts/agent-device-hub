@@ -1,5 +1,25 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo dashboard physical evidence
+
+[Pixoo PR #62](https://github.com/jimmie-potts/divoom-app-upgrade/pull/62)
+records four authorized dashboard runs after the source tooling merge in #59.
+The selected method is complete RGB frames with a configurable 1000 ms minimum
+submission interval. The owner confirmed readability. Recordings show row
+clearing, overflow, coalesced bursts and a separately authorized successful
+restart after cancellation left an in-flight picture applied. No automatic
+retry or restoration of unknown original artwork is claimed. Firmware remains
+unknown; sparse runs and uncalibrated cross-clock timing do not establish
+sustained 1 Hz or universal device limits. Source acceptance delivery is pending.
+
+The shared Codex sequence now records that evidence and preserves #32, #33 and
+#34 as separate renderer, integration and real-client acceptance work. No runtime
+ownership or command flow changes, so architecture definitions and their review
+pins remain unchanged. Backlog/history facts and generated output are refreshed
+through the guide procedure. Public publication is outside this delivery; no
+installation or additional device operation is included. This documentation-only
+reconciliation requires no product specification delta.
+
 ## 2026-09-20 UTC: Pixoo embedded-host performance deferral
 
 [Pixoo PR #60](https://github.com/jimmie-potts/divoom-app-upgrade/pull/60)

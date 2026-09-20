@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-20T21:21:20.235861+00:00",
-  "refreshedAt": "2026-09-20T21:21:29.149510+00:00",
+  "startedAt": "2026-09-20T23:24:09.622654+00:00",
+  "refreshedAt": "2026-09-20T23:24:18.649392+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 62,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        63
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -158,11 +158,11 @@
       "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        19
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
