@@ -39,7 +39,12 @@ exception in docs/sdlc.md; read its evidence requirements before merge or closur
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
-UI changes additionally require explicit human approval of the current candidate.
+UI changes to the cross-project work guide under docs/work-guide/, including
+its generated HTML and architecture viewers, do not require human approval.
+All other UI changes require explicit human approval of the current candidate,
+renewed after changes to that UI. Mixed changes retain approval for UI outside
+the guide. Read the [UI approval scope](docs/sdlc.md#ui-approval-scope) for the
+boundary and evidence.
 
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
 npm run check:workflow and npm run test:workflow from the assigned worktree root.

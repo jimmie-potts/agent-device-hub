@@ -97,8 +97,7 @@ merge is not evidence of a current public edition.
 4. Read all GitHub reviews/threads and current-head CI pages. Require every
    applicable configured job to succeed, including matrix jobs; missing, pending,
    skipped, cancelled or failed jobs prevent merge except for the verified
-   guide-only filtering described below. UI candidates also need explicit user
-   approval, renewed after UI changes.
+   guide-only filtering described below. Apply the UI approval scope below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
@@ -107,6 +106,32 @@ merge is not evidence of a current public edition.
    guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
+
+### UI approval scope
+
+UI changes to the cross-project work guide maintained under `docs/work-guide/`
+do not require human approval. This includes its layout, styling, navigation,
+interactions, generated HTML and companion architecture viewers. Publishing
+verified copies of these guide artifacts adds no human UI approval gate;
+publication still requires the authority and evidence in the
+[guide procedure](work-guide/README.md#publish-the-public-edition).
+
+All other UI changes require explicit human approval of the current candidate,
+renewed after further changes to that UI. A PR containing both guide and other
+UI changes still needs approval for the other UI. Guide changes alone do not
+invalidate approval of otherwise unchanged UI.
+
+Record the affected UI and either its guide exemption or current-candidate
+approval in the PR. For guide work, this policy supersedes older human UI
+approval wording in issues and plans. Preserve their design deliverables,
+validation and dependencies; reconcile the approval wording during authorized
+tracker updates.
+
+Independent Standards and Specification reviews, local guide/browser checks,
+applicable CI and guarded merge remain required. Assess the guide-only CI
+exception separately against every changed path. Guide UI changes accompanied
+by edits outside `docs/work-guide/`, such as SDLC documentation, require normal
+CI even though the guide UI needs no human approval.
 
 ### Guide-only CI exception
 
@@ -126,10 +151,11 @@ may accept intentionally absent runs only after recording all of the following:
   filters, plus the current protection and merge-state inspection. Missing runs
   alone, failed API reads or a cancelled run do not establish intentional filtering.
 
-Independent Standards and Specification reviews, current-candidate human approval
-for UI changes, and guarded squash merge still apply. Required checks that remain
-pending block merge; never bypass protections or emit dummy success checks. Record
-unavailable protection reads and inspect the PR's authoritative merge/check state.
+Independent Standards and Specification reviews and guarded squash merge still
+apply. Follow the separate [UI approval scope](#ui-approval-scope). Required checks
+that remain pending block merge; never bypass protections or emit dummy success
+checks. Record unavailable protection reads and inspect the PR's authoritative
+merge/check state.
 Any changed path outside the guide folder requires all normal CI, including a
 rename out of the folder. If path scope or filter applicability is uncertain,
 retain the normal gate until resolved. Workflow/policy changes themselves receive

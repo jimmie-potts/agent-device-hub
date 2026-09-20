@@ -1,5 +1,43 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Guide UI approval policy candidate
+
+Repository: agent-device-hub, [PR #106](https://github.com/jimmie-potts/agent-device-hub/pull/106).
+The owner requested a documentation update through `plan-work`, then authorized
+source delivery through `deliver-work`. Remove human approval for guide UI while
+retaining it for every other UI change. This candidate updates `AGENTS.md`,
+`docs/sdlc.md`, the PR template and the guide procedure. Mixed changes still require approval for UI
+outside the guide. Guide changes alone do not require renewed approval.
+Independent reviews, guide/browser checks, applicable CI and publication
+authority remain required; the CI path-filter exception is separate.
+
+Updated the development-workflow guide's CI and Prism rows and regenerated the
+HTML. Older human UI approval wording in guide issues #73, #85, #86 and #87 is
+superseded by the new policy; reconcile those fields when tracker updates are
+authorized. Their design, validation and dependency requirements remain. The
+linked guide tasks remain open; this PR delivers only the approval policy.
+
+Backlog/history snapshots, issue states, roadmap order and all nine architecture
+viewers and receipts are unchanged. No ownership, command flow, product behavior
+or contract changes, so no OpenSpec proposal or architecture redraw is needed.
+Earlier entries retain the approval rules and evidence recorded at their dates.
+
+Validation passed under Node 24.20.0: workflow checks validated all four specs
+and four archives, and all 15 workflow tests passed. The current specs are
+`agent-lifecycle-contract`, `controller-contracts`, `shared-mcp-gateway` and
+`shared-monitor-performance-baseline`. Guide generation, all five maintenance
+tests and browser checks passed at widths 320, 390, 768, 900, 1000 and 1440,
+including navigation, search, links, timeline controls and print restoration,
+with no browser errors. Repeated generation preserved all ten HTML hashes;
+the complete output diff contains only the two intended policy paragraphs.
+
+Static instruction scenarios cover guide UI, other UI, mixed changes, approval
+renewal, older guide issue wording, publication authority and independent CI
+scope. These are document exercises, not live agent-session verification.
+This entry records candidate preparation. PR #106 records independent reviews,
+hosted CI and merge evidence as they are verified. Public publication and live
+verification remain separate from this source delivery.
+
 ## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
 
 PR #77 merged as `1fd353215532a5d0220b99d9b35b6da0436221cc` on
