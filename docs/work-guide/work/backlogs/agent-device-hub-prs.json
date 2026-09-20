@@ -1,16 +1,16 @@
 [
   {
-    "number": 104,
-    "title": "docs: add BUNNY HTML design atlas and service references",
-    "body": "BUNNY’s architecture and device interfaces are spread across separate repositories and planning records. This adds a linked HTML design atlas plus offline API and database references, with delivered source and future behavior marked separately.\n\n## Included\n\n- An overview, 26 component documents, a combined reading/print view and an explorable state/action diagram.\n- Three Scalar viewers and downloadable OpenAPI 3.1 documents covering 37 explicit Pixoo/Nanoleaf REST/SSE operations. Each operation links to its pinned source handler.\n- Three SchemaSpy reports covering 28 tables: Pixoo library, separate ownership lock and Nanoleaf state. They are generated from empty source-schema fixtures; no live database is opened. Declared foreign keys are shown without inferred relationships.\n- HTML refresh instructions, source/tool hashes, offline browser assets, generation checks and work-guide synchronization.\n\nThe planned BUNNY hub database remains conceptual. No product contract, service, hook, installation, device behavior or public deployment changes. Browser request controls are disabled because live testing must be integrated with the owning services’ origin and credential rules. The OpenAPI files use an inactive port-0 placeholder for native-client import.\n\n## Validation\n\n- All three OpenAPI files validate with Swagger Parser 13.0.0.\n- Three source-extraction tests pass; no application source is executed by the DDL extractor.\n- Static checks pass for 28 reading pages and 53 reference pages, 37 operations, 28 table definitions, source pins, local references and bundled asset receipts.\n- Browser checks pass for Scalar search, every operation/table, desktop/mobile layout, navigation, themes, print, offline assets and no page errors. No service or device requests are made.\n- Two single-threaded SchemaSpy rebuilds produce identical file receipts.\n- Node 24 workflow validation passes for four specifications and four archived changes; all 15 workflow tests pass. Guide build, five maintenance tests and browser checks pass.\n\nSource pins: Hub `514b566279f271451e36a5bb86b166bfa2a33bd8`, Pixoo `9f1c0ec75651810a441606b0c08fbdeee824c8d8`, Nanoleaf `2558df5a2fc543247b0c75898ef0260ba3ea264b`.\n\n## Remaining delivery gates\n\nCandidate: `0a029966f82fe31958616be3241fb2e9b76c89de`; comparison base and merge-base: `514b566279f271451e36a5bb86b166bfa2a33bd8`.\nIndependent Standards and Specification reviews report no findings on this fixed candidate. Both verified all 31 source-file hashes; Standards also reran the complete offline reference browser checks. Explicit human approval of this HTML candidate is pending.\n\nAll 13 current-head GitHub jobs failed before starting because GitHub reports failed account payments or a spending-limit restriction. Resolve the account restriction and rerun both workflows; every configured job must pass before an eligible guarded merge. Local verification does not replace this gate.\n\nThe repository-owned work guide is synchronized. Public publication remains outside scope; the public copy has not changed. No installation, real-client or physical acceptance is claimed.\n\nCloses #103\n",
+    "number": 110,
+    "title": "docs: track Pixoo controller API delivery candidate",
+    "body": "Pixoo #37 is now in progress. Refresh the complete backlog and describe its native controller API candidate without claiming source acceptance. The refresh also reconciles Hub #103's verified closure after PR #104, retaining it as a completed reference.\n\nRefs https://github.com/jimmie-potts/divoom-app-upgrade/issues/37. This is the coordinator-owned guide companion for that delivery. Source candidate: https://github.com/jimmie-potts/divoom-app-upgrade/pull/58. No product spec delta applies; changes are entirely under docs/work-guide/. Public publication is outside the source-only request.\n\nValidation: guide generation and generated-output consistency pass; all five maintenance tests pass; browser checks pass at 1440, 1000, 900, 768, 390 and 320 pixels, including print expansion/restoration, links, filtering and all nine unchanged architecture viewers. The guide contains 105 primary open issues, 125 linked issues, 12 guides and 49 roadmap nodes. History and architecture keep their separate snapshot dates. HTML SHA-256: fca470dc81e332772bf96e38c0e0d8c559eb0c38cc8f22e510331db00be341ea.\n\nComparison: base/merge-base 46d430180e0791a3462b85cf70ae7d54941aae98; head e6f5004ca4d3ad8eea6d827254b091f6af8fb569. Worktree clean after rebuild. Independent Standards and Specification reviews pending. The existing guide-only CI-filter exception will be evaluated against the full changed-file list and current provider state before merge. Guide UI is exempt from human approval under the existing policy.\n\nStrategy: coordinator writes with independent read-only reviewers. No installation, device operation or public deployment.\n",
     "state": "open",
-    "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
-    "updated_at": "2026-09-20T04:35:54Z",
+    "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
+    "updated_at": "2026-09-20T18:52:59Z",
     "draft": false,
     "head": {
-      "label": "jimmie-potts:codex/gh-103-system-design",
-      "ref": "codex/gh-103-system-design",
-      "sha": "0a029966f82fe31958616be3241fb2e9b76c89de",
+      "label": "jimmie-potts:codex/pixoo-gh-37-guide",
+      "ref": "codex/pixoo-gh-37-guide",
+      "sha": "e6f5004ca4d3ad8eea6d827254b091f6af8fb569",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -100,8 +100,8 @@
         "releases_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/releases{/id}",
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
-        "updated_at": "2026-09-20T18:21:56Z",
-        "pushed_at": "2026-09-20T18:21:52Z",
+        "updated_at": "2026-09-20T18:35:20Z",
+        "pushed_at": "2026-09-20T18:50:15Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 64,
+        "open_issues_count": 63,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 64,
+        "open_issues": 63,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -139,7 +139,7 @@
     "base": {
       "label": "jimmie-potts:main",
       "ref": "main",
-      "sha": "514b566279f271451e36a5bb86b166bfa2a33bd8",
+      "sha": "46d430180e0791a3462b85cf70ae7d54941aae98",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -229,8 +229,8 @@
         "releases_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/releases{/id}",
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
-        "updated_at": "2026-09-20T18:21:56Z",
-        "pushed_at": "2026-09-20T18:21:52Z",
+        "updated_at": "2026-09-20T18:35:20Z",
+        "pushed_at": "2026-09-20T18:50:15Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 64,
+        "open_issues_count": 63,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 64,
+        "open_issues": 63,
         "watchers": 0,
         "default_branch": "main"
       }
