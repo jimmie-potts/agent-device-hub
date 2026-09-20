@@ -13,12 +13,16 @@ source revision. External imports, declarations, manifests, all 96 Node/process
 tests and 36 Python snapshot fixtures pass. Build/type and workflow checks pass,
 including six specifications, 34 requirements, five archives and 15 workflow tests.
 
-The source acceptance checklist is complete. Hub #3 remains open in review and
-blocked because all 13 merged-revision CI jobs failed before any step executed
-under the account billing/spending restriction. The account owner must restore
-Actions execution; successful merged-revision CI remains required for closure.
-The release receipt records this limitation. Production host/storage adoption,
-installed-provider qualification and physical acceptance remain separate work.
+The source acceptance checklist is complete. The initial main-CI attempt blocked
+all 13 jobs before execution because of account billing. Checks attempt 2 later
+passed 11 jobs; Ubuntu Workflow failed before Linux qualification when the cached
+bubblewrap package URL returned 404. Work guide attempt 2 passed after one retry,
+so 12 of 13 merged-revision jobs now pass. Hub #3 remains open in review and
+blocked pending complete CI acceptance. The separate Hub #107 / PR #108 task owns
+the package-index repair and further workflow changes or reruns. The release
+receipt preserves the first-attempt observation; release notes carry the updated
+status. Production host/storage adoption, installed-provider qualification and
+physical acceptance remain separate work.
 
 Updated the shared Codex row, next-work recommendation, repository snapshots and
 merge history to record the source merge and release without claiming closure.
