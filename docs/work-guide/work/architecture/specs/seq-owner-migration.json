@@ -199,7 +199,7 @@
    "dot": "amber",
    "title": "Owned elsewhere",
    "items": [
-    "Exact design: Hub #5/#8 and Pixoo #31 — no transfer algorithm or command is invented here",
+    "Pixoo #31 supplies the migration boundary; Hub #5/#8 own standalone installed cutover",
     "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
     "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
    ]
