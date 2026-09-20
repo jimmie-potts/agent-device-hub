@@ -1,5 +1,33 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Nanoleaf #29 shared consumer source
+
+[Nanoleaf PR #62](https://github.com/jimmie-potts/codex-nanoleaf/pull/62)
+merged as `5375a3088522507c7f207c6e9c824454db1e1d5f`, with the same tree as
+reviewed head `8deed074c1d214071f255f445dad95c181f56ed9`. All nine PR jobs
+and all nine merged-main jobs passed. Issue #29 is closed as completed, with
+status labels removed and its acceptance checklist read back.
+Independent Standards and Specification R2 reviews found no unresolved findings.
+Local checks passed 216 Python tests, browser checks and 10 workflow fixtures.
+The 900-operation synthetic Linux measurement identifies source hashes and does
+not claim integrated or physical performance acceptance.
+
+The selected shared feed is authoritative while the existing Python worker keeps
+sole light-write ownership. Stale sessions retain steady last colors, with no
+automatic fallback. An evidenced new turn clears notices for Nanoleaf only.
+Existing incompatible durable consumer policies need a supported migration before
+installed cutover. Hub #8 and Nanoleaf #30 retain installed and physical acceptance.
+
+Refreshed backlog and paginated history inputs record the actual merge and
+closure. #29 remains a completed reference and leaves primary remaining work.
+The shared-system diagram and lifecycle notes now describe the consumer source.
+All 14 refreshed Nanoleaf source copies match the merged revision and SHA-256
+receipts. Historical Hub/Pixoo source-cache gaps predate this refresh and are not
+newly verified. All nine diagrams passed deterministic Archify checks. The changed
+viewer passed four desktop viewport checks and light/dark visual inspection.
+Generation, five maintenance tests and desktop/mobile/print checks passed for the
+candidate. Public publication and live verification remain outside this delivery.
+
 ## 2026-09-20 UTC: Pixoo embedded-host performance deferral
 
 [Pixoo PR #60](https://github.com/jimmie-potts/divoom-app-upgrade/pull/60)

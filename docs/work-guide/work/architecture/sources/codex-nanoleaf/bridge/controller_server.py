@@ -1,5 +1,6 @@
 """Opt-in native machine API. No device transport and no browser page tokens."""
 import contextlib
+import errno
 import hashlib
 import json
 import re
@@ -12,6 +13,10 @@ ID=re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
 HTTP={'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,
       'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-order':409,
       'request-expired':410,'unsupported-capability':422,'capacity':429,'transport-failure':503}
+
+
+class ListenerUnavailable(Exception):
+    pass
 
 
 def check_deadline(deadline):
@@ -274,11 +279,18 @@ def serve(directory,b,port=0):
     import sqlite3
     with contextlib.closing(sqlite3.connect(directory/'controller-lock.sqlite',timeout=0)) as guard:
         try:guard.execute('BEGIN EXCLUSIVE')
-        except sqlite3.OperationalError:return
+        except sqlite3.OperationalError as error:
+            if getattr(error,'sqlite_errorcode',None)==sqlite3.SQLITE_BUSY:
+                raise ListenerUnavailable('A controller is already running for this installation.') from None
+            raise
         app=App(directory,b)
         with contextlib.closing(b.connect_state(directory)) as db,db:
             db.execute('BEGIN IMMEDIATE');data=state.read(db);data['clockEpoch']=secrets.token_hex(16);data['stopped']=False;state.save(db,data);state.event(db)
-        server=make_server(app,port)
+        try:server=make_server(app,port)
+        except OSError as error:
+            if error.errno==errno.EADDRINUSE:
+                raise ListenerUnavailable(f'Port {port} is already in use. Stop its owner or choose another controller port.') from None
+            raise ListenerUnavailable(f'Cannot bind the controller to 127.0.0.1:{port}.') from None
         b.write_json(directory/'controller-server.json',dict(apiVersion='1.0',port=server.server_port))
         import threading
         stopping=threading.Event()
@@ -307,7 +319,7 @@ def serve(directory,b,port=0):
 def command(argv,b):
     import argparse
     from pathlib import Path
-    parser=argparse.ArgumentParser(description='Opt-in local controller API; private state stays in Windows.')
+    parser=argparse.ArgumentParser(description='Opt-in local controller API; state stays private to its installation.')
     parser.add_argument('action',choices=('controller-configure','controller-token','controller-revoke','controller-serve','controller-status','controller-disable'))
     parser.add_argument('--state-dir',type=Path,default=b.data_dir(),help=argparse.SUPPRESS)
     parser.add_argument('--controller-id');parser.add_argument('--device-id');parser.add_argument('--source-id')
@@ -330,5 +342,7 @@ def command(argv,b):
                 for sequence,revision in list(db.execute("SELECT sequence,mode_revision FROM controller_requests WHERE phase IN ('queued','attempting')")):
                     state.finish(db,sequence,'cancelled','forbidden')
                     db.execute("INSERT OR REPLACE INTO meta VALUES ('controller_hold_revision',?)",(str(revision),))
+    except ListenerUnavailable as error:
+        parser.exit(1,f'Controller: {error}\n')
     except Exception:
         parser.exit(1,'Controller command failed. Check local configuration and optional dependencies.\n')

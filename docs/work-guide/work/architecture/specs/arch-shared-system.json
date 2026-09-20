@@ -115,13 +115,14 @@
    "id": "nanoleaf",
    "type": "backend",
    "label": "Nanoleaf controller",
-   "sublabel": "Windows worker · Work/Quiet/Free",
+   "sublabel": "Python · Work/Quiet/Free",
    "row": 1,
    "col": 1,
    "size": [
     150,
     62
-   ]
+   ],
+   "tag": "source delivered"
   },
   {
    "id": "tidbyt",
@@ -369,7 +370,8 @@
    "title": "Ownership",
    "items": [
     "Each physical device has one designated writer and private state",
-    "Embedded Pixoo hosting is delivered; new controllers remain planned"
+    "Nanoleaf selects one input; new controllers remain planned",
+    "Stale task colors stay steady; new turns clear Nanoleaf notices"
    ]
   }
  ]
