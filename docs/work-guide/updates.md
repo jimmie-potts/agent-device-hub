@@ -1370,3 +1370,29 @@ application job timed out in the existing media-admission cancellation test on
 the initial attempt and its single retry. The other four jobs passed. The guide
 records this blocker and pending physical acceptance; it does not claim source
 completion. The refreshed history also records the observed #104/#109 merges.
+
+## September 20, 2026: Pixoo #30 cancellation-test correction
+
+The coordinator diagnosed the Windows CI timeout as a circular wait in the
+media-admission test. PR #59 now holds the existing shared manual clock and
+releases its gated import during cleanup. The real queue, cancellation and
+session-retention assertions remain. No production behavior or specification
+delta changed. The branch also incorporates the merged controller API from
+PR #58 and retains both ADR entries.
+
+Guide reconciliation updates the shared-monitoring qualification row, backlog
+metadata and paginated delivery history. Architecture ownership and all nine
+viewers remain unchanged. Physical measurements, method/cadence selection,
+installation and public guide publication are not performed by this update.
+
+The refreshed backlog also observes the owner-created Pixoo #61 hardening
+story. Added its primary coverage and corrected the obsolete statement that
+numeric performance acceptance blocks #31. This records the saved issue scope;
+it starts no work on #31 or #61 and changes no performance limit.
+
+Pixoo PR #59 merged as `df9c37d836df78ecd7e26d4fa2c2934b829055e6`
+after all five current-head jobs passed and both independent reviewers approved
+`6a424e3298adf19a756745208d5f3606e23fc37b`. Local checks passed 533
+application tests, 10 workflow fixtures and 54 browser tests. The merged source
+tree matches the reviewed candidate. The linked delivery receipt records
+merged-main CI separately. Issue #30 remains open for physical measurements and the method/cadence decision.

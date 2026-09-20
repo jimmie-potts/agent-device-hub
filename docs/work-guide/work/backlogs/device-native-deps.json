@@ -428,7 +428,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 18,
+        "totalCount": 19,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -829,6 +829,24 @@
                 "hasNextPage": false
               },
               "nodes": []
+            }
+          },
+          {
+            "number": 61,
+            "blockedBy": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "number": 31,
+                  "state": "OPEN",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
+                  }
+                }
+              ]
             }
           }
         ]
