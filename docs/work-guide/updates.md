@@ -1,21 +1,32 @@
 # Guide maintenance history
 
-## 2026-09-20 UTC: Nanoleaf #29 shared-consumer candidate
+## 2026-09-20 UTC: Nanoleaf #29 shared consumer source
 
-[Nanoleaf #29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) is in
-source implementation. The shared-integration stage now records explicit source
-selection, one existing Python writer, steady last colors on stale evidence,
-no automatic fallback and Nanoleaf-only notice clearing on an evidenced new turn.
-The owner accepted both presentation decisions. Existing incompatible durable
-consumer policies require a supported migration before installed cutover.
+[Nanoleaf PR #62](https://github.com/jimmie-potts/codex-nanoleaf/pull/62)
+merged as `5375a3088522507c7f207c6e9c824454db1e1d5f`, with the same tree as
+reviewed head `8deed074c1d214071f255f445dad95c181f56ed9`. All nine PR jobs
+and all nine merged-main jobs passed. Issue #29 is closed as completed, with
+status labels removed and its acceptance checklist read back.
+Independent Standards and Specification R2 reviews found no unresolved findings.
+Local checks passed 216 Python tests, browser checks and 10 workflow fixtures.
+The 900-operation synthetic Linux measurement identifies source hashes and does
+not claim integrated or physical performance acceptance.
 
-Refreshed backlog inputs retain #29 as open. The shared-system diagram and lifecycle notes now describe the consumer
-candidate, with source pins and SHA-256 receipts. All nine diagrams passed
-deterministic Archify checks. The changed viewer passed four desktop viewport
-checks and visual inspection in light and dark themes. Source merge and closure facts will be reconciled
-after verification. Hub #8 and Nanoleaf #30 retain installed and physical
-acceptance. Generation, five maintenance tests and desktop/mobile/print browser
-checks passed. Public publication and live verification are not part of this delivery.
+The selected shared feed is authoritative while the existing Python worker keeps
+sole light-write ownership. Stale sessions retain steady last colors, with no
+automatic fallback. An evidenced new turn clears notices for Nanoleaf only.
+Existing incompatible durable consumer policies need a supported migration before
+installed cutover. Hub #8 and Nanoleaf #30 retain installed and physical acceptance.
+
+Refreshed backlog and paginated history inputs record the actual merge and
+closure. #29 remains a completed reference and leaves primary remaining work.
+The shared-system diagram and lifecycle notes now describe the consumer source.
+All 14 refreshed Nanoleaf source copies match the merged revision and SHA-256
+receipts. Historical Hub/Pixoo source-cache gaps predate this refresh and are not
+newly verified. All nine diagrams passed deterministic Archify checks. The changed
+viewer passed four desktop viewport checks and light/dark visual inspection.
+Generation, five maintenance tests and desktop/mobile/print checks passed for the
+candidate. Public publication and live verification remain outside this delivery.
 
 ## 2026-09-20 UTC: Pixoo embedded-host performance deferral
 

@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-20T23:03:03.785705+00:00",
-  "refreshedAt": "2026-09-20T23:03:13.851838+00:00",
+  "startedAt": "2026-09-20T23:29:34.268898+00:00",
+  "refreshedAt": "2026-09-20T23:29:43.134674+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 62,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        64
       ],
-      "openPRs": 0,
+      "openPRs": 2,
       "prPageSizes": [
-        0
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -85,10 +85,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 24,
+      "openIssues": 23,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        24
+        23
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -101,6 +101,14 @@
           "state": "CLOSED",
           "commentPages": [
             8
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 29,
+          "state": "CLOSED",
+          "commentPages": [
+            2
           ],
           "commentBodiesStored": true
         },
@@ -158,11 +166,11 @@
       "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        19
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -217,7 +225,7 @@
       ]
     }
   },
-  "openIssues": 104,
+  "openIssues": 103,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }
