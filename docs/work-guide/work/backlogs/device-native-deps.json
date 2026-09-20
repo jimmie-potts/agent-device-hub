@@ -389,7 +389,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 18,
+        "totalCount": 17,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -480,16 +480,6 @@
             }
           },
           {
-            "number": 30,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 32,
             "blockedBy": {
               "totalCount": 2,
@@ -552,7 +542,7 @@
                 },
                 {
                   "number": 30,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }
@@ -598,7 +588,7 @@
                 },
                 {
                   "number": 30,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }

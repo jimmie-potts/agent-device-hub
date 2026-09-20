@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-20T23:37:25.867788+00:00",
-  "refreshedAt": "2026-09-20T23:37:35.260580+00:00",
+  "startedAt": "2026-09-20T23:39:41.638626+00:00",
+  "refreshedAt": "2026-09-20T23:39:50.731391+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -163,10 +163,10 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 18,
+      "openIssues": 17,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        17
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -200,9 +200,9 @@
         },
         {
           "number": 30,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            2
+            3
           ],
           "commentBodiesStored": false
         },
@@ -233,7 +233,7 @@
       ]
     }
   },
-  "openIssues": 103,
+  "openIssues": 102,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

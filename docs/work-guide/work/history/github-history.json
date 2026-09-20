@@ -1,5 +1,5 @@
 {
- "fetchedAt": "2026-09-20T23:37:42.108457+00:00",
+ "fetchedAt": "2026-09-20T23:39:58.360900+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
@@ -1578,6 +1578,14 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/29"
     },
     {
+     "number": 30,
+     "title": "Compare Pixoo dashboard frame and text update methods",
+     "closedAt": "2026-09-20T23:39:18Z",
+     "createdAt": "2026-09-07T00:55:23Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/30"
+    },
+    {
      "number": 31,
      "title": "Embed the shared agent-state service in the Pixoo backend",
      "closedAt": "2026-09-20T21:20:29Z",
@@ -1618,7 +1626,7 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 18,
+   "openIssueCount": 17,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-20T20:59:48Z"
