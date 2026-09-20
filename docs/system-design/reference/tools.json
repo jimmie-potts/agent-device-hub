@@ -1,0 +1,24 @@
+{
+  "scalar": {
+    "version": "1.69.2",
+    "archive": "https://registry.npmjs.org/@scalar/api-reference/-/api-reference-1.69.2.tgz",
+    "archiveIntegrity": "sha512-dh72RlSKRfjk+wTfplO1oNLQBGKmczWxi+zoI553pgPA7Zer03iBf084qqGoIwwSA+odO2oXIxwvcXVHTWRE/Q==",
+    "asset": "assets/scalar-1.69.2.js",
+    "sha256": "d8f4028c4ed27c58c4d424331b8ed5fd9c1e59856d413df2477eba7bf82a0ee6",
+    "license": "https://github.com/scalar/scalar/blob/20151e227922fb9423f71ff8e6f8b6b04c668917/LICENSE"
+  },
+  "schemaspy": {
+    "version": "7.0.2",
+    "filename": "schemaspy-app.jar",
+    "url": "https://github.com/schemaspy/schemaspy/releases/download/v7.0.2/schemaspy-app.jar",
+    "algorithm": "sha512",
+    "digest": "f8a256ed73928ab5a23ac26ea722e881e530af098f5014998b4bbd17c20980d996e39137153504f581346abd07c3556c850bb1efa55c908e319059b1e23878e5"
+  },
+  "sqliteJdbc": {
+    "version": "3.50.3.0",
+    "filename": "sqlite-jdbc.jar",
+    "url": "https://repo.maven.apache.org/maven2/org/xerial/sqlite-jdbc/3.50.3.0/sqlite-jdbc-3.50.3.0.jar",
+    "algorithm": "sha256",
+    "digest": "a3f53a2aa15ae9425a9e793bbe9c8e5288febeb4b65ef5c1a4e80d4c2045cf08"
+  }
+}

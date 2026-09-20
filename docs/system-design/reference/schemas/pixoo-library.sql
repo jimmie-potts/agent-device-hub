@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,checksum TEXT NOT NULL);
+CREATE TABLE assets(id TEXT PRIMARY KEY, content_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, source_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE renditions(id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT, manifest_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TRIGGER immutable_rendition BEFORE UPDATE ON renditions BEGIN SELECT RAISE(ABORT,'immutable rendition'); END;
+    CREATE TABLE cleanup_jobs(asset_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, rendition_ids TEXT NOT NULL);
+CREATE TABLE playlists(id TEXT PRIMARY KEY, name TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0 AND revision<=9007199254740991), repeat INTEGER NOT NULL CHECK(repeat IN (0,1)), shuffle INTEGER NOT NULL CHECK(shuffle IN (0,1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE items(id TEXT PRIMARY KEY, playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, position INTEGER NOT NULL CHECK(position>=0), rendition_id TEXT NOT NULL REFERENCES renditions(id) ON DELETE RESTRICT, policy_json TEXT NOT NULL, UNIQUE(playlist_id,position));
+    CREATE INDEX items_rendition ON items(rendition_id);
+    CREATE TABLE sessions(id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+    CREATE TABLE session_refs(session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, rendition_id TEXT NOT NULL REFERENCES renditions(id) ON DELETE RESTRICT, PRIMARY KEY(session_id,rendition_id));
+    CREATE INDEX session_rendition ON session_refs(rendition_id);
+CREATE TABLE playback_checkpoint(slot INTEGER PRIMARY KEY CHECK(slot=1), session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE RESTRICT, payload TEXT NOT NULL);

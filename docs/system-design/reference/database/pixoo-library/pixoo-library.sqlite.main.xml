@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<database name="pixoo-library.sqlite" schema="main" type="SQLite - 3.50.3">
+   <tables>
+      <table name="assets" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <child column="asset_id" foreignKey="" implied="false" onDeleteCascade="false" table="renditions"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="content_hash" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="name" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="source_json" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="created_at" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="assets_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_assets_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_assets_2" unique="true">
+            <column ascending="true" name="content_hash"/>
+         </index>
+      </table>
+      <table name="cleanup_jobs" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="asset_id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="content_hash" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="rendition_ids" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="asset_id" sequenceNumberInPK="1"/>
+         <index name="cleanup_jobs_s_pk" unique="true">
+            <column ascending="true" name="asset_id"/>
+         </index>
+         <index name="sqlite_autoindex_cleanup_jobs_1" unique="true">
+            <column ascending="true" name="asset_id"/>
+         </index>
+      </table>
+      <table name="items" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="playlist_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="true" table="playlists"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="position" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="rendition_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="true" table="renditions"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="policy_json" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="items_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="items_rendition" unique="false">
+            <column ascending="true" name="rendition_id"/>
+         </index>
+         <index name="sqlite_autoindex_items_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_items_2" unique="true">
+            <column ascending="true" name="playlist_id"/>
+            <column ascending="true" name="position"/>
+         </index>
+      </table>
+      <table name="playback_checkpoint" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="slot" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="session_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="false" table="sessions"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="payload" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="slot" sequenceNumberInPK="1"/>
+         <index name="playback_checkpoint_s_pk" unique="true">
+            <column ascending="true" name="slot"/>
+         </index>
+         <index name="sqlite_autoindex_playback_checkpoint_1" unique="true">
+            <column ascending="true" name="session_id"/>
+         </index>
+      </table>
+      <table name="playlists" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <child column="playlist_id" foreignKey="" implied="false" onDeleteCascade="true" table="items"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="name" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="revision" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="repeat" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="shuffle" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="5" name="created_at" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="6" name="updated_at" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="playlists_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_playlists_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="renditions" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <child column="rendition_id" foreignKey="" implied="false" onDeleteCascade="true" table="items"/>
+            <child column="rendition_id" foreignKey="" implied="false" onDeleteCascade="false" table="session_refs"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="asset_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="false" table="assets"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="manifest_json" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="created_at" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="renditions_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_renditions_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="schema_migrations" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="version" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="checksum" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="version" sequenceNumberInPK="1"/>
+         <index name="schema_migrations_s_pk" unique="true">
+            <column ascending="true" name="version"/>
+         </index>
+      </table>
+      <table name="session_refs" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="false" table="sessions"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="rendition_id" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <parent column="id" foreignKey="" implied="false" onDeleteCascade="false" table="renditions"/>
+         </column>
+         <primaryKey column="session_id" sequenceNumberInPK="1"/>
+         <primaryKey column="rendition_id" sequenceNumberInPK="2"/>
+         <index name="session_refs_s_pk" unique="true">
+            <column ascending="true" name="session_id"/>
+            <column ascending="true" name="rendition_id"/>
+         </index>
+         <index name="session_rendition" unique="false">
+            <column ascending="true" name="rendition_id"/>
+         </index>
+         <index name="sqlite_autoindex_session_refs_1" unique="true">
+            <column ascending="true" name="session_id"/>
+            <column ascending="true" name="rendition_id"/>
+         </index>
+      </table>
+      <table name="sessions" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12">
+            <child column="session_id" foreignKey="" implied="false" onDeleteCascade="false" table="playback_checkpoint"/>
+            <child column="session_id" foreignKey="" implied="false" onDeleteCascade="false" table="session_refs"/>
+         </column>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="created_at" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="sessions_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_sessions_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+   </tables>
+</database>

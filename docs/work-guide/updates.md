@@ -1,5 +1,44 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Add API and database references to #103 / PR #104
+
+Extend the BUNNY HTML candidate with three local Scalar viewers and downloadable
+OpenAPI 3.1 files for 37 explicit REST/SSE operations. Generate SchemaSpy reports
+for 28 tables across Pixoo's library, its separate ownership lock and Nanoleaf's
+state store. Inputs come from pinned source commits, with file hashes and route
+ownership recorded beside the references. No installed controller, live SQLite
+file or physical device is contacted. Browser request controls remain disabled;
+same-origin integration and installed-client testing remain future service work.
+
+Link the references from all design navigation and the Pixoo, Nanoleaf and
+storage documents. The HTML runbook records source refresh, generation and
+verification commands. Update the development-workflow guide's #103 entry and
+refresh all three backlog inventories. The refresh also captures current Hub #3
+labels and the Nanoleaf #29/#41/#42/#43 Linux-baseline planning edits. Coverage
+remains 12 guides, 107 primary open issues, 124 linked issues and 48 roadmap
+nodes. The existing nine architecture viewers and 68 merged PR history records
+are unchanged because this addition changes no runtime ownership or command flow.
+
+Validation: all three OpenAPI files pass Swagger Parser 13.0.0 validation. The
+source-only extraction tests pass. Two SchemaSpy rebuilds with a single scan
+thread produce identical file receipts. Static checks verify 28 reading pages and
+53 reference pages, source pins, all table metadata, bundled asset hashes and
+local links. Browser checks pass for every API operation and table, Scalar
+search, desktop/mobile layouts, offline assets and absence of page errors or
+external requests. Node 24 workflow validation reports four specifications and
+four archived changes; all 15 workflow tests pass. Guide generation, five
+maintenance tests and the guide browser checks pass.
+
+The guide SHA-256 is
+`04c81b8bca48e1b278dfebbcfdfb76693bafa3ca9ffed847fb21d90cb6adee97`.
+The reference entry page SHA-256 is
+`29af5f6ee00fb81f2bc5e55d742ffcec157770f6df99504d123b48f33f9b70e2`.
+Current-candidate independent review, successful hosted CI and explicit human
+UI approval remain required before merge. No installation or deployment is
+claimed. A fresh unauthenticated public-guide read still returns SHA-256
+`0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`;
+public publication remains outside this task and has not changed.
+
 ## 2026-09-20 UTC: BUNNY HTML system design candidate for #103
 
 Add a linked HTML overview, 26 component documents, a combined reading/print

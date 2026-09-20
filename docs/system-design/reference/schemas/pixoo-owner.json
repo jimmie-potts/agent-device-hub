@@ -1,0 +1,21 @@
+{
+  "tables": [
+    {
+      "name": "owner",
+      "sql": "CREATE TABLE owner(id INTEGER PRIMARY KEY)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    }
+  ],
+  "triggers": []
+}

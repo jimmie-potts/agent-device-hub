@@ -49,7 +49,8 @@ def badge(item):
 def navigation(data, mode, current):
     prefix = "../" if mode == "component" else ""
     parts = [f'<a class="overview-link" href="{prefix}index.html">System overview</a>',
-             f'<a class="overview-link" href="{prefix}full-system-design.html">Complete reading view</a>']
+             f'<a class="overview-link" href="{prefix}full-system-design.html">Complete reading view</a>',
+             f'<a class="overview-link" href="{prefix}reference/index.html">API &amp; database reference</a>']
     for group in dict.fromkeys(item["group"] for item in data["components"]):
         parts.append(f'<div class="nav-group"><p class="nav-label">{escape(group)}</p>')
         for item in data["components"]:
@@ -68,6 +69,7 @@ def fragment(item, full=False):
     if "{{" in content:
         raise ValueError(f"Unfilled template field: {item['id']}")
     if full:
+        content = content.replace('href="../reference/', 'href="reference/')
         content = re.sub(r'href="([A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*)\.html(#[^"]*)?"',
                          lambda m: 'href="' + (m[2] or "#" + m[1]) + '"', content)
     else:

@@ -1,0 +1,2143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "counter": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "time": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "mode": {
+      "enum": [
+        "Work",
+        "Quiet",
+        "Free",
+        "Monitor",
+        "Media"
+      ]
+    },
+    "profileVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])",
+      "maxLength": 32
+    },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/id"
+        },
+        "profileVersion": {
+          "$ref": "#/$defs/profileVersion"
+        }
+      },
+      "required": [
+        "profileId",
+        "profileVersion"
+      ],
+      "additionalProperties": false
+    },
+    "ticket": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "$ref": "#/$defs/counter"
+        }
+      },
+      "required": [
+        "epoch",
+        "sequence"
+      ],
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/id"
+        },
+        "controllerId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "controllerEpoch": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "deviceId",
+        "controllerId",
+        "sourceId",
+        "controllerEpoch"
+      ],
+      "additionalProperties": false
+    },
+    "clock": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "const": "controller-monotonic"
+        },
+        "epoch": {
+          "$ref": "#/$defs/id"
+        },
+        "sampledAtMs": {
+          "$ref": "#/$defs/time"
+        }
+      },
+      "required": [
+        "domain",
+        "epoch",
+        "sampledAtMs"
+      ],
+      "additionalProperties": false
+    },
+    "unknown": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "unknown"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "powerValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "brightnessValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/percent"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "modeValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "value": {
+              "$ref": "#/$defs/mode"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "mediaAction": {
+      "enum": [
+        "pause",
+        "resume",
+        "stop",
+        "next",
+        "previous",
+        "restart-with-changes",
+        "clear"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "power": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "brightness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "minimum": {
+                  "const": 0
+                },
+                "maximum": {
+                  "const": 100
+                }
+              },
+              "required": [
+                "supported",
+                "minimum",
+                "maximum"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "media": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "actions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/mediaAction"
+                  },
+                  "maxItems": 7,
+                  "uniqueItems": true
+                },
+                "playlistIds": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true
+                },
+                "renditionIds": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "supported",
+                "actions",
+                "playlistIds",
+                "renditionIds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "zones": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "zoneIds": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "supported",
+                "zoneIds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "scenes": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "sceneIds": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "supported",
+                "sceneIds"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "preview": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "profiles": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/profile"
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "supported",
+                "profiles"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "modes": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": false
+                }
+              },
+              "required": [
+                "supported"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "supported": {
+                  "const": true
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/mode"
+                  },
+                  "maxItems": 5,
+                  "uniqueItems": true
+                }
+              },
+              "required": [
+                "supported",
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "power",
+        "brightness",
+        "media",
+        "zones",
+        "scenes",
+        "preview"
+      ],
+      "additionalProperties": false
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "power.set"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "on"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "brightness.set"
+            },
+            "percent": {
+              "$ref": "#/$defs/percent"
+            }
+          },
+          "required": [
+            "kind",
+            "percent"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scene.activate"
+            },
+            "sceneId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "sceneId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "zone.power.set"
+            },
+            "zoneId": {
+              "$ref": "#/$defs/id"
+            },
+            "on": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "zoneId",
+            "on"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "media.start"
+            },
+            "playlistId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "playlistId"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "media.control"
+            },
+            "action": {
+              "$ref": "#/$defs/mediaAction"
+            }
+          },
+          "required": [
+            "kind",
+            "action"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "mode.set"
+            },
+            "mode": {
+              "$ref": "#/$defs/mode"
+            }
+          },
+          "required": [
+            "kind",
+            "mode"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "1.0"
+        },
+        "controllerId": {
+          "$ref": "#/$defs/id"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ticket"
+        },
+        "expectedConfigurationRevision": {
+          "$ref": "#/$defs/counter"
+        },
+        "expectedGeneration": {
+          "$ref": "#/$defs/ticket"
+        },
+        "command": {
+          "$ref": "#/$defs/command"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "controllerId",
+        "deviceId",
+        "requestId",
+        "expectedConfigurationRevision",
+        "expectedGeneration",
+        "command"
+      ],
+      "additionalProperties": false
+    },
+    "failureCode": {
+      "enum": [
+        "unauthenticated",
+        "forbidden",
+        "unsupported-capability",
+        "invalid-request",
+        "unknown-device",
+        "revision-conflict",
+        "stale-generation",
+        "request-conflict",
+        "request-expired",
+        "request-order",
+        "capacity",
+        "external-control",
+        "transport-failure",
+        "uncertain-result"
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/failureCode"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "priorEffects": {
+      "enum": [
+        "none",
+        "possible",
+        "confirmed-transmission"
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "1.0"
+        },
+        "controllerId": {
+          "$ref": "#/$defs/id"
+        },
+        "deviceId": {
+          "$ref": "#/$defs/id"
+        },
+        "requestId": {
+          "$ref": "#/$defs/ticket"
+        },
+        "configurationRevision": {
+          "$ref": "#/$defs/counter"
+        },
+        "generation": {
+          "$ref": "#/$defs/ticket"
+        },
+        "outcome": {
+          "enum": [
+            "queued",
+            "sent",
+            "failed",
+            "partially-applied",
+            "uncertain",
+            "cancelled"
+          ]
+        },
+        "priorEffects": {
+          "$ref": "#/$defs/priorEffects"
+        },
+        "completedOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "uncertainOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "failure": {
+          "$ref": "#/$defs/failure"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "controllerId",
+        "deviceId",
+        "requestId",
+        "configurationRevision",
+        "generation",
+        "outcome",
+        "priorEffects",
+        "completedOperations",
+        "uncertainOperations"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completedOperations": {
+                "minItems": 1,
+                "type": "array"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priorEffects": {
+                "const": "confirmed-transmission"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "uncertainOperations": {
+                "minItems": 1,
+                "type": "array"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priorEffects": {
+                "enum": [
+                  "possible",
+                  "confirmed-transmission"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "partially-applied"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "completedOperations": {
+                "minItems": 1,
+                "type": "array"
+              },
+              "priorEffects": {
+                "const": "confirmed-transmission"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "uncertain"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priorEffects": {
+                "enum": [
+                  "possible",
+                  "confirmed-transmission"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "sent"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priorEffects": {
+                "const": "confirmed-transmission"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "queued"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "priorEffects": {
+                "const": "none"
+              },
+              "completedOperations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "uncertainOperations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "failure": false
+            }
+          }
+        }
+      ]
+    },
+    "desired": {
+      "type": "object",
+      "properties": {
+        "power": {
+          "$ref": "#/$defs/powerValue"
+        },
+        "brightness": {
+          "$ref": "#/$defs/brightnessValue"
+        },
+        "mode": {
+          "$ref": "#/$defs/modeValue"
+        }
+      },
+      "required": [
+        "power",
+        "brightness",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "pending": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "$ref": "#/$defs/ticket"
+        },
+        "command": {
+          "$ref": "#/$defs/command"
+        },
+        "generation": {
+          "$ref": "#/$defs/ticket"
+        }
+      },
+      "required": [
+        "requestId",
+        "command",
+        "generation"
+      ],
+      "additionalProperties": false
+    },
+    "lastSuccessfulSend": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "requestId": {
+              "$ref": "#/$defs/ticket"
+            },
+            "clock": {
+              "$ref": "#/$defs/clock"
+            },
+            "operationIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/id"
+              },
+              "maxItems": 256,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "status",
+            "requestId",
+            "clock",
+            "operationIds"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "lastOutcome": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "receipt": {
+              "$ref": "#/$defs/receipt"
+            }
+          },
+          "required": [
+            "status",
+            "receipt"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "externalControl": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "owner": {
+              "enum": [
+                "controller",
+                "external"
+              ]
+            },
+            "clock": {
+              "$ref": "#/$defs/clock"
+            }
+          },
+          "required": [
+            "status",
+            "owner",
+            "clock"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "observation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/unknown"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "clock": {
+              "$ref": "#/$defs/clock"
+            },
+            "evidenceAgeMs": {
+              "$ref": "#/$defs/time"
+            },
+            "power": {
+              "$ref": "#/$defs/powerValue"
+            },
+            "brightness": {
+              "$ref": "#/$defs/brightnessValue"
+            }
+          },
+          "required": [
+            "status",
+            "clock",
+            "evidenceAgeMs",
+            "power",
+            "brightness"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "desired": {
+          "$ref": "#/$defs/desired"
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pending"
+          },
+          "maxItems": 32
+        },
+        "lastSuccessfulSend": {
+          "$ref": "#/$defs/lastSuccessfulSend"
+        },
+        "lastOutcome": {
+          "$ref": "#/$defs/lastOutcome"
+        },
+        "externalControl": {
+          "$ref": "#/$defs/externalControl"
+        },
+        "observation": {
+          "$ref": "#/$defs/observation"
+        }
+      },
+      "required": [
+        "desired",
+        "pending",
+        "lastSuccessfulSend",
+        "lastOutcome",
+        "externalControl",
+        "observation"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxPending": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "maxBodyBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "maxInFlight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "maxReceipts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "maxEvents": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "maxStreams": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "authenticationTimeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      },
+      "required": [
+        "maxPending",
+        "maxBodyBytes",
+        "maxInFlight",
+        "maxReceipts",
+        "maxEvents",
+        "maxStreams",
+        "authenticationTimeoutMs"
+      ],
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "1.0"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "configurationRevision": {
+          "$ref": "#/$defs/counter"
+        },
+        "generation": {
+          "$ref": "#/$defs/ticket"
+        },
+        "nextRequestId": {
+          "$ref": "#/$defs/ticket"
+        },
+        "cursor": {
+          "$ref": "#/$defs/ticket"
+        },
+        "sampleClock": {
+          "$ref": "#/$defs/clock"
+        },
+        "serviceHealth": {
+          "enum": [
+            "unknown",
+            "ready",
+            "degraded",
+            "unavailable"
+          ]
+        },
+        "capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "identity",
+        "configurationRevision",
+        "generation",
+        "nextRequestId",
+        "cursor",
+        "sampleClock",
+        "serviceHealth",
+        "capabilities",
+        "limits",
+        "state"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 1
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 2
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 3
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 3
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 4
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 4
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 5
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 6
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 6
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 7
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 7
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 8
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 9
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 9
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 10
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 11
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 11
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 12
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 12
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 13
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 13
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 14
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 14
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 15
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 15
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 16
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 16
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 17
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 17
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 18
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 18
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 19
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 19
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 20
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 21
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 21
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 22
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 22
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 23
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 23
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 24
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 24
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 25
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 25
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 26
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 26
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 27
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 27
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 28
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 28
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 29
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 29
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 30
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 30
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 31
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 31
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "limits": {
+                "type": "object",
+                "properties": {
+                  "maxPending": {
+                    "const": 32
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "type": "object",
+                "properties": {
+                  "pending": {
+                    "type": "array",
+                    "maxItems": 32
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "feed": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "const": "1.0"
+        },
+        "kind": {
+          "enum": [
+            "change",
+            "resync"
+          ]
+        },
+        "cursor": {
+          "$ref": "#/$defs/ticket"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/snapshot"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "cursor",
+        "snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "renderer": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/id"
+        },
+        "profileVersion": {
+          "$ref": "#/$defs/profileVersion"
+        },
+        "rendererEpoch": {
+          "$ref": "#/$defs/id"
+        },
+        "generation": {
+          "$ref": "#/$defs/ticket"
+        },
+        "clock": {
+          "$ref": "#/$defs/clock"
+        },
+        "deadlineMs": {
+          "$ref": "#/$defs/time"
+        },
+        "updateOutcome": {
+          "enum": [
+            "accepted",
+            "pending",
+            "sent",
+            "partial",
+            "failed",
+            "uncertain",
+            "cancelled"
+          ]
+        }
+      },
+      "required": [
+        "profileId",
+        "profileVersion",
+        "rendererEpoch",
+        "generation",
+        "clock",
+        "updateOutcome"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/identity"
+    },
+    {
+      "$ref": "#/$defs/capabilities"
+    },
+    {
+      "$ref": "#/$defs/command"
+    },
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/receipt"
+    },
+    {
+      "$ref": "#/$defs/snapshot"
+    },
+    {
+      "$ref": "#/$defs/feed"
+    },
+    {
+      "$ref": "#/$defs/renderer"
+    }
+  ]
+}

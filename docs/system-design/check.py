@@ -38,6 +38,7 @@ if __name__ == "__main__":
     sources = [ROOT / "design.json", *sorted((ROOT / "source").glob("*.html"))]
     before = hashes(sources)
     subprocess.run([sys.executable, str(ROOT / "build.py"), "--check"], check=True)
+    subprocess.run([sys.executable, str(ROOT / "reference/check_reference.py")], check=True)
     assert before == hashes(sources), "Source documents changed during verification"
     data = json.loads((ROOT / "design.json").read_text())
     paths = [ROOT / "index.html", ROOT / "full-system-design.html", *sorted((ROOT / "components").glob("*.html"))]
@@ -54,8 +55,8 @@ if __name__ == "__main__":
             target = (path.parent / unquote(url.path)).resolve() if url.path else path
             assert target.is_file(), f"Broken link in {path.name}: {href}"
             if url.fragment:
-                assert target in parsed, f"Unvalidated anchor target: {href}"
-                assert unquote(url.fragment) in parsed[target].ids, f"Broken anchor: {path.name}: {href}"
+                target_doc = parsed[target] if target in parsed else Document(target)
+                assert unquote(url.fragment) in target_doc.ids, f"Broken anchor: {path.name}: {href}"
             links += 1
     full = parsed[(ROOT / "full-system-design.html").resolve()]
     assert all(item["id"] in full.ids for item in data["components"])

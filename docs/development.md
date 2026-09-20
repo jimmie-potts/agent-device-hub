@@ -20,6 +20,23 @@ installed Playwright/Chromium, with the same `GUIDE_PLAYWRIGHT_MODULE` and
 an external screenshot/PDF/receipt directory; the default is a temporary folder.
 The Work guide CI job runs these document checks using its pinned browser setup.
 
+The API/database reference is linked from the design navigation. Its Scalar
+viewers embed three source-pinned OpenAPI documents; SchemaSpy reports cover the
+three existing SQLite schemas. Keep `docs/system-design/reference/` together
+when copying the HTML. Bundled assets allow offline browsing. Request controls
+are disabled here; the owning services retain their origin and credential rules.
+The database reports are generated from fresh empty schema fixtures, never live
+controller files. The proposed BUNNY store still has no delivered table schema.
+
+`check.py` also verifies reference generation, the REST/SSE route inventory,
+all 28 table definitions, source pins, local links and bundled asset receipts.
+`check.cjs` adds Scalar search/operation checks, all table columns and offline
+desktop/mobile browsing. Refresh commands and tool prerequisites are in the
+[HTML runbook](system-design/components/OPS-runbook.html#OPS-runbook-6).
+Download URLs, versions and checksums are recorded in `reference/tools.json`.
+Schema extraction needs the pinned Git objects; normal verification uses the
+committed extracts. No remote schema or controller is queried by the checks.
+
 The diagram JSON is rendered by the installed archify skill. Keep its validated
 HTML and specification together. Browser screenshots and local delivery receipts
 remain outside Git. This documentation workflow starts no application, installs

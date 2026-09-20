@@ -1,0 +1,261 @@
+[
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/health",
+    "file": "apps/server/src/app.ts",
+    "line": 15
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/diagnostics",
+    "file": "apps/server/src/api.ts",
+    "line": 42
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/assets",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 13
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/assets",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 18
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/assets/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 28
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/assets/{id}/renditions",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 29
+  },
+  {
+    "service": "pixoo",
+    "method": "delete",
+    "path": "/api/assets/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 33
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/renditions/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 34
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/renditions/{id}/frames/{index}.png",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 35
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/playlists",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 40
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/playlists",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 41
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/playlists/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 42
+  },
+  {
+    "service": "pixoo",
+    "method": "patch",
+    "path": "/api/playlists/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 43
+  },
+  {
+    "service": "pixoo",
+    "method": "patch",
+    "path": "/api/playlists/{id}/options",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 44
+  },
+  {
+    "service": "pixoo",
+    "method": "put",
+    "path": "/api/playlists/{id}/items",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 45
+  },
+  {
+    "service": "pixoo",
+    "method": "put",
+    "path": "/api/playlists/{id}/order",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 46
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/playlists/{id}/duplicate",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 47
+  },
+  {
+    "service": "pixoo",
+    "method": "delete",
+    "path": "/api/playlists/{id}",
+    "file": "apps/server/src/catalog-routes.ts",
+    "line": 48
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/player",
+    "file": "apps/server/src/player-routes.ts",
+    "line": 7
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/player/commands",
+    "file": "apps/server/src/player-routes.ts",
+    "line": 8
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/device",
+    "file": "apps/server/src/device-routes.ts",
+    "line": 24
+  },
+  {
+    "service": "pixoo",
+    "method": "put",
+    "path": "/api/device",
+    "file": "apps/server/src/device-routes.ts",
+    "line": 25
+  },
+  {
+    "service": "pixoo",
+    "method": "post",
+    "path": "/api/device/probe",
+    "file": "apps/server/src/device-routes.ts",
+    "line": 33
+  },
+  {
+    "service": "pixoo",
+    "method": "patch",
+    "path": "/api/device/display",
+    "file": "apps/server/src/device-routes.ts",
+    "line": 37
+  },
+  {
+    "service": "pixoo",
+    "method": "get",
+    "path": "/api/events",
+    "file": "apps/server/src/events.ts",
+    "line": 31
+  },
+  {
+    "service": "nanoleaf-controller",
+    "method": "get",
+    "path": "/controller/v1/devices",
+    "file": "bridge/controller_server.py",
+    "line": 224
+  },
+  {
+    "service": "nanoleaf-controller",
+    "method": "get",
+    "path": "/controller/v1/snapshot",
+    "file": "bridge/controller_server.py",
+    "line": 230
+  },
+  {
+    "service": "nanoleaf-controller",
+    "method": "get",
+    "path": "/controller/v1/feed",
+    "file": "bridge/controller_server.py",
+    "line": 232
+  },
+  {
+    "service": "nanoleaf-controller",
+    "method": "post",
+    "path": "/controller/v1/commands",
+    "file": "bridge/controller_server.py",
+    "line": 213
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "get",
+    "path": "/health",
+    "file": "bridge/wall_server.py",
+    "line": 134
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "get",
+    "path": "/api/state",
+    "file": "bridge/wall_server.py",
+    "line": 133
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/mode",
+    "file": "bridge/wall_server.py",
+    "line": 145
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/settings",
+    "file": "bridge/wall_server.py",
+    "line": 79
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/assign",
+    "file": "bridge/wall_server.py",
+    "line": 83
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/project",
+    "file": "bridge/wall_server.py",
+    "line": 91
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/task",
+    "file": "bridge/wall_server.py",
+    "line": 94
+  },
+  {
+    "service": "nanoleaf-map",
+    "method": "post",
+    "path": "/api/locate",
+    "file": "bridge/wall_server.py",
+    "line": 99
+  }
+]

@@ -1,0 +1,4 @@
+# Preserve upstream bundles and generated SchemaSpy output byte-for-byte.
+# Input/output hashes are checked by check_reference.py.
+assets/scalar-1.69.2.js -whitespace
+database/** -whitespace

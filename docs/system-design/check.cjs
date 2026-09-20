@@ -71,5 +71,6 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     const receipt={ok:true,documents:data.components.length+2,viewports:['1440x1000','1920x1080','390x844'],themes:['dark','light'],checks:['navigation','search','no-results','theme','mobile-menu','all-component-pages','anchors','print','no-external-requests','no-console-errors'],overviewSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),output:out};
     fs.writeFileSync(path.join(out,'browser.json'),JSON.stringify(receipt,null,2)+'\n');
     console.log(JSON.stringify(receipt,null,2));
+    await require('./reference/check_reference.cjs').check(browser, path.join(out,'reference'));
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
