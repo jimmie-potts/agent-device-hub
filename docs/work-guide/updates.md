@@ -12,6 +12,9 @@ tests, 10 workflow fixtures and 52 browser tests. The compatibility total is a
 subset of the application suite. Thirteen current specifications and fourteen
 archives validate, including the synchronized `gh-37-hub-controller-api` change.
 
+The candidate reconciles concurrent Hub PR #111 dashboard qualification and
+PR #112 host performance-blocker entries before regeneration.
+
 The complete backlog and paginated history refresh retain #37 as a completed
 reference, remove it from primary remaining work and the roadmap, and leave
 shared state hosting with #31. The guide records configured native identity,
@@ -47,6 +50,26 @@ its separate dated snapshot. No product specification delta applies to this
 guide-only synchronization. Generation, maintenance and browser checks are
 recorded on the companion PR. Public publication is outside this source-only
 request and remains separate.
+
+## 2026-09-20 UTC: Pixoo #31 host candidate
+
+The Pixoo #31 delivery coordinator refreshed the authoritative issue and its five
+closed prerequisites, verified the agent-state 1.0.0 release archive, and moved
+Pixoo #31 to in progress. The host candidate preserves the simulator default and
+existing explicit device mode, following the user's scope decision. Monitoring
+has separate private storage and credentials, a selected embedded/remote source,
+and an explicit quiesce/import boundary. It does not install hooks or operate
+devices. Local Linux measurements exceeded fixed percentile budgets, so Pixoo
+#31 remains open and blocked. Review, acceptance and source merge remain pending.
+
+Affected guide sections: shared Codex integration, suggested next source work,
+and refreshed backlog/status inputs. Paginated history reads also reconcile the
+separately merged Atlas PR #104 and closed Hub #103. Ownership diagrams retain their existing
+planned host/source separation; this unmerged candidate does not establish an
+implemented-host label or new architecture ownership. Reconcile those source
+pins and delivery facts after verified source merge. Public publication and live
+verification are outside this source-only task. Validation receipts and the
+linked source PR belong in this companion PR's delivery evidence.
 
 ## 2026-09-20 UTC: Complete PR #104's offline asset bundle
 
@@ -1322,3 +1345,28 @@ Guide no-impact: inspected guide inputs and found no raw receipt filename links.
 Storage changes do not alter represented results, architecture or delivery status.
 Generated HTML, snapshot dates and its pending approval remain unchanged. This
 entry records evidence maintenance, not source merge or public publication.
+
+## 2026-09-20: Pixoo #30 source qualification candidate
+
+The Pixoo #30 candidate adds an offline-default synthetic dashboard runner,
+bounded latest-picture delivery, exact RGB browser previews and local target
+lock participation for both protocol tools. The shared monitoring sequence now
+distinguishes this source work from the pending physical transport decision.
+No device was operated; source delivery does not select a measured cadence.
+
+Refreshed the GitHub backlog through the maintained helper. The snapshot also
+observed Hub #103 closed after PR #104; retained it as a closed reference and
+removed its open-work coverage. That reconciliation prevents stale atlas work
+from remaining in the roadmap. Architecture ownership and command-flow diagrams
+remain unchanged: this is an opt-in qualification tool, not a monitor runtime.
+No product specification delta applies to this guide-only companion.
+
+Validation receipts and source/guide PR links belong in the companion PR.
+Public publication and live-site verification are outside this delivery.
+
+Pixoo PR #59 remains unmerged at `893009145a457f3445b88b8f3df2c809cd06b388`.
+All local checks and both independent source reviews passed, but the Windows
+application job timed out in the existing media-admission cancellation test on
+the initial attempt and its single retry. The other four jobs passed. The guide
+records this blocker and pending physical acceptance; it does not claim source
+completion. The refreshed history also records the observed #104/#109 merges.
