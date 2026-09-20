@@ -1,5 +1,41 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo embedded-host performance deferral
+
+[Pixoo PR #60](https://github.com/jimmie-potts/divoom-app-upgrade/pull/60)
+merged as `3414847a6f80826fc6e2501aac98c3dd8fe71163`, with the same tree as
+reviewed head `f34638c1dafac0e91b3cd85b0a60afdb97896006`. All five PR jobs
+and all five merged-main jobs passed. Issue #31 is closed as completed. Local
+validation passed 553 application tests, 54 browser tests and 10 workflow fixtures;
+15 specifications and 16 archives validate. Both independent review axes passed.
+The guide retains #31 as a completed reference and removes it from remaining work.
+
+
+The owner moved Pixoo #31 performance measurement and numeric acceptance to
+[Pixoo #61](https://github.com/jimmie-potts/divoom-app-upgrade/issues/61).
+It follows #31 without blocking that feature or dependent feature work. The
+frozen budgets and failed receipts remain unchanged; no performance acceptance
+is claimed. Correctness, authentication, privacy, durability, bounded resources,
+failure isolation and hard fail-open deadlines remain mandatory. Hub #30 keeps
+integrated qualification and consumes the later embedded-host evidence.
+
+Refreshed backlog inputs, primary coverage, shared Codex narrative and timeline
+record the new story and remove the superseded performance merge blocker.
+The companion also reconciles the delivered host boundary in the shared-system,
+lifecycle and migration diagrams, with pinned source receipts. Standalone hosting,
+installed cutover and device consumers remain pending. Concurrent Hub #113 already
+records the #61 deferral and dashboard source merge; those newer inputs are preserved.
+All nine diagrams passed deterministic Archify checks. The changed shared-system
+and lifecycle viewers passed four desktop viewport checks and visual inspection.
+The migration viewer retains its documented vertical-scroll limitation; no
+first-screen containment pass is claimed for it. Guide generation, five maintenance
+tests and desktop/mobile/print browser checks passed.
+
+The public edition still serves SHA-256
+`0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c` and lacks #61.
+This documentation change needs no product OpenSpec delta. Public publication,
+installation and physical acceptance are outside this source-only follow-up.
+
 ## 2026-09-20 UTC: Pixoo #37 source acceptance and guide reconciliation
 
 [Pixoo PR #58](https://github.com/jimmie-potts/divoom-app-upgrade/pull/58)

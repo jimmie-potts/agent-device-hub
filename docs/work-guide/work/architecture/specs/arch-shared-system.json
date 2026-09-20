@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Shared source and planned host integration",
+  "title": "Shared source and embedded Pixoo host",
   "quality_profile": "showcase",
   "views": [
    {
@@ -71,7 +71,7 @@
     150,
     62
    ],
-   "tag": "source candidate"
+   "tag": "source delivered"
   },
   {
    "id": "core",
@@ -84,7 +84,7 @@
     150,
     62
    ],
-   "tag": "source candidate"
+   "tag": "source delivered"
   },
   {
    "id": "feed",
@@ -97,7 +97,7 @@
     150,
     62
    ],
-   "tag": "source candidate"
+   "tag": "source delivered"
   },
   {
    "id": "pixoo",
@@ -205,7 +205,7 @@
  "boundaries": [
   {
    "kind": "region",
-   "label": "Agent-state package; host integration pending",
+   "label": "Released agent-state; embedded Pixoo host",
    "wraps": [
     "emitters",
     "core",
@@ -352,7 +352,7 @@
    "items": [
     "Provider hooks report allowlisted lifecycle metadata and fail open",
     "The core interprets observations once; controllers only project state",
-    "Pixoo hosting and standalone ownership remain separate work"
+    "Pixoo hosts the core; standalone hosting remains future work"
    ]
   },
   {
@@ -369,7 +369,7 @@
    "title": "Ownership",
    "items": [
     "Each physical device has one designated writer and private state",
-    "Agent-state source is under review; production hosts and new controllers remain pending"
+    "Embedded Pixoo hosting is delivered; new controllers remain planned"
    ]
   }
  ]

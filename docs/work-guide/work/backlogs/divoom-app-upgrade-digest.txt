@@ -9,7 +9,7 @@
 #26 [CLOSED] Verify local Codex control on the Pixoo
 #29 [CLOSED] Adopt qualified shared monitoring contracts in Pixoo
 #30 [OPEN] Compare Pixoo dashboard frame and text update methods
-#31 [OPEN] Embed the shared agent-state service in the Pixoo backend
+#31 [CLOSED] Embed the shared agent-state service in the Pixoo backend
 #32 [OPEN] Render the 64×64 agent monitoring dashboard and preview
 #33 [OPEN] Add monitor controls and shared Monitor/Media display ownership
 #34 [OPEN] Package and verify Codex and Claude monitoring on the Pixoo
