@@ -94,6 +94,9 @@ TRACKS = [
     ('System design documents', [
         dict(id='n-system-design', x=0, label='BUNNY design atlas', issues=['H103'], guide='development-workflow'),
     ]),
+    ('Hub CI consolidation', [
+        dict(id='n-hub-ci', x=0, label='Five Ubuntu checks', issues=['H107'], guide='development-workflow'),
+    ]),
     ('Guide workflow checkpoints', [
         dict(id='n-guide-workflow', x=0, label='Checkpoints delivered', issues=[], guide='development-workflow'),
     ]),

@@ -1,5 +1,48 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Hub #3 source merged and package released
+
+[PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105) merged as
+`f550bcd6b7d3b7da0f34c90c622b343afe2b25fb`. Its tree matches the independently
+reviewed candidate. Published [agent-state 1.0.0](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0)
+with the package archive, checksum and source receipt. A fresh merged-revision
+build reproduces SHA-256
+`ae589d311e282c3356579c85507a3aa973ab7990e06e062143aeb08d8d2dcc99`.
+Downloaded all three release assets and verified their exact bytes and the tag's
+source revision. External imports, declarations, manifests, all 96 Node/process
+tests and 36 Python snapshot fixtures pass. Build/type and workflow checks pass,
+including six specifications, 34 requirements, five archives and 15 workflow tests.
+
+The source acceptance checklist is complete. Hub #3 remains open in review and
+blocked because all 13 merged-revision CI jobs failed before any step executed
+under the account billing/spending restriction. The account owner must restore
+Actions execution; successful merged-revision CI remains required for closure.
+The release receipt records this limitation. Production host/storage adoption,
+installed-provider qualification and physical acceptance remain separate work.
+
+Updated the shared Codex row, next-work recommendation, repository snapshots and
+merge history to record the source merge and release without claiming closure.
+The complete REST/GraphQL refresh contains 108 primary open issues, 12 guides,
+50 roadmap nodes and 71 historical merges. Added the newly opened, separately
+owned Hub #107 to development-workflow coverage and an independent roadmap row.
+Its proposed five-job Ubuntu CI remains future work. PR #104 remains independent.
+
+Guide generation, all five maintenance tests and browser checks at widths 320,
+390, 768, 900, 1000 and 1440 pass, including navigation, search, links, timeline
+controls and print restoration, with no browser errors. Inspected desktop,
+mobile and print timeline renders. The existing dense history captions and
+mobile horizontal scrolling remain. Generated-output consistency and independent
+review evidence are recorded in the follow-up PR.
+
+No ownership, command flow, product API or wire value changed, so no new OpenSpec
+change or architecture redraw is needed. All nine viewers and their dated source
+receipts are unchanged. This follow-up changes only `docs/work-guide/`; its
+guide-only CI exception does not satisfy Hub #3's outstanding product CI gate.
+
+The public landing page still serves the `950f7f6` source edition, verified at
+SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
+Public publication remains outside this source-delivery wrap-up.
+
 ## 2026-09-20 UTC: Reconcile Hub #3 with the merged guide policy
 
 Resolved [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)
