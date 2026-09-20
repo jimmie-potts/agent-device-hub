@@ -1,5 +1,56 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Complete PR #104's offline asset bundle
+
+The first hosted run of the conflict-free candidate passed all four core jobs
+but failed the reference asset receipt check. A fresh Git archive reproduced
+the failure: the root `dist/` ignore rule had excluded 41 SchemaSpy theme CSS
+and JavaScript files that were present in the local browser candidate. Added a
+narrow exception in the reference directory and committed those assets. All
+330 database report files now match the existing generation receipt exactly.
+The receipt, upstream asset bytes and authored pages are unchanged.
+
+The static document checks and full atlas/reference browser checks pass from a
+fresh Git archive, covering 28 reading pages, 37 operations and 28 tables with
+offline assets and no page errors. Guide facts, ownership, architecture and
+generated guide bytes are unchanged, so the preceding merge reconciliation's
+snapshot and checksum are retained. No new OpenSpec change is needed. Renewed
+fixed-revision reviews and hosted CI are recorded on PR #104 before closing out
+the requested conflict-resolution work.
+
+## 2026-09-20 UTC: Resolve PR #104 against current main
+
+The Hub coordinator resolved the six textual work-guide conflicts in
+[PR #104](https://github.com/jimmie-potts/agent-device-hub/pull/104), combining
+candidate `0a029966f82fe31958616be3241fb2e9b76c89de` with main
+`1ea93eebc13ee818962053daa7cb690c5735c59a`. Retained both maintenance histories,
+main's shared agent-state implementation, five-job Ubuntu CI, guide approval
+policy and delivery closeout from PR #109. Reconciled the source inputs before
+regenerating the HTML. Hub #103 has one primary guide assignment, one roadmap
+node and one detailed documentation row.
+
+The complete backlog refresh retains Hub #3 and #107 as completed references.
+The guide contains 106 primary open issues, 125 linked issues, 12 guides,
+49 roadmap nodes, 72 historical merges and nine architecture viewers. The
+history, architecture viewers and source receipts match main. The BUNNY atlas
+and API/database references are unchanged from the previous candidate and
+retain their source pins. This conflict resolution changes no product behavior
+or ownership and needs no new OpenSpec change or architecture redraw.
+
+Node 24 workflow validation passed for six specifications, zero active changes
+and five archives; all 15 workflow tests passed. Guide generation, all five
+maintenance tests and browser checks passed at 320, 390, 768, 900, 1000 and
+1440 pixels, including navigation, search, timeline, viewers and print. Atlas
+and reference checks passed for 28 reading pages, 53 reference pages,
+37 operations and 28 tables, including offline browser checks and all three
+source-extraction tests. Guide SHA-256:
+`ae940b35cc2dca468ecbb094bd4217ee7206773fba2796f60133432967b390aa`.
+Screenshots and browser receipts remain outside Git.
+
+The requested finish line is a conflict-free PR branch. Renewed independent
+reviews and current-head hosted checks are recorded on PR #104. Main merge,
+atlas UI approval and public publication remain separate from this update.
+
 ## 2026-09-20 UTC: Complete Hub #3 release and reconcile CI acceptance
 
 The #3 coordinator completed source delivery after [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)
@@ -202,6 +253,85 @@ scope. These are document exercises, not live agent-session verification.
 This entry records candidate preparation. PR #106 records independent reviews,
 hosted CI and merge evidence as they are verified. Public publication and live
 verification remain separate from this source delivery.
+
+## 2026-09-20 UTC: Add API and database references to #103 / PR #104
+
+Extend the BUNNY HTML candidate with three local Scalar viewers and downloadable
+OpenAPI 3.1 files for 37 explicit REST/SSE operations. Generate SchemaSpy reports
+for 28 tables across Pixoo's library, its separate ownership lock and Nanoleaf's
+state store. Inputs come from pinned source commits, with file hashes and route
+ownership recorded beside the references. No installed controller, live SQLite
+file or physical device is contacted. Browser request controls remain disabled;
+same-origin integration and installed-client testing remain future service work.
+
+Link the references from all design navigation and the Pixoo, Nanoleaf and
+storage documents. The HTML runbook records source refresh, generation and
+verification commands. Update the development-workflow guide's #103 entry and
+refresh all three backlog inventories. The refresh also captures current Hub #3
+labels and the Nanoleaf #29/#41/#42/#43 Linux-baseline planning edits. Coverage
+remains 12 guides, 107 primary open issues, 124 linked issues and 48 roadmap
+nodes. The existing nine architecture viewers and 68 merged PR history records
+are unchanged because this addition changes no runtime ownership or command flow.
+
+Validation: all three OpenAPI files pass Swagger Parser 13.0.0 validation. The
+source-only extraction tests pass. Two SchemaSpy rebuilds with a single scan
+thread produce identical file receipts. Static checks verify 28 reading pages and
+53 reference pages, source pins, all table metadata, bundled asset hashes and
+local links. Browser checks pass for every API operation and table, Scalar
+search, desktop/mobile layouts, offline assets and absence of page errors or
+external requests. Node 24 workflow validation reports four specifications and
+four archived changes; all 15 workflow tests pass. Guide generation, five
+maintenance tests and the guide browser checks pass.
+
+The guide SHA-256 is
+`04c81b8bca48e1b278dfebbcfdfb76693bafa3ca9ffed847fb21d90cb6adee97`.
+The reference entry page SHA-256 is
+`29af5f6ee00fb81f2bc5e55d742ffcec157770f6df99504d123b48f33f9b70e2`.
+Current-candidate independent review, successful hosted CI and explicit human
+UI approval remain required before merge. No installation or deployment is
+claimed. A fresh unauthenticated public-guide read still returns SHA-256
+`0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`;
+public publication remains outside this task and has not changed.
+
+## 2026-09-20 UTC: BUNNY HTML system design candidate for #103
+
+Add a linked HTML overview, 26 component documents, a combined reading/print
+view and one explorable state/action diagram under `docs/system-design/`.
+The documents adapt the composable template approach from the Map Distributed
+System Design Docs task. They distinguish delivered contracts and source from
+planned modules, qualification work and optional hosting choices. Editable HTML
+fragments and a JSON inventory regenerate the reading pages without overwriting
+the authored content. No product capability or OpenSpec scenario changes.
+
+Refresh all three issue inventories through the existing REST/GraphQL helper.
+Place #103 in the development-workflow guide and its CI/documentation timeline
+node. The guide contains 12 guides, 107 primary open issues, 124 linked issues,
+48 roadmap nodes and the existing 68 merged PR records. No state owner, command
+flow, controller contract or failure boundary changes; retain all nine existing
+architecture viewers and their receipts. The additional diagram illustrates the
+same boundaries in the separate system design set.
+
+Validation: Node 24 setup and workflow validation pass for four specifications
+and four archived changes; all 15 workflow tests pass. Extend the existing CI
+regression to retain the old guide checks alongside the new document checks and
+review artifacts. Document verification passes for 28 reading pages and 1,022
+local links. Browser checks cover desktop/mobile navigation, search, no-result
+states, both themes, all component pages and print output, with no page errors
+or external requests from the reading pages. The architecture diagram passes
+all nine checks and its desktop browser containment/readability checks.
+
+Guide generation, all five maintenance tests and browser checks pass at widths
+320, 390, 768, 900, 1000 and 1440. Generated guide SHA-256:
+`b699e3652063f93ae134c75602d4fd8c6f51d6b207dc9361529d086ed656edbb`.
+The HTML overview SHA-256 is
+`7257c2ef07b650074ef86afd5b7a1d8de209893cd95b6c5fd1be66618cf7b92e`.
+Independent review, hosted CI and explicit approval of the current HTML
+candidate remain delivery gates; this entry does not claim merge or deployment.
+
+The unauthenticated public guide returned HTTP 200 with SHA-256
+`0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
+It differs from this candidate. Public publication is outside #103; source
+synchronization here does not update or verify a deployed copy of this change.
 
 ## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
 

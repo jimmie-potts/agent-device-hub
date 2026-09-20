@@ -338,17 +338,22 @@ test('guide CI retains its validation and review artifacts', () => {
           { run: 'python3 docs/work-guide/work/build_guide.py' },
           { run: 'git diff --exit-code -- docs/work-guide/outputs' },
           { run: 'python3 docs/work-guide/work/test_maintenance.py' },
+          { name: 'Check system design documents',
+            run: 'python3 docs/system-design/check.py' },
           { name: 'Prepare the pinned browser checker',
             run:
              'npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0\nnode "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium\n' },
           { name: 'Check the guide and capture review evidence',
             run:
              'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs' },
+          { name: 'Check system design navigation and print output',
+            run:
+             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs' },
           { uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
             with:
              { name: 'work-guide-review',
                path:
-                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n',
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-design-review\n',
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });

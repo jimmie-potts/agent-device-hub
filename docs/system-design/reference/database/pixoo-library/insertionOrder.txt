@@ -1,0 +1,9 @@
+sessions
+assets
+playlists
+renditions
+playback_checkpoint
+items
+session_refs
+cleanup_jobs
+schema_migrations

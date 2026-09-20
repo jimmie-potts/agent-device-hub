@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT,color TEXT,roots TEXT);
+CREATE TABLE IF NOT EXISTS task_info (session TEXT PRIMARY KEY,title TEXT,cwd TEXT,project TEXT,manual_project TEXT,turn TEXT,started REAL);
+CREATE TABLE IF NOT EXISTS line_prefs (line_id TEXT PRIMARY KEY,project TEXT,signature INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS map_settings (id INTEGER PRIMARY KEY,style TEXT,coverage TEXT,rotation INTEGER,flip_x INTEGER,flip_y INTEGER);
+CREATE TABLE IF NOT EXISTS map_pending (id INTEGER PRIMARY KEY,payload TEXT);
+CREATE TABLE IF NOT EXISTS locate (id INTEGER PRIMARY KEY,line_id TEXT,started REAL);
+CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, turn TEXT, status TEXT, updated REAL);
+CREATE TABLE IF NOT EXISTS slots (session TEXT PRIMARY KEY, slot INTEGER UNIQUE);
+CREATE TABLE IF NOT EXISTS waits (session TEXT, turn TEXT, key TEXT, kind TEXT, tool TEXT, PRIMARY KEY(session, turn, key));
+CREATE TABLE IF NOT EXISTS activity (session TEXT PRIMARY KEY, turn TEXT, status TEXT, started REAL);
+CREATE TABLE IF NOT EXISTS receipts (session TEXT PRIMARY KEY, turn TEXT, completed REAL, observed INTEGER);
+CREATE TABLE IF NOT EXISTS display_v3 (id INTEGER PRIMARY KEY, snapshot TEXT, looping INTEGER, rendered REAL);
+CREATE TABLE IF NOT EXISTS comets (session TEXT PRIMARY KEY, turn TEXT, queued REAL, source INTEGER, started REAL);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS controller_meta (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS controller_credentials (principal TEXT PRIMARY KEY, digest TEXT NOT NULL, scopes TEXT NOT NULL, active INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS controller_requests (sequence INTEGER PRIMARY KEY, request TEXT NOT NULL, receipt TEXT NOT NULL, principal TEXT NOT NULL, phase TEXT NOT NULL, created REAL NOT NULL, mode_revision INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS controller_events (sequence INTEGER PRIMARY KEY, payload TEXT NOT NULL);

@@ -1,0 +1,231 @@
+{
+  "pins": {
+    "pixoo": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8"
+    },
+    "nanoleaf": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b"
+    }
+  },
+  "files": {
+    "pixoo/packages/library/src/migrations.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/library/src/migrations.ts",
+      "sha256": "91a945fff0e5c1828fb05443d6d7dfc259955e4cde00d6dfb929d374624be574",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/library/src/migrations.ts"
+    },
+    "pixoo/packages/library/src/files.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/library/src/files.ts",
+      "sha256": "987438457713c3c99931f07bdfa5dd7ae41ad61b48558e0d2b47bf608d733526",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/library/src/files.ts"
+    },
+    "nanoleaf/bridge/project_map.py": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/project_map.py",
+      "sha256": "df925871dffc55e727bfbbc211354ea84589a48f56552af820691913565e7d76",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/project_map.py"
+    },
+    "nanoleaf/bridge/bridge.py": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/bridge.py",
+      "sha256": "e056d0a43d75fb41dbe0e4780c904aea5d3d05b61ee64ec220313564f13981f3",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/bridge.py"
+    },
+    "nanoleaf/bridge/controller_state.py": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/controller_state.py",
+      "sha256": "ea6d8a1c627d83f5a901eebe1e72f0e54d6baa98b331d493a535418fff4cb234",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/controller_state.py"
+    },
+    "pixoo/apps/server/src/app.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/app.ts",
+      "sha256": "17170fa7c3a1415ffb0599171d29ab694f70525a7daf81afcdae8953db0caaa8",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/app.ts"
+    },
+    "pixoo/apps/server/src/api.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/api.ts",
+      "sha256": "c2dcfa33d9abea21b76ea386d12c46c396989479887c27a32c3a79fe0c65191b",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/api.ts"
+    },
+    "pixoo/apps/server/src/catalog-routes.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/catalog-routes.ts",
+      "sha256": "f09ae3a580430e0f2659df5a1c9bb304e04e59e5365542e41aa4f23f31a22c37",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/catalog-routes.ts"
+    },
+    "pixoo/apps/server/src/player-routes.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/player-routes.ts",
+      "sha256": "9e719ecb18f39bd0f30acb5ad3467c279620bae16926208af7e063ed17631e60",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/player-routes.ts"
+    },
+    "pixoo/apps/server/src/device-routes.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/device-routes.ts",
+      "sha256": "13db3d1250ac62938a97b77d62d0ca205c1975281b19682ff7bcff3b816542ee",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/device-routes.ts"
+    },
+    "pixoo/apps/server/src/events.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/events.ts",
+      "sha256": "61025e4ad2b073333f52f562a328a0c10de4efbd3cd0420875a1434ab3b0b3b3",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/events.ts"
+    },
+    "nanoleaf/bridge/controller_server.py": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/controller_server.py",
+      "sha256": "cc20ecf59934d969a2e9dbb7d6f669ced428e76fce7ba84cadc221db48d5b832",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/controller_server.py"
+    },
+    "nanoleaf/bridge/wall_server.py": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/wall_server.py",
+      "sha256": "6910a9ea2bd79524c3d6e0c3be51093c186263071ae3ec6e0a8eb29a09edb8b5",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/wall_server.py"
+    },
+    "pixoo/packages/core/src/api.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/core/src/api.ts",
+      "sha256": "234730fb5c9cdbe025e2685024e5e51342579818fe34011f5c2e5e9b6035ccbb",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/core/src/api.ts"
+    },
+    "pixoo/packages/core/src/index.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/core/src/index.ts",
+      "sha256": "c6c336a9a46f595666d2a6fbebca86bc30501a144f61432fa167acde3ddc35d0",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/core/src/index.ts"
+    },
+    "pixoo/packages/library/src/contracts.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/library/src/contracts.ts",
+      "sha256": "f6e2604f46b7432f38380a36ebd98f31eb9e3cd0c0fe0f6081d246fefaffe78d",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/library/src/contracts.ts"
+    },
+    "pixoo/packages/media/src/contracts.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/media/src/contracts.ts",
+      "sha256": "6926f0b378964a4f63056daac0e360d67bb06bb3f2fedd35ca4387578f8d37f5",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/media/src/contracts.ts"
+    },
+    "pixoo/packages/playback/src/contracts.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/playback/src/contracts.ts",
+      "sha256": "4163cce12979d9911e93e1b436b1f692006f49a188b2200c29bca1de757dbdad",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/playback/src/contracts.ts"
+    },
+    "pixoo/packages/playback/src/player.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/playback/src/player.ts",
+      "sha256": "84cbc2ef830b86e9103d42692ba0a4da1b46ef229b027157fd9b6e2790563b97",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/playback/src/player.ts"
+    },
+    "pixoo/packages/library/src/checkpoint.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/library/src/checkpoint.ts",
+      "sha256": "51e4850d021bc8ba26ee82491669178b9a3320cee3ccdb1b6ca52bd4aab64bbf",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/library/src/checkpoint.ts"
+    },
+    "pixoo/packages/device/src/contracts.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "packages/device/src/contracts.ts",
+      "sha256": "d5da765c130f173b99ee26a2055023ec1ab986e9aa2d3629a099f91deec7f699",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/packages/device/src/contracts.ts"
+    },
+    "pixoo/apps/server/src/security.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/security.ts",
+      "sha256": "8b7aa621d19ddef58461d6ceadcd8136b6b1cd5c67c2049b49042fcec9c057e8",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/security.ts"
+    },
+    "pixoo/apps/server/src/commands.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/commands.ts",
+      "sha256": "02b4ca3b17103ab4e6fe7c5e73990879c7c74a8d0ee0ae8c2cd6729a3d1ca423",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/commands.ts"
+    },
+    "pixoo/apps/server/src/control-service.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/control-service.ts",
+      "sha256": "a5cfd1fe7eba9128b7c946d4265a06d9f1b4cfa6d8ed4b43ec56be47d89cc72e",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/control-service.ts"
+    },
+    "pixoo/apps/server/src/device-settings.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/device-settings.ts",
+      "sha256": "7336046d757e279e991c2432745e398486e256d826936dd840fbff0ff1bf9309",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/device-settings.ts"
+    },
+    "pixoo/apps/server/src/mcp.ts": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "apps/server/src/mcp.ts",
+      "sha256": "6febb89813b1ad8928c7a8fd826ec4650b12a27603b62d2006310b0f9bd0f121",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/apps/server/src/mcp.ts"
+    },
+    "pixoo/docs/api.md": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "docs/api.md",
+      "sha256": "664ee7754582c2994f0dfd8574278bc8ec52ad78c94a20dd12a55b30f114dedb",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/docs/api.md"
+    },
+    "pixoo/docs/library-persistence.md": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "docs/library-persistence.md",
+      "sha256": "20c176e22157132e79ab057f238563ca40e26b40a0ceff48b8c0b0b1721e6569",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/docs/library-persistence.md"
+    },
+    "pixoo/package-lock.json": {
+      "repository": "divoom-app-upgrade",
+      "revision": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
+      "path": "package-lock.json",
+      "sha256": "093d6139ec454fdd9f62b4d196b3f7e431fda768bea5d8a52fa98f73fada5148",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/package-lock.json"
+    },
+    "nanoleaf/docs/controller-api.md": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "docs/controller-api.md",
+      "sha256": "8082683b5e300ee2cb542ee6372935eee1d0483d57e7b651f53348e4d174a327",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/docs/controller-api.md"
+    },
+    "nanoleaf/bridge/vendor/device-contracts-1.0.0/package/schemas/controller-v1.schema.json": {
+      "repository": "codex-nanoleaf",
+      "revision": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+      "path": "bridge/vendor/device-contracts-1.0.0/package/schemas/controller-v1.schema.json",
+      "sha256": "ce5835782c18549da6bb2706be51d3b3d3bccda357a3d7c4be7d3f0c12f4ab8b",
+      "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/bridge/vendor/device-contracts-1.0.0/package/schemas/controller-v1.schema.json"
+    }
+  }
+}

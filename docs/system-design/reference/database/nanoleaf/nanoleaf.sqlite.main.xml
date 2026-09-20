@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<database name="nanoleaf.sqlite" schema="main" type="SQLite - 3.50.3">
+   <tables>
+      <table name="activity" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="status" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="3" name="started" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <index name="activity_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_activity_1" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+      </table>
+      <table name="comets" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="2" name="queued" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="source" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="4" name="started" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <index name="comets_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_comets_1" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+      </table>
+      <table name="controller_credentials" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="principal" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="digest" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="scopes" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="active" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="principal" sequenceNumberInPK="1"/>
+         <index name="controller_credentials_s_pk" unique="true">
+            <column ascending="true" name="principal"/>
+         </index>
+         <index name="sqlite_autoindex_controller_credentials_1" unique="true">
+            <column ascending="true" name="principal"/>
+         </index>
+      </table>
+      <table name="controller_events" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="sequence" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="payload" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="sequence" sequenceNumberInPK="1"/>
+         <index name="controller_events_s_pk" unique="true">
+            <column ascending="true" name="sequence"/>
+         </index>
+      </table>
+      <table name="controller_meta" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="payload" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="controller_meta_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="controller_requests" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="sequence" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="request" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="receipt" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="principal" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="phase" nullable="false" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="5" name="created" nullable="false" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="6" name="mode_revision" nullable="false" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="sequence" sequenceNumberInPK="1"/>
+         <index name="controller_requests_s_pk" unique="true">
+            <column ascending="true" name="sequence"/>
+         </index>
+      </table>
+      <table name="display_v3" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="snapshot" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="looping" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="3" name="rendered" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="display_v3_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="line_prefs" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="line_id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="project" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="0" digits="0" id="2" name="signature" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="line_id" sequenceNumberInPK="1"/>
+         <index name="line_prefs_s_pk" unique="true">
+            <column ascending="true" name="line_id"/>
+         </index>
+         <index name="sqlite_autoindex_line_prefs_1" unique="true">
+            <column ascending="true" name="line_id"/>
+         </index>
+      </table>
+      <table name="locate" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="line_id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="2" name="started" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="locate_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="map_pending" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="payload" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="map_pending_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="map_settings" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="style" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="coverage" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="rotation" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="flip_x" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="5" name="flip_y" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="map_settings_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="meta" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="key" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="value" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="key" sequenceNumberInPK="1"/>
+         <index name="meta_s_pk" unique="true">
+            <column ascending="true" name="key"/>
+         </index>
+         <index name="sqlite_autoindex_meta_1" unique="true">
+            <column ascending="true" name="key"/>
+         </index>
+      </table>
+      <table name="projects" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="name" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="color" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="roots" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="projects_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_projects_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="receipts" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="2" name="completed" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="observed" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <index name="receipts_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_receipts_1" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+      </table>
+      <table name="sessions" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="id" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="status" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="3" name="updated" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="id" sequenceNumberInPK="1"/>
+         <index name="sessions_s_pk" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+         <index name="sqlite_autoindex_sessions_1" unique="true">
+            <column ascending="true" name="id"/>
+         </index>
+      </table>
+      <table name="slots" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="slot" nullable="true" remarks="" size="2000000000" type="INTEGER" typeCode="4"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <index name="slots_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_slots_1" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_slots_2" unique="true">
+            <column ascending="true" name="slot"/>
+         </index>
+      </table>
+      <table name="task_info" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="title" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="cwd" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="project" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="manual_project" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="5" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="10" id="6" name="started" nullable="true" remarks="" size="2000000000" type="REAL" typeCode="6"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <index name="task_info_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+         <index name="sqlite_autoindex_task_info_1" unique="true">
+            <column ascending="true" name="session"/>
+         </index>
+      </table>
+      <table name="waits" remarks="" type="TABLE">
+         <column autoUpdated="false" defaultValue="null" digits="0" id="0" name="session" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="1" name="turn" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="2" name="key" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="3" name="kind" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <column autoUpdated="false" defaultValue="null" digits="0" id="4" name="tool" nullable="true" remarks="" size="2000000000" type="TEXT" typeCode="12"/>
+         <primaryKey column="session" sequenceNumberInPK="1"/>
+         <primaryKey column="turn" sequenceNumberInPK="2"/>
+         <primaryKey column="key" sequenceNumberInPK="3"/>
+         <index name="waits_s_pk" unique="true">
+            <column ascending="true" name="session"/>
+            <column ascending="true" name="turn"/>
+            <column ascending="true" name="key"/>
+         </index>
+         <index name="sqlite_autoindex_waits_1" unique="true">
+            <column ascending="true" name="session"/>
+            <column ascending="true" name="turn"/>
+            <column ascending="true" name="key"/>
+         </index>
+      </table>
+   </tables>
+</database>

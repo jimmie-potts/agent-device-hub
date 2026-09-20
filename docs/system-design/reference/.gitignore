@@ -1,0 +1,5 @@
+__pycache__/
+
+# SchemaSpy's offline theme assets are part of the committed reference.
+!database/shared/bower/admin-lte/dist/
+!database/shared/bower/admin-lte/dist/**

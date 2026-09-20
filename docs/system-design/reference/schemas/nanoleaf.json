@@ -1,0 +1,830 @@
+{
+  "tables": [
+    {
+      "name": "activity",
+      "sql": "CREATE TABLE activity (session TEXT PRIMARY KEY, turn TEXT, status TEXT, started REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "status",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "started",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_activity_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "comets",
+      "sql": "CREATE TABLE comets (session TEXT PRIMARY KEY, turn TEXT, queued REAL, source INTEGER, started REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "queued",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "source",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "started",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_comets_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "controller_credentials",
+      "sql": "CREATE TABLE controller_credentials (principal TEXT PRIMARY KEY, digest TEXT NOT NULL, scopes TEXT NOT NULL, active INTEGER NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "principal",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "digest",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "scopes",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "active",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_controller_credentials_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "principal"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "controller_events",
+      "sql": "CREATE TABLE controller_events (sequence INTEGER PRIMARY KEY, payload TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "sequence",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "payload",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "controller_meta",
+      "sql": "CREATE TABLE controller_meta (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "payload",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "controller_requests",
+      "sql": "CREATE TABLE controller_requests (sequence INTEGER PRIMARY KEY, request TEXT NOT NULL, receipt TEXT NOT NULL, principal TEXT NOT NULL, phase TEXT NOT NULL, created REAL NOT NULL, mode_revision INTEGER NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "sequence",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "request",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "receipt",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "principal",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "phase",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 5,
+          "name": "created",
+          "type": "REAL",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 6,
+          "name": "mode_revision",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "display_v3",
+      "sql": "CREATE TABLE display_v3 (id INTEGER PRIMARY KEY, snapshot TEXT, looping INTEGER, rendered REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "snapshot",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "looping",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "rendered",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "line_prefs",
+      "sql": "CREATE TABLE line_prefs (line_id TEXT PRIMARY KEY,project TEXT,signature INTEGER DEFAULT 0)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "line_id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "project",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "signature",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": "0",
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_line_prefs_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "line_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "locate",
+      "sql": "CREATE TABLE locate (id INTEGER PRIMARY KEY,line_id TEXT,started REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "line_id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "started",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "map_pending",
+      "sql": "CREATE TABLE map_pending (id INTEGER PRIMARY KEY,payload TEXT)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "payload",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "map_settings",
+      "sql": "CREATE TABLE map_settings (id INTEGER PRIMARY KEY,style TEXT,coverage TEXT,rotation INTEGER,flip_x INTEGER,flip_y INTEGER)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "style",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "coverage",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "rotation",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "flip_x",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 5,
+          "name": "flip_y",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "meta",
+      "sql": "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "key",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "value",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_meta_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "key"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "projects",
+      "sql": "CREATE TABLE projects (id TEXT PRIMARY KEY,name TEXT,color TEXT,roots TEXT)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "name",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "color",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "roots",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_projects_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "receipts",
+      "sql": "CREATE TABLE receipts (session TEXT PRIMARY KEY, turn TEXT, completed REAL, observed INTEGER)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "completed",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "observed",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_receipts_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "sql": "CREATE TABLE sessions (id TEXT PRIMARY KEY, turn TEXT, status TEXT, updated REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "status",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "updated",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_sessions_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "slots",
+      "sql": "CREATE TABLE slots (session TEXT PRIMARY KEY, slot INTEGER UNIQUE)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "slot",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_slots_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session"
+          ]
+        },
+        {
+          "name": "sqlite_autoindex_slots_2",
+          "unique": true,
+          "origin": "u",
+          "partial": false,
+          "columns": [
+            "slot"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "task_info",
+      "sql": "CREATE TABLE task_info (session TEXT PRIMARY KEY,title TEXT,cwd TEXT,project TEXT,manual_project TEXT,turn TEXT,started REAL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "title",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "cwd",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "project",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "manual_project",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 5,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 6,
+          "name": "started",
+          "type": "REAL",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_task_info_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "waits",
+      "sql": "CREATE TABLE waits (session TEXT, turn TEXT, key TEXT, kind TEXT, tool TEXT, PRIMARY KEY(session, turn, key))",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "turn",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 2
+        },
+        {
+          "position": 2,
+          "name": "key",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 3
+        },
+        {
+          "position": 3,
+          "name": "kind",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "tool",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_waits_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session",
+            "turn",
+            "key"
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": []
+}

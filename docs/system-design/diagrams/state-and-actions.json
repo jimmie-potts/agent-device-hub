@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "BUNNY · state and actions", "locale": "en", "quality_profile": "showcase", "viewBox": [1280, 670]},
+  "components": [
+    {"id":"hooks","type":"external","label":"Agent lifecycle hooks","sublabel":"Bounded observations","pos":[40,80],"size":[220,78]},
+    {"id":"agent","type":"backend","label":"Agent-state core","sublabel":"Task facts and notices","pos":[370,80],"size":[220,78],"tag":"planned"},
+    {"id":"monitor","type":"backend","label":"Monitoring consumer","sublabel":"Existing device policy","pos":[700,80],"size":[220,78]},
+    {"id":"music","type":"external","label":"Windows music connector","sublabel":"Qualified player observations","pos":[40,285],"size":[220,78],"tag":"qualification"},
+    {"id":"playback","type":"backend","label":"Playback-state service","sublabel":"Track, controls, freshness","pos":[370,285],"size":[220,78],"tag":"planned"},
+    {"id":"rules","type":"backend","label":"Automation rules","sublabel":"Accepted event-to-action policy","pos":[700,285],"size":[220,78],"tag":"future"},
+    {"id":"clients","type":"frontend","label":"UI / MCP clients","sublabel":"Explicit user commands","pos":[370,490],"size":[220,78]},
+    {"id":"services","type":"security","label":"Application services","sublabel":"Validate, authorize and route","pos":[700,490],"size":[220,78],"tag":"planned"},
+    {"id":"controller","type":"backend","label":"Owning controller","sublabel":"Private queue and one writer","pos":[1030,490],"size":[220,78]}
+  ],
+  "connections": [
+    {"id":"hook-observation","from":"hooks","to":"agent","label":"metadata"},
+    {"id":"state-monitor","from":"agent","to":"monitor","label":"state feed"},
+    {"id":"music-observation","from":"music","to":"playback","label":"now playing"},
+    {"id":"playback-rules","from":"playback","to":"rules","label":"track change"},
+    {"id":"rule-actions","from":"rules","to":"services","label":"actions","labelDy":24},
+    {"id":"explicit-command","from":"clients","to":"services","label":"commands","variant":"emphasis"},
+    {"id":"controller-command","from":"services","to":"controller","label":"requests","variant":"emphasis"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"Separate state owners","items":["Agent state describes tasks. Playback state describes music. UI reads remain available without a matching rule."]},
+    {"dot":"emerald","title":"One physical writer","items":["Monitoring consumers belong to controllers. Rules may consult agent state; they never bypass controller policy or queues."]},
+    {"dot":"amber","title":"Target design","items":["Logical responsibilities, not a deployment map. New core, playback and rules runtimes remain planned."]}
+  ]
+}

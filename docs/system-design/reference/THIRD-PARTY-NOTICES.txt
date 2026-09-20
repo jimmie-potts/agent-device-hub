@@ -1,0 +1,17 @@
+Scalar API Reference 1.69.2
+https://github.com/scalar/scalar
+The unchanged standalone browser bundle is distributed under the MIT license.
+See assets/SCALAR-LICENSE. The npm archive integrity and bundle hash are in tools.json.
+
+SchemaSpy 7.0.2
+https://github.com/schemaspy/schemaspy
+The database directory contains generated SchemaSpy reports, including the
+browser libraries, fonts and license notices supplied by its report template.
+Common bower and fonts directories are shared without changing their contents.
+Generated pages have a BUNNY return link, normalized dates and temporary paths,
+and a viewport that allows zoom. Implied relationships and row counts are disabled.
+The SchemaSpy application and SQLite JDBC driver are build tools, not shipped binaries.
+Their versions, download URLs and verified checksums are recorded in tools.json.
+
+These references describe source-owned interfaces. They do not replace the
+licenses or authority of the owning controller repositories.

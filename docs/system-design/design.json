@@ -1,0 +1,1050 @@
+{
+  "system": {
+    "id": "SYS-bunny",
+    "name": "BUNNY",
+    "summary": "Local-first personal device control, shared agent monitoring and future music automation."
+  },
+  "reviewed_at": "2026-09-19",
+  "issue": "https://github.com/jimmie-potts/agent-device-hub/issues/103",
+  "source_baselines": {
+    "agent-device-hub": "514b566279f271451e36a5bb86b166bfa2a33bd8",
+    "codex-nanoleaf": "2558df5a2fc543247b0c75898ef0260ba3ea264b",
+    "divoom-app-upgrade": "9f1c0ec75651810a441606b0c08fbdeee824c8d8"
+  },
+  "provenance": {
+    "task": "Map Distributed System Design Docs",
+    "method": "Composable component templates adapted into authored HTML. The Markdown composer is not a runtime dependency.",
+    "templates": {
+      "adr.md": "8e1e40c64f8bd5c58508b280dbd02608ecc89bd289f49364bcd92a61595bba9e",
+      "database.md": "946498e2c56a78f463afeb04fb561ca33d2597f453405adf98210f327dd8b0c1",
+      "device-controller.md": "357e64745d6186cb3fb54c9153f1119bf8f6c17eae1634cc772c60997a2c2e5f",
+      "event-contract.md": "bac590461e2df08a9b1edbbe796d5d2eaf16b33017cf0b9937491624b3cb6b5c",
+      "frontend.md": "5dbdc0bf01cacd2031b03759df87e2d44c76ff89c218410ab05be71f2ad9b9de",
+      "host-adapter.md": "330f0643d8e7a45700b9ad09739c5578096a54b02a6075bec2b3834060f5ac26",
+      "kubernetes-cluster.md": "a0fbe6a3ef0bf7167eb73e530015c549edbd042f3dedaee68c8d3f72eb6b540b",
+      "kubernetes-workload.md": "63df5f1b2d8f8392636490ca5ae2c0c4bbaa0bb9691f6bc8ac95a26b80b17076",
+      "message-broker.md": "b6854338e9582d725612e9e653c0c6771e3f0f0c804cd6fa7535447a8e521480",
+      "message-channel.md": "e75f2d0c6ea7b93a535bb61f63c069401f48b80d52dee6f0e6b2e353872d1773",
+      "network-route.md": "2c35a57f299ac3aa68c1f34e98e0f39e006347b2a81f00b929dd2ba6d275ba38",
+      "persistent-storage.md": "10eea61085a0b3eddcfae46564de8e4de62c6fa8aa7592d73c46411a0683d410",
+      "rest-api.md": "b5c511b074c24813494ecdbcd9276414ec3f9b3a566560195b5f92c52eb7d810",
+      "shared-infrastructure.md": "a88f05701971e7f1d6fe40a633e26fb188015bd0c5ca1bf4302dbb956fee5ef9",
+      "system.md": "d0464b43b0bc7ce0b7e44f1f01616ef3f4c73e1eac428af920f900f823725a6d",
+      "worker.md": "0811da064d9c1835941d487ad42e2f7e6fab786f9b5afb2830beccf7579622e0"
+    }
+  },
+  "components": [
+    {
+      "id": "API-bunny",
+      "name": "Application API",
+      "group": "Application & state",
+      "type": "Application interface / REST API",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "A common entry point for UI requests and approved actions, with behavior shared by MCP and automation.",
+      "depends_on": [
+        "EVT-controller",
+        "CORE-agent",
+        "CORE-playback",
+        "WRK-automation"
+      ],
+      "sources": [
+        {
+          "label": "Accepted architecture",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Controller contract v1",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/controller-contract.md"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #6",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/6"
+        },
+        {
+          "label": "Hub #13",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/13"
+        },
+        {
+          "label": "Hub #31",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/31"
+        }
+      ]
+    },
+    {
+      "id": "API-mcp",
+      "name": "MCP interface",
+      "group": "Application & state",
+      "type": "Embedded protocol interface",
+      "status": "delivered",
+      "status_label": "Source delivered",
+      "summary": "The implemented MCP library translates registered tools into calls to owning services. Its host controls the listener.",
+      "depends_on": [
+        "EVT-controller"
+      ],
+      "sources": [
+        {
+          "label": "Module API and limits",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/packages/mcp/README.md"
+        },
+        {
+          "label": "Implemented tool dispatch",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/packages/mcp/src/tools.ts"
+        },
+        {
+          "label": "Hub #7",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
+        },
+        {
+          "label": "Hub #13",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/13"
+        }
+      ]
+    },
+    {
+      "id": "CORE-agent",
+      "name": "Shared agent-state core",
+      "group": "Application & state",
+      "type": "Embeddable state module",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Interprets agent observations once, so every task monitor receives the same task facts.",
+      "depends_on": [
+        "EVT-lifecycle",
+        "DB-hub",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Lifecycle interpretation boundary",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/agent-lifecycle-contract.md"
+        },
+        {
+          "label": "Early performance procedure",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/performance-baseline.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "label": "Hub #30",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
+        }
+      ]
+    },
+    {
+      "id": "CORE-playback",
+      "name": "Playback-state service",
+      "group": "Application & state",
+      "type": "Media state module",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Owns selected-player observations, now-playing state, freshness and supported playback operations.",
+      "depends_on": [
+        "HOST-music",
+        "EVT-playback",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Accepted music direction",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/decisions/0004-local-first-personal-assistant.md"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #37",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/37"
+        },
+        {
+          "label": "Hub #38",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/38"
+        },
+        {
+          "label": "Hub #39",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/39"
+        },
+        {
+          "label": "Hub #40",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/40"
+        },
+        {
+          "label": "Hub #41",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/41"
+        }
+      ]
+    },
+    {
+      "id": "WRK-automation",
+      "name": "Automation rules",
+      "group": "Application & state",
+      "type": "Rule evaluator / worker",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Turns accepted events and conditions into explicit application actions without an open conversation.",
+      "depends_on": [
+        "CORE-agent",
+        "CORE-playback",
+        "DB-hub",
+        "EVT-controller"
+      ],
+      "sources": [
+        {
+          "label": "Independent accepted rules",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/decisions/0004-local-first-personal-assistant.md"
+        },
+        {
+          "label": "Hub #40",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/40"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        },
+        {
+          "label": "Hub #46",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/46"
+        }
+      ]
+    },
+    {
+      "id": "UI-dashboard",
+      "name": "Shared UI",
+      "group": "Application & state",
+      "type": "Frontend",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "A common view of task status, device capabilities, pending actions and, later, playback and rules.",
+      "depends_on": [
+        "API-bunny",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Unified UI scope",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #6",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/6"
+        },
+        {
+          "label": "Hub #31",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/31"
+        },
+        {
+          "label": "Hub #32",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/32"
+        },
+        {
+          "label": "Hub #37",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/37"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        }
+      ]
+    },
+    {
+      "id": "DB-hub",
+      "name": "Hub data ownership",
+      "group": "Contracts & data",
+      "type": "Logical database design",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Defines what BUNNY persists and who may change it, while leaving the storage engine and schema to implementation.",
+      "depends_on": [
+        "VOL-state"
+      ],
+      "sources": [
+        {
+          "label": "State and private storage ownership",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #43",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        }
+      ]
+    },
+    {
+      "id": "EVT-lifecycle",
+      "name": "Agent lifecycle contract",
+      "group": "Contracts & data",
+      "type": "Versioned event contract",
+      "status": "delivered",
+      "status_label": "Source delivered",
+      "summary": "The strict shared metadata envelope used to qualify agent observations without transporting private task content.",
+      "depends_on": [],
+      "sources": [
+        {
+          "label": "Lifecycle contract",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/agent-lifecycle-contract.md"
+        },
+        {
+          "label": "Strict wire schema",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/packages/lifecycle-contracts/schemas/lifecycle-v1.schema.json"
+        },
+        {
+          "label": "Hub #2",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/2"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        }
+      ]
+    },
+    {
+      "id": "EVT-controller",
+      "name": "Controller command contract",
+      "group": "Contracts & data",
+      "type": "Versioned command / observation contract",
+      "status": "delivered",
+      "status_label": "Source delivered",
+      "summary": "A shared vocabulary for capabilities, safe command admission, receipts and truthful device observations.",
+      "depends_on": [],
+      "sources": [
+        {
+          "label": "Controller contract v1",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/controller-contract.md"
+        },
+        {
+          "label": "Hub #4",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/4"
+        },
+        {
+          "label": "Hub #7",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
+        },
+        {
+          "label": "Hub #9",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/9"
+        }
+      ]
+    },
+    {
+      "id": "EVT-playback",
+      "name": "Playback event semantics",
+      "group": "Contracts & data",
+      "type": "Proposed event contract",
+      "status": "qualification",
+      "status_label": "Qualification required",
+      "summary": "Defines the questions a qualified track-change event must answer before it drives device effects.",
+      "depends_on": [
+        "HOST-music"
+      ],
+      "sources": [
+        {
+          "label": "Playback vocabulary",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #38",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/38"
+        },
+        {
+          "label": "Hub #39",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/39"
+        },
+        {
+          "label": "Hub #41",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/41"
+        }
+      ]
+    },
+    {
+      "id": "CH-feeds",
+      "name": "State feeds and subscriptions",
+      "group": "Contracts & data",
+      "type": "Logical message channels",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Distributes current facts to UI and policy consumers without making every subscriber a state owner.",
+      "depends_on": [
+        "EVT-lifecycle",
+        "EVT-playback"
+      ],
+      "sources": [
+        {
+          "label": "Revisioned feeds and failure boundaries",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #30",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        }
+      ]
+    },
+    {
+      "id": "HOST-agent",
+      "name": "Agent host integrations",
+      "group": "Hosts & devices",
+      "type": "Host adapters",
+      "status": "mixed",
+      "status_label": "Mixed evidence",
+      "summary": "Qualified host hooks report bounded lifecycle metadata while allowing agent work to continue.",
+      "depends_on": [
+        "EVT-lifecycle",
+        "CORE-agent"
+      ],
+      "sources": [
+        {
+          "label": "Provider qualification",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/provider-qualification.md"
+        },
+        {
+          "label": "Lifecycle producer requirements",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/agent-lifecycle-contract.md"
+        },
+        {
+          "label": "Early measurement procedure",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/performance-baseline.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "label": "Hub #30",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
+        }
+      ]
+    },
+    {
+      "id": "HOST-music",
+      "name": "Windows music connector",
+      "group": "Hosts & devices",
+      "type": "Host adapter",
+      "status": "qualification",
+      "status_label": "Qualification required",
+      "summary": "Keeps Windows player access beside Apple Music while presenting a portable boundary to BUNNY.",
+      "depends_on": [
+        "EVT-playback"
+      ],
+      "sources": [
+        {
+          "label": "Windows music direction",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/decisions/0004-local-first-personal-assistant.md"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #37",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/37"
+        },
+        {
+          "label": "Hub #41",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/41"
+        }
+      ]
+    },
+    {
+      "id": "DEV-nanoleaf",
+      "name": "Nanoleaf controller",
+      "group": "Hosts & devices",
+      "type": "Physical-device controller",
+      "status": "mixed",
+      "status_label": "Mixed evidence",
+      "summary": "Retains lighting policy, geometry, scenes and the sole light writer behind the protected controller.",
+      "depends_on": [
+        "EVT-controller",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Current Nanoleaf README",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/README.md"
+        },
+        {
+          "label": "Linux setup design",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/2558df5a2fc543247b0c75898ef0260ba3ea264b/docs/linux-install.md"
+        },
+        {
+          "label": "Nanoleaf source owner #54",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
+        },
+        {
+          "label": "Installed Linux acceptance #55",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/55"
+        },
+        {
+          "label": "Hub #26",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/26"
+        },
+        {
+          "label": "Hub #39",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/39"
+        },
+        {
+          "label": "Hub #43",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
+        }
+      ]
+    },
+    {
+      "id": "DEV-pixoo",
+      "name": "Pixoo controller",
+      "group": "Hosts & devices",
+      "type": "Physical-device controller",
+      "status": "mixed",
+      "status_label": "Mixed evidence",
+      "summary": "Owns media, playback, rendering and the serialized display writer; shared monitoring is a separate integration.",
+      "depends_on": [
+        "EVT-controller",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Current Pixoo README",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/README.md"
+        },
+        {
+          "label": "Pixoo HTTP API",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/docs/api.md"
+        },
+        {
+          "label": "Monitoring consumer requirements",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9f1c0ec75651810a441606b0c08fbdeee824c8d8/docs/agent-monitoring.md"
+        },
+        {
+          "label": "First embedded host owner",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/31"
+        },
+        {
+          "label": "Controller API adoption",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/37"
+        },
+        {
+          "label": "Hub #25",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/25"
+        },
+        {
+          "label": "Hub #38",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/38"
+        },
+        {
+          "label": "Hub #41",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/41"
+        }
+      ]
+    },
+    {
+      "id": "DEV-tidbyt",
+      "name": "Tidbyt controller",
+      "group": "Hosts & devices",
+      "type": "Physical-device controller",
+      "status": "qualification",
+      "status_label": "Qualification required",
+      "summary": "Plans a cloud-first 64×32 display controller with a replaceable connection and one display writer.",
+      "depends_on": [
+        "EVT-controller",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Tidbyt owning guide",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/controllers/tidbyt/README.md"
+        },
+        {
+          "label": "Hub #15",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/15"
+        },
+        {
+          "label": "Hub #16",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/16"
+        },
+        {
+          "label": "Hub #19",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/19"
+        },
+        {
+          "label": "Hub #21",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/21"
+        },
+        {
+          "label": "Hub #23",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/23"
+        },
+        {
+          "label": "Hub #24",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/24"
+        },
+        {
+          "label": "Hub #38",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/38"
+        },
+        {
+          "label": "Hub #41",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/41"
+        }
+      ]
+    },
+    {
+      "id": "DEV-lifx",
+      "name": "LIFX controller",
+      "group": "Hosts & devices",
+      "type": "Physical-device controller",
+      "status": "qualification",
+      "status_label": "Qualification required",
+      "summary": "Plans direct LAN lighting with capability qualification and an independent queue for each configured bulb.",
+      "depends_on": [
+        "EVT-controller",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "LIFX owning guide",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/controllers/lifx/README.md"
+        },
+        {
+          "label": "Hub #17",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/17"
+        },
+        {
+          "label": "Hub #18",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/18"
+        },
+        {
+          "label": "Hub #20",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/20"
+        },
+        {
+          "label": "Hub #22",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/22"
+        }
+      ]
+    },
+    {
+      "id": "DEV-pc",
+      "name": "PC and desk lighting",
+      "group": "Hosts & devices",
+      "type": "Host-bound device controller",
+      "status": "qualification",
+      "status_label": "Qualification required",
+      "summary": "A future controller for qualified Corsair, Strimer and keyboard lighting while preserving vendor applications.",
+      "depends_on": [
+        "EVT-controller",
+        "CH-feeds"
+      ],
+      "sources": [
+        {
+          "label": "Hub #50",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/50"
+        },
+        {
+          "label": "Hub #51",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/51"
+        },
+        {
+          "label": "Hub #52",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/52"
+        },
+        {
+          "label": "Hub #53",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/53"
+        },
+        {
+          "label": "Hub #54",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/54"
+        },
+        {
+          "label": "Hub #55",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/55"
+        },
+        {
+          "label": "Hub #56",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/56"
+        },
+        {
+          "label": "Hub #57",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/57"
+        },
+        {
+          "label": "Hub #58",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/58"
+        },
+        {
+          "label": "Hub #60",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/60"
+        },
+        {
+          "label": "Hub #61",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/61"
+        },
+        {
+          "label": "Hub #62",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/62"
+        }
+      ]
+    },
+    {
+      "id": "DEP-local",
+      "name": "Deployment composition",
+      "group": "Deployment & operations",
+      "type": "Host / container deployment design",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Maps logical modules to today’s separate owners and the future Docker, kind and dedicated-server environments.",
+      "depends_on": [
+        "WLD-hub",
+        "K8S-kind",
+        "NET-access",
+        "VOL-state",
+        "HOST-agent",
+        "HOST-music"
+      ],
+      "sources": [
+        {
+          "label": "Accepted hosting direction",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/decisions/0004-local-first-personal-assistant.md"
+        },
+        {
+          "label": "Ownership and migration",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
+          "label": "Hub #43",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
+        },
+        {
+          "label": "Hub #44",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/44"
+        }
+      ]
+    },
+    {
+      "id": "K8S-kind",
+      "name": "Optional kind environment",
+      "group": "Deployment & operations",
+      "type": "Kubernetes cluster design",
+      "status": "optional",
+      "status_label": "Optional / future",
+      "summary": "A future local Kubernetes learning and staging environment, kept separate from the first useful PC release.",
+      "depends_on": [
+        "NET-access",
+        "VOL-state"
+      ],
+      "sources": [
+        {
+          "label": "Composable-template design context",
+          "url": "https://kind.sigs.k8s.io/docs/user/configuration/"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
+          "label": "Hub #44",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/44"
+        }
+      ]
+    },
+    {
+      "id": "WLD-hub",
+      "name": "Hub workload lifecycle",
+      "group": "Deployment & operations",
+      "type": "Kubernetes workload / process lifecycle",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Describes how a future BUNNY host starts, stops and hands off state ownership without duplicate effects.",
+      "depends_on": [
+        "API-bunny",
+        "CORE-agent",
+        "CORE-playback",
+        "WRK-automation",
+        "VOL-state",
+        "NET-access"
+      ],
+      "sources": [
+        {
+          "label": "Single-owner runtime rules",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        }
+      ]
+    },
+    {
+      "id": "NET-access",
+      "name": "Local access and trust",
+      "group": "Deployment & operations",
+      "type": "Network route design",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Records each required connection, its identity boundary and how to prove that the intended caller can use it.",
+      "depends_on": [
+        "API-mcp",
+        "EVT-controller"
+      ],
+      "sources": [
+        {
+          "label": "MCP transport boundary",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/packages/mcp/README.md"
+        },
+        {
+          "label": "Controller authentication",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/controller-contract.md"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
+          "label": "Hub #47",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/47"
+        }
+      ]
+    },
+    {
+      "id": "VOL-state",
+      "name": "Persistence and recovery",
+      "group": "Deployment & operations",
+      "type": "Persistent storage design",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Defines storage lifetime, backup and owner transfer independently of the logical data model.",
+      "depends_on": [],
+      "sources": [
+        {
+          "label": "Storage ownership rules",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #8",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
+          "label": "Hub #43",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
+        }
+      ]
+    },
+    {
+      "id": "INF-telemetry",
+      "name": "Diagnostics and evidence",
+      "group": "Deployment & operations",
+      "type": "Shared infrastructure capability",
+      "status": "planned",
+      "status_label": "Planned",
+      "summary": "Makes stale state, overloaded consumers and uncertain actions inspectable without collecting private task content.",
+      "depends_on": [
+        "EVT-lifecycle",
+        "EVT-controller"
+      ],
+      "sources": [
+        {
+          "label": "Performance evidence",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/performance-baseline.md"
+        },
+        {
+          "label": "Privacy and observation semantics",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/agent-lifecycle-contract.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #9",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/9"
+        },
+        {
+          "label": "Hub #30",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        }
+      ]
+    },
+    {
+      "id": "OPS-runbook",
+      "name": "Build, review and verify",
+      "group": "Deployment & operations",
+      "type": "Development runbook / acceptance",
+      "status": "mixed",
+      "status_label": "Mixed evidence",
+      "summary": "The executable documentation workflow and the separate evidence needed before BUNNY can run devices.",
+      "depends_on": [
+        "DEP-local",
+        "INF-telemetry"
+      ],
+      "sources": [
+        {
+          "label": "Repository development checks",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/development.md"
+        },
+        {
+          "label": "Delivery and UI gates",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/sdlc.md"
+        },
+        {
+          "label": "Hub #3",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/3"
+        },
+        {
+          "label": "Hub #5",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+        },
+        {
+          "label": "Hub #32",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/32"
+        },
+        {
+          "label": "Hub #36",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/36"
+        },
+        {
+          "label": "Hub #42",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
+          "label": "Hub #103",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/103"
+        }
+      ]
+    },
+    {
+      "id": "ADR-decisions",
+      "name": "Decisions and open questions",
+      "group": "Deployment & operations",
+      "type": "Architecture decisions / design register",
+      "status": "mixed",
+      "status_label": "Mixed evidence",
+      "summary": "Links accepted boundaries to their sources and gives unresolved choices an owner and next step.",
+      "depends_on": [],
+      "sources": [
+        {
+          "label": "Architecture",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/architecture.md"
+        },
+        {
+          "label": "Assistant ADR",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/blob/514b566279f271451e36a5bb86b166bfa2a33bd8/docs/decisions/0004-local-first-personal-assistant.md"
+        },
+        {
+          "label": "GoF design patterns",
+          "url": "https://www.informit.com/store/design-patterns-elements-of-reusable-object-oriented-software-9780201633610"
+        },
+        {
+          "label": "Ports and adapters",
+          "url": "https://alistair.cockburn.us/hexagonal-architecture"
+        },
+        {
+          "label": "Service Layer",
+          "url": "https://martinfowler.com/eaaCatalog/serviceLayer.html"
+        },
+        {
+          "label": "Hub #43",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
+        },
+        {
+          "label": "Hub #45",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/45"
+        },
+        {
+          "label": "Hub #103",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/103"
+        }
+      ]
+    }
+  ]
+}

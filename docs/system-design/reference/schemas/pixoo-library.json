@@ -1,0 +1,529 @@
+{
+  "tables": [
+    {
+      "name": "assets",
+      "sql": "CREATE TABLE assets(id TEXT PRIMARY KEY, content_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL, source_json TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "content_hash",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "name",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "source_json",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "created_at",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_assets_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "sqlite_autoindex_assets_2",
+          "unique": true,
+          "origin": "u",
+          "partial": false,
+          "columns": [
+            "content_hash"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cleanup_jobs",
+      "sql": "CREATE TABLE cleanup_jobs(asset_id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, rendition_ids TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "asset_id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "content_hash",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "rendition_ids",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_cleanup_jobs_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "asset_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "items",
+      "sql": "CREATE TABLE items(id TEXT PRIMARY KEY, playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, position INTEGER NOT NULL CHECK(position>=0), rendition_id TEXT NOT NULL REFERENCES renditions(id) ON DELETE RESTRICT, policy_json TEXT NOT NULL, UNIQUE(playlist_id,position))",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "playlist_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "position",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "rendition_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "policy_json",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "sequence": 0,
+          "table": "renditions",
+          "from": "rendition_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "sequence": 0,
+          "table": "playlists",
+          "from": "playlist_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "items_rendition",
+          "unique": false,
+          "origin": "c",
+          "partial": false,
+          "columns": [
+            "rendition_id"
+          ]
+        },
+        {
+          "name": "sqlite_autoindex_items_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "sqlite_autoindex_items_2",
+          "unique": true,
+          "origin": "u",
+          "partial": false,
+          "columns": [
+            "playlist_id",
+            "position"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "playback_checkpoint",
+      "sql": "CREATE TABLE playback_checkpoint(slot INTEGER PRIMARY KEY CHECK(slot=1), session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE RESTRICT, payload TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "slot",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "session_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "payload",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "sequence": 0,
+          "table": "sessions",
+          "from": "session_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "RESTRICT",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_playback_checkpoint_1",
+          "unique": true,
+          "origin": "u",
+          "partial": false,
+          "columns": [
+            "session_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "playlists",
+      "sql": "CREATE TABLE playlists(id TEXT PRIMARY KEY, name TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0 AND revision<=9007199254740991), repeat INTEGER NOT NULL CHECK(repeat IN (0,1)), shuffle INTEGER NOT NULL CHECK(shuffle IN (0,1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "name",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "revision",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "repeat",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 4,
+          "name": "shuffle",
+          "type": "INTEGER",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 5,
+          "name": "created_at",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 6,
+          "name": "updated_at",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_playlists_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "renditions",
+      "sql": "CREATE TABLE renditions(id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT, manifest_json TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "asset_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 2,
+          "name": "manifest_json",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        },
+        {
+          "position": 3,
+          "name": "created_at",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "sequence": 0,
+          "table": "assets",
+          "from": "asset_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "RESTRICT",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_renditions_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "schema_migrations",
+      "sql": "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,checksum TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "version",
+          "type": "INTEGER",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "checksum",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": []
+    },
+    {
+      "name": "session_refs",
+      "sql": "CREATE TABLE session_refs(session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, rendition_id TEXT NOT NULL REFERENCES renditions(id) ON DELETE RESTRICT, PRIMARY KEY(session_id,rendition_id))",
+      "columns": [
+        {
+          "position": 0,
+          "name": "session_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "rendition_id",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 2
+        }
+      ],
+      "foreignKeys": [
+        {
+          "id": 0,
+          "sequence": 0,
+          "table": "renditions",
+          "from": "rendition_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "RESTRICT",
+          "match": "NONE"
+        },
+        {
+          "id": 1,
+          "sequence": 0,
+          "table": "sessions",
+          "from": "session_id",
+          "to": "id",
+          "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "match": "NONE"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "session_rendition",
+          "unique": false,
+          "origin": "c",
+          "partial": false,
+          "columns": [
+            "rendition_id"
+          ]
+        },
+        {
+          "name": "sqlite_autoindex_session_refs_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "session_id",
+            "rendition_id"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "sql": "CREATE TABLE sessions(id TEXT PRIMARY KEY, created_at TEXT NOT NULL)",
+      "columns": [
+        {
+          "position": 0,
+          "name": "id",
+          "type": "TEXT",
+          "declaredNotNull": 0,
+          "default": null,
+          "primaryKeyOrder": 1
+        },
+        {
+          "position": 1,
+          "name": "created_at",
+          "type": "TEXT",
+          "declaredNotNull": 1,
+          "default": null,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "foreignKeys": [],
+      "indexes": [
+        {
+          "name": "sqlite_autoindex_sessions_1",
+          "unique": true,
+          "origin": "pk",
+          "partial": false,
+          "columns": [
+            "id"
+          ]
+        }
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "immutable_rendition",
+      "table": "renditions",
+      "sql": "CREATE TRIGGER immutable_rendition BEFORE UPDATE ON renditions BEGIN SELECT RAISE(ABORT,'immutable rendition'); END"
+    }
+  ]
+}

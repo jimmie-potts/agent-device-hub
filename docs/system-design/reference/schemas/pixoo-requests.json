@@ -1,0 +1,818 @@
+{
+  "apiErrorSchema": {
+    "type": "object",
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      }
+    },
+    "required": [
+      "error"
+    ]
+  },
+  "apiHash": {
+    "type": "string",
+    "pattern": "^[a-f0-9]{64}$"
+  },
+  "apiId": {
+    "type": "string",
+    "format": "uuid",
+    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+  },
+  "apiName": {
+    "type": "string",
+    "minLength": 1,
+    "maxLength": 120,
+    "description": "Trimmed by the service. Control characters U+0000–U+001F and U+007F are rejected."
+  },
+  "apiRevision": {
+    "type": "integer",
+    "exclusiveMinimum": 0,
+    "maximum": 9007199254740991
+  },
+  "assetQuery": {
+    "type": "object",
+    "properties": {
+      "offset": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000000
+      },
+      "limit": {
+        "default": 25,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "q": {
+        "default": "",
+        "type": "string",
+        "maxLength": 120
+      }
+    },
+    "additionalProperties": false
+  },
+  "catalogQuery": {
+    "type": "object",
+    "properties": {
+      "q": {
+        "default": "",
+        "type": "string",
+        "maxLength": 120
+      },
+      "offset": {
+        "default": 0,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "limit": {
+        "default": 25,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      }
+    },
+    "additionalProperties": false
+  },
+  "deviceConfiguration": {
+    "type": "object",
+    "properties": {
+      "ip": {
+        "type": "string",
+        "format": "ipv4",
+        "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$",
+        "description": "Canonical RFC1918 IPv4 only: 10/8, 172.16/12 or 192.168/16. Saving settings does not select device mode; changing the active configuration requires a restart."
+      },
+      "model": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "firmware": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "profile": {
+        "type": "string",
+        "enum": [
+          "simulator-v1",
+          "pixoo64-smoke-2026-09-06"
+        ]
+      }
+    },
+    "required": [
+      "ip",
+      "profile"
+    ],
+    "additionalProperties": false
+  },
+  "diagnosticsSchema": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "const": "ready"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "simulator",
+          "device"
+        ]
+      },
+      "uptimeMs": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "library": {
+        "type": "string",
+        "const": "ready"
+      },
+      "device": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "available",
+              "offline"
+            ]
+          }
+        },
+        "required": [
+          "connected",
+          "availability"
+        ],
+        "additionalProperties": false
+      },
+      "player": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "loading",
+              "playing",
+              "paused",
+              "reconnecting",
+              "error"
+            ]
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "stopped"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "intent"
+        ],
+        "additionalProperties": false
+      },
+      "logging": {
+        "type": "object",
+        "properties": {
+          "persistent": {
+            "type": "boolean",
+            "const": false
+          }
+        },
+        "required": [
+          "persistent"
+        ],
+        "additionalProperties": false
+      },
+      "limits": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "number",
+            "const": 32
+          },
+          "eventClients": {
+            "type": "number",
+            "const": 16
+          },
+          "eventHistory": {
+            "type": "number",
+            "const": 32
+          },
+          "commandReceipts": {
+            "type": "number",
+            "const": 256
+          },
+          "playbackRenditions": {
+            "type": "number",
+            "const": 2
+          }
+        },
+        "required": [
+          "requests",
+          "eventClients",
+          "eventHistory",
+          "commandReceipts",
+          "playbackRenditions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "status",
+      "mode",
+      "uptimeMs",
+      "library",
+      "device",
+      "player",
+      "logging",
+      "limits"
+    ],
+    "additionalProperties": false
+  },
+  "displayCommand": {
+    "type": "object",
+    "properties": {
+      "requestId": {
+        "type": "string",
+        "pattern": "^[a-f0-9-]{36}:[1-9][0-9]{0,15}$"
+      },
+      "brightness": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "screenOn": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "requestId"
+    ],
+    "additionalProperties": false,
+    "oneOf": [
+      {
+        "required": [
+          "brightness"
+        ]
+      },
+      {
+        "required": [
+          "screenOn"
+        ]
+      }
+    ]
+  },
+  "emptyRequest": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "expectedRevision": {
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "required": [
+      "revision"
+    ],
+    "additionalProperties": false
+  },
+  "playbackPolicy": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "duration"
+          },
+          "durationMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "mode",
+          "durationMs"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "plays"
+          },
+          "totalPlays": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "mode",
+          "totalPlays"
+        ],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "playerCommand": {
+    "oneOf": [
+      {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}:[1-9][0-9]{0,15}$"
+          },
+          "command": {
+            "type": "string",
+            "const": "start"
+          },
+          "playlistId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "revision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "requestId",
+          "command",
+          "playlistId"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}:[1-9][0-9]{0,15}$"
+          },
+          "command": {
+            "type": "string",
+            "const": "show-media"
+          },
+          "renditionId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "playback": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "duration"
+                  },
+                  "durationMs": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "mode",
+                  "durationMs"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "plays"
+                  },
+                  "totalPlays": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "mode",
+                  "totalPlays"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "command",
+          "renditionId"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[a-f0-9-]{36}:[1-9][0-9]{0,15}$"
+          },
+          "command": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "stop",
+              "next",
+              "previous",
+              "restart-with-changes",
+              "clear"
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    ]
+  },
+  "playlistCreate": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "repeat": {
+        "type": "boolean"
+      },
+      "shuffle": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "additionalProperties": false
+  },
+  "playlistItems": {
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "items": {
+        "maxItems": 1000,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "renditionId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "playback": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "duration"
+                    },
+                    "durationMs": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "durationMs"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "plays"
+                    },
+                    "totalPlays": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "totalPlays"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "renditionId"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "revision",
+      "items"
+    ],
+    "additionalProperties": false
+  },
+  "playlistOptions": {
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "repeat": {
+        "type": "boolean"
+      },
+      "shuffle": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "revision"
+    ],
+    "additionalProperties": false,
+    "anyOf": [
+      {
+        "required": [
+          "repeat"
+        ]
+      },
+      {
+        "required": [
+          "shuffle"
+        ]
+      }
+    ]
+  },
+  "playlistOrder": {
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "itemIds": {
+        "maxItems": 1000,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      }
+    },
+    "required": [
+      "revision",
+      "itemIds"
+    ],
+    "additionalProperties": false
+  },
+  "playlistRename": {
+    "type": "object",
+    "properties": {
+      "revision": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    },
+    "required": [
+      "revision",
+      "name"
+    ],
+    "additionalProperties": false
+  },
+  "renditionRequest": {
+    "type": "object",
+    "properties": {
+      "transform": {
+        "type": "object",
+        "properties": {
+          "fit": {
+            "type": "string",
+            "enum": [
+              "fit",
+              "crop"
+            ]
+          },
+          "scaling": {
+            "type": "string",
+            "enum": [
+              "nearest",
+              "smooth"
+            ]
+          },
+          "background": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              }
+            ],
+            "items": false,
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "required": [
+          "fit",
+          "scaling",
+          "background"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
+  },
+  "requestIdentity": {
+    "type": "string",
+    "pattern": "^[a-f0-9-]{36}:[1-9][0-9]{0,15}$"
+  },
+  "transformRequest": {
+    "type": "object",
+    "properties": {
+      "fit": {
+        "type": "string",
+        "enum": [
+          "fit",
+          "crop"
+        ]
+      },
+      "scaling": {
+        "type": "string",
+        "enum": [
+          "nearest",
+          "smooth"
+        ]
+      },
+      "background": {
+        "type": "array",
+        "prefixItems": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        ],
+        "items": false,
+        "minItems": 3,
+        "maxItems": 3
+      }
+    },
+    "required": [
+      "fit",
+      "scaling",
+      "background"
+    ],
+    "additionalProperties": false
+  },
+  "healthSchema": {
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "const": "ready"
+      },
+      "mode": {
+        "type": "string",
+        "enum": [
+          "simulator",
+          "device"
+        ]
+      },
+      "device": {
+        "type": "object",
+        "properties": {
+          "connected": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "connected"
+        ]
+      },
+      "canvas": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "number",
+            "const": 64
+          },
+          "height": {
+            "type": "number",
+            "const": 64
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ]
+      }
+    },
+    "required": [
+      "status",
+      "mode",
+      "device",
+      "canvas"
+    ]
+  }
+}
