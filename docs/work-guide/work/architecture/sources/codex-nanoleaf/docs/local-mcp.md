@@ -1,8 +1,11 @@
 # Local Codex controls
 
-The optional MCP host exposes `nanoleaf_status` and `nanoleaf_mode_set` through the protected Windows controller. Modes are Work, Quiet and Free. Their existing brightness and scene policies remain unchanged. The [local MCP specification](../openspec/specs/local-mcp-bindings/spec.md) owns behavior; [issue #33](https://github.com/jimmie-potts/codex-nanoleaf/issues/33) owns source delivery and [ADR 0006](decisions/0006-local-mcp-hosting.md) records hosting.
+The optional MCP host exposes `nanoleaf_status` and `nanoleaf_mode_set` through the protected local controller. Modes are Work, Quiet and Free. Their existing brightness and scene policies remain unchanged. The [local MCP specification](../openspec/specs/local-mcp-bindings/spec.md) owns behavior; [issue #33](https://github.com/jimmie-potts/codex-nanoleaf/issues/33) owns source delivery and [ADR 0006](decisions/0006-local-mcp-hosting.md) records hosting.
 
 Source delivery does not install, provision credentials, launch Codex or touch lights. [Issue #34](https://github.com/jimmie-potts/codex-nanoleaf/issues/34) owns separately authorized installation, client permission checks and physical acceptance. The commands below are instructions for that handoff.
+
+The [2026-09-08 acceptance record](hardware-validation.md) covers the tested
+Windows and WSL clients, physical observations, restoration and cleanup.
 
 ## Prepare the source host
 
@@ -17,7 +20,11 @@ npm --prefix mcp test
 
 The private vendored MCP archive is version `1.0.0`, source `06c9c504a107cc04093c34500dadbbc6082679d2`, from [device-mcp-v1.0.0](https://github.com/jimmie-potts/agent-device-hub/releases/tag/device-mcp-v1.0.0). SHA-256 is `03f1ec51ffe5aa576799ea756dc65c0d47285e1e321fce20dc9241029196eb62`. Verification checks its release pin, installed manifest, bundled contract and the matching direct runtime contract. Dependencies and artifact content are pinned in `mcp/package-lock.json`. CI needs no sibling checkout or new private repository credential.
 
-## Select the Windows or WSL route
+## Fresh Linux route
+
+[Linux setup](linux-install.md) provisions the existing host, private credentials and a user service. The controller and MCP host both run in Linux. The generated configuration and [Linux example](../mcp/examples/linux.json) use `windows-http`, the existing compatibility name for direct HTTP on either OS. They do not launch Windows executables. The private client bearer is stored in `mcp-client-token` under the selected state directory. [ADR 0007](decisions/0007-linux-runtime-ownership.md) records the decision; [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) owns Linux client and physical acceptance.
+
+## Legacy Windows and WSL-to-Windows routes
 
 Copy the matching example in `mcp/examples` to a private location outside the checkout. Replace all placeholder paths and target IDs. Set `enabled` to true only when explicitly activating the host.
 
@@ -37,7 +44,7 @@ For WSL:
 npm --prefix mcp start -- --config /PRIVATE/nanoleaf-mcp.json
 ```
 
-The foreground process prints its local endpoint. Stop that process with Ctrl+C. Stopping MCP closes client delivery and new admission; it does not stop already admitted Windows controller work.
+The foreground process prints its local endpoint. Stop that process with Ctrl+C. Stopping MCP closes client delivery and new admission; it does not stop already admitted controller work.
 
 ## Keep credentials separate
 

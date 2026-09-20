@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-20T23:29:05.335486+00:00",
+ "fetchedAt": "2026-09-20T23:37:42.108457+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-20T23:26:53Z",
+   "pushedAt": "2026-09-20T23:33:25Z",
    "defaultBranch": "main",
-   "headSha": "b640c2ceb0e14b1b7f93795eeabf69d5fd74fb8e",
-   "mainCommitCount": 39,
+   "headSha": "83b59c3030a6255cba6b7b71c8c28b05be762a66",
+   "mainCommitCount": 40,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "83b59c3030a6255cba6b7b71c8c28b05be762a66",
+     "date": "2026-09-20T23:33:25Z",
+     "message": "Reconcile Nanoleaf shared consumer source delivery (#115)"
+    },
     {
      "sha": "b640c2ceb0e14b1b7f93795eeabf69d5fd74fb8e",
      "date": "2026-09-20T21:24:15Z",
@@ -510,16 +515,17 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/114",
      "base": "main",
      "mergedAt": "2026-09-20T21:24:15Z"
+    },
+    {
+     "number": 115,
+     "title": "docs: reconcile Nanoleaf shared consumer source delivery",
+     "createdAt": "2026-09-20T23:10:54Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/115",
+     "base": "main",
+     "mergedAt": "2026-09-20T23:33:25Z"
     }
    ],
    "openPRs": [
-    {
-     "number": 115,
-     "title": "docs: track Nanoleaf shared input delivery",
-     "createdAt": "2026-09-20T23:10:54Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/115",
-     "base": "main"
-    },
     {
      "number": 116,
      "title": "Reconcile Pixoo dashboard physical acceptance",
@@ -1045,6 +1051,14 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/28"
     },
     {
+     "number": 29,
+     "title": "Consume shared agent sessions while preserving Nanoleaf behavior",
+     "closedAt": "2026-09-20T23:29:24Z",
+     "createdAt": "2026-09-07T02:24:18Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/29"
+    },
+    {
      "number": 33,
      "title": "Add local Codex MCP bindings for the Nanoleaf controller",
      "closedAt": "2026-09-07T19:39:11Z",
@@ -1101,7 +1115,7 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
     }
    ],
-   "openIssueCount": 24,
+   "openIssueCount": 23,
    "issueCreatedRange": [
     "2026-09-05T17:58:03Z",
     "2026-09-09T22:37:08Z"
@@ -1115,12 +1129,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-20T23:24:32Z",
+   "pushedAt": "2026-09-20T23:34:56Z",
    "defaultBranch": "main",
-   "headSha": "3414847a6f80826fc6e2501aac98c3dd8fe71163",
-   "mainCommitCount": 24,
+   "headSha": "671b8dda3c620fc7cefb48af112c49be0687063a",
+   "mainCommitCount": 25,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "671b8dda3c620fc7cefb48af112c49be0687063a",
+     "date": "2026-09-20T23:34:56Z",
+     "message": "Record dashboard physical acceptance and cadence decision (#62)"
+    },
     {
      "sha": "3414847a6f80826fc6e2501aac98c3dd8fe71163",
      "date": "2026-09-20T21:16:20Z",
@@ -1426,17 +1445,17 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/60",
      "base": "main",
      "mergedAt": "2026-09-20T21:16:21Z"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 62,
      "title": "Record dashboard physical acceptance and cadence decision",
      "createdAt": "2026-09-20T23:23:30Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/62",
-     "base": "main"
+     "base": "main",
+     "mergedAt": "2026-09-20T23:34:56Z"
     }
    ],
+   "openPRs": [],
    "closedIssues": [
     {
      "number": 1,

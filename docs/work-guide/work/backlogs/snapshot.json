@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-20T23:24:09.622654+00:00",
-  "refreshedAt": "2026-09-20T23:24:18.649392+00:00",
+  "startedAt": "2026-09-20T23:37:25.867788+00:00",
+  "refreshedAt": "2026-09-20T23:37:35.260580+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -85,10 +85,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 24,
+      "openIssues": 23,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        24
+        23
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -101,6 +101,14 @@
           "state": "CLOSED",
           "commentPages": [
             8
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 29,
+          "state": "CLOSED",
+          "commentPages": [
+            3
           ],
           "commentBodiesStored": true
         },
@@ -158,11 +166,11 @@
       "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        19
+        18
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -191,6 +199,14 @@
           "commentBodiesStored": true
         },
         {
+          "number": 30,
+          "state": "OPEN",
+          "commentPages": [
+            2
+          ],
+          "commentBodiesStored": false
+        },
+        {
           "number": 31,
           "state": "CLOSED",
           "commentPages": [
@@ -217,7 +233,7 @@
       ]
     }
   },
-  "openIssues": 104,
+  "openIssues": 103,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
-  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 retain comment links and timestamps only. Other issue bodies, states and labels are current."
+  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

@@ -11,7 +11,7 @@
 #20 [OPEN] Customize animation for each status
 #21 [OPEN] Investigate mirroring externally controlled Nanoleaf scenes
 #26 [CLOSED] Keep map number tags clear of neighbouring Lines in rotated compact layouts
-#29 [OPEN] Consume shared agent sessions while preserving Nanoleaf behavior
+#29 [CLOSED] Consume shared agent sessions while preserving Nanoleaf behavior
 #30 [OPEN] Verify shared monitoring migration and Nanoleaf compatibility
 #31 [OPEN] Adopt shared OpenSpec validation tooling
 #34 [CLOSED] Verify local Codex control of the Nanoleaf lights

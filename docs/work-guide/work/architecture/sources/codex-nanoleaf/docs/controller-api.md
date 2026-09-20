@@ -1,10 +1,14 @@
 # Local controller API
 
-The optional controller API exposes the bridge's existing Work, Quiet and Free modes to local native clients. The Windows worker still owns light updates. Power, brightness, media, zones, scenes and animation preview are explicitly unsupported. Work/Quiet brightness and scene restoration retain their existing policies.
+The optional controller API exposes the bridge's existing Work, Quiet and Free modes to local native clients. The installation's single worker owns light updates on Linux or Windows. Power, brightness, media, zones, scenes and animation preview are explicitly unsupported. Work/Quiet brightness and scene restoration retain their existing policies.
 
 The [protected controller specification](../openspec/specs/protected-controller-api/spec.md) owns the machine behavior. [Issue #28](https://github.com/jimmie-potts/codex-nanoleaf/issues/28) owns delivery scope. Shared monitoring, installation/real-client acceptance and physical previews have separate issues.
 
-## Dependency and activation
+## Linux installation
+
+[Fresh Linux setup](linux-install.md) provisions the controller dependencies and credentials. Run the generated controller user service, or `~/.local/share/codex-nanoleaf/nanoleaf controller-serve --port 41231` in the foreground. Use the selected custom port when setup overrides the default. Its state and worker stay in Linux. MCP calls this listener directly; no Windows helper is involved. [ADR 0007](decisions/0007-linux-runtime-ownership.md) records this ownership. Linux installed acceptance belongs to [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55).
+
+## Legacy Windows dependency and activation
 
 Legacy hooks, map, tray and worker startup use the standard library. The listener lazily imports the unchanged shared Python consumer and needs the pinned packages in `requirements-controller.txt`. A disabled machine API does not require those packages.
 
@@ -27,11 +31,11 @@ The token command prints a new opaque credential once. Keep it in the native cli
 & $python .\bridge.py controller-disable
 ```
 
-Revocation blocks old credentials before replay lookup and cancels unsent work. Disable stops the listener and cancels pending machine work without deleting legacy tasks or preferences. To restart a disabled listener, explicitly run `controller-serve`. Installed WSL commands forward to Windows before opening configuration/state. They fail without touching state if the Windows runtime is unavailable. Never run a Linux process against the live Windows SQLite database.
+Revocation blocks old credentials before replay lookup and cancels unsent work. Disable stops the listener and cancels pending machine work without deleting legacy tasks or preferences. To restart a disabled listener, explicitly run `controller-serve`. Legacy Windows-installed WSL commands forward to Windows before opening configuration/state. They fail without touching state if the Windows runtime is unavailable. Never run a Linux process against the live Windows SQLite database.
 
 ## Routes and authentication
 
-Every request requires `Authorization: Bearer <machine credential>` and the exact `Host: 127.0.0.1:<port>`. Browser edit tokens do not qualify. A supplied Origin must match `http://127.0.0.1:<port>`; cross-site Fetch-Metadata is rejected. There is no CORS permission or LAN listener. The owning Windows worker can still reach its privately configured LAN device.
+Every request requires `Authorization: Bearer <machine credential>` and the exact `Host: 127.0.0.1:<port>`. Browser edit tokens do not qualify. A supplied Origin must match `http://127.0.0.1:<port>`; cross-site Fetch-Metadata is rejected. There is no CORS permission or LAN listener. The owning worker can still reach its privately configured LAN device.
 
 | Request | Response |
 | --- | --- |

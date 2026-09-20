@@ -391,9 +391,20 @@
       }
     ],
     "milestone": null,
-    "comments": [],
+    "comments": [
+      {
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/30#issuecomment-5751977042",
+        "createdAt": "2026-09-20T19:08:14Z",
+        "updatedAt": "2026-09-20T19:08:14Z"
+      },
+      {
+        "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/30#issuecomment-5752707446",
+        "createdAt": "2026-09-20T21:14:34Z",
+        "updatedAt": "2026-09-20T21:14:34Z"
+      }
+    ],
     "commentCount": 2,
-    "commentsRefreshed": false
+    "commentsRefreshed": true
   },
   {
     "number": 31,
@@ -428,17 +439,14 @@
     "title": "Render the 64×64 agent monitoring dashboard and preview",
     "body": "## Shared-hub ownership\nConsume shared session state through #31. Keep the 64x64 renderer and pagination in Pixoo. Shared clients may consume its rendition contract. #30 conditionally gates physical transport, not pure rendering.\n\n## Outcome\nTurn monitoring state into a readable, deterministic 64×64 dashboard that can be previewed and tested without a physical display.\n\n## Scope and source\nBuild the layout and rendering service over normalized session state. Keep layout and pagination independent of provider hooks and device transport. Provide a canonical pixel preview and the layout data needed to evaluate the qualified device-rendering method.\n\n## Acceptance criteria\n- [ ] Render a summary strip and four compact top-level session rows per page, with provider/state icons, user-chosen short labels, attributable active-subagent counts, and clear unknown/uncertain indicators. Do not use color as the only state distinction.\n- [ ] Put sessions needing attention first and keep ordering stable within a priority group. Distinguish a question while work continues from a blocked approval/input request. Keep the attention total visible on every page, including overflow pages.\n- [ ] Rotate overflow pages every ten seconds using an injectable clock. Clamp the current page when sessions or filters change; cover empty, one-page, and overflow states without flicker or skipped rows caused by unstable sorting.\n- [ ] Render retained turn-ended notices according to the state service. Preserve them across restart/dismissal scenarios and new turns without treating them as successful task completion. Show observation freshness separately from collector health.\n- [ ] Produce a deterministic 64×64 pixel buffer and browser preview from the same layout state. Specify truncation and unsupported-character fallback for short labels. Full labels and precise timestamps are available to the browser controls, outside the constrained display rows.\n- [ ] Coalesce state bursts to the newest snapshot and bound pending rendering work. Obsolete generations cannot publish a later preview or device result. Rendering cadence is configurable and independent of the ten-second page interval; three seconds is only a provisional experiment value.\n- [ ] Keep pure rendering and simulator output usable while hardware qualification is pending. A transport-specific optimization must preserve the agreed layout and exact preview. Do not claim native-font fidelity or physical timing from pixel fixtures.\n- [ ] Document layout rules and preview examples with synthetic data in `docs/agent-monitoring.md`. Add the issue-linked dashboard capability scenarios before implementation.\n\n## Dependencies\n- #31 supplies validated session snapshots and freshness/notice semantics.\n- #3 supplies the delivered fake device boundary.\n- #30 informs later device transport selection. It does not block the pure renderer and simulator preview delivered here.\n\n## Related monitoring work\n#30 qualifies physical update methods. #33 integrates browser and device display ownership. #34 verifies the installed result.\n\n## Verification approach\nUse deterministic pixel fixtures and fake-clock behavior tests for priority/stable sorting, page rotation, clipping, unknown values, subagent counts, attention totals, stale observations, and coalescing. Inspect synthetic previews at native resolution and enlarged nearest-neighbor scale. Physical readability remains a separate acceptance gate.\nUse isolated runtime data and the deterministic fake device. For executable changes, retain focused red/green evidence and run Node 24 `npm ci` and `npm run check`. For HTTP, UI, or startup changes, install Playwright Chromium and run `npm run test:browser`. OpenSpec/workflow changes also require `npm run check:workflow` and `npm run test:workflow`. No real account or display is needed for source checks.\n\n## Delivery target\nSource-only, including simulator rendering and preview. This issue does not select an unqualified physical protocol or send display commands.\n\n## Planning and delivery\nBefore implementation, prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, and applicable design using the local planning root `openspec/changes/`. GitHub owns acceptance and delivery status; the specification owns capability scenarios. Follow [the repository SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md), including isolated work, independent review, and current PR/main CI. This publication authorizes backlog records only.\n\nPlanned OpenSpec change: `gh-32-agent-dashboard-renderer`.\nLocal planning root: `openspec/changes/gh-32-agent-dashboard-renderer/`. Check active and archived changes for collisions before creating it.\n\n## Codex-first goal alignment, 2026-09-07\n\nPart of [the shared Codex-integration goal](https://github.com/jimmie-potts/agent-device-hub/issues/32). First deliver automatic Codex task integration and manual frontend controls for that integration. General agent-independent device control is [a later phase](https://github.com/jimmie-potts/agent-device-hub/issues/31). Existing local MCP delivery and independently owned work keep their scope. Shared provider contracts remain extensible; retain existing Claude criteria and report Codex milestone evidence separately rather than falsely closing outstanding provider acceptance.\n\n### Additional acceptance criteria\n- [ ] Treat this as the Pixoo device renderer for Codex task integration. The shared browser application belongs to Hub #6; reuse layout/preview contracts rather than creating another provider interpreter.\n- [ ] Verify bursts and overflow with bounded rendering work, current-state resync and no obsolete frame publication. Preserve the physical cadence qualification and existing preview fidelity boundary.\n\nThis update defines backlog work only. It does not start implementation, change an active installation or grant device-test authority. Existing OpenSpec identities, validation and UI/physical acceptance gates remain.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/32",
-    "updatedAt": "2026-09-07T20:14:26Z",
+    "updatedAt": "2026-09-20T23:33:56Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:backlog"
-      },
-      {
-        "name": "blocked"
+        "name": "status:in-progress"
       }
     ],
     "milestone": null,
