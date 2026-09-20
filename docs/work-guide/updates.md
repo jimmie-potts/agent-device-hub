@@ -1,5 +1,23 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Nanoleaf #49 integration extension candidate
+
+[Nanoleaf #49](https://github.com/jimmie-potts/codex-nanoleaf/issues/49) is in
+source implementation after the owner selected a Nanoleaf-owned versioned
+settings/assignment extension. Shared controller v1 remains unchanged. The
+candidate adds pure private projections and protected revisioned configuration
+edits through the existing wall operations and sole worker. Configuration
+receipts remain separate from unknown physical outcomes. Native Linux and
+retained Windows keep their private databases. No frontend, installation, device
+operation or public publication is included.
+
+The shared Codex guide records the accepted boundary while #49 remains open.
+Refreshed backlog inputs preserve other deliveries. Diagram topology and review
+pins remain unchanged: the extension uses the already represented native
+controller and existing writer, and does not alter the mode-only MCP surface.
+This candidate does not label the extension as merged. Source/closure facts will
+be reconciled before this companion completes. Validation is recorded in its PR.
+
 ## 2026-09-20 UTC: Pixoo dashboard physical evidence
 
 [Pixoo PR #62](https://github.com/jimmie-potts/divoom-app-upgrade/pull/62)
