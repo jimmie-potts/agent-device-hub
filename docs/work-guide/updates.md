@@ -1,5 +1,23 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Complete PR #104's offline asset bundle
+
+The first hosted run of the conflict-free candidate passed all four core jobs
+but failed the reference asset receipt check. A fresh Git archive reproduced
+the failure: the root `dist/` ignore rule had excluded 41 SchemaSpy theme CSS
+and JavaScript files that were present in the local browser candidate. Added a
+narrow exception in the reference directory and committed those assets. All
+330 database report files now match the existing generation receipt exactly.
+The receipt, upstream asset bytes and authored pages are unchanged.
+
+The static document checks and full atlas/reference browser checks pass from a
+fresh Git archive, covering 28 reading pages, 37 operations and 28 tables with
+offline assets and no page errors. Guide facts, ownership, architecture and
+generated guide bytes are unchanged, so the preceding merge reconciliation's
+snapshot and checksum are retained. No new OpenSpec change is needed. Renewed
+fixed-revision reviews and hosted CI are recorded on PR #104 before closing out
+the requested conflict-resolution work.
+
 ## 2026-09-20 UTC: Resolve PR #104 against current main
 
 The Hub coordinator resolved the six textual work-guide conflicts in
