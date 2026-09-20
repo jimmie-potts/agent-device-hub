@@ -1,5 +1,36 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Hub #3 agent-state source candidate
+
+The Hub #3 candidate adds the shared state owner, host storage boundary, bounded
+provider emitters, snapshot consumers and reproducible package archive. Updated
+the shared Codex row, next-work recommendation, shared-system and lifecycle
+diagrams, and migration explanation. Production hosting and durable adapters
+remain Pixoo #31; installed qualification remains Hub #8. No hooks, personal
+state, agent sessions or devices were changed.
+
+Refreshed the three repository inventories. The guide contains 107 primary open
+issues, 12 guides, 49 roadmap nodes and the existing 68-merge history. Added the
+new, independently owned Hub #103 to development-workflow coverage and its own
+roadmap track. Its PR #104 remains separate. History dates are unchanged because
+this candidate does not predict a merge or close #3. Hub architecture pins point
+to the candidate's source commit; other repository source pins retain their dates.
+
+Validation: generation, five maintenance tests and browser checks at six widths
+pass, including links, search, navigation, diagram controls and print. All nine
+Archify artifacts pass 9/9 checks with no errors or warnings. Both changed
+standalone viewers pass all four desktop containment checks and were inspected
+in their rendered form. The lifecycle viewer needed two focused layout passes
+to remove existing overflow and overlapping phase labels. Other viewers retain
+their recorded baseline limitations. Screenshots, print output and hashes remain
+in the external candidate receipt. Current-candidate UI approval remains required.
+
+The served public guide was checked and still matches its published
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a` edition and recorded HTML checksum.
+It does not contain this candidate. Public publication is outside #3's source
+delivery; guide history/status need a follow-up after an eligible merge and
+verified issue closure.
+
 ## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
 
 PR #77 merged as `1fd353215532a5d0220b99d9b35b6da0436221cc` on

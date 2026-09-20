@@ -17,5 +17,5 @@
 
 ## 4. Delivery evidence
 
-- [ ] 4.1 Update architecture/development/package documentation and guide inputs/output; verify generation, maintenance tests, browser checks and complete diff inspection while retaining source/installed/physical distinctions.
-- [ ] 4.2 Run all applicable existing and new checks, record the actual specification inventory, synchronize both capabilities and archive before fixed-comparison independent review; keep revision-dependent CI/review evidence outside this commit.
+- [x] 4.1 Update architecture/development/package documentation and guide inputs/output; verify generation, maintenance tests, browser checks and complete diff inspection while retaining source/installed/physical distinctions.
+- [x] 4.2 Run all applicable existing and new checks, record the actual specification inventory, synchronize both capabilities and archive before fixed-comparison independent review; keep revision-dependent CI/review evidence outside this commit.

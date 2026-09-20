@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-10T00:24:43.598509+00:00",
+  "renderedAt": "2026-09-20T04:32:15.319935+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -30,12 +30,12 @@
       "type": "architecture",
       "status": "planned",
       "specification": {
-        "sha256": "71ec5e37a74f32be9d3ad866f60897656e489a29a4bf9726ed9bbf1171901eb9",
-        "bytes": 6751
+        "sha256": "2ad11eeb9ff1304220f4781dcc1778b5258830ed8db009c67ba0f06954cf90ef",
+        "bytes": 6734
       },
       "artifact": {
-        "sha256": "7ca2835eef68324fb26f3cce3ff973d479f13d6c7ec2d5da299f30c223f980d1",
-        "bytes": 723730
+        "sha256": "7a2966101c06500b7eb62437bdc5929917f04d0fa6205ef21b53ad0a42f3d6f6",
+        "bytes": 723724
       },
       "validation": {
         "checksPassed": 9,
@@ -46,7 +46,7 @@
         "warnings": 0
       },
       "viewer": "arch-shared-system.html",
-      "svgSha256": "25b9e6211f7065f8b68ce50c6bcb67911948b0a387b2f3a36a05602e12724d4a"
+      "svgSha256": "e492f20b9fc840e026011f5feba0ee905f17d188314cda95fa3f735bbc143cb8"
     },
     {
       "id": "arch-nanoleaf-linux",
@@ -76,12 +76,12 @@
       "type": "sequence",
       "status": "planned",
       "specification": {
-        "sha256": "c3143d65d011d4879d51a428567a36fe06c7e556885fa7d7054884f50df3853a",
-        "bytes": 4131
+        "sha256": "4eda8536929eb98c20c57afe5bdeb34aee80a413819c9af16e2f5f159c1da9c0",
+        "bytes": 3386
       },
       "artifact": {
-        "sha256": "d339ceadf48be3bab3be46126607f7603fb333779f6b4c2e35fa7598c9cac5b1",
-        "bytes": 713515
+        "sha256": "0acdb8bc2371b197ce9677d3382e13c2ada152a17af4581daf5d878d3cc3a690",
+        "bytes": 711239
       },
       "validation": {
         "checksPassed": 9,
@@ -92,7 +92,7 @@
         "warnings": 0
       },
       "viewer": "seq-lifecycle-observation.html",
-      "svgSha256": "266cf1a5816bc5298ac4789d3962e8c98d773a26476a2dc0151ddd081d474428"
+      "svgSha256": "2048b80e34a2924ca1cfa1d4fb8dd5744e175f68b9709cf379b62af97c94ca2e"
     },
     {
       "id": "seq-nanoleaf-command",
