@@ -1,5 +1,20 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo #32 renderer candidate
+
+[Pixoo PR #63](https://github.com/jimmie-potts/divoom-app-upgrade/pull/63)
+implements the source-only shared-session renderer and authenticated RGB preview.
+The delivery coordinator owns this Hub companion. Source review, CI, merge and
+tracking completion remain pending. The guide records the candidate without
+claiming installed monitoring or physical acceptance. Pixoo #33 owns the monitor
+panel and device writer integration; #34 owns integrated acceptance.
+
+Updated shared Codex narrative and current backlog/reference inputs. Architecture
+remains labeled as planned at this candidate checkpoint; no implemented-state
+claim is made before source merge. Post-merge reconciliation will update the
+source pins and projection evidence. Public publication is outside this task.
+Validation evidence belongs in the companion PR.
+
 ## 2026-09-20 UTC: Pixoo dashboard physical evidence
 
 [Pixoo PR #62](https://github.com/jimmie-potts/divoom-app-upgrade/pull/62)
