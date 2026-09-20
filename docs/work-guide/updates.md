@@ -1,5 +1,21 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Nanoleaf #29 shared-consumer candidate
+
+[Nanoleaf #29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) is in
+source implementation. The shared-integration stage now records explicit source
+selection, one existing Python writer, steady last colors on stale evidence,
+no automatic fallback and Nanoleaf-only notice clearing on an evidenced new turn.
+The owner accepted both presentation decisions. Existing incompatible durable
+consumer policies require a supported migration before installed cutover.
+
+Refreshed backlog inputs retain #29 as open. The architecture already represents
+the planned owner/feed/consumer split; this candidate changes no ownership or
+command flow in those diagrams. Source merge and closure facts will be reconciled
+after verification. Hub #8 and Nanoleaf #30 retain installed and physical
+acceptance. Generation, five maintenance tests and desktop/mobile/print browser
+checks passed. Public publication and live verification are not part of this delivery.
+
 ## 2026-09-20 UTC: Pixoo embedded-host performance deferral
 
 [Pixoo PR #60](https://github.com/jimmie-potts/divoom-app-upgrade/pull/60)
