@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-20T04:53:08.323890+00:00",
+  "renderedAt": "2026-09-20T19:02:42.261886+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -7,12 +7,12 @@
       "type": "architecture",
       "status": "implemented",
       "specification": {
-        "sha256": "f2fa15cf948e303f80e37e2fdaa51faa14b81df6425e120dd91f491c011aef6e",
-        "bytes": 7451
+        "sha256": "ec5b73d61e48436e820a435b74c84cb97ce2879f404b558c6ed5a4563b87baaf",
+        "bytes": 7468
       },
       "artifact": {
-        "sha256": "391a42acdc9b06ac1a9c6288b178db20c1af2a88e0c44e636a9dc47b09bbc87f",
-        "bytes": 725093
+        "sha256": "027b51601a21e01f56a4a193c572ec0d2addde37cae14aecaf6ded95b2c03eaa",
+        "bytes": 725119
       },
       "validation": {
         "checksPassed": 9,
@@ -23,7 +23,7 @@
         "warnings": 0
       },
       "viewer": "arch-local-paths.html",
-      "svgSha256": "754cd7e67b27ea6309e1bcc62d225256a75b099640dc58b87a8d988697a5be4b"
+      "svgSha256": "1a826f34b977b20addab56c86ffee93eaf4de4851c2bd62086451c302e53f1d8"
     },
     {
       "id": "arch-shared-system",
@@ -122,11 +122,11 @@
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "4a8f1b35ee48172d8ee7d5a43e381b070d2bfac7731706f4ef7864cb601ab7e8",
+        "sha256": "9aa54ec036a7ea027378f0322ff0d7972650ad454a97087b689f80888b445d39",
         "bytes": 5032
       },
       "artifact": {
-        "sha256": "5b8ec68a4bfe9bd86bf786f4e77c58e60914e24cd930608d54ad221fd078e2aa",
+        "sha256": "dfd355173e0ba646d0e16729c81950819c0a9c6cdf1efaf1b5d1afa0cb8ae1d9",
         "bytes": 718134
       },
       "validation": {

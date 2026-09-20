@@ -5488,7 +5488,7 @@
           <h3>One owner</h3>
         </div>
         <ul>
-          <li>&bull; Browser and MCP share the same services, ledger and adapter queue</li>
+          <li>&bull; Browser, MCP and native controller v1 share one ledger and writer</li>
           <li>&bull; Playback tools never import or edit media or pick raw device targets</li>
         </ul>
       </div>
@@ -5501,7 +5501,7 @@
         <ul>
           <li>&bull; A receipt acknowledges admission; upload can still be loading</li>
           <li>&bull; Reconcile a lost response with status, not a new write identity</li>
-          <li>&bull; Last 256 results retained; restart changes the server epoch</li>
+          <li>&bull; Native snapshots retain upload outcomes across cancellation</li>
         </ul>
       </div>
 

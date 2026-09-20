@@ -44,8 +44,8 @@
         <path data-edge-from="nanoWorker" data-edge-to="lights" data-edge-label="transmit" data-edge-key="12" data-edge-id="arch-local-paths-worker-lights" data-composition-points="905,462;905,640" d="M 905 462 L 905 640" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-local-paths-arrowhead-emphasis)"/>
 
         <!-- Components -->
-        <g id="arch-local-paths-node-browser" data-node-id="arch-local-paths-browser" data-node-label="Pixoo browser UI" tabindex="0" role="button" aria-label="Focus Pixoo browser UI, same HTTP API and services, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="same HTTP API and services" data-node-context="Architecture component">
-          <title>Pixoo browser UI · same HTTP API and services · Architecture component</title>
+        <g id="arch-local-paths-node-browser" data-node-id="arch-local-paths-browser" data-node-label="Browser / native client" tabindex="0" role="button" aria-label="Focus Browser / native client, /api · /controller/v1, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="/api · /controller/v1" data-node-context="Architecture component">
+          <title>Browser / native client · /api · /controller/v1 · Architecture component</title>
           <rect x="560" y="40" width="170" height="62" rx="6" class="c-mask"/>
           <rect x="560" y="40" width="170" height="62" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(566 46) scale(0.6875)">
@@ -54,8 +54,8 @@
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="645" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo browser UI</text>
-        <text data-detail="context" x="645" y="85" class="t-muted" font-size="9" text-anchor="middle">same HTTP API and services</text>
+          <text data-node-label="" data-detail-anchor="" x="645" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Browser / native client</text>
+        <text data-detail="context" x="645" y="85" class="t-muted" font-size="9" text-anchor="middle">/api · /controller/v1</text>
         </g>
 
         <g id="arch-local-paths-node-codex" data-node-id="arch-local-paths-codex" data-node-label="Local Codex" tabindex="0" role="button" aria-label="Focus Local Codex, MCP client · Windows or WSL, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="MCP client · Windows or WSL" data-node-context="Architecture component">

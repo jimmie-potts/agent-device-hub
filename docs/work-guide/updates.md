@@ -1,5 +1,56 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo #37 source acceptance and guide reconciliation
+
+[Pixoo PR #58](https://github.com/jimmie-potts/divoom-app-upgrade/pull/58)
+merged as `e541412b201fa9a0bfa5c10f7108ca217536691e`, with the same tree as
+reviewed candidate `00ad8f632222d0fd8e421bfc46ece300cab18685`. Independent
+Standards and Specification reviews found no remaining blockers. All five PR
+jobs and all five merged-main jobs passed. Issue #37 is closed as completed.
+Local Node 24 checks passed 515 application tests, 239 controller compatibility
+tests, 10 workflow fixtures and 52 browser tests. The compatibility total is a
+subset of the application suite. Thirteen current specifications and fourteen
+archives validate, including the synchronized `gh-37-hub-controller-api` change.
+
+The candidate reconciles concurrent Hub PR #111 dashboard qualification and
+PR #112 host performance-blocker entries before regeneration.
+
+The complete backlog and paginated history refresh retain #37 as a completed
+reference, remove it from primary remaining work and the roadmap, and leave
+shared state hosting with #31. The guide records configured native identity,
+scoped authentication, shared replay and writer ownership, bounded feeds and
+media evidence across cancellation and recovery. Source delivery does not
+establish installation, real hub-client operation or physical accuracy.
+
+Pixoo architecture source pins and SHA-256 receipts now reference the merged
+revision. The local-command diagram includes the optional native client;
+playback notes describe the shared ledger and retained upload outcomes. Other
+repository pins and diagram topology remain unchanged. All nine diagrams pass
+Archify's nine deterministic checks. The two changed viewers retain exactly
+the baseline viewport dimensions, including the documented vertical overflow;
+these checks do not establish a first-screen containment pass. Guide generation,
+maintenance tests, browser/mobile interactions and print checks are recorded
+on Hub PR #110. No product specification delta applies to this guide-only work.
+Public publication and live-site verification remain outside this source-only
+request; the public copy has not been updated by this delivery.
+
+## 2026-09-20 UTC: Pixoo #37 controller API candidate
+
+The Pixoo #37 coordinator refreshed the complete three-repository backlog after
+moving that issue to in progress. The shared-Codex guide identifies the native
+controller API candidate and retains pending source acceptance. The refresh also
+found Hub #103 closed after PR #104, so it is retained as a completed reference
+and removed from remaining-work counts. No implementation, installation or
+physical acceptance is inferred from these tracker changes.
+
+The candidate keeps the accepted controller ownership and queue flow. Existing
+architecture diagrams still describe that direction; their source pins and
+viewer bytes are unchanged while source delivery remains pending. History keeps
+its separate dated snapshot. No product specification delta applies to this
+guide-only synchronization. Generation, maintenance and browser checks are
+recorded on the companion PR. Public publication is outside this source-only
+request and remains separate.
+
 ## 2026-09-20 UTC: Pixoo #31 host candidate
 
 The Pixoo #31 delivery coordinator refreshed the authoritative issue and its five
