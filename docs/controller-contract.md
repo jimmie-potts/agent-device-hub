@@ -122,10 +122,14 @@ Schema checking proves payload shape. Pure semantic fixtures prove the reference
 
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
-| TypeScript reference | Node 24, Ubuntu and Windows | Strict Ajv schema validation, 220 shared cases, immutable input checks, emitted receipt validation and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu and Windows | jsonschema 4.19.2, the same 220 cases and archive import |
+| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 220 shared cases, immutable input checks, emitted receipt validation and archive import |
+| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 220 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
+
+Native Windows is outside the current CI support matrix. Windows development
+uses Linux runtimes inside WSL; installed WSL/client acceptance remains separate.
+Published artifact bytes and their historical verification receipts stay intact.
 
 Run `npm run test:package` to build and check the distributable. The generated
 manifest hashes every shipped source, schema, fixture, compiled module and guide.
