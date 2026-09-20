@@ -1292,3 +1292,10 @@ No product specification delta applies to this guide-only companion.
 
 Validation receipts and source/guide PR links belong in the companion PR.
 Public publication and live-site verification are outside this delivery.
+
+Pixoo PR #59 remains unmerged at `893009145a457f3445b88b8f3df2c809cd06b388`.
+All local checks and both independent source reviews passed, but the Windows
+application job timed out in the existing media-admission cancellation test on
+the initial attempt and its single retry. The other four jobs passed. The guide
+records this blocker and pending physical acceptance; it does not claim source
+completion. The refreshed history also records the observed #104/#109 merges.
