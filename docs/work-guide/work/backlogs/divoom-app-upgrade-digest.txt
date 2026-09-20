@@ -21,3 +21,4 @@
 #47 [OPEN] Consolidate workflow and application setup without dropping checks
 #52 [OPEN] Fix rapid extra GIF flashes before the next still image
 #55 [OPEN] Qualify variable GIF frame timing on Pixoo64
+#61 [OPEN] Harden and qualify embedded shared-monitor performance
