@@ -1,5 +1,35 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo dashboard physical evidence
+
+[Pixoo PR #62](https://github.com/jimmie-potts/divoom-app-upgrade/pull/62)
+records four authorized dashboard runs after the source tooling merge in #59.
+The selected method is complete RGB frames with a configurable 1000 ms minimum
+submission interval. The owner confirmed readability. Recordings show row
+clearing, overflow, coalesced bursts and a separately authorized successful
+restart after cancellation left an in-flight picture applied. No automatic
+retry or restoration of unknown original artwork is claimed. Firmware remains
+unknown; sparse runs and uncalibrated cross-clock timing do not establish
+sustained 1 Hz or universal device limits. Pixoo #30 is closed as completed after
+PR #62 merged as
+`671b8dda3c620fc7cefb48af112c49be0687063a`, with the same tree as reviewed
+head `17b28a627091584eb08e1299a8ae6d634f8fe37e`. Both independent review axes
+found no actionable findings. All five PR checks passed after one unchanged
+Windows diagnostics test timed out and passed on rerun; all five merged-main
+checks passed on their first attempt.
+
+The shared Codex sequence retains #30 as a completed reference and removes it
+from remaining-work coverage and the roadmap. It preserves #32, #33 and
+#34 as separate renderer, integration and real-client acceptance work. No runtime
+ownership or command flow changes, so architecture definitions and their review
+pins remain unchanged. Backlog/history facts and generated output are refreshed
+through the guide procedure. Concurrent Hub #115 Nanoleaf source/architecture
+updates are preserved. Guide generation, five maintenance tests, generated-output
+consistency and six-viewport/print browser checks passed. Public publication is
+outside this delivery; no installation or additional device operation is included. This documentation-only
+reconciliation requires no product specification delta.
+
+
 ## 2026-09-20 UTC: Nanoleaf #29 shared consumer source
 
 [Nanoleaf PR #62](https://github.com/jimmie-potts/codex-nanoleaf/pull/62)
