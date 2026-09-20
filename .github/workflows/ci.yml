@@ -31,6 +31,7 @@ jobs:
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'
         run: |
+          sudo apt-get update
           sudo apt-get install -y bubblewrap apparmor-profiles
           sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true

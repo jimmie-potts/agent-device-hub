@@ -27,8 +27,20 @@ against the old workflow with `13 !== 5`, then passed after consolidation.
 Workflow validation reports six specifications, zero active changes and five
 archives. Guide generation, all five maintenance tests and browser checks at
 320, 390, 768, 900, 1000 and 1440 pixels passed, including print and viewer checks.
-Guide SHA-256: `91feef4cf993617190cc6bc6106deffb58c5d13f1fa6b6557d4c74bb78da25e6`.
+Guide SHA-256: `d4320d12979ff6488896172cf387af3114aca6a3eccd821e396317bd0a3f2cd7`.
 Screenshots and the browser receipt stay outside Git.
+
+The first hosted candidate ran exactly five jobs. Both Python versions, MCP and
+the guide passed; workflow validation passed its fifteen tests but package setup
+failed because the runner's stale apt index referenced a removed bubblewrap
+archive. Added `apt-get update` before installation, preserving the AppArmor
+profile and namespace check. The setup assertion failed before this fix and
+passed afterward. This setup correction changes no guide output or architecture.
+
+Specification review found an older next-work recommendation that still called
+PR #105 unmerged. Reconciled it with the source-merge row, regenerated the guide
+and repeated maintenance/browser checks successfully. Remaining #3 acceptance
+and closure stay separate from its verified source merge.
 
 Source synchronization is in this candidate; independent review and current-head
 and merged-main CI remain required before completion. Public publication is

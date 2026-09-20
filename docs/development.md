@@ -224,7 +224,8 @@ checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the
 Ubuntu workflow job; the other four Ubuntu jobs remain required.
-Hosted setup installs Ubuntu's `bubblewrap` and `apparmor-profiles` packages,
+Hosted setup refreshes the package index before installing Ubuntu's `bubblewrap`
+and `apparmor-profiles` packages,
 then loads `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` and checks
 namespace startup before running the tests. It does not disable
 AppArmor or change a global namespace restriction. A host that cannot create the
