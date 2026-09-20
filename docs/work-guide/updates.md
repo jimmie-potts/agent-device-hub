@@ -1,5 +1,25 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo #31 host candidate
+
+The Pixoo #31 delivery coordinator refreshed the authoritative issue and its five
+closed prerequisites, verified the agent-state 1.0.0 release archive, and moved
+Pixoo #31 to in progress. The host candidate preserves the simulator default and
+existing explicit device mode, following the user's scope decision. Monitoring
+has separate private storage and credentials, a selected embedded/remote source,
+and an explicit quiesce/import boundary. It does not install hooks or operate
+devices. Local Linux measurements exceeded fixed percentile budgets, so Pixoo
+#31 remains open and blocked. Review, acceptance and source merge remain pending.
+
+Affected guide sections: shared Codex integration, suggested next source work,
+and refreshed backlog/status inputs. Paginated history reads also reconcile the
+separately merged Atlas PR #104 and closed Hub #103. Ownership diagrams retain their existing
+planned host/source separation; this unmerged candidate does not establish an
+implemented-host label or new architecture ownership. Reconcile those source
+pins and delivery facts after verified source merge. Public publication and live
+verification are outside this source-only task. Validation receipts and the
+linked source PR belong in this companion PR's delivery evidence.
+
 ## 2026-09-20 UTC: Complete PR #104's offline asset bundle
 
 The first hosted run of the conflict-free candidate passed all four core jobs
