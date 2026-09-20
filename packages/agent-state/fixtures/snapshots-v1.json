@@ -1,0 +1,3967 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "current-notice-and-chosen-label",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "restart-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "uncertain",
+            "restartUncertain": true,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "stale-five-minutes",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 301000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 300000,
+            "freshness": "uncertain",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "claude-unavailable-read",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "claude",
+              "client": "code",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "unsupported-version",
+      "valid": false,
+      "input": {
+        "apiVersion": "2.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "private-root-field",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ],
+        "prompt": "PRIVATE_CANARY"
+      }
+    },
+    {
+      "id": "private-session-field",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "transcript": "PRIVATE_CANARY"
+          }
+        ]
+      }
+    },
+    {
+      "id": "private-notice-field",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ],
+                "tool": "PRIVATE_CANARY"
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-sessions",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-notice",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-identity",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "private/path"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "invalid-provider-client",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "claude",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "invented-cli-read",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "cli",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "read",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "invented-claude-read",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "claude",
+              "client": "code",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unread",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "self-parent",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "foreign-parent-source",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "foreign",
+                "sessionId": "parent"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "age-disagreement",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 1,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "false-freshness",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "uncertain",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "restart-claimed-current",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": true,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "freshness-after-five-minutes",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 301000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 300000,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "negative-clock",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": -1,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fractional-revision",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2.5,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "unsafe-revision",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 9007199254740992,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "non-ascii-neutral-id",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "café"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "notice-hash-newline",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "labels-exclude-controls",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen\nlabel",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "capacity-notices",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000000",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000001",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000002",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000003",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000004",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000005",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000006",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000007",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000008",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000009",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000000f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000010",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000011",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000012",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000013",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000014",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000015",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000016",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000017",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000018",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000019",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000001f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000020",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000021",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000022",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000023",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000024",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000025",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000026",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000027",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000028",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000029",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000002f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000030",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000031",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000032",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000033",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000034",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000035",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000036",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000037",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000038",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000039",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000003f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000040",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000041",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000042",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000043",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000044",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000045",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000046",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000047",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000048",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000049",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000004f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000050",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000051",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000052",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000053",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000054",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000055",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000056",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000057",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000058",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000059",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000005f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000060",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000061",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000062",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000063",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000064",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000065",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000066",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000067",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000068",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000069",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000006f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000070",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000071",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000072",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000073",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000074",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000075",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000076",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000077",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000078",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000079",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007a",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007b",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007c",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007d",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007e",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "000000000000000000000000000000000000000000000000000000000000007f",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              },
+              {
+                "id": "0000000000000000000000000000000000000000000000000000000000000080",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "invented-child-counts",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 7,
+              "uncertain": 9
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "attributable-fresh-child",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "contradictory-child-activity-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-authoritative-count-for-contradictory-child",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-omitted-uncertain-child",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ambiguous-parent-cannot-attribute-child",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "parent",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-count-for-ambiguous-parent",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "parent",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-child-activity-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ambiguous-child-order-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "ordering",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

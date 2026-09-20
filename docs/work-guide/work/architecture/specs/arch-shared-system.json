@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Planned shared system and ownership boundaries",
+  "title": "Shared source and planned host integration",
   "quality_profile": "showcase",
   "views": [
    {
@@ -71,7 +71,7 @@
     150,
     62
    ],
-   "tag": "planned"
+   "tag": "source candidate"
   },
   {
    "id": "core",
@@ -84,7 +84,7 @@
     150,
     62
    ],
-   "tag": "planned · inside Pixoo first"
+   "tag": "source candidate"
   },
   {
    "id": "feed",
@@ -97,7 +97,7 @@
     150,
     62
    ],
-   "tag": "planned"
+   "tag": "source candidate"
   },
   {
    "id": "pixoo",
@@ -205,7 +205,7 @@
  "boundaries": [
   {
    "kind": "region",
-   "label": "Shared runtime in agent-device-hub (planned)",
+   "label": "Agent-state package; host integration pending",
    "wraps": [
     "emitters",
     "core",
@@ -348,11 +348,11 @@
  "cards": [
   {
    "dot": "cyan",
-   "title": "Observation path (planned)",
+   "title": "Source API; installation pending",
    "items": [
     "Provider hooks report allowlisted lifecycle metadata and fail open",
     "The core interprets observations once; controllers only project state",
-    "The core runs inside Pixoo first; the standalone hub composes the same core"
+    "Pixoo hosting and standalone ownership remain separate work"
    ]
   },
   {
@@ -369,7 +369,7 @@
    "title": "Ownership",
    "items": [
     "Each physical device has one designated writer and private state",
-    "Contracts and device-mcp are implemented; collectors, core, host and new controllers are backlog"
+    "Agent-state source is under review; production hosts and new controllers remain pending"
    ]
   }
  ]

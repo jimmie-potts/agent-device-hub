@@ -1,5 +1,75 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Reconcile Hub #3 with the merged guide policy
+
+Resolved [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)
+against main `897208ad31d48d10c1d4e45906a6c7a1c9101a4e`, which merged the
+guide UI approval policy in PR #106. Retained both maintenance entries and
+regenerated the guide from the combined inputs. The generated change contains
+the two policy paragraphs from #106 and preserves #3's state-package coverage.
+The [SDLC guide exemption](../sdlc.md#ui-approval-scope) supersedes the human UI
+approval requirement recorded in the earlier #3 candidate entry. Independent
+reviews, applicable CI and guarded merge remain required.
+
+Validation passed under Node 24.21.0 and Python 3.14: build/type checks, all 96
+agent-state Node tests, both Python tests covering the 36-case snapshot corpus,
+workflow validation for six capabilities and five archives, all 15 workflow
+tests, all five guide maintenance tests, and browser/print checks at widths
+320, 390, 768, 900, 1000 and 1440 with no browser errors. The six capabilities
+are `agent-lifecycle-contract`, `agent-provider-emitters`, `agent-state-core`,
+`controller-contracts`, `shared-mcp-gateway` and
+`shared-monitor-performance-baseline`.
+
+Product source, schemas, fixtures, dependencies, CI and OpenSpec are unchanged
+from #3's previously reviewed candidate. Ownership and command flows are also
+unchanged, so no architecture redraw or new OpenSpec change is needed. All nine
+viewers, source receipts and backlog/history dates are preserved. The guide
+still contains 107 primary open issues, 12 guides, 49 roadmap nodes and 68
+historical merges. Current revision reviews and hosted CI are recorded in
+PR #105. Public publication remains outside this source delivery.
+
+## 2026-09-20 UTC: Hub #3 agent-state source candidate
+
+The Hub #3 candidate adds the shared state owner, host storage boundary, bounded
+provider emitters, snapshot consumers and reproducible package archive. Updated
+the shared Codex row, next-work recommendation, shared-system and lifecycle
+diagrams, and migration explanation. Production hosting and durable adapters
+remain Pixoo #31; installed qualification remains Hub #8. No hooks, personal
+state, agent sessions or devices were changed.
+
+Refreshed the three repository inventories. The guide contains 107 primary open
+issues, 12 guides, 49 roadmap nodes and the existing 68-merge history. Added the
+new, independently owned Hub #103 to development-workflow coverage and its own
+roadmap track. Its PR #104 remains separate. History dates are unchanged because
+this candidate does not predict a merge or close #3. Hub architecture pins point
+to the candidate's source commit; other repository source pins retain their dates.
+
+Validation: generation, five maintenance tests and browser checks at six widths
+pass, including links, search, navigation, diagram controls and print. All nine
+Archify artifacts pass 9/9 checks with no errors or warnings. Both changed
+standalone viewers pass all four desktop containment checks and were inspected
+in their rendered form. The lifecycle viewer needed two focused layout passes
+to remove existing overflow and overlapping phase labels. Other viewers retain
+their recorded baseline limitations. Screenshots, print output and hashes remain
+in the external candidate receipt. Current-candidate UI approval remains required.
+
+Independent review found child-identity and unordered-event defects. The
+corrected source retains observations received before their turn starts,
+retires turns only with established ordering, and excludes conflicting parent
+evidence from child counts. Regression and shared snapshot coverage were
+expanded. These corrections preserve the represented ownership and flows;
+the package source pin is refreshed with the candidate.
+
+The refreshed tracker snapshot records #3 in review with an account-billing CI
+block. The account owner must restore Actions execution before current-head CI,
+merge and closure can proceed.
+
+The served public guide was checked and still matches its published
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a` edition and recorded HTML checksum.
+It does not contain this candidate. Public publication is outside #3's source
+delivery; guide history/status need a follow-up after an eligible merge and
+verified issue closure.
+
 ## 2026-09-20 UTC: Guide UI approval policy candidate
 
 Repository: agent-device-hub, [PR #106](https://github.com/jimmie-potts/agent-device-hub/pull/106).

@@ -91,6 +91,9 @@ TRACKS = [
         dict(id='n-dev-jobs', x=1, label='Job consolidation', issues=['P47'], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
+    ('System design documents', [
+        dict(id='n-system-design', x=0, label='BUNNY design atlas', issues=['H103'], guide='development-workflow'),
+    ]),
     ('Guide workflow checkpoints', [
         dict(id='n-guide-workflow', x=0, label='Checkpoints delivered', issues=[], guide='development-workflow'),
     ]),

@@ -40,13 +40,13 @@ def src(repo, path):
 STEP = 44
 
 
-def seq(diagram_id, title, participants, steps, cards, views=None, width=None, first_y=196):
+def seq(diagram_id, title, participants, steps, cards, views=None, width=None, first_y=196, step_height=STEP):
     messages, segments, y = [], [], first_y
     current = None
     for step in steps:
         if step[0] == 'seg':
             if current:
-                current['to'] = y - STEP // 2
+                current['to'] = y - step_height // 2
                 segments.append(current)
             current = {'from': y - 18, 'label': step[1]}
             y += 14
@@ -58,9 +58,9 @@ def seq(diagram_id, title, participants, steps, cards, views=None, width=None, f
         if len(step) > 5 and step[5]:
             message['note'] = step[5]
         messages.append(message)
-        y += STEP
+        y += step_height
     if current:
-        current['to'] = y - STEP // 2
+        current['to'] = y - step_height // 2
         segments.append(current)
     count = len(participants)
     width = min(width or max(900, 86 * count + 108 * (count - 1) + 160), 1070)
@@ -167,12 +167,12 @@ def c2(id, type, label, sublabel, row, col, tag=None):
 
 
 D2 = arch(
-    'Planned shared system and ownership boundaries',
+    'Shared source and planned host integration',
     components=[
         c2('providers', 'external', 'Agent providers', 'Codex · Claude Code', 0, 0),
-        c2('emitters', 'security', 'Bounded emitters', 'allowlisted · fail-open', 0, 1, 'planned'),
-        c2('core', 'backend', 'Agent-state core', 'one authoritative owner', 0, 2, 'planned · inside Pixoo first'),
-        c2('feed', 'messagebus', 'Versioned feed', 'snapshots · resync', 0, 3, 'planned'),
+        c2('emitters', 'security', 'Bounded emitters', 'allowlisted · fail-open', 0, 1, 'source candidate'),
+        c2('core', 'backend', 'Agent-state core', 'one authoritative owner', 0, 2, 'source candidate'),
+        c2('feed', 'messagebus', 'Versioned feed', 'snapshots · resync', 0, 3, 'source candidate'),
         c2('pixoo', 'backend', 'Pixoo controller', 'media · 64×64 · Monitor/Media', 1, 0),
         c2('nanoleaf', 'backend', 'Nanoleaf controller', 'Windows worker · Work/Quiet/Free', 1, 1),
         c2('tidbyt', 'cloud', 'Tidbyt controller', 'cloud · 64×32 renderer', 1, 2, 'planned'),
@@ -197,14 +197,14 @@ D2 = arch(
         {'id': 'contract-routing', 'from': 'contracts', 'to': 'routing', 'label': 'validates', 'variant': 'dashed', 'fromSide': 'left', 'toSide': 'right', 'labelDy': 26},
     ],
     boundaries=[
-        {'kind': 'region', 'label': 'Shared runtime in agent-device-hub (planned)', 'wraps': ['emitters', 'core', 'feed']},
+        {'kind': 'region', 'label': 'Agent-state package; host integration pending', 'wraps': ['emitters', 'core', 'feed']},
         {'kind': 'security-group', 'label': 'Existing repositories: own writer, private state', 'wraps': ['pixoo', 'nanoleaf']},
         {'kind': 'region', 'label': 'New controllers in agent-device-hub (planned)', 'wraps': ['tidbyt', 'lifx', 'pclight']},
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'Observation path (planned)', 'items': ['Provider hooks report allowlisted lifecycle metadata and fail open', 'The core interprets observations once; controllers only project state', 'The core runs inside Pixoo first; the standalone hub composes the same core']},
+        {'dot': 'cyan', 'title': 'Source API; installation pending', 'items': ['Provider hooks report allowlisted lifecycle metadata and fail open', 'The core interprets observations once; controllers only project state', 'Pixoo hosting and standalone ownership remain separate work']},
         {'dot': 'rose', 'title': 'Command path', 'items': ['Dashboard, MCP and desk presets send explicit requests', 'Registered routing sends each command to its existing owner', 'Per-device queues: an offline device cannot stall another']},
-        {'dot': 'emerald', 'title': 'Ownership', 'items': ['Each physical device has one designated writer and private state', 'Contracts and device-mcp are implemented; collectors, core, host and new controllers are backlog']},
+        {'dot': 'emerald', 'title': 'Ownership', 'items': ['Each physical device has one designated writer and private state', 'Agent-state source is under review; production hosts and new controllers remain pending']},
     ],
     layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 150, 'cellH': 62, 'gapX': 60, 'gapY': 112},
     views=[
@@ -227,30 +227,26 @@ D3 = seq(
         {'id': 'device', 'type': 'external', 'label': 'Device', 'sublabel': 'Pixoo / Nanoleaf / …'},
     ],
     steps=[
-        ('seg', 'Qualified signal, bounded hook'),
+        ('seg', 'Observation, state and planned presentation'),
         ('msg', 'provider', 'emitter', 'lifecycle event (turn end, attention, notice)', 'emphasis'),
         ('msg', 'emitter', 'core', 'submit allowlisted metadata + neutral IDs', 'emphasis', 'prompts, transcripts, tool content and titles are excluded'),
         ('msg', 'emitter', 'provider', 'return within bound (even if core is down)', 'return'),
-        ('seg', 'Shared interpretation and delivery'),
-        ('msg', 'core', 'controller', 'change event, revision N (activity · attention · notice · freshness)', 'emphasis'),
-        ('msg', 'controller', 'device', 'render for native mode; queue writes only if generation g is still current', 'emphasis', 'skipped while Media/Free or an external owner holds the device'),
+        ('msg', 'core', 'controller', 'revision N notification; consumer reads current snapshot', 'emphasis'),
+        ('msg', 'controller', 'device', 'mode + ownership; render; check generation g at write', 'emphasis', 'skipped while Media/Free or an external owner holds the device'),
         ('msg', 'device', 'controller', 'sent (transport only, not optical proof)', 'return'),
-        ('seg', 'Stale cursor or reconnect'),
         ('msg', 'controller', 'core', 'read with expired cursor', 'dashed'),
         ('msg', 'core', 'controller', 'resync: authoritative snapshot, no replayed effects', 'return'),
-        ('seg', 'Acknowledgment'),
         ('msg', 'user', 'core', 'acknowledge notice', 'security'),
-        ('msg', 'core', 'controller', 'revision N+1: notice cleared (owner state, not a read receipt)', 'emphasis'),
+        ('msg', 'core', 'controller', 'revision N+1: notice acknowledged for the selected consumer', 'emphasis'),
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'Bounded and fail-open', 'items': ['The hook returns inside its budget whether or not the collector or device answers', 'Collector or device failure never changes agent permissions or holds work']},
-        {'dot': 'violet', 'title': 'Distinct facts', 'items': ['Activity, attention, notices, acknowledgment, optional read evidence and freshness stay separate', 'Turn end proves neither success nor readership', 'Five minutes without evidence marks a session uncertain, not failed']},
-        {'dot': 'amber', 'title': 'Planned, not final', 'items': ['Schemas and endpoints belong to Hub #2/#3 and Pixoo #31', 'Controller-v1 cursors are not silently reused for the agent-state feed']},
+        {'dot': 'violet', 'title': 'Evidence and hosting', 'items': ['Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.', 'Lifecycle 1.0 and agent-state 1.0 define the source APIs. Pixoo #31 owns production hosting.']},
     ],
     views=[
         {'id': 'ingest', 'label': 'Ingest', 'focus': ['provider', 'emitter', 'core'], 'note': 'Small, filtered, bounded.'},
         {'id': 'present', 'label': 'Present', 'focus': ['core', 'controller', 'device'], 'note': 'Projection, policy, generation check, write.'},
     ],
+    first_y=172, step_height=36,
 )
 
 # ---------------------------------------------------------------------------
@@ -543,15 +539,15 @@ DIAGRAMS = [
          sources=[(H, 'packages/mcp/README.md'), (P, 'docs/local-mcp.md'), (P, 'apps/server/src/mcp.ts'), (P, 'apps/server/src/mcp-tools.ts'), (N, 'docs/local-mcp.md'), (N, 'mcp/src/server.ts'), (N, 'mcp/src/transport.ts'), (N, 'docs/controller-api.md')],
          issues=['P37', 'N34', 'P12']),
     dict(id='arch-shared-system', spec=D2, kind='architecture', status='planned',
-         status_label='Planned composition; contracts and MCP implemented', short='Shared system and ownership',
+         status_label='Agent-state source candidate; host integration pending', short='Shared system and ownership',
          summary='The planned shared system interprets qualified provider observations once in one authoritative agent-state core and projects that state to each controller. Explicit dashboard, MCP and preset requests take a separate authenticated route to the existing command owners.',
          reading=['Top row: providers → bounded emitters → shared core → versioned feed. Dashed “projection” arrows deliver revisioned state to each controller, which renders it for its own device.',
                   'Second row: dashboard, MCP and desk-preset requests → registered routing → native commands to the existing owners. Contracts and device-mcp (implemented) validate that path.',
                   'Third row: each controller’s responsibility. Pixoo owns media, player, the 64×64 renderer and Monitor/Media. Nanoleaf owns its Windows worker, geometry, effects, restoration and Work/Quiet/Free. Tidbyt (cloud, 64×32), LIFX (direct LAN) and PC lighting (Corsair first; optional Strimer and Varmilo) are planned.'],
-         boundaries=['The core runs inside Pixoo first ([[P31]]); the later standalone hub ([[H5]]) composes the same core. Collectors, state runtime, dashboard, standalone host and the new controllers are backlog work.',
-                     'Only the shared contracts ([[H4]]) and reusable MCP ([[H7]]) are implemented source.',
+         boundaries=['The agent-state source candidate in [[H3]] provides the reducer, storage boundary, snapshots and emitters. Pixoo hosting ([[P31]]), standalone hosting ([[H5]]) and device-feed adoption remain pending.',
+                     'Shared contracts ([[H4]]), lifecycle metadata ([[H2]]) and reusable MCP ([[H7]]) are delivered. The [[H3]] candidate does not prove installed collection or physical behavior.',
                      'Each physical device has one designated writer and private state. No global mode replaces native Nanoleaf or Pixoo modes.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'docs/controller-contract.md'), (H, 'packages/mcp/README.md'), (N, 'docs/hub-integration.md'), (P, 'docs/hub-integration.md')],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (H, 'packages/mcp/README.md'), (N, 'docs/hub-integration.md'), (P, 'docs/hub-integration.md')],
          issues=['H2', 'H3', 'H5', 'P31', 'H15', 'H17', 'H53']),
     dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='planned',
          status_label='Proposed; source review and installed acceptance open', short='Nanoleaf Linux runtime',
@@ -565,14 +561,14 @@ DIAGRAMS = [
         sources=[(H, 'docs/architecture.md'), (N, 'docs/decisions/0007-linux-runtime-ownership.md'), (N, 'docs/linux-install.md'), (N, 'bridge/install_linux.py'), (N, 'bridge/README.md'), (N, 'bridge/wall_server.py')],
          issues=['H43', 'N54', 'N55']),
     dict(id='seq-lifecycle-observation', spec=D3, kind='sequence', status='planned',
-         status_label='Planned conceptual flow', short='Lifecycle observation',
+         status_label='Source API candidate; presentation integration pending', short='Lifecycle observation',
          summary='A qualified provider signal passes through privacy filtering and bounded submission, is interpreted once, and reaches the device through versioned delivery, native-mode and ownership checks, device-specific rendering and a generation-checked queue.',
          reading=['The hook returns inside its bound even when the core or device is unavailable (dashed return in the first phase).',
                   'The controller checks native mode and manual ownership before rendering; the queue checks the generation again right before writing. “Sent” is transport evidence only.',
                   'A stale cursor gets one authoritative resync without replayed effects. A user acknowledgment changes owner state; it does not invent a provider read receipt.'],
          boundaries=['Activity, attention, notices, acknowledgment, optional provider read evidence and freshness stay distinct. Turn end proves neither success nor readership.',
-                     'No finalized agent-event schema or endpoint is shown; those belong to [[H2]], [[H3]] and [[P31]]. Controller v1 cursor fields are not silently applied to the agent-state contract.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (N, 'docs/hub-integration.md')],
+                     'Lifecycle 1.0 defines the envelope; the [[H3]] candidate supplies versioned snapshots, bounded revision notifications and consumer-scoped acknowledgment. [[P31]] owns the production endpoint and storage adapter.'],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (N, 'docs/hub-integration.md')],
          issues=['H2', 'H3', 'P29', 'P31', 'N29', 'P32', 'P33']),
     dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented',
          status_label='Implemented source; installed and physical acceptance open', short='Nanoleaf command admission',
@@ -615,17 +611,17 @@ DIAGRAMS = [
          boundaries=['[[H67]] requires [[H63]], [[H32]], [[H31]], [[H5]], [[N49]] and [[P33]]. [[H68]] requires [[H65]] and [[H67]]; [[H69]] also requires [[H8]].',
                      'Manual Big B dispatch does not require automation engine [[H45]]. Music [[H71]] consumes [[H40]] policy and requires [[H68]] and [[H36]]; [[H38]]/[[H39]] apply to selected branches and [[H41]] is conditional on measured audio.',
                      'Native Nanoleaf and Pixoo modes and their restoration limits are preserved; a preset is not a shared device-mode value.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'docs/controller-contract.md')],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
          issues=['H67', 'H68', 'H69', 'H71']),
     dict(id='seq-owner-migration', spec=D8, kind='sequence', status='future',
          status_label='Future work; design owned by Hub #5/#8 and Pixoo #31', short='Owner migration',
          summary='An explicitly authorized migration quiesces the selected route and old owner, exports and imports versioned state with its identities and revisions, validates the import, keeps the old reducer inactive, switches producer and consumer endpoints and resyncs from authoritative snapshots.',
          reading=['Pixoo’s session-source facade switches renderer, feed, label and acknowledgment operations to the selected owner. Remote mode never starts a second local reducer.',
                   'Rollback happens only after quiescing the new owner. Consumers reload from an authoritative snapshot; no expired effects are replayed.'],
-         boundaries=['No transfer algorithm, schema or runnable migration command is defined here; [[H5]], [[H8]] and [[P31]] own that design.',
+         boundaries=['The [[H3]] candidate defines quiesced export/import format 1.0. Endpoint cutover, durable host adapters and installed rollback remain with [[H5]], [[H8]] and [[P31]].',
                      'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
                      'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
-         sources=[(H, 'docs/architecture.md'), (P, 'docs/hub-integration.md'), (N, 'docs/hub-integration.md')],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (N, 'docs/hub-integration.md')],
          issues=['H5', 'H8', 'P31', 'N29']),
 ]
 assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)

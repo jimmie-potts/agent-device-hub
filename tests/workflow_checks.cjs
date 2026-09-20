@@ -215,7 +215,7 @@ test('CI validates PRs once and retains every platform and suite', () => {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
     contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built'],
-    lifecycle: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built'],
+    lifecycle: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
@@ -271,6 +271,8 @@ const builtPayloads = {
   'test:mcp:package': 'node scripts/package-mcp.mjs --test',
   'test:lifecycle': 'node --test packages/lifecycle-contracts/tests/*.test.mjs',
   'test:lifecycle:package': 'node scripts/package-lifecycle.mjs --test',
+  'test:agent-state': 'node --test packages/agent-state/tests/*.test.mjs',
+  'test:agent-state:package': 'node scripts/package-agent-state.mjs --test',
 };
 
 test('built variants retain every original test payload and standalone build', () => {

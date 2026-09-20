@@ -4,9 +4,10 @@ Shared local agent status and device integration contracts for Codex, Claude Cod
 Nanoleaf, Pixoo, Tidbyt and LIFX.
 
 This repository contains versioned controller contracts with TypeScript and Python
-conformance checks, an embeddable authenticated MCP module, accepted architecture
-and development workflow tooling. Collectors, controller runtime APIs, standalone
-hosting, dashboards and device adapters remain separate work.
+conformance checks, an embeddable authenticated MCP module, a shared agent-state
+package with bounded provider emitters, accepted architecture and development
+workflow tooling. Production collector hosting, controller runtime APIs,
+dashboards and device adapters remain separate work.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -95,11 +96,16 @@ Their current repositories retain ownership until those migrations are delivered
 The [lifecycle contract](docs/agent-lifecycle-contract.md) supplies strict versioned
 schemas, shared TypeScript/Python fixtures and private archive packaging.
 [Provider qualification](docs/provider-qualification.md) separates installed
-artifact evidence from documented and live capabilities. The state reducer,
-emitters and installed-path qualification remain separate work.
+artifact evidence from documented and live capabilities. The
+[agent-state package](packages/agent-state/README.md) supplies the reducer,
+host storage boundary, snapshots, independent subscriptions, migration exports
+and source emitters. Installed-path qualification remains Hub #8; Pixoo #31
+owns the production host and its durable storage adapter.
 
 Run `npm run test:lifecycle`, `npm run test:lifecycle:python` and
 `npm run test:lifecycle:package` with the shared build/type checks.
+Run `npm run test:agent-state`, `npm run test:agent-state:python` and
+`npm run test:agent-state:package` for the state owner and external consumers.
 
 ## Cross-project work guide
 

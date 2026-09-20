@@ -11,8 +11,9 @@ npm run test:workflow
 ```
 
 Both checks must exit zero. The product specification inventory is
-controller-contracts, shared-mcp-gateway and agent-lifecycle-contract after
-the Hub #2 change is synchronized.
+controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
+shared-monitor-performance-baseline, agent-state-core and agent-provider-emitters
+after the Hub #3 change is synchronized.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -225,3 +226,16 @@ Linux state and temporary files. Parent timeout kills the namespace and the
 host terminates and verifies its own namespace init through a Linux PID handle;
 Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
+
+## Agent state core checks
+
+Hub #3 adds the embeddable `packages/agent-state` owner and source provider emitters.
+Use Node 24 and Python 3.12 or 3.14. Run `npm run build`, `npm run typecheck`,
+`npm run test:agent-state`, `npm run test:agent-state:python` and
+`npm run test:agent-state:package`, alongside all existing shared checks.
+CI runs the core, Python fixtures and external package consumers on the existing
+Ubuntu/Windows and Python 3.12/3.14 lifecycle matrix. Tests use fake providers,
+exclusive test stores, disposable state and loopback transports. They do not
+install hooks, launch clients or operate devices. `:built` commands require a
+fresh build in the same job. Host storage conformance, installed qualification
+and integrated performance remain separately evidenced downstream gates.
