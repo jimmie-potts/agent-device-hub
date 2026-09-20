@@ -68,5 +68,5 @@
 #87 [OPEN] Publish and verify the Prism guide at existing public and local destinations
 #91 [CLOSED] Reduce CI minutes while preserving all test coverage
 #100 [CLOSED] Skip automatic CI for guide-only changes
-#103 [OPEN] Document the composable BUNNY system design
+#103 [CLOSED] Document the composable BUNNY system design
 #107 [CLOSED] Consolidate Hub CI into five Ubuntu checks
