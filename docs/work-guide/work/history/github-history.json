@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-20T19:05:11.464486+00:00",
+ "fetchedAt": "2026-09-20T19:13:26.177646+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head; terminal pages verified.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-20T19:00:32Z",
+   "pushedAt": "2026-09-20T19:11:36Z",
    "defaultBranch": "main",
-   "headSha": "46d430180e0791a3462b85cf70ae7d54941aae98",
-   "mainCommitCount": 34,
+   "headSha": "0ae1484817593670541587b490e37d762b7f083d",
+   "mainCommitCount": 35,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "0ae1484817593670541587b490e37d762b7f083d",
+     "date": "2026-09-20T19:10:33Z",
+     "message": "Record Pixoo dashboard qualification in the work guide (#111)"
+    },
     {
      "sha": "46d430180e0791a3462b85cf70ae7d54941aae98",
      "date": "2026-09-20T18:35:15Z",
@@ -445,6 +450,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
      "base": "main",
      "mergedAt": "2026-09-20T18:35:15Z"
+    },
+    {
+     "number": 111,
+     "title": "Record Pixoo dashboard qualification in the work guide",
+     "createdAt": "2026-09-20T18:56:27Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/111",
+     "base": "main",
+     "mergedAt": "2026-09-20T19:10:33Z"
     }
    ],
    "openPRs": [
@@ -456,10 +469,10 @@
      "base": "main"
     },
     {
-     "number": 111,
-     "title": "Record Pixoo dashboard qualification in the work guide",
-     "createdAt": "2026-09-20T18:56:27Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/111",
+     "number": 112,
+     "title": "Record the Pixoo shared host candidate and performance blocker",
+     "createdAt": "2026-09-20T19:11:37Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/112",
      "base": "main"
     }
    ],
@@ -1037,7 +1050,7 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-20T19:00:45Z",
+   "pushedAt": "2026-09-20T19:12:32Z",
    "defaultBranch": "main",
    "headSha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
    "mainCommitCount": 21,
@@ -1324,6 +1337,13 @@
      "title": "Add bounded dashboard transport qualification tools",
      "createdAt": "2026-09-20T18:55:56Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/59",
+     "base": "main"
+    },
+    {
+     "number": 60,
+     "title": "Embed shared agent monitoring with durable ownership and remote access",
+     "createdAt": "2026-09-20T19:12:33Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/60",
      "base": "main"
     }
    ],
