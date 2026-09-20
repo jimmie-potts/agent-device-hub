@@ -101,6 +101,24 @@ test('qualified child ordering gives the same idle count in either delivery orde
   }
 });
 
+test('parent identity is independent of JSON property order',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));await owner.ingest(envelope('turn.started'));
+  const child={...identity,sessionId:'child'};
+  await owner.ingest(envelope('turn.started',1,{identity:child,parent:{status:'known',identity}}));
+  const reversed=Object.fromEntries(Object.entries(identity).reverse());
+  await owner.ingest(envelope('activity.observed',2,{identity:child,parent:{identity:reversed,status:'known'}}));
+  assert.deepEqual(owner.snapshot().sessions[0].children,{active:1,uncertain:0});
+  await owner.shutdown();
+});
+
+test('attention identity is independent of JSON property order',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(envelope('attention.approval',1,{event:{kind:'attention.approval',attention:{status:'known',id:'approval'}}}));
+  await owner.ingest(envelope('attention.approval',2,{turn:{id:'turn-1',status:'known'},event:{kind:'attention.approval',attention:{id:'approval',status:'known'}}}));
+  assert.equal(owner.snapshot().sessions[0].attention.length,1);
+  await owner.shutdown();
+});
+
 test('restart restores committed labels and notices and requires fresh evidence',async()=>{
   const storage=new MemoryStorage();
   const owner=await createAgentState(options(storage));

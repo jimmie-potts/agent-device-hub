@@ -5,6 +5,7 @@ import {identityKey} from './memory-storage.js';
 
 type Reduction = {outcome:'applied'|'duplicate'|'stale'|'ambiguous'; session?:Session; fresh:boolean; capacity?:boolean};
 const sameTurn=(a:KnownId,b:KnownId)=>a.status==='known'&&b.status==='known'&&a.id===b.id;
+const sameId=(a:KnownId,b:KnownId)=>a.status==='unknown'&&b.status==='unknown'||sameTurn(a,b);
 export function unavailable(session:Session,dimension:Unavailable['dimension'],reason:Unavailable['reason']) {
   if(session.unavailable.some(item=>item.dimension===dimension&&item.reason==='ambiguous')&&reason!=='ambiguous')return;
   session.unavailable=session.unavailable.filter(item=>item.dimension!==dimension);
@@ -76,7 +77,8 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   }
   if(event.parent.status!=='unknown'){
     if(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous')){session.parent={status:'unknown'};ambiguous=true;}
-    else if(session.parent.status!=='unknown'&&JSON.stringify(session.parent)!==JSON.stringify(event.parent)){
+    else if(session.parent.status!=='unknown'&&(session.parent.status!==event.parent.status||
+      (session.parent.status==='known'&&event.parent.status==='known'&&identityKey(session.parent.identity)!==identityKey(event.parent.identity)))){
       session.parent={status:'unknown'};unavailable(session,'parent','ambiguous');ambiguous=true;
     }
     else session.parent=event.parent;
@@ -101,7 +103,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     case 'attention.approval':{
       const attention=event.event.attention;
       const attentionKind=event.event.kind==='question.continuing'?'question':event.event.kind==='attention.input'?'input':'approval';
-      if(!session.attention.some(item=>item.kind===attentionKind&&JSON.stringify(item.id)===JSON.stringify(attention)&&JSON.stringify(item.turn)===JSON.stringify(event.turn)))
+      if(!session.attention.some(item=>item.kind===attentionKind&&sameId(item.id,attention)&&sameId(item.turn,event.turn)))
         session.attention.push({id:attention,kind:attentionKind,turn:event.turn});
       if(attention.status==='unknown')unavailable(session,'attention','ambiguous');
       break;

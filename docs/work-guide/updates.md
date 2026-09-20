@@ -25,6 +25,17 @@ to remove existing overflow and overlapping phase labels. Other viewers retain
 their recorded baseline limitations. Screenshots, print output and hashes remain
 in the external candidate receipt. Current-candidate UI approval remains required.
 
+Independent review found child-identity and unordered-event defects. The
+corrected source retains observations received before their turn starts,
+retires turns only with established ordering, and excludes conflicting parent
+evidence from child counts. Regression and shared snapshot coverage were
+expanded. These corrections preserve the represented ownership and flows;
+the package source pin is refreshed with the candidate.
+
+The refreshed tracker snapshot records #3 in review with an account-billing CI
+block. The account owner must restore Actions execution before current-head CI,
+merge and closure can proceed.
+
 The served public guide was checked and still matches its published
 `950f7f62d502bc1d55d0f95872a4a10c08d4a27a` edition and recorded HTML checksum.
 It does not contain this candidate. Public publication is outside #3's source
