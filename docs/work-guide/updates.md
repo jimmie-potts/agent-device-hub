@@ -2,10 +2,11 @@
 
 ## 2026-09-20 UTC: Guide UI approval policy candidate
 
-Repository: agent-device-hub. The owner requested a documentation update through
-`plan-work` to remove human approval for guide UI while retaining it for every
-other UI change. This local candidate updates `AGENTS.md`, `docs/sdlc.md`, the PR
-template and the guide procedure. Mixed changes still require approval for UI
+Repository: agent-device-hub, [PR #106](https://github.com/jimmie-potts/agent-device-hub/pull/106).
+The owner requested a documentation update through `plan-work`, then authorized
+source delivery through `deliver-work`. Remove human approval for guide UI while
+retaining it for every other UI change. This candidate updates `AGENTS.md`,
+`docs/sdlc.md`, the PR template and the guide procedure. Mixed changes still require approval for UI
 outside the guide. Guide changes alone do not require renewed approval.
 Independent reviews, guide/browser checks, applicable CI and publication
 authority remain required; the CI path-filter exception is separate.
@@ -13,8 +14,8 @@ authority remain required; the CI path-filter exception is separate.
 Updated the development-workflow guide's CI and Prism rows and regenerated the
 HTML. Older human UI approval wording in guide issues #73, #85, #86 and #87 is
 superseded by the new policy; reconcile those fields when tracker updates are
-authorized. Their design, validation and dependency requirements remain. This
-planning request does not publish tracker changes, a PR or the public guide.
+authorized. Their design, validation and dependency requirements remain. The
+linked guide tasks remain open; this PR delivers only the approval policy.
 
 Backlog/history snapshots, issue states, roadmap order and all nine architecture
 viewers and receipts are unchanged. No ownership, command flow, product behavior
@@ -33,8 +34,9 @@ the complete output diff contains only the two intended policy paragraphs.
 Static instruction scenarios cover guide UI, other UI, mixed changes, approval
 renewal, older guide issue wording, publication authority and independent CI
 scope. These are document exercises, not live agent-session verification.
-Independent delivery reviews, hosted CI, tracker reconciliation and publication
-remain outside this local planning edit.
+This entry records candidate preparation. PR #106 records independent reviews,
+hosted CI and merge evidence as they are verified. Public publication and live
+verification remain separate from this source delivery.
 
 ## 2026-09-12 UTC: Reconcile the merged #77 baseline and closed #99
 
