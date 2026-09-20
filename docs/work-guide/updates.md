@@ -1,5 +1,53 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Five Ubuntu CI checks for Hub #107
+
+The delivery coordinator prepared [Hub #107](https://github.com/jimmie-potts/agent-device-hub/issues/107)
+from main `f550bcd`, including the shared agent-state checks merged in PR #105.
+The candidate removes native Windows jobs and combines controller, lifecycle and
+agent-state validation into two Ubuntu jobs for Python 3.12 and 3.14. Workflow,
+MCP and guide checks bring the total to five. Existing Linux suites, isolated
+package consumers, performance checks, scheduling and timeout rules remain.
+This is CI/tooling maintenance without a product or wire-contract change; no new
+OpenSpec change is needed.
+
+Refreshed all three backlog inventories and native prerequisite records, added
+#107 to development-workflow primary coverage and the existing CI roadmap node,
+and regenerated the guide. Recorded PR #105's observed source merge while #3
+remains open. Kept #91's earlier thirteen-job measurements as historical evidence.
+The candidate represents 108 primary open issues, 12 guides, 49 roadmap nodes
+and nine architecture viewers. History and architecture retain their independent
+source dates. CI consolidation changes no runtime ownership, command flow or
+device boundary, so architecture sources and viewers need no changes.
+
+Local validation passed with Node 24.21.0 and Python 3.12.13/3.14.4: all 32 retained
+workflow/product command invocations, including fifteen workflow regression tests
+and thirteen isolated Linux hook checks. The five-job regression first failed
+against the old workflow with `13 !== 5`, then passed after consolidation.
+Workflow validation reports six specifications, zero active changes and five
+archives. Guide generation, all five maintenance tests and browser checks at
+320, 390, 768, 900, 1000 and 1440 pixels passed, including print and viewer checks.
+Guide SHA-256: `d4320d12979ff6488896172cf387af3114aca6a3eccd821e396317bd0a3f2cd7`.
+Screenshots and the browser receipt stay outside Git.
+
+The first hosted candidate ran exactly five jobs. Both Python versions, MCP and
+the guide passed; workflow validation passed its fifteen tests but package setup
+failed because the runner's stale apt index referenced a removed bubblewrap
+archive. Added `apt-get update` before installation, preserving the AppArmor
+profile and namespace check. The setup assertion failed before this fix and
+passed afterward. This setup correction changes no guide output or architecture.
+
+Specification review found an older next-work recommendation that still called
+PR #105 unmerged. Reconciled it with the source-merge row, regenerated the guide
+and repeated maintenance/browser checks successfully. Remaining #3 acceptance
+and closure stay separate from its verified source merge.
+
+Source synchronization is in this candidate; independent review and current-head
+and merged-main CI remain required before completion. Public publication is
+outside this request. The public repository still records source `950f7f6` and
+eight viewers, so it does not represent this candidate. No public files, personal
+installation, provider configuration or devices were changed.
+
 ## 2026-09-20 UTC: Reconcile Hub #3 with the merged guide policy
 
 Resolved [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)

@@ -40,22 +40,33 @@ outside the existing main-only push trigger. Static tests verify configuration;
 only hosted event evidence verifies actual scheduling.
 
 Product CI jobs run `npm run build` and `npm run typecheck` once, then use
-`:built` variants of the controller, lifecycle and MCP TypeScript/package test
-commands. These variants require output freshly built in that same job. The
+`:built` variants of the controller, lifecycle, agent-state and MCP
+TypeScript/package test commands. These variants require output freshly built
+in that same job. The
 existing standalone commands still build first and stop if compilation fails.
 Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-GitHub CI requires Workflow checks on Ubuntu and Windows and four contract jobs,
-one for each Ubuntu/Windows and Python 3.12/3.14 combination. The contract jobs
-run build, type, both language corpora and isolated package checks. Later runtime
-and browser changes must add their own issue-appropriate checks.
+Normal GitHub CI has five jobs, all on `ubuntu-latest`:
 
-The configured MCP jobs run build/type, tool/service tests, loopback protocol tests
-and isolated archive-consumer checks on Ubuntu and Windows. Local validation runs
-the same commands. Keep platform coverage and delivery-specific CI exceptions in
-the external validation receipt.
+| Check | Runtime and coverage |
+| --- | --- |
+| Workflow checks | Node 24 workflow validation and isolated Linux hook qualification |
+| Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, performance checks and isolated package consumers |
+| Contracts and state, Python 3.14 | The same suites on the second supported Python version |
+| MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
+| Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
+
+Each combined contracts/state job installs dependencies, builds and typechecks
+once before running its suites. The core workflow performs three full builds
+across its jobs. Local validation runs the same commands. Later runtime and
+browser changes must add their own issue-appropriate checks.
+
+Native Windows is outside the supported CI matrix. Windows development uses
+Linux Node/Python runtimes inside WSL. Ubuntu CI does not establish installed
+WSL/client or device compatibility. Keep that acceptance evidence separate.
+Existing provider qualification records and device ownership are unchanged.
 
 ## Shared tooling provenance
 
@@ -188,8 +199,9 @@ and TypeScript/Python consumers. Use Node 24 and Python 3.12 or 3.14, run `npm c
 and install `requirements-contracts.txt` in an isolated Python environment.
 Run `npm run build`, `npm run typecheck`, `npm run test:lifecycle`,
 `npm run test:lifecycle:python` and `npm run test:lifecycle:package`, in addition
-to all existing workflow, controller-contract and MCP checks. Lifecycle CI runs
-on Ubuntu/Windows with both Python versions. Tests use synthetic metadata only.
+to all existing workflow, controller-contract and MCP checks. The combined
+contracts/state jobs run lifecycle checks on Ubuntu with both Python versions.
+Tests use synthetic metadata only.
 `npm run package:lifecycle` builds the private archive with a file-hash manifest;
 record its source revision and archive hash externally after reviewed delivery.
 No command installs hooks, launches a client or contacts a device.
@@ -198,9 +210,9 @@ No command installs hooks, launches a client or contacts a device.
 
 `npm run test:performance` uses Python 3.12 or 3.14 to check measurement
 statistics, pinned source verification, isolated legacy admission and bounded
-worker failure handling. The existing lifecycle Linux/Windows Python matrix
-also runs this command; all previous jobs and checks remain required. The
-tests use synthetic state and do not establish installed-client, full hook,
+worker failure handling. The combined contracts/state jobs run this command
+on Ubuntu with both Python versions. The tests use synthetic state and do not
+establish installed-client, full hook,
 helper-route or physical performance. See [the early measurement procedure](performance-baseline.md)
 for actual profile commands and pending budget gates.
 
@@ -211,8 +223,9 @@ under `/usr` and the packaged `bwrap` executable available. These thirteen focus
 checks execute the pinned real hook in disposable PID/network/mount namespaces,
 verify provenance and failure retention, and test detached-child cleanup. They
 perform no timing benchmark or device operations. CI runs them once in the
-Ubuntu workflow job; existing platform/version jobs and tests remain required.
-Hosted setup installs Ubuntu's `bubblewrap` and `apparmor-profiles` packages,
+Ubuntu workflow job; the other four Ubuntu jobs remain required.
+Hosted setup refreshes the package index before installing Ubuntu's `bubblewrap`
+and `apparmor-profiles` packages,
 then loads `/usr/share/apparmor/extra-profiles/bwrap-userns-restrict` and checks
 namespace startup before running the tests. It does not disable
 AppArmor or change a global namespace restriction. A host that cannot create the
@@ -233,8 +246,8 @@ Hub #3 adds the embeddable `packages/agent-state` owner and source provider emit
 Use Node 24 and Python 3.12 or 3.14. Run `npm run build`, `npm run typecheck`,
 `npm run test:agent-state`, `npm run test:agent-state:python` and
 `npm run test:agent-state:package`, alongside all existing shared checks.
-CI runs the core, Python fixtures and external package consumers on the existing
-Ubuntu/Windows and Python 3.12/3.14 lifecycle matrix. Tests use fake providers,
+CI runs the core, Python fixtures and external package consumers in the combined
+Ubuntu contracts/state jobs with Python 3.12 and 3.14. Tests use fake providers,
 exclusive test stores, disposable state and loopback transports. They do not
 install hooks, launch clients or operate devices. `:built` commands require a
 fresh build in the same job. Host storage conformance, installed qualification
