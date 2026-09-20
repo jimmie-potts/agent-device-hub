@@ -1,5 +1,52 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Complete Hub #3 release and reconcile CI acceptance
+
+The #3 coordinator completed source delivery after [PR #105](https://github.com/jimmie-potts/agent-device-hub/pull/105)
+merged at `f550bcd6b7d3b7da0f34c90c622b343afe2b25fb`. Its tree matches the
+independently reviewed candidate. Published the [agent-state 1.0.0 release](https://github.com/jimmie-potts/agent-device-hub/releases/tag/agent-state-v1.0.0)
+with the reproducible archive, checksum, source receipt and final CI acceptance
+receipt. Downloaded all four assets and verified their exact bytes. A fresh build
+at the merged revision reproduces archive SHA-256
+`ae589d311e282c3356579c85507a3aa973ab7990e06e062143aeb08d8d2dcc99`.
+External consumers, 96 Node/process tests, 36 Python snapshot fixtures,
+build/type checks and workflow checks passed.
+
+The separately owned [PR #108](https://github.com/jimmie-potts/agent-device-hub/pull/108)
+merged the owner-approved five-job Ubuntu matrix and package-index repair at
+`ed5024e94da08009f313b08a0dd0e5a1af687a25`. Read every job and its executed
+steps in [Checks](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35527760360)
+and [Work guide](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35527760350).
+All five passed, including Linux hook qualification. Product code, schemas,
+fixtures, package inputs and OpenSpec are unchanged from the released source.
+The earlier billing failures and stale apt-index failure remain historical
+evidence. Issue #3 closed as completed after these results; #107's coordinator
+also closed that issue. Coordination and Actions ownership are recorded on
+[PR #108](https://github.com/jimmie-potts/agent-device-hub/pull/108#issuecomment-5751591521).
+This guide follow-up makes no workflow changes.
+
+[PR #109](https://github.com/jimmie-potts/agent-device-hub/pull/109) is the linked
+source-guide companion. It preserves #108's guide changes, marks #3 and #107
+completed, and retains their closed reference records. Refreshed all three open
+inventories and native dependencies, plus paginated history pinned to each
+observed main revision. The guide now represents 106 primary open issues,
+12 guides, 49 roadmap nodes, 72 merged PRs and nine architecture viewers.
+The roadmap recommends separately scoped first-host adoption in Pixoo #31;
+Hub #8 still owns installed-provider qualification. Ownership, command flows and
+architecture have not changed, so the viewer artifacts and their dated source
+receipts remain unchanged. No new OpenSpec change is needed for this closeout.
+
+Guide generation, all five maintenance tests and browser checks at 320, 390,
+768, 900, 1000 and 1440 pixels passed, including links, search, timeline controls,
+viewer interactions and print restoration, with no browser errors. Guide HTML
+SHA-256: `3c3f9931bae93ab2bd9333a92fc3c460e4ef857aaba1e1d53223ba2513d229df`.
+Screenshots, print output and verification receipts remain outside Git.
+Fixed-revision independent reviews, generated-output consistency and the
+[guide-only CI exception](../sdlc.md#guide-only-ci-exception) are recorded in
+PR #109 before guarded merge. Public publication remains outside this request;
+the last verified public edition records source `950f7f6` and eight viewers.
+No installation, live state, agent sessions or devices were changed.
+
 ## 2026-09-20 UTC: Five Ubuntu CI checks for Hub #107
 
 The delivery coordinator prepared [Hub #107](https://github.com/jimmie-potts/agent-device-hub/issues/107)

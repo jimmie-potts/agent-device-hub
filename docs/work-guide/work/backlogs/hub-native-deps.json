@@ -2,29 +2,11 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 65,
+        "totalCount": 63,
         "pageInfo": {
           "hasNextPage": false
         },
         "nodes": [
-          {
-            "number": 3,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 2,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
           {
             "number": 5,
             "blockedBy": {
@@ -63,7 +45,7 @@
                 },
                 {
                   "number": 3,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -338,7 +320,7 @@
                 },
                 {
                   "number": 3,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -370,7 +352,7 @@
                 },
                 {
                   "number": 3,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -804,7 +786,7 @@
                 },
                 {
                   "number": 3,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1274,16 +1256,6 @@
           },
           {
             "number": 103,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
-            "number": 107,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {

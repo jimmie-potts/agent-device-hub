@@ -1,5 +1,5 @@
 #2 [CLOSED] Qualify and version the shared agent lifecycle contract
-#3 [OPEN] Implement the reusable agent-state core and provider emitters
+#3 [CLOSED] Implement the reusable agent-state core and provider emitters
 #4 [CLOSED] Define versioned controller capabilities and integration APIs
 #5 [OPEN] Host shared monitoring and route commands to existing controllers
 #6 [OPEN] Build the shared Codex-integration frontend
@@ -69,4 +69,4 @@
 #91 [CLOSED] Reduce CI minutes while preserving all test coverage
 #100 [CLOSED] Skip automatic CI for guide-only changes
 #103 [OPEN] Document the composable BUNNY system design
-#107 [OPEN] Consolidate Hub CI into five Ubuntu checks
+#107 [CLOSED] Consolidate Hub CI into five Ubuntu checks
