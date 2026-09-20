@@ -9,9 +9,10 @@ no automatic fallback and Nanoleaf-only notice clearing on an evidenced new turn
 The owner accepted both presentation decisions. Existing incompatible durable
 consumer policies require a supported migration before installed cutover.
 
-Refreshed backlog inputs retain #29 as open. The architecture already represents
-the planned owner/feed/consumer split; this candidate changes no ownership or
-command flow in those diagrams. Source merge and closure facts will be reconciled
+Refreshed backlog inputs retain #29 as open. The shared-system diagram and lifecycle notes now describe the consumer
+candidate, with source pins and SHA-256 receipts. All nine diagrams passed
+deterministic Archify checks. The changed viewer passed four desktop viewport
+checks and visual inspection in light and dark themes. Source merge and closure facts will be reconciled
 after verification. Hub #8 and Nanoleaf #30 retain installed and physical
 acceptance. Generation, five maintenance tests and desktop/mobile/print browser
 checks passed. Public publication and live verification are not part of this delivery.
