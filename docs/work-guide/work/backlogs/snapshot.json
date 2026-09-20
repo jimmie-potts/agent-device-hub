@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-20T18:45:05.408534+00:00",
-  "refreshedAt": "2026-09-20T18:45:13.608713+00:00",
+  "startedAt": "2026-09-20T19:18:32.880039+00:00",
+  "refreshedAt": "2026-09-20T19:18:41.374588+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 62,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        63
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -73,12 +73,12 @@
           "purpose": "Closed guide reference"
         },
         {
-          "number": 107,
+          "number": 103,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         },
         {
-          "number": 103,
+          "number": 107,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         }
@@ -155,14 +155,14 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 19,
+      "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        19
+        20
       ],
-      "openPRs": 0,
+      "openPRs": 2,
       "prPageSizes": [
-        0
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -191,6 +191,14 @@
           "commentBodiesStored": true
         },
         {
+          "number": 37,
+          "state": "CLOSED",
+          "commentPages": [
+            1
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 46,
           "state": "CLOSED",
           "commentPages": [
@@ -201,7 +209,7 @@
       ]
     }
   },
-  "openIssues": 105,
+  "openIssues": 104,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

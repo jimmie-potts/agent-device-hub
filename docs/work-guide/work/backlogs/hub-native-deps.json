@@ -31,7 +31,7 @@
                 },
                 {
                   "number": 37,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }

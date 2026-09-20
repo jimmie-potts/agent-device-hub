@@ -13,7 +13,7 @@
 #32 [OPEN] Render the 64×64 agent monitoring dashboard and preview
 #33 [OPEN] Add monitor controls and shared Monitor/Media display ownership
 #34 [OPEN] Package and verify Codex and Claude monitoring on the Pixoo
-#37 [OPEN] Expose the Pixoo controller through the shared device API
+#37 [CLOSED] Expose the Pixoo controller through the shared device API
 #38 [OPEN] Adopt shared OpenSpec validation tooling
 #43 [OPEN] Verify authenticated phone and other-computer browser access
 #44 [OPEN] Verify ChatGPT web MCP control and physical Pixoo acceptance

@@ -16,7 +16,7 @@
      "pixooDev",
      "browser"
     ],
-    "note": "Codex and the browser reach the same owning services and one queue."
+    "note": "Codex, browser and optional native clients share the same services and one queue."
    },
    {
     "id": "nanoleaf-route",
@@ -61,8 +61,8 @@
   {
    "id": "browser",
    "type": "frontend",
-   "label": "Pixoo browser UI",
-   "sublabel": "same HTTP API and services",
+   "label": "Browser / native client",
+   "sublabel": "/api · /controller/v1",
    "row": 0,
    "col": 2,
    "size": [
@@ -380,7 +380,7 @@
    "title": "Pixoo path (implemented)",
    "items": [
     "Strict application extensions carry the native string request_id",
-    "ControlService, catalog, player and the shared HTTP/MCP ledger",
+    "Native controller v1, browser and MCP share one request ledger",
     "One serialized adapter queue; simulator unless device mode is selected"
    ]
   },

@@ -1,15 +1,35 @@
 {
- "fetchedAt": "2026-09-20T18:13:57.635132+00:00",
- "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head; PR #109 title read back after its closeout scope update",
+ "fetchedAt": "2026-09-20T19:18:35.529481+00:00",
+ "source": "Paginated read-only GitHub pulls, issues and commits pinned to observed default-branch heads; refreshed after Pixoo PR #58 source acceptance",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-20T18:02:18Z",
+   "pushedAt": "2026-09-20T19:16:25Z",
    "defaultBranch": "main",
-   "headSha": "ed5024e94da08009f313b08a0dd0e5a1af687a25",
-   "mainCommitCount": 32,
+   "headSha": "ee1f4405798ea1c6645cec1f9d17b288f5feffd3",
+   "mainCommitCount": 36,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "ee1f4405798ea1c6645cec1f9d17b288f5feffd3",
+     "date": "2026-09-20T19:16:25Z",
+     "message": "Record the Pixoo shared host candidate and performance blocker (#112)"
+    },
+    {
+     "sha": "0ae1484817593670541587b490e37d762b7f083d",
+     "date": "2026-09-20T19:10:33Z",
+     "message": "Record Pixoo dashboard qualification in the work guide (#111)"
+    },
+    {
+     "sha": "46d430180e0791a3462b85cf70ae7d54941aae98",
+     "date": "2026-09-20T18:35:15Z",
+     "message": "docs: add BUNNY HTML design atlas and service references (#104)"
+    },
+    {
+     "sha": "1ea93eebc13ee818962053daa7cb690c5735c59a",
+     "date": "2026-09-20T18:21:52Z",
+     "message": "docs: close out agent-state delivery and CI acceptance (#109)"
+    },
     {
      "sha": "ed5024e94da08009f313b08a0dd0e5a1af687a25",
      "date": "2026-09-20T18:02:18Z",
@@ -419,22 +439,48 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/108",
      "base": "main",
      "mergedAt": "2026-09-20T18:02:18Z"
-    }
-   ],
-   "openPRs": [
-    {
-     "number": 104,
-     "title": "docs: add BUNNY HTML design atlas and service references",
-     "createdAt": "2026-09-20T02:55:40Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
-     "base": "main"
     },
     {
      "number": 109,
      "title": "docs: close out agent-state delivery and CI acceptance",
      "createdAt": "2026-09-20T17:56:43Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/109",
-     "base": "main"
+     "base": "main",
+     "mergedAt": "2026-09-20T18:21:52Z"
+    },
+    {
+     "number": 104,
+     "title": "docs: add BUNNY HTML design atlas and service references",
+     "createdAt": "2026-09-20T02:55:40Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
+     "base": "main",
+     "mergedAt": "2026-09-20T18:35:15Z"
+    },
+    {
+     "number": 111,
+     "title": "Record Pixoo dashboard qualification in the work guide",
+     "createdAt": "2026-09-20T18:56:27Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/111",
+     "base": "main",
+     "mergedAt": "2026-09-20T19:10:33Z"
+    },
+    {
+     "number": 112,
+     "title": "Record the Pixoo shared host candidate and performance blocker",
+     "createdAt": "2026-09-20T19:11:37Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/112",
+     "base": "main",
+     "mergedAt": "2026-09-20T19:16:25Z"
+    }
+   ],
+   "openPRs": [
+    {
+     "number": 110,
+     "title": "docs: track Pixoo controller API delivery candidate",
+     "createdAt": "2026-09-20T18:50:37Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
+     "base": "main",
+     "draft": false
     }
    ],
    "closedIssues": [
@@ -527,6 +573,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/100"
     },
     {
+     "number": 103,
+     "title": "Document the composable BUNNY system design",
+     "closedAt": "2026-09-20T18:36:09Z",
+     "createdAt": "2026-09-20T02:25:27Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/103"
+    },
+    {
      "number": 107,
      "title": "Consolidate Hub CI into five Ubuntu checks",
      "closedAt": "2026-09-20T18:05:14Z",
@@ -535,7 +589,7 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 63,
+   "openIssueCount": 62,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-20T17:44:01Z"
@@ -1003,12 +1057,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-10T21:10:06Z",
+   "pushedAt": "2026-09-20T19:17:58Z",
    "defaultBranch": "main",
-   "headSha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
-   "mainCommitCount": 21,
+   "headSha": "e541412b201fa9a0bfa5c10f7108ca217536691e",
+   "mainCommitCount": 22,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "e541412b201fa9a0bfa5c10f7108ca217536691e",
+     "date": "2026-09-20T19:15:03Z",
+     "message": "Expose Pixoo through the authenticated shared controller API (#58)"
+    },
     {
      "sha": "9f1c0ec75651810a441606b0c08fbdeee824c8d8",
      "date": "2026-09-10T21:10:05Z",
@@ -1275,9 +1334,34 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
      "base": "main",
      "mergedAt": "2026-09-10T21:10:06Z"
+    },
+    {
+     "number": 58,
+     "title": "Expose Pixoo through the authenticated shared controller API",
+     "createdAt": "2026-09-20T18:51:08Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/58",
+     "base": "main",
+     "mergedAt": "2026-09-20T19:15:03Z"
     }
    ],
-   "openPRs": [],
+   "openPRs": [
+    {
+     "number": 59,
+     "title": "Add bounded dashboard transport qualification tools",
+     "createdAt": "2026-09-20T18:55:56Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/59",
+     "base": "main",
+     "draft": false
+    },
+    {
+     "number": 60,
+     "title": "Embed shared agent monitoring with durable ownership and remote access",
+     "createdAt": "2026-09-20T19:12:33Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/60",
+     "base": "main",
+     "draft": true
+    }
+   ],
    "closedIssues": [
     {
      "number": 1,
@@ -1408,6 +1492,14 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/36"
     },
     {
+     "number": 37,
+     "title": "Expose the Pixoo controller through the shared device API",
+     "closedAt": "2026-09-20T19:18:25Z",
+     "createdAt": "2026-09-07T02:24:12Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/37"
+    },
+    {
      "number": 42,
      "title": "Integrate an opt-in physical Pixoo adapter with the local application",
      "closedAt": "2026-09-07T17:38:00Z",
@@ -1424,7 +1516,7 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 19,
+   "openIssueCount": 18,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-09T00:07:22Z"

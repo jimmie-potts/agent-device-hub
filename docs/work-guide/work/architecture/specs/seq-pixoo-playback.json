@@ -215,7 +215,7 @@
    "dot": "cyan",
    "title": "One owner",
    "items": [
-    "Browser and MCP share the same services, ledger and adapter queue",
+    "Browser, MCP and native controller v1 share one ledger and writer",
     "Playback tools never import or edit media or pick raw device targets"
    ]
   },
@@ -225,7 +225,7 @@
    "items": [
     "A receipt acknowledges admission; upload can still be loading",
     "Reconcile a lost response with status, not a new write identity",
-    "Last 256 results retained; restart changes the server epoch"
+    "Native snapshots retain upload outcomes across cancellation"
    ]
   },
   {
