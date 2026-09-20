@@ -1,5 +1,22 @@
 # Guide maintenance history
 
+## 2026-09-20 UTC: Pixoo #37 controller API candidate
+
+The Pixoo #37 coordinator refreshed the complete three-repository backlog after
+moving that issue to in progress. The shared-Codex guide identifies the native
+controller API candidate and retains pending source acceptance. The refresh also
+found Hub #103 closed after PR #104, so it is retained as a completed reference
+and removed from remaining-work counts. No implementation, installation or
+physical acceptance is inferred from these tracker changes.
+
+The candidate keeps the accepted controller ownership and queue flow. Existing
+architecture diagrams still describe that direction; their source pins and
+viewer bytes are unchanged while source delivery remains pending. History keeps
+its separate dated snapshot. No product specification delta applies to this
+guide-only synchronization. Generation, maintenance and browser checks are
+recorded on the companion PR. Public publication is outside this source-only
+request and remains separate.
+
 ## 2026-09-20 UTC: Complete PR #104's offline asset bundle
 
 The first hosted run of the conflict-free candidate passed all four core jobs
