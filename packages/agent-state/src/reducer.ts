@@ -6,6 +6,7 @@ import {identityKey} from './memory-storage.js';
 type Reduction = {outcome:'applied'|'duplicate'|'stale'|'ambiguous'; session?:Session; fresh:boolean; capacity?:boolean};
 const sameTurn=(a:KnownId,b:KnownId)=>a.status==='known'&&b.status==='known'&&a.id===b.id;
 export function unavailable(session:Session,dimension:Unavailable['dimension'],reason:Unavailable['reason']) {
+  if(session.unavailable.some(item=>item.dimension===dimension&&item.reason==='ambiguous')&&reason!=='ambiguous')return;
   session.unavailable=session.unavailable.filter(item=>item.dimension!==dimension);
   session.unavailable.push({kind:'evidence.unavailable',dimension,reason});
 }
@@ -33,7 +34,6 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     read:'unknown',unavailable:[],ordering:event.ordering,lastEvidenceAtMs:now,observedAtMs:event.observedAtMs,
     retiredTurns:[],seen:[],watermarks:[]};
   const remember=()=>{session.seen.push({key,content});session.seen=session.seen.slice(-LIMITS.seen);};
-  const kind=event.event.kind;
   if(event.event.kind==='notice.acknowledged'){
     const acknowledgment=event.event;
     const notice=session.notices.find(item=>item.id===acknowledgment.noticeId);
@@ -46,21 +46,26 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   const order=event.ordering;
   const watermark=order.status==='known'?session.watermarks.find(item=>item.dimension===eventDimension&&item.epoch===order.epoch):undefined;
   if(order.status==='known'&&watermark&&order.sequence<=watermark.sequence)return {outcome:'stale',fresh:false};
+  const orderedActivity=eventDimension==='activity'&&watermark!==undefined;
   let ambiguous=false;
   if(previous&&event.turn.status==='known'&&session.turn.status==='known'&&!sameTurn(event.turn,session.turn)){
     const comparable=order.status==='known'&&previous.ordering.status==='known'&&order.epoch===previous.ordering.epoch;
     if(comparable&&previous.ordering.status==='known'&&order.sequence<=previous.ordering.sequence)return {outcome:'stale',fresh:false};
-    if(kind!=='turn.started'){
-      unavailable(session,'turn','ambiguous');remember();return {session,outcome:'ambiguous',fresh:false};
-    }
-    if(session.retiredTurns.length>=LIMITS.retiredTurns)return {outcome:'ambiguous',fresh:false,capacity:true};
-    const oldTurn=session.turn;session.retiredTurns.push(oldTurn.id);session.turn=event.turn;
     if(comparable){
+      if(session.retiredTurns.length>=LIMITS.retiredTurns)return {outcome:'ambiguous',fresh:false,capacity:true};
+      const oldTurn=session.turn;session.retiredTurns.push(oldTurn.id);session.turn=event.turn;
       for(const notice of session.notices)if(sameTurn(notice.turn,oldTurn))for(const consumer of consumers){
         if(consumer.clearOnNewTurn&&!notice.acknowledgedBy.includes(consumer.id))notice.acknowledgedBy.push(consumer.id);
       }
-    }else{ambiguous=true;unavailable(session,'ordering','ambiguous');}
-  }else if(session.turn.status==='unknown'&&event.turn.status==='known')session.turn=event.turn;
+    }else{
+      // Receipt order cannot select the current turn or retire either candidate.
+      session.turn={status:'unknown'};ambiguous=true;
+      unavailable(session,'turn','ambiguous');unavailable(session,'ordering','ambiguous');
+    }
+  }else if(session.turn.status==='unknown'&&event.turn.status==='known'){
+    if(session.unavailable.some(item=>item.dimension==='turn'&&item.reason==='ambiguous'))ambiguous=true;
+    else session.turn=event.turn;
+  }
   if(event.turn.status==='unknown')unavailable(session,'turn','missing');
   if(order.status==='unknown'){session.ordering={status:'unknown'};unavailable(session,'ordering','missing');}
   else{
@@ -70,7 +75,10 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     else session.watermarks.push({dimension:eventDimension,epoch:order.epoch,sequence:order.sequence});
   }
   if(event.parent.status!=='unknown'){
-    if(session.parent.status==='known'&&JSON.stringify(session.parent)!==JSON.stringify(event.parent)){unavailable(session,'parent','ambiguous');ambiguous=true;}
+    if(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous')){session.parent={status:'unknown'};ambiguous=true;}
+    else if(session.parent.status!=='unknown'&&JSON.stringify(session.parent)!==JSON.stringify(event.parent)){
+      session.parent={status:'unknown'};unavailable(session,'parent','ambiguous');ambiguous=true;
+    }
     else session.parent=event.parent;
   }
   if(event.label)session.label=event.label.value;
@@ -106,6 +114,12 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     }
     case 'read.observed':session.read=event.event.state;break;
     case 'evidence.unavailable':unavailable(session,event.event.dimension,event.event.reason);break;
+  }
+  if(eventDimension==='activity'){
+    const conflict=previous&&previous.activity!=='unknown'&&previous.activity!==session.activity&&!orderedActivity;
+    if(conflict||session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')){
+      session.activity='unknown';unavailable(session,'activity','ambiguous');ambiguous=true;
+    }
   }
   if(session.notices.length>LIMITS.notices||session.attention.length>LIMITS.attention||session.watermarks.length>LIMITS.watermarks)return {outcome:'ambiguous',fresh:false,capacity:true};
   session.lastEvidenceAtMs=now;session.observedAtMs=event.observedAtMs;remember();

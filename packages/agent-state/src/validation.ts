@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
 import {identityKey} from './memory-storage.js';
+import {childCounts} from './children.js';
 import type {DurableState,Session,Snapshot} from './types.js';
 
 const MAX_BYTES=16*1024*1024,MAX_NODES=1000000;
@@ -70,8 +71,7 @@ export function validateSnapshot(input:unknown):Validation<Snapshot>{
   return validate(input,snapshotCheck,snapshot=>sessionSemantics(snapshot.sessions)&&snapshot.sessions.every(session=>
     session.lastEvidenceAtMs<=snapshot.asOfMs&&session.observationAgeMs===snapshot.asOfMs-session.lastEvidenceAtMs&&
     session.freshness===(session.restartUncertain||session.observationAgeMs>=300000?'uncertain':'current')&&
-    (['current','uncertain'] as const).every(freshness=>session.children[freshness==='current'?'active':'uncertain']===snapshot.sessions.filter(child=>
-      child.parent.status==='known'&&identityKey(child.parent.identity)===identityKey(session.identity)&&child.activity==='active'&&child.freshness===freshness).length)));
+    (['active','uncertain'] as const).every(kind=>session.children[kind]===childCounts(snapshot.sessions,session.identity)[kind])));
 }
 /** V1 exports migrate without rewriting identity; unsupported versions fail closed. */
 export const migrateExport=validateExport;

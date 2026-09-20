@@ -1448,7 +1448,7 @@
               "client": "desktop",
               "hostId": "host",
               "sourceId": "source",
-              "sessionId": "caf\u00e9"
+              "sessionId": "café"
             },
             "turn": {
               "status": "known",
@@ -3130,6 +3130,834 @@
             "children": {
               "active": 7,
               "uncertain": 9
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "attributable-fresh-child",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "contradictory-child-activity-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-authoritative-count-for-contradictory-child",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-omitted-uncertain-child",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "activity",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ambiguous-parent-cannot-attribute-child",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "parent",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-count-for-ambiguous-parent",
+      "valid": false,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 1,
+              "uncertain": 0
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "active",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "parent",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-child-activity-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "unknown",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ambiguous-child-order-is-uncertain",
+      "valid": true,
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 1
+            }
+          },
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "child"
+            },
+            "turn": {
+              "status": "unknown"
+            },
+            "parent": {
+              "status": "known",
+              "identity": {
+                "provider": "codex",
+                "client": "desktop",
+                "hostId": "host",
+                "sourceId": "source",
+                "sessionId": "session"
+              }
+            },
+            "label": "Chosen label",
+            "activity": "idle",
+            "attention": [],
+            "notices": [],
+            "read": "unknown",
+            "unavailable": [
+              {
+                "kind": "evidence.unavailable",
+                "dimension": "ordering",
+                "reason": "ambiguous"
+              }
+            ],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
             }
           }
         ]

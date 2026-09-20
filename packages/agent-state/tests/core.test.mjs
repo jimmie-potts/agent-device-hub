@@ -1,10 +1,105 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAgentState, MemoryStorage} from '../dist/index.js';
+import {createAgentState, MemoryStorage, validateSnapshot} from '../dist/index.js';
+import {normalizeHook} from '../dist/providers.js';
 
 const identity={provider:'codex',client:'cli',hostId:'host-1',sourceId:'source-1',sessionId:'session-1'};
 const envelope=(kind,sequence=1,extra={})=>({apiVersion:'1.0',identity,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event:{kind},observedAtMs:1000,ordering:{status:'known',epoch:'epoch-1',sequence},...extra});
 const options=(storage,clock=()=>1000)=>({storage,ownerId:'owner-1',consumers:[{id:'pixoo',clearOnNewTurn:true},{id:'nanoleaf',clearOnNewTurn:false}],clock});
+const hook=(name,raw)=>normalizeHook(raw,{provider:'codex',client:'cli',hostId:identity.hostId,sourceId:identity.sourceId,hook:name},1000);
+
+test('child permission requests remain on the child established by its start',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  const raw={session_id:identity.sessionId,agent_id:'child',turn_id:'parent-turn'};
+  await owner.ingest(hook('SubagentStart',raw));await owner.ingest(hook('PermissionRequest',raw));
+  const sessions=owner.snapshot().sessions;
+  assert.equal(sessions.length,1);assert.equal(sessions[0].identity.sessionId,'child');
+  assert.equal(sessions[0].attention[0].kind,'approval');assert.deepEqual(sessions[0].attention[0].turn,{status:'unknown'});
+  await owner.shutdown();
+});
+
+test('an unordered turn cannot retire a turn supported by a later qualified sequence',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(envelope('turn.started',20));
+  await owner.ingest(envelope('turn.started',0,{turn:{status:'known',id:'old'},ordering:{status:'unknown'}}));
+  const result=await owner.ingest(envelope('turn.ended',21));
+  assert.notEqual(result.outcome,'stale');assert.equal(result.ok,true);
+  assert.ok(owner.snapshot().sessions[0].notices.some(notice=>notice.turn.id==='turn-1'));
+  await owner.shutdown();
+});
+
+test('unordered successive turns retain completion and expose an unknown current turn',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  for(const turn_id of ['turn-1','turn-3','turn-2'])await owner.ingest(hook('UserPromptSubmit',{session_id:identity.sessionId,turn_id}));
+  const result=await owner.ingest(hook('Stop',{session_id:identity.sessionId,turn_id:'turn-3'}));
+  assert.notEqual(result.outcome,'stale');
+  const session=owner.snapshot().sessions[0];
+  assert.deepEqual(session.turn,{status:'unknown'});
+  assert.ok(session.unavailable.some(item=>item.dimension==='turn'&&item.reason==='ambiguous'));
+  assert.ok(session.notices.some(notice=>notice.turn.id==='turn-3'));
+  await owner.shutdown();
+});
+
+for(const kind of ['attention.approval','attention.input','question.continuing','turn.ended'])test(`${kind} arriving before its newer turn start is retained without a retry`,async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(envelope('turn.started',1));await owner.ingest(envelope('turn.ended',2));
+  const turn={status:'known',id:'turn-2'};
+  const observation=envelope(kind,4,{turn,event:kind==='turn.ended'?{kind}:{kind,attention:{status:'known',id:'request'}}});
+  assert.equal((await owner.ingest(observation)).ok,true);
+  await owner.ingest(envelope('turn.started',3,{turn}));
+  const session=owner.snapshot().sessions[0];
+  assert.deepEqual(session.turn,turn);
+  if(kind==='turn.ended'){
+    assert.equal(session.activity,'idle');assert.ok(session.notices.some(notice=>notice.turn.id==='turn-2'));
+  }else assert.deepEqual(session.attention.map(item=>item.turn),[turn]);
+  assert.equal((await owner.ingest(observation)).outcome,'duplicate');
+  await owner.shutdown();
+});
+
+test('unordered child start and stop permutations yield the same uncertain count after restart',async()=>{
+  for(const names of [['SubagentStart','SubagentStop'],['SubagentStop','SubagentStart']]){
+    const storage=new MemoryStorage();const owner=await createAgentState(options(storage));
+    await owner.ingest(envelope('turn.started'));
+    const raw={session_id:identity.sessionId,agent_id:'child'};
+    for(const name of names)await owner.ingest(hook(name,raw));
+    for(const name of names)await owner.ingest(hook(name,raw));
+    const snapshot=owner.snapshot();
+    assert.deepEqual(snapshot.sessions[0].children,{active:0,uncertain:1});
+    assert.equal(snapshot.sessions[1].activity,'unknown');assert.equal(snapshot.sessions[1].freshness,'current');
+    assert.equal(validateSnapshot(snapshot).ok,true);
+    await owner.shutdown();const restored=await createAgentState(options(storage));
+    assert.deepEqual(restored.snapshot().sessions[0].children,{active:0,uncertain:1});
+    assert.equal(validateSnapshot(restored.snapshot()).ok,true);await restored.shutdown();
+  }
+});
+
+test('conflicting parent permutations cannot attribute a child to either parent',async()=>{
+  const other={...identity,sessionId:'other-parent'};
+  for(const parents of [[identity,other],[other,identity]]){
+    const storage=new MemoryStorage();const owner=await createAgentState(options(storage));
+    for(const parent of [identity,other])await owner.ingest(envelope('turn.started',1,{identity:parent}));
+    for(const [i,parent] of [...parents,parents[0]].entries())await owner.ingest(envelope('activity.observed',i+1,{identity:{...identity,sessionId:'child'},parent:{status:'known',identity:parent}}));
+    const snapshot=owner.snapshot();
+    for(const parent of snapshot.sessions.slice(0,2))assert.deepEqual(parent.children,{active:0,uncertain:0});
+    assert.deepEqual(snapshot.sessions[2].parent,{status:'unknown'});
+    assert.ok(snapshot.sessions[2].unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous'));
+    assert.equal(validateSnapshot(snapshot).ok,true);
+    await owner.shutdown();const restored=await createAgentState(options(storage));
+    assert.deepEqual(restored.snapshot().sessions[2].parent,{status:'unknown'});await restored.shutdown();
+  }
+});
+
+test('qualified child ordering gives the same idle count in either delivery order',async()=>{
+  const start=envelope('turn.started',1,{identity:{...identity,sessionId:'child'},parent:{status:'known',identity}});
+  const end={...start,event:{kind:'turn.ended'},ordering:{status:'known',epoch:'epoch-1',sequence:2}};
+  for(const events of [[start,end],[end,start]]){
+    const owner=await createAgentState(options(new MemoryStorage()));await owner.ingest(envelope('turn.started'));
+    for(const event of events)await owner.ingest(event);
+    assert.deepEqual(owner.snapshot().sessions[0].children,{active:0,uncertain:0});
+    assert.equal(owner.snapshot().sessions[1].activity,'idle');assert.equal(validateSnapshot(owner.snapshot()).ok,true);
+    await owner.shutdown();
+  }
+});
 
 test('restart restores committed labels and notices and requires fresh evidence',async()=>{
   const storage=new MemoryStorage();

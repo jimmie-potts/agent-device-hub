@@ -46,16 +46,29 @@ database private to its host. Never share a live database between Windows and WS
 
 The full provider, client, host, source and session tuple identifies a session.
 Project IDs and labels never merge sessions. Known child identity and parent
-evidence determine child counts; missing parentage remains unknown. A provider
+evidence determine child counts; missing parentage remains unknown. Conflicting
+parent selectors make parentage unknown and exclude that child from either
+parent's count. Missing or contradictory child activity contributes to the
+uncertain count. Observation freshness remains a separate field. A provider
 installation must qualify the separation of its root and child IDs before it
-enables collection. Child hooks do not reuse the parent's turn ID.
+enables collection. Any supported hook carrying `agent_id` identifies that child
+and its parent. The normalizer does not reuse the parent's turn ID for the child.
 
 Activity, continuing questions, blocked attention, completion notices, read
 evidence and unavailable evidence remain separate. An interruption or runtime
 end retains notices. An evidenced new turn clears prior-turn notices only for
 consumers configured with `clearOnNewTurn`. Without comparable ordering, the
-new observation is marked ambiguous and notice acknowledgment stays explicit.
+current turn becomes unknown when different known turns conflict, neither turn
+is permanently retired, and notice acknowledgment stays explicit. Contradictory
+unordered activity also becomes unknown. Further receipt alone cannot remove
+that ambiguity. Correlated attention and completion notices remain available
+under their original turn identities.
 Attention resolution requires matching known turn and attention IDs.
+
+A qualified sequence can establish a newer turn even when its first received
+observation is attention or completion. The owner retains that observation
+immediately. A delayed start cannot erase it or revive activity after a newer
+completion for the same turn.
 
 Known retired turns and per-dimension sequence watermarks reject stale changes.
 The last 256 validated deduplication keys per session suppress retries. Reuse of

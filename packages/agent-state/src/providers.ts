@@ -46,10 +46,11 @@ export function normalizeHook(raw:unknown,source:SourceConfiguration,nowMs:numbe
     const selected=parseSource(source),record=plain(raw);if(!selected||!record)return null;
     const sessionId=string(record,'session_id');if(!sessionId||!identifier.test(sessionId))return null;
     const childHook=selected.hook==='SubagentStart'||selected.hook==='SubagentStop';
+    const child=field(record,'agent_id');
     let identity:Identity,parent:Envelope['parent'],turn:Envelope['turn']=Object.freeze({status:'unknown'});
-    if(childHook){
-      const childId=string(record,'agent_id');
-      if(!childId||!identifier.test(childId)||childId===sessionId)return null;
+    if(childHook||child.state!=='missing'){
+      if(child.state!=='value'||typeof child.value!=='string'||!identifier.test(child.value)||child.value===sessionId)return null;
+      const childId=child.value;
       identity=selectIdentity(selected,childId);parent=Object.freeze({status:'known',identity:selectIdentity(selected,sessionId)});
       // Common prompt/turn fields describe the parent invocation, not a child turn.
     }else{

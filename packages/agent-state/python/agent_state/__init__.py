@@ -72,7 +72,15 @@ def _semantics(snapshot):
             return False
         children = {'active': 0, 'uncertain': 0}
         for child in snapshot['sessions']:
-            if child['parent']['status'] == 'known' and _identity(child['parent']['identity']) == key and child['activity'] == 'active':
+            if (child['parent']['status'] != 'known' or _identity(child['parent']['identity']) != key
+                    or any(item['dimension'] == 'parent' and item['reason'] == 'ambiguous' for item in child['unavailable'])):
+                continue
+            uncertain = child['activity'] == 'unknown' or any(
+                item['dimension'] == 'activity' or item['dimension'] in ('turn', 'ordering') and item['reason'] == 'ambiguous'
+                for item in child['unavailable'])
+            if uncertain:
+                children['uncertain'] += 1
+            elif child['activity'] == 'active':
                 children['active' if child['freshness'] == 'current' else 'uncertain'] += 1
         if session['children'] != children:
             return False

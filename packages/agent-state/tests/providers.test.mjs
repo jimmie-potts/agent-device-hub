@@ -5,13 +5,13 @@ import {normalizeHook,createEmitter} from '../dist/providers.js';
 import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
 
 const source=(hook='SessionStart',provider='codex')=>({provider,client:provider==='codex'?'cli':'code',hostId:'host',sourceId:'source',hook});
-const raw={session_id:'session',turn_id:'turn',prompt_id:'prompt',agent_id:'child'};
+const raw={session_id:'session',turn_id:'turn',prompt_id:'prompt'};
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
 for(const provider of ['codex','claude'])for(const [hook,kind] of Object.entries({SessionStart:'session.started',UserPromptSubmit:'turn.started',PermissionRequest:'attention.approval',Stop:'turn.ended',SessionEnd:'runtime.ended',SubagentStart:'session.started',SubagentStop:'turn.ended',...(provider==='codex'?{Interrupt:'turn.interrupted'}:{})})){
   test(`${provider} ${hook} maps only qualified lifecycle metadata`,()=>{
-    const value=normalizeHook(raw,source(hook,provider),1000);
+    const value=normalizeHook(hook.startsWith('Subagent')?{...raw,agent_id:'child'}:raw,source(hook,provider),1000);
     assert.equal(value.event.kind,kind);assert.equal(validateEvent(value).ok,true);
     assert.deepEqual(value.ordering,{status:'unknown'});
     assert.equal(value.identity.sourceId,'source');assert.equal(value.observedAtMs,1000);
@@ -24,6 +24,18 @@ for(const provider of ['codex','claude'])for(const [hook,kind] of Object.entries
     assert.ok(Object.isFrozen(value));assert.ok(Object.isFrozen(value.identity));
   });
 }
+
+for(const provider of ['codex','claude'])test(`${provider} child metadata identifies the child on every supported hook`,()=>{
+  for(const hook of ['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop',...(provider==='codex'?['Interrupt']:[])]){
+    const value=normalizeHook({...raw,agent_id:'child'},source(hook,provider),1000);
+    assert.equal(value.identity.sessionId,'child',hook);
+    assert.equal(value.parent.identity.sessionId,'session',hook);
+    assert.deepEqual(value.turn,{status:'unknown'},hook);
+    for(const agent_id of [null,'','bad child','session'])assert.equal(normalizeHook({...raw,agent_id},source(hook,provider),1000),null,hook);
+    let reads=0;const input={...raw};Object.defineProperty(input,'agent_id',{enumerable:true,get(){reads++;return 'child';}});
+    assert.equal(normalizeHook(input,source(hook,provider),1000),null,hook);assert.equal(reads,0);
+  }
+});
 
 test('private fields and getters never enter normalized transport metadata',()=>{
   let reads=0;const input={...raw,prompt:'PRIVATE_CANARY',title:'PRIVATE_CANARY',cwd:'/PRIVATE_CANARY',tool_input:{secret:'PRIVATE_CANARY'},event_id:'invented'};

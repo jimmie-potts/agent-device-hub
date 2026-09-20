@@ -4,6 +4,7 @@ import {reduceSession} from './reducer.js';
 import {Feeds} from './subscriptions.js';
 import {validateExport} from './validation.js';
 import {identityKey} from './memory-storage.js';
+import {childCounts} from './children.js';
 import {LIMITS, type Consumer, type DurableState, type Envelope, type Identity, type Outcome,
   type Session, type Snapshot, type Storage, type StorageLease, type Commit} from './types.js';
 export * from './types.js';
@@ -163,17 +164,13 @@ export async function createAgentState(options:Options) {
     },
     snapshot():Snapshot{
       const at=now();
-      return freeze({apiVersion:'1.0',revision:data.revision,asOfMs:at,collector,lossCount,sessions:data.sessions.map(session=>{
+      const sessions:Snapshot['sessions']=data.sessions.map(session=>{
         const {seen,watermarks,retiredTurns,...visible}=structuredClone(session);
         const age=Math.max(0,at-session.lastEvidenceAtMs),restartUncertain=restarted.has(identityKey(session.identity));
-        const children={active:0,uncertain:0};
-        for(const child of data.sessions){
-          if(child.parent.status!=='known'||identityKey(child.parent.identity)!==identityKey(session.identity))continue;
-          if(child.activity!=='active')continue;
-          if(restarted.has(identityKey(child.identity))||at-child.lastEvidenceAtMs>=LIMITS.staleMs)children.uncertain++;else children.active++;
-        }
-        return {...visible,observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain' as const:'current' as const,restartUncertain,children};
-      })});
+        return {...visible,observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
+      });
+      for(const session of sessions)session.children=childCounts(sessions,session.identity);
+      return freeze({apiVersion:'1.0',revision:data.revision,asOfMs:at,collector,lossCount,sessions});
     },
     journal(){const at=now();return freeze(structuredClone(data.journal.filter(row=>row.atMs>at-LIMITS.journalAgeMs).slice(-LIMITS.journalEvents)));},
     maintain(){return queue(()=>commit(undefined,'maintenance'));},
