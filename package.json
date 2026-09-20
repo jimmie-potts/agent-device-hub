@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -32,7 +32,13 @@
     "test:lifecycle:built": "node --test packages/lifecycle-contracts/tests/*.test.mjs",
     "test:lifecycle:package:built": "node scripts/package-lifecycle.mjs --test",
     "test:performance": "python scripts/check-performance.py && node scripts/check-performance-validators.mjs",
-    "test:performance:linux": "/usr/bin/python3 -B -m unittest discover -s tests/performance_linux -v"
+    "test:performance:linux": "/usr/bin/python3 -B -m unittest discover -s tests/performance_linux -v",
+    "test:agent-state": "npm run build && npm run test:agent-state:built",
+    "test:agent-state:built": "node --test packages/agent-state/tests/*.test.mjs",
+    "test:agent-state:python": "python3 scripts/check-agent-state.py",
+    "package:agent-state": "npm run build && node scripts/package-agent-state.mjs",
+    "test:agent-state:package": "npm run build && npm run test:agent-state:package:built",
+    "test:agent-state:package:built": "node scripts/package-agent-state.mjs --test"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",
@@ -44,6 +50,7 @@
   "workspaces": [
     "packages/contracts",
     "packages/mcp",
-    "packages/lifecycle-contracts"
+    "packages/lifecycle-contracts",
+    "packages/agent-state"
   ]
 }

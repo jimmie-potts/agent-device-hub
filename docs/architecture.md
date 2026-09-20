@@ -1,7 +1,8 @@
 # Shared architecture
 
-Status: Accepted direction. Controller contracts and reusable MCP are implemented;
-collectors, shared agent-state runtime and standalone hosting remain in the backlog.
+Status: Accepted direction. Controller contracts, reusable MCP, and the shared
+agent-state package with source emitters are implemented. Production collector
+hosting, device-feed adoption and standalone hosting remain in the backlog.
 The fresh Nanoleaf Linux runtime has merged source in
 [Nanoleaf PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57), revision
 `2558df5a2fc543247b0c75898ef0260ba3ea264b`. Installed acceptance remains open
@@ -156,18 +157,29 @@ Qualify the native Windows helper needed by PC lighting separately.
 Share JSON contracts and fixtures across languages and implement the shared
 status interpreter once.
 
-Implemented shared packages are packages/contracts, packages/mcp and the pure
-packages/lifecycle-contracts validators. The [lifecycle contract](agent-lifecycle-contract.md)
+Implemented shared packages are packages/contracts, packages/mcp, packages/agent-state
+and the pure packages/lifecycle-contracts validators. The [lifecycle contract](agent-lifecycle-contract.md)
 and [provider matrix](provider-qualification.md) establish metadata and source evidence,
-without claiming installed producer qualification. The remaining
-proposed layout is packages/agent-state,
-integrations/codex, integrations/claude, adapters/nanoleaf, adapters/pixoo,
+without claiming installed producer qualification. Provider normalizers and bounded
+emitters live in packages/agent-state/src/providers.ts; the silent source hook is
+packages/agent-state/bin/hook.mjs. The remaining proposed layout is
+adapters/nanoleaf, adapters/pixoo,
 apps/hub, apps/dashboard, controllers/tidbyt, controllers/lifx and
 controllers/pc-lighting. The controller directories contain documents only;
 the other paths remain proposed.
 Use Node 24 and npm workspaces when executable packages are introduced.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
+
+The [agent-state API](../packages/agent-state/README.md) owns deterministic
+reduction, immutable snapshots, independent consumer queues and versioned
+export/import. Its host storage boundary requires an exclusive lease and atomic
+revision-checked commits. Current records, chosen labels and notices survive
+journal retention. The journal retains the newest 10,000 events within 24 hours,
+with pruning on writes, startup and an idle timer. The in-memory reference store
+is a test adapter; Pixoo #31 supplies production durability and access controls.
+Observation age and restart uncertainty remain separate from collector health.
+The core sends no device commands, regardless of Media/Free modes.
 
 The MCP module exports an HTTP handler and configured service/tool registration.
 The owning application enables and mounts it; the module never opens a listener

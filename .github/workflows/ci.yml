@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
@@ -31,16 +31,17 @@ jobs:
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'
         run: |
+          sudo apt-get update
           sudo apt-get install -y bubblewrap apparmor-profiles
           sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
           npm run test:performance:linux
   contracts:
-    name: Contracts Python ${{ matrix.python }} on ${{ matrix.os }}
+    name: Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
         python: ['3.12', '3.14']
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
@@ -63,12 +64,18 @@ jobs:
       - run: npm run test:contracts:python
       - run: npm run test:performance
       - run: npm run test:package:built
+      - run: npm run test:lifecycle:built
+      - run: npm run test:lifecycle:python
+      - run: npm run test:lifecycle:package:built
+      - run: npm run test:agent-state:built
+      - run: npm run test:agent-state:python
+      - run: npm run test:agent-state:package:built
   mcp:
     name: MCP on ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     steps:
@@ -83,31 +90,3 @@ jobs:
       - run: npm run test:mcp:built
       - run: npm run test:mcp:protocol:built
       - run: npm run test:mcp:package:built
-
-  lifecycle:
-    name: Lifecycle Python ${{ matrix.python }} on ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ['3.12', '3.14']
-    timeout-minutes: 10
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: '24'
-          cache: npm
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: requirements-contracts.txt
-      - run: npm ci
-      - run: python -m pip install -r requirements-contracts.txt
-      - run: npm run build
-      - run: npm run typecheck
-      - run: npm run test:lifecycle:built
-      - run: npm run test:lifecycle:python
-      - run: npm run test:lifecycle:package:built

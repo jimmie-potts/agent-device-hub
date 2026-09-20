@@ -204,8 +204,12 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('CI validates PRs once and retains every platform and suite', () => {
+test('CI runs five Ubuntu jobs and retains every suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
+  const guide = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
+  const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
+    + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 5, 'normal CI must run exactly five jobs');
   assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -213,15 +217,13 @@ test('CI validates PRs once and retains every platform and suite', () => {
   });
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built'],
-    lifecycle: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
-    contracts: 'Contracts Python ${{ matrix.python }} on ${{ matrix.os }}',
+    contracts: 'Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}',
     mcp: 'MCP on ${{ matrix.os }}',
-    lifecycle: 'Lifecycle Python ${{ matrix.python }} on ${{ matrix.os }}',
   };
   assert.deepEqual(ci.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs), Object.keys(suites));
@@ -233,7 +235,7 @@ test('CI validates PRs once and retains every platform and suite', () => {
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
       { uses: 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', with: { 'node-version': '24', cache: 'npm' } },
     ];
-    if (['contracts', 'lifecycle'].includes(id)) expectedSetup.push({
+    if (id === 'contracts') expectedSetup.push({
       uses: 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
       with: { 'python-version': '${{ matrix.python }}', cache: 'pip', 'cache-dependency-path': 'requirements-contracts.txt' },
     });
@@ -245,8 +247,8 @@ test('CI validates PRs once and retains every platform and suite', () => {
     assert.equal(job['timeout-minutes'], 10);
     assert.equal(job.strategy['fail-fast'], false);
     assert.deepEqual(job.strategy.matrix, {
-      os: ['ubuntu-latest', 'windows-latest'],
-      ...(['contracts', 'lifecycle'].includes(id) ? { python: ['3.12', '3.14'] } : {}),
+      os: ['ubuntu-latest'],
+      ...(id === 'contracts' ? { python: ['3.12', '3.14'] } : {}),
     });
     assert.equal(job.if, undefined, 'all matrix jobs must run');
     assert.equal(job.concurrency, undefined, 'matrix siblings must not cancel each other');
@@ -254,13 +256,13 @@ test('CI validates PRs once and retains every platform and suite', () => {
     assert.deepEqual(linuxSteps, id === 'workflow' ? [{
       name: 'Check isolated Linux hook qualification',
       if: "runner.os == 'Linux'",
-      run: 'sudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\n',
+      run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\n',
     }] : []);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 10);
+  assert.equal(builds, 3);
 });
 
 const builtPayloads = {
@@ -271,6 +273,8 @@ const builtPayloads = {
   'test:mcp:package': 'node scripts/package-mcp.mjs --test',
   'test:lifecycle': 'node --test packages/lifecycle-contracts/tests/*.test.mjs',
   'test:lifecycle:package': 'node scripts/package-lifecycle.mjs --test',
+  'test:agent-state': 'node --test packages/agent-state/tests/*.test.mjs',
+  'test:agent-state:package': 'node scripts/package-agent-state.mjs --test',
 };
 
 test('built variants retain every original test payload and standalone build', () => {

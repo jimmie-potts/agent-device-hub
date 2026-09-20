@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   752
+   606
   ],
   "views": [
    {
@@ -72,38 +72,23 @@
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Qualified signal, bounded hook",
-   "to": 320
-  },
-  {
-   "from": 324,
-   "label": "Shared interpretation and delivery",
-   "to": 466
-  },
-  {
-   "from": 470,
-   "label": "Stale cursor or reconnect",
-   "to": 568
-  },
-  {
-   "from": 572,
-   "label": "Acknowledgment",
-   "to": 670
+   "from": 154,
+   "label": "Observation, state and planned presentation",
+   "to": 528
   }
  ],
  "messages": [
   {
    "from": "provider",
    "to": "emitter",
-   "y": 210,
+   "y": 186,
    "label": "lifecycle event (turn end, attention, notice)",
    "variant": "emphasis"
   },
   {
    "from": "emitter",
    "to": "core",
-   "y": 254,
+   "y": 222,
    "label": "submit allowlisted metadata + neutral IDs",
    "variant": "emphasis",
    "note": "prompts, transcripts, tool content and titles are excluded"
@@ -111,85 +96,68 @@
   {
    "from": "emitter",
    "to": "provider",
-   "y": 298,
+   "y": 258,
    "label": "return within bound (even if core is down)",
    "variant": "return"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 356,
-   "label": "change event, revision N (activity · attention · notice · freshness)",
+   "y": 294,
+   "label": "revision N notification; consumer reads current snapshot",
    "variant": "emphasis"
   },
   {
    "from": "controller",
    "to": "device",
-   "y": 400,
-   "label": "render for native mode; queue writes only if generation g is still current",
+   "y": 330,
+   "label": "mode + ownership; render; check generation g at write",
    "variant": "emphasis",
    "note": "skipped while Media/Free or an external owner holds the device"
   },
   {
    "from": "device",
    "to": "controller",
-   "y": 444,
+   "y": 366,
    "label": "sent (transport only, not optical proof)",
    "variant": "return"
   },
   {
    "from": "controller",
    "to": "core",
-   "y": 502,
+   "y": 402,
    "label": "read with expired cursor",
    "variant": "dashed"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 546,
+   "y": 438,
    "label": "resync: authoritative snapshot, no replayed effects",
    "variant": "return"
   },
   {
    "from": "user",
    "to": "core",
-   "y": 604,
+   "y": 474,
    "label": "acknowledge notice",
    "variant": "security"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 648,
-   "label": "revision N+1: notice cleared (owner state, not a read receipt)",
+   "y": 510,
+   "label": "revision N+1: notice acknowledged for the selected consumer",
    "variant": "emphasis"
   }
  ],
  "cards": [
   {
-   "dot": "cyan",
-   "title": "Bounded and fail-open",
-   "items": [
-    "The hook returns inside its budget whether or not the collector or device answers",
-    "Collector or device failure never changes agent permissions or holds work"
-   ]
-  },
-  {
    "dot": "violet",
-   "title": "Distinct facts",
+   "title": "Evidence and hosting",
    "items": [
-    "Activity, attention, notices, acknowledgment, optional read evidence and freshness stay separate",
-    "Turn end proves neither success nor readership",
-    "Five minutes without evidence marks a session uncertain, not failed"
-   ]
-  },
-  {
-   "dot": "amber",
-   "title": "Planned, not final",
-   "items": [
-    "Schemas and endpoints belong to Hub #2/#3 and Pixoo #31",
-    "Controller-v1 cursors are not silently reused for the agent-state feed"
+    "Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.",
+    "Lifecycle 1.0 and agent-state 1.0 define the source APIs. Pixoo #31 owns production hosting."
    ]
   }
  ]

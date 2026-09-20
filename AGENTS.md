@@ -14,8 +14,10 @@ launched from the repository root. These directories currently contain documents
 only. Before shared package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
-Controller contracts, pure TypeScript/Python conformance consumers and reusable MCP are implemented.
-Do not describe the proposed core, standalone host, adapters or UI as implemented. Planning/review is read-only unless
+Controller contracts, pure TypeScript/Python conformance consumers, reusable MCP,
+and the shared agent-state package with source emitters are implemented.
+Production host storage adapters, installed hooks, standalone hosting, device
+adapters and UI remain separate work. Planning/review is read-only unless
 the user explicitly authorizes document or tracker changes. Preserve that scope;
 planning writes do not authorize implementing the planned features.
 
@@ -39,7 +41,12 @@ exception in docs/sdlc.md; read its evidence requirements before merge or closur
 scope, head and base before a squash merge guarded by --match-head-commit.
 Never use --admin. Read all applicable merged-revision main CI jobs before issue closure;
 for a guide-only filtered revision, record the docs/sdlc.md exception evidence.
-UI changes additionally require explicit human approval of the current candidate.
+UI changes to the cross-project work guide under docs/work-guide/, including
+its generated HTML and architecture viewers, do not require human approval.
+All other UI changes require explicit human approval of the current candidate,
+renewed after changes to that UI. Mixed changes retain approval for UI outside
+the guide. Read the [UI approval scope](docs/sdlc.md#ui-approval-scope) for the
+boundary and evidence.
 
 For workflow/OpenSpec changes, use Node 24 and run npm ci for setup, then
 npm run check:workflow and npm run test:workflow from the assigned worktree root.
@@ -53,6 +60,11 @@ For MCP changes, read packages/mcp/README.md and run npm run test:mcp,
 npm run test:mcp:protocol and npm run test:mcp:package in addition to the shared
 build/type/contract/workflow checks. All must exit zero. Report installed-client
 and physical acceptance separately from fake service and loopback HTTP tests.
+For agent-state changes, read packages/agent-state/README.md and run
+npm run test:agent-state, npm run test:agent-state:python and
+npm run test:agent-state:package, plus the shared build/type, controller,
+lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
+Source tests do not qualify a production storage adapter or installed provider.
 Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.
