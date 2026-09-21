@@ -227,12 +227,13 @@ D3 = seq(
         {'id': 'device', 'type': 'external', 'label': 'Device', 'sublabel': 'Pixoo / Nanoleaf / …'},
     ],
     steps=[
-        ('seg', 'Observation, state and planned presentation'),
+        ('seg', 'Observation and explicit presentation'),
         ('msg', 'provider', 'emitter', 'lifecycle event (turn end, attention, notice)', 'emphasis'),
         ('msg', 'emitter', 'core', 'submit allowlisted metadata + neutral IDs', 'emphasis', 'prompts, transcripts, tool content and titles are excluded'),
         ('msg', 'emitter', 'provider', 'return within bound (even if core is down)', 'return'),
         ('msg', 'core', 'controller', 'revision N notification; consumer reads current snapshot', 'emphasis'),
-        ('msg', 'controller', 'device', 'mode + ownership; render; check generation g at write', 'emphasis', 'skipped while Media/Free or an external owner holds the device'),
+        ('msg', 'user', 'controller', 'explicit native mode/view command; guard revision + generation', 'security'),
+        ('msg', 'controller', 'device', 'selected view → sole queue; check generation g at write', 'emphasis', 'Pixoo Monitor pauses media; Media never receives monitor pictures'),
         ('msg', 'device', 'controller', 'sent (transport only, not optical proof)', 'return'),
         ('msg', 'controller', 'core', 'read with expired cursor', 'dashed'),
         ('msg', 'core', 'controller', 'resync: authoritative snapshot, no replayed effects', 'return'),
@@ -240,7 +241,7 @@ D3 = seq(
         ('msg', 'core', 'controller', 'revision N+1: notice acknowledged for the selected consumer', 'emphasis'),
     ],
     cards=[
-        {'dot': 'violet', 'title': 'Evidence and hosting', 'items': ['Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.', 'Pixoo #31 hosts durable state; #32 adds exact RGB preview. Device integration remains with #33.']},
+        {'dot': 'violet', 'title': 'Evidence and hosting', 'items': ['Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.', 'Pixoo #31 hosts state; #32 renders exact RGB; #33 candidate connects explicit Monitor/Media. Installed acceptance remains #34.']},
     ],
     views=[
         {'id': 'ingest', 'label': 'Ingest', 'focus': ['provider', 'emitter', 'core'], 'note': 'Small, filtered, bounded.'},
@@ -567,8 +568,8 @@ DIAGRAMS = [
                   'The controller checks native mode and manual ownership before rendering; the queue checks the generation again right before writing. “Sent” is transport evidence only.',
                   'A stale cursor gets one authoritative resync without replayed effects. A user acknowledgment changes owner state; it does not invent a provider read receipt.'],
          boundaries=['Activity, attention, notices, acknowledgment, optional provider read evidence and freshness stay distinct. Turn end proves neither success nor readership. Nanoleaf uses explicit shared selection, steady stale colors and consumer-only clear-on-new-turn; installed cutover remains separate.',
-                     'Lifecycle 1.0 defines the envelope; released [[H3]] supplies versioned snapshots, bounded revision notifications and consumer-scoped acknowledgment. [[P31]] implements the authenticated endpoint and durable storage adapter. [[P32]] projects snapshots into exact RGB previews with bounded generation publication; [[P33]] retains device integration. [[P61]] owns deferred numeric qualification.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
+                     'Lifecycle 1.0 defines the envelope; released [[H3]] supplies versioned snapshots, bounded revision notifications and consumer-scoped acknowledgment. [[P31]] implements the authenticated endpoint and durable storage adapter. [[P32]] projects snapshots into exact RGB previews with bounded generation publication; [[P33]] has a candidate for explicit Monitor/Media, selected filters and one generation-guarded writer; [[P34]] retains integrated acceptance. [[P61]] owns deferred numeric qualification.'],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H2', 'H3', 'P29', 'P31', 'N29', 'P32', 'P33']),
     dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented',
          status_label='Implemented source; installed and physical acceptance open', short='Nanoleaf command admission',
@@ -621,7 +622,7 @@ DIAGRAMS = [
          boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Standalone hosting and installed cutover remain with [[H5]] and [[H8]].',
                      'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
                      'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
+         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H5', 'H8', 'P31', 'N29']),
 ]
 assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)

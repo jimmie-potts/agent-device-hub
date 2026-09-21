@@ -1,9 +1,9 @@
 {
-  "reviewedAt": "2026-09-21T00:01:06.762337+00:00",
+  "reviewedAt": "2026-09-21T18:13:41.768938+00:00",
   "sourceRevisions": {
     "agent-device-hub": "f59c2046fed623221c7c3a5bffb3924c07f43919",
     "codex-nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f",
-    "divoom-app-upgrade": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25"
+    "divoom-app-upgrade": "0f6415f65dfe971b04b23bc178c4217dd15db24a"
   },
   "files": [
     {
@@ -92,37 +92,37 @@
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "docs/local-mcp.md",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/docs/local-mcp.md",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/local-mcp.md",
       "sha256": "dec26180ee94fecd6262202dbdd5ae46af1619b235fb12e710caf3cc8d95acfa"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "docs/playback.md",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/docs/playback.md",
-      "sha256": "6047eb85ab4d540d8b05d575a15d225341b902a1410c3e2bf1d1edde010bf303"
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/playback.md",
+      "sha256": "a7ebadc623d4fdf7da349c3494c6ba579a8014c3dae13ae048af61e322b3ff58"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "docs/hub-integration.md",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/docs/hub-integration.md",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/hub-integration.md",
       "sha256": "4e0264237dfd0311f52d26de6653b6e7cbed00db1acbb37bc80caa9fb18a6673"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "apps/server/src/mcp.ts",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/apps/server/src/mcp.ts",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/apps/server/src/mcp.ts",
       "sha256": "6febb89813b1ad8928c7a8fd826ec4650b12a27603b62d2006310b0f9bd0f121"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "apps/server/src/mcp-tools.ts",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/apps/server/src/mcp-tools.ts",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/apps/server/src/mcp-tools.ts",
       "sha256": "184bdf79eb68cfaab8a647e1fd364d7f728031110359755284daef431f04bfaa"
     },
     {
@@ -155,38 +155,38 @@
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "apps/server/src/controller-state.ts",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/apps/server/src/controller-state.ts",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/apps/server/src/controller-state.ts",
       "sha256": "9843426e19b34ad7da0b1a436530de22be9a97bfa3ddeacc8c6cf8d4eba70187"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "apps/server/src/controller.ts",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/apps/server/src/controller.ts",
-      "sha256": "ce70984a1d396810eaeb233f11b13b2a322835dd7319723d7437c2f059a941fe"
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/apps/server/src/controller.ts",
+      "sha256": "88f77411be8d4a85e0a0510204872cfa020ad28c6fadde705a136eac0376e401"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "docs/hub-controller-api.md",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/docs/hub-controller-api.md",
-      "sha256": "05a8f21e3bf8112b9f2f0abc369b26de5162ae032a7227d41801ae14b602e0e3"
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/hub-controller-api.md",
+      "sha256": "990b4d624a31378c04e6aaa8a3a61346e8723e9292fd4a16ef006c885df94f3e"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "packages/playback/src/player.ts",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/packages/playback/src/player.ts",
-      "sha256": "eb43af380b6e7bb3a459edec9adba49a9c2514f7d66e425ade3ece1356373178"
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/packages/playback/src/player.ts",
+      "sha256": "7200a69d7fca7a13c0c3f9d082e482ce02c7a1d7a90bc16eeedc2c8961e76275"
     },
     {
       "repo": "divoom-app-upgrade",
-      "revision": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
       "path": "docs/agent-monitoring.md",
-      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/9bd99c1b2ec1759cc70eedd5644e585627d3fd25/docs/agent-monitoring.md",
-      "sha256": "eb32f4b09c7ea121d2f0078682db98cd315020859963835c85ce06efc96b6966"
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/agent-monitoring.md",
+      "sha256": "e946d7b1b11037576acac93b46af11f737ba5f2af84287436e7f579562a80912"
     },
     {
       "repo": "codex-nanoleaf",
@@ -201,8 +201,29 @@
       "revision": "5375a3088522507c7f207c6e9c824454db1e1d5f",
       "url": "https://github.com/jimmie-potts/codex-nanoleaf/blob/5375a3088522507c7f207c6e9c824454db1e1d5f/bridge/shared_input.py",
       "sha256": "7618d8ac7455dd01447122b06541cee779be0c8b10e0903e84f16d1397ed3dcc"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "path": "apps/server/src/monitor-presentation.ts",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/apps/server/src/monitor-presentation.ts",
+      "sha256": "baad8da59aed79162bf57d65df62e506a37ad903060160e2b99fb103b03a5b40"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "path": "packages/core/src/integration.ts",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/packages/core/src/integration.ts",
+      "sha256": "6012ccaf65cb97e3663a1a1084f831b8ecc221f6364342cfc9f0ebbadbcedfd7"
+    },
+    {
+      "repo": "divoom-app-upgrade",
+      "path": "docs/decisions/0018-monitor-display-ownership.md",
+      "revision": "0f6415f65dfe971b04b23bc178c4217dd15db24a",
+      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/0f6415f65dfe971b04b23bc178c4217dd15db24a/docs/decisions/0018-monitor-display-ownership.md",
+      "sha256": "dbe66c9c9c41fbeb428b853b87ef6c252c7d5375f0f8e171a3fad64dfdfd1715"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
-  "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display."
+  "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display. Pixoo #33 candidate pins use PR #64 head 0f6415f65dfe971b04b23bc178c4217dd15db24a. Its source review and merge remain pending. No installation or physical acceptance is claimed."
 }

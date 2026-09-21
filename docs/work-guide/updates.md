@@ -1,5 +1,20 @@
 # Guide maintenance history
 
+## 2026-09-21 UTC: Pixoo #33 source candidate
+
+The Pixoo #33 coordinator owns this companion. The source candidate adds the
+Monitor panel, owner-backed labels/notices and project/session filters, exact
+RGB preview, explicit Monitor/Media activation and guarded uploads through the
+existing Player and adapter. Its finite protected integration extension leaves
+shared controller v1 and existing MCP tools unchanged.
+
+Source merge, hosted checks and issue closure remain pending. Before this
+companion is finalized, refresh authoritative history/backlogs, pin the reviewed
+source and update the agent-state diagram's presentation boundary. Installed
+acceptance remains Pixoo #34. No device operation, public publication or live
+verification is included. Generation, maintenance, browser/print checks and
+independent reviews remain pending for this candidate.
+
 ## 2026-09-21 UTC: Nanoleaf #49 integration extension source
 
 [Nanoleaf PR #63](https://github.com/jimmie-potts/codex-nanoleaf/pull/63)
