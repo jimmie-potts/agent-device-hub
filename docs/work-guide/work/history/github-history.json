@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-21T20:50:46.329629+00:00",
+ "fetchedAt": "2026-09-21T21:31:21.701874+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T20:47:39Z",
+   "pushedAt": "2026-09-21T21:27:41Z",
    "defaultBranch": "main",
-   "headSha": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
-   "mainCommitCount": 48,
+   "headSha": "ee1eac1608d1cff72293a6627da4685f951f241f",
+   "mainCommitCount": 50,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "ee1eac1608d1cff72293a6627da4685f951f241f",
+     "date": "2026-09-21T21:27:41Z",
+     "message": "Host local MCP session and controller tools in the standalone hub (#126)"
+    },
+    {
+     "sha": "a639e0a8ca79c1651e3acb9190c565af1c9c7fa9",
+     "date": "2026-09-21T20:55:49Z",
+     "message": "Reconcile completed Linux host delivery in the work guide (#125)"
+    },
     {
      "sha": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
      "date": "2026-09-21T20:47:39Z",
@@ -627,9 +637,33 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/124",
      "base": "main",
      "mergedAt": "2026-09-21T19:48:42Z"
+    },
+    {
+     "number": 125,
+     "title": "Reconcile completed Linux host integration and migration in the guide",
+     "createdAt": "2026-09-21T20:53:45Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/125",
+     "base": "main",
+     "mergedAt": "2026-09-21T20:55:50Z"
+    },
+    {
+     "number": 126,
+     "title": "Host local MCP session and controller tools in the standalone hub",
+     "createdAt": "2026-09-21T21:15:27Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/126",
+     "base": "main",
+     "mergedAt": "2026-09-21T21:27:42Z"
     }
    ],
-   "openPRs": [],
+   "openPRs": [
+    {
+     "number": 127,
+     "title": "Add BUNNY activity and component integration dashboard",
+     "createdAt": "2026-09-21T21:19:43Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
+     "base": "main"
+    }
+   ],
    "closedIssues": [
     {
      "number": 1,
@@ -678,6 +712,14 @@
      "createdAt": "2026-09-07T02:24:04Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
+    },
+    {
+     "number": 13,
+     "title": "Host shared MCP discovery and agent-status tools in the standalone hub",
+     "closedAt": "2026-09-21T21:31:11Z",
+     "createdAt": "2026-09-07T03:58:51Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/13"
     },
     {
      "number": 14,
@@ -760,7 +802,7 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 60,
+   "openIssueCount": 59,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-21T19:37:29Z"
