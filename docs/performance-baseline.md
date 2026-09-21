@@ -269,7 +269,7 @@ legacy failure output is not the future producer's required silent behavior.
 Future consumers have explicit design caps of 128 pending events and 256 KiB
 queued bytes, with a 2 KiB event maximum, bounded loss reporting and resync.
 Rendering is capped at 20 Hz, one update per 50 ms, independent of immediate
-hook return. A service process has a 128 MiB RSS cap. These limits provide
+hook return. A service process has a 256 MiB RSS cap. These limits provide
 bounded headroom above the tested 50-event burst; the legacy measurement does
 not implement or verify these queues, a complete Node service, or rendering.
 Integrated qualification must prove those caps before release.
@@ -315,3 +315,18 @@ Configured hosted CI gates still apply until a separately reviewed CI change
 replaces them. This delivery adds one short Linux correctness step to the existing workflow
 job and retains all other configured gates. It does not deliver repository-wide
 Windows removal or broader CI cost reduction.
+
+
+## September 21, 2026: service memory budget revision
+
+The owner explicitly increased the Linux/WSL service RSS constraint from 128 MiB
+to 256 MiB during Hub #5. This changes the service memory budget only; hook
+latency, CPU and child-RSS ceilings, queue limits, deadlines and rendering cadence
+retain their existing values. The budget file is `docs/performance/linux-budgets.json`.
+
+The earlier Hub measurements remain failed against their recorded 128 MiB limit.
+A larger budget does not demonstrate reduced memory use or complete integrated
+qualification. [Hub #123](https://github.com/jimmie-potts/agent-device-hub/issues/123)
+tracks budget re-evaluation, allocation profiling and measured memory improvements.
+It is backlog work, not a prerequisite for Hub #5. New measurements use 256 MiB
+and retain their own limits and results. Final integrated qualification remains #30.

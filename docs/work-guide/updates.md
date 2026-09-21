@@ -1,5 +1,36 @@
 # Guide maintenance history
 
+## September 21, 2026: Owner-approved service memory budget
+
+The owner doubled the Linux/WSL service RSS constraint from 128 to 256 MiB.
+[Hub #123](https://github.com/jimmie-potts/agent-device-hub/issues/123) now tracks
+budget re-evaluation and measured memory improvements as non-blocking backlog
+work. The budget artifact, baseline explanation and host documentation record
+the decision; all historical failed receipts remain unchanged. A fresh 9,000-sample
+API run passed the revised memory check with 164.64 MiB peak RSS. This does
+not establish full integrated qualification or complete Hub #5.
+
+Refreshed all backlog inputs, added #123 to the shared-Codex guide and roadmap,
+and retained the merged Pixoo #33 source/diagram updates. The budget revision
+changes no device ownership or command flow, so it needs no further diagram
+changes. Guide generation, maintenance/browser checks and source review are
+recorded in PR #121. Public publication remains separate and pending.
+
+## September 21, 2026: Initial Hub #5 Linux host candidate
+
+The owner selected Linux in WSL and excluded native Windows runtime work.
+Issue #5 now records that decision and is in progress. The original five
+prerequisites and Nanoleaf #49 were closed; Pixoo #33 was still open at this initial checkpoint. The active
+`gh-5-hub-host` candidate has not merged or completed migration acceptance.
+
+Refreshed all three backlog inventories and updated the shared-hosting row.
+The existing diagrams still correctly mark standalone hosting as planned, so
+no topology or architecture-source receipt changes are made. Generated guide
+validation is recorded in the candidate PR. Installation, devices, public
+publication and live-site verification are outside this source-only delivery.
+
+The same snapshot records Hub #49 closed. Its placeholder is removed from open guide and timeline coverage; this is a tracker reconciliation, not evidence that a connector was implemented. The regenerated guide covers 99 open issues and passed five maintenance tests and the browser check.
+
 ## 2026-09-21 UTC: Pixoo #33 monitor controls delivered
 
 [Pixoo PR #64](https://github.com/jimmie-potts/divoom-app-upgrade/pull/64)
@@ -40,6 +71,7 @@ Installed-client and physical acceptance remain Pixoo #34. No device operation
 or installation occurred. Public publication is outside this delivery; the
 public landing page still matches the previously published source `950f7f6`
 and SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
+
 ## 2026-09-21 UTC: Public guide verification and publication preparation
 
 The user authorized publication of the central BUNNY UI planning from
