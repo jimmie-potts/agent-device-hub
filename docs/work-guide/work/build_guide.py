@@ -55,6 +55,8 @@ GUIDES = [
              ['06 / Integrated qualification and acceptance', '[[H30]] [[H9]] [[P34]] [[N30]]', 'Complete cross-project source evidence, then installed-client and physical acceptance. This is the final stage of Hub #30.'],
          ], notes=[
              'The shared state implementation belongs in the hub from the start, even while Pixoo hosts it. Each device keeps its own rendering, private state, and writer.',
+             '[[H6]] establishes the central BUNNY UI using the approved Nanoleaf visual language. Current and future user-facing components join consistent navigation and reusable status, settings and supported-control views. A third synthetic component verifies differing capabilities; new production integrations retain their own API, UI and acceptance work.',
+             'Routine supported integration operations stay in the central UI. Advanced wall and playlist editors remain linked initially. [[H31]] later extends the same application with general controls; full editor migration and exact previews retain separate scope.',
              '[[H30]] deliberately spans two stages. Its <strong>early budget artifact</strong> informs implementation; its <strong>final qualification</strong> follows integration. Waiting for the whole issue to close before starting the runtime would create a planning deadlock.',
              'Codex is the first milestone. Any remaining Claude acceptance criteria stay tracked in their owning issues.'
          ]),
@@ -139,7 +141,7 @@ GUIDES = [
     dict(id='controls-music', short='Controls + music', title='Expand into general device controls and Apple Music', phase='After Codex acceptance',
          intro='[[H35]] already provides the future-work guide. Its accepted order starts with Codex integration, then general controls, then music.',
          headers=['Stage', 'Issues', 'Work'], rows=[
-             ['General controls', '[[H31]]', 'After Hub #32 acceptance, choose capabilities and create or refine the necessary implementation work.'],
+             ['General controls', '[[H31]]', 'After Hub #32 acceptance, choose capabilities and refine implementation work within the central BUNNY UI established by [[H6]]. Future components reuse its navigation and status/settings/control views; each feature records its capabilities, permissions, owning API and UI acceptance.'],
              ['Windows playback', '[[H36]]', 'Qualify and build the Apple Music connector.'],
              ['Participation and interruption', '[[H40]]', 'Define per-device music and alert policy. Settle this alongside connector qualification, before effects take over devices. This is a recommended sequence.'],
              ['Common music controls', '[[H37]]', 'Add music controls to the shared UI and Codex tools.'],
@@ -162,6 +164,7 @@ GUIDES = [
              ['Conversational assistant', '[[H46]]', 'Use shared controls and automation tools.'],
              ['Phone conversation', '[[H47]]', 'Add phone access and tap-to-talk after local delivery.'],
              ['Ambient/wearable voice', '[[H48]]', 'Explore after useful phone access.'],
+             ['Closed planning reference / Personal services', '[[H49]]', 'The tracker closed this placeholder on September 21. Closure alone does not establish a qualified connector or connected account; any future implementation needs its own accepted scope and evidence.'],
              ['Pixoo remote browser', '[[P11]] → [[P43]]', 'Deliver HTTPS LAN access, then browser acceptance. Also requires Pixoo #12’s local physical baseline.'],
              ['Pixoo ChatGPT access', '[[P17]] → [[P44]]', 'Deliver the private MCP connection, then ChatGPT acceptance. Also requires Pixoo #26’s local acceptance baseline.'],
          ], notes=['Pixoo’s remote-access findings can inform hub phone access, but they do not automatically qualify access to the shared hub.']),

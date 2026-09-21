@@ -71,11 +71,11 @@ def refresh_repo(repo):
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
     if repo == 'agent-device-hub':
-        for number in (3, 4, 7, 54, 100, 103, 107):
+        for number in (3, 4, 7, 49, 54, 100, 103, 107):
             baseline = normalize(api(f'{base}/issues/{number}'))
             assert baseline['state'] == 'CLOSED'
             issues.append(baseline)
-            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (54, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
+            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (49, 54, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
     prs, pr_sizes = pages(f'{base}/pulls?state=open')
     def write(name, value):
         (DEST / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n')

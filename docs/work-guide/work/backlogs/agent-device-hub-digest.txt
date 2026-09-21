@@ -38,6 +38,7 @@
 #46 [OPEN] Add a conversational assistant using shared device and automation tools
 #47 [OPEN] Add phone access with tap-to-talk after local delivery
 #48 [OPEN] Explore ambient and wearable voice access after phone tap-to-talk
+#49 [CLOSED] Explore personal-service connectors beyond device control
 #50 [OPEN] Document PC and desk lighting and initialize the implementation backlog
 #51 [OPEN] Qualify Corsair RAM and H150i lighting through iCUE
 #52 [OPEN] Qualify Lian Li Strimer control while preserving L-Connect 3

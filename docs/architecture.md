@@ -225,6 +225,24 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
+The planned shared frontend in apps/dashboard is BUNNY's central interface. Build on
+the approved Nanoleaf visual language and interaction patterns. Each current
+and future user-facing component joins the same navigation and reusable views
+for its available status, settings and supported controls, with specialized
+views where needed. A component's declared capabilities and permissions determine
+which operations are available; unsupported or unavailable actions need an
+explanation. All commands continue through the owning services.
+
+[#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) defines and verifies
+this integration-view pattern with the initial device fixtures and a third
+synthetic component. New production integrations retain their own API, UI and
+acceptance work. They do not block the first Codex-integration release.
+[#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) later extends the
+same application with general controls that work without an agent session.
+Routine supported operations belong in the central UI; full migration of the
+linked advanced editors remains separate follow-on work. This is planned
+frontend structure, not an implemented dashboard or automatic device support.
+
 Exact hub previews are deferred for a future scope decision. Device rendering
 contracts and parity checks are prerequisites for any later preview issue, not
 an implicit commitment to implement previews in the first dashboard. The
