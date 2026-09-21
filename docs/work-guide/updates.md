@@ -45,7 +45,7 @@ All nine Archify deliveries passed 9/9 artifact checks. The changed sequence
 was inspected in light/dark desktop renders; the separate standalone browser
 check still fails its known vertical overflow requirement. No layout repair
 or first-screen containment pass is claimed. The guide's scrolling/zooming
-presentation remains usable. HTML SHA-256: `7c16cb4482ef32301fd258a9e9f447cdd2927abb48def821c4685ac64323d940`.
+presentation remains usable. HTML SHA-256: `3238b53989d418b35c0a14ce06daeecda1ffbd37671c820b33e73920c0bffb38`.
 
 The public landing page still serves
 `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
@@ -53,7 +53,7 @@ It differs from this candidate. Public publication and live verification of a
 new edition remain pending separate authority. Source merge and saved issue
 completion facts will be reconciled in a linked follow-up after verification.
 
-The candidate was reconciled with merged MCP PR #126. The refreshed tracker
+The candidate was reconciled with merged MCP PR #126 and its guide follow-up #128. The refreshed tracker
 shows #13 closed, so its primary coverage and roadmap entry were removed; its
 source behavior and shared host/package checks are preserved.
 

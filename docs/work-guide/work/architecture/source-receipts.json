@@ -232,10 +232,10 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "ed43e9e5cb98669a215f460c318f14fb0aac59eb",
+      "revision": "b0e3a0938fb3eb456c193d01dddb1624e2c71252",
       "path": "apps/hub/SETUP.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/ed43e9e5cb98669a215f460c318f14fb0aac59eb/apps/hub/SETUP.md",
-      "sha256": "8dc3fcee39816d3ec8c80a2c64307e624c1360211a5785b6cf58e9f092202db0"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/b0e3a0938fb3eb456c193d01dddb1624e2c71252/apps/hub/SETUP.md",
+      "sha256": "f27cb6b3dc027677fb12daaf898e1da41c7ff09c2039103e3b71dc0922363fcf"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
