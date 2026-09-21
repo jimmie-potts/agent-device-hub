@@ -1,3 +1,4 @@
+import {managedPixooConsumer,type ManagedOwner} from './migration.js';
 import {DatabaseSync} from 'node:sqlite';
 import {open,lstat,realpath,mkdir,rename,rm,readFile} from 'node:fs/promises';
 import {constants} from 'node:fs';
@@ -118,7 +119,7 @@ export async function releaseRoute(route:StagedRoute):Promise<void>{
  finally{staged.unlock();}
 }
 
-export type ActivationPlan={producers:StagedRoute[];consumers:{id:string;route:StagedRoute;endpoint:string;token:string}[]};
+export type ActivationPlan={producers:StagedRoute[];consumers:{id:string;route:StagedRoute;owner:ManagedOwner}[]};
 async function get(endpoint:string,token:string):Promise<unknown>{
  const response=await fetch(endpoint,{redirect:'error',signal:AbortSignal.timeout(2500),headers:{authorization:`Bearer ${token}`}});
  const value=await responseJson(response,16*1024*1024);if(!response.ok)throw new Error('route-not-ready');return value;
@@ -136,10 +137,11 @@ export async function prepareActivation(plan:ActivationPlan,origin:string,ownerI
   if(!object(authority)||authority.ownerId!==ownerId||authority.scope!=='ingest')throw new Error('producer-not-ready');
  }
  for(const consumer of plan.consumers){const record=stages.get(consumer.route)!;
-  if(record.kind!=='pixoo'||record.file.value.endpoint!==origin+'/api/monitor/v1'||record.file.value.ownerId!==ownerId||loopbackEndpoint(consumer.endpoint).pathname!=='/api/monitor/v1'||!validToken(consumer.token))throw new Error('wrong-consumer-route');
+  if(record.kind!=='pixoo'||consumer.id!=='pixoo'||record.file.value.endpoint!==origin+'/api/monitor/v1'||record.file.value.ownerId!==ownerId)throw new Error('wrong-consumer-route');
+  const facade=managedPixooConsumer(consumer.owner,record.file.path,hash(record.file.bytes));if(facade.endpoint===origin+'/api/monitor/v1')throw new Error('consumer-not-ready');
   const authority=await get(origin+'/api/hub/v1/authority?scope=control',record.file.value.token as string);
   if(!object(authority)||authority.ownerId!==ownerId||authority.scope!=='control')throw new Error('consumer-not-ready');
-  const value=await get(consumer.endpoint+'/sessions',consumer.token);
+  const value=await get(facade.endpoint+'/sessions',facade.token);
   if(!object(value)||value.ownerId!==ownerId||value.connection!=='current')throw new Error('consumer-not-ready');
   const checked=validateSnapshot(value.snapshot),current=snapshot();
   // Clock/freshness projection may advance between reads; compare durable session fields.
@@ -148,5 +150,7 @@ export async function prepareActivation(plan:ActivationPlan,origin:string,ownerI
  }
  await checkFiles();
  for(const receipt of plan.producers){const record=stages.get(receipt)!;await updateStage(record,{...record.file.value,enabled:record.enabled});}
+ await checkFiles();
+ for(const consumer of plan.consumers){const record=stages.get(consumer.route)!;managedPixooConsumer(consumer.owner,record.file.path,hash(record.file.bytes));}
  // Locks remain held until the caller commits activation or explicitly abandons the attempt.
 }

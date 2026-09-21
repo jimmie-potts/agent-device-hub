@@ -1,3 +1,5 @@
+import {createHash} from 'node:crypto';
+import {constants} from 'node:fs';
 import {spawn,type ChildProcess} from 'node:child_process';
 import {resolve,dirname,join} from 'node:path';
 import {open,lstat,realpath} from 'node:fs/promises';
@@ -6,12 +8,18 @@ import {loopbackEndpoint,responseJson,object} from './common.js';
 
 export type ManagedOwner={readonly url:string;readonly pid:number};
 export type ReleasedState={readonly ownerId:string;readonly revision:number};
-const managed=new WeakMap<ManagedOwner,{child:ChildProcess;exit:Promise<number|null>;token:string;quiescing:boolean}>();
+const managed=new WeakMap<ManagedOwner,{child:ChildProcess;exit:Promise<number|null>;token:string;quiescing:boolean;kind:'hub'|'pixoo';config?:{path:string;digest:string}}>();
 const releases=new WeakMap<ReleasedState,DurableState>();
 
 /** Explicit source tooling. It owns only children it starts; no PID guessing or shell. */
 export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;args:string[];environment:Record<string,string>;token:string}):Promise<ManagedOwner>{
  if(process.platform!=='linux'||resolve(input.entrypoint)!==input.entrypoint||!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(input.token))throw new Error('invalid-launch');
+ let config:{path:string;digest:string}|undefined;
+ if(input.kind==='pixoo'){
+  const data=input.environment.PIXOO_DATA_DIR;if(!data||resolve(data)!==data)throw new Error('invalid-launch');
+  const path=join(data,'agent-monitor','config.json'),file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{const info=await file.stat();if(!info.isFile()||info.size>8192)throw new Error('invalid-launch');const bytes=Buffer.alloc(8193);let size=0;while(size<bytes.length){const part=await file.read(bytes,size,bytes.length-size,null);size+=part.bytesRead;if(!part.bytesRead)break;}if(size>8192)throw new Error('invalid-launch');config={path,digest:createHash('sha256').update(bytes.subarray(0,size)).digest('hex')};}finally{await file.close();}
+ }
  const child=spawn(process.execPath,[input.entrypoint,...input.args],{env:input.environment,stdio:['ignore','pipe','pipe']});
  const exit=new Promise<number|null>((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);});
  // Drain bounded diagnostics without exposing paths or credentials.
@@ -32,7 +40,7 @@ export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;ar
   const parsed=loopbackEndpoint(url+'/');if(parsed.pathname!=='/'||url!==parsed.origin)throw new Error('owner-start-invalid');
   child.stdout!.removeAllListeners('data');child.stdout!.resume();
   if (!child.pid || child.exitCode!==null || child.signalCode!==null) throw new Error('owner-start-failed');
-  const owner=Object.freeze({url,pid:child.pid});managed.set(owner,{child,exit,token:input.token,quiescing:false});return owner;
+  const owner=Object.freeze({url,pid:child.pid});managed.set(owner,{child,exit,token:input.token,quiescing:false,kind:input.kind,config});return owner;
  }catch(error){child.kill('SIGTERM');await Promise.race([exit.catch(()=>{}),new Promise(r=>{const timer=setTimeout(r,1000);timer.unref();})]);if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exit.catch(()=>{});}throw error;}
  finally{clearTimeout(timer);}
 }
@@ -76,4 +84,11 @@ export async function quiesceAndStop(owner:ManagedOwner,exportPath:string):Promi
 /** Internal single-use transfer. Consumed synchronously before destination acquisition. */
 export function consumeReleasedState(receipt:ReleasedState):DurableState{
  const state=releases.get(receipt);if(!state)throw new Error('invalid-or-consumed-release');releases.delete(receipt);return state;
+}
+
+/** Bind consumer readiness to a live Pixoo child and the exact selected config loaded at launch. */
+export function managedPixooConsumer(owner:ManagedOwner,path:string,digest:string):{endpoint:string;token:string}{
+ const record=managed.get(owner);
+ if(!record||record.kind!=='pixoo'||record.quiescing||record.child.exitCode!==null||record.child.signalCode!==null||record.config?.path!==path||record.config.digest!==digest)throw new Error('consumer-not-ready');
+ return {endpoint:owner.url+'/api/monitor/v1',token:record.token};
 }

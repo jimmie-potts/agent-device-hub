@@ -44,7 +44,7 @@ try{
   pixoo=await launchPixoo();
   let view=await request(pixoo.url,'/api/integration/v1/view',monitorToken);assert.equal(view.source.ownerId,'owner');assert.equal(view.source.snapshot.collector,'quiesced');assert.equal(view.integration.configuration.filter.projectId,'project');assert.equal(view.integration.participating,false);
   const denied=await fetch(pixoo.url+'/api/integration/v1/shared-actions',{method:'POST',headers:headers(monitorToken),body:JSON.stringify({operation:'label',requestId:view.source.nextRequestId,identity,label:'must not apply'})});assert.equal(denied.status,503);
-  await hub.activate({producers:[routes[0]],consumers:[{id:consumer,route:routes[1],endpoint:pixoo.url+'/api/monitor/v1',token:monitorToken}]});
+  await hub.activate({producers:[routes[0]],consumers:[{id:consumer,route:routes[1],owner:pixoo}]});
   for(const route of routes)await releaseRoute(route);routes=[];
   view=await request(pixoo.url,'/api/integration/v1/view',monitorToken);assert.equal(view.source.snapshot.collector,'running');return view;
  }

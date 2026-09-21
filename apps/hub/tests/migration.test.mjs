@@ -130,3 +130,37 @@ test('death before publishing initial intent leaves the original route available
   route=await stageProducer(path,before,'http://127.0.0.1:2/api/monitor/v1/events',token);assert.equal(JSON.parse(await readFile(path,'utf8')).enabled,false);
  }finally{if(route)await releaseRoute(route);await rm(root,{recursive:true,force:true});}
 });
+
+test('activation rejects the host masquerading as a missing Pixoo consumer',async()=>{
+ const {routeDigest,stageProducer,stagePixooSource,releaseRoute}=await import('../dist/migration-routes.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-missing-facade-'));let hub,source;const routes=[];
+ try{
+  const directory=join(root,'host');await mkdir(directory,{mode:0o700});
+  const sourceDir=join(root,'source');await mkdir(sourceDir,{mode:0o700});const configPath=join(root,'source.json');const configOptions={...options(sourceDir),consumers:[{id:'pixoo',clearOnNewTurn:true}]};await writeFile(configPath,JSON.stringify(configOptions),{mode:0o600});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configPath],environment:{},token});const released=await quiesceAndStop(source,join(root,'export.json'));
+  hub=await startHub({...configOptions,directory},{staged:true,released});
+  const producer=join(root,'producer.json'),config=join(root,'config.json');
+  await writeFile(producer,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token}),{mode:0o600});
+  await writeFile(config,JSON.stringify({version:1,mode:'embedded',ownerId:'owner'}),{mode:0o600});
+  routes.push(await stageProducer(producer,await routeDigest(producer),hub.url+'/api/monitor/v1/events',token));
+  routes.push(await stagePixooSource(config,await routeDigest(config),'owner',hub.url+'/api/monitor/v1',token));
+  await assert.rejects(hub.activate({producers:[routes[0]],consumers:[{id:'pixoo',route:routes[1],endpoint:hub.url+'/api/monitor/v1',token}]}),/consumer-not-ready/);
+  assert.equal(hub.staged(),true);
+ }finally{for(const route of routes)await releaseRoute(route);await hub?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
+});
+
+test('consumer proof rejects copied handles, wrong startup config and stopped processes',async()=>{
+ const {managedPixooConsumer}=await import('../dist/migration.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-consumer-proof-'));let owner;
+ try{
+  const monitor=join(root,'agent-monitor');await mkdir(monitor,{mode:0o700});const path=join(monitor,'config.json'),bytes=JSON.stringify({version:1,mode:'remote',ownerId:'owner'});
+  await writeFile(path,bytes,{mode:0o600});const digest=createHash('sha256').update(bytes).digest('hex');
+  const entrypoint=join(root,'child.mjs');await writeFile(entrypoint,"console.log('Pixoo simulator listening on http://127.0.0.1:49123');setInterval(()=>{},1000);process.on('SIGTERM',()=>process.exit(0));");
+  owner=await launchOwner({kind:'pixoo',entrypoint,args:[],environment:{PIXOO_DATA_DIR:root},token});
+  assert.equal(managedPixooConsumer(owner,path,digest).endpoint,owner.url+'/api/monitor/v1');
+  assert.throws(()=>managedPixooConsumer({...owner},path,digest),/consumer-not-ready/);
+  assert.throws(()=>managedPixooConsumer(owner,path+'.other',digest),/consumer-not-ready/);
+  assert.throws(()=>managedPixooConsumer(owner,path,'0'.repeat(64)),/consumer-not-ready/);
+  await stopOwner(owner);assert.throws(()=>managedPixooConsumer(owner,path,digest),/consumer-not-ready/);
+ }finally{if(owner)await stopOwner(owner);await rm(root,{recursive:true,force:true});}
+});
