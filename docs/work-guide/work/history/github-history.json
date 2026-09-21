@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-20T23:39:58.360900+00:00",
+ "fetchedAt": "2026-09-21T00:05:07.874108+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-20T23:33:25Z",
+   "pushedAt": "2026-09-20T23:57:23Z",
    "defaultBranch": "main",
-   "headSha": "83b59c3030a6255cba6b7b71c8c28b05be762a66",
-   "mainCommitCount": 40,
+   "headSha": "58a9a3dee78107c13eb1896e1fcd3b540c07b75a",
+   "mainCommitCount": 41,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "58a9a3dee78107c13eb1896e1fcd3b540c07b75a",
+     "date": "2026-09-20T23:43:53Z",
+     "message": "Reconcile Pixoo dashboard physical acceptance (#116)"
+    },
     {
      "sha": "83b59c3030a6255cba6b7b71c8c28b05be762a66",
      "date": "2026-09-20T23:33:25Z",
@@ -523,14 +528,29 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/115",
      "base": "main",
      "mergedAt": "2026-09-20T23:33:25Z"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 116,
      "title": "Reconcile Pixoo dashboard physical acceptance",
      "createdAt": "2026-09-20T23:26:55Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/116",
+     "base": "main",
+     "mergedAt": "2026-09-20T23:43:54Z"
+    }
+   ],
+   "openPRs": [
+    {
+     "number": 117,
+     "title": "Synchronize Pixoo dashboard renderer delivery in the work guide",
+     "createdAt": "2026-09-20T23:50:07Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/117",
+     "base": "main"
+    },
+    {
+     "number": 118,
+     "title": "docs: synchronize Nanoleaf integration settings delivery",
+     "createdAt": "2026-09-20T23:57:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/118",
      "base": "main"
     }
    ],
@@ -656,12 +676,17 @@
   },
   "codex-nanoleaf": {
    "createdAt": "2026-09-05T16:18:38Z",
-   "pushedAt": "2026-09-20T23:23:22Z",
+   "pushedAt": "2026-09-21T00:04:05Z",
    "defaultBranch": "main",
-   "headSha": "5375a3088522507c7f207c6e9c824454db1e1d5f",
-   "mainCommitCount": 27,
+   "headSha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
+   "mainCommitCount": 28,
    "firstCommitAt": "2026-09-05T16:17:05Z",
    "mainCommits": [
+    {
+     "sha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
+     "date": "2026-09-21T00:04:04Z",
+     "message": "feat: expose protected Nanoleaf integration settings API (#63)"
+    },
     {
      "sha": "5375a3088522507c7f207c6e9c824454db1e1d5f",
      "date": "2026-09-20T23:23:22Z",
@@ -974,6 +999,14 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/62",
      "base": "main",
      "mergedAt": "2026-09-20T23:23:22Z"
+    },
+    {
+     "number": 63,
+     "title": "feat: expose protected Nanoleaf integration settings API",
+     "createdAt": "2026-09-20T23:58:52Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/63",
+     "base": "main",
+     "mergedAt": "2026-09-21T00:04:05Z"
     }
    ],
    "openPRs": [],
@@ -1129,12 +1162,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-20T23:34:56Z",
+   "pushedAt": "2026-09-21T00:00:14Z",
    "defaultBranch": "main",
-   "headSha": "671b8dda3c620fc7cefb48af112c49be0687063a",
-   "mainCommitCount": 25,
+   "headSha": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+   "mainCommitCount": 26,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
+     "date": "2026-09-21T00:00:14Z",
+     "message": "Render paged agent dashboards from shared session snapshots (#63)"
+    },
     {
      "sha": "671b8dda3c620fc7cefb48af112c49be0687063a",
      "date": "2026-09-20T23:34:56Z",
@@ -1453,6 +1491,14 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/62",
      "base": "main",
      "mergedAt": "2026-09-20T23:34:56Z"
+    },
+    {
+     "number": 63,
+     "title": "Render shared agent monitoring as paged 64×64 dashboards",
+     "createdAt": "2026-09-20T23:45:42Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
+     "base": "main",
+     "mergedAt": "2026-09-21T00:00:14Z"
     }
    ],
    "openPRs": [],
@@ -1594,6 +1640,14 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/31"
     },
     {
+     "number": 32,
+     "title": "Render the 64×64 agent monitoring dashboard and preview",
+     "closedAt": "2026-09-21T00:04:22Z",
+     "createdAt": "2026-09-07T00:55:32Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/32"
+    },
+    {
      "number": 36,
      "title": "Record shared agent-device-hub ownership and migration dependencies",
      "closedAt": "2026-09-07T03:01:12Z",
@@ -1626,7 +1680,7 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 17,
+   "openIssueCount": 16,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-20T20:59:48Z"

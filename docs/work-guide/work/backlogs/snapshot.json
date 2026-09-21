@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-20T23:48:52.875290+00:00",
-  "refreshedAt": "2026-09-20T23:49:01.230914+00:00",
+  "startedAt": "2026-09-21T00:04:56.013131+00:00",
+  "refreshedAt": "2026-09-21T00:05:05.214977+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 62,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        62
+        64
       ],
-      "openPRs": 0,
+      "openPRs": 2,
       "prPageSizes": [
-        0
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -163,14 +163,14 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 17,
+      "openIssues": 16,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        16
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -215,6 +215,14 @@
           "commentBodiesStored": true
         },
         {
+          "number": 32,
+          "state": "CLOSED",
+          "commentPages": [
+            0
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 37,
           "state": "CLOSED",
           "commentPages": [
@@ -233,7 +241,7 @@
       ]
     }
   },
-  "openIssues": 102,
+  "openIssues": 101,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

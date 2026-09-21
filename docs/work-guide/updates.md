@@ -1,19 +1,26 @@
 # Guide maintenance history
 
-## 2026-09-20 UTC: Pixoo #32 renderer candidate
+## 2026-09-21 UTC: Pixoo #32 renderer source delivered
 
 [Pixoo PR #63](https://github.com/jimmie-potts/divoom-app-upgrade/pull/63)
-implements the source-only shared-session renderer and authenticated RGB preview.
-The delivery coordinator owns this Hub companion. Source review, CI, merge and
-tracking completion remain pending. The guide records the candidate without
-claiming installed monitoring or physical acceptance. Pixoo #33 owns the monitor
-panel and device writer integration; #34 owns integrated acceptance.
+merged as `9bd99c1b2ec1759cc70eedd5644e585627d3fd25`. Its tree matches the
+independently reviewed candidate. All five PR jobs and all five merged-main
+jobs passed. Issue #32 is closed as completed. The first current-head Windows
+PR attempt timed out in an existing diagnostics test; one rerun passed without
+code changes.
 
-Updated shared Codex narrative and current backlog/reference inputs. Architecture
-remains labeled as planned at this candidate checkpoint; no implemented-state
-claim is made before source merge. Post-merge reconciliation will update the
-source pins and projection evidence. Public publication is outside this task.
-Validation evidence belongs in the companion PR.
+The renderer supplies stable attention-first pages, exact 64×64 RGB888 preview
+pixels and bounded generation publication. Local validation passed 564 tests,
+56 browser checks and 10 workflow fixtures, with 16 current specifications and
+17 archives. Synthetic previews were inspected at native and enlarged scales.
+Pixoo #33 owns the monitor panel and device writer integration; #34 owns
+installed acceptance. No display commands or installation were performed.
+
+This companion refreshes source pins, history and backlog evidence, removes P32
+from remaining-work coverage and updates the shared-state diagram. The changed
+viewer passed all four archify viewport checks and was visually inspected.
+Guide validation and merge evidence belong in Hub PR #117. Public publication
+is outside this task.
 
 ## 2026-09-20 UTC: Pixoo dashboard physical evidence
 
