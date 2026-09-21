@@ -51,3 +51,14 @@ test('an edit during credential provisioning is retained with disabled emission'
 test('configuration near the node ceiling is rejected before installing an unremovable target',async t=>{
  const input=await fixture(t);await write(input.target,{hooks:{},values:Array(9950).fill(0)});const before=await readFile(input.target,'utf8');await assert.rejects(planSetup(input),/configuration-limit/);assert.equal(await readFile(input.target,'utf8'),before);assert.equal((await inspectSetup(input.directory)).state,'absent');
 });
+test('a second receipt cannot adopt the first source credential or revoke its access',async t=>{
+ const {startHub}=await import('../dist/server.js');const {hubSetupAuthority}=await import('../dist/setup-authority.js');
+ const input=await fixture(t),other=await fixture(t),root=join(input.directory,'host');await mkdir(root,{mode:0o700});
+ const path=join(input.directory,'host.json'),config={directory:root,ownerId:'owner',consumers:[],controllers:[],port:0,credentials:[{id:'admin',digest:'f'.repeat(64),scopes:['admin'],devices:[]}]};await write(path,config);
+ const hub=await startHub(config);t.after(()=>hub.close());input.endpoint=other.endpoint=hub.url+'/api/monitor/v1/events';const access=hubSetupAuthority(hub,path);
+ await applySetup(input,(await planSetup(input)).digest,access);const producer=await read(join(input.directory,'producer.json'));const tokenFile=join(other.directory,'token');await writeFile(tokenFile,producer.token,{mode:0o600});other.credentialFile=tokenFile;
+ await assert.rejects(applySetup(other,(await planSetup(other)).digest,access),/source-ownership-conflict/);
+ await assert.rejects(remove(other.directory,access),/source-ownership-conflict/);
+ assert.equal((await fetch(hub.url+'/api/hub/v1/authority?scope=ingest',{headers:{authorization:'Bearer '+producer.token}})).status,200);
+ await remove(input.directory,access);
+});

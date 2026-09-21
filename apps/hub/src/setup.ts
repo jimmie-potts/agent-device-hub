@@ -7,7 +7,7 @@ import {digest,privateDirectory,readPrivate,replacePrivate} from './setup-files.
 
 export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;windowsDistribution?:string;credentialFile?:string};
 /** Implementations must persist grants/revocations and confirm the active owner's access state before resolving. */
-export type SetupAuthority={grant:(id:string,token:string)=>Promise<void>;revoke:(id:string,token:string)=>Promise<void>};
+export type SetupAuthority={grant:(id:string,token:string,receiptDirectory:string)=>Promise<void>;revoke:(id:string,token:string,receiptDirectory:string)=>Promise<void>};
 type Entry={event:string;group:{hooks:{type:string;command:string;timeout:number;commandWindows?:string}[]}};
 type Receipt={version:1;state:'applying'|'installed'|'removing'|'removed';input:SetupInput;id:string;token:string;entries:Entry[];before:string;after:string;removal?:{before:string;after:string}};
 const encode=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
@@ -95,7 +95,7 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   // The original configuration is retained only for inspection, never whole-file rollback.
   const backup=join(input.directory,'configuration-backup.json');const saved=await readPrivate(backup,true);
   if(saved!==null&&saved!==record.before)throw new Error('backup-conflict');if(saved===null)await replacePrivate(backup,null,record.before);
-  await authority.grant(record.id,record.token);
+  await authority.grant(record.id,record.token,input.directory);
   if(current!==record.after)await replacePrivate(input.target,current,record.after);
   await replacePrivate(producerPath,await readPrivate(producerPath),encode({...producer,enabled:input.qualified}));
   record.state='installed';await save(record);
@@ -114,7 +114,7 @@ export async function removeSetup(directory:string,expected:string,authority:Set
   record.removal={before:plan.before!,after:plan.after!};record.state='removing';await save(record);
   const producer=join(directory,'producer.json'),raw=await readPrivate(producer,true);
   if(raw!==null){const value=JSON.parse(raw);if(value.token!==record.token||canonical(value.source)!==canonical(record.input.source))throw new Error('producer-changed');await replacePrivate(producer,raw,encode({...value,enabled:false}));}
-  await authority.revoke(record.id,record.token);
+  await authority.revoke(record.id,record.token,directory);
   const latest=(await readPrivate(record.input.target))!;if(latest!==record.removal.before)throw new Error('configuration-changed');await replacePrivate(record.input.target,latest,record.removal.after);
   // Retain a disabled private producer and receipt for migration/revocation audit.
   record.state='removed';await save(record);

@@ -9,7 +9,9 @@
     "apps/server/src/control-service.ts": "6c55c994fd5146cb3ad8d77d1921d8ea10d21e4fb5a2a455a08da1665581086c",
     "apps/server/src/monitor-source.ts": "b656732ddefcdb787884322705490c66cd8dc8543093741ba58886714ee0b453",
     "apps/server/src/monitor.ts": "2e0ef03325c74da6c5bc90ce010940dbd27acd87ea048b96756cb79d6e4e3354",
-    "apps/server/src/monitor-storage.ts": "610d7904d81fe3b11639a33b70571148fdb6046312c8559ebdb52725eb1b3883"
+    "apps/server/src/monitor-storage.ts": "610d7904d81fe3b11639a33b70571148fdb6046312c8559ebdb52725eb1b3883",
+    "apps/server/src/mcp-config.ts": "6353f5ba9559442cfdc8e2f690617690c27a6b310bcdbd467322e9acf7a8ff01",
+    "apps/server/src/monitor-cli.ts": "8e6bb05f5241f0de3310df82801a308641840fb7202380839c08ebe557c949db"
   },
   "fixtureSha256": "6fb0387ec76ef3088004dabcc876fcf4169eb202c847249d00aba7d9c179cf14"
 }
