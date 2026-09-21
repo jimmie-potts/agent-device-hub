@@ -13,7 +13,7 @@ Keep browser intent separate from remote observations, and retain each owning AP
 - Keep a small component registry with common navigation/status/settings and typed Nanoleaf/Pixoo views. Unknown components render read-only unavailable controls. New production components need their own contract and integration work.
 - Read snapshots sequentially per controller and concurrently across controllers. Use bounded SSE reconnect plus periodic snapshot refresh, with request-generation guards and elapsed observation ages. Reconnect never reissues writes.
 - Pin draft intent to the revision and request ticket observed when editing begins. Preserve drafts and focus across refreshes; show conflicts and uncertain outcomes without silently replacing tickets or retrying writes. Monitor labels/acknowledgment use the existing owner commands and server-issued IDs.
-- Reuse the Nanoleaf approved dark HUD palette and selection/pending patterns from merged revision ec133b8519f41a7f57e0c4b9830d7c38d5173355. Use semantic HTML controls instead of copying its wall-specific SVG.
+- Reuse the current approved Nanoleaf Prism/Neon palette, cyan selection and magenta pending patterns from main revision f12ac6653a9f3267fa9ef62a2d6667072183d8b3, including approved PRs #58 and #60. Use semantic HTML controls instead of copying its wall-specific SVG.
 - Advanced editor URLs are operator configuration, validated as credential-free numeric-loopback HTTP links without query or fragment. They are links only, never proxy destinations.
 
 ## Risks / Trade-offs
