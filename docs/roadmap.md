@@ -123,6 +123,33 @@ introduced by the documentation bootstrap.
 | [divoom-app-upgrade#34](https://github.com/jimmie-potts/divoom-app-upgrade/issues/34) | Package and verify Codex and Claude monitoring on the Pixoo | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31), [divoom-app-upgrade#32](https://github.com/jimmie-potts/divoom-app-upgrade/issues/32), [divoom-app-upgrade#30](https://github.com/jimmie-potts/divoom-app-upgrade/issues/30), [divoom-app-upgrade#33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [codex-nanoleaf#15](https://github.com/jimmie-potts/codex-nanoleaf/issues/15) | Expose authoritative light rendering state for display clients | [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
 
+## Central BUNNY UI
+
+[The Codex-first goal #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
+owns the first shared frontend milestone. The accepted progression is:
+
+1. [#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) builds the
+   shared status and integration-control UI in apps/dashboard, using the approved
+   Nanoleaf visual language and interactions. It establishes reusable navigation
+   and component views for available status, settings and supported controls.
+   A third synthetic component verifies that pattern without adding production
+   hardware prerequisites.
+2. After #32 acceptance,
+   [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) defines general
+   controls in the same application, usable without an active agent session.
+   The supported feature set and its implementation issues retain their later
+   planning and acceptance gates.
+3. Across both phases, each additional user-facing BUNNY component adopts the
+   common view pattern as its capabilities are delivered. Its owning issues
+   retain their existing prerequisites and track required API, UI and validation
+   work. Future integrations do not become prerequisites for #6.
+
+Routine supported operations stay in the central UI. Advanced Nanoleaf wall
+editing and Pixoo playlist editing remain linked initially; full editor
+migration, new effects and exact previews have separate follow-on scope.
+These requirements refine the existing phases without changing dependencies,
+issue readiness or implementation status.
+
 ## Stages and gates
 
 1. Qualify shared lifecycle contracts and define controller contracts. They can

@@ -1,5 +1,40 @@
 # Guide maintenance history
 
+## 2026-09-21 UTC: Central BUNNY component UI requirements
+
+This Hub planning delivery coordinates the user-authorized updates to
+[#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) and
+[#31](https://github.com/jimmie-potts/agent-device-hub/issues/31).
+Both saved bodies were read back exactly; their titles, open state and labels
+were preserved. Five new frontend criteria and four later planning criteria
+require consistent navigation and component status, settings and supported
+controls, based on the approved Nanoleaf UI. A third synthetic component
+verifies the reusable pattern without adding production hardware prerequisites.
+
+Architecture and roadmap text, the shared Codex guide and the controls/music
+guide now describe the same central application and delivery phases.
+Advanced editors remain linked initially, and general controls stay deferred
+behind #32. This update delivers planning records and guide source; it adds no
+dashboard implementation, device API or installation.
+
+The complete backlog refresh also observed the independent closure of Hub #49.
+It is retained as a closed planning reference, removed from remaining-work
+coverage and the roadmap, and is not described as delivered connector software.
+The refresh preserves concurrent Hub #5 and Pixoo #33 delivery status.
+No device ownership or command flow changes, so the nine architecture viewers,
+their source-review dates and history evidence remain unchanged.
+
+Generation, five maintenance tests, browser checks at 1440/1000/900/768/390/320,
+print expansion/restoration, navigation and exact issue coverage passed.
+The generated guide contains 99 primary open issues, 126 linked issues,
+12 guides, nine diagrams and 49 roadmap nodes. HTML SHA-256:
+`028ec4c874181b51e3d8d38345ee09a39285963acc9e776db97a9c932ede194c`.
+Candidate review, CI and merge evidence belong in the linked planning PR.
+
+The public edition still serves the previously published revision
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a`; its landing-page hash matches the
+public README. Public publication is outside this planning update's finish line.
+
 ## 2026-09-21 UTC: Nanoleaf #49 integration extension source
 
 [Nanoleaf PR #63](https://github.com/jimmie-potts/codex-nanoleaf/pull/63)
