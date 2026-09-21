@@ -23,14 +23,6 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});
   res.end(JSON.stringify(value));
 }
-function receiptStatus(value: unknown): number {
-  if (!object(value)) return 200;
-  const codes:Record<string,number> = {'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,'revision-conflict':409,
-    'stale-generation':409,'request-conflict':409,'request-order':409,'request-expired':410,'unsupported-capability':422,'capacity':429,
-    'external-control':409,'transport-failure':503,'uncertain-result':503};
-  if (object(value.failure) && typeof value.failure.code === 'string') return codes[value.failure.code] ?? 503;
-  return value.outcome === 'queued' ? 202 : 200;
-}
 async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json' || req.headers['content-encoding']) throw new HttpError('invalid-input',400);
   if (Number(req.headers['content-length'] ?? 0) > maximum) throw new HttpError('capacity',413);
@@ -200,14 +192,14 @@ export async function startHub(options: HubOptions) {
           const operation = integrationRoute[2];
           if (req.method === 'GET' && operation === 'snapshot' && !url.search) json(res,200,await client.integrationSnapshot());
           else if (req.method === 'GET' && operation === 'receipt' && [...url.searchParams.keys()].length === 2 && url.searchParams.has('epoch') && /^[0-9]+$/.test(url.searchParams.get('sequence') ?? ''))
-            json(res,200,await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))}));
-          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await body(req,65536));json(res,receiptStatus(receipt),receipt);}
-          else if (req.method === 'POST' && !url.search && operation === 'cancel') json(res,200,await client.integrationCancel(await body(req,65536)));
+            {const response = await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))});json(res,response.status,response.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await body(req,65536));json(res,receipt.status,receipt.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await body(req,65536));json(res,response.status,response.body);}
           else throw new HttpError('invalid-input',400);
         } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
-          const result = route[2] === 'snapshot' ? await client.snapshot() : await client.command(await body(req,65536));
-          json(res,route[2] === 'snapshot' ? 200 : receiptStatus(result),result);
+          if (route[2] === 'snapshot') json(res,200,await client.snapshot());
+          else {const response = await client.command(await body(req,65536));json(res,response.status,response.body);}
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);

@@ -49,13 +49,17 @@ test('typed upstream rejection keeps its HTTP status, identity and receipt',asyn
  const receipt=structuredClone(corpus.schemaCases.find(c=>c.definition==='receipt'&&c.valid).value);
  Object.assign(receipt,{controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId,outcome:'failed',priorEffects:'none',completedOperations:[],uncertainOperations:[],failure:{code:'revision-conflict'}});
  assert.equal(validate('receipt',receipt),true);
- let calls=0;const fake=createServer((req,res)=>{calls++;res.writeHead(409,{'content-type':'application/json'});res.end(JSON.stringify(receipt));});
+ let calls=0,status=409;const fake=createServer((req,res)=>{calls++;res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(receipt));});
  await new Promise(resolve=>fake.listen(0,'127.0.0.1',resolve));
  const directory=await mkdtemp(join(tmpdir(),'hub-receipt-'));let hub;
  try {
   hub=await startHub({directory,ownerId:'owner',consumers:[],credentials:[{...credentials[0],devices:['wall']}],controllers:[{id:'wall',kind:'nanoleaf',controllerId:request.controllerId,deviceId:request.deviceId,token:'c'.repeat(43),endpoint:`http://127.0.0.1:${fake.address().port}/controller/v1`}]});
   const response=await fetch(hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:{authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'},body:JSON.stringify(request)});
   assert.equal(response.status,409);assert.deepEqual(await response.json(),receipt);assert.equal(calls,1);
+  status=200;
+  const replay=await fetch(hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:{authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'},body:JSON.stringify(request)});
+  assert.equal(replay.status,200);assert.deepEqual(await replay.json(),receipt);assert.equal(calls,2);
+
  }finally{await hub?.close();await new Promise(resolve=>{fake.close(resolve);fake.closeAllConnections();});await rm(directory,{recursive:true,force:true});}
 });
 

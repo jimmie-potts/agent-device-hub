@@ -72,10 +72,26 @@ test('process death releases the lease and leaves a complete committed revision'
   const code=`import {HubStorage} from ${JSON.stringify(module)};import {createAgentState} from '@jimmie-potts/agent-state';const o=await createAgentState({storage:new HubStorage(process.argv[1]),ownerId:'owner',consumers:${JSON.stringify(consumers)}});await o.ingest(${JSON.stringify(event)});process.stdout.write('ready\\n');for(let n=0;n<10000;n++)await o.setLabel(${JSON.stringify(identity)},'label-'+n);setInterval(()=>{},1000);`;
   child=spawn(process.execPath,['--input-type=module','-e',code,directory],{stdio:['ignore','pipe','pipe']});
   const exited=once(child,'exit');const killTimer=setTimeout(()=>child.kill('SIGKILL'),5000);
-  try {await once(child.stdout,'data');child.kill('SIGKILL');await exited;}finally{clearTimeout(killTimer);}
+  try {await Promise.race([once(child.stdout,'data'),exited.then(()=>{throw new Error('child exited before readiness');})]);child.kill('SIGKILL');await exited;}finally{clearTimeout(killTimer);}
   owner=await createAgentState({storage:new HubStorage(directory),ownerId:'owner',consumers});
   assert.ok(owner.snapshot().revision>=1);assert.equal(owner.snapshot().sessions.length,1);
   assert.equal(owner.snapshot().sessions[0].restartUncertain,true);
   if(owner.snapshot().sessions[0].label)assert.match(owner.snapshot().sessions[0].label,/^label-\d+$/);
  }finally{if(child?.exitCode===null&&child?.signalCode===null)child.kill('SIGKILL');await owner?.shutdown();await rm(directory,{recursive:true,force:true});}
+});
+
+
+test('failed commits and caller mutation cannot alter durable state',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-rollback-'));let owner,lease;
+ const signal=new AbortController().signal;
+ try{
+  owner=await createAgentState({storage:new HubStorage(directory),ownerId:'owner',consumers});await owner.ingest(event);await owner.shutdown();owner=undefined;
+  lease=await new HubStorage(directory).acquire('owner',signal);const initial=await lease.load(signal);
+  const change={expectedRevision:initial.revision,revision:initial.revision+1,atMs:initial.lastCommitAtMs,pruneBeforeMs:0,session:{...initial.sessions[0],label:'Changed'}};
+  await assert.rejects(lease.commit({...change,atMs:-1},signal),/invalid-state/);
+  assert.deepEqual(await lease.load(signal),initial);
+  await lease.commit(change,signal);const read=await lease.load(signal);assert.equal(read.sessions[0].label,'Changed');
+  read.sessions[0].label='Caller mutation';assert.equal((await lease.load(signal)).sessions[0].label,'Changed');
+  await lease.release();lease=await new HubStorage(directory).acquire('owner',signal);assert.equal((await lease.load(signal)).sessions[0].label,'Changed');
+ }finally{await owner?.shutdown();await lease?.release();await rm(directory,{recursive:true,force:true});}
 });

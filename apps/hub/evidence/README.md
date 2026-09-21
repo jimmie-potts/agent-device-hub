@@ -11,3 +11,5 @@ node scripts/measure-hub.mjs /tmp/new-hub-measurement.json
 ```
 
 Migration activation and the actual Pixoo selected-source cutover/rollback remain unimplemented. Nanoleaf request compatibility is pinned, but full owning-service adapter acceptance is still pending. Pixoo integration settings await its #33 API. These remain incomplete acceptance criteria under the original issue, not a reduced delivery scope.
+
+Four additional diagnostic receipts retain another 36,000 samples. A 64 MiB old-generation heap limit, SQLite statement reuse, a durable-state cache, and a 1 MiB semi-space experiment all exceeded 128 MiB. The heap settings and durable-state cache were not adopted. Statement reuse remains because it bounds prepared-statement handles to the lease lifetime. These trials are diagnostic comparisons, not qualification receipts; each JSON names its variant. The original failing receipt remains the source-hashed baseline.
