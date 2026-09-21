@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   606
+   642
   ],
   "views": [
    {
@@ -73,8 +73,8 @@
  "segments": [
   {
    "from": 154,
-   "label": "Observation, state and planned presentation",
-   "to": 528
+   "label": "Observation and explicit presentation",
+   "to": 564
   }
  ],
  "messages": [
@@ -108,45 +108,52 @@
    "variant": "emphasis"
   },
   {
+   "from": "user",
+   "to": "controller",
+   "y": 330,
+   "label": "explicit native mode/view command; guard revision + generation",
+   "variant": "security"
+  },
+  {
    "from": "controller",
    "to": "device",
-   "y": 330,
-   "label": "mode + ownership; render; check generation g at write",
+   "y": 366,
+   "label": "selected view → sole queue; check generation g at write",
    "variant": "emphasis",
-   "note": "skipped while Media/Free or an external owner holds the device"
+   "note": "Pixoo Monitor pauses media; Media never receives monitor pictures"
   },
   {
    "from": "device",
    "to": "controller",
-   "y": 366,
+   "y": 402,
    "label": "sent (transport only, not optical proof)",
    "variant": "return"
   },
   {
    "from": "controller",
    "to": "core",
-   "y": 402,
+   "y": 438,
    "label": "read with expired cursor",
    "variant": "dashed"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 438,
+   "y": 474,
    "label": "resync: authoritative snapshot, no replayed effects",
    "variant": "return"
   },
   {
    "from": "user",
    "to": "core",
-   "y": 474,
+   "y": 510,
    "label": "acknowledge notice",
    "variant": "security"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 510,
+   "y": 546,
    "label": "revision N+1: notice acknowledged for the selected consumer",
    "variant": "emphasis"
   }
@@ -157,7 +164,7 @@
    "title": "Evidence and hosting",
    "items": [
     "Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.",
-    "Pixoo #31 hosts durable state; #32 adds exact RGB preview. Device integration remains with #33."
+    "Pixoo #31 hosts state; #32 renders exact RGB; #33 connects explicit Monitor/Media. Installed acceptance remains #34."
    ]
   }
  ]

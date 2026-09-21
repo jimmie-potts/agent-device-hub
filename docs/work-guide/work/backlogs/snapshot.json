@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-21T18:33:34.245816+00:00",
-  "refreshedAt": "2026-09-21T18:33:44.850565+00:00",
+  "startedAt": "2026-09-21T19:38:45.106004+00:00",
+  "refreshedAt": "2026-09-21T19:38:55.075257+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 61,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        63
+        62
       ],
-      "openPRs": 2,
+      "openPRs": 1,
       "prPageSizes": [
-        2
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -69,6 +69,11 @@
         },
         {
           "number": 54,
+          "state": "CLOSED",
+          "purpose": "Closed guide reference"
+        },
+        {
+          "number": 80,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         },
@@ -176,14 +181,14 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 16,
+      "openIssues": 15,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        17
+        15
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -236,6 +241,14 @@
           "commentBodiesStored": true
         },
         {
+          "number": 33,
+          "state": "CLOSED",
+          "commentPages": [
+            0
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 37,
           "state": "CLOSED",
           "commentPages": [
@@ -254,7 +267,7 @@
       ]
     }
   },
-  "openIssues": 99,
+  "openIssues": 98,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

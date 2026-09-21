@@ -54,7 +54,7 @@ def refresh_repo(repo):
     assert all(i['state'] == 'OPEN' for i in issues)
     assert len({i['number'] for i in issues}) == len(issues)
     # Comments are acceptance evidence for these direct status reads.
-    targets = {'agent-device-hub': [2, 50, 83, 91], 'codex-nanoleaf': [26, 29, 34, 37, 49, 52, 53, 54, 55], 'divoom-app-upgrade': [12, 26, 29, 30, 31, 32, 37, 46]}[repo]
+    targets = {'agent-device-hub': [2, 50, 83, 91], 'codex-nanoleaf': [26, 29, 34, 37, 49, 52, 53, 54, 55], 'divoom-app-upgrade': [12, 26, 29, 30, 31, 32, 33, 37, 46]}[repo]
     direct = []
     for number in targets:
         raw = api(f'{base}/issues/{number}')
@@ -71,11 +71,11 @@ def refresh_repo(repo):
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
     if repo == 'agent-device-hub':
-        for number in (3, 4, 7, 49, 54, 100, 103, 107):
+        for number in (3, 4, 7, 49, 54, 80, 100, 103, 107):
             baseline = normalize(api(f'{base}/issues/{number}'))
             assert baseline['state'] == 'CLOSED'
             issues.append(baseline)
-            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (49, 54, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
+            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (49, 54, 80, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
     prs, pr_sizes = pages(f'{base}/pulls?state=open')
     def write(name, value):
         (DEST / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n')

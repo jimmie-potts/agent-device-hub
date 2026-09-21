@@ -31,3 +31,14 @@ Quiesce and export the selected embedded owner, retain the validated export priv
 ## Acceptance mapping and assessment
 
 Complexity high: durable ownership, HTTP and cross-service migration. Impact high: credentials, state and command effects. Uncertainty medium for delivered APIs, high for Pixoo's unpublished settings extension. Ready host work uses executable storage/process, HTTP/privacy, controller-isolation, feed/replay and package tests. Consumer cutover and both settings adapters require owning-service fixtures. Final acceptance also requires guide synchronization, independent Standards/Specification review, all applicable CI and merged-revision verification. Reassess when #33 lands or a migration test disproves the design. No test or fake endpoint establishes installed or physical acceptance.
+
+
+## Owner-approved service memory revision
+
+On September 21, 2026, the owner explicitly doubled the service RSS constraint
+from 128 MiB to 256 MiB and requested budget re-evaluation and memory optimization
+as backlog [Hub #123](https://github.com/jimmie-potts/agent-device-hub/issues/123).
+That follow-up does not block this change. Preserve the original failed receipts
+and use the revised budget for new checks. Other limits and migration/controller
+acceptance are unchanged. A passing API memory probe is not full integrated
+qualification under #30.

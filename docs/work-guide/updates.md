@@ -1,10 +1,26 @@
 # Guide maintenance history
 
-## September 21, 2026: Hub #5 Linux host candidate
+## September 21, 2026: Owner-approved service memory budget
+
+The owner doubled the Linux/WSL service RSS constraint from 128 to 256 MiB.
+[Hub #123](https://github.com/jimmie-potts/agent-device-hub/issues/123) now tracks
+budget re-evaluation and measured memory improvements as non-blocking backlog
+work. The budget artifact, baseline explanation and host documentation record
+the decision; all historical failed receipts remain unchanged. A fresh 9,000-sample
+API run passed the revised memory check with 164.64 MiB peak RSS. This does
+not establish full integrated qualification or complete Hub #5.
+
+Refreshed all backlog inputs, added #123 to the shared-Codex guide and roadmap,
+and retained the merged Pixoo #33 source/diagram updates. The budget revision
+changes no device ownership or command flow, so it needs no further diagram
+changes. Guide generation, maintenance/browser checks and source review are
+recorded in PR #121. Public publication remains separate and pending.
+
+## September 21, 2026: Initial Hub #5 Linux host candidate
 
 The owner selected Linux in WSL and excluded native Windows runtime work.
 Issue #5 now records that decision and is in progress. The original five
-prerequisites and Nanoleaf #49 are closed; Pixoo #33 remains open. The active
+prerequisites and Nanoleaf #49 were closed; Pixoo #33 was still open at this initial checkpoint. The active
 `gh-5-hub-host` candidate has not merged or completed migration acceptance.
 
 Refreshed all three backlog inventories and updated the shared-hosting row.
@@ -14,6 +30,85 @@ validation is recorded in the candidate PR. Installation, devices, public
 publication and live-site verification are outside this source-only delivery.
 
 The same snapshot records Hub #49 closed. Its placeholder is removed from open guide and timeline coverage; this is a tracker reconciliation, not evidence that a connector was implemented. The regenerated guide covers 99 open issues and passed five maintenance tests and the browser check.
+
+## 2026-09-21 UTC: Pixoo #33 monitor controls delivered
+
+[Pixoo PR #64](https://github.com/jimmie-potts/divoom-app-upgrade/pull/64)
+merged as `28f4875b7a0f0e57ca6f25d9971e125e927a5503`. Its tree matches the
+reviewed candidate `dcadf88f6b29f1944c8df811af7e4592197dd2ee`. All five PR jobs
+and all five merged-main jobs passed. Issue #33 is closed with all 13 criteria
+checked. Local Node 24 validation passed 587 application tests, 64 browser
+checks and 10 workflow fixtures, with 17 current specifications and 18 archives.
+
+The Monitor panel adds owner-backed labels/notices, project/session filters,
+exact RGB preview and explicit Monitor/Media activation. The existing Player
+and serialized adapter remain the sole writer. The finite protected integration
+extension preserves shared controller v1 and existing MCP tools. Restart and
+screen-on remain passive. Source review required three rounds; cancellation,
+stale-read handling, ambiguous-request retention and a test locator were
+corrected with regression evidence. PR #64 records the resolved findings and
+superseded browser failure.
+
+This companion refreshes authoritative backlogs/history, removes P33 from
+remaining-work coverage and the roadmap, updates the shared-Codex narrative,
+and shows explicit mode/view commands in the lifecycle diagram. All 13 Pixoo
+source hashes and eight cached copies match the immutable merged source.
+Concurrent Hub PR #120 central BUNNY planning, its Hub #49 closure and PR #122
+public-verification maintenance remain
+intact. The refresh also observes Hub #80 closure after its independently owned
+verification of the existing public edition; it removes H80 from remaining-work
+coverage without claiming this newer guide is published. An initial refresh
+crossed an issue closure and failed its open-state assertion; a complete fresh
+read replaced the partial candidate. Historical source-review receipts keep
+their original limitations.
+This documentation-only change introduces no product specification delta.
+
+Generation, five maintenance tests, browser/print checks, diagram layout and
+visual inspection are recorded against the companion's final revision in its
+PR. Independent guide reviews and guarded merge remain required. The Pixoo #33
+coordinator owns [Hub companion #119](https://github.com/jimmie-potts/agent-device-hub/pull/119).
+Installed-client and physical acceptance remain Pixoo #34. No device operation
+or installation occurred. Public publication is outside this delivery; the
+public landing page still matches the previously published source `950f7f6`
+and SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
+
+## 2026-09-21 UTC: Public guide verification and publication preparation
+
+The user authorized publication of the central BUNNY UI planning from
+[Hub PR #120](https://github.com/jimmie-potts/agent-device-hub/pull/120).
+This Hub follow-up coordinates the source snapshot and its separate public
+publication PR. It preserves the central component UI requirements and adds no
+product behavior or OpenSpec delta.
+
+The remaining acceptance check in
+[#80](https://github.com/jimmie-potts/agent-device-hub/issues/80) is now verified.
+Unauthenticated requests to the existing landing page and all eight viewers
+returned HTTP 200. All nine served hashes matched Hub source
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a` and public revision
+`d00a99d4f24b240094283d573d2b600798e48372`. The three Pages jobs, twelve source
+jobs and guide/browser job were read back as successful. Public PR #3 records
+the original reviews and publication. Issue #80 is closed as completed, with
+its old evidence retained and the successful live verification appended.
+
+The complete backlog refresh also observed Pixoo #33 closing after source
+PR #64 merged. It leaves remaining-work coverage and stays a completed
+reference. Its dedicated architecture and history synchronization remains with
+the Pixoo coordinator in [Hub PR #119](https://github.com/jimmie-potts/agent-device-hub/pull/119).
+This publication does not adopt that unmerged candidate. No architecture
+topology or source pins change here; all nine viewers and their separate review
+dates are retained. The dated history snapshot is unchanged.
+
+Generation, five maintenance tests and browser checks at
+1440/1000/900/768/390/320 passed, including navigation, search, viewer links,
+exact issue coverage and print expansion/restoration. The guide contains
+97 primary open issues, 126 linked issues, 12 guides, nine diagrams and
+49 roadmap nodes. HTML SHA-256:
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+The source and public PRs retain the fixed reviews, CI-filter evidence, exact
+published revisions, deployment result and every served-file hash. The public
+copy must come from the merged source revision; publication and verification
+remain separate from this source preparation.
+
 ## 2026-09-21 UTC: Central BUNNY component UI requirements
 
 This Hub planning delivery coordinates the user-authorized updates to

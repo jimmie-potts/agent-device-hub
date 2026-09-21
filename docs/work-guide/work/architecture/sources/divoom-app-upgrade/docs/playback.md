@@ -204,3 +204,13 @@ An older binary may reject a temporary checkpoint; clear it using the current
 version or restore a compatible offline backup before downgrade. No automatic
 parse-error recovery deletes context. Admission receipts do not prove upload
 completion or visible display behavior.
+
+
+## Monitor ownership
+
+The optional [monitor presentation](agent-monitoring.md#monitor-panel-and-display-ownership)
+pauses the captured playlist before submitting a complete RGB picture through
+Player's current paused generation and sole adapter. Selecting Media leaves that
+context paused. Explicit start/show-media/restart/resume selects Media through
+ControlService, including existing MCP operations. Screen-on and startup never
+resume either presentation. Obsolete upload completions cannot reclaim ownership.
