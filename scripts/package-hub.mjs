@@ -40,7 +40,7 @@ try {
   const output=join(root,'artifacts',basename(first));await copyFile(first,output);await writeFile(output+'.sha256',sha(bytes)+'  '+basename(output)+'\n');
   if(process.argv.includes('--test')){
     const consumer=join(scratch,'consumer');await mkdir(consumer);await writeFile(join(consumer,'package.json'),'{"name":"isolated-hub-consumer","private":true,"type":"module"}');
-    npm(['install','--offline','--ignore-scripts','--no-audit','--no-fund',output],consumer);
+    npm(['install','--offline','--cache',join(scratch,'empty-cache'),'--ignore-scripts','--no-audit','--no-fund',output],consumer);
     const installed=join(consumer,'node_modules/@jimmie-potts/hub');
     const manifest=JSON.parse(await readFile(join(installed,'manifest.json'),'utf8'));
     assert.deepEqual(await files(installed),[...Object.keys(manifest.files),'manifest.json'].sort());

@@ -40,7 +40,7 @@
     "test:agent-state:package": "npm run build && npm run test:agent-state:package:built",
     "test:agent-state:package:built": "node scripts/package-agent-state.mjs --test",
     "test:hub": "npm run build && npm run test:hub:built",
-    "test:hub:built": "node --test apps/hub/tests/*.test.mjs",
+    "test:hub:built": "node --test apps/hub/tests/*.test.mjs tests/hub_measurement.test.mjs",
     "package:hub": "npm run build && node scripts/package-hub.mjs",
     "test:hub:package": "npm run build && npm run test:hub:package:built",
     "test:hub:package:built": "node scripts/package-hub.mjs --test"
