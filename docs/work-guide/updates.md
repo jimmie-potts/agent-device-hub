@@ -8,12 +8,16 @@ recovery and rollback after new writes. Disposable owning-service checks passed
 against pinned source. This is source evidence; installed migration remains #8,
 full qualification remains #30 and budget/memory follow-up remains #123.
 
+Final review tightened readiness to a live supervised Pixoo process and its
+selected configuration; the missing-facade regression and real simulator
+cutover passed. The host README receipt now pins `2b80b96`.
+
 Updated shared-hosting text, the ownership and migration diagrams, and pinned
 Hub source receipts at `f606c09`. Refreshed all three repository inventories.
 Generation, five maintenance tests and guide browser/print checks passed with
 98 primary open issues, 12 guides and nine diagrams. All nine diagrams passed
 9/9 deterministic artifact checks. Guide SHA-256 is
-`826c8f5f94ed71d2e988557fb415533d00841d5e90f40a687a532cbc1f37f1f2`.
+`a34a2db21bc565739fd793352ae66547b32bfd2f7740023064ed3dd57e1fa35d`.
 
 Inspected the changed diagrams at desktop/mobile sizes and in print. Archify's
 standalone shared-system browser check passed all four desktop sizes. The
