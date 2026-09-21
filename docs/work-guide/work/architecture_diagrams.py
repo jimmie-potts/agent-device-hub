@@ -461,7 +461,7 @@ D8 = seq(
     cards=[
         {'dot': 'cyan', 'title': 'One owner at a time', 'items': ['Embedded and standalone owners never run against one state', 'A stale feed stays visibly stale until recovery or rollback']},
         {'dot': 'violet', 'title': 'What moves', 'items': ['Identities, session/notice state, revisions and producer configuration', 'Pixoo’s facade switches renderer, feed, label and acknowledgment operations to the selected owner']},
-        {'dot': 'amber', 'title': 'Owned elsewhere', 'items': ['Hub #8 candidate adds reversible setup and Nanoleaf cutover', 'Controller databases stay private; Windows/WSL never share a mounted SQLite file', 'Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate']},
+        {'dot': 'amber', 'title': 'Owned elsewhere', 'items': ['Hub #8 source adds reversible setup and Nanoleaf cutover', 'Controller databases stay private; Windows/WSL never share a mounted SQLite file', 'Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate']},
     ],
     width=1240,
 )
@@ -615,11 +615,11 @@ DIAGRAMS = [
          sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
          issues=['H67', 'H68', 'H69', 'H71']),
     dict(id='seq-owner-migration', spec=D8, kind='sequence', status='implemented',
-         status_label='Source migration delivered; setup candidate; installation pending', short='Owner migration',
+         status_label='Source setup and migration delivered; installation pending', short='Owner migration',
          summary='An explicitly authorized migration quiesces the selected route and old owner, exports and imports versioned state with its identities and revisions, validates the import, keeps the old reducer inactive, switches producer and consumer endpoints and resyncs from authoritative snapshots.',
          reading=['Pixoo’s session-source facade switches renderer, feed, label and acknowledgment operations to the selected owner. Remote mode never starts a second local reducer.',
                   'Rollback requires quiescing and stopping the new owner, transferring its latest export if it accepted writes, then importing into a fresh host store and validating routes before activation. Pixoo remains a remote facade with its media and preferences. Consumers reload the authoritative snapshot.'],
-         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Delivered [[H5]] source verifies supervised release, fenced import, durable route recovery and rollback after writes. [[H8]] now has a Linux/WSL source candidate for setup and Nanoleaf cutover; installation and real-client qualification remain pending.',
+         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Delivered [[H5]] source verifies supervised release, fenced import, durable route recovery and rollback after writes. [[H8]] source merged in PR #129 for Linux/WSL setup and Nanoleaf cutover; installation and real-client qualification remain pending.',
                      'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
                      'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
          sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'apps/hub/SETUP.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],

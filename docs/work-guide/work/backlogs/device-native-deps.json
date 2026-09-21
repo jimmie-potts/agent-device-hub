@@ -190,7 +190,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -479,7 +479,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
