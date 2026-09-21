@@ -123,3 +123,10 @@ Run `npm run test:agent-state`, `npm run test:agent-state:python` and
 The [work guide](docs/work-guide/README.md) contains the remaining-work map,
 delivery history and architecture diagrams for Hub, Nanoleaf and Pixoo. Its
 generator and source snapshots live here and are maintained with each delivery.
+
+## BUNNY frontend
+
+The Hub #6 candidate adds the [integration dashboard](apps/dashboard/README.md)
+for activity, components and connections. It uses the existing protected hub and
+controller services, with source-only synthetic browser checks. Human approval of
+the new UI, source delivery, installation and physical acceptance remain separate.

@@ -10,15 +10,18 @@ export function makeCommand(snapshot:Snapshot,command:Command):Request {
 }
 export class ApiError extends Error {constructor(public code:string,public status=0,public detail:unknown=undefined){super(code);}}
 export class Api {
+ private mutation=0;
  constructor(private token:string){}
  async request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T> {
+  if(body!==undefined)this.mutation++;const generation=this.mutation;
   try {
    const response=await fetch(path,{method:body===undefined?'GET':'POST',redirect:'error',cache:'no-store',headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json','x-pixoo-request':'1'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
    const value=await response.json();
+   if(body===undefined&&generation!==this.mutation)throw new ApiError('snapshot-superseded');
    if(!response.ok)throw new ApiError(value.error?.code??value.failure?.code??'unavailable',response.status,value);
    if(value.ok===false)throw new ApiError(value.code??'unavailable',503,value);
    return value as T;
-  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}
+  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}finally{if(body!==undefined)this.mutation++;}
  }
  async feed(signal:AbortSignal,onChange:()=>void,onStatus:(connected:boolean)=>void){
   let cursor='',delay=500;

@@ -7,11 +7,16 @@ import {join} from 'node:path';
 const dir=await mkdtemp(join(tmpdir(),'dashboard-client-'));
 try {
  await build({entryPoints:['apps/dashboard/src/client.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'client.mjs')});
- const {makeCommand,safeEditorUrl}=await import(join(dir,'client.mjs'));
+ const {makeCommand,safeEditorUrl,Api}=await import(join(dir,'client.mjs'));
  test('mode commands preserve the edited revision and original server ticket',()=>{
   const snapshot={identity:{controllerId:'c',deviceId:'d'},configurationRevision:2,generation:{epoch:'g',sequence:7},nextRequestId:{epoch:'e',sequence:3}};
   const command=makeCommand(snapshot,{kind:'mode.set',mode:'Quiet'});
   assert.deepEqual(command,{apiVersion:'1.0',controllerId:'c',deviceId:'d',expectedConfigurationRevision:2,expectedGeneration:{epoch:'g',sequence:7},requestId:{epoch:'e',sequence:3},command:{kind:'mode.set',mode:'Quiet'}});
+ });
+ test('a delayed read cannot replace observations after a submitted write',async()=>{
+  const original=globalThis.fetch;let release;
+  globalThis.fetch=async(_url,options)=>options.method==='POST'?Response.json({ok:true}):new Promise(resolve=>{release=resolve;});
+  try {const api=new Api('a'.repeat(43));const read=api.request('/snapshot');await api.request('/commands',{action:'explicit'});release(Response.json({revision:1}));await assert.rejects(read,error=>error.code==='snapshot-superseded');}finally{globalThis.fetch=original;}
  });
  test('editor links reject credentials, javascript, nonloopback and secret query strings',()=>{
   assert.equal(safeEditorUrl('http://127.0.0.1:8765/wall'),'http://127.0.0.1:8765/wall');

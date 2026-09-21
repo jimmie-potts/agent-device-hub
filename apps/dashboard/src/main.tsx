@@ -91,7 +91,7 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
    }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);}
   }
   async function refresh(){if(busy){again=true;return;}busy=true;
-   try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);setMonitor(next);setReceived(Date.now());setError('');}
+   try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);setMonitor(old=>old&&old.ownerId===next.ownerId&&old.snapshot.revision>next.snapshot.revision?old:next);setReceived(Date.now());setError('');}
    catch(e){if(!stop.signal.aborted)setError(e instanceof ApiError?e.code:'unavailable');}finally{busy=false;if(again&&!stop.signal.aborted){again=false;void refresh();}}
   }
   refreshRef.current=()=>void refresh();deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);if(c)void refreshDevice(c);};

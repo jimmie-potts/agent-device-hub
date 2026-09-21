@@ -1,0 +1,26 @@
+{
+  "synthetic": true,
+  "physical": false,
+  "tests": "browser controls, no-write inspection, draft/focus, conflict, offline, desktop/mobile axe",
+  "ingestRoundTripMs": [
+    2.807393999999931,
+    2.0742089999998825,
+    1.974999999999909,
+    1.9615490000001046,
+    1.8284189999999398
+  ],
+  "eventToRenderedSnapshotMs": [
+    584.1651540000003,
+    199.85739900000044,
+    799.4547249999996,
+    1000.2026089999999,
+    1000.1827479999993,
+    999.9121570000007,
+    1000.1527590000005,
+    199.87510900000052,
+    799.6632860000009,
+    999.808567
+  ],
+  "feedConnections": 3,
+  "a11yViolations": 0
+}

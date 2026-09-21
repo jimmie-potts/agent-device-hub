@@ -398,3 +398,22 @@ latest state into a fresh host store; Pixoo retains its private media directory
 and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
+
+## BUNNY frontend candidate, Hub #6
+
+The source candidate in `apps/dashboard` adds React/TypeScript activity, component
+and connection views served by `apps/hub` at the same origin. A dedicated scoped
+hub credential stays in page memory. Native controller credentials remain in the
+hub's private configuration. The authenticated dashboard context exposes permitted
+component identities and supported editor links, never arbitrary proxy targets.
+
+The component view owns browser navigation, drafts and displayed observations.
+Typed controls submit existing owning-service commands with their request and
+revision identity. Feed resync and periodic snapshots refresh evidence without
+replaying writes. Nanoleaf/Pixoo settings retain their device-specific meanings;
+unknown components expose unavailable controls. No database, reducer, device
+writer or physical effect scheduler moves into the browser.
+
+This candidate retains Hub #6's explicit UI approval and source-delivery gates.
+Installation, physical acceptance, general controls and full editor migration
+remain separately owned work.
