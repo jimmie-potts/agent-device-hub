@@ -29,3 +29,13 @@ test('open stdin cannot hold the hook beyond its own deadline',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'hub-hook-stall-'));t.after(()=>rm(directory,{recursive:true,force:true}));const path=join(directory,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',hook:'SessionStart'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token:'t'.repeat(43)}),{mode:0o600});
  const start=performance.now();const child=spawn(process.execPath,[new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,path],{stdio:['pipe','pipe','pipe']});let output='';child.stdout.on('data',v=>output+=v);child.stderr.on('data',v=>output+=v);const code=await new Promise(r=>child.once('exit',r));assert.equal(code,0);assert.equal(output,'');assert.ok(performance.now()-start<3300);child.stdin.destroy();
 });
+test('setup receipt blocks incomplete, foreign and malformed installations after a producer rename',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-receipt-hook-'));t.after(()=>rm(directory,{recursive:true,force:true}));let requests=0;
+ const server=createServer((req,res)=>{requests++;req.resume();res.end('{}');});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const path=join(directory,'producer.json'),receiptPath=join(directory,'receipt.json'),source={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'SessionStart'},token='t'.repeat(43),endpoint=`http://127.0.0.1:${server.address().port}/api/monitor/v1/events`;
+ await writeFile(path,JSON.stringify({enabled:true,qualified:true,source,endpoint,token}),{mode:0o600});const receipt={version:1,state:'installed',token,input:{directory,source,endpoint,qualified:true}};
+ for(const value of [{...receipt,state:'applying'},{...receipt,state:'removing'},{...receipt,state:'removed'},{...receipt,token:'z'.repeat(43)},{...receipt,input:{...receipt.input,source:{...source,sourceId:'foreign'}}},null]){
+  await writeFile(receiptPath,value===null?'{invalid':JSON.stringify(value),{mode:0o600});assert.deepEqual(await run(path,{hook_event_name:'Stop',session_id:'session'}),{code:0,stdout:'',stderr:''});assert.equal(requests,0);
+ }
+ await writeFile(receiptPath,JSON.stringify(receipt),{mode:0o600});await run(path,{hook_event_name:'Stop',session_id:'session'});assert.equal(requests,1);
+});

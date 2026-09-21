@@ -178,3 +178,17 @@ test('explicit consumer preparation exposes the running reducer while every muta
   await destination.close();destination=await startHub(options(join(root,'destination')),{staged:true});assert.throws(()=>destination.prepareConsumers(),/activation-unavailable/);
  }finally{await destination?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
 });
+for(const consumerId of ['pixoo','nanoleaf'])test('activation refuses missing '+consumerId+' readiness proof',async()=>{
+ const {readFile}=await import('node:fs/promises');const {stageProducer,routeDigest,releaseRoute}=await import('../dist/migration-routes.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-missing-proof-'));let source,hub,route;
+ try{
+  for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
+  const configuration=join(root,'host.json'),config={...options(join(root,'source')),consumers:[{id:consumerId,clearOnNewTurn:true}]};await writeFile(configuration,JSON.stringify(config),{mode:0o600});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  hub=await startHub({...config,directory:join(root,'destination')},{staged:true,released:await quiesceAndStop(source,join(root,'export.json'))});
+  const path=join(root,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:hub.url+'/api/monitor/v1/events',token}),{mode:0o600});
+  route=await stageProducer(path,await routeDigest(path),hub.url+'/api/monitor/v1/events',token);
+  await assert.rejects(hub.activate({producers:[route],consumers:[{id:consumerId}]}),/consumer-not-ready/);
+  assert.equal(hub.staged(),true);assert.equal(JSON.parse(await readFile(path,'utf8')).enabled,false);assert.equal((await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:'{}'})).status,503);
+ }finally{if(route)await releaseRoute(route);await hub?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
+});

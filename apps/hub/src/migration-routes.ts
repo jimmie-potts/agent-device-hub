@@ -127,7 +127,9 @@ async function get(endpoint:string,token:string):Promise<unknown>{
 }
 /** Files are enabled while admission is STILL fenced. The caller opens admission synchronously afterward. */
 export async function prepareActivation(plan:ActivationPlan,origin:string,ownerId:string,consumers:Consumer[],snapshot:()=>Snapshot):Promise<void>{
+ if(!object(plan))throw new Error('incomplete-routes');
  if(!Array.isArray(plan.producers)||plan.producers.length<1||plan.producers.length>32||!Array.isArray(plan.consumers)||plan.consumers.length!==consumers.length||new Set(plan.consumers.map(c=>c.id)).size!==consumers.length||consumers.some(c=>!plan.consumers.some(route=>route.id===c.id)))throw new Error('incomplete-routes');
+ if(plan.consumers.some(c=>!object(c)||!(c.id==='pixoo'&&exact(c,['id','route','owner'])||c.id==='nanoleaf'&&exact(c,['id','nanoleaf']))))throw new Error('consumer-not-ready');
  const pixoo=plan.consumers.filter((c):c is {id:string;route:StagedRoute;owner:ManagedOwner}=>'route' in c);
  const records=[...plan.producers,...pixoo.map(c=>c.route)];if(new Set(records).size!==records.length)throw new Error('duplicate-route');
  const selected=records.map(receipt=>{const record=stages.get(receipt);if(!record)throw new Error('unstaged-route');return record;});

@@ -6,7 +6,7 @@ hub and setup tests, reproducible offline hub package, workflow checks and
 Linux isolated performance checks passed. The workflow coverage fixture was
 updated to retain the new setup command alongside every previous suite.
 
-Fourteen setup checks cover configuration conflicts, edited/duplicated/missing
+Eighteen setup checks cover configuration conflicts, edited/duplicated/missing
 ownership entries, bounded configurations, interrupted grant/revoke,
 private-content dropping, silence/deadlines, consumer capability checks and
 competing receipt claims. The duplicate-credential regression fails against
@@ -28,3 +28,7 @@ This archive records completed source implementation, not hosted acceptance,
 merge, personal installation, client-version qualification or physical results.
 Those remain separate receipts. Final reviews and all five PR/main CI jobs
 remain delivery gates recorded in the PR, outside this commit.
+
+Final review regressions reject missing consumer capability records, concurrent
+SDK edits to one target, and post-rename setup persistence failures. Pending or
+foreign receipts also block hook emission after a process-death window.

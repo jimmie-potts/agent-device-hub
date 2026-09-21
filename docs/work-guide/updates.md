@@ -1,3 +1,25 @@
+## September 21, 2026: Hub #13 source completion
+
+[PR #126](https://github.com/jimmie-potts/agent-device-hub/pull/126) merged as
+`ee1eac1608d1cff72293a6627da4685f951f241f`. Independent Standards and
+Specification reviews approved the source candidate after the packaging
+correction. All five PR checks and all five merged-main checks passed before
+#13 closed. The hub suite passed 43 tests, including 14 host MCP tests; a fresh
+offline archive consumer passed 42 tests. The eight-task OpenSpec change is
+synchronized and archived.
+
+This follow-up records completed source delivery, refreshes the three backlogs
+and paginated histories, and removes #13 from open-issue coverage and the
+remaining-work roadmap. The coordinating writer owns this guide companion to
+PR #126. The existing diagrams retain the same clients, registered routing,
+shared module and controller owners; no diagram or source-review date changes
+are needed. Installed Codex/Claude, physical acceptance and public publication
+remain separate. Pixoo catalog/player handlers remain in its application.
+
+Guide generation, five maintenance tests, browser/print checks and identical
+regeneration passed. This change contains only guide files and uses the
+verified guide-only CI exception. It does not publish the public website.
+
 ## September 21, 2026: Hub #13 standalone MCP candidate
 
 Updated shared-hosting guidance and the backlog snapshot for the opt-in MCP candidate. The host delegates qualified session commands and configured controller operations to existing owners. Source protocol checks cover synthetic Codex/Claude profiles, authorization, replay, native settings, stale evidence and disconnect. Installed clients, devices and public guide publication remain separate.

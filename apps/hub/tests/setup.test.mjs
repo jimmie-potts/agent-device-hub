@@ -62,3 +62,19 @@ test('a second receipt cannot adopt the first source credential or revoke its ac
  assert.equal((await fetch(hub.url+'/api/hub/v1/authority?scope=ingest',{headers:{authorization:'Bearer '+producer.token}})).status,200);
  await remove(input.directory,access);
 });
+test('concurrent sources cannot overwrite the same client target',async t=>{
+ const first=await fixture(t),second=await fixture(t);second.target=first.target;second.source={...source,sourceId:'second'};
+ const plans=await Promise.all([planSetup(first),planSetup(second)]);let release;const gate=new Promise(r=>release=r);let entered;const started=new Promise(r=>entered=r);
+ const access={grant:async()=>{entered();await gate;},revoke:async()=>{}};
+ const one=applySetup(first,plans[0].digest,access);await started;
+ const two=applySetup(second,plans[1].digest,access);two.catch(()=>{});await new Promise(r=>setTimeout(r,50));release();
+ const results=await Promise.allSettled([one,two]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected').length,1);
+ assert.equal((await inspectSetup(first.directory)).state,'installed');assert.equal((await read(first.target)).hooks.SessionStart.length,1);
+});
+for(const phase of ['producer','receipt'])test('failed '+phase+' persistence leaves an inactive recoverable producer',async t=>{
+ const {open}=await import('node:fs/promises');const input=await fixture(t);input.qualified=true;const access=authority();const handle=await open(input.directory,'r'),prototype=Object.getPrototypeOf(handle),original=prototype.sync;await handle.close();let failed=false;
+ prototype.sync=async function(){if(!failed){try{if((await read(join(input.directory,'producer.json'))).enabled&&(phase==='producer'||(await read(join(input.directory,'receipt.json'))).state==='installed')){failed=true;throw new Error('injected-sync');}}catch(e){if(e.message==='injected-sync')throw e;}}return original.call(this);};
+ try{await assert.rejects(applySetup(input,(await planSetup(input)).digest,access),/injected-sync/);}finally{prototype.sync=original;}
+ assert.equal(failed,true);assert.equal((await inspectSetup(input.directory)).enabled,false);assert.equal((await inspectSetup(input.directory)).state,'applying');
+ await applySetup(input,(await planSetup(input)).digest,access);assert.equal((await inspectSetup(input.directory)).enabled,true);
+});

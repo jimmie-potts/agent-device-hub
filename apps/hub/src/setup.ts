@@ -1,4 +1,4 @@
-import {join,resolve} from 'node:path';
+import {join,resolve,dirname} from 'node:path';
 import {mkdir,rm} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
 import {createEmitter,type SourceConfiguration} from '@jimmie-potts/agent-state/providers';
@@ -78,8 +78,13 @@ async function locked<T>(directory:string,run:()=>Promise<T>):Promise<T>{
  try{await mkdir(lock,{mode:0o700});}catch{throw new Error('setup-owner-or-recovery-required');}
  try{return await run();}finally{await rm(lock,{recursive:true});}
 }
+async function targetLocked<T>(target:string,run:()=>Promise<T>):Promise<T>{
+ await privateDirectory(dirname(target));const lock=target+'.setup.lock';
+ try{await mkdir(lock,{mode:0o700});}catch{throw new Error('target-owner-or-recovery-required');}
+ try{return await run();}finally{await rm(lock,{recursive:true});}
+}
 export async function applySetup(input:SetupInput,expected:string,authority:SetupAuthority):Promise<void>{
- await locked(input.directory,async()=>{
+ await locked(input.directory,()=>targetLocked(input.target,async()=>{
   const plan=await planSetup(input);if(plan.digest!==expected)throw new Error('configuration-changed');
   let record=await receipt(input.directory);
   if(record?.state==='installed')return;
@@ -95,11 +100,20 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   // The original configuration is retained only for inspection, never whole-file rollback.
   const backup=join(input.directory,'configuration-backup.json');const saved=await readPrivate(backup,true);
   if(saved!==null&&saved!==record.before)throw new Error('backup-conflict');if(saved===null)await replacePrivate(backup,null,record.before);
+  try{
   await authority.grant(record.id,record.token,input.directory);
   if(current!==record.after)await replacePrivate(input.target,current,record.after);
   await replacePrivate(producerPath,await readPrivate(producerPath),encode({...producer,enabled:input.qualified}));
   record.state='installed';await save(record);
- });
+  }catch(error){
+   // Revoke emission, not another writer's changed configuration. The hook also
+   // requires an installed receipt, covering process death before this recovery.
+   record.state='applying';
+   try{const raw=await readPrivate(producerPath);const current=JSON.parse(raw!);if(current.token===record.token&&canonical(current.source)===canonical(input.source))await replacePrivate(producerPath,raw,encode({...current,enabled:false}));}catch{/* Retain the original failure; receipt gating remains fail closed. */}
+   try{await save(record);}catch{/* Owner must inspect retained durable intent. */}
+   throw error;
+  }
+ }));
 }
 export async function planRemoval(directory:string){
  const record=await receipt(directory);if(!record||record.state==='removed')return {digest:digest('removed'),removals:[] as Entry[],additions:[],after:null};
@@ -109,6 +123,8 @@ export async function planRemoval(directory:string){
 }
 export async function removeSetup(directory:string,expected:string,authority:SetupAuthority):Promise<void>{
  await locked(directory,async()=>{
+  const existingRecord=await receipt(directory);if(!existingRecord)return;
+  await targetLocked(existingRecord.input.target,async()=>{
   const plan=await planRemoval(directory);if(plan.digest!==expected)throw new Error('configuration-changed');
   const record=await receipt(directory);if(!record||record.state==='removed')return;
   record.removal={before:plan.before!,after:plan.after!};record.state='removing';await save(record);
@@ -118,11 +134,12 @@ export async function removeSetup(directory:string,expected:string,authority:Set
   const latest=(await readPrivate(record.input.target))!;if(latest!==record.removal.before)throw new Error('configuration-changed');await replacePrivate(record.input.target,latest,record.removal.after);
   // Retain a disabled private producer and receipt for migration/revocation audit.
   record.state='removed';await save(record);
+  });
  });
 }
 export async function inspectSetup(directory:string){
  const record=await receipt(directory);if(!record)return {state:'absent' as const};
  const {provider,client,hostId,sourceId}=record.input.source;
  const producer=await readPrivate(join(directory,'producer.json'),true);
- return {state:record.state,owner:record.input.owner,source:{provider,client,hostId,sourceId},qualified:record.input.qualified,enabled:producer!==null&&JSON.parse(producer).enabled===true};
+ return {state:record.state,owner:record.input.owner,source:{provider,client,hostId,sourceId},qualified:record.input.qualified,enabled:record.state==='installed'&&producer!==null&&JSON.parse(producer).enabled===true};
 }

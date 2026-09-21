@@ -9,7 +9,7 @@ import {object,canonical,loopbackEndpoint} from './common.js';
 async function ownedChange(directory:string,id:string,token:string,receiptDirectory:string,remove:boolean,change:()=>Promise<void>){
  if(!/^hub-[a-f0-9]{32}$/.test(id)||!/^[A-Za-z0-9_-]{43}$/.test(token))throw new Error('invalid-owned-credential');
  await privateDirectory(directory);await privateDirectory(receiptDirectory);
- const path=join(directory,'setup-'+id+'.json'),lock=path+'.lock';
+ const path=join(directory,'setup-'+id+'.json'),lock=join(directory,'setup-authority.lock');
  try{await mkdir(lock,{mode:0o700});}catch{throw new Error('credential-owner-or-recovery-required');}
  try{
   const raw=await readPrivate(path,true),record=raw===null?null:JSON.parse(raw),identity={receiptDirectory,digest:digest(token)};
