@@ -164,3 +164,17 @@ test('consumer proof rejects copied handles, wrong startup config and stopped pr
   await stopOwner(owner);assert.throws(()=>managedPixooConsumer(owner,path,digest),/consumer-not-ready/);
  }finally{if(owner)await stopOwner(owner);await rm(root,{recursive:true,force:true});}
 });
+
+test('explicit consumer preparation exposes the running reducer while every mutation remains fenced',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-consumer-stage-'));let source,destination;
+ try{
+  for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  destination=await startHub(options(join(root,'destination')),{staged:true,released:await quiesceAndStop(source,join(root,'export.json'))});
+  destination.prepareConsumers();const view=await (await fetch(destination.url+'/api/monitor/v1/sessions',{headers})).json();
+  assert.equal(view.snapshot.collector,'running');assert.deepEqual(Object.keys(view).sort(),['apiVersion','ownerId','connection','snapshot','admissionRejected','nextRequestId'].sort());
+  assert.equal((await fetch(destination.url+'/api/monitor/v1/events',{method:'POST',headers,body:'{}'})).status,503);
+  await assert.rejects(destination.activate({producers:[],consumers:[]}),/incomplete-routes/);assert.equal((await (await fetch(destination.url+'/api/monitor/v1/sessions',{headers})).json()).snapshot.collector,'quiesced');
+  await destination.close();destination=await startHub(options(join(root,'destination')),{staged:true});assert.throws(()=>destination.prepareConsumers(),/activation-unavailable/);
+ }finally{await destination?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
+});

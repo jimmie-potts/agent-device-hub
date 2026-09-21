@@ -25,3 +25,7 @@ test('disabled, invalid, offline and hung input exit silently within the hard de
  for(const enabled of [false,true]){await writeFile(path,JSON.stringify({enabled,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token:'t'.repeat(43)}),{mode:0o600});const start=performance.now();assert.deepEqual(await run(path,{hook_event_name:'Stop',session_id:'s'}),{code:0,stdout:'',stderr:''});assert.ok(performance.now()-start<3300);}
  await writeFile(path,'not-json',{mode:0o600});assert.deepEqual(await run(path,{}),{code:0,stdout:'',stderr:''});
 });
+test('open stdin cannot hold the hook beyond its own deadline',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-hook-stall-'));t.after(()=>rm(directory,{recursive:true,force:true}));const path=join(directory,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',hook:'SessionStart'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token:'t'.repeat(43)}),{mode:0o600});
+ const start=performance.now();const child=spawn(process.execPath,[new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,path],{stdio:['pipe','pipe','pipe']});let output='';child.stdout.on('data',v=>output+=v);child.stderr.on('data',v=>output+=v);const code=await new Promise(r=>child.once('exit',r));assert.equal(code,0);assert.equal(output,'');assert.ok(performance.now()-start<3300);child.stdin.destroy();
+});

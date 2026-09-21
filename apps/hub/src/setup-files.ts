@@ -14,11 +14,12 @@ export async function privateDirectory(path:string):Promise<void>{
 export async function readPrivate(path:string,optional=false):Promise<string|null>{
  await privateDirectory(dirname(path));
  let file;try{file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);}catch(e){if(optional&&(e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}
- try{const stat=await file.stat();if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid!()||(stat.mode&0o077)!==0||stat.size>262144)throw new Error('invalid-private-file');
- const bytes=Buffer.alloc(262145);let size=0;while(size<bytes.length){const r=await file.read(bytes,size,bytes.length-size,null);size+=r.bytesRead;if(!r.bytesRead)break;}if(size>262144)throw new Error('private-file-limit');return new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,size));
+ try{const stat=await file.stat();if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid!()||(stat.mode&0o077)!==0||stat.size>4194304)throw new Error('invalid-private-file');
+ const bytes=Buffer.alloc(4194305);let size=0;while(size<bytes.length){const r=await file.read(bytes,size,bytes.length-size,null);size+=r.bytesRead;if(!r.bytesRead)break;}if(size>4194304)throw new Error('private-file-limit');return new TextDecoder('utf-8',{fatal:true}).decode(bytes.subarray(0,size));
  }finally{await file.close();}
 }
 export async function replacePrivate(path:string,before:string|null,after:string):Promise<void>{
+ if(Buffer.byteLength(after)>4194304)throw new Error('private-file-limit');
  if(await readPrivate(path,true)!==before)throw new Error('configuration-changed');
  const temporary=path+'.'+randomUUID()+'.tmp';
  try{const file=await open(temporary,'wx',0o600);try{await file.writeFile(after);await file.sync();}finally{await file.close();}

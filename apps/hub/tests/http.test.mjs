@@ -28,7 +28,8 @@ test('authenticated Pixoo-compatible reads, scoped writes, replay and restart fe
     assert.equal((await call('/api/monitor/v1/events',event)).status,200);
     let view=await (await call('/api/monitor/v1/sessions')).json();
     assert.equal(view.ownerId,'owner');assert.equal(view.snapshot.sessions.length,1);
-    assert.deepEqual(view.matches,[event.identity]);
+    assert.equal(view.matches,undefined);
+    assert.deepEqual((await (await call('/api/monitor/v1/sessions?q=')).json()).matches,[event.identity]);
     assert.deepEqual((await (await call('/api/monitor/v1/sessions?q=does-not-match')).json()).matches,[]);
     const command={operation:'label',requestId:view.nextRequestId,identity:event.identity,label:'Explicit label'};
     const first=await (await call('/api/monitor/v1/commands',command)).json();

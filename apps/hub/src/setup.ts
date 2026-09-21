@@ -9,7 +9,7 @@ export type SetupInput={directory:string;target:string;source:SourceConfiguratio
 /** Implementations must persist grants/revocations and confirm the active owner's access state before resolving. */
 export type SetupAuthority={grant:(id:string,token:string)=>Promise<void>;revoke:(id:string,token:string)=>Promise<void>};
 type Entry={event:string;group:{hooks:{type:string;command:string;timeout:number;commandWindows?:string}[]}};
-type Receipt={version:1;state:'applying'|'installed'|'removing'|'removed';input:SetupInput;id:string;token:string;entries:Entry[];before:string;after:string};
+type Receipt={version:1;state:'applying'|'installed'|'removing'|'removed';input:SetupInput;id:string;token:string;entries:Entry[];before:string;after:string;removal?:{before:string;after:string}};
 const encode=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 const quote=(value:string)=>"'"+value.replaceAll("'","'\"'\"'")+"'";
 export function hookCommand(node:string,hook:string,config:string,distribution?:string):{command:string;commandWindows?:string}{
@@ -33,7 +33,9 @@ function entries(input:SetupInput):Entry[]{
  const events=['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop',...(input.source.provider==='codex'?['Interrupt']:[])];
  return events.map(event=>({event,group:{hooks:[{type:'command',...command,timeout:3}]}}));
 }
-function config(text:string){const value=JSON.parse(text);if(!object(value)||value.hooks!==undefined&&!object(value.hooks))throw new Error('invalid-client-configuration');const hooks=(value.hooks??{}) as Record<string,unknown>;for(const groups of Object.values(hooks))if(!Array.isArray(groups))throw new Error('invalid-client-configuration');return {...value,hooks};}
+function config(text:string){if(Buffer.byteLength(text)>262144)throw new Error('client-configuration-limit');const value=JSON.parse(text);
+ const pending:[unknown,number][]=[[value,0]];let nodes=0;while(pending.length){const [item,depth]=pending.pop()!;if(++nodes>10000||depth>20)throw new Error('client-configuration-limit');if(item&&typeof item==='object')for(const child of Object.values(item))pending.push([child,depth+1]);}
+if(!object(value)||value.hooks!==undefined&&!object(value.hooks))throw new Error('invalid-client-configuration');const hooks=(value.hooks??{}) as Record<string,unknown>;for(const groups of Object.values(hooks))if(!Array.isArray(groups))throw new Error('invalid-client-configuration');return {...value,hooks};}
 async function receipt(directory:string):Promise<Receipt|null>{
  const raw=await readPrivate(join(directory,'receipt.json'),true);if(raw===null)return null;
  const value=JSON.parse(raw) as Receipt;
@@ -45,6 +47,7 @@ function removeEntries(text:string,record:Receipt){
  const value=config(text);
  for(const {event,group} of record.entries){
   const groups=(value.hooks[event]??[]) as unknown[];
+  if(groups.filter(candidate=>canonical(candidate)===canonical(group)).length!==1)throw new Error('owned-entry-changed');
   // An altered owned command must not be silently removed or replaced.
   for(const candidate of groups){if(canonical(candidate)===canonical(group))continue;
    if(JSON.stringify(candidate).includes(join(record.input.directory,'producer.json')))throw new Error('owned-entry-changed');
@@ -58,14 +61,16 @@ export async function planSetup(input:SetupInput){
  validate(input);await privateDirectory(input.directory);
  const current=await readPrivate(input.target),record=await receipt(input.directory);if(current===null)throw new Error('missing-target');
  if(record&&canonical(record.input)!==canonical(input))throw new Error('setup-identity-conflict');
- if(record&&record.state!=='removed')removeEntries(current,record);
- const additions=entries(input),value=config(current);
- for(const {event,group} of additions){const groups=(value.hooks[event]??[]) as unknown[];
+ if(record&&record.state==='installed')removeEntries(current,record);
+ if(record&&record.state==='applying'&&current!==record.before&&current!==record.after)throw new Error('configuration-changed');
+ const desired=entries(input),additions:Entry[]=[],value=config(current);
+ for(const {event,group} of desired){const groups=(value.hooks[event]??[]) as unknown[];
   if(!record&&groups.some(g=>JSON.stringify(g).includes(input.hook)))throw new Error('unowned-producer-conflict');
-  if(!groups.some(g=>canonical(g)===canonical(group)))value.hooks[event]=[...groups,group];
+  if(!groups.some(g=>canonical(g)===canonical(group))){value.hooks[event]=[...groups,group];additions.push({event,group});}
  }
  const after=encode(value);
- return {digest:digest(canonical({input,current,record})),additions,changed:current!==after,after};
+ if(Buffer.byteLength(after)>262144)throw new Error('client-configuration-limit');
+ return {digest:digest(canonical({input,current,record})),additions,removals:[],changed:current!==after,before:current,after};
 }
 async function locked<T>(directory:string,run:()=>Promise<T>):Promise<T>{
  await privateDirectory(directory);const lock=join(directory,'setup.lock');
@@ -78,7 +83,7 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   let record=await receipt(input.directory);
   if(record?.state==='installed')return;
   if(record?.state==='removing'||record?.state==='removed')throw new Error('setup-removal-record-retained');
-  if(!record){record={version:1,state:'applying',input:structuredClone(input),id:identity(input),token:randomBytes(32).toString('base64url'),entries:plan.additions,before:(await readPrivate(input.target))!,after:plan.after};await save(record);}
+  if(!record){record={version:1,state:'applying',input:structuredClone(input),id:identity(input),token:randomBytes(32).toString('base64url'),entries:entries(input),before:plan.before,after:plan.after};if(Buffer.byteLength(encode(record))>4194304)throw new Error('receipt-limit');await save(record);}
   const current=(await readPrivate(input.target))!;
   if(current!==record.before&&current!==record.after)throw new Error('configuration-changed');
   const producerPath=join(input.directory,'producer.json');
@@ -95,15 +100,21 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   record.state='installed';await save(record);
  });
 }
-export async function removeSetup(directory:string,authority:SetupAuthority):Promise<void>{
+export async function planRemoval(directory:string){
+ const record=await receipt(directory);if(!record||record.state==='removed')return {digest:digest('removed'),removals:[] as Entry[],additions:[],after:null};
+ const current=(await readPrivate(record.input.target))!;
+ const after=record.removal&&current===record.removal.after?current:record.state==='applying'&&current===record.before?current:removeEntries(current,record);
+ return {digest:digest(canonical({record,current})),removals:after===current?[]:record.entries,additions:[],before:current,after};
+}
+export async function removeSetup(directory:string,expected:string,authority:SetupAuthority):Promise<void>{
  await locked(directory,async()=>{
+  const plan=await planRemoval(directory);if(plan.digest!==expected)throw new Error('configuration-changed');
   const record=await receipt(directory);if(!record||record.state==='removed')return;
-  const current=(await readPrivate(record.input.target))!;removeEntries(current,record);
-  record.state='removing';await save(record);
+  record.removal={before:plan.before!,after:plan.after!};record.state='removing';await save(record);
   const producer=join(directory,'producer.json'),raw=await readPrivate(producer,true);
   if(raw!==null){const value=JSON.parse(raw);if(value.token!==record.token||canonical(value.source)!==canonical(record.input.source))throw new Error('producer-changed');await replacePrivate(producer,raw,encode({...value,enabled:false}));}
   await authority.revoke(record.id,record.token);
-  const latest=(await readPrivate(record.input.target))!;await replacePrivate(record.input.target,latest,removeEntries(latest,record));
+  const latest=(await readPrivate(record.input.target))!;if(latest!==record.removal.before)throw new Error('configuration-changed');await replacePrivate(record.input.target,latest,record.removal.after);
   // Retain a disabled private producer and receipt for migration/revocation audit.
   record.state='removed';await save(record);
  });

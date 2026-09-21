@@ -21,7 +21,7 @@ try {
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
   const dependencies=Object.keys(metadata.dependencies);
   metadata.bundleDependencies=dependencies;
-  metadata.exports={'./setup':{types:'./dist/setup.d.ts',import:'./dist/setup.js'},'./setup-authority':{types:'./dist/setup-authority.d.ts',import:'./dist/setup-authority.js'},'./monitor-hook':'./bin/monitor-hook.mjs','.':{types:'./dist/server.d.ts',import:'./dist/server.js'},'./migration':{types:'./dist/migration.d.ts',import:'./dist/migration.js'},'./migration-routes':{types:'./dist/migration-routes.d.ts',import:'./dist/migration-routes.js'}};
+  metadata.exports={'./setup-consumer':{types:'./dist/setup-consumer.d.ts',import:'./dist/setup-consumer.js'},'./setup':{types:'./dist/setup.d.ts',import:'./dist/setup.js'},'./setup-authority':{types:'./dist/setup-authority.d.ts',import:'./dist/setup-authority.js'},'./monitor-hook':'./bin/monitor-hook.mjs','.':{types:'./dist/server.d.ts',import:'./dist/server.js'},'./migration':{types:'./dist/migration.d.ts',import:'./dist/migration.js'},'./migration-routes':{types:'./dist/migration-routes.d.ts',import:'./dist/migration-routes.js'}};
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Preserve the already-packaged dependency closure. Re-resolving bundled private
   // dependencies through npm install can incorrectly request them from the registry.
