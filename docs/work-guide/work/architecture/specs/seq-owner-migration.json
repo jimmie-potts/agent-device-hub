@@ -21,7 +21,7 @@
    "id": "tooling",
    "type": "security",
    "label": "Migration tooling",
-   "sublabel": "H8 runbook"
+   "sublabel": "supervised Node children"
   },
   {
    "id": "pixoo",
@@ -45,7 +45,7 @@
    "id": "consumers",
    "type": "frontend",
    "label": "Consumers",
-   "sublabel": "renderer · Nanoleaf feed"
+   "sublabel": "selected Pixoo facade"
   }
  ],
  "segments": [
@@ -103,14 +103,14 @@
    "from": "pixoo",
    "to": "tooling",
    "y": 400,
-   "label": "export bundle",
+   "label": "private export; verified graceful exit",
    "variant": "return"
   },
   {
    "from": "tooling",
    "to": "hub",
    "y": 444,
-   "label": "import bundle",
+   "label": "single-use import into fenced empty store",
    "variant": "emphasis"
   },
   {
@@ -132,7 +132,7 @@
    "from": "tooling",
    "to": "producers",
    "y": 590,
-   "label": "switch producer endpoint",
+   "label": "stage producer route; retain enablement",
    "variant": "emphasis"
   },
   {
@@ -160,7 +160,7 @@
    "from": "producers",
    "to": "hub",
    "y": 766,
-   "label": "resume ingestion",
+   "label": "enable after readiness; open admission",
    "variant": "default"
   },
   {
@@ -172,9 +172,9 @@
   },
   {
    "from": "tooling",
-   "to": "pixoo",
+   "to": "hub",
    "y": 868,
-   "label": "reactivate embedded owner; endpoints back",
+   "label": "latest export → fresh store; recheck routes",
    "variant": "dashed"
   }
  ],
@@ -199,7 +199,7 @@
    "dot": "amber",
    "title": "Owned elsewhere",
    "items": [
-    "Pixoo #31 supplies the migration boundary; Hub #5/#8 own standalone installed cutover",
+    "Hub #5 verifies source migration; #8 owns installed cutover",
     "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
     "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
    ]

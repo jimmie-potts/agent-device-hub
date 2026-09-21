@@ -6,8 +6,9 @@ Nanoleaf, Pixoo, Tidbyt and LIFX.
 This repository contains versioned controller contracts with TypeScript and Python
 conformance checks, an embeddable authenticated MCP module, a shared agent-state
 package with bounded provider emitters, accepted architecture and development
-workflow tooling. Production collector hosting, controller runtime APIs,
-dashboards and device adapters remain separate work.
+workflow tooling, and a [Linux standalone host](apps/hub/README.md) with bounded
+controller routing and supervised state-owner migration. Installation, dashboards
+and new device adapters remain separate work.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -93,8 +94,9 @@ install hooks, launch agent sessions, start a personal service or operate device
 - [Nanoleaf](https://github.com/jimmie-potts/codex-nanoleaf) retains its Python
   worker, Line allocation, spatial effects, scene restoration and wall editor.
 
-The first shared core can run in Pixoo's existing backend. Standalone hub hosting
-and Nanoleaf shared-input migration are separate, dependency-gated deliverables.
+The shared core can run in Pixoo's existing backend or the standalone Linux hub.
+Its supervised handoff preserves one active state owner. Installed Nanoleaf
+shared-input migration remains a separate acceptance step.
 Later source moves into this monorepo have separate deferred issues,
 [Pixoo #25](https://github.com/jimmie-potts/agent-device-hub/issues/25) and
 [Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).

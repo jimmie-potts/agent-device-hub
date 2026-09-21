@@ -295,3 +295,33 @@ exclusive test stores, disposable state and loopback transports. They do not
 install hooks, launch clients or operate devices. `:built` commands require a
 fresh build in the same job. Host storage conformance, installed qualification
 and integrated performance remain separately evidenced downstream gates.
+
+## Standalone hub checks
+
+Hub #5 targets Node 24 on Linux in WSL. Run `npm ci`, `npm run build`,
+`npm run typecheck`, `npm run test:hub` and `npm run test:hub:package` from the worktree root, alongside
+the shared controller/lifecycle/state/MCP and workflow suites. The combined
+Ubuntu contracts/state CI jobs run `npm run test:hub:built` and `npm run test:hub:package:built` after their fresh
+build. Tests use disposable private Linux state, synthetic credentials and
+fake loopback controllers. They do not start installed services or operate
+devices. The source includes supervised child release, fenced import, route readiness,
+interrupted coordinator recovery and rollback tests. Full integrated performance
+qualification remains #30; source checks do not install or activate personal hooks.
+
+For owning-service acceptance, prepare the immutable revisions in
+`apps/hub/fixtures/pixoo-source.json` and `nanoleaf-source.json` in disposable
+checkouts. Build Pixoo with its Node 24 `npm ci` and `npm run build`.
+Run from this hub worktree after building:
+
+```bash
+node scripts/check-hub-pixoo.mjs /absolute/prepared/pixoo
+node scripts/check-hub-nanoleaf.mjs /absolute/prepared/nanoleaf
+```
+
+Both helpers verify pinned source hashes and use temporary simulator/test state.
+Pixoo exercises native settings plus its actual producer, selected-source facade,
+browser label/acknowledgment routes and renderer through cutover and fresh-store
+rollback. Nanoleaf exercises the real HTTP settings service with a disposable
+worker fixture. Native tokens never enter the printed receipt. These local
+cross-repository checks complement CI's pinned fixtures and isolated package tests;
+CI does not fetch another private repository with broader credentials.

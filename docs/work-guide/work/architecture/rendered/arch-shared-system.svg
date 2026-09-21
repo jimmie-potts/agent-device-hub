@@ -1,5 +1,5 @@
 <svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1100 518" role="img" lang="en" aria-labelledby="arch-shared-system-archify-diagram-title arch-shared-system-archify-diagram-description">
-        <title id="arch-shared-system-archify-diagram-title">Shared source and embedded Pixoo host</title>
+        <title id="arch-shared-system-archify-diagram-title">Shared source and optional Linux host</title>
         <desc id="arch-shared-system-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -24,7 +24,7 @@
         <rect width="100%" height="100%" fill="url(#arch-shared-system-grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Released agent-state; embedded Pixoo host" x="220" y="10" width="630" height="112" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Shared core; select one state owner" x="220" y="10" width="630" height="112" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="arch-shared-system-1" data-composition-frame-label="Existing repositories: own writer, private state" x="10" y="184" width="420" height="112" rx="8" class="c-security-group" stroke-width="1"/>
 
@@ -57,8 +57,8 @@
         <text data-detail="context" x="115" y="85" class="t-muted" font-size="9" text-anchor="middle">Codex · Claude Code</text>
         </g>
 
-        <g id="arch-shared-system-node-emitters" data-node-id="arch-shared-system-emitters" data-node-label="Bounded emitters" tabindex="0" role="button" aria-label="Focus Bounded emitters, allowlisted · fail-open, Released agent-state; embedded Pixoo host" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlisted · fail-open" data-node-tag="source delivered" data-node-context="Released agent-state; embedded Pixoo host">
-          <title>Bounded emitters · allowlisted · fail-open · Released agent-state; embedded Pixoo host · source delivered</title>
+        <g id="arch-shared-system-node-emitters" data-node-id="arch-shared-system-emitters" data-node-label="Bounded emitters" tabindex="0" role="button" aria-label="Focus Bounded emitters, allowlisted · fail-open, Shared core; select one state owner" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlisted · fail-open" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
+          <title>Bounded emitters · allowlisted · fail-open · Shared core; select one state owner · source delivered</title>
           <rect x="250" y="40" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="250" y="40" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 46) scale(0.6875)">
@@ -70,8 +70,8 @@
         <text data-detail="fine" x="325" y="94" class="t-security" font-size="7" text-anchor="middle">source delivered</text>
         </g>
 
-        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, one authoritative owner, Released agent-state; embedded Pixoo host" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one authoritative owner" data-node-tag="source delivered" data-node-context="Released agent-state; embedded Pixoo host">
-          <title>Agent-state core · one authoritative owner · Released agent-state; embedded Pixoo host · source delivered</title>
+        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, one authoritative owner, Shared core; select one state owner" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one authoritative owner" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
+          <title>Agent-state core · one authoritative owner · Shared core; select one state owner · source delivered</title>
           <rect x="460" y="40" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="460" y="40" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(466 46) scale(0.6875)">
@@ -82,8 +82,8 @@
         <text data-detail="fine" x="535" y="94" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
         </g>
 
-        <g id="arch-shared-system-node-feed" data-node-id="arch-shared-system-feed" data-node-label="Versioned feed" tabindex="0" role="button" aria-label="Focus Versioned feed, snapshots · resync, Released agent-state; embedded Pixoo host" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="snapshots · resync" data-node-tag="source delivered" data-node-context="Released agent-state; embedded Pixoo host">
-          <title>Versioned feed · snapshots · resync · Released agent-state; embedded Pixoo host · source delivered</title>
+        <g id="arch-shared-system-node-feed" data-node-id="arch-shared-system-feed" data-node-label="Versioned feed" tabindex="0" role="button" aria-label="Focus Versioned feed, snapshots · resync, Shared core; select one state owner" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="snapshots · resync" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
+          <title>Versioned feed · snapshots · resync · Shared core; select one state owner · source delivered</title>
           <rect x="670" y="40" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="670" y="40" width="150" height="62" rx="6" class="c-messagebus" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(676 46) scale(0.6875)">
@@ -171,8 +171,8 @@
         <text data-detail="fine" x="115" y="442" class="t-frontend" font-size="7" text-anchor="middle">planned</text>
         </g>
 
-        <g id="arch-shared-system-node-routing" data-node-id="arch-shared-system-routing" data-node-label="Registered routing" tabindex="0" role="button" aria-label="Focus Registered routing, authenticated · per-device queues, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="authenticated · per-device queues" data-node-tag="planned host" data-node-context="Architecture component">
-          <title>Registered routing · authenticated · per-device queues · Architecture component · planned host</title>
+        <g id="arch-shared-system-node-routing" data-node-id="arch-shared-system-routing" data-node-label="Registered routing" tabindex="0" role="button" aria-label="Focus Registered routing, authenticated · per-device queues, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="authenticated · per-device queues" data-node-tag="host candidate" data-node-context="Architecture component">
+          <title>Registered routing · authenticated · per-device queues · Architecture component · host candidate</title>
           <rect x="250" y="388" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="250" y="388" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 394) scale(0.6875)">
@@ -181,7 +181,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="325" y="417" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Registered routing</text>
         <text data-detail="context" x="325" y="433" class="t-muted" font-size="7.1" text-anchor="middle">authenticated · per-device queues</text>
-        <text data-detail="fine" x="325" y="442" class="t-security" font-size="7" text-anchor="middle">planned host</text>
+        <text data-detail="fine" x="325" y="442" class="t-security" font-size="7" text-anchor="middle">host candidate</text>
         </g>
 
         <g id="arch-shared-system-node-contracts" data-node-id="arch-shared-system-contracts" data-node-label="Contracts + device-mcp" tabindex="0" role="button" aria-label="Focus Contracts + device-mcp, controller v1 · MCP 1.0.0, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="controller v1 · MCP 1.0.0" data-node-tag="implemented" data-node-context="Architecture component">
@@ -236,9 +236,9 @@
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Released agent-state; embedded Pixoo host">
-          <rect data-graph-role="structural-frame-label-mask" x="224" y="20" width="231.4" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="228" y="33" class="t-cloud" font-size="9" font-weight="600">Released agent-state; embedded Pixoo host</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Shared core; select one state owner">
+          <rect data-graph-role="structural-frame-label-mask" x="224" y="20" width="199" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="228" y="33" class="t-cloud" font-size="9" font-weight="600">Shared core; select one state owner</text>
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-1" data-composition-frame-kind="security-group" data-composition-frame-label="Existing repositories: own writer, private state">

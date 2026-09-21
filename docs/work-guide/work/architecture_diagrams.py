@@ -167,7 +167,7 @@ def c2(id, type, label, sublabel, row, col, tag=None):
 
 
 D2 = arch(
-    'Shared source and embedded Pixoo host',
+    'Shared source and optional Linux host',
     components=[
         c2('providers', 'external', 'Agent providers', 'Codex · Claude Code', 0, 0),
         c2('emitters', 'security', 'Bounded emitters', 'allowlisted · fail-open', 0, 1, 'source delivered'),
@@ -179,7 +179,7 @@ D2 = arch(
         c2('lifx', 'backend', 'LIFX controller', 'direct LAN', 1, 3, 'planned'),
         c2('pclight', 'backend', 'PC lighting', 'Corsair first', 1, 4, 'planned · Strimer/Varmilo optional'),
         c2('clients', 'frontend', 'Clients', 'dashboard · MCP · desk presets', 2, 0, 'planned'),
-        c2('routing', 'security', 'Registered routing', 'authenticated · per-device queues', 2, 1, 'planned host'),
+        c2('routing', 'security', 'Registered routing', 'authenticated · per-device queues', 2, 1, 'host candidate'),
         c2('contracts', 'database', 'Contracts + device-mcp', 'controller v1 · MCP 1.0.0', 2, 2, 'implemented'),
     ],
     connections=[
@@ -197,12 +197,12 @@ D2 = arch(
         {'id': 'contract-routing', 'from': 'contracts', 'to': 'routing', 'label': 'validates', 'variant': 'dashed', 'fromSide': 'left', 'toSide': 'right', 'labelDy': 26},
     ],
     boundaries=[
-        {'kind': 'region', 'label': 'Released agent-state; embedded Pixoo host', 'wraps': ['emitters', 'core', 'feed']},
+        {'kind': 'region', 'label': 'Shared core; select one state owner', 'wraps': ['emitters', 'core', 'feed']},
         {'kind': 'security-group', 'label': 'Existing repositories: own writer, private state', 'wraps': ['pixoo', 'nanoleaf']},
         {'kind': 'region', 'label': 'New controllers in agent-device-hub (planned)', 'wraps': ['tidbyt', 'lifx', 'pclight']},
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'Source API; installation pending', 'items': ['Provider hooks report allowlisted lifecycle metadata and fail open', 'The core interprets observations once; controllers only project state', 'Pixoo hosts the core; standalone hosting remains future work']},
+        {'dot': 'cyan', 'title': 'Source API; installation pending', 'items': ['Provider hooks report allowlisted lifecycle metadata and fail open', 'The core interprets observations once; controllers only project state', 'Pixoo embeds the core; Linux standalone source is in review']},
         {'dot': 'rose', 'title': 'Command path', 'items': ['Dashboard, MCP and desk presets send explicit requests', 'Registered routing sends each command to its existing owner', 'Per-device queues: an offline device cannot stall another']},
         {'dot': 'emerald', 'title': 'Ownership', 'items': ['Each physical device has one designated writer and private state', 'Nanoleaf selects one input; new controllers remain planned', 'Stale task colors stay steady; new turns clear Nanoleaf notices']},
     ],
@@ -425,17 +425,17 @@ D7 = seq(
 )
 
 # ---------------------------------------------------------------------------
-# 8. Embedded core to standalone owner (future, H5/H8, P31)
+# 8. Supervised source migration (H5); installed cutover remains H8
 # ---------------------------------------------------------------------------
 D8 = seq(
     'owner-migration', 'Embedded core to standalone owner',
     participants=[
         {'id': 'operator', 'type': 'external', 'label': 'Operator', 'sublabel': 'explicit authorization'},
-        {'id': 'tooling', 'type': 'security', 'label': 'Migration tooling', 'sublabel': 'H8 runbook'},
+        {'id': 'tooling', 'type': 'security', 'label': 'Migration tooling', 'sublabel': 'supervised Node children'},
         {'id': 'pixoo', 'type': 'backend', 'label': 'Pixoo embedded owner', 'sublabel': 'session-source facade'},
         {'id': 'hub', 'type': 'backend', 'label': 'Standalone hub owner', 'sublabel': 'same core, new host'},
         {'id': 'producers', 'type': 'external', 'label': 'Producers', 'sublabel': 'provider hooks'},
-        {'id': 'consumers', 'type': 'frontend', 'label': 'Consumers', 'sublabel': 'renderer · Nanoleaf feed'},
+        {'id': 'consumers', 'type': 'frontend', 'label': 'Consumers', 'sublabel': 'selected Pixoo facade'},
     ],
     steps=[
         ('seg', 'Quiesce'),
@@ -444,24 +444,24 @@ D8 = seq(
         ('msg', 'tooling', 'producers', 'pause ingestion (hooks stay fail-open)', 'security'),
         ('seg', 'Export, import, validate'),
         ('msg', 'tooling', 'pixoo', 'versioned export: source/session/notice identity + revisions', 'emphasis'),
-        ('msg', 'pixoo', 'tooling', 'export bundle', 'return'),
-        ('msg', 'tooling', 'hub', 'import bundle', 'emphasis'),
+        ('msg', 'pixoo', 'tooling', 'private export; verified graceful exit', 'return'),
+        ('msg', 'tooling', 'hub', 'single-use import into fenced empty store', 'emphasis'),
         ('msg', 'hub', 'tooling', 'validated: identities, revisions, notices unchanged', 'return'),
         ('msg', 'tooling', 'pixoo', 'keep old reducer inactive; facade → remote owner', 'security', 'remote mode never starts a second local reducer'),
         ('seg', 'Switch and resync'),
-        ('msg', 'tooling', 'producers', 'switch producer endpoint', 'emphasis'),
+        ('msg', 'tooling', 'producers', 'stage producer route; retain enablement', 'emphasis'),
         ('msg', 'tooling', 'consumers', 'switch consumer endpoint', 'emphasis'),
         ('msg', 'consumers', 'hub', 'authoritative snapshot / resync', 'default'),
         ('msg', 'hub', 'consumers', 'snapshot (no replayed effects)', 'return'),
-        ('msg', 'producers', 'hub', 'resume ingestion', 'default'),
+        ('msg', 'producers', 'hub', 'enable after readiness; open admission', 'default'),
         ('seg', 'Rollback (only after quiescing the new owner)'),
         ('msg', 'tooling', 'hub', 'quiesce new owner', 'dashed'),
-        ('msg', 'tooling', 'pixoo', 'reactivate embedded owner; endpoints back', 'dashed'),
+        ('msg', 'tooling', 'hub', 'latest export → fresh store; recheck routes', 'dashed'),
     ],
     cards=[
         {'dot': 'cyan', 'title': 'One owner at a time', 'items': ['Embedded and standalone owners never run against one state', 'A stale feed stays visibly stale until recovery or rollback']},
         {'dot': 'violet', 'title': 'What moves', 'items': ['Identities, session/notice state, revisions and producer configuration', 'Pixoo’s facade switches renderer, feed, label and acknowledgment operations to the selected owner']},
-        {'dot': 'amber', 'title': 'Owned elsewhere', 'items': ['Pixoo #31 supplies the migration boundary; Hub #5/#8 own standalone installed cutover', 'Controller databases stay private; Windows/WSL never share a mounted SQLite file', 'Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate']},
+        {'dot': 'amber', 'title': 'Owned elsewhere', 'items': ['Hub #5 verifies source migration; #8 owns installed cutover', 'Controller databases stay private; Windows/WSL never share a mounted SQLite file', 'Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate']},
     ],
     width=1240,
 )
@@ -540,15 +540,15 @@ DIAGRAMS = [
          sources=[(H, 'packages/mcp/README.md'), (P, 'docs/local-mcp.md'), (P, 'apps/server/src/mcp.ts'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md'), (P, 'apps/server/src/controller.ts'), (P, 'apps/server/src/controller-state.ts'), (N, 'docs/local-mcp.md'), (N, 'mcp/src/server.ts'), (N, 'mcp/src/transport.ts'), (N, 'docs/controller-api.md')],
          issues=['P37', 'N34', 'P12']),
     dict(id='arch-shared-system', spec=D2, kind='architecture', status='planned',
-         status_label='Embedded host and Nanoleaf consumer source delivered', short='Shared system and ownership',
-         summary='The planned shared system interprets qualified provider observations once in one authoritative agent-state core and projects that state to each controller. Explicit dashboard, MCP and preset requests take a separate authenticated route to the existing command owners.',
+         status_label='Linux host candidate; other clients remain planned', short='Shared system and ownership',
+         summary='The shared system interprets qualified provider observations once in one authoritative agent-state core and projects that state to each controller. Explicit dashboard, MCP and preset requests take a separate authenticated route to the existing command owners.',
          reading=['Top row: providers → bounded emitters → shared core → versioned feed. Dashed “projection” arrows deliver revisioned state to each controller, which renders it for its own device.',
                   'Second row: dashboard, MCP and desk-preset requests → registered routing → native commands to the existing owners. Contracts and device-mcp (implemented) validate that path.',
                   'Third row: each controller’s responsibility. Pixoo owns media, player, the 64×64 renderer and Monitor/Media. Nanoleaf owns the selected installation’s Python worker, geometry, effects, restoration and Work/Quiet/Free. Linux is primary; retained Windows installations keep separate Windows ownership. Tidbyt (cloud, 64×32), LIFX (direct LAN) and PC lighting (Corsair first; optional Strimer and Varmilo) are planned.'],
-         boundaries=['Released [[H3]] supplies the shared engine. [[P31]] embeds one private durable owner and authenticated bounded feeds. Nanoleaf [[N29]] consumes the selected feed through its existing Python writer. Standalone hosting [[H5]], other device-feed adoption and numeric qualification [[P61]] remain pending.',
+         boundaries=['Released [[H3]] supplies the shared engine. [[P31]] embeds one private durable owner and authenticated bounded feeds. Nanoleaf [[N29]] consumes the selected feed through its existing Python writer. Standalone [[H5]] has a verified Linux source candidate. Final review and CI remain pending; other device adoption and numeric qualification [[P61]] retain their own gates.',
                      'Shared contracts ([[H4]]), lifecycle metadata ([[H2]]) and reusable MCP ([[H7]]) are delivered. The [[H3]] release does not prove installed collection or physical behavior.',
                      'Each physical device has one designated writer and private state. No global mode replaces native Nanoleaf or Pixoo modes.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (H, 'packages/mcp/README.md'), (N, 'docs/hub-integration.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md')],
+         sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (H, 'packages/mcp/README.md'), (N, 'docs/hub-integration.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md')],
          issues=['H2', 'H3', 'H5', 'P31', 'N29', 'H15', 'H17', 'H53']),
     dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='planned',
          status_label='Proposed; source review and installed acceptance open', short='Nanoleaf Linux runtime',
@@ -569,7 +569,7 @@ DIAGRAMS = [
                   'A stale cursor gets one authoritative resync without replayed effects. A user acknowledgment changes owner state; it does not invent a provider read receipt.'],
          boundaries=['Activity, attention, notices, acknowledgment, optional provider read evidence and freshness stay distinct. Turn end proves neither success nor readership. Nanoleaf uses explicit shared selection, steady stale colors and consumer-only clear-on-new-turn; installed cutover remains separate.',
                      'Lifecycle 1.0 defines the envelope; released [[H3]] supplies versioned snapshots, bounded revision notifications and consumer-scoped acknowledgment. [[P31]] implements the authenticated endpoint and durable storage adapter. [[P32]] projects snapshots into exact RGB previews with bounded generation publication; [[P33]] implements explicit Monitor/Media, selected filters and one generation-guarded writer; [[P34]] retains integrated acceptance. [[P61]] owns deferred numeric qualification.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
+         sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H2', 'H3', 'P29', 'P31', 'N29', 'P32', 'P33']),
     dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented',
          status_label='Implemented source; installed and physical acceptance open', short='Nanoleaf command admission',
@@ -612,17 +612,17 @@ DIAGRAMS = [
          boundaries=['[[H67]] requires [[H63]], [[H32]], [[H31]], [[H5]], [[N49]] and [[P33]]. [[H68]] requires [[H65]] and [[H67]]; [[H69]] also requires [[H8]].',
                      'Manual Big B dispatch does not require automation engine [[H45]]. Music [[H71]] consumes [[H40]] policy and requires [[H68]] and [[H36]]; [[H38]]/[[H39]] apply to selected branches and [[H41]] is conditional on measured audio.',
                      'Native Nanoleaf and Pixoo modes and their restoration limits are preserved; a preset is not a shared device-mode value.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
+         sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
          issues=['H67', 'H68', 'H69', 'H71']),
-    dict(id='seq-owner-migration', spec=D8, kind='sequence', status='future',
-         status_label='Pixoo migration boundary delivered; standalone cutover pending', short='Owner migration',
+    dict(id='seq-owner-migration', spec=D8, kind='sequence', status='planned',
+         status_label='Source migration verified; installed cutover pending', short='Owner migration',
          summary='An explicitly authorized migration quiesces the selected route and old owner, exports and imports versioned state with its identities and revisions, validates the import, keeps the old reducer inactive, switches producer and consumer endpoints and resyncs from authoritative snapshots.',
          reading=['Pixoo’s session-source facade switches renderer, feed, label and acknowledgment operations to the selected owner. Remote mode never starts a second local reducer.',
-                  'Rollback requires quiescing and stopping the new owner, transferring its latest export if it accepted writes, then explicitly activating the old host. Consumers reload the authoritative snapshot.'],
-         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Standalone hosting and installed cutover remain with [[H5]] and [[H8]].',
+                  'Rollback requires quiescing and stopping the new owner, transferring its latest export if it accepted writes, then importing into a fresh host store and validating routes before activation. Pixoo remains a remote facade with its media and preferences. Consumers reload the authoritative snapshot.'],
+         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. The [[H5]] candidate verifies supervised release, fenced import, durable route recovery and rollback after writes. Installed cutover remains [[H8]].',
                      'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
                      'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
+         sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H5', 'H8', 'P31', 'N29']),
 ]
 assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)
