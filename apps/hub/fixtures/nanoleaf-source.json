@@ -1,0 +1,9 @@
+{
+  "repository": "https://github.com/jimmie-potts/codex-nanoleaf",
+  "revision": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
+  "contract": "nanoleaf.integration/1.0",
+  "files": {
+    "apps/hub/src/vendor/nanoleaf-integration.ts": "d94f2531cfcb574bf329554c66711dc67936d23051f5d44bb0b756aa55517b6c",
+    "apps/hub/fixtures/nanoleaf-integration.json": "2878922a896892afb77200839ea51b0ae5582d1ca9bea17d03b9e130097e1841"
+  }
+}

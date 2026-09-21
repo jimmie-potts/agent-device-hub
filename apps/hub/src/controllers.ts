@@ -1,5 +1,7 @@
 import {validate, type Request, type Receipt, type Snapshot} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
+import {validateIntegrationSnapshot,validateIntegrationReceipt} from './integration.js';
+import {validateRequest as validateIntegrationRequest,ticket as integrationTicket,apiVersion as integrationVersion,type Ticket} from './vendor/nanoleaf-integration.js';
 
 export type ControllerConfig = {id:string; kind:'pixoo'|'nanoleaf'; controllerId:string; deviceId:string; endpoint:string; token:string};
 
@@ -18,20 +20,21 @@ export class ControllerClient {
     this.config = Object.freeze({...config});
   }
   status() { return {id:this.config.id,kind:this.config.kind,controllerId:this.config.controllerId,deviceId:this.config.deviceId,health:this.health,pending:this.busy ? 1 : 0}; }
-  private async request(path: string, body?: unknown): Promise<unknown> {
+  private async request(path: string, body?: unknown, integration = false): Promise<unknown> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
     if (this.busy) throw new HttpError('capacity',429);
     this.busy = true;
     const abort = new AbortController(); this.abort = abort;
     const timer = setTimeout(() => abort.abort(),this.timeoutMs);
     try {
-      const response = await fetch(this.config.endpoint + path, {method:body === undefined ? 'GET' : 'POST', redirect:'error',signal:abort.signal,
+      const endpoint = integration ? this.config.endpoint.replace(/\/controller\/v1$/,'/controller/integration/v1') : this.config.endpoint;
+      const response = await fetch(endpoint + path, {method:body === undefined ? 'GET' : 'POST', redirect:'error',signal:abort.signal,
         headers:{authorization:`Bearer ${this.config.token}`,'content-type':'application/json','x-pixoo-request':'1'},
         ...(body === undefined ? {} : {body:JSON.stringify(body)})});
       const value = await responseJson(response,1024 * 1024);
       if (!response.ok) {
         // A typed receipt can describe an admitted rejection. Preserve its ticket below.
-        if (body !== undefined && validate('receipt',value)) return value;
+        if (body !== undefined && (integration ? validateIntegrationReceipt(value) : validate('receipt',value))) return value;
         const mapping: Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-request':400,'unknown-device':404,
           'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'unsupported-capability':422};
         if (object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
@@ -63,6 +66,38 @@ export class ControllerClient {
       this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
     }
     this.health = 'ready'; return receipt;
+  }
+  private requireIntegration() {
+    if (this.config.kind !== 'nanoleaf') throw new HttpError('unsupported-capability',422);
+  }
+  async integrationSnapshot(): Promise<unknown> {
+    this.requireIntegration();
+    const value = await this.request('/snapshot?deviceId=' + encodeURIComponent(this.config.deviceId),undefined,true);
+    if (!validateIntegrationSnapshot(value) || !object(value) || !object(value.identity) || value.identity.deviceId !== this.config.deviceId || value.identity.controllerId !== this.config.controllerId) {
+      this.health = 'unavailable';throw new HttpError('incompatible-controller',502);
+    }
+    this.health = 'ready';return value;
+  }
+  private checkIntegrationReceipt(value:unknown, ticket:Ticket):unknown {
+    if (!validateIntegrationReceipt(value) || !object(value) || !object(value.requestId) || value.requestId.epoch !== ticket.epoch || value.requestId.sequence !== ticket.sequence) {
+      this.health = 'unavailable';throw new HttpError('uncertain-result',503);
+    }
+    this.health = 'ready';return value;
+  }
+  async integrationCommand(value:unknown):Promise<unknown> {
+    this.requireIntegration();
+    if (!validateIntegrationRequest(value)) throw new HttpError('invalid-request',400);
+    if (value.controllerId !== this.config.controllerId || value.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
+    return this.checkIntegrationReceipt(await this.request('/commands',value,true),value.requestId);
+  }
+  async integrationReceipt(ticket:unknown):Promise<unknown> {
+    this.requireIntegration();if (!integrationTicket(ticket)) throw new HttpError('invalid-request',400);
+    return this.checkIntegrationReceipt(await this.request(`/receipt?deviceId=${encodeURIComponent(this.config.deviceId)}&epoch=${ticket.epoch}&sequence=${ticket.sequence}`,undefined,true),ticket);
+  }
+  async integrationCancel(value:unknown):Promise<unknown> {
+    this.requireIntegration();
+    if (!object(value) || !exact(value,['apiVersion','deviceId','requestId']) || value.apiVersion !== integrationVersion || value.deviceId !== this.config.deviceId || !integrationTicket(value.requestId)) throw new HttpError('invalid-request',400);
+    return this.checkIntegrationReceipt(await this.request('/cancel',value,true),value.requestId);
   }
   close() { this.stopped = true; this.abort?.abort(); }
 }

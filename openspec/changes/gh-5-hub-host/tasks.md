@@ -1,7 +1,7 @@
 ## 1. Host foundation
 
-- [ ] 1.1 Add Node 24 host build/type/test commands and CI coverage; verify setup and a meaningful failing storage test before implementation.
-- [ ] 1.2 Implement private durable Linux storage; verify cross-process exclusion, atomic revision conflicts, abort, restart and persistent fences.
+- [x] 1.1 Add Node 24 host build/type/test commands and CI coverage; verify setup and a meaningful failing storage test before implementation.
+- [x] 1.2 Implement private durable Linux storage; verify cross-process exclusion, atomic revision conflicts, abort, restart and persistent fences.
 - [ ] 1.3 Implement authenticated bounded sessions/events/commands/changes; verify privacy, scope, revocation, replay, reconnect, slow clients and independent health.
 
 ## 2. Controller and migration integration
@@ -13,7 +13,7 @@
 
 ## 3. Delivery evidence
 
-- [ ] 3.1 Package the host reproducibly; verify isolated installation, configuration, readiness and graceful shutdown without private credentials or sibling imports.
+- [x] 3.1 Package the host reproducibly; verify isolated installation, configuration, readiness and graceful shutdown without private credentials or sibling imports.
 - [ ] 3.2 Measure responsiveness against the frozen early budget; retain failures and distinguish integrated qualification under #30.
 - [ ] 3.3 Update architecture, development, compatibility and guide inputs/output; run guide maintenance/browser checks and record pending publication separately.
 - [ ] 3.4 Run all applicable local checks and current OpenSpec validation; synchronize/archive only after acceptance tasks are complete, then obtain independent fixed-comparison reviews and current-head CI.

@@ -4,6 +4,10 @@ import {lstat, realpath, open} from 'node:fs/promises';
 import {resolve, join, dirname} from 'node:path';
 import {validateExport, type Storage, type StorageLease, type DurableState, type Commit} from '@jimmie-potts/agent-state';
 
+// Closing any descriptor for an inode releases this process's POSIX locks.
+// Reserve the directory before probing SQLite files, including failed attempts.
+const heldDirectories = new Set<string>();
+
 /** The caller creates a private directory. This adapter never opens a controller store. */
 export class HubStorage implements Storage {
   constructor(readonly directory: string) {}
@@ -27,6 +31,11 @@ export class HubStorage implements Storage {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       if (parent === dirname(parent)) break;
     }
+    const reservation = `${info.dev}:${info.ino}`;
+    if (heldDirectories.has(reservation)) throw new Error('storage-unavailable');
+    heldDirectories.add(reservation);
+    let lock: DatabaseSync | undefined, db: DatabaseSync | undefined;
+    try {
     for (const name of ['owner.sqlite', 'state.sqlite']) {
       const file = await open(join(directory, name), constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
       try {
@@ -35,8 +44,6 @@ export class HubStorage implements Storage {
       } finally { await file.close(); }
     }
     signal.throwIfAborted();
-    let lock: DatabaseSync | undefined, db: DatabaseSync | undefined;
-    try {
       lock = new DatabaseSync(join(directory, 'owner.sqlite'));
       lock.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE');
       db = new DatabaseSync(join(directory, 'state.sqlite'));
@@ -88,13 +95,14 @@ export class HubStorage implements Storage {
         setFence: active => { check(); db!.prepare('INSERT INTO fence VALUES(1,?) ON CONFLICT(id) DO UPDATE SET active=excluded.active').run(active ? 1 : 0); },
         release: async () => {
           if (released) return;
-          db!.close(); lock!.exec('ROLLBACK'); lock!.close(); released = true;
+          db!.close(); lock!.exec('ROLLBACK'); lock!.close(); released = true;heldDirectories.delete(reservation);
         }
       };
       return lease;
     } catch {
       try { db?.close(); } catch {}
       try { lock?.close(); } catch {}
+      heldDirectories.delete(reservation);
       throw new Error('storage-unavailable');
     }
   }

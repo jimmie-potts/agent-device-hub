@@ -1,0 +1,558 @@
+{
+  "requests": [
+    {
+      "name": "valid-0",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-1",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "coverage": "status"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-2",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "classic",
+          "coverage": "whole"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-3",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "elements.assign",
+          "elements": [
+            {
+              "id": "101:102",
+              "projectId": "project-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "signature": 1
+            }
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-4",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "elements.assign",
+          "elements": [
+            {
+              "id": "101:102",
+              "projectId": null
+            }
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-5",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "task.assign",
+          "taskId": "task-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "projectId": "project-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-6",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "task.assign",
+          "taskId": "task-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "projectId": null
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "valid-7",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "project.color",
+          "projectId": "project-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "color": "#ABCDEF"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "invalid-command-0",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {}
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-1",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "mode.set",
+          "mode": "Quiet"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-2",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "preview"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-3",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-4",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "bad"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-5",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "coverage": "all"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-6",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project",
+          "path": "private"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-7",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "task.assign",
+          "taskId": "/private",
+          "projectId": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-8",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "project.color",
+          "projectId": "project-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "color": "red"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-9",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "elements.assign",
+          "elements": []
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-10",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "elements.assign",
+          "elements": [
+            {
+              "id": "101:102",
+              "signature": true
+            }
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "invalid-command-11",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "elements.assign",
+          "elements": [
+            {
+              "id": "101:102",
+              "projectId": null
+            },
+            {
+              "id": "101:102",
+              "projectId": null
+            }
+          ]
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "version",
+      "request": {
+        "apiVersion": "1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "extra",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        },
+        "raw": "private"
+      },
+      "valid": false
+    },
+    {
+      "name": "sequence",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": true
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "negative",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": -1
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unsafe",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 9007199254740992
+        },
+        "expectedRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "revision",
+      "request": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "controllerId": "controller",
+        "deviceId": "device",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "expectedRevision": "bad",
+        "command": {
+          "kind": "settings.set",
+          "style": "project"
+        }
+      },
+      "valid": false
+    }
+  ],
+  "receipts": [
+    {
+      "name": "queued",
+      "receipt": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "outcome": "queued",
+        "priorEffects": "none",
+        "physicalOutcome": "unknown"
+      },
+      "result": "pending"
+    },
+    {
+      "name": "applied",
+      "receipt": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "outcome": "applied",
+        "priorEffects": "configuration",
+        "physicalOutcome": "unknown"
+      },
+      "result": "saved"
+    },
+    {
+      "name": "failed",
+      "receipt": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "outcome": "failed",
+        "priorEffects": "none",
+        "physicalOutcome": "unknown"
+      },
+      "result": "refresh"
+    },
+    {
+      "name": "cancelled",
+      "receipt": {
+        "apiVersion": "nanoleaf.integration/1.0",
+        "requestId": {
+          "epoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sequence": 0
+        },
+        "outcome": "cancelled",
+        "priorEffects": "none",
+        "physicalOutcome": "unknown"
+      },
+      "result": "stopped"
+    }
+  ]
+}

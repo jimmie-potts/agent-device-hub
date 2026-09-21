@@ -1,6 +1,6 @@
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
-import {createAgentState, type Consumer, type Identity} from '@jimmie-potts/agent-state';
+import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
 import {ControllerClient, type ControllerConfig} from './controllers.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
@@ -8,7 +8,8 @@ import {HttpError, canonical, exact, id, object} from './common.js';
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
 export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number};
-type Ledger = {epoch:string; sequence:number; results:Map<string,{body:string; result:Promise<unknown>}>};
+type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
+type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -21,6 +22,14 @@ function json(res: ServerResponse, status: number, value: unknown) {
   if (res.destroyed) return;
   res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});
   res.end(JSON.stringify(value));
+}
+function receiptStatus(value: unknown): number {
+  if (!object(value)) return 200;
+  const codes:Record<string,number> = {'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,'revision-conflict':409,
+    'stale-generation':409,'request-conflict':409,'request-order':409,'request-expired':410,'unsupported-capability':422,'capacity':429,
+    'external-control':409,'transport-failure':503,'uncertain-result':503};
+  if (object(value.failure) && typeof value.failure.code === 'string') return codes[value.failure.code] ?? 503;
+  return value.outcome === 'queued' ? 202 : 200;
 }
 async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json' || req.headers['content-encoding']) throw new HttpError('invalid-input',400);
@@ -60,10 +69,15 @@ export async function startHub(options: HubOptions) {
     throw error;
   });
   const ledgers = new Map<string,Ledger>();
+  const retained: {ledger:Ledger; key:string; replay:Replay}[] = [];
+  let replayBytes = 0;
+  let exported: Promise<DurableState> | undefined;
   const streams = new Set<ServerResponse>();
   const streamOwners = new Map<ServerResponse,string>();
   let active = 0, rejected = 0, closing = false;
   let origin = '';
+  const feedEpoch = randomUUID();let feedSequence = 0, feedSignature = '';
+  const feedHistory: {sequence:number; body:string}[] = [];
   const ledger = (principal: string) => {
     let value = ledgers.get(principal);
     if (!value) { value = {epoch:randomUUID(),sequence:0,results:new Map()};ledgers.set(principal,value); }
@@ -86,6 +100,11 @@ export async function startHub(options: HubOptions) {
     if (!object(input) || typeof input.requestId !== 'string' || input.requestId.length > 100) throw new HttpError('invalid-input',400);
     const keys = input.operation === 'label' ? ['operation','requestId','identity','label'] : input.operation === 'acknowledge' ? ['operation','requestId','identity','noticeId','consumerId'] : ['operation','requestId'];
     if (!exact(input,keys) || !['label','acknowledge','quiesce'].includes(input.operation as string)) throw new HttpError('invalid-input',400);
+    if (input.operation !== 'quiesce' && (!object(input.identity) || !exact(input.identity,['provider','client','hostId','sourceId','sessionId']) ||
+        !['codex','claude'].includes(input.identity.provider as string) || !['cli','desktop','code'].includes(input.identity.client as string) ||
+        !id(input.identity.hostId) || !id(input.identity.sourceId) || !id(input.identity.sessionId))) throw new HttpError('invalid-input',400);
+    if (input.operation === 'label' && input.label !== null && (typeof input.label !== 'string' || input.label.length > 160)) throw new HttpError('invalid-input',400);
+    if (input.operation === 'acknowledge' && (!id(input.noticeId) || !options.consumers.some(c => c.id === input.consumerId))) throw new HttpError('invalid-input',400);
     if (input.operation === 'quiesce' && !principal.scopes.includes('admin')) throw new HttpError('forbidden',403);
     const entry = ledger(principal.id), fingerprint = canonical(input), old = entry.results.get(input.requestId);
     if (old) { if (old.body !== fingerprint) throw new HttpError('request-conflict',409);return old.result; }
@@ -95,15 +114,22 @@ export async function startHub(options: HubOptions) {
       throw new HttpError(future ? 'request-order' : 'request-expired',future ? 409 : 410);
     }
     if (entry.sequence >= Number.MAX_SAFE_INTEGER) throw new HttpError('capacity',429);
+    const bytes = Buffer.byteLength(fingerprint);
+    while (retained.length >= 256 || replayBytes + bytes > 262144) {
+      const index = retained.findIndex(item => !item.replay.pending);
+      if (index < 0) throw new HttpError('capacity',429);
+      const [expired] = retained.splice(index,1);expired.ledger.results.delete(expired.key);replayBytes -= expired.replay.bytes;
+    }
     entry.sequence++;
     const result = Promise.resolve().then(async () => {
       if (input.operation === 'label') return owner.setLabel(input.identity as Identity,input.label as string | null);
       if (input.operation === 'acknowledge') return owner.acknowledge(input.identity as Identity,input.noticeId as string,input.consumerId as string);
       // Persist before releasing an export, including if export subsequently fails.
-      lease!.setFence(true); return owner.exportState();
+      lease!.setFence(true); return exported ??= owner.exportState();
     });
-    entry.results.set(input.requestId,{body:fingerprint,result});
-    if (entry.results.size > 256) entry.results.delete(entry.results.keys().next().value!);
+    const replay = {body:fingerprint,result,pending:true,bytes};
+    entry.results.set(input.requestId,replay);retained.push({ledger:entry,key:input.requestId,replay});replayBytes += bytes;
+    void result.then(() => {replay.pending = false;},() => {replay.pending = false;});
     return result;
   }
   const server = createServer({maxHeaderSize:8192,requestTimeout:3000,headersTimeout:3000},(req,res) => {
@@ -117,16 +143,17 @@ export async function startHub(options: HubOptions) {
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
+        const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
-        const principal = authorize(req,scope,route?.[1]);
+        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1]);
         if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           const snapshot = owner.snapshot();
           const view: Record<string,unknown> = {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id))};
-          if (url.search) {
-            if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 160 ||
+          {
+            if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
                 (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
             const query = (url.searchParams.get('q') ?? '').toLowerCase(),provider = url.searchParams.get('provider');
-            view.matching = snapshot.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query)).map(s => s.identity);
+            view.matches = snapshot.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query)).map(s => s.identity);
           }
           json(res,200,view);
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
@@ -141,22 +168,46 @@ export async function startHub(options: HubOptions) {
           if (streams.size >= 16) throw new HttpError('capacity',429);
           streaming = true;clearTimeout(timer); streams.add(res);streamOwners.set(res,principal.id);
           res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store','x-content-type-options':'nosniff'});
-          let last = -1, blockedAt = 0;
+          let lastSequence: number | undefined, blockedAt = 0;
           const publish = () => {
             try { authorize(req,'read'); } catch {res.destroy();return;}
             if (res.writableLength > 0) {if (!blockedAt) blockedAt = Date.now();if (Date.now()-blockedAt > 5000) res.destroy();return;}
             blockedAt = 0;
             const state = owner.snapshot();
-            if (state.revision !== last) {
-              const kind = last < 0 ? 'resync' : 'state';last = state.revision;
-              res.write(`id: ${last}\nevent: ${kind}\ndata: ${JSON.stringify({ownerId:options.ownerId,revision:last,connection:'current',collector:state.collector,lossCount:state.lossCount})}\n\n`);
-            } else res.write(': heartbeat\n\n');
+            const projection = {apiVersion:'1.0',ownerId:options.ownerId,revision:state.revision,connection:'current',collector:state.collector,lossCount:state.lossCount,admissionRejected:rejected,uncertain:state.sessions.filter(s => s.freshness === 'uncertain').length};
+            const fingerprint = JSON.stringify(projection);
+            const message = (event:string) => `id: ${feedEpoch}:${feedSequence}\nevent: ${event}\ndata: ${fingerprint}\n\n`;
+            if (fingerprint !== feedSignature) {
+              feedSignature = fingerprint;feedSequence++;
+              feedHistory.push({sequence:feedSequence,body:message('state')});
+              if (feedHistory.length > 32) feedHistory.shift();
+            }
+            const first = feedHistory[0]?.sequence ?? feedSequence;
+            if (lastSequence === undefined) {
+              const cursor = req.headers['last-event-id'], prefix = feedEpoch + ':';
+              const sequence = typeof cursor === 'string' && cursor.startsWith(prefix) ? Number(cursor.slice(prefix.length)) : NaN;
+              if (typeof cursor === 'string' && cursor === prefix + sequence && Number.isSafeInteger(sequence) && sequence >= first-1 && sequence <= feedSequence) lastSequence = sequence;
+              else {lastSequence = feedSequence;res.write(message('resync'));return;}
+            }
+            if (lastSequence < first-1) res.write(message('resync'));
+            else res.write(feedHistory.filter(event => event.sequence > lastSequence!).map(event => event.body).join('') || ': heartbeat\n\n');
+            lastSequence = feedSequence;
           };
           publish();const interval = setInterval(publish,1000);interval.unref();
           res.once('close',() => {clearInterval(interval);streams.delete(res);streamOwners.delete(res);});
+        } else if (integrationRoute) {
+          const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
+          const operation = integrationRoute[2];
+          if (req.method === 'GET' && operation === 'snapshot' && !url.search) json(res,200,await client.integrationSnapshot());
+          else if (req.method === 'GET' && operation === 'receipt' && [...url.searchParams.keys()].length === 2 && url.searchParams.has('epoch') && /^[0-9]+$/.test(url.searchParams.get('sequence') ?? ''))
+            json(res,200,await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))}));
+          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await body(req,65536));json(res,receiptStatus(receipt),receipt);}
+          else if (req.method === 'POST' && !url.search && operation === 'cancel') json(res,200,await client.integrationCancel(await body(req,65536)));
+          else throw new HttpError('invalid-input',400);
         } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
-          json(res,200,route[2] === 'snapshot' ? await client.snapshot() : await client.command(await body(req,65536)));
+          const result = route[2] === 'snapshot' ? await client.snapshot() : await client.command(await body(req,65536));
+          json(res,route[2] === 'snapshot' ? 200 : receiptStatus(result),result);
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);

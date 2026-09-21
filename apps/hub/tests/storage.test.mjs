@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm, chmod, symlink} from 'node:fs/promises';
-import {spawnSync} from 'node:child_process';
+import {spawnSync,spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createAgentState} from '@jimmie-potts/agent-state';
@@ -38,6 +39,9 @@ test('lease excludes another process and fences survive release',async()=>{
     const code=`import {HubStorage} from ${JSON.stringify(new URL('../dist/storage.js',import.meta.url).href)}; try { const l=await new HubStorage(process.argv[1]).acquire('owner',new AbortController().signal);await l.release();process.exit(2); } catch { process.exit(0); }`;
     const child=spawnSync(process.execPath,['--input-type=module','-e',code,directory],{encoding:'utf8',timeout:5000});
     assert.equal(child.status,0,child.stderr);
+    await assert.rejects(new HubStorage(directory).acquire('owner',signal));
+    const afterSameProcess=spawnSync(process.execPath,['--input-type=module','-e',code,directory],{encoding:'utf8',timeout:5000});
+    assert.equal(afterSameProcess.status,0,'Failed same-process acquisition must not release the original OS lease');
     await lease.release();
     lease=await new HubStorage(directory).acquire('owner',signal);
     assert.equal(lease.fenced(),true);
@@ -59,4 +63,19 @@ test('public directories and symlinked storage are refused',async()=>{
     await chmod(directory,0o700);await symlink(directory,link);
     await assert.rejects(new HubStorage(link).acquire('owner',new AbortController().signal),/invalid-store/);
   } finally {await rm(link,{force:true});await rm(directory,{recursive:true,force:true});}
+});
+
+test('process death releases the lease and leaves a complete committed revision',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-crash-'));let child,owner;
+ try {
+  const module=new URL('../dist/storage.js',import.meta.url).href;
+  const code=`import {HubStorage} from ${JSON.stringify(module)};import {createAgentState} from '@jimmie-potts/agent-state';const o=await createAgentState({storage:new HubStorage(process.argv[1]),ownerId:'owner',consumers:${JSON.stringify(consumers)}});await o.ingest(${JSON.stringify(event)});process.stdout.write('ready\\n');for(let n=0;n<10000;n++)await o.setLabel(${JSON.stringify(identity)},'label-'+n);setInterval(()=>{},1000);`;
+  child=spawn(process.execPath,['--input-type=module','-e',code,directory],{stdio:['ignore','pipe','pipe']});
+  const exited=once(child,'exit');const killTimer=setTimeout(()=>child.kill('SIGKILL'),5000);
+  try {await once(child.stdout,'data');child.kill('SIGKILL');await exited;}finally{clearTimeout(killTimer);}
+  owner=await createAgentState({storage:new HubStorage(directory),ownerId:'owner',consumers});
+  assert.ok(owner.snapshot().revision>=1);assert.equal(owner.snapshot().sessions.length,1);
+  assert.equal(owner.snapshot().sessions[0].restartUncertain,true);
+  if(owner.snapshot().sessions[0].label)assert.match(owner.snapshot().sessions[0].label,/^label-\d+$/);
+ }finally{if(child?.exitCode===null&&child?.signalCode===null)child.kill('SIGKILL');await owner?.shutdown();await rm(directory,{recursive:true,force:true});}
 });

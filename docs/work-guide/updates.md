@@ -1,5 +1,20 @@
 # Guide maintenance history
 
+## September 21, 2026: Hub #5 Linux host candidate
+
+The owner selected Linux in WSL and excluded native Windows runtime work.
+Issue #5 now records that decision and is in progress. The original five
+prerequisites and Nanoleaf #49 are closed; Pixoo #33 remains open. The active
+`gh-5-hub-host` candidate has not merged or completed migration acceptance.
+
+Refreshed all three backlog inventories and updated the shared-hosting row.
+The existing diagrams still correctly mark standalone hosting as planned, so
+no topology or architecture-source receipt changes are made. Generated guide
+validation is recorded in the candidate PR. Installation, devices, public
+publication and live-site verification are outside this source-only delivery.
+
+The same snapshot records Hub #49 closed. Its placeholder is removed from open guide and timeline coverage; this is a tracker reconciliation, not evidence that a connector was implemented. The regenerated guide covers 99 open issues and passed five maintenance tests and the browser check.
+
 ## 2026-09-21 UTC: Nanoleaf #49 integration extension source
 
 [Nanoleaf PR #63](https://github.com/jimmie-potts/codex-nanoleaf/pull/63)

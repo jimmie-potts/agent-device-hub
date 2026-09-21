@@ -353,3 +353,13 @@ for the deferred capability assessment.
 Exact schemas, SDK/package versions, controller reachability, client signals and
 physical timing will be settled by their bounded issues. These unknowns do not
 authorize guessed telemetry or deployment changes.
+
+## Standalone host candidate
+
+The active Hub #5 change under `apps/hub` targets native Linux in WSL, following
+the owner's September 21 decision. Native Windows runtime qualification is
+outside that delivery. The application composes the existing shared core and
+uses authenticated configured controller endpoints. Its private store never
+opens a controller database. This is an unmerged candidate; migration, final
+controller integration and performance acceptance remain tracked by #5 and #30.
+The delivered Pixoo embedded owner remains the production source baseline.
