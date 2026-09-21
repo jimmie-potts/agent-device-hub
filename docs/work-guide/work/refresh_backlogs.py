@@ -71,7 +71,7 @@ def refresh_repo(repo):
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
     if repo == 'agent-device-hub':
-        for number in (3, 4, 7, 49, 54, 80, 100, 103, 107):
+        for number in (3, 4, 7, 13, 49, 54, 80, 100, 103, 107):
             baseline = normalize(api(f'{base}/issues/{number}'))
             assert baseline['state'] == 'CLOSED'
             issues.append(baseline)
