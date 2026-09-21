@@ -16,6 +16,7 @@ try {
   // Build the exact local dependencies; neither a registry secret nor a sibling checkout is used.
   run([join(root,'scripts/package-contracts.mjs')],root);
   run([join(root,'scripts/package-agent-state.mjs')],root);
+  run([join(root,'scripts/package-mcp.mjs')],root);
   const stage=join(scratch,'stage');await mkdir(stage);
   for(const name of ['package.json','src','dist','tests','fixtures','README.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
@@ -25,7 +26,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Preserve the already-packaged dependency closure. Re-resolving bundled private
   // dependencies through npm install can incorrectly request them from the registry.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-1.0.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.0.0.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-1.0.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.0.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.0.tgz']]){
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
     const result=spawnSync('tar',['-xzf',join(root,'artifacts',archive),'--strip-components=1','-C',target],{encoding:'utf8'});
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);

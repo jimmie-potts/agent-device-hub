@@ -325,3 +325,7 @@ rollback. Nanoleaf exercises the real HTTP settings service with a disposable
 worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
+
+## Standalone hub MCP checks
+
+`npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
