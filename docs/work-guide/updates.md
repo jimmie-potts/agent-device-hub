@@ -1,5 +1,42 @@
 # Guide maintenance history
 
+## 2026-09-21 UTC: Public guide verification and publication preparation
+
+The user authorized publication of the central BUNNY UI planning from
+[Hub PR #120](https://github.com/jimmie-potts/agent-device-hub/pull/120).
+This Hub follow-up coordinates the source snapshot and its separate public
+publication PR. It preserves the central component UI requirements and adds no
+product behavior or OpenSpec delta.
+
+The remaining acceptance check in
+[#80](https://github.com/jimmie-potts/agent-device-hub/issues/80) is now verified.
+Unauthenticated requests to the existing landing page and all eight viewers
+returned HTTP 200. All nine served hashes matched Hub source
+`950f7f62d502bc1d55d0f95872a4a10c08d4a27a` and public revision
+`d00a99d4f24b240094283d573d2b600798e48372`. The three Pages jobs, twelve source
+jobs and guide/browser job were read back as successful. Public PR #3 records
+the original reviews and publication. Issue #80 is closed as completed, with
+its old evidence retained and the successful live verification appended.
+
+The complete backlog refresh also observed Pixoo #33 closing after source
+PR #64 merged. It leaves remaining-work coverage and stays a completed
+reference. Its dedicated architecture and history synchronization remains with
+the Pixoo coordinator in [Hub PR #119](https://github.com/jimmie-potts/agent-device-hub/pull/119).
+This publication does not adopt that unmerged candidate. No architecture
+topology or source pins change here; all nine viewers and their separate review
+dates are retained. The dated history snapshot is unchanged.
+
+Generation, five maintenance tests and browser checks at
+1440/1000/900/768/390/320 passed, including navigation, search, viewer links,
+exact issue coverage and print expansion/restoration. The guide contains
+97 primary open issues, 126 linked issues, 12 guides, nine diagrams and
+49 roadmap nodes. HTML SHA-256:
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+The source and public PRs retain the fixed reviews, CI-filter evidence, exact
+published revisions, deployment result and every served-file hash. The public
+copy must come from the merged source revision; publication and verification
+remain separate from this source preparation.
+
 ## 2026-09-21 UTC: Central BUNNY component UI requirements
 
 This Hub planning delivery coordinates the user-authorized updates to
