@@ -22,4 +22,4 @@ None. Shared controller v1, lifecycle v1 and durable export v1 stay unchanged.
 
 ## Impact
 
-Adds `apps/hub`, host validation/package commands and CI coverage, plus architecture/development/work-guide updates. Consumes Hub #3/#4, Pixoo #31/#37 and [Nanoleaf #49](https://github.com/jimmie-potts/codex-nanoleaf/issues/49). [Pixoo #33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33) remains required for final monitor settings integration. No personal configuration, installed hooks, live state, physical device or public publication changes are authorized.
+Adds `apps/hub`, host validation/package commands and CI coverage, plus architecture/development/work-guide updates. Consumes Hub #3/#4, Pixoo #31/#37 and [Nanoleaf #49](https://github.com/jimmie-potts/codex-nanoleaf/issues/49). [Pixoo #33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33) supplies the delivered monitor settings integration. No personal configuration, installed hooks, live state, physical device or public publication changes are authorized.

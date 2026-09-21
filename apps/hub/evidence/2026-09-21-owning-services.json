@@ -1,0 +1,27 @@
+{
+  "hubRevision": "3082e75553f05a201c525fce54f945fb850379c7",
+  "scope": "Disposable owning-service source checks; no installation or physical devices.",
+  "pixoo": {
+    "source": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
+    "simulator": true,
+    "settings": true,
+    "sourceExit": true,
+    "fencedImport": true,
+    "facade": true,
+    "producer": true,
+    "label": true,
+    "acknowledgment": true,
+    "rollbackAfterWrites": true,
+    "renderer": true,
+    "physical": false
+  },
+  "nanoleaf": {
+    "contract": "nanoleaf.integration/1.0",
+    "source": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
+    "http": true,
+    "queued": true,
+    "applied": true,
+    "replay": true,
+    "physical": false
+  }
+}

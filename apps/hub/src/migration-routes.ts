@@ -58,7 +58,7 @@ async function stage(path:string,expected:string,kind:StagedRoute['kind'],transf
   const parent=await open(dirname(path),'r');try{await parent.sync();}finally{await parent.close();}
   const updated=await replace(file,next),receipt=Object.freeze({kind,digest:hash(updated.bytes)});
   stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind,intent,unlock});return receipt;
- }catch(error){if(published)failedStages.add(path);else await rm(temporary,{recursive:true,force:true});unlock();throw error;}
+ }catch(error){try{if(published)failedStages.add(path);else await rm(temporary,{recursive:true,force:true});}finally{unlock();}throw error;}
 }
 /** Recover only a dead coordinator's durable intent. An unknown phase or external edit fails closed. */
 export async function recoverRoute(path:string,expected:string):Promise<StagedRoute>{

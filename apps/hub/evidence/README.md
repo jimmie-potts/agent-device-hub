@@ -10,7 +10,7 @@ The compressed JSON contains samples, failures, runtime details and SHA-256 hash
 node scripts/measure-hub.mjs /tmp/new-hub-measurement.json
 ```
 
-Migration activation and the actual Pixoo selected-source cutover/rollback remain unimplemented. Nanoleaf request compatibility is pinned, but full owning-service adapter acceptance is still pending. Pixoo #33 delivered its settings API through PR #64; integration into this host remains pending. These remain incomplete acceptance criteria under the original issue, not a reduced delivery scope.
+At the original measurement, migration activation, actual Pixoo cutover/rollback and owning-service adapter acceptance were incomplete. The final source checks below now cover those criteria.
 
 Four additional diagnostic receipts retain another 36,000 samples. A 64 MiB old-generation heap limit, SQLite statement reuse, a durable-state cache, and a 1 MiB semi-space experiment all exceeded 128 MiB. The heap settings and durable-state cache were not adopted. Statement reuse remains because it bounds prepared-statement handles to the lease lifetime. These trials are diagnostic comparisons, not qualification receipts; each JSON names its variant. The original failing receipt remains the source-hashed baseline.
 
@@ -24,3 +24,12 @@ is the non-blocking backlog follow-up for budget review and memory improvements.
 This is a budget change, not a memory optimization or full integrated qualification.
 
 A fresh run with the revised budget completed all 9,000 samples, peaked at 164.64 MiB RSS and exited 0. `2026-09-21-api-budget256.json.gz` records 256 MiB for each repetition and hashes the source, script and budget file. This passes the synthetic workload memory check only; the receipt still sets `qualified: false` for full integrated qualification.
+
+
+## Integration candidate
+
+`2026-09-21-api-integration.json.gz` retains a new 9,000-sample run with zero failures, per-repetition p95 from 6.51 to 12.04 ms and peak host RSS 165.44 MiB against 256 MiB. The command exited zero; `qualified: false` still excludes full #30 qualification. Source hashes identify the measured product files, independent of later documentation edits.
+
+`2026-09-21-owning-services.json` records successful checks against immutable Pixoo and Nanoleaf source revisions. Pixoo ran its real simulator application and selected-source facade through fenced cutover, producer ingestion, browser label/acknowledgment operations, renderer revision and rollback after new writes. Nanoleaf ran its owning controller HTTP fixture through queued settings, application and replay. Neither check contacted devices or an installed service. Reproduce them with the prepared-source commands in `docs/development.md`.
+
+The host tests also exercise dead-coordinator recovery, file-sync failure after rename, interrupted intent initialization, single-use import, runtime staging validation and cleanup of a startup child that ignores graceful termination. These are process/filesystem failure injections, not power-loss or installed-client qualification.

@@ -21,7 +21,7 @@ try {
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
   const dependencies=Object.keys(metadata.dependencies);
   metadata.bundleDependencies=dependencies;
-  metadata.exports={'.':{types:'./dist/server.d.ts',import:'./dist/server.js'}};
+  metadata.exports={'.':{types:'./dist/server.d.ts',import:'./dist/server.js'},'./migration':{types:'./dist/migration.d.ts',import:'./dist/migration.js'},'./migration-routes':{types:'./dist/migration-routes.d.ts',import:'./dist/migration-routes.js'}};
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Preserve the already-packaged dependency closure. Re-resolving bundled private
   // dependencies through npm install can incorrectly request them from the registry.
@@ -47,7 +47,7 @@ try {
     for(const [path,expected] of Object.entries(manifest.files))assert.equal(sha(await readFile(join(installed,path))),expected,path);
     const tests=(await readdir(join(installed,'tests'))).filter(name=>name.endsWith('.test.mjs')).map(name=>join(installed,'tests',name));
     assert.match(run(['--test',...tests],installed),/fail 0/);
-    assert.equal(run(['--input-type=module','-e','import {startHub} from "@jimmie-potts/hub"; if(typeof startHub!=="function")process.exit(1);'],consumer),'');
+    assert.equal(run(['--input-type=module','-e','import {startHub} from "@jimmie-potts/hub"; import {launchOwner} from "@jimmie-potts/hub/migration"; import {stageProducer} from "@jimmie-potts/hub/migration-routes"; if([startHub,launchOwner,stageProducer].some(value=>typeof value!=="function"))process.exit(1);'],consumer),'');
   }
   console.log(JSON.stringify({archive:output,sha256:sha(bytes),reproducible:true,isolatedTests:process.argv.includes('--test')}));
 }finally{await rm(scratch,{recursive:true,force:true});}

@@ -381,3 +381,20 @@ uses authenticated configured controller endpoints. Its private store never
 opens a controller database. This is an unmerged candidate; migration, final
 controller integration and performance acceptance remain tracked by #5 and #30.
 The delivered Pixoo embedded owner remains the production source baseline.
+
+
+## Linux host handoff implementation
+
+The [host API and migration guide](../apps/hub/README.md) define the delivered
+source boundary. A directly supervised source quiesces and saves its versioned
+export before verified process exit. A single-use release capability permits
+an empty destination import behind a persisted admission fence. Controller
+settings use their owning APIs and never create a device writer.
+
+Activation verifies every configured consumer route and producer authority,
+restores producer enablement while admission remains fenced, then clears that
+fence. Durable route intent survives coordinator exit. Rollback transfers the
+latest state into a fresh host store; Pixoo retains its private media directory
+and selected remote facade. The tool cannot silently restore embedded ownership
+into an occupied Pixoo store. Installed hooks, source qualification and physical
+acceptance remain separate from these source tests.
