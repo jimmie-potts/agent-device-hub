@@ -51,6 +51,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let staged = migration?.staged === true;
   let activationAllowed = imported !== undefined;
   let activating = false;
+  let preparingConsumers = false;
   if (options.mcp !== undefined && typeof options.mcp !== 'boolean') throw new Error('invalid-configuration');
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
@@ -70,7 +71,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
-  const snapshot = () => {const value=owner.snapshot();return staged && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
+  const snapshot = () => {const value=owner.snapshot();return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const ledgers = new Map<string,Ledger>();
   const retained: {ledger:Ledger; key:string; replay:Replay}[] = [];
   let replayBytes = 0;
@@ -168,10 +169,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
               (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
-          json(res,200,sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined));
+          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined);
+          if(url.searchParams.has('q')||url.searchParams.has('provider'))json(res,200,view);
+          else {const {matches,...envelope}=view;json(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
           const current = snapshot();
-          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,revision:current.revision,devices:[...clients.values()].map(c => c.status())});
+          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
           if (staged) throw new HttpError('owner-quiesced',503);
           const result = await owner.ingest(await body(req,2048));
@@ -247,7 +250,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
+    ownerId:options.ownerId,
+    directory:options.directory,
+    validateCredentials(input:Credential[]) { credentials(input); },
     staged:() => staged,
+    prepareConsumers() {
+      if(!staged||!activationAllowed||activating||closing||exported)throw new Error('activation-unavailable');
+      preparingConsumers=true;
+    },
     async activate(plan:ActivationPlan) {
       if (!staged || !activationAllowed || activating || closing) throw new Error('activation-unavailable');
       activating=true;activationAllowed=false;
@@ -255,7 +265,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         await prepareActivation(plan,origin,options.ownerId,options.consumers,snapshot);
         if (closing || exported || owner.snapshot().collector!=='running') throw new Error('activation-unavailable');
         lease!.setFence(false);staged=false;
-      } finally {activating=false;}
+      } finally {activating=false;preparingConsumers=false;}
     },
 
     replaceCredentials(input:Credential[]) {

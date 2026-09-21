@@ -28,6 +28,35 @@ The existing shared-system diagram still describes the same clients, registered 
 
 # Guide maintenance history
 
+## September 21, 2026: Hub #8 setup candidate
+
+The Hub #8 delivery coordinator updated the shared-host guide and migration
+sequence for the owner-selected Linux/WSL source scope. The candidate adds
+reversible setup, private receipt ownership, verified credential revocation,
+and explicit Nanoleaf preflight/selection while host writes remain fenced.
+The source fixtures exercise real pinned Pixoo/Nanoleaf code with disposable
+state and no physical worker. Installation and actual-client qualification
+remain pending. No personal settings, live state or devices were changed.
+
+Refreshed all three backlogs and retained primary coverage of
+96 open issues across 12 guides and nine diagrams.
+Generation, five maintenance tests and guide browser/print checks passed.
+All nine Archify deliveries passed 9/9 artifact checks. The changed sequence
+was inspected in light/dark desktop renders; the separate standalone browser
+check still fails its known vertical overflow requirement. No layout repair
+or first-screen containment pass is claimed. The guide's scrolling/zooming
+presentation remains usable. HTML SHA-256: `3238b53989d418b35c0a14ce06daeecda1ffbd37671c820b33e73920c0bffb38`.
+
+The public landing page still serves
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+It differs from this candidate. Public publication and live verification of a
+new edition remain pending separate authority. Source merge and saved issue
+completion facts will be reconciled in a linked follow-up after verification.
+
+The candidate was reconciled with merged MCP PR #126 and its guide follow-up #128. The refreshed tracker
+shows #13 closed, so its primary coverage and roadmap entry were removed; its
+source behavior and shared host/package checks are preserved.
+
 ## September 21, 2026: Hub #5 source completion
 
 [PR #121](https://github.com/jimmie-potts/agent-device-hub/pull/121) merged as

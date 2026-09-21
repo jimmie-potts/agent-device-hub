@@ -44,6 +44,8 @@
     "package:hub": "npm run build && node scripts/package-hub.mjs",
     "test:hub:package": "npm run build && npm run test:hub:package:built",
     "test:hub:package:built": "node scripts/package-hub.mjs --test",
+    "test:setup": "npm run build && npm run test:setup:built",
+    "test:setup:built": "node --test apps/hub/tests/setup*.test.mjs",
     "test:hub:mcp": "npm run build && npm run test:hub:mcp:built",
     "test:hub:mcp:built": "node --test apps/hub/tests/mcp.test.mjs"
   },

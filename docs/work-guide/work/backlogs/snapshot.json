@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-21T21:31:31.077130+00:00",
-  "refreshedAt": "2026-09-21T21:31:41.776688+00:00",
+  "startedAt": "2026-09-21T21:37:08.718050+00:00",
+  "refreshedAt": "2026-09-21T21:37:19.423053+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 59,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        60
+        61
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -73,7 +73,7 @@
         {
           "number": 13,
           "state": "CLOSED",
-          "purpose": "Completed contract/MCP baseline"
+          "purpose": "Closed guide reference"
         },
         {
           "number": 49,
