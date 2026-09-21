@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md for scope and source links. Hub owns the reducer and its storage interface. Pixoo #31 has delivered `/api/monitor/v1` with an embedded/remote facade; the remote facade requires the same owner ID, monotonically increasing revisions and original command tickets. Nanoleaf owns `nanoleaf.integration/1.0`. Pixoo #33 has not delivered its integration-settings contract.
+See proposal.md for scope and source links. Hub owns the reducer and its storage interface. Pixoo #31 has delivered `/api/monitor/v1` with an embedded/remote facade; the remote facade requires the same owner ID, monotonically increasing revisions and original command tickets. Nanoleaf owns `nanoleaf.integration/1.0`. Pixoo #33 has delivered its integration-settings contract through PR #64; the hub adapter remains to be implemented.
 
 Design is required by the spec-driven schema because this change crosses services and affects security, durable storage, timing and migration. The user's September 21 Linux/WSL decision supersedes Windows-only wording in the planning context. Native Windows qualification is excluded.
 
@@ -21,7 +21,7 @@ Support a separately started Linux process with one state owner and independent 
 
 - Synchronous SQLite can stall the event loop. Keep lock waits zero, bound state and commits, measure responsiveness against `docs/performance/linux-budgets.json`, and retain failures. Numeric qualification is distinct from correctness tests.
 - A valid export alone does not prove the previous owner is stopped. Migration needs verified source release, destination readiness, producer/consumer switching and rollback tests, not an unchecked assertion or automatic fallback.
-- Controller settings contracts evolve independently. Pin delivered evidence and reject unsupported versions. Final Pixoo integration stays blocked on #33.
+- Controller settings contracts evolve independently. Pin delivered evidence and reject unsupported versions. Final Pixoo integration still requires an adapter and owning-service tests against the delivered #33 API.
 - A loopback credential is still an authority. Scope it by operation/device; rotation must reject old credentials before replay and terminate affected streams.
 
 ## Migration Plan
@@ -30,7 +30,7 @@ Quiesce and export the selected embedded owner, retain the validated export priv
 
 ## Acceptance mapping and assessment
 
-Complexity high: durable ownership, HTTP and cross-service migration. Impact high: credentials, state and command effects. Uncertainty medium for delivered APIs, high for Pixoo's unpublished settings extension. Ready host work uses executable storage/process, HTTP/privacy, controller-isolation, feed/replay and package tests. Consumer cutover and both settings adapters require owning-service fixtures. Final acceptance also requires guide synchronization, independent Standards/Specification review, all applicable CI and merged-revision verification. Reassess when #33 lands or a migration test disproves the design. No test or fake endpoint establishes installed or physical acceptance.
+Complexity high: durable ownership, HTTP and cross-service migration. Impact high: credentials, state and command effects. Uncertainty is medium for the delivered APIs and high for end-to-end migration acceptance. Ready host work uses executable storage/process, HTTP/privacy, controller-isolation, feed/replay and package tests. Consumer cutover and both settings adapters require owning-service fixtures. Final acceptance also requires guide synchronization, independent Standards/Specification review, all applicable CI and merged-revision verification. Reassess against the delivered #33 contract and when migration tests challenge the design. No test or fake endpoint establishes installed or physical acceptance.
 
 
 ## Owner-approved service memory revision

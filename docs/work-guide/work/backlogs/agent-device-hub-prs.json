@@ -5,12 +5,12 @@
     "body": "Refs #5\n\nAdds an in-progress standalone host for Linux in WSL. It composes the shared state engine with private SQLite ownership, authenticated monitor APIs, bounded controller clients, Nanoleaf settings routes and a source CLI. Native Windows qualification is outside this delivery.\n\nThis is a draft checkpoint. The original issue remains the acceptance scope. Migration activation and the actual Pixoo selected-source cutover/rollback are not implemented. Pixoo settings integration awaits #33's delivered contract; its candidate is divoom-app-upgrade#64. Complete owning-service transport acceptance and integrated responsiveness also remain pending. Nothing was installed, migrated or sent to a device.\n\nThe candidate includes durable revision checks and restart fences, scoped credentials and revocation, bounded replay/SSE, controller failure isolation, retained request identities and upstream receipt status. The package installs offline with a fresh empty npm cache outside the checkout and reproduces identical archive bytes. The Nanoleaf request consumer and compatibility fixtures are pinned to `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`.\n\nValidation:\n- Node 24.20.0 build/typecheck and 18 host and diagnostic tests pass, including ownership, crash recovery, replay/revocation, upstream status and CLI shutdown.\n- Isolated package tests/imports and repeated archive bytes pass. Archive SHA-256: `5cdecd9962670aa6f05874df36c61a8c5a6c828df9cb18112fa43c47b616160e`.\n- All 18 applicable local test commands passed, covering shared contracts, lifecycle, state, MCP, workflow and Linux performance-isolation checks. Updated host tests and packaging were rerun after the final product edits.\n- The guide covers 99 open issues and passes five maintenance tests, browser checks and a clean regeneration. Public publication remains pending/outside this source change. Concurrent guide companion #119 belongs to the Pixoo coordinator and is not modified here.\n- The active OpenSpec change is deliberately not archived. Completed planning artifacts are not completed implementation acceptance.\n\nPerformance remains unsuccessful. The source-hashed baseline retains all 9,000 API ingest/read samples, with p95 6.19–12.20 ms but peak host RSS 164.82 MiB against the frozen 128 MiB service constraint. Four diagnostic variants retain another 36,000 samples and also exceed that constraint. Heap tweaks and a durable-state cache were not adopted; the limits were not relaxed. HTTP timings do not qualify the full legacy hook or integrated consumer path. See `apps/hub/evidence/` for receipts and limitations.\n\nImplementation used one coordinating writer and independent Standards and Specification reviewers, requested as Astra/high. Actual runtime settings and usage are unexposed. Five intermediate review rounds, including three correction cycles and main reconciliation, resolved all reported findings. Both reviewers inspected base `12c4e3e3bf372dd1a1da680ddb63b42b925e0378` and head `b7a79df8d8fdf9ea1d14d193a650aa9933ea9227`. Their assessment covers the candidate checkpoint, not full issue acceptance. No model promotion or effort increase was used.\n\nAll five current-head PR jobs passed: [four shared/product jobs](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35639249372) and [the guide build/browser job](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35639249373). No CI reruns were needed. The regenerated guide preserves merged central BUNNY planning from #120; its SHA-256 is `ce3a072a40c7250bf0c9ffb2c590f84b66abee0d49ece33d32b85c949e4df46b`. Workflow validation covers six current specifications, one active change and five archives.\n\nDo not merge or close #5 from this checkpoint. Remaining acceptance, final independent reviews, every current-head configured CI job, guarded merge, merged-main CI and guide reconciliation are still required.\n",
     "state": "open",
     "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
-    "updated_at": "2026-09-21T18:37:40Z",
+    "updated_at": "2026-09-21T19:41:21Z",
     "draft": true,
     "head": {
       "label": "jimmie-potts:codex/gh-5-hub-host",
       "ref": "codex/gh-5-hub-host",
-      "sha": "b7a79df8d8fdf9ea1d14d193a650aa9933ea9227",
+      "sha": "6b1fe43b785ec7bd80fa0b919adc6da6d0d722d6",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -101,7 +101,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-21T18:51:50Z",
-        "pushed_at": "2026-09-21T18:51:46Z",
+        "pushed_at": "2026-09-21T19:41:19Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -139,7 +139,7 @@
     "base": {
       "label": "jimmie-potts:main",
       "ref": "main",
-      "sha": "12c4e3e3bf372dd1a1da680ddb63b42b925e0378",
+      "sha": "09ecdde0390dccd352ac31bf0c72b2c8e37e2f11",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -230,7 +230,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-21T18:51:50Z",
-        "pushed_at": "2026-09-21T18:51:46Z",
+        "pushed_at": "2026-09-21T19:41:19Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",

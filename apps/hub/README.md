@@ -40,7 +40,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 | --- | --- |
 | Shared state | `@jimmie-potts/agent-state` 1.0.0; lifecycle and export 1.0; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; full facade/cutover acceptance pending |
-| Pixoo native controller | Released controller v1, #37; Monitor/Media and filters await #33 |
+| Pixoo native controller | Released controller v1, #37; Monitor/Media and filter API delivered by #33; hub integration pending |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
 | Nanoleaf settings | `nanoleaf.integration/1.0`, source `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`; pinned request consumer and fixtures recorded in `fixtures/nanoleaf-source.json` |
 
