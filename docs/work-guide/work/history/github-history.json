@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-21T00:15:45.367163+00:00",
+ "fetchedAt": "2026-09-21T18:40:48.856019+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T00:13:53Z",
+   "pushedAt": "2026-09-21T18:34:20Z",
    "defaultBranch": "main",
-   "headSha": "25715f1536dc17d9bd8fa7a0e024ac449acfd5d0",
-   "mainCommitCount": 42,
+   "headSha": "12c4e3e3bf372dd1a1da680ddb63b42b925e0378",
+   "mainCommitCount": 44,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "12c4e3e3bf372dd1a1da680ddb63b42b925e0378",
+     "date": "2026-09-21T18:31:03Z",
+     "message": "docs: require a central BUNNY UI for future components (#120)"
+    },
+    {
+     "sha": "4b365ad9f28d20a0ac0c85a64b7923960a414d02",
+     "date": "2026-09-21T00:20:17Z",
+     "message": "docs: synchronize Nanoleaf integration settings delivery (#118)"
+    },
     {
      "sha": "25715f1536dc17d9bd8fa7a0e024ac449acfd5d0",
      "date": "2026-09-21T00:13:53Z",
@@ -263,6 +273,14 @@
      "mergedAt": "2026-09-07T21:46:24Z"
     },
     {
+     "number": 59,
+     "title": "docs: plan PC and desk lighting integrations and backlog",
+     "createdAt": "2026-09-08T00:03:57Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+     "base": "main",
+     "mergedAt": "2026-09-10T22:30:08Z"
+    },
+    {
      "number": 72,
      "title": "Keep the cross-project work guide in the SDLC",
      "createdAt": "2026-09-08T16:19:27Z",
@@ -295,6 +313,14 @@
      "mergedAt": "2026-09-08T22:49:23Z"
     },
     {
+     "number": 77,
+     "title": "perf: measure Linux hooks and define early budgets",
+     "createdAt": "2026-09-08T22:54:04Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
+     "base": "main",
+     "mergedAt": "2026-09-12T00:48:02Z"
+    },
+    {
      "number": 78,
      "title": "docs: record Pixoo soak acceptance and open timing qualification",
      "createdAt": "2026-09-08T23:45:16Z",
@@ -317,6 +343,30 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
      "base": "main",
      "mergedAt": "2026-09-09T00:58:06Z"
+    },
+    {
+     "number": 82,
+     "title": "Document the Nanoleaf Prism delivery sequence",
+     "createdAt": "2026-09-09T23:05:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+     "base": "main",
+     "mergedAt": "2026-09-10T21:11:54Z"
+    },
+    {
+     "number": 84,
+     "title": "Document the fresh Nanoleaf Linux runtime",
+     "createdAt": "2026-09-10T00:29:55Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
+     "base": "main",
+     "mergedAt": "2026-09-10T22:24:49Z"
+    },
+    {
+     "number": 88,
+     "title": "Adopt planning and delivery checkpoints for the work guide",
+     "createdAt": "2026-09-10T00:46:23Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+     "base": "main",
+     "mergedAt": "2026-09-10T21:33:28Z"
     },
     {
      "number": 89,
@@ -359,28 +409,12 @@
      "mergedAt": "2026-09-10T13:44:34Z"
     },
     {
-     "number": 82,
-     "title": "Document the Nanoleaf Prism delivery sequence",
-     "createdAt": "2026-09-09T23:05:53Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
-     "base": "main",
-     "mergedAt": "2026-09-10T21:11:54Z"
-    },
-    {
      "number": 95,
      "title": "Record completed Nanoleaf Prism stories in the guide",
      "createdAt": "2026-09-10T21:20:02Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95",
      "base": "main",
      "mergedAt": "2026-09-10T21:27:11Z"
-    },
-    {
-     "number": 88,
-     "title": "Adopt planning and delivery checkpoints for the work guide",
-     "createdAt": "2026-09-10T00:46:23Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
-     "base": "main",
-     "mergedAt": "2026-09-10T21:33:28Z"
     },
     {
      "number": 96,
@@ -399,36 +433,12 @@
      "mergedAt": "2026-09-10T22:13:04Z"
     },
     {
-     "number": 84,
-     "title": "Document the fresh Nanoleaf Linux runtime",
-     "createdAt": "2026-09-10T00:29:55Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
-     "base": "main",
-     "mergedAt": "2026-09-10T22:24:49Z"
-    },
-    {
-     "number": 59,
-     "title": "docs: plan PC and desk lighting integrations and backlog",
-     "createdAt": "2026-09-08T00:03:57Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
-     "base": "main",
-     "mergedAt": "2026-09-10T22:30:08Z"
-    },
-    {
      "number": 98,
      "title": "Record delivered Nanoleaf Linux source and remaining acceptance",
      "createdAt": "2026-09-10T23:07:22Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/98",
      "base": "main",
      "mergedAt": "2026-09-10T23:17:47Z"
-    },
-    {
-     "number": 77,
-     "title": "perf: measure Linux hooks and define early budgets",
-     "createdAt": "2026-09-08T22:54:04Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
-     "base": "main",
-     "mergedAt": "2026-09-12T00:48:02Z"
     },
     {
      "number": 101,
@@ -447,12 +457,12 @@
      "mergedAt": "2026-09-12T02:00:16Z"
     },
     {
-     "number": 106,
-     "title": "docs: exempt work-guide UI from human approval",
-     "createdAt": "2026-09-20T17:00:44Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/106",
+     "number": 104,
+     "title": "docs: add BUNNY HTML design atlas and service references",
+     "createdAt": "2026-09-20T02:55:40Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
      "base": "main",
-     "mergedAt": "2026-09-20T17:19:45Z"
+     "mergedAt": "2026-09-20T18:35:15Z"
     },
     {
      "number": 105,
@@ -461,6 +471,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/105",
      "base": "main",
      "mergedAt": "2026-09-20T17:42:18Z"
+    },
+    {
+     "number": 106,
+     "title": "docs: exempt work-guide UI from human approval",
+     "createdAt": "2026-09-20T17:00:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/106",
+     "base": "main",
+     "mergedAt": "2026-09-20T17:19:45Z"
     },
     {
      "number": 108,
@@ -479,12 +497,12 @@
      "mergedAt": "2026-09-20T18:21:52Z"
     },
     {
-     "number": 104,
-     "title": "docs: add BUNNY HTML design atlas and service references",
-     "createdAt": "2026-09-20T02:55:40Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
+     "number": 110,
+     "title": "Record delivered Pixoo controller API and reconcile the work guide",
+     "createdAt": "2026-09-20T18:50:37Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
      "base": "main",
-     "mergedAt": "2026-09-20T18:35:15Z"
+     "mergedAt": "2026-09-20T19:25:05Z"
     },
     {
      "number": 111,
@@ -501,14 +519,6 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/112",
      "base": "main",
      "mergedAt": "2026-09-20T19:16:25Z"
-    },
-    {
-     "number": 110,
-     "title": "Record delivered Pixoo controller API and reconcile the work guide",
-     "createdAt": "2026-09-20T18:50:37Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
-     "base": "main",
-     "mergedAt": "2026-09-20T19:25:05Z"
     },
     {
      "number": 113,
@@ -549,14 +559,37 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/117",
      "base": "main",
      "mergedAt": "2026-09-21T00:13:53Z"
-    }
-   ],
-   "openPRs": [
+    },
     {
      "number": 118,
      "title": "docs: synchronize Nanoleaf integration settings delivery",
      "createdAt": "2026-09-20T23:57:44Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/118",
+     "base": "main",
+     "mergedAt": "2026-09-21T00:20:17Z"
+    },
+    {
+     "number": 120,
+     "title": "docs: require a central BUNNY UI for future components",
+     "createdAt": "2026-09-21T18:26:29Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/120",
+     "base": "main",
+     "mergedAt": "2026-09-21T18:31:04Z"
+    }
+   ],
+   "openPRs": [
+    {
+     "number": 119,
+     "title": "Synchronize Pixoo Monitor and Media controls in the work guide",
+     "createdAt": "2026-09-21T18:15:48Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/119",
+     "base": "main"
+    },
+    {
+     "number": 121,
+     "title": "Build Linux standalone hub candidate with bounded APIs and controller routing",
+     "createdAt": "2026-09-21T18:28:03Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
      "base": "main"
     }
    ],
@@ -618,12 +651,28 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
     },
     {
+     "number": 49,
+     "title": "Explore personal-service connectors beyond device control",
+     "closedAt": "2026-09-21T00:20:18Z",
+     "createdAt": "2026-09-07T21:58:27Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/49"
+    },
+    {
      "number": 54,
      "title": "Add the qualified Strimer adapter to the PC lighting controller",
      "closedAt": "2026-09-10T23:17:49Z",
      "createdAt": "2026-09-07T23:53:46Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/54"
+    },
+    {
+     "number": 80,
+     "title": "Publish the cross-project work guide on GitHub Pages",
+     "closedAt": "2026-09-21T18:39:17Z",
+     "createdAt": "2026-09-09T00:50:55Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/80"
     },
     {
      "number": 83,
@@ -666,7 +715,7 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 62,
+   "openIssueCount": 60,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-20T17:44:01Z"
@@ -839,6 +888,14 @@
      "mergedAt": "2026-09-05T17:36:19Z"
     },
     {
+     "number": 3,
+     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
+     "createdAt": "2026-09-05T18:31:19Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
+     "base": "main",
+     "mergedAt": "2026-09-05T19:52:44Z"
+    },
+    {
      "number": 4,
      "title": "Allow tray upgrades to preserve existing shortcuts",
      "createdAt": "2026-09-05T18:43:19Z",
@@ -853,14 +910,6 @@
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/5",
      "base": "main",
      "mergedAt": "2026-09-05T18:59:09Z"
-    },
-    {
-     "number": 3,
-     "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
-     "createdAt": "2026-09-05T18:31:19Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
-     "base": "main",
-     "mergedAt": "2026-09-05T19:52:44Z"
     },
     {
      "number": 7,
@@ -879,14 +928,6 @@
      "mergedAt": "2026-09-05T23:53:01Z"
     },
     {
-     "number": 32,
-     "title": "Document shared monitoring adoption and Windows ownership",
-     "createdAt": "2026-09-07T02:46:22Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/32",
-     "base": "main",
-     "mergedAt": "2026-09-07T02:52:11Z"
-    },
-    {
      "number": 24,
      "title": "Restructure the wall map layout and surface status, pending edits, and mode",
      "createdAt": "2026-09-07T00:57:37Z",
@@ -895,12 +936,12 @@
      "mergedAt": "2026-09-07T03:22:21Z"
     },
     {
-     "number": 36,
-     "title": "Make SQLite initialization atomic and close failed connections",
-     "createdAt": "2026-09-07T04:48:39Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/36",
+     "number": 32,
+     "title": "Document shared monitoring adoption and Windows ownership",
+     "createdAt": "2026-09-07T02:46:22Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/32",
      "base": "main",
-     "mergedAt": "2026-09-07T04:53:33Z"
+     "mergedAt": "2026-09-07T02:52:11Z"
     },
     {
      "number": 35,
@@ -911,6 +952,14 @@
      "mergedAt": "2026-09-07T05:23:46Z"
     },
     {
+     "number": 36,
+     "title": "Make SQLite initialization atomic and close failed connections",
+     "createdAt": "2026-09-07T04:48:39Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/36",
+     "base": "main",
+     "mergedAt": "2026-09-07T04:53:33Z"
+    },
+    {
      "number": 39,
      "title": "Add protected Nanoleaf controller API",
      "createdAt": "2026-09-07T17:24:48Z",
@@ -919,20 +968,20 @@
      "mergedAt": "2026-09-07T18:25:49Z"
     },
     {
-     "number": 48,
-     "title": "Add authenticated Windows and WSL Nanoleaf MCP bindings",
-     "createdAt": "2026-09-07T19:23:28Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/48",
-     "base": "main",
-     "mergedAt": "2026-09-07T19:33:00Z"
-    },
-    {
      "number": 40,
      "title": "Animate wall assembly from a central orb",
      "createdAt": "2026-09-07T18:03:01Z",
      "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/40",
      "base": "main",
      "mergedAt": "2026-09-07T19:36:20Z"
+    },
+    {
+     "number": 48,
+     "title": "Add authenticated Windows and WSL Nanoleaf MCP bindings",
+     "createdAt": "2026-09-07T19:23:28Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/48",
+     "base": "main",
+     "mergedAt": "2026-09-07T19:33:00Z"
     },
     {
      "number": 50,
@@ -959,12 +1008,12 @@
      "mergedAt": "2026-09-09T23:57:57Z"
     },
     {
-     "number": 61,
-     "title": "Bound CI runtime and remove duplicate branch-push checks",
-     "createdAt": "2026-09-10T03:00:45Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "number": 57,
+     "title": "Support a fresh Linux installation of Nanoleaf services",
+     "createdAt": "2026-09-10T00:04:39Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
      "base": "main",
-     "mergedAt": "2026-09-10T03:04:28Z"
+     "mergedAt": "2026-09-10T22:56:36Z"
     },
     {
      "number": 58,
@@ -975,14 +1024,6 @@
      "mergedAt": "2026-09-10T13:17:45Z"
     },
     {
-     "number": 60,
-     "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
-     "createdAt": "2026-09-10T01:21:11Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
-     "base": "main",
-     "mergedAt": "2026-09-10T13:33:17Z"
-    },
-    {
      "number": 59,
      "title": "Adopt shared guide planning and delivery checkpoints",
      "createdAt": "2026-09-10T00:46:40Z",
@@ -991,12 +1032,20 @@
      "mergedAt": "2026-09-10T21:19:56Z"
     },
     {
-     "number": 57,
-     "title": "Support a fresh Linux installation of Nanoleaf services",
-     "createdAt": "2026-09-10T00:04:39Z",
-     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
+     "number": 60,
+     "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
+     "createdAt": "2026-09-10T01:21:11Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
      "base": "main",
-     "mergedAt": "2026-09-10T22:56:36Z"
+     "mergedAt": "2026-09-10T13:33:17Z"
+    },
+    {
+     "number": 61,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "createdAt": "2026-09-10T03:00:45Z",
+     "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+     "base": "main",
+     "mergedAt": "2026-09-10T03:04:28Z"
     },
     {
      "number": 62,
@@ -1176,12 +1225,17 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-21T00:00:14Z",
+   "pushedAt": "2026-09-21T18:34:17Z",
    "defaultBranch": "main",
-   "headSha": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
-   "mainCommitCount": 26,
+   "headSha": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
+   "mainCommitCount": 27,
    "firstCommitAt": "2026-09-05T22:00:30Z",
    "mainCommits": [
+    {
+     "sha": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
+     "date": "2026-09-21T18:34:17Z",
+     "message": "Add Monitor controls and shared display ownership (#64)"
+    },
     {
      "sha": "9bd99c1b2ec1759cc70eedd5644e585627d3fd25",
      "date": "2026-09-21T00:00:14Z",
@@ -1459,20 +1513,20 @@
      "mergedAt": "2026-09-09T00:14:44Z"
     },
     {
-     "number": 57,
-     "title": "Bound CI runtime and remove duplicate branch-push checks",
-     "createdAt": "2026-09-10T03:04:35Z",
-     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
-     "base": "main",
-     "mergedAt": "2026-09-10T03:10:59Z"
-    },
-    {
      "number": 56,
      "title": "Adopt shared guide planning and delivery checkpoints",
      "createdAt": "2026-09-10T00:46:39Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
      "base": "main",
      "mergedAt": "2026-09-10T21:10:06Z"
+    },
+    {
+     "number": 57,
+     "title": "Bound CI runtime and remove duplicate branch-push checks",
+     "createdAt": "2026-09-10T03:04:35Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+     "base": "main",
+     "mergedAt": "2026-09-10T03:10:59Z"
     },
     {
      "number": 58,
@@ -1508,11 +1562,19 @@
     },
     {
      "number": 63,
-     "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
+     "title": "Render shared agent monitoring as paged 64×64 dashboards",
      "createdAt": "2026-09-20T23:45:42Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
      "base": "main",
      "mergedAt": "2026-09-21T00:00:14Z"
+    },
+    {
+     "number": 64,
+     "title": "Add Monitor controls and shared display ownership",
+     "createdAt": "2026-09-21T18:11:57Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/64",
+     "base": "main",
+     "mergedAt": "2026-09-21T18:34:18Z"
     }
    ],
    "openPRs": [],
@@ -1655,11 +1717,19 @@
     },
     {
      "number": 32,
-     "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
+     "title": "Render the 64×64 agent monitoring dashboard and preview",
      "closedAt": "2026-09-21T00:04:22Z",
      "createdAt": "2026-09-07T00:55:32Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/32"
+    },
+    {
+     "number": 33,
+     "title": "Add monitor controls and shared Monitor/Media display ownership",
+     "closedAt": "2026-09-21T18:39:24Z",
+     "createdAt": "2026-09-07T00:55:37Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/33"
     },
     {
      "number": 36,
@@ -1694,7 +1764,7 @@
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
     }
    ],
-   "openIssueCount": 16,
+   "openIssueCount": 15,
    "issueCreatedRange": [
     "2026-09-05T22:02:32Z",
     "2026-09-20T20:59:48Z"

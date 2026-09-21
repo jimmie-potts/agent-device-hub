@@ -19,6 +19,7 @@ export class MonitorPresentation {
  private lastOutcome:PresentationStatus['lastOutcome']=null;
  private tail:Promise<unknown>=Promise.resolve();
  private closed=false;
+ private interrupts=0;
  private clock:()=>number;
  private unsubscribe:()=>void;
  onChange=()=>{};
@@ -32,13 +33,16 @@ export class MonitorPresentation {
  status():PresentationStatus{return {configuration:structuredClone(this.configuration),sourceRevision:this.view?.snapshot?.revision??null,sourceConnection:this.view?.connection??'unavailable',renditionGeneration:this.dashboard.status().rendition?.generation??null,generation:this.generation,pendingMode:this.pendingMode,participating:this.active,inFlight:this.inFlight?1:0,lastOutcome:structuredClone(this.lastOutcome)};}
  rendition(){return this.dashboard.status();}
  submit(view:MonitorView){if(this.closed)return;this.view=structuredClone(view);this.dashboard.submit(view,this.configuration.filter);this.onChange();}
+ interrupt(){this.interrupts++;this.suspend();}
  suspend(){this.active=false;this.generation++;this.lastRendition=0;this.onChange();}
  private enqueue<T>(work:()=>Promise<T>):Promise<T>{
   if(this.closed)return Promise.reject(new ApiError('closed',503));
   const result=this.tail.then(()=>{if(this.closed)throw new ApiError('closed',503);return work();});this.tail=result.catch(()=>{});return result;
  }
  async configure(action:IntegrationAction,admit:()=>void=()=>{}):Promise<void>{
+  const interrupts=this.interrupts;
   return this.enqueue(async()=>{
+   if(interrupts!==this.interrupts)throw new ApiError('cancelled',409);
    admit();const wasActive=this.active;
    const next=presentationConfiguration.parse(action.operation==='mode'?{...this.configuration,mode:action.mode}:{...this.configuration,filter:action.filter,cadenceMs:action.cadenceMs});
    this.suspend();this.pendingMode=next.mode;this.onChange();
@@ -52,13 +56,27 @@ export class MonitorPresentation {
   });
  }
  async media<T>(action:()=>Promise<T>,starts:boolean):Promise<T>{
-  return this.enqueue(async()=>{
+  if(this.closed)throw new ApiError('closed',503);
+  if(!starts){
+   // Player cancels capture synchronously before its persistence queue drains.
+   // Keep that boundary even while a presentation transition is awaiting I/O.
+   this.interrupt();return action();
+  }
+  const interrupts=this.interrupts;
+  const check=()=>{if(this.closed||interrupts!==this.interrupts)throw new ApiError('cancelled',409);};
+  const pending=await this.enqueue(async()=>{
+   check();
    if(this.configuration.mode==='monitor'){
-    this.suspend();await this.player.pause();
-    if(starts){const next={...this.configuration,mode:'media' as const};await this.options.save(next);this.configuration=next;this.onChange();}
+    this.suspend();const paused=this.player.pause(),generation=this.player.getState().generation;
+    const current=()=>{check();if(generation!==this.player.getState().generation)throw new ApiError('cancelled',409);};
+    await paused;current();
+    const next={...this.configuration,mode:'media' as const};await this.options.save(next);this.configuration=next;this.onChange();current();
    }
-   return action();
+   // Release the presentation queue after invoking Player, not after its
+   // asynchronous capture. Later mode/media intent must reach Player's guard.
+   return {result:action()};
   });
+  return pending.result;
  }
  tick(){
   if(this.closed)return;

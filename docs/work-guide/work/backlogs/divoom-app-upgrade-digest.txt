@@ -11,7 +11,7 @@
 #30 [CLOSED] Compare Pixoo dashboard frame and text update methods
 #31 [CLOSED] Embed the shared agent-state service in the Pixoo backend
 #32 [CLOSED] Render the 64×64 agent monitoring dashboard and preview
-#33 [OPEN] Add monitor controls and shared Monitor/Media display ownership
+#33 [CLOSED] Add monitor controls and shared Monitor/Media display ownership
 #34 [OPEN] Package and verify Codex and Claude monitoring on the Pixoo
 #37 [CLOSED] Expose the Pixoo controller through the shared device API
 #38 [OPEN] Adopt shared OpenSpec validation tooling
