@@ -1,15 +1,30 @@
 {
- "fetchedAt": "2026-09-21T18:49:23.562008+00:00",
+ "fetchedAt": "2026-09-21T20:50:46.329629+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T18:48:20Z",
+   "pushedAt": "2026-09-21T20:47:39Z",
    "defaultBranch": "main",
-   "headSha": "260707019b7ff83d57e31d91ae1e1582c3734589",
-   "mainCommitCount": 45,
+   "headSha": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+   "mainCommitCount": 48,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+     "date": "2026-09-21T20:47:39Z",
+     "message": "Host Linux shared state with controller integration and supervised migration (#121)"
+    },
+    {
+     "sha": "7614b7ce5562bdaf90503755ec1f0a8222d2f2bc",
+     "date": "2026-09-21T19:48:42Z",
+     "message": "Raise Linux service RSS budget to 256 MiB and track optimization backlog (#124)"
+    },
+    {
+     "sha": "09ecdde0390dccd352ac31bf0c72b2c8e37e2f11",
+     "date": "2026-09-21T18:51:46Z",
+     "message": "Synchronize Pixoo Monitor and Media controls in the work guide (#119)"
+    },
     {
      "sha": "260707019b7ff83d57e31d91ae1e1582c3734589",
      "date": "2026-09-21T18:48:19Z",
@@ -574,6 +589,14 @@
      "mergedAt": "2026-09-21T00:20:17Z"
     },
     {
+     "number": 119,
+     "title": "Synchronize Pixoo Monitor and Media controls in the work guide",
+     "createdAt": "2026-09-21T18:15:48Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/119",
+     "base": "main",
+     "mergedAt": "2026-09-21T18:51:46Z"
+    },
+    {
      "number": 120,
      "title": "docs: require a central BUNNY UI for future components",
      "createdAt": "2026-09-21T18:26:29Z",
@@ -582,30 +605,31 @@
      "mergedAt": "2026-09-21T18:31:04Z"
     },
     {
+     "number": 121,
+     "title": "Host Linux shared state with controller integration and supervised migration",
+     "createdAt": "2026-09-21T18:28:03Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
+     "base": "main",
+     "mergedAt": "2026-09-21T20:47:40Z"
+    },
+    {
      "number": 122,
      "title": "Reconcile public guide verification for the BUNNY publication",
      "createdAt": "2026-09-21T18:44:43Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/122",
      "base": "main",
      "mergedAt": "2026-09-21T18:48:20Z"
-    }
-   ],
-   "openPRs": [
-    {
-     "number": 119,
-     "title": "Synchronize Pixoo Monitor and Media controls in the work guide",
-     "createdAt": "2026-09-21T18:15:48Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/119",
-     "base": "main"
     },
     {
-     "number": 121,
-     "title": "Build Linux standalone hub candidate with bounded APIs and controller routing",
-     "createdAt": "2026-09-21T18:28:03Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
-     "base": "main"
+     "number": 124,
+     "title": "Raise Linux service memory budget to 256 MiB",
+     "createdAt": "2026-09-21T19:45:58Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/124",
+     "base": "main",
+     "mergedAt": "2026-09-21T19:48:42Z"
     }
    ],
+   "openPRs": [],
    "closedIssues": [
     {
      "number": 1,
@@ -638,6 +662,14 @@
      "createdAt": "2026-09-07T02:22:01Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/4"
+    },
+    {
+     "number": 5,
+     "title": "Host shared monitoring and route commands to existing controllers",
+     "closedAt": "2026-09-21T20:50:33Z",
+     "createdAt": "2026-09-07T02:22:03Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
     },
     {
      "number": 7,
@@ -731,7 +763,7 @@
    "openIssueCount": 60,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
-    "2026-09-20T17:44:01Z"
+    "2026-09-21T19:37:29Z"
    ],
    "issuesCreatedByDay": {
     "2026-09-07": 53,
@@ -739,7 +771,8 @@
     "2026-09-09": 1,
     "2026-09-10": 5,
     "2026-09-12": 1,
-    "2026-09-20": 2
+    "2026-09-20": 2,
+    "2026-09-21": 1
    }
   },
   "codex-nanoleaf": {

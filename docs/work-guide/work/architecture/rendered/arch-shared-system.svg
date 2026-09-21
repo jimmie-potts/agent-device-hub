@@ -171,8 +171,8 @@
         <text data-detail="fine" x="115" y="442" class="t-frontend" font-size="7" text-anchor="middle">planned</text>
         </g>
 
-        <g id="arch-shared-system-node-routing" data-node-id="arch-shared-system-routing" data-node-label="Registered routing" tabindex="0" role="button" aria-label="Focus Registered routing, authenticated · per-device queues, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="authenticated · per-device queues" data-node-tag="host candidate" data-node-context="Architecture component">
-          <title>Registered routing · authenticated · per-device queues · Architecture component · host candidate</title>
+        <g id="arch-shared-system-node-routing" data-node-id="arch-shared-system-routing" data-node-label="Registered routing" tabindex="0" role="button" aria-label="Focus Registered routing, authenticated · per-device queues, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="authenticated · per-device queues" data-node-tag="Linux host" data-node-context="Architecture component">
+          <title>Registered routing · authenticated · per-device queues · Architecture component · Linux host</title>
           <rect x="250" y="388" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="250" y="388" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 394) scale(0.6875)">
@@ -181,7 +181,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="325" y="417" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Registered routing</text>
         <text data-detail="context" x="325" y="433" class="t-muted" font-size="7.1" text-anchor="middle">authenticated · per-device queues</text>
-        <text data-detail="fine" x="325" y="442" class="t-security" font-size="7" text-anchor="middle">host candidate</text>
+        <text data-detail="fine" x="325" y="442" class="t-security" font-size="7" text-anchor="middle">Linux host</text>
         </g>
 
         <g id="arch-shared-system-node-contracts" data-node-id="arch-shared-system-contracts" data-node-label="Contracts + device-mcp" tabindex="0" role="button" aria-label="Focus Contracts + device-mcp, controller v1 · MCP 1.0.0, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="controller v1 · MCP 1.0.0" data-node-tag="implemented" data-node-context="Architecture component">
