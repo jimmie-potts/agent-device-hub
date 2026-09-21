@@ -325,3 +325,11 @@ rollback. Nanoleaf exercises the real HTTP settings service with a disposable
 worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
+
+## Shared monitoring setup checks
+
+Hub #8 adds local setup operations to the hub package. `npm run test:setup`
+builds and runs isolated configuration, credential and hook tests; CI runs
+`npm run test:setup:built` after its fresh build. The hub package check also
+executes these tests in the offline installed archive. Use Node 24 on Linux/WSL.
+Temporary synthetic settings and fake transports never qualify personal hooks.

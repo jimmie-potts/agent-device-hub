@@ -229,6 +229,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
+    ownerId:options.ownerId,
+    directory:options.directory,
+    validateCredentials(input:Credential[]) { credentials(input); },
     staged:() => staged,
     async activate(plan:ActivationPlan) {
       if (!staged || !activationAllowed || activating || closing) throw new Error('activation-unavailable');
