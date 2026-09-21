@@ -1,3 +1,9 @@
+## September 21, 2026: Hub #13 standalone MCP candidate
+
+Updated shared-hosting guidance and the backlog snapshot for the opt-in MCP candidate. The host delegates qualified session commands and configured controller operations to existing owners. Source protocol checks cover synthetic Codex/Claude profiles, authorization, replay, native settings, stale evidence and disconnect. Installed clients, devices and public guide publication remain separate.
+
+The existing shared-system diagram still describes the same clients, registered routing, shared module and controller ownership. No component, connection or ownership changes; its planned client group continues to include the undelivered dashboard and desk presets. Architecture viewers and source-review dates are unchanged. This entry records candidate work, not a merge or issue closure. Guide generation, all five maintenance checks and the browser checker passed with no browser errors.
+
 # Guide maintenance history
 
 ## September 21, 2026: Hub #8 setup candidate
@@ -11,19 +17,23 @@ state and no physical worker. Installation and actual-client qualification
 remain pending. No personal settings, live state or devices were changed.
 
 Refreshed all three backlogs and retained primary coverage of
-97 open issues across 12 guides and nine diagrams.
+96 open issues across 12 guides and nine diagrams.
 Generation, five maintenance tests and guide browser/print checks passed.
 All nine Archify deliveries passed 9/9 artifact checks. The changed sequence
 was inspected in light/dark desktop renders; the separate standalone browser
 check still fails its known vertical overflow requirement. No layout repair
 or first-screen containment pass is claimed. The guide's scrolling/zooming
-presentation remains usable. HTML SHA-256: `de5fc93208a11c30ef9d564dc8c0a6c016d9166e634241257049d55a30a856c5`.
+presentation remains usable. HTML SHA-256: `7c16cb4482ef32301fd258a9e9f447cdd2927abb48def821c4685ac64323d940`.
 
 The public landing page still serves
 `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
 It differs from this candidate. Public publication and live verification of a
 new edition remain pending separate authority. Source merge and saved issue
 completion facts will be reconciled in a linked follow-up after verification.
+
+The candidate was reconciled with merged MCP PR #126. The refreshed tracker
+shows #13 closed, so its primary coverage and roadmap entry were removed; its
+source behavior and shared host/package checks are preserved.
 
 ## September 21, 2026: Hub #5 source completion
 

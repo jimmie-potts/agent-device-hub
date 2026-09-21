@@ -6,7 +6,7 @@ hub and setup tests, reproducible offline hub package, workflow checks and
 Linux isolated performance checks passed. The workflow coverage fixture was
 updated to retain the new setup command alongside every previous suite.
 
-Thirteen setup checks cover configuration conflicts, edited/duplicated/missing
+Fourteen setup checks cover configuration conflicts, edited/duplicated/missing
 ownership entries, bounded configurations, interrupted grant/revoke,
 private-content dropping, silence/deadlines, consumer capability checks and
 competing receipt claims. The duplicate-credential regression fails against

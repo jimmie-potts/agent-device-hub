@@ -10,8 +10,8 @@ const read=async p=>JSON.parse(await readFile(p,'utf8'));
 const write=(p,v)=>writeFile(p,JSON.stringify(v),{mode:0o600});
 async function fixture(t){const root=await mkdtemp(join(tmpdir(),'hub-setup-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(join(root,'receipt'),{mode:0o700});const target=join(root,'hooks.json');await write(target,{hooks:{Stop:[{hooks:[{type:'command',command:'unrelated'}]}]},trust:'unchanged'});return {directory:join(root,'receipt'),target,source,endpoint:'http://127.0.0.1:34567/api/monitor/v1/events',node:process.execPath,hook:new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,owner:'installation-owner',qualified:false};}
 function authority(){const active=new Map();return {active,grant:async(id,token)=>{active.set(id,token);},revoke:async(id,token)=>{assert.equal(active.get(id),token);active.delete(id);}};}
-test('plan is read-only; idempotent setup and surgical removal preserve latest unrelated settings',async t=>{
- const input=await fixture(t),access=authority();const before=await readFile(input.target,'utf8');
+for(const [provider,client] of [['codex','cli'],['claude','code']])test(provider+': plan is read-only; idempotent setup and surgical removal preserve latest unrelated settings',async t=>{
+ const input=await fixture(t),access=authority();input.source={...source,provider,client};const before=await readFile(input.target,'utf8');
  const plan=await planSetup(input);assert.equal(await readFile(input.target,'utf8'),before);assert.ok(plan.additions.length>=7);
  await applySetup(input,plan.digest,access);await applySetup(input,(await planSetup(input)).digest,access);assert.equal(access.active.size,1);
  const current=await read(input.target);assert.equal(current.trust,'unchanged');current.hooks.Stop=current.hooks.Stop.filter(g=>g.hooks[0].command!=='unrelated');current.newPreference='KEEP';current.hooks.Stop.push({hooks:[{type:'command',command:'new-user-hook'}]});await write(input.target,current);

@@ -8,7 +8,7 @@
 #9 [OPEN] Verify shared status and command routing across both device integrations
 #10 [OPEN] Publish shared OpenSpec validation tooling
 #11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
-#13 [OPEN] Host shared MCP discovery and agent-status tools in the standalone hub
+#13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
 #15 [OPEN] Qualify Tidbyt cloud and Tronbyt connections
 #16 [OPEN] Implement the Tidbyt cloud controller
 #17 [OPEN] Qualify direct LIFX LAN control
