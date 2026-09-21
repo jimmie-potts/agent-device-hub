@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
+import {startHub} from '../dist/server.js';
+import {launchOwner,quiesceAndStop,stopOwner} from '../dist/migration.js';
+const token='m'.repeat(43),credentials=[{id:'migration',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control','admin','ingest'],devices:[]}];
+const options=directory=>({directory,ownerId:'owner',consumers:[],controllers:[],credentials,port:0});
+const headers={authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'};
+test('verified process handoff imports once, remains fenced across restart and rejects forged release',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'hub-migration-'));let source,destination;
+ try{
+  for(const name of ['source','destination','other'])await mkdir(join(root,name),{mode:0o700});
+  const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  const receipt=await quiesceAndStop(source);
+  destination=await startHub(options(join(root,'destination')),{staged:true,released:receipt});
+  const view=await (await fetch(destination.url+'/api/monitor/v1/sessions',{headers})).json();
+  assert.equal(view.snapshot.collector,'quiesced');
+  await assert.rejects(startHub(options(join(root,'other')),{staged:true,released:receipt}),/consumed/);
+  await assert.rejects(startHub(options(join(root,'other')),{staged:true,released:{ownerId:'owner',revision:0}}),/invalid/);
+  await destination.close();destination=undefined;
+  await assert.rejects(startHub(options(join(root,'destination'))),/owner-quiesced/);
+  destination=await startHub(options(join(root,'destination')),{staged:true});
+  assert.equal((await (await fetch(destination.url+'/api/monitor/v1/sessions',{headers})).json()).snapshot.collector,'quiesced');
+ }finally{await destination?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
+});
+
+test('staged routes activate only with valid authority and preserve producer identities',async()=>{
+ const {stageProducer,routeDigest,releaseRoute}=await import('../dist/migration-routes.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-activation-'));let source,destination,route;
+ try{
+  for(const name of ['source','destination'])await mkdir(join(root,name),{mode:0o700});
+  const configuration=join(root,'source.json');await writeFile(configuration,JSON.stringify(options(join(root,'source'))),{mode:0o600});
+  source=await launchOwner({kind:'hub',entrypoint:new URL('../dist/cli.js',import.meta.url).pathname,args:['serve',configuration],environment:{},token});
+  const receipt=await quiesceAndStop(source);destination=await startHub(options(join(root,'destination')),{staged:true,released:receipt});
+  const path=join(root,'producer.json'),identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'};
+  await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:identity,endpoint:source.url+'/api/monitor/v1/events',token}),{mode:0o600});
+  route=await stageProducer(path,await routeDigest(path),destination.url+'/api/monitor/v1/events',token);
+  await destination.activate({producers:[route],consumers:[]});assert.equal(destination.staged(),false);
+  const {readFile}=await import('node:fs/promises');const saved=JSON.parse(await readFile(path,'utf8'));assert.equal(saved.enabled,true);assert.deepEqual(saved.source,identity);assert.equal(saved.qualified,true);
+  assert.equal((await fetch(destination.url+'/api/hub/v1/health',{headers})).status,200);
+  await assert.rejects(destination.activate({producers:[route],consumers:[]}),/activation-unavailable/);
+ }finally{if(route)await releaseRoute(route);await destination?.close();if(source)await stopOwner(source);await rm(root,{recursive:true,force:true});}
+});

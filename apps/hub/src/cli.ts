@@ -21,8 +21,8 @@ async function readConfiguration(path:string):Promise<HubOptions> {
 }
 
 try {
-  if (process.argv.length !== 4 || process.argv[2] !== 'serve') throw new Error('usage');
-  const hub = await startHub(await readConfiguration(process.argv[3]));
+  if (process.argv.length !== 4 || !['serve','serve-staged'].includes(process.argv[2])) throw new Error('usage');
+  const hub = await startHub(await readConfiguration(process.argv[3]),process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
   process.stdout.write(JSON.stringify({ready:true,url:hub.url}) + '\n');
   let stopping = false;
   const stop = () => {

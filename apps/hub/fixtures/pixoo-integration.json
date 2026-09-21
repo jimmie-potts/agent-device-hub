@@ -1,0 +1,203 @@
+{
+  "snapshot": {
+    "apiVersion": "pixoo-integration/1.0",
+    "serverId": "386113c6-b9ef-43ea-bcc6-84591c7a8282",
+    "nextRequestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:5",
+    "configurationRevision": 3,
+    "capabilities": {
+      "modes": [
+        "monitor",
+        "media"
+      ],
+      "filters": [
+        "provider",
+        "projectId",
+        "session",
+        "q"
+      ],
+      "minimumCadenceMs": 1000,
+      "maximumCadenceMs": 10000
+    },
+    "configuration": {
+      "version": 1,
+      "mode": "media",
+      "filter": {
+        "provider": "codex",
+        "projectId": "chosen"
+      },
+      "cadenceMs": 2000
+    },
+    "sourceRevision": 0,
+    "sourceConnection": "current",
+    "renditionGeneration": 1,
+    "generation": 3,
+    "pendingMode": null,
+    "participating": false,
+    "inFlight": 0,
+    "lastOutcome": null,
+    "identity": {
+      "controllerId": "pixoo-controller",
+      "deviceId": "pixoo-local",
+      "sourceId": "pixoo"
+    }
+  },
+  "cases": [
+    {
+      "request": {
+        "apiVersion": "pixoo-integration/1.0",
+        "controllerId": "pixoo-controller",
+        "deviceId": "pixoo-local",
+        "requestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:1",
+        "expectedConfigurationRevision": 0,
+        "expectedGeneration": 0,
+        "action": {
+          "operation": "view",
+          "filter": {
+            "projectId": "chosen",
+            "provider": "codex"
+          },
+          "cadenceMs": 2000
+        }
+      },
+      "result": {
+        "apiVersion": "pixoo-integration/1.0",
+        "serverId": "386113c6-b9ef-43ea-bcc6-84591c7a8282",
+        "nextRequestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:2",
+        "configurationRevision": 1,
+        "capabilities": {
+          "modes": [
+            "monitor",
+            "media"
+          ],
+          "filters": [
+            "provider",
+            "projectId",
+            "session",
+            "q"
+          ],
+          "minimumCadenceMs": 1000,
+          "maximumCadenceMs": 10000
+        },
+        "configuration": {
+          "version": 1,
+          "mode": "media",
+          "filter": {
+            "provider": "codex",
+            "projectId": "chosen"
+          },
+          "cadenceMs": 2000
+        },
+        "sourceRevision": 0,
+        "sourceConnection": "current",
+        "renditionGeneration": 1,
+        "generation": 1,
+        "pendingMode": null,
+        "participating": false,
+        "inFlight": 0,
+        "lastOutcome": null
+      }
+    },
+    {
+      "request": {
+        "apiVersion": "pixoo-integration/1.0",
+        "controllerId": "pixoo-controller",
+        "deviceId": "pixoo-local",
+        "requestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:2",
+        "expectedConfigurationRevision": 1,
+        "expectedGeneration": 1,
+        "action": {
+          "operation": "mode",
+          "mode": "monitor"
+        }
+      },
+      "result": {
+        "apiVersion": "pixoo-integration/1.0",
+        "serverId": "386113c6-b9ef-43ea-bcc6-84591c7a8282",
+        "nextRequestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:3",
+        "configurationRevision": 2,
+        "capabilities": {
+          "modes": [
+            "monitor",
+            "media"
+          ],
+          "filters": [
+            "provider",
+            "projectId",
+            "session",
+            "q"
+          ],
+          "minimumCadenceMs": 1000,
+          "maximumCadenceMs": 10000
+        },
+        "configuration": {
+          "version": 1,
+          "mode": "monitor",
+          "filter": {
+            "provider": "codex",
+            "projectId": "chosen"
+          },
+          "cadenceMs": 2000
+        },
+        "sourceRevision": 0,
+        "sourceConnection": "current",
+        "renditionGeneration": 1,
+        "generation": 2,
+        "pendingMode": null,
+        "participating": true,
+        "inFlight": 0,
+        "lastOutcome": null
+      }
+    },
+    {
+      "request": {
+        "apiVersion": "pixoo-integration/1.0",
+        "controllerId": "pixoo-controller",
+        "deviceId": "pixoo-local",
+        "requestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:3",
+        "expectedConfigurationRevision": 2,
+        "expectedGeneration": 2,
+        "action": {
+          "operation": "mode",
+          "mode": "media"
+        }
+      },
+      "result": {
+        "apiVersion": "pixoo-integration/1.0",
+        "serverId": "386113c6-b9ef-43ea-bcc6-84591c7a8282",
+        "nextRequestId": "386113c6-b9ef-43ea-bcc6-84591c7a8282:4",
+        "configurationRevision": 3,
+        "capabilities": {
+          "modes": [
+            "monitor",
+            "media"
+          ],
+          "filters": [
+            "provider",
+            "projectId",
+            "session",
+            "q"
+          ],
+          "minimumCadenceMs": 1000,
+          "maximumCadenceMs": 10000
+        },
+        "configuration": {
+          "version": 1,
+          "mode": "media",
+          "filter": {
+            "provider": "codex",
+            "projectId": "chosen"
+          },
+          "cadenceMs": 2000
+        },
+        "sourceRevision": 0,
+        "sourceConnection": "current",
+        "renditionGeneration": 1,
+        "generation": 3,
+        "pendingMode": null,
+        "participating": false,
+        "inFlight": 0,
+        "lastOutcome": null
+      }
+    }
+  ]
+}

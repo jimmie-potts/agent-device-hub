@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/jimmie-potts/divoom-app-upgrade",
+  "revision": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
+  "contract": "pixoo-integration/1.0",
+  "sourceFiles": {
+    "packages/core/src/integration.ts": "6012ccaf65cb97e3663a1a1084f831b8ecc221f6364342cfc9f0ebbadbcedfd7",
+    "packages/core/src/api.ts": "234730fb5c9cdbe025e2685024e5e51342579818fe34011f5c2e5e9b6035ccbb",
+    "apps/server/src/controller.ts": "88f77411be8d4a85e0a0510204872cfa020ad28c6fadde705a136eac0376e401",
+    "apps/server/src/control-service.ts": "6c55c994fd5146cb3ad8d77d1921d8ea10d21e4fb5a2a455a08da1665581086c",
+    "apps/server/src/monitor-source.ts": "b656732ddefcdb787884322705490c66cd8dc8543093741ba58886714ee0b453",
+    "apps/server/src/monitor.ts": "2e0ef03325c74da6c5bc90ce010940dbd27acd87ea048b96756cb79d6e4e3354",
+    "apps/server/src/monitor-storage.ts": "610d7904d81fe3b11639a33b70571148fdb6046312c8559ebdb52725eb1b3883"
+  },
+  "fixtureSha256": "6fb0387ec76ef3088004dabcc876fcf4169eb202c847249d00aba7d9c179cf14"
+}

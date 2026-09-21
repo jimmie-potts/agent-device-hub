@@ -3,6 +3,8 @@ import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
 import {ControllerClient, type ControllerConfig} from './controllers.js';
+import {prepareActivation,type ActivationPlan} from './migration-routes.js';
+import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
@@ -42,7 +44,11 @@ async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   return value;
 }
 
-export async function startHub(options: HubOptions) {
+export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}) {
+  const imported = migration?.released ? consumeReleasedState(migration.released) : undefined;
+  let staged = migration?.staged === true;
+  let activationAllowed = imported !== undefined;
+  let activating = false;
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
@@ -50,9 +56,10 @@ export async function startHub(options: HubOptions) {
   const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
-  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,storage:{acquire:async (ownerId,signal) => {
+  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
     lease = await storage.acquire(ownerId,signal) as HubLease;
-    if (lease.fenced()) { await lease.release(); throw new Error('owner-quiesced'); }
+    if (lease.fenced() && !staged) { await lease.release(); throw new Error('owner-quiesced'); }
+    if (staged) lease.setFence(true);
     return lease;
   }}}).catch(async error => {
     // Keep a stable operator error without exposing database paths.
@@ -60,6 +67,7 @@ export async function startHub(options: HubOptions) {
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
+  const snapshot = () => {const value=owner.snapshot();return staged && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const ledgers = new Map<string,Ledger>();
   const retained: {ledger:Ledger; key:string; replay:Replay}[] = [];
   let replayBytes = 0;
@@ -98,6 +106,7 @@ export async function startHub(options: HubOptions) {
     if (input.operation === 'label' && input.label !== null && (typeof input.label !== 'string' || input.label.length > 160)) throw new HttpError('invalid-input',400);
     if (input.operation === 'acknowledge' && (!id(input.noticeId) || !options.consumers.some(c => c.id === input.consumerId))) throw new HttpError('invalid-input',400);
     if (input.operation === 'quiesce' && !principal.scopes.includes('admin')) throw new HttpError('forbidden',403);
+    if (staged && input.operation !== 'quiesce') throw new HttpError('owner-quiesced',503);
     const entry = ledger(principal.id), fingerprint = canonical(input), old = entry.results.get(input.requestId);
     if (old) { if (old.body !== fingerprint) throw new HttpError('request-conflict',409);return old.result; }
     if (input.requestId !== ticket(entry)) {
@@ -117,7 +126,7 @@ export async function startHub(options: HubOptions) {
       if (input.operation === 'label') return owner.setLabel(input.identity as Identity,input.label as string | null);
       if (input.operation === 'acknowledge') return owner.acknowledge(input.identity as Identity,input.noticeId as string,input.consumerId as string);
       // Persist before releasing an export, including if export subsequently fails.
-      lease!.setFence(true); return exported ??= owner.exportState();
+      lease!.setFence(true); activationAllowed=false; return exported ??= owner.exportState();
     });
     const replay = {body:fingerprint,result,pending:true,bytes};
     entry.results.set(input.requestId,replay);retained.push({ledger:entry,key:input.requestId,replay});replayBytes += bytes;
@@ -136,22 +145,25 @@ export async function startHub(options: HubOptions) {
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
-        const scope = req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
+        const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1]);
-        if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
-          const snapshot = owner.snapshot();
-          const view: Record<string,unknown> = {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id))};
+        if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
+          authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
+        } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
+          const current = snapshot();
+          const view: Record<string,unknown> = {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id))};
           {
             if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
                 (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
             const query = (url.searchParams.get('q') ?? '').toLowerCase(),provider = url.searchParams.get('provider');
-            view.matches = snapshot.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query)).map(s => s.identity);
+            view.matches = current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query)).map(s => s.identity);
           }
           json(res,200,view);
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
-          const snapshot = owner.snapshot();
-          json(res,snapshot.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:snapshot.collector,revision:snapshot.revision,devices:[...clients.values()].map(c => c.status())});
+          const current = snapshot();
+          json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
+          if (staged) throw new HttpError('owner-quiesced',503);
           const result = await owner.ingest(await body(req,2048));
           json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
         } else if (req.method === 'POST' && path === '/api/monitor/v1/commands' && !url.search) {
@@ -165,7 +177,7 @@ export async function startHub(options: HubOptions) {
             try { authorize(req,'read'); } catch {res.destroy();return;}
             if (res.writableLength > 0) {if (!blockedAt) blockedAt = Date.now();if (Date.now()-blockedAt > 5000) res.destroy();return;}
             blockedAt = 0;
-            const state = owner.snapshot();
+            const state = snapshot();
             const projection = {apiVersion:'1.0',ownerId:options.ownerId,revision:state.revision,connection:'current',collector:state.collector,lossCount:state.lossCount,admissionRejected:rejected,uncertain:state.sessions.filter(s => s.freshness === 'uncertain').length};
             const fingerprint = JSON.stringify(projection);
             const message = (event:string) => `id: ${feedEpoch}:${feedSequence}\nevent: ${event}\ndata: ${fingerprint}\n\n`;
@@ -216,6 +228,17 @@ export async function startHub(options: HubOptions) {
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
+    staged:() => staged,
+    async activate(plan:ActivationPlan) {
+      if (!staged || !activationAllowed || activating || closing) throw new Error('activation-unavailable');
+      activating=true;activationAllowed=false;
+      try {
+        await prepareActivation(plan,origin,options.ownerId,options.consumers,snapshot);
+        if (closing || exported || owner.snapshot().collector!=='running') throw new Error('activation-unavailable');
+        lease!.setFence(false);staged=false;
+      } finally {activating=false;}
+    },
+
     replaceCredentials(input:Credential[]) {
       currentCredentials = credentials(input);
       for (const stream of streams) stream.destroy();

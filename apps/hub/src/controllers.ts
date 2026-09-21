@@ -1,5 +1,6 @@
 import {validate, type Request, type Receipt, type Snapshot} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
+import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
 import {validateIntegrationSnapshot,validateIntegrationReceipt} from './integration.js';
 import {validateRequest as validateIntegrationRequest,ticket as integrationTicket,apiVersion as integrationVersion,type Ticket} from './vendor/nanoleaf-integration.js';
 
@@ -27,7 +28,7 @@ export class ControllerClient {
     const abort = new AbortController(); this.abort = abort;
     const timer = setTimeout(() => abort.abort(),this.timeoutMs);
     try {
-      const endpoint = integration ? this.config.endpoint.replace(/\/controller\/v1$/,'/controller/integration/v1') : this.config.endpoint;
+      const endpoint = integration ? this.config.endpoint.replace(/\/controller\/v1$/,this.config.kind === 'pixoo' ? '/controller/pixoo-integration/v1' : '/controller/integration/v1') : this.config.endpoint;
       const response = await fetch(endpoint + path, {method:body === undefined ? 'GET' : 'POST', redirect:'error',signal:abort.signal,
         headers:{authorization:`Bearer ${this.config.token}`,'content-type':'application/json','x-pixoo-request':'1'},
         ...(body === undefined ? {} : {body:JSON.stringify(body)})});
@@ -35,6 +36,10 @@ export class ControllerClient {
       if (!response.ok) {
         // A typed receipt can describe an admitted rejection. Preserve its ticket below.
         if (body !== undefined && (integration ? validateIntegrationReceipt(value) : validate('receipt',value))) return {status:response.status,value};
+        if (integration && this.config.kind === 'pixoo' && object(value) && object(value.error)) {
+          const codes:Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-input':400,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'monitor-unavailable':503};
+          if (typeof value.error.code === 'string' && codes[value.error.code] === response.status) throw new HttpError(value.error.code,response.status);
+        }
         const mapping: Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-request':400,'unknown-device':404,
           'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'unsupported-capability':422};
         if (object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
@@ -71,7 +76,11 @@ export class ControllerClient {
     if (this.config.kind !== 'nanoleaf') throw new HttpError('unsupported-capability',422);
   }
   async integrationSnapshot(): Promise<unknown> {
-    this.requireIntegration();
+    if (this.config.kind === 'pixoo') {
+      const {value} = await this.request('/snapshot',undefined,true);
+      if (!validatePixooSnapshot(value,true) || !object(value) || !object(value.identity) || value.identity.controllerId !== this.config.controllerId || value.identity.deviceId !== this.config.deviceId) {this.health='unavailable';throw new HttpError('incompatible-controller',502);}
+      this.health='ready';return value;
+    }
     const {value} = await this.request('/snapshot?deviceId=' + encodeURIComponent(this.config.deviceId),undefined,true);
     if (!validateIntegrationSnapshot(value) || !object(value) || !object(value.identity) || value.identity.deviceId !== this.config.deviceId || value.identity.controllerId !== this.config.controllerId) {
       this.health = 'unavailable';throw new HttpError('incompatible-controller',502);
@@ -86,7 +95,13 @@ export class ControllerClient {
     this.health = 'ready';return {status:response.status,body:value};
   }
   async integrationCommand(value:unknown):Promise<{status:number;body:unknown}> {
-    this.requireIntegration();
+    if (this.config.kind === 'pixoo') {
+      if (!validatePixooRequest(value)) throw new HttpError('invalid-request',400);
+      if (value.controllerId !== this.config.controllerId || value.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
+      const response=await this.request('/commands',value,true);
+      if (!validatePixooSnapshot(response.value) || !object(response.value) || response.value.serverId !== String(value.requestId).split(':')[0]) {this.health='unavailable';throw new HttpError('uncertain-result',503);}
+      this.health='ready';return {status:response.status,body:response.value};
+    }
     if (!validateIntegrationRequest(value)) throw new HttpError('invalid-request',400);
     if (value.controllerId !== this.config.controllerId || value.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
     return this.checkIntegrationReceipt(await this.request('/commands',value,true),value.requestId);
