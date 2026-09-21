@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-21T18:41:28.462733+00:00",
-  "refreshedAt": "2026-09-21T18:41:38.831070+00:00",
+  "startedAt": "2026-09-21T18:49:10.239138+00:00",
+  "refreshedAt": "2026-09-21T18:49:20.631904+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -26,14 +26,6 @@
         {
           "number": 50,
           "state": "OPEN",
-          "commentPages": [
-            0
-          ],
-          "commentBodiesStored": true
-        },
-        {
-          "number": 80,
-          "state": "CLOSED",
           "commentPages": [
             0
           ],
@@ -77,6 +69,11 @@
         },
         {
           "number": 54,
+          "state": "CLOSED",
+          "purpose": "Closed guide reference"
+        },
+        {
+          "number": 80,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         },

@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-21T18:40:48.856019+00:00",
+ "fetchedAt": "2026-09-21T18:49:23.562008+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T18:34:20Z",
+   "pushedAt": "2026-09-21T18:48:20Z",
    "defaultBranch": "main",
-   "headSha": "12c4e3e3bf372dd1a1da680ddb63b42b925e0378",
-   "mainCommitCount": 44,
+   "headSha": "260707019b7ff83d57e31d91ae1e1582c3734589",
+   "mainCommitCount": 45,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "260707019b7ff83d57e31d91ae1e1582c3734589",
+     "date": "2026-09-21T18:48:19Z",
+     "message": "docs: reconcile public guide verification before publication (#122)"
+    },
     {
      "sha": "12c4e3e3bf372dd1a1da680ddb63b42b925e0378",
      "date": "2026-09-21T18:31:03Z",
@@ -575,6 +580,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/120",
      "base": "main",
      "mergedAt": "2026-09-21T18:31:04Z"
+    },
+    {
+     "number": 122,
+     "title": "Reconcile public guide verification for the BUNNY publication",
+     "createdAt": "2026-09-21T18:44:43Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/122",
+     "base": "main",
+     "mergedAt": "2026-09-21T18:48:20Z"
     }
    ],
    "openPRs": [
