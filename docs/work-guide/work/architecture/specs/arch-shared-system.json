@@ -187,7 +187,7 @@
     150,
     62
    ],
-   "tag": "host candidate"
+   "tag": "Linux host"
   },
   {
    "id": "contracts",
@@ -353,7 +353,7 @@
    "items": [
     "Provider hooks report allowlisted lifecycle metadata and fail open",
     "The core interprets observations once; controllers only project state",
-    "Pixoo embeds the core; Linux standalone source is in review"
+    "Pixoo embeds the core; optional Linux standalone source is delivered"
    ]
   },
   {

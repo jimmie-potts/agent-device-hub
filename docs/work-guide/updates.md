@@ -1,5 +1,36 @@
 # Guide maintenance history
 
+## September 21, 2026: Hub #5 source completion
+
+[PR #121](https://github.com/jimmie-potts/agent-device-hub/pull/121) merged as
+`2c3bb4117bab0f845a95048b4ce72a49e915cfdc` after both independent reviews and
+all five PR checks passed. All five merged-main checks passed before #5 closed.
+This follow-up records that source acceptance, refreshes all three backlogs and
+paginated histories, removes #5 from open-issue coverage and the remaining-work
+roadmap, and pins the ownership/migration diagrams to the merged source.
+
+The guide now covers 97 primary open issues, 12 guides, nine diagrams and 96
+merged PRs. Source delivery includes bounded controller integration and
+supervised migration/rollback. Installed migration remains #8, full performance
+qualification remains #30 and budget/memory improvements remain #123. This
+follow-up changes only guide files and adds no product behavior or new OpenSpec
+capability. The coordinator is the Hub #5 delivery task; this is its completion
+companion to PR #121.
+
+Generation, five maintenance tests, browser/print checks and identical
+regeneration passed. All nine diagram deliveries passed 9/9 artifact checks.
+Guide SHA-256: `2b55a737248f162e9c9da1ab13d53552657359a73766065ec9b131ccc8b5887a`.
+Changed desktop/mobile/print renders were inspected. The shared-system viewer
+passed standalone containment; the migration viewer retains its documented
+vertical overflow, so that separate first-screen check failed. No viewer layout
+repair is claimed.
+
+The public landing page was read successfully and still serves SHA-256
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`, which differs
+from this guide. Public copying, deployment and full live-site verification are
+pending separate publication authority. No installation or device operation was
+performed. The PR records the exact guide-only CI filtering and merge evidence.
+
 ## September 21, 2026: Hub #5 integration and migration candidate
 
 PR #121 now includes the delivered Pixoo monitor extension, Linux Nanoleaf
