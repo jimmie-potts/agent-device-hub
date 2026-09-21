@@ -13,6 +13,7 @@ type Intent={version:1;pid:number;start:string;kind:StagedRoute['kind'];enabled:
 async function processStart(pid:number):Promise<string|null>{try{const stat=await readFile('/proc/'+pid+'/stat','utf8');return stat.slice(stat.lastIndexOf(')')+2).split(' ')[19];}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
 async function writeIntent(lock:string,intent:Intent){const temporary=join(lock,randomUUID()+'.tmp');const file=await open(temporary,'wx',0o600);try{await file.writeFile(JSON.stringify(intent));await file.sync();}finally{await file.close();}await rename(temporary,join(lock,'intent.json'));const directory=await open(lock,'r');try{await directory.sync();}finally{await directory.close();}const parent=await open(dirname(lock),'r');try{await parent.sync();}finally{await parent.close();}}
 const held=new Set<string>();
+const failedStages=new Set<string>();
 async function lockRoute(path:string):Promise<()=>void>{
  if(held.has(path))throw new Error('route-owner-live');held.add(path);let db:DatabaseSync|undefined;
  try{const file=await open(path+'.migration-lease.sqlite',constants.O_CREAT|constants.O_RDWR|constants.O_NOFOLLOW|constants.O_NONBLOCK,0o600);
@@ -48,13 +49,16 @@ async function replace(file:File,value:Record<string,unknown>):Promise<File>{
 export async function routeDigest(path:string):Promise<string>{return hash((await read(path)).bytes);}
 async function stage(path:string,expected:string,kind:StagedRoute['kind'],transform:(value:Record<string,unknown>)=>Record<string,unknown>):Promise<StagedRoute>{
  const file=await read(path);if(hash(file.bytes)!==expected)throw new Error('route-changed');
- const lock=path+'.migration-lock',unlock=await lockRoute(path);
- let acquired=false;
- try{await mkdir(lock,{mode:0o700});acquired=true;
+ const lock=path+'.migration-lock',unlock=await lockRoute(path),temporary=lock+'.'+randomUUID()+'.tmp';
+ let published=false;
+ try{
+  try{await lstat(lock);throw new Error('route-recovery-required');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
   const next=transform(file.value),intent:Intent={version:1,pid:process.pid,start:(await processStart(process.pid))!,kind,enabled:file.value.enabled===true,before:file.bytes.toString('base64'),after:Buffer.from(JSON.stringify(next)+'\n').toString('base64')};
-  await writeIntent(lock,intent);const updated=await replace(file,next),receipt=Object.freeze({kind,digest:hash(updated.bytes)});
+  await mkdir(temporary,{mode:0o700});await writeIntent(temporary,intent);await rename(temporary,lock);published=true;
+  const parent=await open(dirname(path),'r');try{await parent.sync();}finally{await parent.close();}
+  const updated=await replace(file,next),receipt=Object.freeze({kind,digest:hash(updated.bytes)});
   stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind,intent,unlock});return receipt;
- }catch(error){try{if(acquired)await rm(lock,{recursive:true});}finally{unlock();}throw error;}
+ }catch(error){if(published)failedStages.add(path);else await rm(temporary,{recursive:true,force:true});unlock();throw error;}
 }
 /** Recover only a dead coordinator's durable intent. An unknown phase or external edit fails closed. */
 export async function recoverRoute(path:string,expected:string):Promise<StagedRoute>{
@@ -64,7 +68,7 @@ export async function recoverRoute(path:string,expected:string):Promise<StagedRo
   const saved=(await read(join(lock,'intent.json'),32768)).value;
   if(!exact(saved,['version','pid','start','kind','enabled','before','after'])||saved.version!==1||!Number.isSafeInteger(saved.pid)||(saved.pid as number)<1||typeof saved.start!=='string'||!['producer','pixoo'].includes(saved.kind as string)||typeof saved.enabled!=='boolean'||typeof saved.before!=='string'||typeof saved.after!=='string')throw new Error('invalid-route-intent');
   const intent=saved as unknown as Intent;
-  if(await processStart(intent.pid)===intent.start)throw new Error('route-owner-live');
+  if(await processStart(intent.pid)===intent.start && !(intent.pid===process.pid&&failedStages.has(path)))throw new Error('route-owner-live');
   const before=Buffer.from(intent.before,'base64'),after=Buffer.from(intent.after,'base64');
   if(!file.bytes.equals(before)&&!file.bytes.equals(after))throw new Error('route-changed');
   intent.pid=process.pid;intent.start=(await processStart(process.pid))!;
@@ -73,8 +77,8 @@ export async function recoverRoute(path:string,expected:string):Promise<StagedRo
   if(intent.kind==='producer')next.enabled=false;
   intent.before=file.bytes.toString('base64');intent.after=Buffer.from(JSON.stringify(next)+'\n').toString('base64');await writeIntent(lock,intent);
   const updated=await replace(file,next),receipt=Object.freeze({kind:intent.kind,digest:hash(updated.bytes)});
-  stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind:intent.kind,intent,unlock});return receipt;
- }catch(error){unlock();throw error;}
+  stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind:intent.kind,intent,unlock});failedStages.delete(path);return receipt;
+ }catch(error){failedStages.add(path);unlock();throw error;}
 }
 async function updateStage(record:Stage,next:Record<string,unknown>){
  record.intent.before=record.file.bytes.toString('base64');record.intent.after=Buffer.from(JSON.stringify(next)+'\n').toString('base64');
@@ -103,7 +107,17 @@ export async function stagePixooSource(path:string,expected:string,ownerId:strin
  });
 }
 /** Releases the coordinator's lock; it never restores a stale source route or enables a producer. */
-export async function releaseRoute(route:StagedRoute):Promise<void>{const staged=stages.get(route);if(!staged)return;stages.delete(route);try{await rm(staged.lock,{recursive:true});}finally{staged.unlock();}}
+export async function releaseRoute(route:StagedRoute):Promise<void>{
+ const staged=stages.get(route);if(!staged)return;stages.delete(route);
+ try{
+  const current=await read(staged.file.path);
+  if(!current.bytes.equals(staged.file.bytes))throw new Error('route-changed');
+  if(staged.kind==='producer'&&current.value.enabled!==staged.enabled)failedStages.add(staged.file.path);
+  else await rm(staged.lock,{recursive:true});
+ }catch(error){failedStages.add(staged.file.path);throw error;}
+ finally{staged.unlock();}
+}
+
 export type ActivationPlan={producers:StagedRoute[];consumers:{id:string;route:StagedRoute;endpoint:string;token:string}[]};
 async function get(endpoint:string,token:string):Promise<unknown>{
  const response=await fetch(endpoint,{redirect:'error',signal:AbortSignal.timeout(2500),headers:{authorization:`Bearer ${token}`}});

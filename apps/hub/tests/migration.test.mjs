@@ -97,3 +97,36 @@ test('failed supervised startup terminates its own SIGTERM-resistant child',asyn
   const pid=Number(await readFile(pidPath,'utf8'));assert.throws(()=>process.kill(pid,0),e=>e.code==='ESRCH');
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('post-rename sync failure preserves recoverable original producer intent',async()=>{
+ const {open,readFile,realpath}=await import('node:fs/promises');
+ const {stageProducer,recoverRoute,routeDigest,releaseRoute,prepareActivation}=await import('../dist/migration-routes.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-route-sync-'));let route,hub;
+ const probe=await open(join(root,'probe'),'wx',0o600),prototype=Object.getPrototypeOf(probe),original=prototype.sync;await probe.close();
+ try{
+  const state=join(root,'state');await mkdir(state,{mode:0o700});hub=await startHub(options(state));
+  const path=join(root,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token}),{mode:0o600});
+  let injected=false;
+  prototype.sync=async function(){if(!injected&&await realpath('/proc/self/fd/'+this.fd)===root&&JSON.parse(await readFile(path,'utf8')).enabled===false){injected=true;throw Object.assign(new Error('injected-directory-sync'),{code:'EIO'});}return original.call(this);};
+  await assert.rejects(stageProducer(path,await routeDigest(path),hub.url+'/api/monitor/v1/events',token),/injected-directory-sync/);assert.equal(injected,true);prototype.sync=original;
+  route=await recoverRoute(path,await routeDigest(path));await releaseRoute(route);route=undefined;
+  // Releasing an unfinished attempt must retain the original enabled flag too.
+  route=await recoverRoute(path,await routeDigest(path));
+  await prepareActivation({producers:[route],consumers:[]},hub.url,'owner',[],()=>{throw new Error('no consumers');});
+  assert.equal(JSON.parse(await readFile(path,'utf8')).enabled,true);
+ }finally{prototype.sync=original;if(route)await releaseRoute(route);await hub?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('death before publishing initial intent leaves the original route available',async()=>{
+ const {spawnSync}=await import('node:child_process');const {readFile,readdir}=await import('node:fs/promises');
+ const {stageProducer,routeDigest,releaseRoute}=await import('../dist/migration-routes.js');
+ const root=await mkdtemp(join(tmpdir(),'hub-route-init-'));let route;
+ try{
+  const path=join(root,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:'http://127.0.0.1:1/api/monitor/v1/events',token}),{mode:0o600});
+  const before=await routeDigest(path);
+  const script=`import fs from 'node:fs/promises';import {syncBuiltinESMExports} from 'node:module';const mkdir=fs.mkdir;fs.mkdir=async(...args)=>{const result=await mkdir(...args);if(String(args[0]).includes('.migration-lock.')&&String(args[0]).endsWith('.tmp'))process.exit(0);return result;};syncBuiltinESMExports();const {stageProducer,routeDigest}=await import(${JSON.stringify(new URL('../dist/migration-routes.js',import.meta.url).href)});await stageProducer(process.argv[1],await routeDigest(process.argv[1]),process.argv[2],process.argv[3]);process.exit(99);`;
+  const child=spawnSync(process.execPath,['--input-type=module','-e',script,path,'http://127.0.0.1:2/api/monitor/v1/events',token],{encoding:'utf8'});assert.equal(child.status,0,child.stderr);
+  assert.equal(await routeDigest(path),before);assert.ok((await readdir(root)).some(name=>name.endsWith('.tmp')));
+  route=await stageProducer(path,before,'http://127.0.0.1:2/api/monitor/v1/events',token);assert.equal(JSON.parse(await readFile(path,'utf8')).enabled,false);
+ }finally{if(route)await releaseRoute(route);await rm(root,{recursive:true,force:true});}
+});
