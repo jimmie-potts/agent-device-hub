@@ -16,7 +16,7 @@ async function readConfiguration(path:string):Promise<HubOptions> {
     if (size > 65536) throw new Error('invalid-configuration');bytes = buffer.subarray(0,size);
   } finally {await file.close();}
   const value:unknown = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
-  if (!object(value) || !exact(value,['directory','ownerId','consumers','credentials','controllers','port',...(Object.hasOwn(value,'editorLinks')?['editorLinks']:[])]) || typeof value.directory !== 'string' || typeof value.ownerId !== 'string') throw new Error('invalid-configuration');
+  if (!object(value) || !exact(value,['directory','ownerId','consumers','credentials','controllers','port',...(Object.hasOwn(value,'editorLinks')?['editorLinks']:[]),...(Object.hasOwn(value,'mcp')?['mcp']:[])]) || typeof value.directory !== 'string' || typeof value.ownerId !== 'string') throw new Error('invalid-configuration');
   return value as unknown as HubOptions;
 }
 

@@ -1,3 +1,9 @@
+## September 21, 2026: Hub #13 standalone MCP candidate
+
+Updated shared-hosting guidance and the backlog snapshot for the opt-in MCP candidate. The host delegates qualified session commands and configured controller operations to existing owners. Source protocol checks cover synthetic Codex/Claude profiles, authorization, replay, native settings, stale evidence and disconnect. Installed clients, devices and public guide publication remain separate.
+
+The existing shared-system diagram still describes the same clients, registered routing, shared module and controller ownership. No component, connection or ownership changes; its planned client group continues to include the undelivered dashboard and desk presets. Architecture viewers and source-review dates are unchanged. This entry records candidate work, not a merge or issue closure. Guide generation, all five maintenance checks and the browser checker passed with no browser errors.
+
 # Guide maintenance history
 
 ## September 21, 2026: Hub #5 source completion

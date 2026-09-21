@@ -417,3 +417,7 @@ writer or physical effect scheduler moves into the browser.
 This candidate retains Hub #6's explicit UI approval and source-delivery gates.
 Installation, physical acceptance, general controls and full editor migration
 remain separately owned work.
+
+## Standalone MCP composition
+
+The optional host `/mcp` route composes the reusable transport with the existing state owner and controller clients. It adds no listener, reducer, replay ledger or device writer. Global session tools retain the HTTP command ledger. Configured aliases bind device tools while native snapshots and receipts keep their original identities. Read/control permissions are checked on every request; disconnect never resubmits or cancels admitted owner work. Pixoo catalog/player handlers remain owned by its separate application. See [the host tool contract](../apps/hub/README.md#optional-local-mcp) for supported commands and source-only evidence.

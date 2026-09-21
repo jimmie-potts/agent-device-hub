@@ -47,7 +47,9 @@
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
     "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
-    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs"
+    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs",
+    "test:hub:mcp": "npm run build && npm run test:hub:mcp:built",
+    "test:hub:mcp:built": "node --test apps/hub/tests/mcp.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

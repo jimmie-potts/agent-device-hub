@@ -92,6 +92,7 @@ jobs:
       - run: npm run test:mcp:built
       - run: npm run test:mcp:protocol:built
       - run: npm run test:mcp:package:built
+      - run: npm run test:hub:mcp:built
   dashboard:
     name: Dashboard browser and contracts on ${{ matrix.os }}
     strategy:

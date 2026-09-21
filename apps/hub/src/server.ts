@@ -6,11 +6,12 @@ import {HubStorage, type HubLease} from './storage.js';
 import {ControllerClient, type ControllerConfig} from './controllers.js';
 import {prepareActivation,type ActivationPlan} from './migration-routes.js';
 import {consumeReleasedState,type ReleasedState} from './migration.js';
+import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean};
 type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
 type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
@@ -51,6 +52,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let staged = migration?.staged === true;
   let activationAllowed = imported !== undefined;
   let activating = false;
+  if (options.mcp !== undefined && typeof options.mcp !== 'boolean') throw new Error('invalid-configuration');
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
@@ -87,6 +89,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const streamOwners = new Map<ServerResponse,string>();
   let active = 0, rejected = 0, closing = false;
   let origin = '';
+  let mcp: HubMcp | undefined;
   const feedEpoch = randomUUID();let feedSequence = 0, feedSignature = '';
   const feedHistory: {sequence:number; body:string}[] = [];
   const ledger = (principal: string) => {
@@ -95,11 +98,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     return value;
   };
   const ticket = (entry: Ledger) => `${entry.epoch}:${entry.sequence}`;
+  const authenticate = (token:string):Credential|null => {
+    if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
+    const digest = createHash('sha256').update(token).digest();
+    return currentCredentials.find(c => timingSafeEqual(digest,Buffer.from(c.digest,'hex'))) ?? null;
+  };
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
     const token = req.headers.authorization;
-    if (typeof token !== 'string' || !/^Bearer [A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) throw new HttpError('unauthenticated',401);
-    const digest = createHash('sha256').update(token.slice(7)).digest();
-    const principal = currentCredentials.find(c => timingSafeEqual(digest,Buffer.from(c.digest,'hex')));
+    const principal = typeof token === 'string' && token.startsWith('Bearer ') ? authenticate(token.slice(7)) : null;
     if (!principal) throw new HttpError('unauthenticated',401);
     if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) ||
         ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined) ||
@@ -144,6 +150,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     void result.then(() => {replay.pending = false;},() => {replay.pending = false;});
     return result;
   }
+  const sessions = (principal:Credential, query='', provider?:string) => {
+    const current = snapshot();
+    return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id)),
+      matches:current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query.toLowerCase())).map(s=>s.identity)};
+  };
   const server = createServer({maxHeaderSize:8192,requestTimeout:3000,headersTimeout:3000},(req,res) => {
     void (async () => {
       if (closing || active >= 32) { rejected = Math.min(Number.MAX_SAFE_INTEGER,rejected+1);json(res,503,{error:{code:'capacity'}});return; }
@@ -162,6 +173,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
           res.end(bytes);return;
         }
+        if (path === '/mcp') {
+          if (!mcp || url.search) throw new HttpError('not-found',404);
+          await mcp.handle(req,res);return;
+        }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
@@ -171,15 +186,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
-          const current = snapshot();
-          const view: Record<string,unknown> = {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id))};
-          {
-            if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
-                (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
-            const query = (url.searchParams.get('q') ?? '').toLowerCase(),provider = url.searchParams.get('provider');
-            view.matches = current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query)).map(s => s.identity);
-          }
-          json(res,200,view);
+          if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
+              (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
+          json(res,200,sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined));
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
           const current = snapshot();
           json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,revision:current.revision,devices:[...clients.values()].map(c => c.status())});
@@ -246,6 +255,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     await new Promise<void>((resolve,reject) => {server.once('error',reject);server.listen(options.port ?? 0,'127.0.0.1',() => {server.off('error',reject);resolve();});});
   } catch (error) { await owner.shutdown();throw error; }
   origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
+  try {
+    if (options.mcp) mcp = createHubMcp({origin,clients,authenticate,principal:(id,scope,device) => {
+      const value=currentCredentials.find(c=>c.id===id);
+      if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
+      return value;
+    },sessions,command});
+  } catch(error) {
+    await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
+  }
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
@@ -267,7 +285,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     },
     close(): Promise<void> {
       return closePromise ??= (async () => {
-        closing = true;for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
+        closing = true;await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();
       })();
