@@ -155,7 +155,7 @@ test('consumer proof rejects copied handles, wrong startup config and stopped pr
  try{
   const monitor=join(root,'agent-monitor');await mkdir(monitor,{mode:0o700});const path=join(monitor,'config.json'),bytes=JSON.stringify({version:1,mode:'remote',ownerId:'owner'});
   await writeFile(path,bytes,{mode:0o600});const digest=createHash('sha256').update(bytes).digest('hex');
-  const entrypoint=join(root,'child.mjs');await writeFile(entrypoint,"console.log('Pixoo simulator listening on http://127.0.0.1:49123');setInterval(()=>{},1000);process.on('SIGTERM',()=>process.exit(0));");
+  const entrypoint=join(root,'child.mjs');await writeFile(entrypoint,"process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000);console.log('Pixoo simulator listening on http://127.0.0.1:49123');");
   owner=await launchOwner({kind:'pixoo',entrypoint,args:[],environment:{PIXOO_DATA_DIR:root},token});
   assert.equal(managedPixooConsumer(owner,path,digest).endpoint,owner.url+'/api/monitor/v1');
   assert.throws(()=>managedPixooConsumer({...owner},path,digest),/consumer-not-ready/);

@@ -25,7 +25,10 @@ migration viewer retains the documented vertical-overflow limitation, with no
 horizontal overflow and readable labels; its automated first-screen check
 failed. No overflow repair or viewer redesign is claimed. The guide's print
 containment and interaction checks passed. Public publication and live-site
-verification remain pending. Post-merge tracker/history reconciliation follows
+verification remain pending. A hosted package check exposed a readiness/shutdown race in the synthetic
+consumer-proof child. Its handler now initializes before its ready line. This
+test-fixture repair changes no represented guide fact or diagram.
+Post-merge tracker/history reconciliation follows
 only after source review, CI and merge are verified.
 
 ## September 21, 2026: Owner-approved service memory budget
