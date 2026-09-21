@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-21T21:31:21.701874+00:00",
+ "fetchedAt": "2026-09-21T21:50:20.573612+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T21:27:41Z",
+   "pushedAt": "2026-09-21T21:45:30Z",
    "defaultBranch": "main",
-   "headSha": "ee1eac1608d1cff72293a6627da4685f951f241f",
-   "mainCommitCount": 50,
+   "headSha": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+   "mainCommitCount": 52,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+     "date": "2026-09-21T21:45:30Z",
+     "message": "Add reversible Linux/WSL shared monitor setup and cutover (#129)"
+    },
+    {
+     "sha": "ccd56d0276f8c116c81271320c63c31f6099be42",
+     "date": "2026-09-21T21:35:06Z",
+     "message": "Reconcile standalone MCP delivery in the work guide (#128)"
+    },
     {
      "sha": "ee1eac1608d1cff72293a6627da4685f951f241f",
      "date": "2026-09-21T21:27:41Z",
@@ -653,6 +663,22 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/126",
      "base": "main",
      "mergedAt": "2026-09-21T21:27:42Z"
+    },
+    {
+     "number": 128,
+     "title": "Reconcile completed standalone MCP delivery in the guide",
+     "createdAt": "2026-09-21T21:33:39Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/128",
+     "base": "main",
+     "mergedAt": "2026-09-21T21:35:06Z"
+    },
+    {
+     "number": 129,
+     "title": "Add reversible Linux/WSL shared monitor setup and cutover",
+     "createdAt": "2026-09-21T21:35:22Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/129",
+     "base": "main",
+     "mergedAt": "2026-09-21T21:45:30Z"
     }
    ],
    "openPRs": [
@@ -712,6 +738,14 @@
      "createdAt": "2026-09-07T02:24:04Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/7"
+    },
+    {
+     "number": 8,
+     "title": "Package reversible shared hooks and collector ownership migration",
+     "closedAt": "2026-09-21T21:49:42Z",
+     "createdAt": "2026-09-07T02:24:05Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
     },
     {
      "number": 13,
@@ -802,7 +836,7 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 59,
+   "openIssueCount": 58,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-21T19:37:29Z"

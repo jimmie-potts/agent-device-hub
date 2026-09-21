@@ -28,6 +28,35 @@ The existing shared-system diagram still describes the same clients, registered 
 
 # Guide maintenance history
 
+## September 21, 2026: Hub #8 source completion
+
+[PR #129](https://github.com/jimmie-potts/agent-device-hub/pull/129) merged as
+`f6bee907e06177c6dc8abde0075d73cc391784e9` after both independent reviews and
+all five PR jobs passed. All five merged-main jobs passed before issue #8 was
+closed as completed. This follow-up records source acceptance, refreshes all
+three backlogs and paginated histories, removes #8 from primary open coverage
+and the remaining-work roadmap, and pins the setup/migration diagram to the
+merged source. The Hub #8 delivery coordinator owns this completion companion.
+
+The guide covers 95 primary open issues, 12 guides, nine diagrams and
+100 merged PRs. Reversible setup, credential ownership, explicit Nanoleaf
+selection and fenced migration are source-delivered. Personal installation,
+actual-client qualification, integrated performance and physical acceptance
+remain separate. This follow-up changes only guide files and adds no product
+behavior or OpenSpec capability.
+
+Generation, five maintenance tests and guide browser/print checks passed.
+All nine diagram deliveries passed 9/9 artifact checks. The changed migration
+viewer retains its known vertical overflow; no standalone containment repair
+is claimed. Desktop/mobile/print captures were inspected.
+Guide SHA-256: `ca8c9574de6ac79a480d232ecbb0b162db56aea5cd4aa8e71916d5326359d53d`.
+
+The public landing page remains the earlier
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e` edition.
+Public copying, deployment and full live-site verification remain pending
+separate publication authority. No personal installation or device operation
+was performed. The companion PR records exact guide-only filtering evidence.
+
 ## September 21, 2026: Hub #8 setup candidate
 
 The Hub #8 delivery coordinator updated the shared-host guide and migration

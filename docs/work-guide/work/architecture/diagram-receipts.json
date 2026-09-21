@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-21T21:25:27.714655+00:00",
+  "renderedAt": "2026-09-21T21:46:41.844156+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -191,12 +191,12 @@
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "f86d478376f8ce52f08a678f05dd5401a80329cb54575521a022a0bff5dadcb2",
-        "bytes": 4322
+        "sha256": "d8b6269ac82b2174f63b77eeb3d078029e2deb89f178655f89ddfd9af58b33b1",
+        "bytes": 4319
       },
       "artifact": {
-        "sha256": "c155c39af39019c7791619ccbb86bbe2478026cd3084312ee0253cd974d83f93",
-        "bytes": 716839
+        "sha256": "7895d6e19994083785f6a0b33960040a6a71792e5af70833457274e7798411c0",
+        "bytes": 716836
       },
       "validation": {
         "checksPassed": 9,

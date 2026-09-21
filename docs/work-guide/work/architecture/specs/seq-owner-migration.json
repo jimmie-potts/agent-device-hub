@@ -199,7 +199,7 @@
    "dot": "amber",
    "title": "Owned elsewhere",
    "items": [
-    "Hub #8 candidate adds reversible setup and Nanoleaf cutover",
+    "Hub #8 source adds reversible setup and Nanoleaf cutover",
     "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
     "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
    ]

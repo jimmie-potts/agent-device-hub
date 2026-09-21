@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 59,
+        "totalCount": 58,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -15,38 +15,6 @@
                 "hasNextPage": false
               },
               "nodes": [
-                {
-                  "number": 5,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "number": 8,
-            "blockedBy": {
-              "totalCount": 3,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 29,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                },
-                {
-                  "number": 31,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
                 {
                   "number": 5,
                   "state": "CLOSED",
@@ -88,7 +56,7 @@
                 },
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -306,7 +274,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -331,7 +299,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -762,7 +730,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -787,7 +755,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -869,7 +837,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1042,7 +1010,7 @@
               "nodes": [
                 {
                   "number": 8,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
