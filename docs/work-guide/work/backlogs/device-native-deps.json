@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 23,
+        "totalCount": 22,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -354,16 +354,6 @@
                   }
                 }
               ]
-            }
-          },
-          {
-            "number": 49,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
             }
           },
           {

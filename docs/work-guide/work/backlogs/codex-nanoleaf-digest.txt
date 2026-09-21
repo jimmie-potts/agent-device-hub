@@ -23,7 +23,7 @@
 #45 [OPEN] Add controller enrollment and reversible multi-device upgrades
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Windows bridge
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
-#49 [OPEN] Expose Nanoleaf integration settings and assignments to the shared frontend
+#49 [CLOSED] Expose Nanoleaf integration settings and assignments to the shared frontend
 #52 [CLOSED] Expose connector geometry for the Prism wall map
 #53 [CLOSED] Integrate Prism crystal artwork and two-zone wall animation
 #54 [CLOSED] Support a fresh Linux installation of the Nanoleaf services

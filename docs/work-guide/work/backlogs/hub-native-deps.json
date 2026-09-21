@@ -1052,7 +1052,7 @@
                 },
                 {
                   "number": 49,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }

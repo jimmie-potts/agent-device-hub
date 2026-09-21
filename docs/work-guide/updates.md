@@ -1,5 +1,38 @@
 # Guide maintenance history
 
+## 2026-09-21 UTC: Nanoleaf #49 integration extension source
+
+[Nanoleaf PR #63](https://github.com/jimmie-potts/codex-nanoleaf/pull/63)
+merged as `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`, with the exact tree
+of reviewed head `8e5cb47c741ca161849ce1391a39c12f15fdac02`. All nine PR jobs
+passed. Separate Standards and Specification reviews found no actionable
+findings. The intermediate missing-pending-values finding was reproduced,
+corrected and independently reassessed. Local checks passed 231 Python tests,
+including 15 extension tests, 26 Python/TypeScript request fixtures and four
+receipt mappings, plus browser and workflow checks with 10 workflow fixtures.
+All nine merged-main jobs also passed in run `35546463309`; issue #49 is closed with every acceptance criterion checked and source-only boundaries retained.
+
+The Nanoleaf-owned `nanoleaf.integration/1.0` extension adds pure private
+projections and protected revisioned configuration edits through existing wall
+operations and the sole worker. Shared controller v1 stays unchanged.
+Configuration receipts are separate from unknown physical outcomes. Native
+Linux and retained Windows keep private databases. No frontend, installation,
+device operation or public publication is included.
+
+Refreshed backlog and paginated history inputs record actual source status.
+Concurrent Hub PR #117 merged as `25715f1536dc17d9bd8fa7a0e024ac449acfd5d0`.
+This candidate preserves its Pixoo renderer narrative, updated architecture
+viewer and source pins, then regenerates from fresh inputs.
+Diagram topology and dated review pins remain unchanged: the extension uses the
+already represented native controller and existing writer, and does not alter
+the mode-only MCP surface. The new versioned operation details are linked to
+[the merged API guide](https://github.com/jimmie-potts/codex-nanoleaf/blob/f12ac6653a9f3267fa9ef62a2d6667072183d8b3/docs/integration-api.md).
+No new architecture ownership, provider contract, writer or rendering flow is
+claimed by this guide synchronization. Generation, maintenance and browser
+validation receipts are retained in the companion PR. Public publication and
+live verification are outside this delivery.
+
+
 ## 2026-09-21 UTC: Pixoo #32 renderer source delivered
 
 [Pixoo PR #63](https://github.com/jimmie-potts/divoom-app-upgrade/pull/63)
