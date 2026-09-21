@@ -1,4 +1,4 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 606" role="img" lang="en" aria-labelledby="seq-lifecycle-observation-archify-diagram-title seq-lifecycle-observation-archify-diagram-description">
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 642" role="img" lang="en" aria-labelledby="seq-lifecycle-observation-archify-diagram-title seq-lifecycle-observation-archify-diagram-description">
         <title id="seq-lifecycle-observation-archify-diagram-title">Lifecycle observation to device presentation</title>
         <desc id="seq-lifecycle-observation-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
@@ -24,15 +24,15 @@
         <rect width="100%" height="100%" fill="url(#seq-lifecycle-observation-grid)" />
 
         <!-- Time Segments -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-lifecycle-observation-0" x="48" y="154" width="974" height="374" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-lifecycle-observation-0" x="48" y="154" width="974" height="410" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 129 142 L 129 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 295.8 142 L 295.8 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 462.6 142 L 462.6 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 629.4000000000001 142 L 629.4000000000001 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 796.2 142 L 796.2 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 963 142 L 963 541" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 129 142 L 129 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 295.8 142 L 295.8 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 462.6 142 L 462.6 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 629.4000000000001 142 L 629.4000000000001 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 796.2 142 L 796.2 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 963 142 L 963 577" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
@@ -71,59 +71,67 @@
         </g>
         </g>
 
-        <g data-edge-from="controller" data-edge-to="device" data-edge-label="mode + ownership; render; check generation g at write" data-edge-key="4">
-          <path data-composition-edge-from="controller" data-composition-edge-to="device" data-composition-points="803.2,330;956,330" d="M 803.2 330 L 956 330" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
+        <g data-edge-from="user" data-edge-to="controller" data-edge-label="explicit native mode/view command; guard revision + generation" data-edge-key="4">
+          <path data-composition-edge-from="user" data-composition-edge-to="controller" data-composition-points="636.4000000000001,330;789.2,330" d="M 636.4000000000001 330 L 789.2 330" class="a-security" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="735.8" y="310" width="287.6" height="16" rx="3" class="c-mask"/>
-          <text x="879.5999999999999" y="320" class="t-backend" font-size="9" text-anchor="middle">mode + ownership; render; check generation g at write</text>
-        </g>
-        <text data-detail="fine" x="815.2" y="348" class="t-dim" font-size="7">skipped while Media/Free or an external owner holds the device</text>
-        </g>
-
-        <g data-edge-from="device" data-edge-to="controller" data-edge-label="sent (transport only, not optical proof)" data-edge-key="5">
-          <path data-composition-edge-from="device" data-composition-edge-to="controller" data-composition-points="956,366;803.2,366" d="M 956 366 L 803.2 366" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
-        <g data-detail="context">
-          <rect x="769.6" y="346" width="220" height="16" rx="3" class="c-mask"/>
-          <text x="879.6" y="356" class="t-muted" font-size="9" text-anchor="middle">sent (transport only, not optical proof)</text>
+          <rect x="545.6" y="310" width="334.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="712.8000000000001" y="320" class="t-security" font-size="9" text-anchor="middle">explicit native mode/view command; guard revision + generation</text>
         </g>
         </g>
 
-        <g data-edge-from="controller" data-edge-to="core" data-edge-label="read with expired cursor" data-edge-key="6">
-          <path data-composition-edge-from="controller" data-composition-edge-to="core" data-composition-points="789.2,402;469.6,402" d="M 789.2 402 L 469.6 402" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-dashed)"/>
+        <g data-edge-from="controller" data-edge-to="device" data-edge-label="selected view → sole queue; check generation g at write" data-edge-key="5">
+          <path data-composition-edge-from="controller" data-composition-edge-to="device" data-composition-points="803.2,366;956,366" d="M 803.2 366 L 956 366" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="561.0000000000001" y="382" width="136.8" height="16" rx="3" class="c-mask"/>
-          <text x="629.4000000000001" y="392" class="t-messagebus" font-size="9" text-anchor="middle">read with expired cursor</text>
+          <rect x="730.6" y="346" width="298" height="16" rx="3" class="c-mask"/>
+          <text x="879.6" y="356" class="t-backend" font-size="9" text-anchor="middle">selected view → sole queue; check generation g at write</text>
+        </g>
+        <text data-detail="fine" x="815.2" y="384" class="t-dim" font-size="7">Pixoo Monitor pauses media; Media never receives monitor pictures</text>
+        </g>
+
+        <g data-edge-from="device" data-edge-to="controller" data-edge-label="sent (transport only, not optical proof)" data-edge-key="6">
+          <path data-composition-edge-from="device" data-composition-edge-to="controller" data-composition-points="956,402;803.2,402" d="M 956 402 L 803.2 402" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
+        <g data-detail="context">
+          <rect x="769.6" y="382" width="220" height="16" rx="3" class="c-mask"/>
+          <text x="879.6" y="392" class="t-muted" font-size="9" text-anchor="middle">sent (transport only, not optical proof)</text>
         </g>
         </g>
 
-        <g data-edge-from="core" data-edge-to="controller" data-edge-label="resync: authoritative snapshot, no replayed effects" data-edge-key="7">
-          <path data-composition-edge-from="core" data-composition-edge-to="controller" data-composition-points="469.6,438;789.2,438" d="M 469.6 438 L 789.2 438" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
+        <g data-edge-from="controller" data-edge-to="core" data-edge-label="read with expired cursor" data-edge-key="7">
+          <path data-composition-edge-from="controller" data-composition-edge-to="core" data-composition-points="789.2,438;469.6,438" d="M 789.2 438 L 469.6 438" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="490.80000000000007" y="418" width="277.2" height="16" rx="3" class="c-mask"/>
-          <text x="629.4000000000001" y="428" class="t-muted" font-size="9" text-anchor="middle">resync: authoritative snapshot, no replayed effects</text>
+          <rect x="561.0000000000001" y="418" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="629.4000000000001" y="428" class="t-messagebus" font-size="9" text-anchor="middle">read with expired cursor</text>
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="core" data-edge-label="acknowledge notice" data-edge-key="8">
-          <path data-composition-edge-from="user" data-composition-edge-to="core" data-composition-points="622.4000000000001,474;469.6,474" d="M 622.4000000000001 474 L 469.6 474" class="a-security" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-security)"/>
+        <g data-edge-from="core" data-edge-to="controller" data-edge-label="resync: authoritative snapshot, no replayed effects" data-edge-key="8">
+          <path data-composition-edge-from="core" data-composition-edge-to="controller" data-composition-points="469.6,474;789.2,474" d="M 469.6 474 L 789.2 474" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
         <g data-detail="context">
-          <rect x="493.2" y="454" width="105.60000000000001" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="464" class="t-security" font-size="9" text-anchor="middle">acknowledge notice</text>
+          <rect x="490.80000000000007" y="454" width="277.2" height="16" rx="3" class="c-mask"/>
+          <text x="629.4000000000001" y="464" class="t-muted" font-size="9" text-anchor="middle">resync: authoritative snapshot, no replayed effects</text>
         </g>
         </g>
 
-        <g data-edge-from="core" data-edge-to="controller" data-edge-label="revision N+1: notice acknowledged for the selected consumer" data-edge-key="9">
-          <path data-composition-edge-from="core" data-composition-edge-to="controller" data-composition-points="469.6,510;789.2,510" d="M 469.6 510 L 789.2 510" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
+        <g data-edge-from="user" data-edge-to="core" data-edge-label="acknowledge notice" data-edge-key="9">
+          <path data-composition-edge-from="user" data-composition-edge-to="core" data-composition-points="622.4000000000001,510;469.6,510" d="M 622.4000000000001 510 L 469.6 510" class="a-security" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="470.0000000000001" y="490" width="318.8" height="16" rx="3" class="c-mask"/>
-          <text x="629.4000000000001" y="500" class="t-backend" font-size="9" text-anchor="middle">revision N+1: notice acknowledged for the selected consumer</text>
+          <rect x="493.2" y="490" width="105.60000000000001" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="500" class="t-security" font-size="9" text-anchor="middle">acknowledge notice</text>
+        </g>
+        </g>
+
+        <g data-edge-from="core" data-edge-to="controller" data-edge-label="revision N+1: notice acknowledged for the selected consumer" data-edge-key="10">
+          <path data-composition-edge-from="core" data-composition-edge-to="controller" data-composition-points="469.6,546;789.2,546" d="M 469.6 546 L 789.2 546" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
+        <g data-detail="context">
+          <rect x="470.0000000000001" y="526" width="318.8" height="16" rx="3" class="c-mask"/>
+          <text x="629.4000000000001" y="536" class="t-backend" font-size="9" text-anchor="middle">revision N+1: notice acknowledged for the selected consumer</text>
         </g>
         </g>
 
         <!-- Segment Labels -->
         <g data-graph-role="segment-label" data-segment-id="seq-lifecycle-observation-0">
-          <rect x="56" y="132" width="237.6" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="145" class="t-dim" font-size="9" font-weight="600">Observation, state and planned presentation</text>
+          <rect x="56" y="132" width="206.4" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="145" class="t-dim" font-size="9" font-weight="600">Observation and explicit presentation</text>
         </g>
 
         <!-- Participants -->
@@ -199,22 +207,22 @@
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="532" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="552" data-legend-width="78">
-            <path d="M 40 549 L 74 549" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
-            <text x="83" y="552" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="568" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="588" data-legend-width="78">
+            <path d="M 40 585 L 74 585" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-lifecycle-observation-arrowhead-emphasis)"/>
+            <text x="83" y="588" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="552" data-legend-width="73">
-            <path d="M 140 549 L 174 549" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
-            <text x="183" y="552" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="588" data-legend-width="73">
+            <path d="M 140 585 L 174 585" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-lifecycle-observation-arrowhead)"/>
+            <text x="183" y="588" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="552" data-legend-width="83">
-            <path d="M 235 549 L 269 549" class="a-security" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-security)"/>
-            <text x="278" y="552" class="t-muted" font-size="10" font-weight="500">security</text>
+          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="588" data-legend-width="83">
+            <path d="M 235 585 L 269 585" class="a-security" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-security)"/>
+            <text x="278" y="588" class="t-muted" font-size="10" font-weight="500">security</text>
           </g>
-          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="552" data-legend-width="98">
-            <path d="M 340 549 L 374 549" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-dashed)"/>
-            <text x="383" y="552" class="t-muted" font-size="10" font-weight="500">async trace</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="588" data-legend-width="98">
+            <path d="M 340 585 L 374 585" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-lifecycle-observation-arrowhead-dashed)"/>
+            <text x="383" y="588" class="t-muted" font-size="10" font-weight="500">async trace</text>
           </g>
         </g>
       </svg>

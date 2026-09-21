@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-20T23:55:00.014101+00:00",
+  "renderedAt": "2026-09-21T18:35:29.727089+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -76,12 +76,12 @@
       "type": "sequence",
       "status": "planned",
       "specification": {
-        "sha256": "eb20994b6e7e10649244172e21d25fbd109c260544f22c0ec10c724992b72c0a",
-        "bytes": 3389
+        "sha256": "247fde78849ba33b23534e151fdb6c2477056626ecd76e14eb22ad8fd31776aa",
+        "bytes": 3578
       },
       "artifact": {
-        "sha256": "45e4474163dbfbf9ffcd4ea6bb474bd3583acf1a37890ddc69df0ada37aac6eb",
-        "bytes": 711242
+        "sha256": "a5137c8202f6d38ad078163b6d698bac2a48a6ef8985f200a8102d88f0cd6278",
+        "bytes": 712006
       },
       "validation": {
         "checksPassed": 9,
@@ -92,7 +92,7 @@
         "warnings": 0
       },
       "viewer": "seq-lifecycle-observation.html",
-      "svgSha256": "2048b80e34a2924ca1cfa1d4fb8dd5744e175f68b9709cf379b62af97c94ca2e"
+      "svgSha256": "73597049631e8ba60d9442bcfff45d0eff8588691840256d930bbe88f01ebe8d"
     },
     {
       "id": "seq-nanoleaf-command",

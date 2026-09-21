@@ -1,5 +1,45 @@
 # Guide maintenance history
 
+## 2026-09-21 UTC: Pixoo #33 monitor controls delivered
+
+[Pixoo PR #64](https://github.com/jimmie-potts/divoom-app-upgrade/pull/64)
+merged as `28f4875b7a0f0e57ca6f25d9971e125e927a5503`. Its tree matches the
+reviewed candidate `dcadf88f6b29f1944c8df811af7e4592197dd2ee`. All five PR jobs
+and all five merged-main jobs passed. Issue #33 is closed with all 13 criteria
+checked. Local Node 24 validation passed 587 application tests, 64 browser
+checks and 10 workflow fixtures, with 17 current specifications and 18 archives.
+
+The Monitor panel adds owner-backed labels/notices, project/session filters,
+exact RGB preview and explicit Monitor/Media activation. The existing Player
+and serialized adapter remain the sole writer. The finite protected integration
+extension preserves shared controller v1 and existing MCP tools. Restart and
+screen-on remain passive. Source review required three rounds; cancellation,
+stale-read handling, ambiguous-request retention and a test locator were
+corrected with regression evidence. PR #64 records the resolved findings and
+superseded browser failure.
+
+This companion refreshes authoritative backlogs/history, removes P33 from
+remaining-work coverage and the roadmap, updates the shared-Codex narrative,
+and shows explicit mode/view commands in the lifecycle diagram. All 13 Pixoo
+source hashes and eight cached copies match the immutable merged source.
+Concurrent Hub PR #120 central BUNNY planning, its Hub #49 closure and PR #122
+public-verification maintenance remain
+intact. The refresh also observes Hub #80 closure after its independently owned
+verification of the existing public edition; it removes H80 from remaining-work
+coverage without claiming this newer guide is published. An initial refresh
+crossed an issue closure and failed its open-state assertion; a complete fresh
+read replaced the partial candidate. Historical source-review receipts keep
+their original limitations.
+This documentation-only change introduces no product specification delta.
+
+Generation, five maintenance tests, browser/print checks, diagram layout and
+visual inspection are recorded against the companion's final revision in its
+PR. Independent guide reviews and guarded merge remain required. The Pixoo #33
+coordinator owns [Hub companion #119](https://github.com/jimmie-potts/agent-device-hub/pull/119).
+Installed-client and physical acceptance remain Pixoo #34. No device operation
+or installation occurred. Public publication is outside this delivery; the
+public landing page still matches the previously published source `950f7f6`
+and SHA-256 `0f37a2db680f075952c3e055892b5efef4d5d6c366cf20c0f0e9e04aa706f55c`.
 ## 2026-09-21 UTC: Public guide verification and publication preparation
 
 The user authorized publication of the central BUNNY UI planning from
