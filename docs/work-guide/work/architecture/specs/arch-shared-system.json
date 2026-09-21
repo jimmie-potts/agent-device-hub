@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Shared source and embedded Pixoo host",
+  "title": "Shared source and optional Linux host",
   "quality_profile": "showcase",
   "views": [
    {
@@ -187,7 +187,7 @@
     150,
     62
    ],
-   "tag": "planned host"
+   "tag": "host candidate"
   },
   {
    "id": "contracts",
@@ -206,7 +206,7 @@
  "boundaries": [
   {
    "kind": "region",
-   "label": "Released agent-state; embedded Pixoo host",
+   "label": "Shared core; select one state owner",
    "wraps": [
     "emitters",
     "core",
@@ -353,7 +353,7 @@
    "items": [
     "Provider hooks report allowlisted lifecycle metadata and fail open",
     "The core interprets observations once; controllers only project state",
-    "Pixoo hosts the core; standalone hosting remains future work"
+    "Pixoo embeds the core; Linux standalone source is in review"
    ]
   },
   {

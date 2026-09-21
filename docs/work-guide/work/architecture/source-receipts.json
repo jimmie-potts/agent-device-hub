@@ -1,30 +1,30 @@
 {
-  "reviewedAt": "2026-09-21T18:35:29.695991+00:00",
+  "reviewedAt": "2026-09-21T20:31:16.048128+00:00",
   "sourceRevisions": {
-    "agent-device-hub": "f59c2046fed623221c7c3a5bffb3924c07f43919",
+    "agent-device-hub": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
     "codex-nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f",
     "divoom-app-upgrade": "28f4875b7a0f0e57ca6f25d9971e125e927a5503"
   },
   "files": [
     {
       "repo": "agent-device-hub",
-      "revision": "f59c2046fed623221c7c3a5bffb3924c07f43919",
+      "revision": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
       "path": "docs/architecture.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f59c2046fed623221c7c3a5bffb3924c07f43919/docs/architecture.md",
-      "sha256": "e82f6e4cf3e3f1ad01e16e92de7d708a90f4fd26d598a06f1f5ed10685cb1878"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b/docs/architecture.md",
+      "sha256": "3787a07dc331a017c19b3a2f5e200094caafae2b5924ecf98f05fd06520c179e"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f59c2046fed623221c7c3a5bffb3924c07f43919",
+      "revision": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
       "path": "docs/controller-contract.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f59c2046fed623221c7c3a5bffb3924c07f43919/docs/controller-contract.md",
-      "sha256": "3cfa5bfdd74ebc5399304785b119ff1006739296688226bfbcb03e0ff92b374c"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b/docs/controller-contract.md",
+      "sha256": "f43b99b568bb849023beecb30a08d423b5bc57e8553255c9f0b610defb9a5b19"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f59c2046fed623221c7c3a5bffb3924c07f43919",
+      "revision": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
       "path": "packages/mcp/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f59c2046fed623221c7c3a5bffb3924c07f43919/packages/mcp/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b/packages/mcp/README.md",
       "sha256": "fe5f59ea69708b18435a60a279d5a10fbde9239a76efd48046fc6fbc84946b6a"
     },
     {
@@ -148,9 +148,9 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f59c2046fed623221c7c3a5bffb3924c07f43919",
+      "revision": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
       "path": "packages/agent-state/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f59c2046fed623221c7c3a5bffb3924c07f43919/packages/agent-state/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b/packages/agent-state/README.md",
       "sha256": "cc06db6c8a82c88cb93b1f999fa621efadad9d4130e7f9d54521edfc892ffd14"
     },
     {
@@ -222,6 +222,13 @@
       "revision": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
       "url": "https://github.com/jimmie-potts/divoom-app-upgrade/blob/28f4875b7a0f0e57ca6f25d9971e125e927a5503/docs/decisions/0018-monitor-display-ownership.md",
       "sha256": "dbe66c9c9c41fbeb428b853b87ef6c252c7d5375f0f8e171a3fad64dfdfd1715"
+    },
+    {
+      "repo": "agent-device-hub",
+      "revision": "f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b",
+      "path": "apps/hub/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f606c09f690eb9b0b7c2f9a2ea924a88eb873d1b/apps/hub/README.md",
+      "sha256": "71950bee26b0a637ec795fdd73070c86fc99d2b205fa06bf4d9b389d976366d8"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",

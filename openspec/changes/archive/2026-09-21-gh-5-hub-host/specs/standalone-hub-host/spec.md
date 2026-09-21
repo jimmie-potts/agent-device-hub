@@ -46,11 +46,19 @@ The host SHALL support versioned quiesce/export, empty-destination import, readi
 
 #### Scenario: Interrupted cutover
 - **WHEN** destination readiness or consumer switching fails
-- **THEN** ingestion remains fenced across restart, no fallback reducer starts, and rollback requires destination release before old-owner resumption
+- **THEN** ingestion remains fenced across restart, no fallback reducer starts, and rollback requires destination release before activating a fresh selected owner
 
 #### Scenario: Rollback after writes
 - **WHEN** rollback follows accepted destination writes
 - **THEN** a new validated quiesced export preserves those writes in an empty selected store instead of reopening a stale copy
+
+#### Scenario: Release proof and runtime staging
+- **WHEN** migration imports a stopped supervised owner's export
+- **THEN** import requires one single-use release capability and runtime-enforced staged admission; a copied export or arbitrary PID is insufficient
+
+#### Scenario: Interrupted route update
+- **WHEN** the coordinator exits or file synchronization fails after route replacement
+- **THEN** durable intent preserves original producer enablement, another live coordinator is refused, and recovery requires known file bytes under an exclusive lease
 
 ### Requirement: Reproducible Linux source delivery
 The host SHALL provide reproducible packaging, isolated runtime configuration, readiness, shutdown, compatibility documentation and measured responsiveness against the frozen early budget artifact.

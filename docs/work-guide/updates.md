@@ -1,5 +1,29 @@
 # Guide maintenance history
 
+## September 21, 2026: Hub #5 integration and migration candidate
+
+PR #121 now includes the delivered Pixoo monitor extension, Linux Nanoleaf
+settings adapter and supervised migration with fenced activation, durable route
+recovery and rollback after new writes. Disposable owning-service checks passed
+against pinned source. This is source evidence; installed migration remains #8,
+full qualification remains #30 and budget/memory follow-up remains #123.
+
+Updated shared-hosting text, the ownership and migration diagrams, and pinned
+Hub source receipts at `f606c09`. Refreshed all three repository inventories.
+Generation, five maintenance tests and guide browser/print checks passed with
+98 primary open issues, 12 guides and nine diagrams. All nine diagrams passed
+9/9 deterministic artifact checks. Guide SHA-256 is
+`826c8f5f94ed71d2e988557fb415533d00841d5e90f40a687a532cbc1f37f1f2`.
+
+Inspected the changed diagrams at desktop/mobile sizes and in print. Archify's
+standalone shared-system browser check passed all four desktop sizes. The
+migration viewer retains the documented vertical-overflow limitation, with no
+horizontal overflow and readable labels; its automated first-screen check
+failed. No overflow repair or viewer redesign is claimed. The guide's print
+containment and interaction checks passed. Public publication and live-site
+verification remain pending. Post-merge tracker/history reconciliation follows
+only after source review, CI and merge are verified.
+
 ## September 21, 2026: Owner-approved service memory budget
 
 The owner doubled the Linux/WSL service RSS constraint from 128 to 256 MiB.
