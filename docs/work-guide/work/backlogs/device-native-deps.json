@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 23,
+        "totalCount": 22,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -357,16 +357,6 @@
             }
           },
           {
-            "number": 49,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 55,
             "blockedBy": {
               "totalCount": 1,
@@ -389,7 +379,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 17,
+        "totalCount": 16,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -480,31 +470,6 @@
             }
           },
           {
-            "number": 32,
-            "blockedBy": {
-              "totalCount": 2,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 3,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 31,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 33,
             "blockedBy": {
               "totalCount": 7,
@@ -549,7 +514,7 @@
                 },
                 {
                   "number": 32,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }
@@ -595,7 +560,7 @@
                 },
                 {
                   "number": 32,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
                   }
