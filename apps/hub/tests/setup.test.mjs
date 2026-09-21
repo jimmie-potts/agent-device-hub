@@ -48,3 +48,6 @@ test('an edit during credential provisioning is retained with disabled emission'
  const input=await fixture(t),access=authority(),plan=await planSetup(input);const changed={hooks:{},preference:'NEW'};
  await assert.rejects(applySetup(input,plan.digest,{...access,grant:async(...args)=>{await access.grant(...args);await write(input.target,changed);}}),/changed/);assert.deepEqual(await read(input.target),changed);assert.equal((await inspectSetup(input.directory)).enabled,false);
 });
+test('configuration near the node ceiling is rejected before installing an unremovable target',async t=>{
+ const input=await fixture(t);await write(input.target,{hooks:{},values:Array(9950).fill(0)});const before=await readFile(input.target,'utf8');await assert.rejects(planSetup(input),/configuration-limit/);assert.equal(await readFile(input.target,'utf8'),before);assert.equal((await inspectSetup(input.directory)).state,'absent');
+});

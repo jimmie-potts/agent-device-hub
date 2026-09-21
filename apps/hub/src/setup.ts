@@ -5,7 +5,7 @@ import {createEmitter,type SourceConfiguration} from '@jimmie-potts/agent-state/
 import {object,loopbackEndpoint,canonical} from './common.js';
 import {digest,privateDirectory,readPrivate,replacePrivate} from './setup-files.js';
 
-export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;windowsDistribution?:string};
+export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;windowsDistribution?:string;credentialFile?:string};
 /** Implementations must persist grants/revocations and confirm the active owner's access state before resolving. */
 export type SetupAuthority={grant:(id:string,token:string)=>Promise<void>;revoke:(id:string,token:string)=>Promise<void>};
 type Entry={event:string;group:{hooks:{type:string;command:string;timeout:number;commandWindows?:string}[]}};
@@ -21,13 +21,14 @@ export function hookCommand(node:string,hook:string,config:string,distribution?:
  return {command,commandWindows:['wsl.exe','--distribution',distribution,'--exec',node,hook,config].map(v=>'"'+v+'"').join(' ')};
 }
 function validate(input:SetupInput){
- if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution'].includes(k))||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
+ if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile'].includes(k))||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
+ if(input.windowsDistribution!==undefined&&input.source.provider!=='codex')throw new Error('unsupported-windows-client');
  const emitter=createEmitter({source:input.source,enabled:false,send:async()=>{}});emitter.close();
  if(loopbackEndpoint(input.endpoint).pathname!=='/api/monitor/v1/events')throw new Error('invalid-endpoint');
  if(input.target===join(input.directory,'receipt.json')||input.target===join(input.directory,'producer.json'))throw new Error('overlapping-setup');
  hookCommand(input.node,input.hook,join(input.directory,'producer.json'),input.windowsDistribution);
 }
-function identity(input:SetupInput){const {hook,...source}=input.source;return 'hub-'+digest(canonical(source)).slice(0,32);}
+export function producerPrincipal(input:SetupInput){const {hook,...source}=input.source;return 'hub-'+digest(canonical(source)).slice(0,32);}
 function entries(input:SetupInput):Entry[]{
  const command=hookCommand(input.node,input.hook,join(input.directory,'producer.json'),input.windowsDistribution);
  const events=['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop',...(input.source.provider==='codex'?['Interrupt']:[])];
@@ -40,7 +41,7 @@ async function receipt(directory:string):Promise<Receipt|null>{
  const raw=await readPrivate(join(directory,'receipt.json'),true);if(raw===null)return null;
  const value=JSON.parse(raw) as Receipt;
  if(value.version!==1||!['applying','installed','removing','removed'].includes(value.state)||typeof value.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.token))throw new Error('invalid-receipt');
- validate(value.input);if(value.input.directory!==directory||identity(value.input)!==value.id||canonical(value.entries)!==canonical(entries(value.input)))throw new Error('invalid-receipt');return value;
+ validate(value.input);if(value.input.directory!==directory||producerPrincipal(value.input)!==value.id||canonical(value.entries)!==canonical(entries(value.input)))throw new Error('invalid-receipt');return value;
 }
 async function save(record:Receipt){const path=join(record.input.directory,'receipt.json');await replacePrivate(path,await readPrivate(path,true),encode(record));}
 function removeEntries(text:string,record:Receipt){
@@ -68,7 +69,7 @@ export async function planSetup(input:SetupInput){
   if(!record&&groups.some(g=>JSON.stringify(g).includes(input.hook)))throw new Error('unowned-producer-conflict');
   if(!groups.some(g=>canonical(g)===canonical(group))){value.hooks[event]=[...groups,group];additions.push({event,group});}
  }
- const after=encode(value);
+ const after=encode(value);config(after);
  if(Buffer.byteLength(after)>262144)throw new Error('client-configuration-limit');
  return {digest:digest(canonical({input,current,record})),additions,removals:[],changed:current!==after,before:current,after};
 }
@@ -83,7 +84,7 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   let record=await receipt(input.directory);
   if(record?.state==='installed')return;
   if(record?.state==='removing'||record?.state==='removed')throw new Error('setup-removal-record-retained');
-  if(!record){record={version:1,state:'applying',input:structuredClone(input),id:identity(input),token:randomBytes(32).toString('base64url'),entries:entries(input),before:plan.before,after:plan.after};if(Buffer.byteLength(encode(record))>4194304)throw new Error('receipt-limit');await save(record);}
+  if(!record){record={version:1,state:'applying',input:structuredClone(input),id:producerPrincipal(input),token:input.credentialFile?(await readPrivate(input.credentialFile))!.trim():randomBytes(32).toString('base64url'),entries:entries(input),before:plan.before,after:plan.after};if(!/^[A-Za-z0-9_-]{43}$/.test(record.token))throw new Error('invalid-producer-token');if(Buffer.byteLength(encode(record))>4194304)throw new Error('receipt-limit');await save(record);}
   const current=(await readPrivate(input.target))!;
   if(current!==record.before&&current!==record.after)throw new Error('configuration-changed');
   const producerPath=join(input.directory,'producer.json');

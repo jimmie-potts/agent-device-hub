@@ -9,6 +9,8 @@ import {createHash} from 'node:crypto';
 import {startHub} from '../apps/hub/dist/server.js';
 import {launchOwner,quiesceAndStop,stopOwner} from '../apps/hub/dist/migration.js';
 import {stageProducer,stagePixooSource,routeDigest,releaseRoute} from '../apps/hub/dist/migration-routes.js';
+import {planSetup,applySetup,planRemoval,removeSetup,producerPrincipal} from '../apps/hub/dist/setup.js';
+import {pixooSetupAuthority,hubSetupAuthority} from '../apps/hub/dist/setup-authority.js';
 import {prepareNanoleaf,rollbackNanoleaf} from '../apps/hub/dist/setup-consumer.js';
 const [pixooSource,nanoleafSource]=process.argv.slice(2);assert.equal(resolve(pixooSource),pixooSource);assert.equal(resolve(nanoleafSource),nanoleafSource);
 const pin=JSON.parse(await readFile(new URL('../apps/hub/fixtures/pixoo-source.json',import.meta.url),'utf8'));
@@ -25,12 +27,21 @@ try{
  const local=join(root,'embedded'),configPath=join(local,'agent-monitor/config.json');await mkdir(join(local,'agent-monitor'),{mode:0o700});await write(configPath,{version:1,mode:'embedded',ownerId:'owner',consumers});
  const {provisionCredential}=await import(pathToFileURL(join(pixooSource,'apps/server/dist/mcp-config.js')));const credential=await provisionCredential(join(local,'agent-monitor'),'migration',['read','control']);
  const launch=()=>launchOwner({kind:'pixoo',entrypoint:join(pixooSource,'apps/server/dist/main.js'),args:[],environment:{PIXOO_MODE:'simulator',PIXOO_DATA_DIR:local,PIXOO_PORT:'0',PIXOO_MONITOR_ENABLED:'1'},token:credential});
- pixoo=await launch();const released=await quiesceAndStop(pixoo,join(root,'initial.json'));hub=await startHub(options(join(root,'host')),{staged:true,released});
- const producer=join(root,'producer.json'),source={provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'SessionStart'};await write(producer,{enabled:true,qualified:true,source,endpoint:pixoo.url+'/api/monitor/v1/events',token:credential});
+ pixoo=await launch();
+ const setupDir=join(root,'setup');await mkdir(setupDir,{mode:0o700});const target=join(root,'hooks.json'),credentialFile=join(root,'producer-token');await write(target,{hooks:{}});
+ const setup={directory:setupDir,target,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:pixoo.url+'/api/monitor/v1/events',node:process.execPath,hook:new URL('../apps/hub/bin/monitor-hook.mjs',import.meta.url).pathname,owner:'fixture-owner',qualified:false,credentialFile};
+ const producerToken=await provisionCredential(join(local,'agent-monitor'),producerPrincipal(setup),['read','control']);await writeFile(credentialFile,producerToken,{mode:0o600});
+ const access=pixooSetupAuthority({dataDirectory:local,endpoint:pixoo.url+'/api/monitor/v1',node:process.execPath,managementEntrypoint:join(pixooSource,'apps/server/dist/monitor-cli.js')});
+ await applySetup(setup,(await planSetup(setup)).digest,access);await removeSetup(setupDir,(await planRemoval(setupDir)).digest,access);
+ assert.equal((await fetch(pixoo.url+'/api/monitor/v1/sessions',{headers:{authorization:'Bearer '+producerToken}})).status,401);
+ const released=await quiesceAndStop(pixoo,join(root,'initial.json'));hub=await startHub(options(join(root,'host')),{staged:true,released});
+ let activeSetup,activeAuthority,producer;
+ async function installProducer(name){const directory=join(root,name);await mkdir(directory,{mode:0o700});const configuration=join(directory,'host.json');await write(configuration,options(hub.directory));activeAuthority=hubSetupAuthority(hub,configuration);const {credentialFile,...base}=setup;activeSetup={...base,directory,qualified:true,endpoint:hub.url+'/api/monitor/v1/events'};await applySetup(activeSetup,(await planSetup(activeSetup)).digest,activeAuthority);producer=join(directory,'producer.json');}
+ await installProducer('standalone-setup');
  const nanoConfig=join(root,'nanoleaf.json'),readToken=join(root,'read-token');await writeFile(readToken,token,{mode:0o600});
  const command={executable:'/usr/bin/python3',args:[new URL('./hub-shared-nanoleaf.py',import.meta.url).pathname,nanoleafSource,join(root,'nanoleaf')],environment:{}};
  async function activate(){
-  routes.push(await stageProducer(producer,await routeDigest(producer),hub.url+'/api/monitor/v1/events',token),await stagePixooSource(configPath,await routeDigest(configPath),'owner',hub.url+'/api/monitor/v1',token));pixoo=await launch();
+  routes.push(await stageProducer(producer,await routeDigest(producer),hub.url+'/api/monitor/v1/events',JSON.parse(await readFile(producer,'utf8')).token),await stagePixooSource(configPath,await routeDigest(configPath),'owner',hub.url+'/api/monitor/v1',token));pixoo=await launch();
   hub.prepareConsumers();await write(nanoConfig,{version:1,ownerId:'owner',consumerId:'nanoleaf',endpoint:hub.url+'/api/monitor/v1',tokenFile:readToken,clearOnNewTurn:true,qualifiedSources:[{provider:'codex',client:'cli',hostId:'host',sourceId:'source'}],bindings:[]});
   const nanoleaf=await prepareNanoleaf(command,nanoConfig,hub.url+'/api/monitor/v1','owner');
   assert.equal((await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:'{}'})).status,503);
@@ -42,8 +53,8 @@ try{
  const px=await (await fetch(pixoo.url+'/api/monitor/v1/sessions',{headers:{authorization:'Bearer '+credential}})).json();assert.deepEqual(px.snapshot.sessions[0].identity,view.snapshot.sessions[0].identity);
  await child(command.executable,[...command.args,'fixture-poll']);const nl=JSON.parse(await child(command.executable,[...command.args,'shared-status']));assert.deepEqual(nl.sessions[0].identity,view.snapshot.sessions[0].identity);assert.equal(nl.revision,view.snapshot.revision);
  await rollbackNanoleaf(command);assert.equal(JSON.parse(await child(command.executable,[...command.args,'shared-status'])).source,'legacy');
- const revision=view.snapshot.revision;await stopOwner(pixoo);await hub.close();hub=undefined;const hubConfig=join(root,'host.json');await write(hubConfig,options(join(root,'host')));
+ const revision=view.snapshot.revision;await removeSetup(activeSetup.directory,(await planRemoval(activeSetup.directory)).digest,activeAuthority);await stopOwner(pixoo);await hub.close();hub=undefined;const hubConfig=join(root,'host.json');await write(hubConfig,options(join(root,'host')));
  oldHub=await launchOwner({kind:'hub',entrypoint:new URL('../apps/hub/dist/cli.js',import.meta.url).pathname,args:['serve',hubConfig],environment:{},token});
- hub=await startHub(options(join(root,'rollback')),{staged:true,released:await quiesceAndStop(oldHub,join(root,'latest.json'))});await activate();assert.equal((await (await fetch(hub.url+'/api/monitor/v1/sessions',{headers})).json()).snapshot.revision,revision);await rollbackNanoleaf(command);
- console.log(JSON.stringify({pixoo:pin.revision,nanoleaf:nanoPin.revision,identifiedEvent:true,bothConsumers:true,fenced:true,legacyRollback:true,latestStateRollback:true,physical:false}));
+ hub=await startHub(options(join(root,'rollback')),{staged:true,released:await quiesceAndStop(oldHub,join(root,'latest.json'))});await installProducer('rollback-setup');await activate();assert.equal((await (await fetch(hub.url+'/api/monitor/v1/sessions',{headers})).json()).snapshot.revision,revision);await rollbackNanoleaf(command);await removeSetup(activeSetup.directory,(await planRemoval(activeSetup.directory)).digest,activeAuthority);
+ console.log(JSON.stringify({pixoo:pin.revision,nanoleaf:nanoPin.revision,embeddedCredentialRevocation:true,setupAcrossHandoff:true,identifiedEvent:true,bothConsumers:true,fenced:true,legacyRollback:true,latestStateRollback:true,physical:false}));
 }finally{for(const r of routes)await releaseRoute(r);await hub?.close();if(pixoo)await stopOwner(pixoo);if(oldHub)await stopOwner(oldHub);await rm(root,{recursive:true,force:true});}

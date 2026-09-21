@@ -45,7 +45,7 @@
     "test:hub:package": "npm run build && npm run test:hub:package:built",
     "test:hub:package:built": "node scripts/package-hub.mjs --test",
     "test:setup": "npm run build && npm run test:setup:built",
-    "test:setup:built": "node --test apps/hub/tests/setup.test.mjs apps/hub/tests/setup-hook.test.mjs"
+    "test:setup:built": "node --test apps/hub/tests/setup*.test.mjs"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.12.0",

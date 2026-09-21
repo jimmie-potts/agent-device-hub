@@ -1,7 +1,9 @@
 import type {startHub,Credential} from './server.js';
 import type {SetupAuthority} from './setup.js';
 import {readPrivate,replacePrivate,digest} from './setup-files.js';
-import {object,canonical} from './common.js';
+import {spawn} from 'node:child_process';
+import {join,resolve} from 'node:path';
+import {object,canonical,loopbackEndpoint} from './common.js';
 
 /** Compose with the exact live host started from this private configuration.
  * The caller owns the host lifetime; this adapter never starts or signals services.
@@ -31,4 +33,26 @@ export function hubSetupAuthority(hub:Awaited<ReturnType<typeof startHub>>,confi
   }finally{busy=false;}
  }
  return {grant:(id,token)=>change(id,token,false),revoke:(id,token)=>change(id,token,true)};
+}
+
+/** Adopt an explicitly preprovisioned Pixoo monitor principal. The owning CLI
+ * creates/revokes credentials; Hub only verifies its documented digest record.
+ */
+export function pixooSetupAuthority(input:{dataDirectory:string;endpoint:string;node:string;managementEntrypoint:string}):SetupAuthority{
+ const check=async(id:string,token:string)=>{
+  if(!/^hub-[a-f0-9]{32}$/.test(id)||!/^[A-Za-z0-9_-]{43}$/.test(token))throw new Error('invalid-owned-credential');
+  const value=JSON.parse((await readPrivate(join(input.dataDirectory,'agent-monitor','mcp-credentials.json')))!);
+  const principal=value.principals?.find((p:{id:string})=>p.id===id);
+  if(value.version!==1||!principal||principal.digest!==digest(token)||canonical(principal.scopes)!==canonical(['read','control']))throw new Error('credential-ownership-conflict');
+  return principal;
+ };
+ const verify=async(token:string,expected:number)=>{const response=await fetch(input.endpoint+'/sessions',{headers:{authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(2500)});await response.body?.cancel();if(response.status!==expected)throw new Error('credential-state-unverified');};
+ if(loopbackEndpoint(input.endpoint).pathname!=='/api/monitor/v1'||resolve(input.node)!==input.node||resolve(input.managementEntrypoint)!==input.managementEntrypoint)throw new Error('invalid-authority');
+ return {
+  async grant(id,token){const principal=await check(id,token);if(principal.enabled!==true)throw new Error('credential-revoked');await verify(token,200);},
+  async revoke(id,token){const principal=await check(id,token);if(principal.enabled){await new Promise<void>((done,reject)=>{
+   const child=spawn(input.node,[input.managementEntrypoint,'revoke',input.dataDirectory,id],{env:{},stdio:'ignore'});const timer=setTimeout(()=>child.kill('SIGKILL'),5000);
+   child.once('error',()=>{clearTimeout(timer);reject(new Error('credential-revocation-failed'));});child.once('close',code=>{clearTimeout(timer);code===0?done():reject(new Error('credential-revocation-failed'));});
+  });}if((await check(id,token)).enabled!==false)throw new Error('credential-state-unverified');await verify(token,401);}
+ };
 }
