@@ -333,3 +333,18 @@ builds and runs isolated configuration, credential and hook tests; CI runs
 `npm run test:setup:built` after its fresh build. The hub package check also
 executes these tests in the offline installed archive. Use Node 24 on Linux/WSL.
 Temporary synthetic settings and fake transports never qualify personal hooks.
+
+For the optional cross-repository source check, build the exact Pixoo archive
+revision in `apps/hub/fixtures/pixoo-source.json`, extract the Nanoleaf revision
+in `apps/hub/fixtures/nanoleaf-shared-source.json`, then run:
+
+```bash
+node scripts/check-hub-shared-consumers.mjs /absolute/pixoo-source /absolute/nanoleaf-source
+```
+
+The command verifies pinned source hashes and uses disposable state plus a
+suppressed physical worker launch. It covers setup/revocation, two consumer
+projections, fenced handoff, legacy selection and latest-state rollback.
+The existing `check-hub-pixoo.mjs` additionally verifies labels/notices,
+acknowledgment and renderer continuity. These require separately available
+source archives; neither is a personal installation or a physical check.

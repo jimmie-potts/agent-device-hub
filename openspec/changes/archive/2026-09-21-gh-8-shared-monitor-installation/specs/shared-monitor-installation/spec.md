@@ -38,7 +38,7 @@ Producer credentials MUST be independently provisioned and durably owned. Remova
 
 ### Requirement: Explicit consumer and state-owner cutover
 
-Setup MUST compose the delivered quiesced export/import and consumer source-selection interfaces. Source identities, current labels, notices and revisions MUST survive handoff and rollback. Producers MUST remain disabled until the selected owner and consumers are ready. Legacy Nanoleaf ingestion MUST remain selected until an explicit verified cutover and rollback MUST restore its retained current configuration. No setup operation SHALL introduce another device writer or open a controller database.
+Setup MUST compose the delivered quiesced export/import and consumer source-selection interfaces. Source identities, current labels, notices and revisions MUST survive handoff and rollback. Producer emission MUST remain disabled or owner admission fenced until the selected owner and consumers are ready. Legacy Nanoleaf ingestion MUST remain selected until an explicit verified cutover and rollback MUST restore its retained current configuration. No setup operation SHALL introduce another device writer or open a controller database.
 
 #### Scenario: Interrupted state handoff
 - **WHEN** readiness or a route update fails during cutover

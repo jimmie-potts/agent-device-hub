@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-21T20:48:45.278832+00:00",
+  "renderedAt": "2026-09-21T21:25:27.714655+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -191,12 +191,12 @@
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "693ad01644509d3e208087a442795211ca8ef5bb59fd8fbf97943a6aa9bef959",
-        "bytes": 4295
+        "sha256": "f86d478376f8ce52f08a678f05dd5401a80329cb54575521a022a0bff5dadcb2",
+        "bytes": 4322
       },
       "artifact": {
-        "sha256": "f9ac9879b4a76f27cff07023650bf31eefd11adf6c7db65234103c70c6b7cdb4",
-        "bytes": 716780
+        "sha256": "c155c39af39019c7791619ccbb86bbe2478026cd3084312ee0253cd974d83f93",
+        "bytes": 716839
       },
       "validation": {
         "checksPassed": 9,
@@ -207,7 +207,7 @@
         "warnings": 0
       },
       "viewer": "seq-owner-migration.html",
-      "svgSha256": "5aab218e1ea623208d747b8d10b66313958054b028fdb3ee0c1ae8fda02deec1"
+      "svgSha256": "74e082ab0f4909f42dd3e33c84b22485bc57eb08e6f5915a1ca738844034ca8e"
     }
   ]
 }

@@ -45,7 +45,7 @@
    "id": "consumers",
    "type": "frontend",
    "label": "Consumers",
-   "sublabel": "selected Pixoo facade"
+   "sublabel": "Pixoo and Nanoleaf"
   }
  ],
  "segments": [
@@ -80,16 +80,16 @@
   },
   {
    "from": "tooling",
-   "to": "pixoo",
+   "to": "producers",
    "y": 254,
-   "label": "quiesce selected route and old owner",
+   "label": "remove old setup; verify access revoked",
    "variant": "security"
   },
   {
    "from": "tooling",
-   "to": "producers",
+   "to": "pixoo",
    "y": 298,
-   "label": "pause ingestion (hooks stay fail-open)",
+   "label": "quiesce old owner; preserve state",
    "variant": "security"
   },
   {
@@ -132,14 +132,14 @@
    "from": "tooling",
    "to": "producers",
    "y": 590,
-   "label": "stage producer route; retain enablement",
+   "label": "fresh setup receipt; stage disabled route",
    "variant": "emphasis"
   },
   {
    "from": "tooling",
    "to": "consumers",
    "y": 634,
-   "label": "switch consumer endpoint",
+   "label": "Pixoo route; Nanoleaf preflight / select",
    "variant": "emphasis"
   },
   {
@@ -167,7 +167,7 @@
    "from": "tooling",
    "to": "hub",
    "y": 824,
-   "label": "quiesce new owner",
+   "label": "revoke setup; quiesce new owner",
    "variant": "dashed"
   },
   {
@@ -199,7 +199,7 @@
    "dot": "amber",
    "title": "Owned elsewhere",
    "items": [
-    "Hub #5 verifies source migration; #8 owns installed cutover",
+    "Hub #8 candidate adds reversible setup and Nanoleaf cutover",
     "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
     "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
    ]
