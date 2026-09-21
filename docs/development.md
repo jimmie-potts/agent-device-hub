@@ -55,8 +55,8 @@ npm run test:workflow
 
 Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
-shared-monitor-performance-baseline, agent-state-core and agent-provider-emitters
-after the Hub #3 change is synchronized.
+shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
+standalone-hub-host and standalone-hub-mcp.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize

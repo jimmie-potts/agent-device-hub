@@ -24,15 +24,20 @@ try {
   metadata.bundleDependencies=dependencies;
   metadata.exports={'.':{types:'./dist/server.d.ts',import:'./dist/server.js'},'./migration':{types:'./dist/migration.d.ts',import:'./dist/migration.js'},'./migration-routes':{types:'./dist/migration-routes.d.ts',import:'./dist/migration-routes.js'}};
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
-  // Preserve the already-packaged dependency closure. Re-resolving bundled private
-  // dependencies through npm install can incorrectly request them from the registry.
+  // Keep private archives intact: npm cannot resolve their private transitive
+  // version pins from a registry. Resolve the public MCP closure separately.
   for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-1.0.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.0.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.0.tgz']]){
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
     const result=spawnSync('tar',['-xzf',join(root,'artifacts',archive),'--strip-components=1','-C',target],{encoding:'utf8'});
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);
   }
-  // The state archive includes the exact Ajv closure also required by contracts.
   await cp(join(stage,'node_modules/@jimmie-potts/agent-state/node_modules'),join(stage,'node_modules'),{recursive:true});
+  const publicStage=join(scratch,'public');await mkdir(publicStage);
+  const mcp=JSON.parse(await readFile(join(root,'packages/mcp/package.json'),'utf8'));
+  const publicDependencies=Object.fromEntries(Object.entries(mcp.dependencies).filter(([name])=>!name.startsWith('@jimmie-potts/')));
+  await writeFile(join(publicStage,'package.json'),JSON.stringify({name:'hub-public-dependencies',private:true,dependencies:publicDependencies}));
+  npm(['install','--ignore-scripts','--no-audit','--no-fund'],publicStage);
+  await cp(join(publicStage,'node_modules'),join(stage,'node_modules'),{recursive:true});
   const hashes={};for(const name of await files(stage))hashes[name]=sha(await readFile(join(stage,name)));
   await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:metadata.name,version:metadata.version,files:hashes},null,2)+'\n');
   async function pack(folder){await mkdir(folder);const result=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',folder],stage));return join(folder,result[0].filename);}

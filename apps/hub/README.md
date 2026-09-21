@@ -8,7 +8,7 @@ The host supplies private SQLite ownership, the shared agent-state engine, authe
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with exactly `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`. The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`. The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 
 Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must match persisted/imported state. Credentials contain a neutral `id`, SHA-256 `digest` of an independently provisioned 43-character base64url bearer token, `scopes` and registered device aliases in `devices`. Supported scopes are `read`, `ingest`, `control` and `admin`; quiesce requires control and admin. Provision producer and read-only credentials separately. Native controller tokens remain only in private server configuration. No route returns them.
 
@@ -69,3 +69,25 @@ Any activation failure consumes that attempt's activation permission and leaves 
 Rollback after accepted writes uses the same procedure with the current hub as source and a fresh host store as destination. The original Pixoo app remains a remote facade, retaining media and preferences. This tooling does not restore embedded ownership into Pixoo's occupied original monitor store. Every rollback preserves the latest labels, notices, acknowledgment, source identities and revisions. Restarted evidence remains uncertain, and presentation does not resume automatically.
 
 The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-potts/hub/migration-routes` alongside its host API. The source checks exercise disposable state and real owning-service code; they do not migrate a personal installation or establish physical display accuracy.
+
+## Optional local MCP
+
+Set the optional private configuration field `mcp` to `true` to mount `/mcp` on the same loopback listener. Omitted or false leaves it disabled. This is source configuration support; enabling an installed service still needs separate authorization. The handler reuses `@jimmie-potts/device-mcp` 1.0.0, its pinned SDK and supported protocols, and the host's current machine-credential verifier. MCP does not require the browser mutation header; existing REST protections are unchanged.
+
+`hub_sessions` returns the same qualified snapshot, provider/query matches and next state request ID as the HTTP session route. `hub_label` and `hub_acknowledge` use `request_id` for that exact string ticket and share the HTTP command ledger. No ingest, quiesce, migration or administrative tool is exposed. Read/control scopes apply as on the owning routes; read permission does not grant control. Discovery and reads never acknowledge notices or infer task success.
+
+`hub_devices` lists authorized configured aliases and stable `toolPrefix` values without querying controllers. Each prefix binds status, power, brightness, mode and integration tools to one configured owner. Prefixes include a bounded alias segment and SHA-256 suffix so dotted aliases and long IDs remain valid and distinct. The reserved `hub-service` alias represents only global application tools and cannot name a configured controller when MCP is enabled. It is excluded from device discovery. Native controller/device IDs inside results remain unchanged, including when multiple controllers use the same native device ID.
+
+| Suffix | Behavior |
+| --- | --- |
+| `_status` | Validated native controller v1 snapshot |
+| `_power_set`, `_brightness_set`, `_mode_set` | Native request ticket, configuration revision and generation guards; unsupported capabilities return the owner's rejection |
+| `_integration_status` | Validated Pixoo or Nanoleaf integration snapshot |
+| `_integration_set` | Pixoo `request_id`, revision/generation and mode/view action, or Nanoleaf `requestId`, expected revision and declared settings command |
+| `_integration_receipt`, `_integration_cancel` | Nanoleaf receipt lookup and explicit cancellation using the original ticket |
+
+All tool results use the reusable module's extension envelope. `data.result` contains the owning snapshot, outcome or receipt. Safe pre-admission errors use `data.code`; ambiguous writes retain `priorEffects: possible`, the original request ID and `retry: never-automatically`. An accepted or applied configuration is not proof of a physical effect. Disconnect and MCP session removal stop response delivery, not admitted owner work.
+
+Pixoo catalog/player handlers remain in the Pixoo application. This host has no registered machine adapter for them and does not recreate them or borrow browser tokens. Its optional local Pixoo MCP endpoint remains available independently. Unsupported device operations stay unsupported.
+
+`npm run test:hub:mcp` exercises synthetic Codex/Claude protocol profiles for MCP 2025-11-25 and 2025-06-18, scoped discovery, Host/Origin checks, credential replacement, HTTP/MCP replay, native settings, independent controller failure, bounded concurrency, disconnect and stale evidence. The reproducible hub archive bundles MCP and its dependency closure; `npm run test:hub:package` repeats these tests after offline installation. These are source and loopback checks, not installed Codex/Claude, Windows/WSL client routing or physical acceptance. Feed this coverage into Hub #9; installed qualification remains #8 and device-owned acceptance.

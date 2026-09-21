@@ -190,3 +190,22 @@ test('stale session evidence and exact acknowledgment remain separate from reads
  const result=await c.call('hub_acknowledge',{request_id:before.nextRequestId,identity:event.identity,noticeId:notice.id,consumerId:'view'});assert.equal(result.isError,false);
  const after=(await c.call('hub_sessions')).structuredContent.data.result;assert.deepEqual(after.snapshot.sessions[0].notices[0].acknowledgedBy,['view']);assert.equal(after.snapshot.sessions[0].read,'unknown');
 });
+
+test('reserved aliases, unknown tools, raw selectors and session admission are bounded',async t=>{
+ const native=await controller(t,'hub-service');await assert.rejects(fixture(t,{controllers:[native.config]}),/reserved-mcp-alias/);
+ const hub=await fixture(t),c=client(hub);await c.initialize();
+ const unknown=await c.rpc('tools/call',{name:'unknown_device_status',arguments:{}});assert.ok(unknown.body.error||unknown.body.result?.isError);
+ const invalid=await c.call('hub_sessions',{url:'http://private.invalid'});assert.equal(invalid.isError,true);
+ for(let i=1;i<16;i++)assert.equal((await client(hub).initialize()).status,200);
+ assert.equal((await client(hub).initialize()).status,429);
+ await c.close();assert.equal((await client(hub).initialize()).status,200);
+});
+test('staged owner permits inspection but rejects MCP state mutation',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-mcp-staged-'));
+ const hub=await startHub({directory,ownerId:'owner',consumers:[],controllers:[],credentials:[credential],mcp:true},{staged:true});
+ t.after(async()=>{await hub.close();await rm(directory,{recursive:true,force:true});});
+ const c=client(hub);await c.initialize();const view=(await c.call('hub_sessions')).structuredContent.data.result;
+ assert.equal(view.snapshot.collector,'quiesced');
+ const result=await c.call('hub_label',{request_id:view.nextRequestId,identity:event.identity,label:'chosen'});
+ assert.equal(result.structuredContent.data.code,'owner-quiesced');assert.equal(result.structuredContent.data.priorEffects,'none');
+});
