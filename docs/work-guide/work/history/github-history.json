@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-21T00:10:32.326847+00:00",
+ "fetchedAt": "2026-09-21T00:15:45.367163+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T00:05:41Z",
+   "pushedAt": "2026-09-21T00:13:53Z",
    "defaultBranch": "main",
-   "headSha": "58a9a3dee78107c13eb1896e1fcd3b540c07b75a",
-   "mainCommitCount": 41,
+   "headSha": "25715f1536dc17d9bd8fa7a0e024ac449acfd5d0",
+   "mainCommitCount": 42,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "25715f1536dc17d9bd8fa7a0e024ac449acfd5d0",
+     "date": "2026-09-21T00:13:53Z",
+     "message": "Synchronize Pixoo dashboard renderer delivery in the work guide (#117)"
+    },
     {
      "sha": "58a9a3dee78107c13eb1896e1fcd3b540c07b75a",
      "date": "2026-09-20T23:43:53Z",
@@ -536,6 +541,14 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/116",
      "base": "main",
      "mergedAt": "2026-09-20T23:43:54Z"
+    },
+    {
+     "number": 117,
+     "title": "Synchronize Pixoo dashboard renderer delivery in the work guide",
+     "createdAt": "2026-09-20T23:50:07Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/117",
+     "base": "main",
+     "mergedAt": "2026-09-21T00:13:53Z"
     }
    ],
    "openPRs": [
@@ -544,13 +557,6 @@
      "title": "docs: synchronize Nanoleaf integration settings delivery",
      "createdAt": "2026-09-20T23:57:44Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/118",
-     "base": "main"
-    },
-    {
-     "number": 117,
-     "title": "Synchronize Pixoo dashboard renderer delivery in the work guide",
-     "createdAt": "2026-09-20T23:50:07Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/117",
      "base": "main"
     }
    ],

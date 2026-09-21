@@ -157,7 +157,7 @@
    "title": "Evidence and hosting",
    "items": [
     "Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.",
-    "Pixoo #31 hosts agent-state 1.0 with private durable storage. Device presentation remains planned."
+    "Pixoo #31 hosts durable state; #32 adds exact RGB preview. Device integration remains with #33."
    ]
   }
  ]
