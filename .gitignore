@@ -27,3 +27,5 @@ config.local.*
 CLAUDE.local.md
 .DS_Store
 Thumbs.db
+
+/apps/hub/public/

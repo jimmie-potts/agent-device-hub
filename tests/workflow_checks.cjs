@@ -204,12 +204,12 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('CI runs five Ubuntu jobs and retains every suite', () => {
+test('CI runs six Ubuntu jobs and retains every suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
   const guide = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 5, 'normal CI must run exactly five jobs');
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 6, 'normal CI must run exactly six jobs');
   assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -218,15 +218,17 @@ test('CI runs five Ubuntu jobs and retains every suite', () => {
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
     contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built'],
+    dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
     contracts: 'Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}',
+    dashboard: 'Dashboard browser and contracts on ${{ matrix.os }}',
     mcp: 'MCP on ${{ matrix.os }}',
   };
   assert.deepEqual(ci.permissions, { contents: 'read' });
-  assert.deepEqual(Object.keys(ci.jobs), Object.keys(suites));
+  assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
   let builds = 0;
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
@@ -262,7 +264,7 @@ test('CI runs five Ubuntu jobs and retains every suite', () => {
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 3);
+  assert.equal(builds, 4);
 });
 
 const builtPayloads = {

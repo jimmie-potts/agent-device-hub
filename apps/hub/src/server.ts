@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
@@ -9,7 +10,7 @@ import {HttpError, canonical, exact, id, object} from './common.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>};
 type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
 type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
@@ -54,6 +55,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
       (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535))) throw new Error('invalid-configuration');
+  const editorLinks:Record<string,string> = {};
+  if (options.editorLinks !== undefined) {
+    if (!object(options.editorLinks) || Object.keys(options.editorLinks).length > 16) throw new Error('invalid-editor-links');
+    for (const [alias,href] of Object.entries(options.editorLinks)) {
+      const link = new URL(href);
+      if (!options.controllers.some(c=>c.id===alias) || link.protocol!=='http:' || link.hostname!=='127.0.0.1' || link.username || link.password || link.search || link.hash) throw new Error('invalid-editor-links');
+      editorLinks[alias]=link.href;
+    }
+  }
   const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
@@ -144,11 +154,21 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         if (!req.url?.startsWith('/') || req.url.startsWith('//')) throw new HttpError('invalid-input',400);
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
+        if (req.method === 'GET' && !url.search && ['/', '/dashboard.js', '/dashboard.css'].includes(path)) {
+          if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) || ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined)) throw new HttpError('forbidden',403);
+          const asset = path === '/' ? 'index.html' : path.slice(1);
+          const bytes = await readFile(new URL('../public/' + asset,import.meta.url)).catch(()=>null);
+          if (!bytes) throw new HttpError('not-found',404);
+          res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
+          res.end(bytes);return;
+        }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1]);
-        if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
+        if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
+          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+        } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           const current = snapshot();

@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json && npm run build:dashboard",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && npm run typecheck:dashboard",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -43,12 +43,21 @@
     "test:hub:built": "node --test apps/hub/tests/*.test.mjs tests/hub_measurement.test.mjs",
     "package:hub": "npm run build && node scripts/package-hub.mjs",
     "test:hub:package": "npm run build && npm run test:hub:package:built",
-    "test:hub:package:built": "node scripts/package-hub.mjs --test"
+    "test:hub:package:built": "node scripts/package-hub.mjs --test",
+    "build:dashboard": "node scripts/build-dashboard.mjs",
+    "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
+    "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
+    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@fission-ai/openspec": "1.12.0",
     "@types/node": "24.13.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
     "typescript": "5.9.3",
     "yaml": "2.9.0"
   },
@@ -58,5 +67,9 @@
     "packages/lifecycle-contracts",
     "packages/agent-state",
     "apps/hub"
-  ]
+  ],
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
 }

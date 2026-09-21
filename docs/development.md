@@ -325,3 +325,12 @@ rollback. Nanoleaf exercises the real HTTP settings service with a disposable
 worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
+
+## Dashboard checks
+
+Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
+`npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`
+and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
+synthetic state and fake controllers. The dashboard CI job runs these checks;
+shared hub, contract/state, MCP and workflow jobs remain required. No check
+installs a personal service, opens live state or contacts hardware.
