@@ -1,11 +1,12 @@
 import {spawn,type ChildProcess} from 'node:child_process';
-import {resolve} from 'node:path';
+import {resolve,dirname,join} from 'node:path';
+import {open,lstat,realpath} from 'node:fs/promises';
 import {validateExport,type DurableState} from '@jimmie-potts/agent-state';
 import {loopbackEndpoint,responseJson,object} from './common.js';
 
-export type ManagedOwner={readonly url:string};
+export type ManagedOwner={readonly url:string;readonly pid:number};
 export type ReleasedState={readonly ownerId:string;readonly revision:number};
-const managed=new WeakMap<ManagedOwner,{child:ChildProcess;exit:Promise<number|null>;token:string}>();
+const managed=new WeakMap<ManagedOwner,{child:ChildProcess;exit:Promise<number|null>;token:string;quiescing:boolean}>();
 const releases=new WeakMap<ReleasedState,DurableState>();
 
 /** Explicit source tooling. It owns only children it starts; no PID guessing or shell. */
@@ -29,8 +30,10 @@ export async function launchOwner(input:{kind:'hub'|'pixoo';entrypoint:string;ar
    });
   }),exit.then(()=>{throw new Error('owner-start-failed');})]);
   const parsed=loopbackEndpoint(url+'/');if(parsed.pathname!=='/'||url!==parsed.origin)throw new Error('owner-start-invalid');
-  const owner=Object.freeze({url});managed.set(owner,{child,exit,token:input.token});return owner;
- }catch(error){child.kill('SIGTERM');await Promise.race([exit.catch(()=>{}),new Promise(r=>setTimeout(r,5000))]);throw error;}
+  child.stdout!.removeAllListeners('data');child.stdout!.resume();
+  if (!child.pid || child.exitCode!==null || child.signalCode!==null) throw new Error('owner-start-failed');
+  const owner=Object.freeze({url,pid:child.pid});managed.set(owner,{child,exit,token:input.token,quiescing:false});return owner;
+ }catch(error){child.kill('SIGTERM');await Promise.race([exit.catch(()=>{}),new Promise(r=>{const timer=setTimeout(r,1000);timer.unref();})]);if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await exit.catch(()=>{});}throw error;}
  finally{clearTimeout(timer);}
 }
 export async function stopOwner(owner:ManagedOwner):Promise<void>{
@@ -45,12 +48,25 @@ async function call(owner:ManagedOwner,path:string,body?:unknown):Promise<unknow
  const response=await fetch(owner.url+'/api/monitor/v1'+path,{signal:AbortSignal.timeout(4000),redirect:'error',headers:{authorization:`Bearer ${source.token}`,'content-type':'application/json','x-pixoo-request':'1'},...(body===undefined?{}:{method:'POST',body:JSON.stringify(body)})});
  const value=await responseJson(response,16*1024*1024);if(!response.ok)throw new Error('source-unavailable');return value;
 }
+async function saveExport(path:string,state:DurableState):Promise<void>{
+ const parent=dirname(path);
+ if(resolve(path)!==path||path.startsWith('/mnt/')||await realpath(parent)!==parent)throw new Error('invalid-export-path');
+ const stat=await lstat(parent);if(!stat.isDirectory()||(stat.mode&0o077)!==0||stat.uid!==process.getuid!())throw new Error('invalid-export-path');
+ for(let directory=parent;;directory=dirname(directory)){
+  try{const marker=await lstat(join(directory,'.git'));if(marker.isFile())throw new Error('export-in-checkout');await lstat(join(directory,'.git','HEAD'));throw new Error('export-in-checkout');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  if(directory===dirname(directory))break;
+ }
+ const file=await open(path,'wx',0o600);try{await file.writeFile(JSON.stringify(state));await file.sync();}finally{await file.close();}
+ const directory=await open(parent,'r');try{await directory.sync();}finally{await directory.close();}
+}
 /** Successful quiesce precedes verified exit; failed/ambiguous attempts never mint an import capability. */
-export async function quiesceAndStop(owner:ManagedOwner):Promise<ReleasedState>{
- const source=managed.get(owner);if(!source||source.child.exitCode!==null||source.child.signalCode!==null)throw new Error('source-not-running');
+export async function quiesceAndStop(owner:ManagedOwner,exportPath:string):Promise<ReleasedState>{
+ const source=managed.get(owner);if(!source||source.quiescing||source.child.exitCode!==null||source.child.signalCode!==null)throw new Error('source-not-running');
+ source.quiescing=true;
  const view=await call(owner,'/sessions');if(!object(view)||typeof view.nextRequestId!=='string')throw new Error('source-incompatible');
  const result=validateExport(await call(owner,'/commands',{operation:'quiesce',requestId:view.nextRequestId}));
  if(!result.ok||result.value.ownerId!==view.ownerId)throw new Error('source-incompatible');
+ await saveExport(exportPath,result.value);
  await stopOwner(owner);
  // Exit is authoritative. Also reject an unexpected replacement listener.
  try{await fetch(owner.url+'/api/monitor/v1/sessions',{signal:AbortSignal.timeout(1000),redirect:'error'});throw new Error('source-still-listening');}

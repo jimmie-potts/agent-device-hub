@@ -37,7 +37,7 @@ try{
  const identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',sessionId:'session'};
  const event={apiVersion:'1.0',identity,projectId:'project',turn:{status:'known',id:'turn'},parent:{status:'unknown'},ordering:{status:'known',epoch:'epoch',sequence:1},observedAtMs:Date.now(),event:{kind:'turn.ended'}};
  assert.equal((await request(pixoo.url,'/api/monitor/v1/events',monitorToken,event)).ok,true);
- const release=await quiesceAndStop(pixoo);hub=await startHub(options(host),{staged:true,released:release});
+ const release=await quiesceAndStop(pixoo,join(root,'pixoo-export.json'));hub=await startHub(options(host),{staged:true,released:release});
  const producer=join(root,'producer.json');await writeFile(producer,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'cli',hostId:'host',sourceId:'source',hook:'Stop'},endpoint:pixoo.url+'/api/monitor/v1/events',token:monitorToken}),{mode:0o600});
  async function selectAndActivate(){
   routes=[await stageProducer(producer,await routeDigest(producer),hub.url+'/api/monitor/v1/events',hubToken),await stagePixooSource(configPath,await routeDigest(configPath),'owner',hub.url+'/api/monitor/v1',hubToken)];
@@ -59,7 +59,7 @@ try{
  // Relaunch the same current host under supervision, then export its latest writes.
  const hubConfig=join(root,'hub.json');await writeFile(hubConfig,JSON.stringify(options(host)),{mode:0o600});
  sourceHub=await launchOwner({kind:'hub',entrypoint:new URL('../apps/hub/dist/cli.js',import.meta.url).pathname,args:['serve',hubConfig],environment:{},token:hubToken});
- const latest=await quiesceAndStop(sourceHub);assert.equal(latest.revision,beforeRollback);
+ const latest=await quiesceAndStop(sourceHub,join(root,'hub-export.json'));assert.equal(latest.revision,beforeRollback);
  hub=await startHub(options(rollback),{staged:true,released:latest});view=await selectAndActivate();
  const restored=view.source.snapshot.sessions.find(s=>s.identity.sessionId==='session');assert.equal(restored.label,'After cutover');assert.deepEqual(restored.notices[0].acknowledgedBy,['pixoo']);assert.equal(view.source.snapshot.sessions.length,2);assert.equal(view.source.snapshot.revision,beforeRollback);
  // Renderer uses the selected owner; recovery must not reactivate its physical presentation.

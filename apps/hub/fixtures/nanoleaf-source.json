@@ -5,5 +5,12 @@
   "files": {
     "apps/hub/src/vendor/nanoleaf-integration.ts": "d94f2531cfcb574bf329554c66711dc67936d23051f5d44bb0b756aa55517b6c",
     "apps/hub/fixtures/nanoleaf-integration.json": "2878922a896892afb77200839ea51b0ae5582d1ca9bea17d03b9e130097e1841"
+  },
+  "sourceFiles": {
+    "bridge/integration_api.py": "addbf6b6041fd657e18281368f59fd39cc2af18453013e21f27bd1c822447dd6",
+    "bridge/controller_server.py": "15dff3396588d7ba0ffe4b22c2681e17cc8786806d33df6400d68f11ae430d57",
+    "bridge/controller_state.py": "ea6d8a1c627d83f5a901eebe1e72f0e54d6baa98b331d493a535418fff4cb234",
+    "tests/test_integration_api.py": "3f367b86cf2708756f5607c001dbe6528740685de0316b9eb2fe71e860f6499c",
+    "tests/test_controller_state.py": "c41c91621ef39bfecd034b114210c2a74ec42f415222ec1112ef97e7226218bf"
   }
 }

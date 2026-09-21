@@ -1,4 +1,5 @@
-import {open,lstat,realpath,mkdir,rename,rm} from 'node:fs/promises';
+import {DatabaseSync} from 'node:sqlite';
+import {open,lstat,realpath,mkdir,rename,rm,readFile} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {dirname,join,resolve} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
@@ -7,11 +8,23 @@ import {createEmitter,type SourceConfiguration} from '@jimmie-potts/agent-state/
 import {object,exact,loopbackEndpoint,responseJson,canonical} from './common.js';
 export type StagedRoute={readonly kind:'producer'|'pixoo';readonly digest:string};
 type File={path:string;bytes:Buffer;value:Record<string,unknown>};
-type Stage={file:File;lock:string;enabled:boolean;kind:StagedRoute['kind']};
+type Stage={file:File;lock:string;enabled:boolean;kind:StagedRoute['kind'];intent:Intent;unlock:()=>void};
+type Intent={version:1;pid:number;start:string;kind:StagedRoute['kind'];enabled:boolean;before:string;after:string};
+async function processStart(pid:number):Promise<string|null>{try{const stat=await readFile('/proc/'+pid+'/stat','utf8');return stat.slice(stat.lastIndexOf(')')+2).split(' ')[19];}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
+async function writeIntent(lock:string,intent:Intent){const temporary=join(lock,randomUUID()+'.tmp');const file=await open(temporary,'wx',0o600);try{await file.writeFile(JSON.stringify(intent));await file.sync();}finally{await file.close();}await rename(temporary,join(lock,'intent.json'));const directory=await open(lock,'r');try{await directory.sync();}finally{await directory.close();}const parent=await open(dirname(lock),'r');try{await parent.sync();}finally{await parent.close();}}
+const held=new Set<string>();
+async function lockRoute(path:string):Promise<()=>void>{
+ if(held.has(path))throw new Error('route-owner-live');held.add(path);let db:DatabaseSync|undefined;
+ try{const file=await open(path+'.migration-lease.sqlite',constants.O_CREAT|constants.O_RDWR|constants.O_NOFOLLOW|constants.O_NONBLOCK,0o600);
+  try{const stat=await file.stat();if(!stat.isFile()||stat.nlink!==1||stat.uid!==process.getuid!()||(stat.mode&0o077)!==0)throw new Error('invalid-route-lock');}finally{await file.close();}
+  db=new DatabaseSync(path+'.migration-lease.sqlite');db.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE');
+  return ()=>{db!.close();held.delete(path);};
+ }catch(error){db?.close();held.delete(path);throw error;}
+}
 const stages=new WeakMap<StagedRoute,Stage>();
 const hash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const validToken=(token:string)=>/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token);
-async function read(path:string):Promise<File>{
+async function read(path:string,maximum=8192):Promise<File>{
  if(process.platform!=='linux'||resolve(path)!==path||path.startsWith('/mnt/')||await realpath(path)!==path)throw new Error('invalid-route-file');
  for(let parent=dirname(path);;parent=dirname(parent)){
   try{const marker=await lstat(join(parent,'.git'));if(marker.isFile())throw new Error('route-in-checkout');await lstat(join(parent,'.git','HEAD'));throw new Error('route-in-checkout');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
@@ -19,8 +32,8 @@ async function read(path:string):Promise<File>{
  }
  const directory=await lstat(dirname(path));if((directory.mode&0o077)!==0||directory.uid!==process.getuid!())throw new Error('invalid-route-directory');
  const file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
- try{const info=await file.stat();if(!info.isFile()||info.nlink!==1||info.uid!==process.getuid!()||(info.mode&0o077)!==0||info.size>8192)throw new Error('invalid-route-file');
-  const buffer=Buffer.alloc(8193);let size=0;while(size<buffer.length){const part=await file.read(buffer,size,buffer.length-size,null);size+=part.bytesRead;if(!part.bytesRead)break;}if(size>8192)throw new Error('invalid-route-file');
+ try{const info=await file.stat();if(!info.isFile()||info.nlink!==1||info.uid!==process.getuid!()||(info.mode&0o077)!==0||info.size>maximum)throw new Error('invalid-route-file');
+  const buffer=Buffer.alloc(maximum+1);let size=0;while(size<buffer.length){const part=await file.read(buffer,size,buffer.length-size,null);size+=part.bytesRead;if(!part.bytesRead)break;}if(size>maximum)throw new Error('invalid-route-file');
   const bytes=buffer.subarray(0,size),value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(!object(value))throw new Error('invalid-route-file');return {path,bytes,value};
  }finally{await file.close();}
 }
@@ -35,10 +48,43 @@ async function replace(file:File,value:Record<string,unknown>):Promise<File>{
 export async function routeDigest(path:string):Promise<string>{return hash((await read(path)).bytes);}
 async function stage(path:string,expected:string,kind:StagedRoute['kind'],transform:(value:Record<string,unknown>)=>Record<string,unknown>):Promise<StagedRoute>{
  const file=await read(path);if(hash(file.bytes)!==expected)throw new Error('route-changed');
- const lock=path+'.migration-lock';await mkdir(lock,{mode:0o700});
- try{const next=transform(file.value),updated=await replace(file,next),receipt=Object.freeze({kind,digest:hash(updated.bytes)});
-  stages.set(receipt,{file:updated,lock,enabled:file.value.enabled===true,kind});return receipt;
- }catch(error){await rm(lock,{recursive:true});throw error;}
+ const lock=path+'.migration-lock',unlock=await lockRoute(path);
+ let acquired=false;
+ try{await mkdir(lock,{mode:0o700});acquired=true;
+  const next=transform(file.value),intent:Intent={version:1,pid:process.pid,start:(await processStart(process.pid))!,kind,enabled:file.value.enabled===true,before:file.bytes.toString('base64'),after:Buffer.from(JSON.stringify(next)+'\n').toString('base64')};
+  await writeIntent(lock,intent);const updated=await replace(file,next),receipt=Object.freeze({kind,digest:hash(updated.bytes)});
+  stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind,intent,unlock});return receipt;
+ }catch(error){try{if(acquired)await rm(lock,{recursive:true});}finally{unlock();}throw error;}
+}
+/** Recover only a dead coordinator's durable intent. An unknown phase or external edit fails closed. */
+export async function recoverRoute(path:string,expected:string):Promise<StagedRoute>{
+ const file=await read(path);if(hash(file.bytes)!==expected)throw new Error('route-changed');
+ const lock=path+'.migration-lock',unlock=await lockRoute(path);
+ try{
+  const saved=(await read(join(lock,'intent.json'),32768)).value;
+  if(!exact(saved,['version','pid','start','kind','enabled','before','after'])||saved.version!==1||!Number.isSafeInteger(saved.pid)||(saved.pid as number)<1||typeof saved.start!=='string'||!['producer','pixoo'].includes(saved.kind as string)||typeof saved.enabled!=='boolean'||typeof saved.before!=='string'||typeof saved.after!=='string')throw new Error('invalid-route-intent');
+  const intent=saved as unknown as Intent;
+  if(await processStart(intent.pid)===intent.start)throw new Error('route-owner-live');
+  const before=Buffer.from(intent.before,'base64'),after=Buffer.from(intent.after,'base64');
+  if(!file.bytes.equals(before)&&!file.bytes.equals(after))throw new Error('route-changed');
+  intent.pid=process.pid;intent.start=(await processStart(process.pid))!;
+  await writeIntent(lock,intent);
+  const next=JSON.parse(after.toString('utf8')) as Record<string,unknown>;
+  if(intent.kind==='producer')next.enabled=false;
+  intent.before=file.bytes.toString('base64');intent.after=Buffer.from(JSON.stringify(next)+'\n').toString('base64');await writeIntent(lock,intent);
+  const updated=await replace(file,next),receipt=Object.freeze({kind:intent.kind,digest:hash(updated.bytes)});
+  stages.set(receipt,{file:updated,lock,enabled:intent.enabled,kind:intent.kind,intent,unlock});return receipt;
+ }catch(error){unlock();throw error;}
+}
+async function updateStage(record:Stage,next:Record<string,unknown>){
+ record.intent.before=record.file.bytes.toString('base64');record.intent.after=Buffer.from(JSON.stringify(next)+'\n').toString('base64');
+ await writeIntent(record.lock,record.intent);record.file=await replace(record.file,next);
+}
+export async function retargetRoute(receipt:StagedRoute,ownerId:string,endpoint:string,token:string):Promise<void>{
+ const record=stages.get(receipt);if(!record||!validToken(token))throw new Error('unstaged-route');
+ const url=loopbackEndpoint(endpoint);if(url.pathname!==(record.kind==='producer'?'/api/monitor/v1/events':'/api/monitor/v1'))throw new Error('invalid-route');
+ if(record.kind==='pixoo'&&record.file.value.ownerId!==ownerId)throw new Error('wrong-owner');
+ await updateStage(record,{...record.file.value,endpoint,token,...(record.kind==='producer'?{enabled:false}:{})});
 }
 /** Only the explicitly named producer file changes. Qualification and source identity remain unchanged. */
 export async function stageProducer(path:string,expected:string,endpoint:string,token:string):Promise<StagedRoute>{
@@ -57,7 +103,7 @@ export async function stagePixooSource(path:string,expected:string,ownerId:strin
  });
 }
 /** Releases the coordinator's lock; it never restores a stale source route or enables a producer. */
-export async function releaseRoute(route:StagedRoute):Promise<void>{const staged=stages.get(route);if(!staged)return;stages.delete(route);await rm(staged.lock,{recursive:true});}
+export async function releaseRoute(route:StagedRoute):Promise<void>{const staged=stages.get(route);if(!staged)return;stages.delete(route);try{await rm(staged.lock,{recursive:true});}finally{staged.unlock();}}
 export type ActivationPlan={producers:StagedRoute[];consumers:{id:string;route:StagedRoute;endpoint:string;token:string}[]};
 async function get(endpoint:string,token:string):Promise<unknown>{
  const response=await fetch(endpoint,{redirect:'error',signal:AbortSignal.timeout(2500),headers:{authorization:`Bearer ${token}`}});
@@ -87,6 +133,6 @@ export async function prepareActivation(plan:ActivationPlan,origin:string,ownerI
   if(!checked.ok||checked.value.revision!==current.revision||canonical(durable(checked.value))!==canonical(durable(current))||checked.value.collector!=='quiesced')throw new Error('consumer-not-ready');
  }
  await checkFiles();
- for(const receipt of plan.producers){const record=stages.get(receipt)!;record.file=await replace(record.file,{...record.file.value,enabled:record.enabled});}
+ for(const receipt of plan.producers){const record=stages.get(receipt)!;await updateStage(record,{...record.file.value,enabled:record.enabled});}
  // Locks remain held until the caller commits activation or explicitly abandons the attempt.
 }

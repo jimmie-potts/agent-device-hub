@@ -45,6 +45,7 @@ async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
 }
 
 export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}) {
+  if (migration !== undefined && (!object(migration) || migration.staged !== true || Object.keys(migration).some(key=>!['staged','released'].includes(key)))) throw new Error('invalid-migration');
   const imported = migration?.released ? consumeReleasedState(migration.released) : undefined;
   let staged = migration?.staged === true;
   let activationAllowed = imported !== undefined;
