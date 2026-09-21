@@ -55,8 +55,8 @@ npm run test:workflow
 
 Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
-shared-monitor-performance-baseline, agent-state-core and agent-provider-emitters
-after the Hub #3 change is synchronized.
+shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
+standalone-hub-host and standalone-hub-mcp.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -325,3 +325,7 @@ rollback. Nanoleaf exercises the real HTTP settings service with a disposable
 worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
+
+## Standalone hub MCP checks
+
+`npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.

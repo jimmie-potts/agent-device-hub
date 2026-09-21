@@ -398,3 +398,7 @@ latest state into a fresh host store; Pixoo retains its private media directory
 and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
+
+## Standalone MCP composition
+
+The optional host `/mcp` route composes the reusable transport with the existing state owner and controller clients. It adds no listener, reducer, replay ledger or device writer. Global session tools retain the HTTP command ledger. Configured aliases bind device tools while native snapshots and receipts keep their original identities. Read/control permissions are checked on every request; disconnect never resubmits or cancels admitted owner work. Pixoo catalog/player handlers remain owned by its separate application. See [the host tool contract](../apps/hub/README.md#optional-local-mcp) for supported commands and source-only evidence.
