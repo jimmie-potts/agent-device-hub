@@ -1755,7 +1755,7 @@ merged-main CI separately. Issue #30 remains open for physical measurements and 
 
 ## 2026-09-21 — Hub #6 dashboard candidate
 
-The issue is in progress after its three source prerequisites closed. The
+The issue is in review in PR #127 after its three source prerequisites closed. The
 candidate adds the shared React/TypeScript integration frontend using the current
 approved Nanoleaf Prism/Neon visual language, typed owning-controller commands,
 scoped context and a third synthetic component fixture. Human UI approval,

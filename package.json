@@ -47,7 +47,7 @@
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
     "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
-    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs"
+    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

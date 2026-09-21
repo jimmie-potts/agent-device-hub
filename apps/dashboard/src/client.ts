@@ -10,18 +10,39 @@ export function makeCommand(snapshot:Snapshot,command:Command):Request {
 }
 export class ApiError extends Error {constructor(public code:string,public status=0,public detail:unknown=undefined){super(code);}}
 export class Api {
- private mutation=0;
+ private mutations=new Map<string,number>();
+ private queues=new Map<string,{running:boolean;pending:{write:boolean;start:()=>void}[]}>();
+ private schedule<T>(key:string,write:boolean,job:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
+  let queue=this.queues.get(key);if(!queue){queue={running:false,pending:[]};this.queues.set(key,queue);}
+  const selected=queue;
+  if(selected.pending.length>=4)return Promise.reject(new ApiError('capacity',429));
+  return new Promise<T>((resolve,reject)=>{
+   let started=false;
+   const remove=()=>{clearTimeout(timer);signal?.removeEventListener('abort',cancel);const i=selected.pending.indexOf(entry);if(i>=0)selected.pending.splice(i,1);};
+   const cancel=()=>{if(!started){remove();reject(new ApiError('request-cancelled'));}};
+   const next=()=>{selected.running=false;const index=selected.pending.findIndex(item=>item.write);const item=selected.pending.splice(index<0?0:index,1)[0];if(item)item.start();else this.queues.delete(key);};
+   const entry={write,start:()=>{started=true;remove();selected.running=true;void job().then(resolve,reject).finally(next);}};
+   const timer=setTimeout(()=>{if(!started){remove();reject(new ApiError('capacity',429));}},5000);
+   if(signal?.aborted){cancel();return;}signal?.addEventListener('abort',cancel,{once:true});
+   if(selected.running)selected.pending.push(entry);else entry.start();
+  });
+ }
+
  constructor(private token:string){}
- async request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T> {
-  if(body!==undefined)this.mutation++;const generation=this.mutation;
+ request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T> {
+  const device=/^\/api\/controllers\/v1\/([^/]+)\//.exec(path)?.[1];
+  return device?this.schedule(device,body!==undefined,()=>this.perform<T>(path,body,signal,device),signal):this.perform<T>(path,body,signal,'monitor');
+ }
+ private async perform<T>(path:string,body:unknown,signal:AbortSignal|undefined,channel:string):Promise<T> {
+  if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);const generation=this.mutations.get(channel)??0;
   try {
    const response=await fetch(path,{method:body===undefined?'GET':'POST',redirect:'error',cache:'no-store',headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json','x-pixoo-request':'1'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000)});
    const value=await response.json();
-   if(body===undefined&&generation!==this.mutation)throw new ApiError('snapshot-superseded');
+   if(body===undefined&&generation!==(this.mutations.get(channel)??0))throw new ApiError('snapshot-superseded');
    if(!response.ok)throw new ApiError(value.error?.code??value.failure?.code??'unavailable',response.status,value);
    if(value.ok===false)throw new ApiError(value.code??'unavailable',503,value);
    return value as T;
-  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}finally{if(body!==undefined)this.mutation++;}
+  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}finally{if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);}
  }
  async feed(signal:AbortSignal,onChange:()=>void,onStatus:(connected:boolean)=>void){
   let cursor='',delay=500;
@@ -41,4 +62,16 @@ export class Api {
    await new Promise<void>(resolve=>{const done=()=>{clearTimeout(t);signal.removeEventListener('abort',done);resolve();};const t=setTimeout(done,delay);signal.addEventListener('abort',done,{once:true});});delay=Math.min(delay*2,10000);
   }
  }
+}
+
+/** A transport error must never erase a controller's explicit effect evidence. */
+export function failureMessage(error:unknown):{message:string;locked:boolean}{
+ const code=error instanceof ApiError?error.code:'uncertain-result';
+ const detail=error instanceof ApiError?error.detail:undefined;
+ if(detail&&typeof detail==='object'&&'outcome' in detail){
+  const receipt=detail as {outcome:string;priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[]};
+  return {message:`${receipt.outcome}. Prior effects: ${receipt.priorEffects??'unknown'}. Completed: ${receipt.completedOperations?.join(', ')||'none recorded'}. Uncertain operations: ${receipt.uncertainOperations?.join(', ')||'none recorded'}. ${code}. Your edit is retained.`,locked:receipt.priorEffects!=='none'||['uncertain','partially-applied'].includes(receipt.outcome)};
+ }
+ if(code==='uncertain-result')return {message:'Uncertain result. Do not repeat this command. Refresh observations before starting a new edit.',locked:true};
+ return {message:`Not applied: ${code}. Your edit is retained.`,locked:false};
 }

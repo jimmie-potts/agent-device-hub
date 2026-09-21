@@ -8,16 +8,16 @@ import {validate} from '@jimmie-potts/device-contracts';
 import {validateRequest} from '../../hub/dist/vendor/nanoleaf-integration.js';
 import {validatePixooRequest} from '../../hub/dist/pixoo-integration.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
-export async function fixture(){
+export async function fixture({empty=false}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64);
- const nano={apiVersion:'nanoleaf.integration/1.0',identity:{controllerId:'wall-controller',deviceId:'wall',sourceId:'source',controllerEpoch:'epoch'},configurationRevision:0,revision:'b'.repeat(64),mode:'Work',settings:{style:'classic',coverage:'whole'},source:'shared',projects:[{id:project,color:'#a9c3ff'}],tasks:[{id:task,projectId:project,overrideProjectId:null}],elements:[{id:'1:2',projectId:null,signature:0}],wallPending:null,pending:[],outcomes:[],nextRequestId:{epoch:'a'.repeat(32),sequence:0},capabilities:Object.fromEntries(['settings.set','elements.assign','task.assign','project.color','mode.set'].map(k=>[k,{supported:true,scope:'control',...(k==='mode.set'?{route:'/controller/v1/commands'}:{})}])),limits:{maxItems:1000,maxPending:1,maxReceipts:256,maxBodyBytes:65536}};
+ const nano={apiVersion:'nanoleaf.integration/1.0',identity:{controllerId:'wall-controller',deviceId:'wall',sourceId:'source',controllerEpoch:'epoch'},configurationRevision:0,revision:'b'.repeat(64),mode:'Work',settings:{style:'classic',coverage:'whole'},source:'shared',projects:[{id:project,color:'#a9c3ff'},{id:'project-'+'c'.repeat(64),color:'#ff0000'}],tasks:[{id:task,projectId:project,overrideProjectId:null}],elements:[{id:'1:2',projectId:project,signature:0},{id:'2:3',projectId:null,signature:1}],wallPending:null,pending:[],outcomes:[],nextRequestId:{epoch:'a'.repeat(32),sequence:0},capabilities:Object.fromEntries(['settings.set','elements.assign','task.assign','project.color','mode.set'].map(k=>[k,{supported:true,scope:'control',...(k==='mode.set'?{route:'/controller/v1/commands'}:{})}])),limits:{maxItems:1000,maxPending:1,maxReceipts:256,maxBodyBytes:65536}};
  const pixoo=JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json','utf8')).snapshot;
  pixoo.identity={controllerId:'pixel-controller',deviceId:'pixel',sourceId:'pixel'};
  const states={wall:structuredClone(template),pixel:structuredClone(template)};
  for(const [id,s] of Object.entries(states)){s.identity={controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,sourceId:id,controllerEpoch:'epoch'};s.capabilities.modes={supported:true,values:id==='wall'?['Work','Quiet','Free']:['Monitor','Media']};s.state.desired.mode={status:'known',value:id==='wall'?'Work':'Media'};s.state.externalControl={status:'unknown'};s.state.observation={status:'unknown'};s.state.lastSuccessfulSend={status:'unknown'};s.state.lastOutcome={status:'unknown'};s.state.pending=[];}
- const writes=[],requests=[];let offline=false,uncertain=false,delay=0;
+ const writes=[],requests=[];let offline=false,uncertain=false,delay=0,queued=false;
  const controllers=[];
  for(const id of ['wall','pixel']){
   const server=createServer(async(req,res)=>{
@@ -39,8 +39,9 @@ export async function fixture(){
    if(id==='wall'){
     if(!validateRequest(command)){send(400,{failure:{code:'invalid-request'}});return;}
     const conflict=command.expectedRevision!==nano.revision;
+    if(queued&&!conflict){nano.pending=[command];send(202,{apiVersion:nano.apiVersion,requestId:command.requestId,outcome:'queued',priorEffects:'none',physicalOutcome:'unknown'});return;}
     const result={apiVersion:nano.apiVersion,requestId:command.requestId,outcome:conflict?'failed':'applied',priorEffects:conflict?'none':'configuration',physicalOutcome:'unknown',...(conflict?{failure:{code:'revision-conflict'}}:{})};
-    if(!conflict){const c=command.command;if(c.kind==='settings.set')Object.assign(nano.settings,Object.fromEntries(Object.entries(c).filter(([k])=>k!=='kind')));if(c.kind==='elements.assign')Object.assign(nano.elements[0],c.elements[0]);if(c.kind==='task.assign')nano.tasks[0].overrideProjectId=c.projectId;if(c.kind==='project.color')nano.projects[0].color=c.color;nano.nextRequestId.sequence++;nano.configurationRevision++;nano.revision=hash(String(nano.configurationRevision));}send(conflict?409:200,result);
+    if(!conflict){const c=command.command;if(c.kind==='settings.set')Object.assign(nano.settings,Object.fromEntries(Object.entries(c).filter(([k])=>k!=='kind')));if(c.kind==='elements.assign')Object.assign(nano.elements.find(e=>e.id===c.elements[0].id),c.elements[0]);if(c.kind==='task.assign')nano.tasks[0].overrideProjectId=c.projectId;if(c.kind==='project.color')nano.projects.find(p=>p.id===c.projectId).color=c.color;nano.nextRequestId.sequence++;nano.configurationRevision++;nano.revision=hash(String(nano.configurationRevision));}send(conflict?409:200,result);
    }else{
     if(!validatePixooRequest(command)){send(400,{error:{code:'invalid-input'}});return;}
     if(command.expectedConfigurationRevision!==pixoo.configurationRevision){send(409,{error:{code:'revision-conflict'}});return;}
@@ -55,6 +56,6 @@ export async function fixture(){
  const identity={provider:'codex',client:'cli',hostId:'local',sourceId:'codex',sessionId:'task-one'};
  let seq=0;
  async function event(kind,extra={}){const value={apiVersion:'1.0',identity,turn:{status:'known',id:'turn-one'},parent:{status:'unknown'},event:{kind},observedAtMs:Date.now(),ordering:{status:'known',epoch:'fixture',sequence:seq++},...extra};const r=await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(value)});if(!r.ok)throw new Error('fixture-event-'+r.status);return r.json();}
- await event('session.started',{label:{origin:'user',value:'Build the integration'}});
- return {hub,token,reader,reconnect(){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}]);},writes,requests,states,nano,pixoo,identity,headers,event,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+ if(!empty)await event('session.started',{label:{origin:'user',value:'Build the integration'}});
+ return {hub,token,reader,reconnect(){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}]);},writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }

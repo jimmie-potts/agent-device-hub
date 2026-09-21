@@ -63,8 +63,12 @@ Transport success and saved settings do not establish physical output.
 
 The bounded authenticated change feed requests current monitor snapshots on state
 or resync events. A stream reconnect uses its last cursor and backs off up to ten
-seconds. Periodic reads recover observations; device reads are sequential per
-device and independent across devices. Failed reads retain prior evidence with a
+seconds. Periodic reads recover observations; reads and writes share a bounded queue per
+device, with pending explicit writes ahead of polling. Devices remain independent.
+Definite pre-admission rejection retains an editable draft; partial receipts retain
+completed operations and known effects. Terminal integration outcomes update the
+submitted form. Target selection loads that target's current mapping or color
+without making an edit. Failed reads retain prior evidence with a
 stale warning. Observation age grows independently of successful transport reads.
 Opening, selecting, filtering, reconnecting and receiving snapshots issue no
 commands.
@@ -83,7 +87,8 @@ candidate requires its own explicit human approval.
 `npm run test:dashboard` checks command guards and links.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
-concurrent edits, uncertain outcomes, focus, keyboard, reduced motion, responsive
+expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,
+known observations, external control, focus, keyboard, reduced motion, responsive
 layout and automated accessibility. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
