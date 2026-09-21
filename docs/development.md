@@ -295,3 +295,15 @@ exclusive test stores, disposable state and loopback transports. They do not
 install hooks, launch clients or operate devices. `:built` commands require a
 fresh build in the same job. Host storage conformance, installed qualification
 and integrated performance remain separately evidenced downstream gates.
+
+## Standalone hub candidate checks
+
+Hub #5 targets Node 24 on Linux in WSL. Run `npm ci`, `npm run build`,
+`npm run typecheck` and `npm run test:hub` from the worktree root, alongside
+the shared controller/lifecycle/state/MCP and workflow suites. The combined
+Ubuntu contracts/state CI jobs run `npm run test:hub:built` after their fresh
+build. Tests use disposable private Linux state, synthetic credentials and
+fake loopback controllers. They do not start installed services or operate
+devices. The active `gh-5-hub-host` change retains outstanding integration,
+packaging, migration and performance evidence; passing a partial suite does
+not establish completed host delivery.
