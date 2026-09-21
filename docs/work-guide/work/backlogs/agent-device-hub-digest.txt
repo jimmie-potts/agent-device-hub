@@ -70,3 +70,4 @@
 #100 [CLOSED] Skip automatic CI for guide-only changes
 #103 [CLOSED] Document the composable BUNNY system design
 #107 [CLOSED] Consolidate Hub CI into five Ubuntu checks
+#123 [OPEN] Re-evaluate Linux performance budgets and reduce hub memory use

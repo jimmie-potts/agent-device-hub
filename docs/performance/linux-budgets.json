@@ -59,7 +59,7 @@
     "overflow": "Drop new observations at the producer; bounded loss indicator and later resync, no unbounded retry. Consumer coalescing must retain lifecycle ordering and loss evidence.",
     "renderMaxHz": 20,
     "renderIntervalMs": 50,
-    "serviceRssMiB": 128,
+    "serviceRssMiB": 256,
     "rationale": "Queue covers a 50-event burst with bounded headroom; byte and service limits are explicit design constraints, not measured legacy queues or total service memory. Cadence caps rendering work independently of immediate hook return and never promises optical timing."
   },
   "resourceScope": "CPU sums reaped first/warm hooks and workers, excluding preflight/failure probes; RSS is largest child lifetime peak and may include preflight, not combined process memory.",
