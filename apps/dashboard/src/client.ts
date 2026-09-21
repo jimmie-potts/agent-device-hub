@@ -64,13 +64,18 @@ export class Api {
  }
 }
 
+export type ReceiptEvidence={priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[]};
+export function receiptEvidence(receipt:ReceiptEvidence):string {
+ return `Prior effects: ${receipt.priorEffects??'unknown'}. Completed: ${receipt.completedOperations?.join(', ')||'none recorded'}. Uncertain operations: ${receipt.uncertainOperations?.join(', ')||'none recorded'}.`;
+}
+
 /** A transport error must never erase a controller's explicit effect evidence. */
 export function failureMessage(error:unknown):{message:string;locked:boolean}{
  const code=error instanceof ApiError?error.code:'uncertain-result';
  const detail=error instanceof ApiError?error.detail:undefined;
  if(detail&&typeof detail==='object'&&'outcome' in detail){
   const receipt=detail as {outcome:string;priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[]};
-  return {message:`${receipt.outcome}. Prior effects: ${receipt.priorEffects??'unknown'}. Completed: ${receipt.completedOperations?.join(', ')||'none recorded'}. Uncertain operations: ${receipt.uncertainOperations?.join(', ')||'none recorded'}. ${code}. Your edit is retained.`,locked:receipt.priorEffects!=='none'||['uncertain','partially-applied'].includes(receipt.outcome)};
+  return {message:`${receipt.outcome}. ${receiptEvidence(receipt)} ${code}. Your edit is retained.`,locked:receipt.priorEffects!=='none'||['uncertain','partially-applied'].includes(receipt.outcome)};
  }
  if(code==='uncertain-result')return {message:'Uncertain result. Do not repeat this command. Refresh observations before starting a new edit.',locked:true};
  return {message:`Not applied: ${code}. Your edit is retained.`,locked:false};

@@ -2,7 +2,7 @@ import React, {useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode} from '../../../packages/contracts/src/types';
-import {Api,ApiError,failureMessage,makeCommand,safeEditorUrl,type Context,type Component} from './client';
+import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,type Context,type Component} from './client';
 import './style.css';
 
 type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
@@ -24,11 +24,12 @@ function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refr
  const conflict=dirty&&!locked&&draft.revision!==revision;
  useEffect(()=>{
   if(!draft||!locked||!source||typeof source!=='object')return;
-  const observed=source as {outcomes?:{requestId:unknown;outcome:string;failure?:{code:string}}[];state?:{lastOutcome?:{status:string;receipt?:{requestId:unknown;outcome:string;failure?:{code:string}}}}};
+  type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string;failure?:{code:string}};
+  const observed=source as {outcomes?:ObservedReceipt[];state?:{lastOutcome?:{status:string;receipt?:ObservedReceipt}}};
   const ticket=(draft.source as {nextRequestId?:unknown}).nextRequestId;
   const records=[...(observed.outcomes??[]),...(observed.state?.lastOutcome?.status==='known'&&observed.state.lastOutcome.receipt?[observed.state.lastOutcome.receipt]:[])];
   const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
-  if(result&&result.outcome!=='queued')setStatus(`Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}. Physical result is not confirmed.`);
+  if(result&&result.outcome!=='queued')setStatus(`Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`);
  },[source,draft,locked]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
  async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;setBusy(true);setStatus('Submitting…');
