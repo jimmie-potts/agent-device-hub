@@ -8,7 +8,7 @@
 - Derive availability from the controller-declared capability, the credential's control scope and the Pixoo mode. Every disabled control names the missing capability, scope or mode.
 - Disable playlist and playback controls while Pixoo presents agent status, with a one-click explicit switch to Media through the existing mode control. No command changes the mode as a side effect; nothing restores automatically.
 - Submit one guarded controller v1 command per control through the existing hub route with the snapshot's request ticket, configuration revision and generation, showing pending, conflict, typed-failure and uncertain states with retained drafts.
-- Route the Pixoo Monitor/Media mode control through the delivered Pixoo integration extension, which is where the real controller accepts mode changes; align the fake Pixoo fixture with the real controller's declared capabilities.
+- Route the Pixoo Monitor/Media mode control through the delivered Pixoo integration extension, which is where the real controller accepts mode changes; align the fake Pixoo fixture with the real controller's declared capabilities. This is the reassessment named in the issue: the general controls still submit controller v1 commands through the existing hub route, while the existing Pixoo mode control uses the extension's mode operation because controller v1 modes are not declared.
 - List playlists by ID until [Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67) supplies names; that extension is separate and non-blocking.
 
 ## Capabilities

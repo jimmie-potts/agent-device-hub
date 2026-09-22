@@ -1,8 +1,8 @@
-import React, {useEffect,useRef,useState} from 'react';
+import React, {useEffect,useId,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
-import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,type GeneralReasons,type Context,type Component} from './client';
+import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,type GeneralReasons,type Context,type Component} from './client';
 import './style.css';
 
 type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
@@ -26,22 +26,23 @@ function observedResult(source:unknown,ticket:unknown):string|undefined{
  const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
  if(result&&result.outcome!=='queued')return `Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`;
 }
-/** One-click commands use the latest observed snapshot at activation. An uncertain result locks the group until the user loads current values. */
-function useCommand(api:Api,path:string,refresh:()=>void,source:unknown){
+/** One-click commands use the latest observed snapshot at activation and stay busy until the refreshed snapshot arrives, so the next activation carries fresh guards. Only an accepted ticket is watched for its terminal outcome; a rejected ticket may be consumed by another client. An uncertain result locks the group until the user loads current values. */
+function useCommand(api:Api,path:string,refresh:()=>void|Promise<void>,source:unknown){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<{label:string;ticket:unknown}>();
  useEffect(()=>{const message=submitted&&observedResult(source,submitted.ticket);if(message)setStatus(`${submitted.label}: ${message}`);},[source,submitted]);
- async function run(label:string,request:unknown){if(busy||locked)return;setBusy(true);setStatus(`${label}: submitting…`);setSubmitted({label,ticket:(request as {requestId?:unknown}).requestId});
-  try {const result=await api.request<Record<string,unknown>>(path,request);const failure=result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String((result.failure as {code:unknown}).code):'';setStatus(`${label}: ${String(result.outcome??'configuration accepted')}${failure}. Physical result is not confirmed.`);refresh();}
-  catch(error){const result=failureMessage(error);setStatus(`${label}: ${result.message}`);setLocked(result.locked);refresh();}
-  finally{setBusy(false);}
+ async function run(label:string,request:unknown){if(busy||locked)return;setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
+  try {const result=await api.request<Record<string,unknown>>(path,request);const failure=result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String((result.failure as {code:unknown}).code):'';setStatus(`${label}: ${String(result.outcome??'configuration accepted')}${failure}. Physical result is not confirmed.`);if(!failure)setSubmitted({label,ticket:(request as {requestId?:unknown}).requestId});}
+  catch(error){const result=failureMessage(error);setStatus(`${label}: ${result.message}`);setLocked(result.locked);}
+  finally{await refresh();setBusy(false);}
  }
- return {status,busy,locked,run,unlock:()=>{setLocked(false);setStatus('');setSubmitted(undefined);refresh();}};
+ return {status,busy,locked,run,unlock:()=>{setLocked(false);setStatus('');setSubmitted(undefined);void refresh();}};
 }
 function Badge({children,warning=false}:{children:React.ReactNode;warning?:boolean}){return <span className={'badge'+(warning?' warning':'')}>{children}</span>;}
 function Facts({items}:{items:[string,React.ReactNode][]}){return <dl>{items.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;}
 
-type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,string>;disabled?:string;api:Api;path:string;build:(source:T,values:Record<string,string>)=>unknown;refresh:()=>void;submitLabel?:string;children:(values:Record<string,string>,change:(name:string,value:string)=>void)=>React.ReactNode};
+type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,string>;disabled?:string;api:Api;path:string;build:(source:T,values:Record<string,string>)=>unknown;refresh:()=>void|Promise<void>;submitLabel?:string;children:(values:Record<string,string>,change:(name:string,value:string)=>void)=>React.ReactNode};
 function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,submitLabel,children}:FormProps<T>){
+ const heading=useId();
  const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null),[status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
  const values=draft?.values??initial,dirty=draft!==null;
  const conflict=dirty&&!locked&&draft.revision!==revision;
@@ -52,15 +53,15 @@ function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refr
  },[source,draft,locked]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
  async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;setBusy(true);setStatus('Submitting…');
-  try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);refresh();}
-  catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);refresh();}
+  try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);void refresh();}
+  catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);void refresh();}
   finally{setBusy(false);}
  }
- return <form className="edit" onSubmit={submit}><h3>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Changed by another client. Your edit is retained. Discard it to load the current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">{submitLabel??`Apply ${title.toLowerCase()}`}</button>{dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);setLocked(false);setStatus('');}}>Discard edit / load current</button>}</div><p role="status">{status}</p></form>;
+ return <form className="edit" aria-labelledby={heading} onSubmit={submit}><h3 id={heading}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Changed by another client. Your edit is retained. Discard it to load the current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">{submitLabel??`Apply ${title.toLowerCase()}`}</button>{dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);setLocked(false);setStatus('');}}>Discard edit / load current</button>}</div><p role="status">{status}</p></form>;
 }
 function Select({label,value,onChange,options}:{label:string;value:string;onChange:(v:string)=>void;options:{value:string;label:string}[]}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;}
 const options=(values:string[])=>values.map(value=>({value,label:value}));
-function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:()=>void;now:number;sessions:SessionSnapshot[]}){
+function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:()=>void|Promise<void>;now:number;sessions:SessionSnapshot[]}){
  const snapshot=device.snapshot,integr=device.integration;
  const disabled=!context.control?'Your credential is read-only':device.error?'Controller observations are stale':!snapshot?'No controller snapshot':snapshot.state.externalControl.status==='known'&&snapshot.state.externalControl.owner==='external'?'Device is externally controlled':undefined;
  const path=`/api/controllers/v1/${encodeURIComponent(component.id)}`;
@@ -100,23 +101,24 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
 }
 const actionLabels:Record<string,string>={pause:'Pause',resume:'Resume',stop:'Stop',next:'Next',previous:'Previous',clear:'Clear','restart-with-changes':'Restart with changes'};
 /** Capability-driven general controls. Each control submits one guarded controller v1 command; a disabled control names its reason. */
-function GeneralControls({component,snapshot,reasons,api,path,refresh,extra}:{component:Component;snapshot:Snapshot;reasons:GeneralReasons;api:Api;path:string;refresh:()=>void;extra?:React.ReactNode}){
+function GeneralControls({component,snapshot,reasons,api,path,refresh,extra}:{component:Component;snapshot:Snapshot;reasons:GeneralReasons;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
  const revision=`${snapshot.configurationRevision}:${JSON.stringify(snapshot.generation)}`,pixel=component.kind==='pixoo';
- const brightness=snapshot.capabilities.brightness,range=brightness.supported?brightness:{minimum:0,maximum:100};
+ const brightness=snapshot.capabilities.brightness,range=brightness.supported?brightness:{minimum:0,maximum:100},draft=brightnessDraft(snapshot);
  const power=pixel?'Screen power':'Power';
  return <>
  <EditForm title={power} source={snapshot} revision={revision} initial={{on:snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'on'}} disabled={reasons.power} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'power.set',on:v.on==='on'})} refresh={refresh}>{(v,c)=><><Select label={power} value={v.on} onChange={x=>c('on',x)} options={[{value:'on',label:'On'},{value:'off',label:'Off'}]}/><p className="hint">{pixel?'Screen off pauses playback; screen on does not resume it. Power works in Monitor and Media and does not change the mode.':'Power does not change the device mode.'}</p></>}</EditForm>
- <EditForm title="Brightness" source={snapshot} revision={revision} initial={{percent:snapshot.state.desired.brightness.status==='known'?String(snapshot.state.desired.brightness.value):String(range.maximum)}} disabled={reasons.brightness} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'brightness.set',percent:Number(v.percent)})} refresh={refresh}>{(v,c)=><><label>Brightness (%)<input type="range" min={range.minimum} max={range.maximum} step={1} value={v.percent} onChange={e=>c('percent',e.target.value)}/></label><p className="hint">Selected {v.percent}% of {range.minimum}–{range.maximum}. Brightness works in every mode and does not change the mode.</p></>}</EditForm>
+ <EditForm title="Brightness" source={snapshot} revision={revision} initial={{percent:String(draft.value)}} disabled={reasons.brightness} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'brightness.set',percent:Number(v.percent)})} refresh={refresh}>{(v,c)=><><label>Brightness (%)<input type="range" min={range.minimum} max={range.maximum} step={1} value={v.percent} onChange={e=>c('percent',e.target.value)}/></label><p className="hint">Selected {v.percent}% of {range.minimum}–{range.maximum}. {draft.source==='unknown'?'Current brightness is unknown; the slider starts at a placeholder, not an observed value.':`Current ${draft.source} brightness is ${draft.value}%.`} Brightness works in every mode and does not change the mode.</p></>}</EditForm>
  <MediaControls snapshot={snapshot} reason={reasons.media} api={api} path={path} refresh={refresh} extra={extra}/>
  </>;
 }
-function MediaControls({snapshot,reason,api,path,refresh,extra}:{snapshot:Snapshot;reason?:string;api:Api;path:string;refresh:()=>void;extra?:React.ReactNode}){
+function MediaControls({snapshot,reason,api,path,refresh,extra}:{snapshot:Snapshot;reason?:string;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
+ const heading=useId();
  const media=snapshot.capabilities.media,playlists=media.supported?media.playlistIds:[],actions:MediaAction[]=media.supported?media.actions:[];
  const [playlistId,setPlaylistId]=useState('');const selected=playlists.includes(playlistId)?playlistId:playlists[0]??'';
  const command=useCommand(api,path,refresh,snapshot);
  const disabled=reason??(!playlists.length&&!actions.length?'No playlists or playback actions are declared':undefined);
  const run=(label:string,cmd:Command)=>void command.run(label,makeCommand(snapshot,cmd));
- return <div className="edit"><h3>Media</h3><fieldset disabled={!!disabled||command.busy||command.locked}><Select label="Saved playlist" value={selected} onChange={setPlaylistId} options={playlists.length?playlists.map(id=>({value:id,label:id})):[{value:'',label:'No saved playlists declared'}]}/><p className="hint">Playlists are listed by controller-declared ID. Starting a playlist or a playback action does not change the mode.</p><div className="actions"><button type="button" disabled={!selected} onClick={()=>run('Start playlist',{kind:'media.start',playlistId:selected})}>Start playlist</button>{actions.map(action=><button key={action} type="button" className="secondary" onClick={()=>run(actionLabels[action]??action,{kind:'media.control',action})}>{actionLabels[action]??action}</button>)}</div></fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{extra}{command.locked&&<div className="actions"><button type="button" className="secondary" onClick={command.unlock}>Load current / unlock</button></div>}<p role="status">{command.status}</p></div>;
+ return <div className="edit" role="group" aria-labelledby={heading}><h3 id={heading}>Media</h3><fieldset disabled={!!disabled||command.busy||command.locked}><Select label="Saved playlist" value={selected} onChange={setPlaylistId} options={playlists.length?playlists.map(id=>({value:id,label:id})):[{value:'',label:'No saved playlists declared'}]}/><p className="hint">Playlists are listed by controller-declared ID. Starting a playlist or a playback action does not change the mode.{!playlists.length&&!disabled?' Unavailable: Start playlist has no declared saved playlist; playback actions remain available.':''}</p><div className="actions"><button type="button" disabled={!selected} onClick={()=>run('Start playlist',{kind:'media.start',playlistId:selected})}>Start playlist</button>{actions.map(action=><button key={action} type="button" className="secondary" onClick={()=>run(actionLabels[action]??action,{kind:'media.control',action})}>{actionLabels[action]??action}</button>)}</div></fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{extra}{command.locked&&<div className="actions"><button type="button" className="secondary" onClick={command.unlock}>Load current / unlock</button></div>}<p role="status">{command.status}</p></div>;
 }
 function NanoMappings({integration:s,disabled,api,path,refresh}:{integration:Nano;disabled?:string;api:Api;path:string;refresh:()=>void}){
  const [elementId,setElementId]=useState(''),[taskId,setTaskId]=useState(''),[projectId,setProjectId]=useState('');
@@ -142,21 +144,24 @@ function SessionView({session:s,monitor,context,api,refresh,stale,elapsed}:{sess
 }
 function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  const [context,setContext]=useState<Context>(),[monitor,setMonitor]=useState<Monitor>(),[devices,setDevices]=useState<Record<string,Device>>({}),[view,setView]=useState('activity'),[q,setQ]=useState(''),[provider,setProvider]=useState(''),[error,setError]=useState(''),[feed,setFeed]=useState(false),[now,setNow]=useState(Date.now()),[received,setReceived]=useState(0);
- const refreshRef=useRef<()=>void>(()=>{}),deviceRefresh=useRef<(id:string)=>void>(()=>{});
+ const refreshRef=useRef<()=>void>(()=>{}),deviceRefresh=useRef<(id:string)=>Promise<void>>(async()=>{});
  useEffect(()=>{
-  const stop=new AbortController();let busy=false,again=false;const deviceBusy=new Set<string>(),deviceAgain=new Set<string>();let current:Context|undefined,latestMonitor:Monitor|undefined;
+  const stop=new AbortController();let busy=false,again=false;const deviceBusy=new Set<string>(),deviceAgain=new Set<string>(),deviceWaiters=new Map<string,(()=>void)[]>();let current:Context|undefined,latestMonitor:Monitor|undefined;
   const update=(id:string,value:Partial<Device>)=>{if(!stop.signal.aborted)setDevices(old=>({...old,[id]:{...old[id],...value}}));};
-  async function refreshDevice(c:Component){if(stop.signal.aborted)return;if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return;}deviceBusy.add(c.id);
+  // Resolves after a read that started after this call completed, so a caller can wait for authoritative guards.
+  async function refreshDevice(c:Component):Promise<void>{if(stop.signal.aborted)return;
+   if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return new Promise<void>(resolve=>{const waiters=deviceWaiters.get(c.id)??[];waiters.push(resolve);deviceWaiters.set(c.id,waiters);});}
+   deviceBusy.add(c.id);
    try {const snapshot=await api.request<Snapshot>(`/api/controllers/v1/${c.id}/snapshot`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
     if(['nanoleaf','pixoo'].includes(c.kind))integration=await api.request<Nano|Pixoo>(`/api/controllers/v1/${c.id}/integration/snapshot`,undefined,stop.signal);
     update(c.id,{snapshot,integration,error:undefined,received:Date.now()});
-   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);if(deviceAgain.delete(c.id))void refreshDevice(c);}
+   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);if(deviceAgain.delete(c.id)&&!stop.signal.aborted)void refreshDevice(c);else{const waiters=deviceWaiters.get(c.id)??[];deviceWaiters.delete(c.id);waiters.forEach(resolve=>resolve());}}
   }
   async function refresh(){if(busy){again=true;return;}busy=true;
    try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);if(latestMonitor&&latestMonitor.ownerId===next.ownerId&&latestMonitor.snapshot.revision>next.snapshot.revision){setError('stale-snapshot');return;}latestMonitor=next;setMonitor(next);setReceived(Date.now());setError('');}
    catch(e){if(!stop.signal.aborted)setError(e instanceof ApiError?e.code:'unavailable');}finally{busy=false;if(again&&!stop.signal.aborted){again=false;void refresh();}}
   }
-  refreshRef.current=()=>void refresh();deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);if(c)void refreshDevice(c);};
+  refreshRef.current=()=>void refresh();deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);return c?refreshDevice(c):Promise.resolve();};
   void refresh().then(()=>current?.components.forEach(c=>void refreshDevice(c)));
   void api.feed(stop.signal,()=>void refresh(),value=>{if(!stop.signal.aborted)setFeed(value);});
   const interval=setInterval(()=>{void refresh();current?.components.forEach(c=>void refreshDevice(c));},5000),clock=setInterval(()=>setNow(Date.now()),1000);
@@ -165,7 +170,7 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  const sessions=monitor?.snapshot.sessions??[],filtered=sessions.filter(s=>(!provider||s.identity.provider===provider)&&(!q||(s.label??s.identity.sessionId).toLowerCase().includes(q.toLowerCase())));
  return <div className="shell"><a className="skip" href="#main">Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>BUNNY<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><button aria-current={view==='activity'?'page':undefined} onClick={()=>setView('activity')}>Activity <span>{sessions.length}</span></button><p className="nav-label">COMPONENTS</p>{context?.components.map(c=><button key={c.id} aria-current={view===c.id?'page':undefined} onClick={()=>setView(c.id)}>{c.id}<small>{c.kind}</small></button>)}<button aria-current={view==='connections'?'page':undefined} onClick={()=>setView('connections')}>Connections</button></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p><button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
  <section hidden={view!=='activity'}><header className="hero"><p className="eyebrow">CODEX & CONNECTED COMPONENTS</p><h1>Your work, at a glance.</h1><p>Activity, attention and device participation. Every action stays explicit.</p></header><div className="stats"><div><strong>{sessions.filter(s=>s.activity==='active').length}</strong><span>Active sessions</span></div><div><strong>{sessions.reduce((n,s)=>n+s.attention.length,0)}</strong><span>Attention signals</span></div><div><strong>{context?.components.length??0}</strong><span>Components</span></div><div><strong>{monitor?.snapshot.collector??'Unknown'}</strong><span>Collector health</span></div></div><div className="filters"><label>Find a session<input type="search" maxLength={120} value={q} onChange={e=>setQ(e.target.value)} placeholder="Chosen label or session ID"/></label><Select label="Provider" value={provider} onChange={setProvider} options={[{value:'',label:'All providers'},...options(['codex','claude'])]}/></div>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}{!filtered.length&&<div className="empty"><h2>{q||provider?'No matching sessions':'No sessions observed'}</h2><p>{q||provider?'Change the filters to see other observations.':'Component status and supported integration controls remain available.'}</p></div>}<div className="sessions">{sessions.map(s=><div key={key(s)} hidden={!filtered.includes(s)}><SessionView session={s} monitor={monitor!} context={context!} api={api} refresh={()=>refreshRef.current()} stale={!!error||!received||now-received>10000} elapsed={Math.max(0,now-received)} /></div>)}</div></section>
- {context?.components.map(c=><section key={c.id} hidden={view!==c.id} data-configuration-revision={devices[c.id]?.snapshot?.configurationRevision}><ComponentView component={c} device={devices[c.id]??{}} context={{...context,control:context.control&&!error}} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/></section>)}
+ {context?.components.map(c=><section key={c.id} hidden={view!==c.id}><ComponentView component={c} device={devices[c.id]??{}} context={{...context,control:context.control&&!error}} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/></section>)}
  <section hidden={view!=='connections'}><header className="hero"><p className="eyebrow">SOURCES & CONNECTIONS</p><h1>Evidence, not assumptions.</h1></header><Facts items={[
  ['Collector',monitor?.snapshot.collector??'Unknown'],['State owner',monitor?.ownerId??'Unknown'],['Feed',feed?'Connected':'Reconnecting'],['Snapshot age',received?age(now-received):'Unknown'],['Lost observations',monitor?.snapshot.lossCount??'Unknown'],['Connection error',error||'None observed']
  ]}/><h2>Observed sources</h2>{[...new Set(sessions.map(s=>`${s.identity.provider} / ${s.identity.hostId} / ${s.identity.sourceId}`))].map(s=><p key={s}>{s}</p>)}{!sessions.length&&<p>No source evidence yet.</p>}<p className="hint">A connected collector does not prove a fresh session, successful task, read chat or physical device result.</p></section><footer>BUNNY / Source observations and deliberate controls</footer></main></div>;

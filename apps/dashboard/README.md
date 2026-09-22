@@ -78,10 +78,14 @@ screen on does not resume it. Playlists are listed by ID until
 [Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67)
 supplies user-entered names.
 
-Power and brightness use the draft pattern below. Playlist start, playback
-actions and the Media switch are one-click commands that use the latest observed
-snapshot. A typed conflict is shown and the action stays available; an uncertain
-result locks the group until "Load current / unlock". Physical acceptance on the
+Power and brightness use the draft pattern below; the brightness slider starts
+from desired, then observed evidence, and says when the current brightness is
+unknown. Playlist start, playback actions and the Media switch are one-click
+commands that use the latest observed snapshot and stay busy until the refreshed
+snapshot arrives, so a following activation carries fresh guards. Only an
+accepted ticket is watched for its terminal outcome; a rejected ticket may be
+consumed by another client. A typed conflict is shown and the action stays
+available; an uncertain result locks the group until "Load current / unlock". Physical acceptance on the
 display is [Hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
 
 ## Intent and observation

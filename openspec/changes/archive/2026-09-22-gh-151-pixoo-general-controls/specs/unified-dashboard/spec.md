@@ -29,7 +29,7 @@ The dashboard SHALL offer screen power, brightness, saved-playlist selection and
 - **THEN** the command is submitted in Monitor or Media without changing the mode, and the view explains that screen-off pauses playback and screen-on does not resume it
 
 ### Requirement: Content controls gated by status presentation
-The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, show the reason, and offer a one-click explicit switch to Media through the existing mode control. Returning to Monitor MUST use the existing mode control. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed.
+The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, show the reason, and offer a one-click explicit switch to Media through the existing mode control. Returning to Monitor MUST use the existing mode control. Because the Pixoo controller does not declare controller v1 modes, the Pixoo mode control and the explicit switch SHALL submit the device-owned Pixoo integration extension's mode operation through the hub's existing integration route with that extension's request ID, configuration revision and generation guards; controllers that declare controller v1 modes keep the controller v1 mode command. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed.
 
 #### Scenario: Monitor gating with explicit switch
 - **WHEN** Pixoo is in Monitor and the user activates the explicit switch

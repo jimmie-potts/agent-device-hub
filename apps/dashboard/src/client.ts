@@ -19,6 +19,14 @@ export function generalReasons({snapshot,control,common,content}:{snapshot:Pick<
  };
  return {power:reason('power','Power'),brightness:reason('brightness','Brightness'),media:reason('media','Media',content)};
 }
+/** The brightness draft starts from desired evidence, then observed evidence; missing evidence stays visibly unknown. */
+export function brightnessDraft(snapshot:Pick<Snapshot,'state'|'capabilities'>):{value:number;source:'desired'|'observed'|'unknown'} {
+ const desired=snapshot.state.desired.brightness,observation=snapshot.state.observation;
+ if(desired.status==='known')return {value:desired.value,source:'desired'};
+ if(observation.status==='known'&&observation.brightness.status==='known')return {value:observation.brightness.value,source:'observed'};
+ const range=snapshot.capabilities.brightness;
+ return {value:range.supported?Math.round((range.minimum+range.maximum)/2):50,source:'unknown'};
+}
 export class ApiError extends Error {constructor(public code:string,public status=0,public detail:unknown=undefined){super(code);}}
 export class Api {
  private mutations=new Map<string,number>();
