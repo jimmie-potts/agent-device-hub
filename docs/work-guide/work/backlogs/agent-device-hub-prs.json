@@ -1,16 +1,16 @@
 [
   {
-    "number": 127,
-    "title": "Add BUNNY activity and component integration dashboard",
-    "body": "BUNNY gains a React/TypeScript interface for shared activity, component integration and connection evidence. It uses the approved Nanoleaf Prism/Neon visual language, preserves device-specific modes and routes explicit settings commands through the existing hub/controller services.\n\nRefs #6.\n\nThe candidate adds scoped dashboard context, fixed same-origin assets, memory-only browser credentials, validated editor links, reusable component views, draft/revision guards and bounded read-only reconnect. It covers Nanoleaf settings/mappings and Pixoo filters, with a third synthetic component. General controls, exact previews, installation and physical operations are excluded.\n\nValidation: Node 24 build/type checks; controller/lifecycle/state TypeScript and Python suites and package consumers; MCP service/protocol/package; 46 hub tests and reproducible offline package installation; workflow validation with eight specifications, one active change and seven archives; all 15 workflow tests. Dashboard unit/browser checks cover explicit commands, no-write inspection, settings/mappings, attributable subagents, attention/notices, acknowledgment without readership, focus/draft preservation, concurrent edits, uncertain outcomes, read-only access, reconnect and offline isolation. The expanded matrix covers empty sessions, expired cursors, slow-device isolation, terminal integration failures, known observations, external control, Pixoo mode transitions and partial receipts. Keyboard activation and axe scans across activity, component and connection views report no violations. Synthetic timing samples are retained for #30, not claimed as full performance qualification.\n\nThe work-guide backlog and shared Codex narrative are refreshed, generated output updated, maintenance/browser checks passed. Existing diagrams retain the planned dashboard boundary until source delivery. Public guide publication remains separate.\n\nThe first task review found seven defects or coverage gaps. The correction preserves existing mapping values, isolates per-device read/write admission, retains partial effects and terminal outcomes, rejects stale freshness, and expands browser coverage. Both reviewers cleared the fixes at `a7db5eaa82e14f6f6d9c8f0df50f4220eb174f2a`, based on `ccd56d0276f8c116c81271320c63c31f6099be42`. The branch includes merged MCP PR #126 and guide PR #128. The original dashboard CI failure exposed a draft-reset race, now covered by atomic draft state and browser assertions.\n\nA second correction preserves partial-effect evidence after authoritative receipt refresh; its browser regression failed before the fix and passes afterward. Task review completed in three rounds.\n\nAll six configured hosted jobs passed at `a7db5eaa82e14f6f6d9c8f0df50f4220eb174f2a`: workflow, both Python contract/state jobs, MCP, dashboard browser and work guide. Both task-review axes report no remaining actionable findings.\n\nPending: explicit approval of this new UI candidate, then OpenSpec synchronization/archive and final independent review before guarded merge. Keep #6 open until merged-main checks and completion reconciliation. No installation or device testing occurred.\n",
+    "number": 131,
+    "title": "Track Pixoo monitoring packaging and pending acceptance",
+    "body": "Pixoo #34 now has a source packaging candidate at https://github.com/jimmie-potts/divoom-app-upgrade/pull/65. Refresh the shared guide's backlog and remaining-work narrative to show that work while retaining installation, client, physical and Hub #6 frontend gates.\n\nThe same delivery coordinator owns both PRs. This guide candidate records source work in progress, not a predicted merge or issue closure. A completion reconciliation will record the actual source result. No architecture ownership or command flow changes, so no diagram redraw is needed. Public publication remains outside scope.\n\nValidation: guide generation, all five maintenance tests, generated-output no-drift check and browser/print checks pass. HTML SHA-256: a81b5e245e1e4dbc2ad0653e190723443fb52ece911706df507203802bb868df. Browser checks cover six widths, links, controls, nine companion viewers and print restoration, with no errors.\n\nGuide-only CI receipt: base 012de557257940cc66913c64012cf4d85e13fb91; all six changed paths are under docs/work-guide/. Both unchanged workflow triggers exclude that directory for pull_request and main push. Independent Standards and Specification review, provider readbacks and guarded merge remain required. Protection reads return the account-plan HTTP 403; repository procedural gates remain in force.\n",
     "state": "open",
-    "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
-    "updated_at": "2026-09-21T21:45:58Z",
+    "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
+    "updated_at": "2026-09-22T00:49:22Z",
     "draft": false,
     "head": {
-      "label": "jimmie-potts:codex/gh-6-unified-dashboard",
-      "ref": "codex/gh-6-unified-dashboard",
-      "sha": "a7db5eaa82e14f6f6d9c8f0df50f4220eb174f2a",
+      "label": "jimmie-potts:codex/pixoo-gh34-guide",
+      "ref": "codex/pixoo-gh34-guide",
+      "sha": "2c17dad2d433e7152ac377bbf9059ccf35d068c7",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -100,8 +100,8 @@
         "releases_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/releases{/id}",
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
-        "updated_at": "2026-09-21T21:57:32Z",
-        "pushed_at": "2026-09-21T21:57:27Z",
+        "updated_at": "2026-09-22T00:44:53Z",
+        "pushed_at": "2026-09-22T00:49:22Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 59,
+        "open_issues_count": 58,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 59,
+        "open_issues": 58,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -139,7 +139,7 @@
     "base": {
       "label": "jimmie-potts:main",
       "ref": "main",
-      "sha": "ccd56d0276f8c116c81271320c63c31f6099be42",
+      "sha": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -229,8 +229,8 @@
         "releases_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/releases{/id}",
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
-        "updated_at": "2026-09-21T21:57:32Z",
-        "pushed_at": "2026-09-21T21:57:27Z",
+        "updated_at": "2026-09-22T00:44:53Z",
+        "pushed_at": "2026-09-22T00:49:22Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 59,
+        "open_issues_count": 58,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 59,
+        "open_issues": 58,
         "watchers": 0,
         "default_branch": "main"
       }

@@ -1,30 +1,30 @@
 {
-  "reviewedAt": "2026-09-21T21:46:41.813820+00:00",
+  "reviewedAt": "2026-09-22T00:45:56.805493+00:00",
   "sourceRevisions": {
-    "agent-device-hub": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+    "agent-device-hub": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
     "codex-nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f",
     "divoom-app-upgrade": "28f4875b7a0f0e57ca6f25d9971e125e927a5503"
   },
   "files": [
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "docs/architecture.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/docs/architecture.md",
-      "sha256": "1beba82a1de821474516b61515f96f685a8bcf7fc033a0afd5a79861ecd238ac"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/docs/architecture.md",
+      "sha256": "d43f237d78a76b28d5830048ad0492d8d1c6dc7dfeaf8ab2119ef11ca04bcaea"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "docs/controller-contract.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/docs/controller-contract.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/docs/controller-contract.md",
       "sha256": "f43b99b568bb849023beecb30a08d423b5bc57e8553255c9f0b610defb9a5b19"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "packages/mcp/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/packages/mcp/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/packages/mcp/README.md",
       "sha256": "fe5f59ea69708b18435a60a279d5a10fbde9239a76efd48046fc6fbc84946b6a"
     },
     {
@@ -148,9 +148,9 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "packages/agent-state/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/packages/agent-state/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/packages/agent-state/README.md",
       "sha256": "cc06db6c8a82c88cb93b1f999fa621efadad9d4130e7f9d54521edfc892ffd14"
     },
     {
@@ -225,17 +225,24 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "apps/hub/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/apps/hub/README.md",
-      "sha256": "7163ddd730282ce06feb21f4a24e9e64b458a8a0367ca48e0f5c9a808f073081"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/apps/hub/README.md",
+      "sha256": "c82fb4ec95290b862cd2add2e7bc6925d9b2815657dda3474633d88c9a4594c9"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "path": "apps/hub/SETUP.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/apps/hub/SETUP.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/apps/hub/SETUP.md",
       "sha256": "f27cb6b3dc027677fb12daaf898e1da41c7ff09c2039103e3b71dc0922363fcf"
+    },
+    {
+      "repo": "agent-device-hub",
+      "path": "apps/dashboard/README.md",
+      "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/apps/dashboard/README.md",
+      "sha256": "682712e99fab71eb99448e802a55895d008ba580b312dc4985986447d05ad0d6"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
