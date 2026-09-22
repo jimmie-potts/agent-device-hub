@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T10:17:52.044843+00:00",
+  "fetchedAt": "2026-09-22T14:52:13.539262+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T06:15:11Z",
+      "pushedAt": "2026-09-22T14:50:13Z",
       "defaultBranch": "main",
-      "headSha": "dd00c7846d6f6da79a09948b925ddda0e9c342b7",
-      "mainCommitCount": 70,
+      "headSha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
+      "mainCommitCount": 71,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
+          "date": "2026-09-22T10:29:21Z",
+          "message": "Record the Nanoleaf device-aware state foundation in the guide (#159)"
+        },
         {
           "sha": "dd00c7846d6f6da79a09948b925ddda0e9c342b7",
           "date": "2026-09-22T06:15:11Z",
@@ -913,6 +918,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/157",
           "base": "main",
           "mergedAt": "2026-09-22T06:15:11Z"
+        },
+        {
+          "number": 159,
+          "title": "Record the Nanoleaf device-aware state foundation in the guide",
+          "createdAt": "2026-09-22T10:21:22Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/159",
+          "base": "main",
+          "mergedAt": "2026-09-22T10:29:21Z"
         }
       ],
       "openPRs": [
@@ -921,6 +934,13 @@
           "title": "Record 85HA keyboard and N30 mouse qualification findings",
           "createdAt": "2026-09-22T02:38:29Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
+          "base": "main"
+        },
+        {
+          "number": 160,
+          "title": "Add Pixoo general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T14:50:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/160",
           "base": "main"
         }
       ],
@@ -1160,7 +1180,7 @@
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-22T10:12:12Z",
+      "pushedAt": "2026-09-22T14:43:21Z",
       "defaultBranch": "main",
       "headSha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
       "mainCommitCount": 29,
@@ -1506,7 +1526,15 @@
           "mergedAt": "2026-09-22T10:12:12Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 66,
+          "title": "Expose native power, brightness and saved-scene controls on the controller API",
+          "createdAt": "2026-09-22T14:43:59Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/66",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 2,

@@ -1,3 +1,33 @@
+## September 22, 2026: Pixoo general controls candidate
+
+Hub PR #160 carries the source candidate for Hub #151: screen power,
+brightness, saved-playlist selection and the six playback actions in the
+existing Pixoo component view, one guarded controller v1 command each through
+the existing hub route. Content controls are disabled in Monitor with an explicit
+Media switch through the Pixoo integration mode operation, because Pixoo `main`
+c81bc31 declares controller v1 modes unsupported; the fake Pixoo now declares the
+real capabilities. OpenSpec change `gh-151-pixoo-general-controls` records the
+`unified-dashboard` delta. Nothing is installed or operated; #154 owns the
+display acceptance.
+
+This entry refreshes the three backlogs and the paginated history at
+2026-09-22T14:52Z. Hub #151 moved from ready to review, so it leaves the
+parallel candidate cards while it stays a primary open issue; the concurrent
+Nanoleaf #64 candidate (Nanoleaf PR #66, in review) is recorded the same way.
+The controls guide's Pixoo and Nanoleaf rows and its next step name both
+candidates. There are 94 primary open issues, 12 guides, nine viewers, 52
+roadmap nodes and 122 merged PRs in this snapshot. Ownership, transports,
+physical writers and pinned architecture viewers are unchanged: the browser
+remains a client of the hub route.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+HTML SHA-256 `685d9040864536449381d923d51ae306b60cb88c72744cf65409ebe2608eb1cd`.
+This candidate is a mixed change, so every configured CI job applies and the
+Pixoo view needs explicit human UI approval recorded on the PR. A linked
+follow-up will record merge, issue closure and acceptance facts unavailable
+before merge. Public guide publication and live verification remain separate
+and were not requested.
+
 ## September 22, 2026: General-control definition closeout
 
 Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical

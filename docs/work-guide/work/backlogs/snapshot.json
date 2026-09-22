@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-22T10:25:21.205894+00:00",
-  "refreshedAt": "2026-09-22T10:25:38.067276+00:00",
+  "startedAt": "2026-09-22T14:50:32.128594+00:00",
+  "refreshedAt": "2026-09-22T14:50:48.084264+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -179,11 +179,11 @@
       "openIssues": 20,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        21
       ],
-      "openPRs": 0,
+      "openPRs": 1,
       "prPageSizes": [
-        0
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -231,7 +231,7 @@
           "number": 41,
           "state": "CLOSED",
           "commentPages": [
-            5
+            6
           ],
           "commentBodiesStored": false
         },
