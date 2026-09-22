@@ -2084,3 +2084,25 @@ read/control credential. Saved consumers were reconciled, and authenticated
 read/control checks passed. Pixoo device acceptance remains separate.
 The refresh retains #30 as a direct closed reference without importing private
 operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
+
+
+## 2026-09-22 - Hub #137 current-status candidate
+
+Prepared best-effort current-turn selection in the shared reducer, agent-state
+2.0.0 and Hub 0.2.0, with unchanged snapshot/storage 1.0. The candidate guide
+records the delayed-unseen-start limit, old-store recovery, independent consumer
+policies and the separate installed Pixoo #34 retest. Reset #138 and history #139
+remain separate work. No hooks, personal service, state store or device changed.
+
+Refreshed all three backlogs and paginated history after incorporating PRs #135
+and #140. Their now-closed issues #30 and #63 remain reference links and leave
+open-work counts. Retained the added status/recovery/history roadmap tracks.
+The change affects reduction inside the existing state owner; no architecture
+component, ownership arrow, transport or physical writer changes, so diagram
+source pins and viewers remain unchanged.
+
+Generation, five maintenance tests and desktop/mobile/print browser checks pass.
+The candidate has 94 primary open issues, 12 guides and nine architecture viewers.
+Final source reviews, hosted CI, merge and immutable release receipts follow this
+candidate. A linked completion refresh will record facts unavailable before
+merge. Public guide publication and installed verification remain separate.

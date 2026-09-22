@@ -141,6 +141,18 @@ test('two sessions and consumer-scoped manual dismissal stay independent',async 
   assert.deepEqual(after.notices[0].acknowledgedBy,['nanoleaf','pixoo']);assert.deepEqual(unchanged,second);
 });
 
+test('fresh selection can recover activity while conflicting parent evidence stays unknown',async t=>{
+  const owner=await createAgentState(options());t.after(()=>owner.shutdown());
+  const parent=id=>({status:'known',identity:{...identity,sessionId:id}});
+  await owner.ingest({...hook('UserPromptSubmit','a'),parent:parent('first-parent')});
+  await owner.ingest({...hook('PermissionRequest','a',1001),parent:parent('other-parent')});
+  await owner.ingest({...hook('UserPromptSubmit','b',1002),parent:parent('first-parent')});
+  const session=owner.snapshot().sessions[0];
+  assert.equal(session.activity,'active');assert.equal(session.turn.id,'b');assert.equal(session.parent.status,'unknown');
+  assert.ok(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous'));
+  assert.equal(session.attention.length,1);
+});
+
 test('retired identities use a bounded FIFO across restart; retained completions outlive retry-key eviction',async t=>{
   const storage=new MemoryStorage();let owner=await createAgentState(options(storage));t.after(()=>owner.shutdown());
   await owner.ingest(hook('Stop','completed'));

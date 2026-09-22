@@ -7,16 +7,16 @@
 
 ## 2. Hook, consumer and distribution integration
 
-- [ ] 2.1 Exercise actual packaged hooks against the host for ordinary unordered lifecycle, duplicates, session isolation and privacy/authentication/deadlines; require the same behavior from the isolated new Hub archive.
+- [x] 2.1 Exercise actual packaged hooks against the host for ordinary unordered lifecycle, duplicates, session isolation and privacy/authentication/deadlines; require the same behavior from the isolated new Hub archive.
 - [x] 2.2 Verify both pinned real consumer projections using disposable state and fake device transports, including selected activity and independent completion acknowledgment.
-- [ ] 2.3 Publish candidate package versions in source, update exact build pins, and verify reproducible agent-state/Hub archives and external consumer imports with unchanged version 1.0 schemas.
+- [x] 2.3 Publish candidate package versions in source, update exact build pins, and verify reproducible agent-state/Hub archives and external consumer imports with unchanged version 1.0 schemas.
 
 ## 3. Documentation and whole-candidate validation
 
-- [ ] 3.1 Update state/architecture/development documentation and the installed-update runbook; inspect the stated evidence limits, version compatibility, hashes and no-reset procedure.
-- [ ] 3.2 Refresh the maintained guide inputs and narrative, regenerate HTML, and pass maintenance, browser/print and no-drift checks while retaining concurrent deliveries.
-- [ ] 3.3 Run all required build/type, controller/lifecycle/state/MCP, host/setup/package, workflow and applicable consumer checks; retain actual outcomes and the specification inventory outside the candidate commit.
-- [ ] 3.4 Synchronize affected specifications and archive this completed source change before final independent Standards/Specification review and hosted CI.
+- [x] 3.1 Update state/architecture/development documentation and the installed-update runbook; inspect the stated evidence limits, version compatibility, hashes and no-reset procedure.
+- [x] 3.2 Refresh the maintained guide inputs and narrative, regenerate HTML, and pass maintenance, browser/print and no-drift checks while retaining concurrent deliveries.
+- [x] 3.3 Run all required build/type, controller/lifecycle/state/MCP, host/setup/package, workflow and applicable consumer checks; retain actual outcomes and the specification inventory outside the candidate commit.
+- [x] 3.4 Synchronize affected specifications and archive this completed source change before final independent Standards/Specification review and hosted CI.
 
 ## Acceptance mapping and ownership
 

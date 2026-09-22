@@ -150,7 +150,8 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   if(eventDimension==='activity'){
     const conflict=previous&&previous.activity!=='unknown'&&previous.activity!==session.activity&&!orderedActivity&&!selectedStart&&!matchingStop;
     const missingStart=event.event.kind==='turn.started'&&event.turn.status==='unknown';
-    if(conflict||missingStart||ambiguous||session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')){
+    const unresolvedActivity=session.unavailable.some(item=>['turn','activity'].includes(item.dimension)&&item.reason==='ambiguous');
+    if(conflict||missingStart||unresolvedActivity){
       session.activity='unknown';unavailable(session,'activity','ambiguous');ambiguous=true;
     }
   }
