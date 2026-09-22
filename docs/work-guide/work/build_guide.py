@@ -9,6 +9,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import architecture_diagrams as AD  # noqa: E402  diagram definitions and rendered-file layout
+import guide_status as GS
+from guide_paths import PATHS, PARALLEL
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,10 +28,12 @@ for key, (repo, _) in REPOS.items():
     for issue in json.loads((ROOT / 'work' / 'backlogs' / f'{repo}-issues.json').read_text()):
         ISSUES[f'{key}{issue["number"]}'] = issue
 
+DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
+
 GUIDES = [
     dict(id='local-acceptance', short='Local acceptance', title='Completed local Codex control and physical acceptance', phase='Local release',
          intro='Pixoo and Nanoleaf local Codex acceptance are complete. The Pixoo reliability observations are accepted for the current uniform-500-ms profile; variable timing has its own follow-up.',
-         headers=['Work', 'Issues', 'Remaining work'], rows=[
+         headers=['Work', 'Issues', 'Accepted result'], rows=[
              ['Completed / Local Codex → Nanoleaf', '[[N34]]', 'Completed through Nanoleaf PR #50. The closing receipt records installation, actual Windows/WSL routes, physical observations and restoration under its scoped hosted-CI exception.'],
              ['Completed / Local Codex → Pixoo', '[[P26]]', 'Completed baseline, excluded from remaining-work counts. Reviewed delivery through Pixoo PR #50 records installed WSL-client checks, physical controls, restoration and credential revocation.'],
              ['Completed / Pixoo reliability', '[[P12]]', 'Pixoo PR #54 delivered the compatibility fix and accepted local evidence. All five merged-main jobs passed before closure. Variable timing remains unverified in [[P55]]; the current uniform-500-ms profile is unchanged.'],
@@ -58,7 +62,6 @@ GUIDES = [
              ['Deferred reliable event history', '[[H139]]', 'Define capture, ordering, retention and inspection guarantees separately from best-effort current status. The bounded diagnostic journal is not complete history. This refinement does not block current status, per-task reset or Pixoo acceptance.'],
              ['Service memory budget and hardening', '[[H123]]', 'The owner raised the Linux/WSL service RSS budget from 128 to 256 MiB. Re-evaluate budgets and reduce measured memory use in this backlog follow-up; it does not block Hub #5. Original failed measurements remain retained; the budget revision is not an optimization or complete integrated qualification.'],
              ['Completed / Personal Nanoleaf installation', '[[N30]]', 'The owner narrowed #30 to a one-off Linux/WSL update and real Codex Desktop/CLI-to-light checks. Both real tasks reached the shared owner and Nanoleaf without duplicate identities. Shared input survived service restart, and the owner observed task-related light color changes. Quiet, Free and Work returned confirmed transmission, ending in Work; the existing wall map rendered without page errors. The issue is closed. Pixoo is also registered with new-turn notice clearing and a private read/control credential; its own installed acceptance remains separate. No reusable updater, formal rollback, Windows/Claude or broader performance qualification is claimed.'],
-             ['Separate / Current status, task recovery and history', '[[H137]] [[H138]] [[H139]]', 'Hub #137 delivered best-effort current status for successive unordered Codex turns. Hub #138 follows that delivered input with an explicit per-task reset. Hub #139 is deferred refinement for reliable history; neither reset nor reliable history blocks the current-status fix or Pixoo #34. These source changes remain separate from Hub #30 timing and recovery qualification of the pinned consumers.'],
              ['Completed / Everyday standalone qualification', '[[H30]] [[P34]]', 'Qualify the standalone Linux/WSL hub with real Pixoo/Nanoleaf consumers, synthetic input and fake device transports. Measure hook return and consumer receipt for one task and a realistic concurrent profile, with a short 50-task overload check. Cover dashboard connection/reconnect, an ordinary integration control, one unavailable consumer and host restart. Reuse existing migration and presentation regressions; omit embedded-host and production rollback qualification. The delivered command has a passing 400-warm-event source receipt: hook p95 58/78 ms for one/ten tasks, both consumer receipt p95 values below one second, and peak Hub RSS 151 MiB. All 487 hooks met the hard deadline; the 50-task burst, dashboard/reconnect, real Pixoo control, consumer outage and restart scenarios passed. Eight development attempts and all four full runs are retained. The final run adds confined preparation and positive dashboard reconnect evidence required by review. PR #135 merged as 8411413 after both independent reviews and all six PR checks passed. All six merged-main checks passed before #30 closed. Practical targets were fixed before runs; retain the 3,000 ms hard hook deadline, 256 MiB service RSS ceiling, bounded resources, isolation and cleanup. Historical percentile ceilings remain diagnostic for #30. Installed-client and physical acceptance stay in their owning issues; they are not #30 closure gates.'],
              ['Completed / Bounded cross-device compatibility', '[[H9]]', 'Verify one standalone Linux/WSL combination through the real dashboard, Hub and Pixoo/Nanoleaf consumer code with fake physical boundaries. Cover everyday Codex states, two sessions in one project, one Claude smoke test, labels, monitor acknowledgment and representative frontend/MCP integration controls. Check duplicate/late events, one unavailable consumer and restart. Reuse detailed contract, MCP and migration tests; no repeated cutover/rollback suite or older-version matrix. Record one concise results table. The delivered #30 report supplies the performance input; installed-client and physical acceptance stay separately owned. PR #136 merged as 4f90164 after both independent final reviews and all six PR checks passed. All six merged-main checks passed before #9 closed. Its twelve source scenarios pass, all five reduced acceptance criteria are checked, and the seven-task OpenSpec plan is archived.'],
          ], notes=[
@@ -107,14 +110,14 @@ GUIDES = [
              '<a href="https://github.com/jimmie-potts/agent-device-hub/pull/59" target="_blank" rel="noopener noreferrer">PC-lighting documentation PR #59</a> is merged and remains separate from desktop controls. All eleven follow-up issues are deferred backlog work requiring refinement; this guide performs no qualification, installation or device operations.',
          ]),
     dict(id='desktop-controls', short='Desktop controls', title='Add Wispr, Codex mouse actions and later desk presets', phase='Independent shortcuts, then shared presets',
-         intro='[[H63]] is closed after documentation PR #140 merged. [[H64]] remains available for independent qualification; no hardware or app acceptance is claimed. The other seven issues are blocked by their prerequisites. <strong>Wispr and basic Codex mouse controls can ship without the hub, shared monitoring, general controls or Music.</strong> Wispr retains its own service requirements.',
+         intro='[[H63]] is closed after documentation PR #140 merged. [[H64]] is in review and still blocked; its open PR does not establish acceptance. The other seven issues retain their own prerequisites. <strong>Wispr and basic Codex mouse controls can ship without the hub, shared monitoring, general controls or Music.</strong> Wispr retains its own service requirements.',
          headers=['Work', 'Owning issue', 'Required prerequisites and result'], rows=[
              ['Documentation', '[[H63]]', 'No source prerequisite. The <a href="https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/desktop-controls.md" target="_blank" rel="noopener noreferrer">desktop-control document</a> records accepted defaults, control profiles, desk presets and evidence boundaries. PC-lighting PR #59 is merged and remains separate.'],
-             ['Hardware and Wispr qualification', '[[H64]]', 'None. In a future session, qualify exposed remappable controls, hold/release behavior, app focus and supported interfaces. The mouse model/edition remains unverified; Retro R8 is a candidate.'],
-             ['Independent / Local controls', '[[H65]]', 'Requires [[H63]] and [[H64]]. Big A: hold to dictate, release to insert through Wispr Flow. The integration adds no automatic send action. Codex mouse actions: next task needing attention, command menu, previous task and next task. Preserve ordinary mouse behavior outside Codex.'],
+             ['Hardware and Wispr qualification', '[[H64]]', 'Qualification is under review in Hub PR #143. Resolve missing held-input, app-focus and shortcut evidence before implementation; read the issue for the current model findings and separately authorized checks.'],
+             ['Independent / Local controls', '[[H65]]', 'Requires [[H63]] and [[H64]]. Version 1 defaults: Big B holds Ctrl+Win for Wispr and releases to insert. Big A sends Enter only on a separate deliberate press. Both bindings are user-editable; dictation release never automatically sends Enter. Codex mouse actions: next task needing attention, command menu, previous task and next task. Preserve ordinary mouse behavior outside Codex.'],
              ['Independent / Local acceptance', '[[H66]]', 'Requires [[H65]]. Separately authorize installation, real input and app checks, release recovery and restoration. This delivery does not require shared device presets.'],
              ['Shared / Work, Free and Quiet', '[[H67]]', 'Requires [[H63]], Codex-first milestone [[H32]], general-control definition [[H31]], standalone host [[H5]], [[N49]] and [[P33]]. Define supported actions and participation through existing owners.'],
-             ['Shared / Big B and feedback', '[[H68]]', 'Requires [[H65]] and [[H67]]. Each fresh press cycles Work → Free → Quiet → Work through the hub, with visible requested and partial/failed/uncertain results. Manual dispatch does not require automation engine [[H45]].'],
+             ['Shared / Selected preset binding and feedback', '[[H68]]', 'Requires [[H65]] and [[H67]]. An explicitly selected qualified binding cycles Work → Free → Quiet → Work through the hub, with visible requested and partial/failed/uncertain results. Manual dispatch does not require automation engine [[H45]].'],
              ['Shared / Handoff and restoration', '[[H69]]', 'Requires [[H68]] and lifecycle setup [[H8]]. Verify selected device results and manual handoff separately from transport. Additional devices require their own qualification and acceptance.'],
              ['Later / Custom mappings and profiles', '[[H70]]', 'Requires [[H65]]. Cover every hardware-exposed remappable control, saved profiles, supported app/hub actions and custom shortcuts. Local profile editing stays useful without optional preset or Music providers.'],
              ['Later / Music preset', '[[H71]]', 'Requires [[H68]], playback [[H36]] and policy owner [[H40]]. Add presentation prerequisites [[H38]] and/or [[H39]] only for selected branches. [[H41]] is conditional on measured-audio effects.'],
@@ -186,6 +189,7 @@ GUIDES = [
              ['Guide-only CI', 'Completed [[H100]]', 'Hub #100 is closed and PR #101 merged the guide-only path filters. Both automatic Hub workflows exclude changes entirely under docs/work-guide/, including generators and tests. Local guide checks and independent review remain required. Guide UI changes do not require human approval; all other UI changes do. Mixed changes retain normal CI; verify filter applicability for each delivery.'],
              ['Optional Pixoo job consolidation', '[[P47]]', 'Pixoo #46 is complete. Assess whether setup savings justify changing the job layout when #47 is separately selected.'],
              ['Shared OpenSpec tooling', '[[H10]] → ([[N31]] + [[P38]])', 'Publish the common package, then adopt it while preserving repository-specific checks.'],
+             ['Guide story status and reading paths', '[[H148]]', 'Make issue-link status explicit, foreground the next action and keep completed evidence expandable. Publish the reviewed repository guide and public edition.'],
              ['Guide connector visibility', '[[H73]]', 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite delivery does not repair it or authorize evaluation runs.'],
              ['Public work guide', 'Completed [[H80]]', 'Public hosting acceptance is complete. The September 21 readback verified the previous edition’s landing page and all eight viewers without authentication, with every served hash matching its reviewed source. Future editions still require a separate reviewed publication PR, successful Pages deployment and a live hash check of every published HTML file.'],
              ['Guide workflow checkpoints', 'Completed [[H83]]', 'Hub PR #88, Pixoo PR #56 and Nanoleaf PR #59 adopted the shared checkpoints delivered in <a href="https://github.com/jimmie-potts/agent-skills/issues/33" target="_blank" rel="noopener noreferrer">agent-skills #33</a> through the existing Hub maintenance and publication procedure. Public guide PR #2 deployed the reviewed source; its landing page and all eight viewers passed unauthenticated served-hash checks. Hub #83 is closed as completed. The external prerequisite remains a reference outside these three-repository issue totals.'],
@@ -225,14 +229,39 @@ METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], staticSnapshot=True, openIs
                                                                                  viewerSha256=receipt_by_id[d['id']]['artifact']['sha256']) for d in AD.DIAGRAMS],
                                   countedInIssueTotals=False))
 
-def link(match):
-    key = match.group(1)
+def issue_link(key):
     issue = ISSUES[key]
+    dependencies = DEPENDENCIES.get(key, [])
+    status = GS.issue_status(issue, dependencies)
+    symbol, status_text = GS.STATUS[status]
+    if status in ('in-progress', 'review') and GS.is_blocked(issue, dependencies):
+        status_text += ' · blocked'
     label = f'{REPOS[key[0]][1]} #{issue["number"]}'
-    return f'<a class="issue repo-{key[0]}" data-issue="{key}" data-state="{issue["state"]}" href="{html.escape(issue["url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="{html.escape(issue["title"], quote=True)}"><span>{label}</span><span aria-hidden="true" class="external">↗</span><span class="sr-only">: {html.escape(issue["title"])} ({issue["state"].lower()}; opens in GitHub)</span></a>'
+    title = html.escape(f'{label}: {issue["title"]} ({status_text}; opens in GitHub)', quote=True)
+    return f'<a class="issue repo-{key[0]}" data-issue="{key}" data-state="{issue["state"]}" data-status="{status}" href="{html.escape(issue["url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="{title}" aria-label="{title}"><span class="status-symbol" aria-hidden="true">{symbol}</span><span class="issue-id">{label}</span><span class="issue-status">{status_text}</span><span aria-hidden="true" class="external">↗</span></a>'
+
 
 def render(text):
-    return re.sub(r'\[\[([HNP]\d+)\]\]', link, text)
+    return re.sub(r'\[\[([HNP]\d+)\]\]', lambda match: issue_link(match.group(1)), text)
+
+
+def gate_text(key):
+    issue = ISSUES[key]
+    dependencies = DEPENDENCIES.get(key, [])
+    blockers = GS.open_blockers(dependencies)
+    if issue['state'] == 'CLOSED':
+        return 'Closed in this snapshot. Read the owning receipt for its accepted scope.'
+    if blockers:
+        names = ', '.join(f'{d["repository"]["nameWithOwner"].split("/")[-1]} #{d["number"]}' for d in blockers)
+        return f'Waiting for {html.escape(names)}.'
+    if 'blocked' in GS.labels(issue):
+        return 'Blocked label remains. Reconcile the issue body and evidence; no open GitHub prerequisite is recorded.'
+    if 'deferred' in GS.labels(issue):
+        return 'Deferred. Select and refine its scope before scheduling.'
+    if GS.issue_status(issue, dependencies) in ('in-progress', 'review'):
+        return 'Work is underway. Coordinate with the current owner.'
+    return 'No recorded open prerequisite. Confirm the issue scope and owner before starting.'
+
 
 nav = []
 sections = []
@@ -241,15 +270,39 @@ for index, guide in enumerate(GUIDES, 1):
     count = len(coverage[guide_id])
     content = json.dumps(guide)
     assert set(coverage[guide_id]) <= set(re.findall(r'\[\[([HNP]\d+)\]\]', content)), f'Missing primary links in {guide_id}'
-    nav.append(f'<a href="#{guide_id}" data-guide="{guide_id}"><span class="nav-number">{index:02}</span><span>{guide["short"]}</span><span class="nav-count">{count:02}</span></a>')
+    nav.append(f'<a href="#{guide_id}" data-guide="{guide_id}"><span class="nav-number">{index:02}</span><span>{guide["short"]}</span><span class="nav-count" aria-label="{count} open issues">{count:02}</span></a>')
     headings = ''.join(f'<th scope="col">{heading}</th>' for heading in guide['headers'])
-    rows = ''.join('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{render(cell)}</td>' for n, cell in enumerate(row)) + '</tr>' for row in guide['rows'])
+    remaining, closed = [], []
+    for row in guide['rows']:
+        owners = re.findall(r'\[\[([HNP]\d+)\]\]', row[1])
+        destination = closed if owners and all(ISSUES[key]['state'] == 'CLOSED' for key in owners) else remaining
+        # The issue chip owns status; avoid repeating "Completed" in row labels.
+        cells = [re.sub(r'^Completed(?: / | )', '', cell) for cell in row]
+        destination.append('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{render(cell)}</td>' for n, cell in enumerate(cells)) + '</tr>')
+    def table(rows, caption):
+        return f'<table><caption class="sr-only">{guide["title"]}: {caption}</caption><thead><tr>{headings}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+    work = '<h3 class="work-heading">Remaining work</h3>' + table(remaining, 'remaining work and dependencies') if remaining else '<p class="all-done">✓ No open stories owned by this guide.</p>'
+    completed = f'<details class="delivery-evidence"><summary>Closed stories and delivery evidence <span>{len(closed)} rows</span></summary>{table(closed, "closed stories and accepted scope")}</details>' if closed else ''
     notes = ''.join(f'<p>{render(note)}</p>' for note in guide['notes'])
+    outcome, next_action, next_keys = PATHS[guide_id]
+    gates = ''.join(f'<li>{issue_link(key)}<span>{gate_text(key)}</span></li>' for key in next_keys)
     sections.append(f'''<details class="guide" id="{guide_id}" data-count="{count}" data-primary="{' '.join(coverage[guide_id])}" open>
-      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} {'issue' if count == 1 else 'issues'}</span><span class="chevron" aria-hidden="true">−</span></summary>
-      <div class="guide-body"><p class="intro">{render(guide['intro'])}</p>
-      <table><caption class="sr-only">{guide['title']}: work, issues, and dependencies</caption><thead><tr>{headings}</tr></thead><tbody>{rows}</tbody></table>
-      <div class="guide-notes">{notes}</div><a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>''')
+      <summary><span class="guide-number">{index:02}</span><span class="guide-heading"><span class="eyebrow">{guide['phase']}</span><h2>{guide['title']}</h2></span><span class="guide-count">{count} open</span><span class="chevron" aria-hidden="true">−</span></summary>
+      <div class="guide-body"><p class="intro">{outcome}</p>
+      <div class="next-action"><h3>Next step</h3><p>{next_action}</p><ul class="next-issues">{gates}</ul></div>
+      {work}{completed}
+      <details class="guide-evidence"><summary>Context, evidence and boundaries</summary><div class="guide-notes"><p>{render(guide['intro'])}</p>{notes}</div></details>
+      <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>''')
+
+parallel_cards, waiting_cards = [], []
+for key, title, guide_id, description in PARALLEL:
+    state = GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, []))
+    card = f'<article class="parallel-unit" data-unit="{key}" data-scheduling="{state}"><h3>{title}</h3>{issue_link(key)}<p>{description}</p><p class="unit-gate">{gate_text(key)}</p><a href="#{guide_id}">Read this work guide →</a></article>'
+    (parallel_cards if state == 'candidate' else waiting_cards).append(card)
+parallel_section = '<section class="parallel-plan" aria-labelledby="parallel-title"><div class="eyebrow">Independent work units</div><h2 id="parallel-title">What can move in parallel</h2><p>These units have separate deliverables and no recorded open prerequisites in this snapshot. Select an owner for each; keep shared contracts and guide merges coordinated. Run performance measurements without competing benchmarks. Physical trials still need their own authorization.</p><div class="parallel-grid">' + ''.join(parallel_cards) + '</div>'
+if waiting_cards:
+    parallel_section += '<h3>Hold or coordinate first</h3><div class="parallel-grid">' + ''.join(waiting_cards) + '</div>'
+parallel_section += '<p class="parallel-boundary">Keep dependent stages in order: Nanoleaf state → worker → effects; each new-device qualification → controller → status → acceptance; input qualification → local shortcuts. General controls wait for the Codex milestone; music and desk presets follow their own gates.</p></section>'
 
 # --- Architecture reference section -----------------------------------------
 STATUS_NAMES = {'implemented': 'Implemented source', 'planned': 'Planned composition', 'future': 'Future work'}
@@ -282,7 +335,7 @@ architecture_section = f'''<details class="reference" id="architecture" data-dia
 
 # --- Timeline: where we've been, where we're going --------------------------
 totals = TIMELINE['totals']
-timeline_section = f'''<details class="reference timeline" id="timeline" open>
+timeline_section = f'''<details class="reference timeline" id="timeline">
       <summary><span class="guide-number">T</span><span class="guide-heading"><span class="eyebrow">Map · where we've been and where we're going</span><h2>Delivery history and ordered roadmap</h2></span><span class="guide-count">{totals['merged']} merged</span><span class="chevron" aria-hidden="true">−</span></summary>
       <div class="guide-body">
       <div class="chips" role="group" aria-label="Highlight a repository"><button type="button" class="repo-chip" data-repo="all" aria-pressed="true">All</button><button type="button" class="repo-chip repo-H" data-repo="H" aria-pressed="false">Hub</button><button type="button" class="repo-chip repo-N" data-repo="N" aria-pressed="false">Nanoleaf</button><button type="button" class="repo-chip repo-P" data-repo="P" aria-pressed="false">Pixoo</button></div>
@@ -358,6 +411,9 @@ CSS += '''
 @media print{@page{size:A4;margin:16mm}html{scroll-behavior:auto}body{background:white!important;color:#17212e!important;font:10pt/1.5 Arial,sans-serif}.sidebar,.topbar,.hero-art,.toolbar,.search-meta,.overview,.back-top,.chevron,.empty-state,.skip,.footer>a{display:none!important}.shell{display:block}main{padding:0}.hero{padding:0 0 18px;overflow:visible}.hero::before{display:none}h1{font-size:31pt;margin:10px 0}h1 span{color:#153542!important;text-shadow:none}.hero-copy,.document-note,.guide-notes p,.intro,.recommendation p,.footer{color:#384756!important}.eyebrow,.guide-heading .eyebrow{color:#465767!important}.stats{max-width:100%;background:transparent;border-color:#abb5bc;margin:18px 0 0}.stat{padding:12px 15px}.stat+.stat{border-color:#abb5bc}.stat strong{font-size:23pt;color:#17212e}.stat span{color:#384756}.repo-legend{margin:12px 0}.repo-legend a{color:#17212e}.repo-legend a::before{box-shadow:none;background:#475c6c}.guide,.guide[hidden]{display:block!important;background:white;border:1px solid #bdc6cd;margin:0 0 19px;overflow:visible}.guide::before{display:none}.guide summary{display:flex;padding:15px 16px;break-after:avoid;cursor:default}.guide-heading h2{font:600 15pt/1.3 Arial,sans-serif;color:#17212e}.guide-number{color:#1b6872;font-size:18pt}.guide-count{color:#384756;border-color:#bdc6cd}.guide-body{padding:0 16px 15px}.guide table{display:table;table-layout:fixed;font-size:9pt}.guide thead{display:table-header-group}.guide tbody{display:table-row-group}.guide tr{display:table-row;break-inside:avoid}.guide th,.guide td{display:table-cell;width:auto;padding:8px;line-height:1.55;color:#263b4a;border-color:#cbd2d8}.guide th{background:#edf2f4;color:#344553}.guide th:nth-child(1){width:25%}.guide th:nth-child(2){width:28%}.guide th:nth-child(3){width:47%}.guide td:first-child{color:#17212e}.issue{color:#145565!important;background:transparent;border:1px solid #b9cbd0;font:8pt/1.4 Consolas,monospace;padding:2px 4px;box-shadow:none!important}.external{display:none}.intro .issue,.guide-notes .issue,.recommendation .issue{font-size:8pt}.guide-notes{border-color:#879ca8}.guide-notes p{font-size:9pt}.guide-notes strong,.recommendation strong{color:#17212e}.recommendation{background:white;border-color:#879ca8;break-inside:avoid;margin:20px 0}.recommendation h2{color:#17212e}.footer{font-size:8pt;border-color:#879ca8}.print-only{display:block;font:9pt/1.5 Arial,sans-serif;color:#384756}.document-note{font-size:9pt}}
 '''
 
+CSS = CSS.replace('.guide summary', '.guide > summary').replace('.reference summary', '.reference > summary')
+CSS += (ROOT / 'work/guide_reading.css').read_text()
+
 JS = '''
 (() => {
  // .guide elements are the counted work guides; .reference sections (timeline,
@@ -365,6 +421,7 @@ JS = '''
  // without joining the issue accounting.
  const guides = [...document.querySelectorAll('.guide')];
  const refs = [...document.querySelectorAll('.reference')];
+ const evidence = [...document.querySelectorAll('.delivery-evidence,.guide-evidence')];
  const sections = [...guides, ...refs];
  const figures = [...document.querySelectorAll('.diagram')];
  const architecture = document.querySelector('#architecture');
@@ -379,14 +436,15 @@ JS = '''
  const normal = value => value.toLocaleLowerCase().replace(/\\s+/g, ' ').trim();
  const haystacks = new Map([...guides, ...figures].map(g => [g, normal(g.textContent)]));
  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
- const snapshot = () => ({open: sections.map(s => s.open), hidden: sections.map(s => s.hidden), figures: figures.map(f => f.hidden), nav: navLinks.map(a => a.hidden)});
- const restore = state => { sections.forEach((s, i) => { s.open = state.open[i]; s.hidden = state.hidden[i]; }); figures.forEach((f, i) => f.hidden = state.figures[i]); navLinks.forEach((a, i) => a.hidden = state.nav[i]); };
+ const snapshot = () => ({open: sections.map(s => s.open), evidence: evidence.map(s => s.open), hidden: sections.map(s => s.hidden), figures: figures.map(f => f.hidden), nav: navLinks.map(a => a.hidden)});
+ const restore = state => { evidence.forEach((s, i) => s.open = state.evidence[i]); sections.forEach((s, i) => { s.open = state.open[i]; s.hidden = state.hidden[i]; }); figures.forEach((f, i) => f.hidden = state.figures[i]); navLinks.forEach((a, i) => a.hidden = state.nav[i]); };
  let saved = null;
  function filter() {
    const query = normal(search.value);
    if (query && !saved) saved = snapshot();
    let count = 0, issues = 0, diagrams = 0;
    if (query) {
+     evidence.forEach(s => s.open = true);
      guides.forEach(g => { const show = haystacks.get(g).includes(query); g.hidden = !show; navById.get(g.id).hidden = !show; if (show) { count++; issues += Number(g.dataset.count); g.open = true; } });
      figures.forEach(f => { const show = haystacks.get(f).includes(query); f.hidden = !show; if (show) diagrams++; });
      architecture.hidden = diagrams === 0; navById.get('architecture').hidden = diagrams === 0; if (diagrams) architecture.open = true;
@@ -401,8 +459,8 @@ JS = '''
  search.addEventListener('input', filter);
  search.addEventListener('keydown', e => { if (e.key === 'Escape') { search.value = ''; filter(); } });
  clear.addEventListener('click', () => { search.value = ''; filter(); search.focus(); });
- document.querySelector('#expand-all').addEventListener('click', () => sections.filter(s => !s.hidden).forEach(s => s.open = true));
- document.querySelector('#collapse-all').addEventListener('click', () => sections.filter(s => !s.hidden).forEach(s => s.open = false));
+ document.querySelector('#expand-all').addEventListener('click', () => [...sections, ...evidence].filter(s => !s.closest('[hidden]')).forEach(s => s.open = true));
+ document.querySelector('#collapse-all').addEventListener('click', () => [...sections, ...evidence].filter(s => !s.closest('[hidden]')).forEach(s => s.open = false));
  const setCurrent = id => navLinks.forEach(a => { if (navId(a) === id) a.setAttribute('aria-current', 'location'); else a.removeAttribute('aria-current'); });
  function reveal(id) {
    const figure = figures.find(f => f.id === id);
@@ -425,7 +483,7 @@ JS = '''
    sections.forEach(s => observer.observe(s));
  }
  let beforePrint = null;
- window.addEventListener('beforeprint', () => { if (!beforePrint) beforePrint = snapshot(); sections.forEach(s => {s.open = true; s.hidden = false;}); figures.forEach(f => f.hidden = false); });
+ window.addEventListener('beforeprint', () => { if (!beforePrint) beforePrint = snapshot(); [...sections, ...evidence].forEach(s => {s.open = true; s.hidden = false;}); figures.forEach(f => f.hidden = false); });
  window.addEventListener('afterprint', () => { if (beforePrint) restore(beforePrint); beforePrint = null; });
  document.querySelector('#print').addEventListener('click', () => window.print());
  // Diagram zoom, fit, drag-to-pan and the optional inline Archify viewer.
@@ -494,21 +552,29 @@ document = '''<!doctype html>
 <div class="sidebar-foot"><span><i class="snapshot-dot" aria-hidden="true"></i>BACKLOG SNAPSHOT</span><span>@@DATE@@ / @@PROJECTS_PADDED@@ PROJECTS</span><span>Issue links open GitHub ↗</span></div></aside>
 <main id="main"><header class="topbar"><div class="breadcrumb"><span>PLANNING</span> / CROSS-PROJECT GUIDE</div><time class="date" datetime="@@ISO@@">@@DATE@@</time></header>
 <section class="hero" aria-labelledby="document-title"><div class="eyebrow">One shared system · @@GUIDE_COUNT@@ work guides</div><h1 id="document-title">Agent device<br><span>work guides.</span></h1>
-<p class="hero-copy">The remaining work across the hub, Nanoleaf, and Pixoo. Grouped by outcome, with dependencies and a practical order for delivery.</p>
+<p class="hero-copy">See what is complete, what needs attention, and which independent units can move next across the hub, Nanoleaf and Pixoo.</p>
 <svg class="hero-art" viewBox="0 0 250 220" fill="none" aria-hidden="true"><g stroke="#22d3ee" opacity=".10" stroke-width="10"><path d="m125 20 70 40v80l-70 40-70-40V60Z"/><path d="m55 60 70 40 70-40m-70 40v80"/></g><g stroke="#22d3ee" stroke-width="1.4"><path d="m125 20 70 40v80l-70 40-70-40V60Z"/><path d="m55 60 70 40 70-40m-70 40v80"/><path d="M125 20v-9M195 140l20 12M55 140l-20 12"/></g><path d="m125 43 50 29v56l-50 29-50-29V72Z" stroke="#e879f9" opacity=".55"/><g fill="#22d3ee"><circle cx="125" cy="20" r="3"/><circle cx="195" cy="140" r="3"/><circle cx="55" cy="140" r="3"/><circle cx="125" cy="100" r="4"/></g><path d="M23 191h60m23 0h73m10 0h33M23 198h25m8 0h111" stroke="#22d3ee" opacity=".3"/></svg>
 <div class="stats" aria-label="Snapshot totals"><div class="stat"><strong>@@TOTAL@@</strong><span>OPEN ISSUES</span></div><div class="stat"><strong>@@GUIDE_COUNT@@</strong><span>WORK GUIDES</span></div><div class="stat"><strong>@@PROJECTS_PADDED@@</strong><span>PROJECTS</span></div></div>
 <div class="repo-legend" aria-label="Repository key"><a class="repo-H" href="https://github.com/jimmie-potts/agent-device-hub/issues" target="_blank" rel="noopener noreferrer">Hub <b>@@H_COUNT@@</b></a><a class="repo-N" href="https://github.com/jimmie-potts/codex-nanoleaf/issues" target="_blank" rel="noopener noreferrer">Nanoleaf <b>@@N_COUNT@@</b></a><a class="repo-P" href="https://github.com/jimmie-potts/divoom-app-upgrade/issues" target="_blank" rel="noopener noreferrer">Pixoo <b>@@P_COUNT@@</b></a></div></section>
-<section class="overview" aria-label="Main product sequence"><div class="eyebrow">Main product sequence</div><div class="path"><a href="#local-acceptance">Local acceptance</a><span class="arrow" aria-hidden="true">→</span><a href="#shared-codex">Shared Codex integration</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">General controls</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">Music</a><span class="arrow" aria-hidden="true">→</span><a href="#assistant-access">Assistant</a></div><p><strong>Independent shortcut path:</strong> <a href="#desktop-controls">Desktop documentation + qualification → local Wispr/mouse controls → local acceptance</a>. This path does not wait for the shared hub. PC lighting, other device features, presentation, hosting and maintenance have their own sequences below. The <a href="#timeline">timeline map</a> shows delivered history and the ordered roadmap; the <a href="#architecture">architecture section</a> shows how the pieces fit.</p></section>
+<section class="overview" aria-labelledby="route-title"><div class="eyebrow">Where the work stands</div><h2 id="route-title">The shared foundation is delivered. Reconcile the milestone, then choose a track.</h2>
+<div class="route-grid"><article><h3>Delivered</h3><p>Local device control, shared state, the standalone host, integration UI and scoped Pixoo/Nanoleaf acceptance.</p><a href="#local-acceptance">Local acceptance</a> · <a href="#shared-codex">Shared delivery evidence</a></article>
+<article><h3>Next decision</h3><p>Hub #32 still has an open milestone checklist and blocked label. Reconcile it with the completed child stories before general controls.</p><a href="#shared-codex">Review the milestone</a></article>
+<article><h3>Independent work</h3><p>Nanoleaf device foundations, Pixoo embedded performance and separate device qualification can be selected alongside that review.</p><a href="#parallel-work">Compare parallel units</a></article></div>
+<div class="path"><a href="#shared-codex">Codex milestone</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">General controls</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">Music</a><span class="arrow" aria-hidden="true">→</span><a href="#assistant-access">Assistant</a></div></section>
+<section class="issue-legend" aria-label="Issue status key"><h2>Read status on the issue link</h2><div><span class="status-key" data-status="open"><span aria-hidden="true">○</span> Open</span><span class="status-key" data-status="in-progress"><span aria-hidden="true">◐</span> In progress</span><span class="status-key" data-status="review"><span aria-hidden="true">◐</span> In review</span><span class="status-key" data-status="blocked"><span aria-hidden="true">⊘</span> Blocked</span><span class="status-key" data-status="completed"><span aria-hidden="true">✓</span> Completed</span><span class="status-key" data-status="closed"><span aria-hidden="true">−</span> Closed</span></div><p>Completed means the issue closed as completed within its own scope. Closed alone does not claim delivery. In-progress and review links retain a blocked qualifier when needed. Counts show open stories; closed evidence is expandable.</p></section>
 <p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. This document does not refresh issue status automatically.</p>
+<div id="parallel-work">''' + parallel_section + '''</div>
 <div class="guides references">''' + timeline_section + '''</div>
 <div class="toolbar" aria-label="Document controls"><div class="search-wrap"><label class="sr-only" for="search">Search guides by topic, device, or issue</label><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m12 12 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="search" type="search" placeholder="Find a topic, device, or issue…" autocomplete="off"></div><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button><button id="print" type="button">Print / PDF</button></div>
 <div class="search-meta"><span id="result-count" role="status" aria-live="polite">@@GUIDE_COUNT@@ guides · @@TOTAL@@ issues in these guides · @@DIAGRAM_COUNT@@ diagrams</span><button id="clear-search" type="button" hidden>Clear search</button><span>Use an issue link to open its full scope ↗</span></div>
 <div id="empty-state" class="empty-state" hidden><h2>No matching guides or diagrams</h2><p>Try a device name, topic, or issue such as “Pixoo #37”.</p></div>
 <div class="guides">''' + ''.join(sections) + '''</div>
 <div class="guides references">''' + architecture_section + '''</div>
-<section class="recommendation" aria-labelledby="next-title"><div class="eyebrow">Suggested next source work</div><h2 id="next-title">Build consumers on the delivered shared host.</h2><p>''' + render('The source contract in <strong>[[H2]]</strong> is delivered. PR #77 merged the early Linux baseline and budgets for <strong>[[H30]]</strong>. <strong>[[H3]]</strong> is closed. PR #105 merged its source, agent-state 1.0.0 is released, and all five applicable merged-main checks passed after PR #108 repaired CI setup. The first host is delivered. <strong>[[P31]]</strong> is closed after PR #60 and all five merged-main checks passed. It provides private durable ownership, authenticated admission, selected-owner reads and explicit cutover. Nanoleaf [[N29]] is closed after PR #62 delivered explicit shared input through the existing worker; all nine PR and nine merged-main jobs passed. [[H8]] source setup is delivered. [[N30]] is closed after the personal Linux/WSL update, real Desktop/CLI delivery, restart checks and owner-observed task light changes. The installation finished in Work. Pixoo has a configured shared consumer and private read/control credential; its device acceptance remains separate. Pixoo dashboard [[P32]] is closed after PR #63 and all five PR and five merged-main checks passed. The renderer and authenticated preview are now connected through [[P33]], closed after PR #64 and all five PR and five merged-main jobs passed. Explicit Monitor/Media controls use the sole Player writer, while restart and screen-on remain passive. The reduced installed-client and physical acceptance in [[P34]] is complete. PR #65 merged its source packaging: a pinned shared setup SDK, disposable Pixoo rehearsal and operator acceptance sequence. The owner reduced #34 to one Codex Desktop task path through Ubuntu WSL: working/completed activity, notice clearing/dismissal, a short readable Pixoo display check and basic Monitor/Media behavior. The installed trial found successive ordinary Desktop turns become ambiguous; [[H137]] is closed after PR #144 delivered agent-state 2.0.0 and Hub 0.2.0. The owner installed Hub 0.2.0 and the real Desktop retest passed active, idle, then active with previous-notice clearing. The owner confirmed a readable dashboard and visible amber T. Manual dismissal and active-playback pause/resume checks passed. Pixoo PR #66 merged as c81bc31 after both independent reviews and all five PR plus all five merged-main checks passed. Issue #34 is closed for the reduced installed scope. Required CLI/Claude trials, migration, broad failure matrices and a shared-frontend trial are outside this revised scope. Remaining device consumers retain their own scope and prerequisites. The owner deferred embedded-host performance measurement and numeric acceptance to <strong>[[P61]]</strong>; it follows #31 and does not block feature delivery. Failed measurements and frozen limits remain recorded. Hub #30 is closed after PR #135 delivered standalone-only qualification, both independent reviews and all six PR plus all six merged-main checks passed. Pixoo #61 evidence is not required; historical and development failures remain recorded. <strong>[[P29]]</strong> has delivered its released-contract adoption. <strong>[[P37]]</strong> is closed after PR #58 delivered the protected shared controller boundary; frontend adoption remains with its owning issue. <strong>[[N41]]</strong> is the clearest separate feature starting point. Keep later device qualification with its owning issues. [[H63]] is closed after documentation PR #140 merged. [[H64]] remains an independent qualification path; this guide claims no installed 8BitDo mappings or app acceptance.') + '''</p><p>Some blocked labels and native dependency links lag the issue bodies. Refresh readiness when selecting each issue, especially where source prerequisites have closed.</p></section>
-<footer class="footer"><p>AGENT DEVICE WORK GUIDES / @@MONTH_UPPER@@<br>Source: existing GitHub planning records, refreshed @@TIMESTAMP@@.<br>This HTML refresh reads existing planning records. Earlier work created and updated those records; this refresh made no GitHub changes. Source validation, installation, real-client, transport and physical evidence remain separate. One state owner and one designated writer per device.</p><a href="#top">RETURN TO TOP ↑</a></footer>
+<footer class="footer"><p>AGENT DEVICE WORK GUIDES / @@MONTH_UPPER@@<br>Source: existing GitHub planning records, refreshed @@TIMESTAMP@@.<br>Issue states and dependencies come from the dated GitHub snapshot. Source validation, installation, real-client, transport and physical evidence remain separate. One state owner and one designated writer per device.</p><a href="#top">RETURN TO TOP ↑</a></footer>
 </main></div><script>''' + JS + '''</script></body></html>'''
+
+document = document.replace('Hub #32 still', render('[[H32]] still'))
+document = document.replace('scoped Pixoo/Nanoleaf acceptance.</p>', 'scoped Pixoo/Nanoleaf acceptance.</p><div>' + render('[[H5]] [[H6]] [[P34]] [[N30]]') + '</div>')
 
 tokens = {
     'TOTAL': str(TOTAL), 'GUIDE_COUNT': str(len(GUIDES)), 'PROJECTS_PADDED': f'{len(REPOS):02}',
