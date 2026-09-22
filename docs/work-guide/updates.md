@@ -21,6 +21,39 @@ The public edition still records source `260707019b7ff83d57e31d91ae1e1582c373458
 This source delivery does not publish the public guide or claim new installation,
 real-client or physical acceptance.
 
+## September 22, 2026: Hub #63 desktop-control documentation candidate
+
+The delivery coordinator added `docs/desktop-controls.md` and discovery,
+architecture and roadmap links for the accepted 8BitDo/Wispr/Codex direction.
+The document distinguishes control profiles, button bindings and desk presets;
+it preserves native controller modes, manual ownership and separate evidence
+for source, installation, hardware/input, apps, transport and visible restoration.
+No product behavior or wire-contract delta is introduced, so no new OpenSpec
+capability is needed. Qualification and implementation remain in #64–#71.
+
+The desktop-controls guide now links the canonical document and records #63's
+in-progress state. PC-lighting PR #59 is merged and retains its separate scope.
+The refreshed backlogs preserve the independent local shortcut path and the
+Codex-first/general-control prerequisites for shared presets. The existing input
+and preset diagrams already represent these accepted flows; no diagram content,
+source pin or architecture-review date changes.
+
+The complete refresh also found newly published #137–#139. Their existing
+current-status, optional recovery and deferred-history scopes now have primary
+coverage and roadmap nodes; this documentation task implements none of them.
+Initial generation rejected their missing coverage before that reconciliation.
+
+Node 24.21.0 setup and both workflow checks passed: 10 current specifications,
+9 archived changes and 15 workflow tests. All 42 local Markdown links/anchors
+passed. Guide generation, five maintenance tests and six-width browser/print
+checks passed with 96 primary open issues, 12 guides and nine unchanged diagrams.
+The public landing-page read returned HTTP 200 with the older hash below.
+The issue remains open until independent Standards/Specification reviews, all
+six applicable PR checks, guarded merge and merged-main checks pass. A linked guide follow-up will reconcile closure and
+newly verified history. Public publication remains separate; the public README
+still identifies Hub source `260707019b7ff83d57e31d91ae1e1582c3734589` and guide
+hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+
 ## September 22, 2026: Pixoo #34 reduced installed scope
 
 The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo

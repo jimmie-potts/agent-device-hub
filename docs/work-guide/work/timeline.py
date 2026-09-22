@@ -33,9 +33,11 @@ TRACKS = [
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
-        dict(id='n-current-status', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
-        dict(id='n-task-reset', x=1, label='Per-task recovery', issues=['H138'], guide='shared-codex'),
-        dict(id='n-reliable-history', x=4, label='Reliable history refinement', issues=['H139'], guide='shared-codex'),
+        dict(id='n-status-fix', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
+        dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
+    ]),
+    ('Reliable event history', [
+        dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
     ]),
     ('Desktop controls (shortcut path)', [
         dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H63', 'H64'], guide='desktop-controls', ready=True),

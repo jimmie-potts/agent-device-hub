@@ -31,6 +31,11 @@ Read [architecture](docs/architecture.md) for ownership and migration decisions,
 [development](docs/development.md) for setup. GitHub issues own scope, acceptance,
 dependencies and status. A completed bootstrap is not a working device integration.
 
+[Desktop controls](docs/desktop-controls.md) records the accepted 8BitDo/Wispr
+defaults, Codex mouse actions, control profiles and later desk presets. These
+controls remain future work. Local shortcuts can ship independently of the hub;
+shared presets follow the Codex-first milestone and general-control definition.
+
 ## System design documents
 
 Open the [BUNNY system design atlas](docs/system-design/index.html) locally for
