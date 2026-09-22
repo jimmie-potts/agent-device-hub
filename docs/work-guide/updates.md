@@ -8,19 +8,28 @@ until the next explicit mode command; scenes are disabled in Work and Quiet or
 while a mode change is pending, with an explicit Free switch through the
 controller v1 mode command, and are labelled by user-chosen names from the
 `nanoleaf.integration/1.0` snapshot or by ID. OpenSpec change
-`gh-153-nanoleaf-general-controls` records the `unified-dashboard` delta. The
-candidate is stacked on the #64 hub companion PR #161 and the Pixoo PR #160 and
-merges only after them. Nothing is installed or operated; #155 owns the wall
-acceptance.
+`gh-153-nanoleaf-general-controls` records the `unified-dashboard` delta.
+Nothing is installed or operated; #155 owns the wall acceptance.
 
-This entry reconciles the guide inputs of the two concurrent candidates and
-refreshes the three backlogs at the snapshot time recorded in
-`work/backlogs/snapshot.json`. Hub #153 moved from backlog to in progress with
-its blocked label retained for the merge order; the controls guide's Nanoleaf
-row and the controls-music next step name all three open PRs. Ownership,
-transports, physical writers and pinned architecture viewers are unchanged: the
-browser remains a client of the hub route and the Nanoleaf worker remains the
-only light writer.
+The candidate was first stacked on the #64 hub companion PR #161 and the Pixoo
+PR #160. Both merged on September 22, 2026, so the branch was refreshed onto
+`main` and its diff is now the Nanoleaf change alone. A correction round kept
+keyboard focus through a submitted control after an accessibility review
+finding; that round changed no represented fact, and this entry records it.
+This entry refreshes the three backlogs at the snapshot time recorded in
+`work/backlogs/snapshot.json`. Hub #151 closed as completed after PR #160
+merged, so it leaves open coverage, its candidate card and the timeline node:
+the controls guide now carries a completed Pixoo reference row, a separate
+display-acceptance row for #154, and #151 joins the direct reference reads.
+Hub #153 is in progress with its blocked label retained until the merge order
+clears; the controls guide's Nanoleaf row and the controls-music next step name
+the merged Pixoo candidate and this open one.
+The paginated history now records PR #160's merge and #151's completed
+closure; earlier entries are unchanged. There are 92 primary open issues, 12
+guides, nine viewers, 52 roadmap nodes and 125 merged PRs in this snapshot.
+Ownership, transports, physical writers and pinned architecture viewers are
+unchanged: the browser remains a client of the hub route and the Nanoleaf worker
+remains the only light writer.
 
 Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
 the HTML SHA-256 is recorded on the PR. This candidate is a mixed change, so
@@ -28,6 +37,7 @@ every configured CI job applies and the Nanoleaf view needs explicit human UI
 approval recorded on the PR. A linked follow-up will record merge, issue closure
 and acceptance facts unavailable before merge. Public guide publication and live
 verification remain separate and were not requested.
+
 ## September 22, 2026: Pixoo general controls candidate
 
 Hub PR #160 carries the source candidate for Hub #151: screen power,
