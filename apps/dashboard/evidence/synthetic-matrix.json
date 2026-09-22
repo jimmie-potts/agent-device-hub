@@ -16,5 +16,5 @@
     "a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry"
   ],
   "pixelReadDelayMs": 800,
-  "independentDeviceReadMs": 3.780337999999574
+  "independentDeviceReadMs": 3.0982130000002144
 }

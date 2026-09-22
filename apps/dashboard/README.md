@@ -117,7 +117,10 @@ Physical acceptance on the installed wall is
 ## Intent and observation
 
 Drafts pin the observed controller revision/generation and server-issued ticket.
-Refreshes preserve focus, selection and drafts. A changed revision blocks stale
+Refreshes preserve focus, selection and drafts. A submitted control keeps
+keyboard focus: while a command runs its group is disabled, and once the command
+settles focus returns to that control, or to the group's first enabled control
+when the control is locked or no longer rendered. A changed revision blocks stale
 submission; server rejections retain edits. An uncertain result is locked and
 never automatically retried. Loading current values is a separate explicit action.
 Transport success and saved settings do not establish physical output.
@@ -157,8 +160,9 @@ mode, concurrent edits with typed conflicts and locked uncertain actions, and
 read-only or undeclared capabilities with named reasons. The Hub #153 scenarios
 add Nanoleaf power and brightness in Work with the override hint, Work gating
 with the explicit Free switch, one guarded scene command with a preserved
-selection and focus across reconnect, and a controller-side scene rejection,
-revision conflict and uncertain result with no retry. `DASHBOARD_RECEIPTS` selects an external
+selection and focus across reconnect, keyboard focus kept through the Free
+switch, a scene activation and a locked draft form, and a controller-side scene
+rejection, revision conflict and uncertain result with no retry. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,

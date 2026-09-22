@@ -26,11 +26,24 @@ function observedResult(source:unknown,ticket:unknown):string|undefined{
  const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
  if(result&&result.outcome!=='queued')return `Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`;
 }
+/** Disabling the focused control while a command runs would drop keyboard focus to the document. Once the command settles, focus returns to that control, or to the first enabled control of the same group when it is locked or gone. */
+function useRestoredFocus(active:boolean){
+ const saved=useRef<{control:HTMLElement;group:HTMLElement|null}|null>(null);
+ useEffect(()=>{
+  if(active||!saved.current)return;
+  const {control,group}=saved.current;saved.current=null;
+  if(document.activeElement!==document.body)return;
+  if(control.isConnected&&!control.matches(':disabled')){control.focus();return;}
+  if(group?.isConnected)group.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)')?.focus();
+ },[active]);
+ return ()=>{const control=document.activeElement;if(control instanceof HTMLElement&&control!==document.body)saved.current={control,group:control.closest<HTMLElement>('.edit')};};
+}
 /** One-click commands use the latest observed snapshot at activation and stay busy until the refreshed snapshot arrives, so the next activation carries fresh guards. Only an accepted ticket is watched for its terminal outcome; a rejected ticket may be consumed by another client. An uncertain result locks the group until the user loads current values. */
 function useCommand(api:Api,path:string,refresh:()=>void|Promise<void>,source:unknown){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<{label:string;ticket:unknown}>();
+ const keepFocus=useRestoredFocus(busy);
  useEffect(()=>{const message=submitted&&observedResult(source,submitted.ticket);if(message)setStatus(`${submitted.label}: ${message}`);},[source,submitted]);
- async function run(label:string,request:unknown){if(busy||locked)return;setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
+ async function run(label:string,request:unknown){if(busy||locked)return;keepFocus();setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
   try {const result=await api.request<Record<string,unknown>>(path,request);const failure=result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String((result.failure as {code:unknown}).code):'';setStatus(`${label}: ${String(result.outcome??'configuration accepted')}${failure}. Physical result is not confirmed.`);if(!failure)setSubmitted({label,ticket:(request as {requestId?:unknown}).requestId});}
   catch(error){const result=failureMessage(error);setStatus(`${label}: ${result.message}`);setLocked(result.locked);}
   finally{await refresh();setBusy(false);}
@@ -44,6 +57,7 @@ type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,s
 function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,submitLabel,children}:FormProps<T>){
  const heading=useId();
  const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null),[status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
+ const keepFocus=useRestoredFocus(busy);
  const values=draft?.values??initial,dirty=draft!==null;
  const conflict=dirty&&!locked&&draft.revision!==revision;
  useEffect(()=>{
@@ -52,7 +66,7 @@ function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refr
   if(message)setStatus(message);
  },[source,draft,locked]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
- async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;setBusy(true);setStatus('Submitting…');
+ async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;keepFocus();setBusy(true);setStatus('Submitting…');
   try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);void refresh();}
   catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);void refresh();}
   finally{setBusy(false);}
