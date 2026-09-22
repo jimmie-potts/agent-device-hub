@@ -1,3 +1,98 @@
+## September 22, 2026: Hub #9 final source compatibility candidate
+
+The #9 coordinator verified #30 closure and PR #135 merge `8411413`, and
+linked its final acceptance report without repeating measurements. Reconciled
+the concurrent main changes and refreshed the complete backlog. The guide keeps
+#9 separate from delivered performance qualification and records source review
+in progress. The new compatibility table preserves the distinct Nanoleaf/runtime
+pins and installed/physical boundaries. Existing diagram ownership and command
+flows are unchanged, so no viewer source or receipt changes apply.
+
+Guide generation, maintenance, browser/print and output consistency checks are
+required for this final candidate. Public publication and live verification remain
+outside this source delivery. Source merge and issue closure will be reconciled
+in a linked guide-only follow-up after their authoritative readback.
+
+## September 22, 2026: Hub #30 qualification closeout
+
+PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
+independent reviews and all six PR jobs passed. All six merged-main jobs passed
+in Checks run 35679809596 and Work guide run 35679809755 before #30 closed.
+All seven current acceptance criteria are checked; historical criteria and failed
+receipts remain unchanged. The committed receipt measures 487 synthetic hooks,
+with hook p95 58/78 ms for one/ten tasks, consumer receipt p95 below one second,
+and 151 MiB peak Hub RSS. Preparation, every scenario and cleanup passed.
+
+Refreshed paginated history and backlog inputs, retained closed #30 as a direct
+reference, removed it from remaining-work coverage and roadmap counts, and
+updated the shared-monitor guide and recommendation. The coordinator owns this
+linked guide-only follow-up. Generation, five maintenance tests, browser/print
+checks and generated-output consistency are recorded with its candidate.
+The architecture viewers retain their existing source pins and ownership.
+The refresh also observes concurrent #63 closure after PR #140. It retains that
+reference and removes it from open-work counts; its coordinator owns the
+separate desktop-control closeout in PR #141.
+
+This records source qualification with pinned real consumers and fake transports.
+It makes no new installation, real-client or physical acceptance claim. Public
+guide publication and live verification remain pending separate authorization.
+
+## 2026-09-22 — Hub #30 standalone qualification candidate
+
+The source command now has a retained passing run at Hub
+`d9f5e7e1129f048f8caee046f8f6644e043ec6e2`: 400 warmed events,
+487 hooks overall, hook p95 58/78 ms for one/ten tasks, each consumer receipt
+p95 below one second and 151 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves eight non-qualifying development attempts and all four
+full runs. Review required confined preparation and positive reconnect evidence;
+the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
+
+Updated shared-monitor qualification, sequencing and recommendation text, and
+refreshed the complete backlog snapshot. Assigned concurrently published Hub
+#137/#138/#139 to the shared-monitor guide without changing their scope or status. Preserved the concurrent Pixoo #34 and
+Nanoleaf #30 guide updates from PRs #131/#134. Issue #30 remains open until
+independent review, CI, merge and merged-source checks pass. Existing architecture
+flows and ownership do not change, so diagram sources/receipts remain unchanged.
+No application UI changed. Guide generation, maintenance and browser checks are
+required on this candidate; results are recorded in the PR receipt.
+
+The public edition still records source `260707019b7ff83d57e31d91ae1e1582c3734589`.
+This source delivery does not publish the public guide or claim new installation,
+real-client or physical acceptance.
+
+## September 22, 2026: Hub #63 desktop-control documentation candidate
+
+The delivery coordinator added `docs/desktop-controls.md` and discovery,
+architecture and roadmap links for the accepted 8BitDo/Wispr/Codex direction.
+The document distinguishes control profiles, button bindings and desk presets;
+it preserves native controller modes, manual ownership and separate evidence
+for source, installation, hardware/input, apps, transport and visible restoration.
+No product behavior or wire-contract delta is introduced, so no new OpenSpec
+capability is needed. Qualification and implementation remain in #64–#71.
+
+The desktop-controls guide now links the canonical document and records #63's
+in-progress state. PC-lighting PR #59 is merged and retains its separate scope.
+The refreshed backlogs preserve the independent local shortcut path and the
+Codex-first/general-control prerequisites for shared presets. The existing input
+and preset diagrams already represent these accepted flows; no diagram content,
+source pin or architecture-review date changes.
+
+The complete refresh also found newly published #137–#139. Their existing
+current-status, optional recovery and deferred-history scopes now have primary
+coverage and roadmap nodes; this documentation task implements none of them.
+Initial generation rejected their missing coverage before that reconciliation.
+
+Node 24.21.0 setup and both workflow checks passed: 10 current specifications,
+9 archived changes and 15 workflow tests. All 42 local Markdown links/anchors
+passed. Guide generation, five maintenance tests and six-width browser/print
+checks passed with 96 primary open issues, 12 guides and nine unchanged diagrams.
+The public landing-page read returned HTTP 200 with the older hash below.
+The issue remains open until independent Standards/Specification reviews, all
+six applicable PR checks, guarded merge and merged-main checks pass. A linked guide follow-up will reconcile closure and
+newly verified history. Public publication remains separate; the public README
+still identifies Hub source `260707019b7ff83d57e31d91ae1e1582c3734589` and guide
+hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+
 ## September 22, 2026: Pixoo #34 reduced installed scope
 
 The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo

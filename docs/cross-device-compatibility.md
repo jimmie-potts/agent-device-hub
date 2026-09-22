@@ -5,7 +5,7 @@ standalone Linux/WSL combination with synthetic input, the real dashboard and
 owning consumers. The command and preparation steps are in
 [development.md](development.md#bounded-cross-device-compatibility).
 
-The tested product source is Hub `25590e9c95ce334a516d2de0494584d67ea15a26`,
+The tested product source is Hub `10493718ee01dee78c290294f751829dd60ea91d`,
 Pixoo `28f4875b7a0f0e57ca6f25d9971e125e927a5503` and Nanoleaf
 `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`. The runner rebuilds Hub and Pixoo
 from the prepared source before importing them. Nanoleaf's shared-input module
@@ -21,7 +21,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 
 | Scenario | Observed result |
 | --- | --- |
-| Source combination | Hub `25590e9`, Pixoo `28f4875`, Nanoleaf `f12ac66`; full source IDs above and verified files in the JSON receipt |
+| Source combination | Hub `1049371`, Pixoo `28f4875`, Nanoleaf `f12ac66`; full source IDs above and verified files in the JSON receipt |
 | Runtime and packages | Node 24.21.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts, agent-state and device-mcp `1.0.0`; hub `0.1.0` |
 | APIs | Lifecycle/state and controller `1.0`, `nanoleaf.integration/1.0`, `pixoo-integration/1.0` |
 | Empty state | No sessions in the hub, dashboard or either consumer |
@@ -39,7 +39,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 | Reused migration/setup checks | [Shared consumer check](../scripts/check-hub-shared-consumers.mjs), [migration tests](../apps/hub/tests/migration.test.mjs), [setup tests](../apps/hub/tests/setup.test.mjs) |
 | Reused protocol/provider checks | [Host MCP](../apps/hub/tests/mcp.test.mjs), [core semantics](../packages/agent-state/tests/core.test.mjs), [TypeScript/Python contract commands](development.md#controller-contract-checks) |
 | Reused frontend checks | [Browser scenarios](../apps/dashboard/tests/browser.mjs), [browser matrix](../apps/dashboard/tests/matrix.mjs) |
-| Performance input | [#30 report in PR #135](https://github.com/jimmie-potts/agent-device-hub/pull/135), pending source delivery |
+| Performance input | [Delivered #30 report](https://github.com/jimmie-potts/agent-device-hub/blob/8411413fa43329dba6e25acc4cb715ffbba7887f/docs/performance/standalone-2026-09-22/README.md), including the final acceptance run and retained failed attempts |
 | Installed-client and physical evidence | Not performed by this suite; retain separately owned receipts linked by #9 |
 
 The runner closes its owned browser and services and removes disposable state.
@@ -51,9 +51,12 @@ and [#13](https://github.com/jimmie-potts/agent-device-hub/issues/13).
 
 ## Performance and delivery limits
 
-[#30's report candidate](https://github.com/jimmie-potts/agent-device-hub/pull/135)
-is available; its final source delivery remains pending. #9 cannot close until
-that completion input is verified. No performance measurement is repeated here.
+[#30's delivered report](https://github.com/jimmie-potts/agent-device-hub/blob/8411413fa43329dba6e25acc4cb715ffbba7887f/docs/performance/standalone-2026-09-22/README.md)
+merged in PR #135 as `8411413fa43329dba6e25acc4cb715ffbba7887f`. All six
+merged-main checks passed and #30 closed. Its final acceptance run measures Hub
+`d9f5e7e1129f048f8caee046f8f6644e043ec6e2`; earlier reports remain historical
+attempts. This satisfies #9's required performance-report input. No performance
+measurement is repeated here.
 The performance run used Nanoleaf `5375a3088522507c7f207c6e9c824454db1e1d5f`
 and Node 24.20.0/Python 3.14.4. Its results apply to its recorded runtime;
 #9 does not relabel them as timing results for this newer settings-capable pin.

@@ -1,6 +1,6 @@
 ## Context
 
-See proposal.md for motivation. Existing Hub scripts verify pinned Pixoo and Nanoleaf owning code. Dashboard tests provide browser selectors, and host MCP tests provide protocol initialization and command helpers. #30 is independently producing the performance report required for final acceptance.
+See proposal.md for motivation. Existing Hub scripts verify pinned Pixoo and Nanoleaf owning code. Dashboard tests provide browser selectors, and host MCP tests provide protocol initialization and command helpers. #30 delivered the required performance report in PR #135, merge `8411413fa43329dba6e25acc4cb715ffbba7887f`; its final run and retained failures are linked from the compatibility results.
 
 ## Goals / Non-Goals
 

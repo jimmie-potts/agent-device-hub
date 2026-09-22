@@ -56,7 +56,8 @@ npm run test:workflow
 Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
-standalone-hub-host and standalone-hub-mcp.
+standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
+unified-dashboard and standalone-monitor-qualification.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -395,3 +396,21 @@ without private source access.
 No product code or contract changes are intended. The #30 performance report is
 a separate required completion input. Source compatibility does not install
 hooks, start an actual agent client or establish visible-device behavior.
+
+## Everyday standalone qualification
+
+Hub #30 adds `npm run test:performance:standalone` for report completeness,
+negative acceptance and PID/network/mount confinement, including timeout and
+detached-child cleanup. Use Node 24 and system Python 3.12/3.14 with bubblewrap.
+The existing Ubuntu workflow job runs these checks after its namespace preflight.
+They do not benchmark timing or fetch private consumer repositories. Run the
+shared build/type, contract/lifecycle/state, MCP, hub, dashboard and workflow
+checks alongside them; the actual specification inventory also includes
+`standalone-monitor-qualification` once synchronized.
+
+The separately authorized local command is `npm run qualify:standalone --` with
+the arguments in [the qualification runbook](performance-standalone.md). It
+prepares pinned consumer sources, then measures only inside a disposable isolated
+Linux namespace. Setup/build time is excluded from runtime timings. No installed
+hook, agent client, physical device or live state is used. The report retains
+failures and is not a substitute for installed or physical acceptance.

@@ -7,6 +7,6 @@
 ## 2. Evidence and documentation
 
 - [x] 2.1 Run the bounded source check and relevant existing component tests; record exact versions, scenarios, failures and source-only limitations in one results table.
-- [ ] 2.2 Incorporate the delivered #30 report without repeating measurements; verify the linked source revision and report before final acceptance.
+- [x] 2.2 Incorporate the delivered #30 report without repeating measurements; verify the linked source revision and report before final acceptance.
 - [x] 2.3 Synchronize affected work-guide inputs and generated HTML; run guide generation, maintenance and browser checks.
 - [ ] 2.4 Run applicable build, type, workflow and shared consumer checks; validate and archive the completed OpenSpec change before independent final review.

@@ -100,6 +100,52 @@ protocol research and simulated key control are outside the accepted scope.
 No shared package, runtime or service is
 introduced by the documentation bootstrap.
 
+## Desktop controls and desk presets
+
+[Accepted defaults and evidence boundaries](desktop-controls.md) distinguish
+Windows-local shortcuts from the later shared preset service. Documentation and
+input qualification can proceed independently. Required issue links below match
+the native dependency graph checked September 22, 2026; follow each live issue
+for current readiness and successful qualification evidence.
+
+| Issue | Outcome | Required source or milestone prerequisites |
+| --- | --- | --- |
+| [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63) | Document accepted desktop controls | None |
+| [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) | Qualify hardware, Wispr hold/release and Codex mappings | None |
+| [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) | Implement independent local Wispr/Codex controls | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63), successful [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) qualification |
+| [#66](https://github.com/jimmie-potts/agent-device-hub/issues/66) | Install and verify local shortcuts and restoration | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) |
+| [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) | Coordinate Work, Free and Quiet desk presets | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63), Codex-first [#32](https://github.com/jimmie-potts/agent-device-hub/issues/32), general-control definition [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31), host [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [Nanoleaf #49](https://github.com/jimmie-potts/codex-nanoleaf/issues/49), [Pixoo #33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33) |
+| [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68) | Bind Big B and show requested/per-device results | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65), [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) |
+| [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) | Verify preset switching, manual handoff and restoration | [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68), shared producer setup [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
+| [#70](https://github.com/jimmie-potts/agent-device-hub/issues/70) | Add saved profiles and supported remapping | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) |
+| [#71](https://github.com/jimmie-potts/agent-device-hub/issues/71) | Add a later Music preset | [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68), playback [#36](https://github.com/jimmie-potts/agent-device-hub/issues/36), participation/interruption policy [#40](https://github.com/jimmie-potts/agent-device-hub/issues/40) |
+
+The independent #64 → #65 → #66 path consumes #63's decisions but does not wait
+for the hub, shared monitoring, #31, #32 or Music. Wispr retains its own service
+requirements. Manual preset dispatch does not require the future automation
+engine. #31 owns general-control definition after #32 acceptance; desktop
+presets consume it without expanding or reversing that scope.
+
+Conditional prerequisites apply only to selected functionality. Tidbyt, LIFX and
+PC-lighting participation need their own supported adapters/capabilities and
+acceptance. They do not block a supported Nanoleaf/Pixoo release. The separate
+[PC-lighting documentation PR #59](https://github.com/jimmie-potts/agent-device-hub/pull/59)
+is merged and is not a desktop-control prerequisite. #70's optional preset actions
+need the preset service and Big B delivery, while its basic local profile editor
+does not wait for them or Music. #71 must add
+[#38](https://github.com/jimmie-potts/agent-device-hub/issues/38) and/or
+[#39](https://github.com/jimmie-potts/agent-device-hub/issues/39) for the chosen
+presentations; measured-audio effects additionally need
+[#41](https://github.com/jimmie-potts/agent-device-hub/issues/41) and their own
+implementation/physical evidence. #40's policy does not depend on button delivery.
+
+The [future-work guide #35](https://github.com/jimmie-potts/agent-device-hub/issues/35)
+groups these tickets. Source prerequisite closure does not authorize installation,
+personal mappings, microphone use, agent sessions, input injection or device
+operations. #66 and #69 retain named installation owners, exact target/sequence
+authorization and separate input, app, transport and visible/restoration evidence.
+Hardware or app qualification with an unsupported result does not enable support.
+
 ## Device adoption
 
 | Issue | Outcome | Required issues |

@@ -16,7 +16,7 @@ REPO_NAME = {'H': 'agent-device-hub', 'N': 'codex-nanoleaf', 'P': 'divoom-app-up
 REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
 # Delivered baselines worth naming on the history chart (repo key, PR number, caption).
 MILESTONES = {
-    ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
+    ('H', 135): 'Standalone qualification', ('H', 74): 'Lifecycle contract v1', ('H', 12): 'Shared architecture', ('H', 28): 'Controller contract v1', ('H', 29): 'Device MCP module',
     ('N', 39): 'Protected controller API', ('N', 48): 'Nanoleaf MCP bindings', ('N', 56): 'Connector geometry',
     ('P', 60): 'Embedded monitor host', ('P', 54): 'Local reliability', ('P', 53): 'Monitoring contract', ('P', 28): 'Playlist playback', ('P', 45): 'Physical Pixoo adapter', ('P', 49): 'Pixoo MCP media tools', ('P', 50): 'Local Codex acceptance',
 }
@@ -27,13 +27,20 @@ SLOTS = ['Now · ready or independent', 'Next in this track', 'Following stage',
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H30', 'H123', 'H9', 'P34'], guide='shared-codex', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H123', 'H9', 'P34'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
+    ('Monitor status and recovery', [
+        dict(id='n-status-fix', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
+        dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
+    ]),
+    ('Reliable event history', [
+        dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
+    ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H63', 'H64'], guide='desktop-controls', ready=True),
+        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H64'], guide='desktop-controls', ready=True),
         dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
