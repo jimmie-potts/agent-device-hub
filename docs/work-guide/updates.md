@@ -2157,3 +2157,39 @@ candidate HTML SHA-256 is
 `16b813fe25e7c75307f7faf23cf8056219a2718e45eee7ed63169b0351e705af`.
 This entry records an unmerged source candidate. Public publication and live
 verification are outside this delivery and remain separate.
+
+## 2026-09-22 - Hub #137 source and release completion
+
+Reconciled [source PR #144](https://github.com/jimmie-potts/agent-device-hub/pull/144)
+at `013b829a851277cd0cfbaeaba6d6d0dfc32727c7`, the verified agent-state 2.0.0
+and Hub 0.2.0 releases, and the completed eight-item issue checklist. The merged
+tree matches reviewed `b1eff926`. Both independent reviews, all six PR jobs and
+all six merged-main jobs passed. Fresh source builds and both CI Python jobs
+reproduce the released archive hashes; all downloaded assets match their
+prepared bytes. Release assets include checksums and merged-source receipts.
+
+GitHub recorded issue closure at merge time. Main checks and release publication
+were subsequently verified before the coordinator completed the checklist and
+removed the review label. This entry records those stages separately.
+
+Updated the shared-monitoring guide, Pixoo #34 handoff and status/recovery track.
+Retained #137 as a closed reference, removed it from open-work coverage, and
+refreshed all three backlogs plus paginated repository history. There are 92
+primary open issues, 12 guides, nine viewers, 52 roadmap nodes and 113 merged PRs
+in this snapshot. Reset #138 and reliable history #139 remain separate work.
+The policy stays inside the existing state reducer, so ownership, transports,
+physical writers and pinned architecture viewers do not change.
+
+Guide generation, five maintenance tests, desktop/mobile/print browser checks
+and generated-output consistency pass. HTML SHA-256:
+`9595ae1cfe67fa2fd3f1743ead4b862c8aa17fad118165846c461908f1c0af69`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception receipt.
+No new product behavior or OpenSpec delta is introduced.
+
+Public guide publication, installation and the real Desktop/Pixoo retest remain
+separate. The public readback still serves Hub source `2607070`, landing-page
+hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+The named installation owner follows the packaged update instructions and Pixoo
+#34 for the remaining installed acceptance. This source task changes no personal
+hook, live database, service or physical device.

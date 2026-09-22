@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-22T03:06:40.329531+00:00",
+ "fetchedAt": "2026-09-22T03:22:17.332941+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-22T03:03:02Z",
+   "pushedAt": "2026-09-22T03:18:46Z",
    "defaultBranch": "main",
-   "headSha": "1dda5e9432422f3a36f483be317b2962d799d937",
-   "mainCommitCount": 63,
+   "headSha": "013b829a851277cd0cfbaeaba6d6d0dfc32727c7",
+   "mainCommitCount": 64,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "013b829a851277cd0cfbaeaba6d6d0dfc32727c7",
+     "date": "2026-09-22T03:12:54Z",
+     "message": "Fix ordinary Codex current status across successive turns (#144)"
+    },
     {
      "sha": "1dda5e9432422f3a36f483be317b2962d799d937",
      "date": "2026-09-22T03:01:15Z",
@@ -816,6 +821,14 @@
      "mergedAt": "2026-09-22T02:42:18Z"
     },
     {
+     "number": 144,
+     "title": "Fix ordinary Codex current status across successive turns",
+     "createdAt": "2026-09-22T02:46:53Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/144",
+     "base": "main",
+     "mergedAt": "2026-09-22T03:12:54Z"
+    },
+    {
      "number": 145,
      "title": "Reconcile compatibility delivery and issue closure in the guide",
      "createdAt": "2026-09-22T02:57:44Z",
@@ -830,13 +843,6 @@
      "title": "Record 85HA keyboard and N30 mouse qualification findings",
      "createdAt": "2026-09-22T02:38:29Z",
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
-     "base": "main"
-    },
-    {
-     "number": 144,
-     "title": "Fix ordinary Codex current status across successive turns",
-     "createdAt": "2026-09-22T02:46:53Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/144",
      "base": "main"
     }
    ],
@@ -1016,9 +1022,17 @@
      "createdAt": "2026-09-20T17:44:01Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
+    },
+    {
+     "number": 137,
+     "title": "Support best-effort Codex current status across successive turns",
+     "closedAt": "2026-09-22T03:12:55Z",
+     "createdAt": "2026-09-22T01:53:34Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/137"
     }
    ],
-   "openIssueCount": 57,
+   "openIssueCount": 56,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-22T01:53:35Z"
