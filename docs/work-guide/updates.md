@@ -1,3 +1,35 @@
+## September 22, 2026 UTC: Owner-revised programmable A/B defaults
+
+The owner changed the version 1 defaults to B=Wispr hold/release and A=Enter
+on a separate deliberate press, with both bindings editable in version 1.
+Updated the accepted definitions in #63-#71 and the #31/#35 references. #65 now
+requires saved, editable A/B assignments and default restoration; #66 covers
+their installed acceptance. #70 extends that initial configuration to broader
+controls and saved profiles. #68 now uses an explicitly chosen preset binding
+instead of reserving B. States, labels, milestones, assignees and dependency
+relationships were preserved. No linked implementation or closure is claimed.
+
+Updated desktop controls, architecture, roadmap, qualification and guide inputs.
+The desktop-input sequence now shows B dictation and a separate A Enter action;
+the preset sequence shows a configured binding. Both cite the pinned revised
+desktop-control document. Other architecture sources retain their baseline
+pins. All nine regenerated diagrams passed 9/9 deterministic checks. Guide
+generation, five maintenance tests and browser/print checks passed for the
+revised candidate. The refreshed snapshot contains 92 open issues, 131 linked issues and
+116 merged PRs. It retains Pixoo #34 as a completed installed acceptance
+reference and assigns the newly created Hub #148 to guide maintenance.
+
+The owner approved temporary A/B mapping, focused observation, a brief Notepad
+dictation/Enter trial and restoration, confirming both buttons were unmodified.
+The first separate-browser capture returned no allowed events before focus
+loss. A later assignment retry produced a complete A Enter pair and B Ctrl+Win
+down edges. The observer stopped B at its repeat limit after 1,307 ms, before
+release. A revised temporary observer preserves the release check; its synthetic
+regression passed. Complete B release, dictation and restoration remain pending.
+Earlier N30 results remain valid within their recorded limits.
+New scope, source and base require renewed independent review and CI. Merge,
+issue completion and public guide publication remain pending.
+
 ## September 22, 2026 UTC: Hub #64 authorized N30 observations
 
 The owner reports that the keyboard and mouse now work and the large A/B

@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "sequence",
  "meta": {
-  "title": "Big B presets, partial results and manual handoff",
+  "title": "Desk presets, partial results and manual handoff",
   "quality_profile": "showcase",
   "column_fit": "spread",
   "viewBox": [
@@ -15,7 +15,7 @@
    "id": "user",
    "type": "external",
    "label": "User",
-   "sublabel": "Big B · vendor app"
+   "sublabel": "preset binding · vendor app"
   },
   {
    "id": "dispatcher",
@@ -64,7 +64,7 @@
    "from": "user",
    "to": "dispatcher",
    "y": 210,
-   "label": "fresh Big B press",
+   "label": "fresh configured preset press",
    "variant": "emphasis"
   },
   {
@@ -128,7 +128,7 @@
    "from": "user",
    "to": "dispatcher",
    "y": 620,
-   "label": "next fresh Big B press",
+   "label": "next fresh configured preset press",
    "variant": "emphasis"
   },
   {

@@ -237,12 +237,26 @@ The focused N30 browser observation above has authorization and results. The
 owner also approved a bounded A/B trial and confirmed that both buttons are
 unmodified. That trial temporarily maps B to Ctrl+Win and A to Enter, observes
 their browser events with Wispr quit, then uses one short Wispr dictation and
-a separate Enter press in blank Notepad before restoration. Its results are
-pending. The prepared observer records only selected modifier/Enter codes,
+a separate Enter press in blank Notepad before restoration. The prepared
+observer records only selected modifier/Enter codes,
 transitions, overlapping hold duration and bounded repeats; it stops on release,
 focus loss or after 15 seconds. It cannot identify the receiver or prove an app
 outcome. Broader Codex dispatch, reconnect, sleep and coexistence trials below
 still need separately scoped authorization.
+
+The first A/B attempt ran in a separate Windows Edge/Chrome window. Both samples
+ended with "Focus left the observation area; observation incomplete" and no
+allowed event. B reported zero observed overlap and repeats; A reported zero
+repeats. These values describe an empty capture, not the hardware's hold duration.
+The owner then confirmed that the keyboard's own Enter key records correctly
+and that assignments used the 8BitDo keyboard's keys. After repeating the
+documented assignment, the owner reported that the buttons work. A recorded
+Enter down/up pair lasted 144 ms, with no repeats and no recorded key left down.
+B recorded ControlLeft and MetaLeft down, with 1,307 ms of observed overlap
+before the observer stopped at 50 repeated keydowns. That cutoff leaves release
+unobserved; it does not establish stuck keys or a complete hold/release result.
+The original empty captures remain part of the evidence, and their cause is
+unproven. Dictation, final restoration and complete B release remain pending.
 
 The local-controls owner operates the devices and observes application results.
 The exact hardware, input observer and trial scope must be identified before
@@ -296,8 +310,8 @@ presets, calls the hub/controllers or operates lights/displays.
 
 ## Acceptance mapping and handoff
 
-Assessment refreshed against Hub main
-`8411413fa43329dba6e25acc4cb715ffbba7887f`: medium complexity from interacting
+Assessment refreshed against the owner's revised A/B defaults and incorporated Hub main
+`2855be7af01265e82012e131838e94d45c83e62f`: medium complexity from interacting
 vendor/input/app interfaces; high uncertainty from
 unobserved held events and unqualified N30 input translation; medium impact because trials can disrupt input and need
 restoration. Documentation work is ready; live qualification is pending.

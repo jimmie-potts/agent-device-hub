@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   928
+   1030
   ]
  },
  "participants": [
@@ -15,7 +15,7 @@
    "id": "user",
    "type": "external",
    "label": "User",
-   "sublabel": "Big A · mapped mouse"
+   "sublabel": "A/B · mapped mouse"
   },
   {
    "id": "dispatcher",
@@ -50,18 +50,23 @@
   },
   {
    "from": 324,
-   "label": "Big A: dictation",
+   "label": "Default B: dictation",
    "to": 554
   },
   {
    "from": 558,
-   "label": "Mouse: one Codex action",
-   "to": 700
+   "label": "Default A: separate Enter",
+   "to": 656
   },
   {
-   "from": 704,
+   "from": 660,
+   "label": "Mouse: one Codex action",
+   "to": 802
+  },
+  {
+   "from": 806,
    "label": "Boundaries",
-   "to": 846
+   "to": 948
   }
  ],
  "messages": [
@@ -90,7 +95,7 @@
    "from": "user",
    "to": "dispatcher",
    "y": 356,
-   "label": "Big A press (hold)",
+   "label": "Big B press (hold)",
    "variant": "emphasis"
   },
   {
@@ -104,7 +109,7 @@
    "from": "user",
    "to": "dispatcher",
    "y": 444,
-   "label": "Big A release",
+   "label": "Big B release",
    "variant": "emphasis"
   },
   {
@@ -118,27 +123,41 @@
    "from": "wispr",
    "to": "app",
    "y": 532,
-   "label": "insert text — no added send action",
+   "label": "insert text; no automatic Enter",
    "variant": "return"
   },
   {
    "from": "user",
    "to": "dispatcher",
    "y": 590,
+   "label": "fresh Big A press",
+   "variant": "emphasis"
+  },
+  {
+   "from": "dispatcher",
+   "to": "app",
+   "y": 634,
+   "label": "send configured Enter action",
+   "variant": "emphasis"
+  },
+  {
+   "from": "user",
+   "to": "dispatcher",
+   "y": 692,
    "label": "fresh mapped mouse press",
    "variant": "emphasis"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 634,
+   "y": 736,
    "label": "resolve app scope + action",
    "variant": "default"
   },
   {
    "from": "dispatcher",
    "to": "app",
-   "y": 678,
+   "y": 780,
    "label": "next attention task · command menu · previous task · next task",
    "variant": "emphasis",
    "note": "exactly one action per deliberate press"
@@ -146,22 +165,22 @@
   {
    "from": "dispatcher",
    "to": "app",
-   "y": 736,
+   "y": 838,
    "label": "outside Codex → ordinary mouse behavior passes through",
    "variant": "dashed"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 780,
+   "y": 882,
    "label": "held / repeated / stale input → no duplicate, no replay",
    "variant": "dashed"
   },
   {
    "from": "dispatcher",
    "to": "user",
-   "y": 824,
-   "label": "Big B unavailable until its preset service exists; presses are not buffered",
+   "y": 926,
+   "label": "A/B editable in version 1; preset actions need a configured binding and service",
    "variant": "return"
   }
  ],
@@ -188,7 +207,7 @@
    "title": "Unverified",
    "items": [
     "Owner packaging identifies keyboard 85HA and N30 mouse 85CA; hold and app tests remain pending (H64)",
-    "The first editor (H70) excludes scripts, shell execution, raw device commands and macros"
+    "A/B editing ships in H65 version 1; H70 extends supported controls and saved profiles"
    ]
   }
  ]

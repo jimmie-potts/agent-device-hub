@@ -1,4 +1,4 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 928" role="img" lang="en" aria-labelledby="seq-desktop-input-archify-diagram-title seq-desktop-input-archify-diagram-description">
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 1030" role="img" lang="en" aria-labelledby="seq-desktop-input-archify-diagram-title seq-desktop-input-archify-diagram-description">
         <title id="seq-desktop-input-archify-diagram-title">Independent Wispr and Codex input controls</title>
         <desc id="seq-desktop-input-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
@@ -28,16 +28,18 @@
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-1" x="48" y="324" width="974" height="230" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-2" x="48" y="558" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-2" x="48" y="558" width="974" height="98" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-3" x="48" y="704" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-3" x="48" y="660" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-4" x="48" y="806" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 144.5 142 L 144.5 863" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 345.25 142 L 345.25 863" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 546 142 L 546 863" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 746.75 142 L 746.75 863" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 947.5 142 L 947.5 863" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 144.5 142 L 144.5 965" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 345.25 142 L 345.25 965" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 546 142 L 546 965" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 746.75 142 L 746.75 965" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 947.5 142 L 947.5 965" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
@@ -67,11 +69,11 @@
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="Big A press (hold)" data-edge-key="3">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="Big B press (hold)" data-edge-key="3">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,356;338.25,356" d="M 151.5 356 L 338.25 356" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
           <rect x="192.075" y="336" width="105.60000000000001" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="346" class="t-backend" font-size="9" text-anchor="middle">Big A press (hold)</text>
+          <text x="244.875" y="346" class="t-backend" font-size="9" text-anchor="middle">Big B press (hold)</text>
         </g>
         </g>
 
@@ -83,11 +85,11 @@
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="Big A release" data-edge-key="5">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="Big B release" data-edge-key="5">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,444;338.25,444" d="M 151.5 444 L 338.25 444" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
           <rect x="205.075" y="424" width="79.60000000000001" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="434" class="t-backend" font-size="9" text-anchor="middle">Big A release</text>
+          <text x="244.875" y="434" class="t-backend" font-size="9" text-anchor="middle">Big B release</text>
         </g>
         </g>
 
@@ -99,60 +101,76 @@
         </g>
         </g>
 
-        <g data-edge-from="wispr" data-edge-to="app" data-edge-label="insert text — no added send action" data-edge-key="7">
+        <g data-edge-from="wispr" data-edge-to="app" data-edge-label="insert text; no automatic Enter" data-edge-key="7">
           <path data-composition-edge-from="wispr" data-composition-edge-to="app" data-composition-points="753.75,532;940.5,532" d="M 753.75 532 L 940.5 532" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
         <g data-detail="context">
-          <rect x="752.725" y="512" width="188.8" height="16" rx="3" class="c-mask"/>
-          <text x="847.125" y="522" class="t-muted" font-size="9" text-anchor="middle">insert text — no added send action</text>
+          <rect x="760.525" y="512" width="173.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="847.125" y="522" class="t-muted" font-size="9" text-anchor="middle">insert text; no automatic Enter</text>
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh mapped mouse press" data-edge-key="8">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh Big A press" data-edge-key="8">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,590;338.25,590" d="M 151.5 590 L 338.25 590" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="176.475" y="570" width="136.8" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="580" class="t-backend" font-size="9" text-anchor="middle">fresh mapped mouse press</text>
+          <rect x="194.675" y="570" width="100.4" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="580" class="t-backend" font-size="9" text-anchor="middle">fresh Big A press</text>
         </g>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="resolve app scope + action" data-edge-key="9">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="352.25,634;539,634" d="M 352.25 634 L 539 634" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
+        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="send configured Enter action" data-edge-key="9">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="352.25,634;940.5,634" d="M 352.25 634 L 940.5 634" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="372.025" y="614" width="147.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="624" class="t-backend" font-size="9" text-anchor="middle">resolve app scope + action</text>
+          <rect x="567.575" y="614" width="157.6" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="624" class="t-backend" font-size="9" text-anchor="middle">send configured Enter action</text>
         </g>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="next attention task · command menu · previous task · next task" data-edge-key="10">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="352.25,678;940.5,678" d="M 352.25 678 L 940.5 678" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh mapped mouse press" data-edge-key="10">
+          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,692;338.25,692" d="M 151.5 692 L 338.25 692" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="479.17499999999995" y="658" width="334.40000000000003" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="668" class="t-backend" font-size="9" text-anchor="middle">next attention task · command menu · previous task · next task</text>
-        </g>
-        <text data-detail="fine" x="364.25" y="696" class="t-dim" font-size="7">exactly one action per deliberate press</text>
-        </g>
-
-        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="outside Codex → ordinary mouse behavior passes through" data-edge-key="11">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="352.25,736;940.5,736" d="M 352.25 736 L 940.5 736" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
-        <g data-detail="context">
-          <rect x="499.975" y="716" width="292.8" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="726" class="t-messagebus" font-size="9" text-anchor="middle">outside Codex → ordinary mouse behavior passes through</text>
+          <rect x="176.475" y="672" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="682" class="t-backend" font-size="9" text-anchor="middle">fresh mapped mouse press</text>
         </g>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="held / repeated / stale input → no duplicate, no replay" data-edge-key="12">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="352.25,780;539,780" d="M 352.25 780 L 539 780" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="resolve app scope + action" data-edge-key="11">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="352.25,736;539,736" d="M 352.25 736 L 539 736" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
         <g data-detail="context">
-          <rect x="296.625" y="760" width="298" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="770" class="t-messagebus" font-size="9" text-anchor="middle">held / repeated / stale input → no duplicate, no replay</text>
+          <rect x="372.025" y="716" width="147.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="726" class="t-backend" font-size="9" text-anchor="middle">resolve app scope + action</text>
         </g>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="user" data-edge-label="Big B unavailable until its preset service exists; presses are not buffered" data-edge-key="13">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="338.25,824;151.5,824" d="M 338.25 824 L 151.5 824" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
+        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="next attention task · command menu · previous task · next task" data-edge-key="12">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="352.25,780;940.5,780" d="M 352.25 780 L 940.5 780" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="43.875" y="804" width="402" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="814" class="t-muted" font-size="9" text-anchor="middle">Big B unavailable until its preset service exists; presses are not buffered</text>
+          <rect x="479.17499999999995" y="760" width="334.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="770" class="t-backend" font-size="9" text-anchor="middle">next attention task · command menu · previous task · next task</text>
+        </g>
+        <text data-detail="fine" x="364.25" y="798" class="t-dim" font-size="7">exactly one action per deliberate press</text>
+        </g>
+
+        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="outside Codex → ordinary mouse behavior passes through" data-edge-key="13">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="352.25,838;940.5,838" d="M 352.25 838 L 940.5 838" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+        <g data-detail="context">
+          <rect x="499.975" y="818" width="292.8" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="828" class="t-messagebus" font-size="9" text-anchor="middle">outside Codex → ordinary mouse behavior passes through</text>
+        </g>
+        </g>
+
+        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="held / repeated / stale input → no duplicate, no replay" data-edge-key="14">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="352.25,882;539,882" d="M 352.25 882 L 539 882" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+        <g data-detail="context">
+          <rect x="296.625" y="862" width="298" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="872" class="t-messagebus" font-size="9" text-anchor="middle">held / repeated / stale input → no duplicate, no replay</text>
+        </g>
+        </g>
+
+        <g data-edge-from="dispatcher" data-edge-to="user" data-edge-label="A/B editable in version 1; preset actions need a configured binding and service" data-edge-key="15">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="338.25,926;151.5,926" d="M 338.25 926 L 151.5 926" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
+        <g data-detail="context">
+          <rect x="33.474999999999994" y="906" width="422.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="916" class="t-muted" font-size="9" text-anchor="middle">A/B editable in version 1; preset actions need a configured binding and service</text>
         </g>
         </g>
 
@@ -162,21 +180,25 @@
           <text x="62" y="169" class="t-dim" font-size="9" font-weight="600">Profile selection</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-1">
-          <rect x="56" y="302" width="97.2" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="315" class="t-dim" font-size="9" font-weight="600">Big A: dictation</text>
+          <rect x="56" y="302" width="118" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="315" class="t-dim" font-size="9" font-weight="600">Default B: dictation</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-2">
-          <rect x="56" y="536" width="133.60000000000002" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="549" class="t-dim" font-size="9" font-weight="600">Mouse: one Codex action</text>
+          <rect x="56" y="536" width="144" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="549" class="t-dim" font-size="9" font-weight="600">Default A: separate Enter</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-3">
-          <rect x="56" y="682" width="66" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="695" class="t-dim" font-size="9" font-weight="600">Boundaries</text>
+          <rect x="56" y="638" width="133.60000000000002" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="651" class="t-dim" font-size="9" font-weight="600">Mouse: one Codex action</text>
+        </g>
+        <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-4">
+          <rect x="56" y="784" width="66" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="797" class="t-dim" font-size="9" font-weight="600">Boundaries</text>
         </g>
 
         <!-- Participants -->
-        <g id="seq-desktop-input-node-user" data-node-id="seq-desktop-input-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, Big A · mapped mouse, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="Big A · mapped mouse" data-node-context="Sequence participant">
-          <title>User · Big A · mapped mouse · Sequence participant</title>
+        <g id="seq-desktop-input-node-user" data-node-id="seq-desktop-input-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, A/B · mapped mouse, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="A/B · mapped mouse" data-node-context="Sequence participant">
+          <title>User · A/B · mapped mouse · Sequence participant</title>
           <rect x="62" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="62" y="72" width="165" height="54" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(68 78) scale(0.6875)">
@@ -184,7 +206,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="144.5" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">User</text>
-          <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">Big A · mapped mouse</text>
+          <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">A/B · mapped mouse</text>
         </g>
 
         <g id="seq-desktop-input-node-dispatcher" data-node-id="seq-desktop-input-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, local, no hub, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="local, no hub" data-node-context="Sequence participant">
@@ -238,22 +260,22 @@
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="854" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="874" data-legend-width="78">
-            <path d="M 40 871 L 74 871" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
-            <text x="83" y="874" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="956" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="976" data-legend-width="78">
+            <path d="M 40 973 L 74 973" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+            <text x="83" y="976" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="874" data-legend-width="73">
-            <path d="M 140 871 L 174 871" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
-            <text x="183" y="874" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="976" data-legend-width="73">
+            <path d="M 140 973 L 174 973" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
+            <text x="183" y="976" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="dashed" data-legend-x="235" data-legend-baseline="874" data-legend-width="98">
-            <path d="M 235 871 L 269 871" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
-            <text x="278" y="874" class="t-muted" font-size="10" font-weight="500">async trace</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="235" data-legend-baseline="976" data-legend-width="98">
+            <path d="M 235 973 L 269 973" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+            <text x="278" y="976" class="t-muted" font-size="10" font-weight="500">async trace</text>
           </g>
-          <g data-legend-semantic-kind="default" data-legend-x="355" data-legend-baseline="874" data-legend-width="118">
-            <path d="M 355 871 L 389 871" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
-            <text x="398" y="874" class="t-muted" font-size="10" font-weight="500">default message</text>
+          <g data-legend-semantic-kind="default" data-legend-x="355" data-legend-baseline="976" data-legend-width="118">
+            <path d="M 355 973 L 389 973" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
+            <text x="398" y="976" class="t-muted" font-size="10" font-weight="500">default message</text>
           </g>
         </g>
       </svg>

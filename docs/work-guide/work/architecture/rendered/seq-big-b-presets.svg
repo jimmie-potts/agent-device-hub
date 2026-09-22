@@ -1,5 +1,5 @@
 <svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 870" role="img" lang="en" aria-labelledby="seq-big-b-presets-archify-diagram-title seq-big-b-presets-archify-diagram-description">
-        <title id="seq-big-b-presets-archify-diagram-title">Big B presets, partial results and manual handoff</title>
+        <title id="seq-big-b-presets-archify-diagram-title">Desk presets, partial results and manual handoff</title>
         <desc id="seq-big-b-presets-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -41,11 +41,11 @@
 
 
         <!-- Messages -->
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh Big B press" data-edge-key="0">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh configured preset press" data-edge-key="0">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,210;338.25,210" d="M 151.5 210 L 338.25 210" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="194.675" y="190" width="100.4" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="200" class="t-backend" font-size="9" text-anchor="middle">fresh Big B press</text>
+          <rect x="163.475" y="190" width="162.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="200" class="t-backend" font-size="9" text-anchor="middle">fresh configured preset press</text>
         </g>
         </g>
 
@@ -114,11 +114,11 @@
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="next fresh Big B press" data-edge-key="9">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="next fresh configured preset press" data-edge-key="9">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,620;338.25,620" d="M 151.5 620 L 338.25 620" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="181.675" y="600" width="126.4" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="610" class="t-backend" font-size="9" text-anchor="middle">next fresh Big B press</text>
+          <rect x="150.475" y="600" width="188.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="610" class="t-backend" font-size="9" text-anchor="middle">next fresh configured preset press</text>
         </g>
         </g>
 
@@ -161,8 +161,8 @@
         </g>
 
         <!-- Participants -->
-        <g id="seq-big-b-presets-node-user" data-node-id="seq-big-b-presets-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, Big B · vendor app, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="Big B · vendor app" data-node-context="Sequence participant">
-          <title>User · Big B · vendor app · Sequence participant</title>
+        <g id="seq-big-b-presets-node-user" data-node-id="seq-big-b-presets-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, preset binding · vendor app, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="preset binding · vendor app" data-node-context="Sequence participant">
+          <title>User · preset binding · vendor app · Sequence participant</title>
           <rect x="62" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="62" y="72" width="165" height="54" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(68 78) scale(0.6875)">
@@ -170,7 +170,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="144.5" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">User</text>
-          <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">Big B · vendor app</text>
+          <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">preset binding · vendor app</text>
         </g>
 
         <g id="seq-big-b-presets-node-dispatcher" data-node-id="seq-big-b-presets-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, binding + feedback, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="binding + feedback" data-node-context="Sequence participant">

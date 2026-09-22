@@ -2,7 +2,6 @@
   "local-acceptance": [],
   "shared-codex": [
     "H32",
-    "P34",
     "P61",
     "H123",
     "H138",
@@ -89,7 +88,8 @@
     "H73",
     "H85",
     "H86",
-    "H87"
+    "H87",
+    "H148"
   ],
   "pc-lighting": [
     "H50",
