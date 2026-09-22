@@ -1,3 +1,37 @@
+## September 22, 2026: Hub #63 source and tracker completion
+
+[PR #140](https://github.com/jimmie-potts/agent-device-hub/pull/140) merged the
+desktop-control document, README discovery, architecture/roadmap additions and
+guide candidate as `0d1b0930efae23912b942f6e65560763402fe665`. Its main tree
+matches reviewed head `0d558384294d37bb3b9bc8e74137fae3d95a1d69`. Independent
+Standards and Specification reviews passed with no findings. All six PR jobs
+and all six merged-main jobs passed. Main receipts are
+[Checks](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35679165829)
+and [Work guide](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35679165900).
+Issue #63 then closed as completed with its documentation label retained.
+Guide issue #35 links the delivered document and marks only that item complete.
+
+The coordinator owns this guide-only completion follow-up. It refreshes the
+three backlogs and paginated repository histories, retains closed #63 as a
+reference, removes it from primary open-issue coverage and the remaining-work
+roadmap, and records its verified source delivery. The independent qualification
+path and the downstream preset gates remain unchanged. #64–#71 retain their
+own implementation, qualification and acceptance requirements. No product or
+wire-contract delta, OpenSpec capability, diagram redraw or source-pin change
+is introduced.
+
+Guide generation, all five maintenance tests, six-width browser checks and
+print expansion/restoration passed: 95 primary open issues, 12 guides, nine
+unchanged viewers and 108 merged PRs. Guide SHA-256:
+`cec272dbe78cb9ad227f1995a3719249668049869b8d4c19d60fc5386d653ba8`.
+This follow-up uses the
+existing guide-only CI filter exception with fixed-comparison scope, local
+checks and independent reviews. Public publication remains outside this
+delivery; the unauthenticated landing page still serves the older guide hash
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+No installation, real input/app qualification, transport or visible-device
+acceptance is claimed by this documentation work.
+
 ## September 22, 2026: Hub #63 desktop-control documentation candidate
 
 The delivery coordinator added `docs/desktop-controls.md` and discovery,

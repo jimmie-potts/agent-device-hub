@@ -1,15 +1,30 @@
 {
-  "fetchedAt": "2026-09-22T01:05:21.876394+00:00",
+  "fetchedAt": "2026-09-22T02:27:13.482506+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T01:01:10Z",
+      "pushedAt": "2026-09-22T02:24:57Z",
       "defaultBranch": "main",
-      "headSha": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
-      "mainCommitCount": 56,
+      "headSha": "0d1b0930efae23912b942f6e65560763402fe665",
+      "mainCommitCount": 59,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "0d1b0930efae23912b942f6e65560763402fe665",
+          "date": "2026-09-22T02:21:29Z",
+          "message": "docs: define desktop controls and preset delivery boundaries (#140)"
+        },
+        {
+          "sha": "25590e9c95ce334a516d2de0494584d67ea15a26",
+          "date": "2026-09-22T01:24:53Z",
+          "message": "docs: record Nanoleaf shared-monitor installed acceptance (#134)"
+        },
+        {
+          "sha": "97ee1592a535d14fef2903be8fc430762c6f23db",
+          "date": "2026-09-22T01:08:52Z",
+          "message": "Record Pixoo monitoring delivery and reduced setup scope (#131)"
+        },
         {
           "sha": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
           "date": "2026-09-22T01:01:10Z",
@@ -717,6 +732,14 @@
           "mergedAt": "2026-09-21T21:57:28Z"
         },
         {
+          "number": 131,
+          "title": "Record Pixoo monitoring delivery and reduced setup scope",
+          "createdAt": "2026-09-22T00:46:51Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
+          "base": "main",
+          "mergedAt": "2026-09-22T01:08:53Z"
+        },
+        {
           "number": 132,
           "title": "docs: record completed shared dashboard delivery",
           "createdAt": "2026-09-22T00:52:23Z",
@@ -731,17 +754,25 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/133",
           "base": "main",
           "mergedAt": "2026-09-22T01:01:10Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
-          "number": 131,
-          "title": "Track Pixoo monitoring packaging and pending acceptance",
-          "createdAt": "2026-09-22T00:46:51Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
-          "base": "main"
+          "number": 134,
+          "title": "docs: close out Nanoleaf shared-monitor installed acceptance",
+          "createdAt": "2026-09-22T01:22:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/134",
+          "base": "main",
+          "mergedAt": "2026-09-22T01:24:53Z"
+        },
+        {
+          "number": 140,
+          "title": "Document desktop controls, control profiles and desk presets",
+          "createdAt": "2026-09-22T02:14:54Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/140",
+          "base": "main",
+          "mergedAt": "2026-09-22T02:21:29Z"
         }
       ],
+      "openPRs": 2,
       "closedIssues": [
         {
           "number": 1,
@@ -848,6 +879,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/54"
         },
         {
+          "number": 63,
+          "title": "Document desktop controls, control profiles and desk presets",
+          "closedAt": "2026-09-22T02:26:08Z",
+          "createdAt": "2026-09-08T02:35:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/63"
+        },
+        {
           "number": 80,
           "title": "Publish the cross-project work guide on GitHub Pages",
           "closedAt": "2026-09-21T18:39:17Z",
@@ -896,10 +935,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
         }
       ],
-      "openIssueCount": 57,
+      "openIssueCount": 59,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-21T19:37:29Z"
+        "2026-09-22T01:53:35Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -908,7 +947,8 @@
         "2026-09-10": 5,
         "2026-09-12": 1,
         "2026-09-20": 2,
-        "2026-09-21": 1
+        "2026-09-21": 1,
+        "2026-09-22": 3
       }
     },
     "codex-nanoleaf": {
@@ -1246,7 +1286,7 @@
           "mergedAt": "2026-09-21T00:04:05Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": 0,
       "closedIssues": [
         {
           "number": 2,
@@ -1329,6 +1369,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/29"
         },
         {
+          "number": 30,
+          "title": "Get shared Codex monitoring working on the existing Linux Nanoleaf installation",
+          "closedAt": "2026-09-22T01:19:47Z",
+          "createdAt": "2026-09-07T02:24:20Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/30"
+        },
+        {
           "number": 33,
           "title": "Add local Codex MCP bindings for the Nanoleaf controller",
           "closedAt": "2026-09-07T19:39:11Z",
@@ -1393,7 +1441,7 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
         }
       ],
-      "openIssueCount": 22,
+      "openIssueCount": 21,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-09T22:37:08Z"
@@ -1772,7 +1820,7 @@
           "mergedAt": "2026-09-22T00:50:20Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": 0,
       "closedIssues": [
         {
           "number": 1,
