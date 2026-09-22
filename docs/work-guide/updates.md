@@ -10,9 +10,9 @@ This follow-up refreshes the three backlogs, native dependencies and the
 paginated history at 2026-09-22T06:07Z, retains #31 as a completed reference,
 removes it from open coverage and the remaining-work map, and rewrites the
 overview, controls and desktop-control next steps so they no longer wait on
-the definition. Hub #151, Nanoleaf #64 and Pixoo #67 have no open native
-prerequisites and appear as parallel candidates; #153, #154 and #155 remain
-blocked by their listed prerequisites. There are 94 primary open issues,
+the definition. Hub #151 and Nanoleaf #64 have no open native prerequisites
+and appear as parallel candidates; Pixoo #67 is listed as a non-blocking
+companion; #153, #154 and #155 remain blocked by their listed prerequisites. There are 94 primary open issues,
 12 guides, nine viewers, 52 roadmap nodes and 119 merged PRs in this snapshot.
 Architecture diagrams, ownership, transports and physical writers are unchanged.
 
