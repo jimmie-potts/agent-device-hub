@@ -42,7 +42,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
-| Nanoleaf settings | `nanoleaf.integration/1.0`, source `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`; pinned request consumer and fixtures recorded in `fixtures/nanoleaf-source.json` |
+| Nanoleaf settings | `nanoleaf.integration/1.0`, source `80628498136203a8f5fcb06ab5fa306e961e2def`; pinned request consumer and fixtures recorded in `fixtures/nanoleaf-source.json` |
 
 Run `npm run test:hub`, `npm run test:hub:package` and all shared checks from the worktree root. The tests use synthetic tokens, private temporary directories and fake loopback controllers. These checks do not qualify installed clients, physical results, live migration or performance budgets. A database lease prevents concurrent use of that store; it does not by itself prevent a second owner in another directory. The supervised migration path below verifies source-process release, destination and consumer readiness before resuming ingestion.
 
