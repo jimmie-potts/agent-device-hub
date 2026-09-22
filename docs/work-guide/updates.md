@@ -1,3 +1,34 @@
+## September 22, 2026: Hub #30 personal-project scope revision
+
+The owner approved standalone Linux/WSL qualification for everyday Codex
+monitoring. The saved Hub #30 body now requires real Pixoo/Nanoleaf consumers
+with synthetic input, disposable state and fake device transports; hook-return
+and consumer-receipt timing; normal/concurrent use; a short overload burst; and
+ordinary reconnect, unavailable-consumer and host-restart checks. One command
+and a concise report replace the broad multi-host qualification programme.
+
+Embedded-host hardening in Pixoo #61 is no longer a prerequisite for implementing
+or closing Hub #30. Existing #61 acceptance remains unchanged. Historical
+percentile ceilings are diagnostic comparisons for the revised #30; practical
+standalone targets must be defined before qualification runs. The 3,000 ms hard
+hook deadline, 256 MiB service RSS ceiling, bounded resources, confinement,
+cleanup and single-owner protections remain required. Historical budgets and
+failed receipts remain unchanged and do not become passing evidence.
+
+The coordinating writer updated only Hub #30's body, preserving its title,
+labels and open state, then refreshed the guide backlogs and shared-Codex
+sequence. This is a planning change with no product behavior delta, so no new
+OpenSpec change is needed. Architecture ownership and command flows are
+unchanged; diagram artifacts and their source-review dates need no update.
+Implementation, qualification, installation and physical acceptance are not
+claimed. Public publication remains outside this revision.
+
+Guide generation, all five maintenance tests, six-width browser checks and print
+expansion/restoration passed. The guide contains 94 primary open issues, 12
+guides and nine diagrams. The initial refresh detected Hub #6 closing during
+this task; its separately merged guide PR #132 was incorporated before these
+checks. No diagram artifacts or product tests were changed.
+
 ## September 21, 2026: Hub #6 source completion
 
 [PR #127](https://github.com/jimmie-potts/agent-device-hub/pull/127) merged as
