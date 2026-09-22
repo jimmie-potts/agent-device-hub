@@ -2004,3 +2004,25 @@ read/control credential. Saved consumers were reconciled, and authenticated
 read/control checks passed. Pixoo device acceptance remains separate.
 The refresh retains #30 as a direct closed reference without importing private
 operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
+# September 22, 2026 UTC: Hub #64 source qualification candidate
+
+The owner supplied packaging photos identifying the N Edition keyboard 85HA
+and N30 mouse 85CA. The qualification report corrects the R8 assumption,
+records documented controls and unknown event behavior, and prepares a
+reversible operator trial. #64 remains incomplete; #65 is not made ready.
+No input experiment, personal setup or device operation ran.
+
+Updated the desktop-controls guide and desktop-input diagram wording. The
+complete backlog refresh also includes the newly published Hub #137-#139 in
+shared-monitor coverage. It does not implement those issues. The diagram's
+planned ownership and command flow are unchanged; existing source pins remain
+their dated source baseline. Hardware identity comes from the owner's #64
+delivery-task photos, which remain outside Git.
+
+Guide generation and five maintenance tests passed. Browser checks passed
+coverage, links, navigation, search, diagram interactions and print restoration
+across six widths. All nine Archify artifacts passed 9/9 deterministic checks.
+The separate desktop-input viewer check found vertical overflow; its comparison
+with the baseline and the final candidate evidence remain in the delivery task.
+Source review, hosted CI, merge and live qualification remain pending. Public
+publication is outside this source task's authority and has not been performed.

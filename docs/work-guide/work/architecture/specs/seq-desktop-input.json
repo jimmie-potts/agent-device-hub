@@ -187,7 +187,7 @@
    "dot": "amber",
    "title": "Unverified",
    "items": [
-    "Qualification (H64) and hardware support are not established; Retro R8 is only a candidate mouse",
+    "Owner packaging identifies keyboard 85HA and N30 mouse 85CA; hold and app tests remain pending (H64)",
     "The first editor (H70) excludes scripts, shell execution, raw device commands and macros"
    ]
   }

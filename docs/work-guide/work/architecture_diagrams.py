@@ -381,7 +381,7 @@ D6 = seq(
     cards=[
         {'dot': 'cyan', 'title': 'Independent path', 'items': ['Ships without the hub, shared monitoring, general controls or Music', 'Wispr keeps its own service requirements']},
         {'dot': 'violet', 'title': 'Vocabulary', 'items': ['Control profile: controls, gestures and app scope mapped to actions', 'Button binding: one assignment', 'Desk preset: configured actions on participating devices (not used here)']},
-        {'dot': 'amber', 'title': 'Unverified', 'items': ['Qualification (H64) and hardware support are not established; Retro R8 is only a candidate mouse', 'The first editor (H70) excludes scripts, shell execution, raw device commands and macros']},
+        {'dot': 'amber', 'title': 'Unverified', 'items': ['Owner packaging identifies keyboard 85HA and N30 mouse 85CA; hold and app tests remain pending (H64)', 'The first editor (H70) excludes scripts, shell execution, raw device commands and macros']},
     ],
     width=1100,
 )
@@ -599,7 +599,7 @@ DIAGRAMS = [
          reading=['Ordinary mouse behavior passes through outside Codex. Held, repeated or stale input does not dispatch twice or replay later.',
                   'Big B stays unavailable until its preset service exists; presses are not buffered.'],
          boundaries=['This path does not wait for the hub, shared monitoring, general controls or Music. Wispr retains its own requirements.',
-                     'Hardware support and qualification remain unverified; Retro R8 is only a candidate mouse.',
+                     'Owner packaging identifies the N Edition keyboard 85HA and N30 mouse 85CA. Runtime mapping, hold/release and app acceptance remain unverified under [[H64]].',
                      'The first profile editor ([[H70]]) excludes arbitrary scripts, shell execution, raw device commands and multi-step macros.'],
          sources=[(H, 'docs/architecture.md')],
          issues=['H63', 'H64', 'H65', 'H66', 'H70']),
