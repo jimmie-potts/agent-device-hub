@@ -23,7 +23,7 @@
 #26 [OPEN] Plan and migrate Nanoleaf into the hub monorepo
 #30 [CLOSED] Qualify latency and failure isolation for shared Codex monitoring
 #31 [OPEN] Define agent-independent device controls after Codex integration acceptance
-#32 [OPEN] Deliver Codex-first shared monitoring and integration controls
+#32 [CLOSED] Deliver Codex-first shared monitoring and integration controls
 #35 [OPEN] Track future personal assistant, music and hosting work
 #36 [OPEN] Connect Windows Apple Music playback to the hub
 #37 [OPEN] Add now-playing and music controls to the shared UI and Codex tools
@@ -32,7 +32,7 @@
 #40 [OPEN] Configure music participation and alert interruption per device
 #41 [OPEN] Qualify audio capture and music visualizers for lights and displays
 #42 [OPEN] Package and qualify the hub for always-on Docker hosting on the PC
-#43 [OPEN] Adopt the Nanoleaf Linux runtime and update architecture documentation
+#43 [CLOSED] Adopt the Nanoleaf Linux runtime and update architecture documentation
 #44 [OPEN] Plan dedicated server hardware and migration from the PC
 #45 [OPEN] Run approved alert and device automation rules independently of conversation
 #46 [OPEN] Add a conversational assistant using shared device and automation tools
@@ -75,3 +75,8 @@
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability
 #148 [CLOSED] Clarify work-guide story status and actionable delivery paths
+#151 [OPEN] Add Pixoo general controls to the BUNNY component view
+#152 [OPEN] Add media tools to the hub MCP device tool set
+#153 [OPEN] Add Nanoleaf general controls to the BUNNY component view
+#154 [OPEN] Install and verify Pixoo general controls on the physical display
+#155 [OPEN] Install and verify Nanoleaf general controls on the installed wall

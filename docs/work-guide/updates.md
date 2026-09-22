@@ -1,3 +1,32 @@
+## September 22, 2026: General-control definition and concurrent closures
+
+Hub #31's general-control definition was accepted in a grouped question round
+and recorded in ADR 0005, with pointers in architecture, roadmap, desktop
+controls and the README. The tracker now holds the bounded issues: Hub #151
+(Pixoo controls), #152 (hub MCP media tools), #153 (Nanoleaf controls), #154
+and #155 (hardware acceptance), Nanoleaf #64 (native capabilities) and Pixoo
+#67 (playlist names), with native blocked-by links and refined notes on #67
+and #56. Hub #31 stays open and in progress until this documentation PR merges
+and its merged-revision CI is read back; a follow-up refresh records closure.
+
+The same snapshot records three concurrent closures made by other sessions
+today: Hub #32 (Codex-first milestone, completed on its reconciled dependency
+table), Nanoleaf #55 (installed Linux runtime, completed on existing evidence)
+and Hub #43 (architecture record, completed on its earlier PRs #84 and #98).
+Their guide rows now read as completed, the shared-codex and hosting next steps
+no longer point at them, and Hub #31, #32 and #43 join the direct acceptance
+reads. The controls guide gains rows for the new issues; #151 and Nanoleaf #64
+are listed as parallel candidates and are withheld until #31 closes.
+
+Refreshed all three backlogs and native dependencies at
+2026-09-22T05:45Z: 95 primary open issues, 12 guides, nine viewers, 52 roadmap
+nodes. Architecture diagrams, history inputs, ownership, transports and
+physical writers are unchanged. Generation, nine maintenance tests and the
+browser/print checks pass; HTML SHA-256 `75575f090d6d5740d7408fcfb00e607de9d58606301d0c3ba9b0ec1ec9d6dea9`.
+This is a mixed change with documentation outside `docs/work-guide/`, so all
+configured CI jobs apply. Public publication and live verification remain
+separate and were not requested.
+
 ## September 22, 2026: Guide clarity source closeout
 
 Hub PR #149 merged as `56e5667342cd446a229a4234dadf13fe3d07b0a2`.

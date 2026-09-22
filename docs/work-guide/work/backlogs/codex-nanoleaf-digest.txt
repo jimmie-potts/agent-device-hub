@@ -21,10 +21,11 @@
 #43 [OPEN] Render task effects on NL22 Light Panels
 #44 [OPEN] Manage Lines and Light Panels together in the wall map and tray
 #45 [OPEN] Add controller enrollment and reversible multi-device upgrades
-#46 [OPEN] Verify Lines and NL22 Panels together on the installed Windows bridge
+#46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
 #49 [CLOSED] Expose Nanoleaf integration settings and assignments to the shared frontend
 #52 [CLOSED] Expose connector geometry for the Prism wall map
 #53 [CLOSED] Integrate Prism crystal artwork and two-zone wall animation
 #54 [CLOSED] Support a fresh Linux installation of the Nanoleaf services
-#55 [OPEN] Install and verify the Linux Nanoleaf runtime in WSL
+#55 [CLOSED] Install and verify the Linux Nanoleaf runtime in WSL
+#64 [OPEN] Expose native power, brightness and saved-scene controls through the protected controller API

@@ -781,5 +781,27 @@
     "comments": [],
     "commentCount": 0,
     "commentsRefreshed": false
+  },
+  {
+    "number": 67,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Expose user-entered playlist names through the Pixoo integration extension",
+    "body": "## Outcome\n\nExpose the user-entered name of each discoverable saved playlist through the Pixoo integration extension, so the shared BUNNY frontend can label playlist selection instead of showing bare IDs.\n\n## Scope and accepted definition\n\nThe accepted general-control definition is [Hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31), recorded in the hub as ADR 0005 (`docs/decisions/0005-general-device-controls.md`). Controller v1 exposes up to the first 100 saved playlist IDs without names and remains unchanged. This issue adds an additive field to the Pixoo-owned `pixoo-integration` extension under a new compatible minor version, with explicit consumer negotiation.\n\nThis issue is non-blocking for the hub's Pixoo general-control UI. That UI is accepted with IDs alone and shows names only after it consumes the new extension version.\n\n## Accepted behavior\n\n- A playlist name is included only when it was entered by the user in the Pixoo application. Names derived from filenames, media titles or paths are omitted, not substituted.\n- Names follow the shared label bound of at most 80 Unicode characters and contain no credentials, paths or private metadata.\n- The mapping is keyed by the same playlist IDs and catalog revision that controller v1 discovery uses, so a stale name cannot be paired with a different playlist.\n- Browser and local MCP routes are unchanged. Reads add no device writes.\n\n## Acceptance criteria\n\n- [ ] **AC1.** The extension snapshot carries the additive name field under a new minor version; existing consumers of the current version keep working. The exact issue-linked OpenSpec change records the delta.\n- [ ] **AC2.** Validation rejects names above the bound and never includes names that are not user-entered; tests cover a playlist without a user-entered name.\n- [ ] **AC3.** Names and IDs are consistent with the catalog revision in the same snapshot; a catalog change advances the revision.\n- [ ] **AC4.** A linked Hub companion PR updates the hub's pinned Pixoo integration fixtures and compatibility record.\n\n## Required source prerequisites\n\n- [Hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31): general-control definition, accepted 2026-09-22.\n- [#37](https://github.com/jimmie-potts/divoom-app-upgrade/issues/37) and [#33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33): controller API and integration extension, closed.\n\n## Work assessment\n\nPlanning assessment, 2026-09-22, against divoom-app-upgrade `main` and the accepted Hub #31 decisions.\n\n- **Complexity: low.** One additive read field on an existing versioned extension.\n- **Uncertainty: low.** Whether Pixoo stores an explicit user-entered playlist name must be confirmed in the code before the field is specified; if names are ever auto-derived, the omission rule applies.\n- **Impact: low.** Read-only data; a wrong name is a labeling defect, not a device effect.\n\n**Readiness:** ready. **Review:** independent Standards and Specification reviews with a privacy check on name provenance.\n\n## Planning and delivery\n\nFollow AGENTS.md and docs/sdlc.md. Use the exact issue-linked OpenSpec change, proportionate executable checks, isolated work, independent review, guarded merge and merged-revision CI. Keep private media, credentials and runtime state out of Git. This issue does not authorize installation or device operations.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/67",
+    "updatedAt": "2026-09-22T05:37:38Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:ready"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
   }
 ]
