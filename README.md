@@ -126,7 +126,8 @@ generator and source snapshots live here and are maintained with each delivery.
 
 ## BUNNY frontend
 
-The Hub #6 candidate adds the [integration dashboard](apps/dashboard/README.md)
+The [integration dashboard](apps/dashboard/README.md) implements Hub #6
 for activity, components and connections. It uses the existing protected hub and
-controller services, with source-only synthetic browser checks. Human approval of
-the new UI, source delivery, installation and physical acceptance remain separate.
+controller services, with source-only synthetic browser checks. PR #127 records
+human UI approval and source-delivery evidence. Installation and physical
+acceptance remain separate.
