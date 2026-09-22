@@ -1,3 +1,18 @@
+## September 22, 2026: Hub #9 final source compatibility candidate
+
+The #9 coordinator verified #30 closure and PR #135 merge `8411413`, and
+linked its final acceptance report without repeating measurements. Reconciled
+the concurrent main changes and refreshed the complete backlog. The guide keeps
+#9 separate from delivered performance qualification and records source review
+in progress. The new compatibility table preserves the distinct Nanoleaf/runtime
+pins and installed/physical boundaries. Existing diagram ownership and command
+flows are unchanged, so no viewer source or receipt changes apply.
+
+Guide generation, five maintenance tests, browser/print and output consistency
+checks passed for this final candidate. Public publication and live verification remain
+outside this source delivery. Source merge and issue closure will be reconciled
+in a linked guide-only follow-up after their authoritative readback.
+
 ## September 22, 2026: Hub #30 qualification closeout
 
 PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
@@ -2094,15 +2109,28 @@ records the delayed-unseen-start limit, old-store recovery, independent consumer
 policies and the separate installed Pixoo #34 retest. Reset #138 and history #139
 remain separate work. No hooks, personal service, state store or device changed.
 
-Refreshed all three backlogs and paginated history after incorporating PRs #135
-and #140. Their now-closed issues #30 and #63 remain reference links and leave
-open-work counts. Retained the added status/recovery/history roadmap tracks.
+Refreshed all three backlogs after incorporating PRs #135, #136 and #140.
+The closed issues #9, #30 and #63 remain reference links and leave open-work counts. Retained the added status/recovery/history roadmap tracks.
 The change affects reduction inside the existing state owner; no architecture
 component, ownership arrow, transport or physical writer changes, so diagram
 source pins and viewers remain unchanged.
 
 Generation, five maintenance tests and desktop/mobile/print browser checks pass.
-The candidate has 94 primary open issues, 12 guides and nine architecture viewers.
+The candidate has 93 primary open issues, 12 guides and nine architecture viewers.
 Final source reviews, hosted CI, merge and immutable release receipts follow this
 candidate. A linked completion refresh will record facts unavailable before
 merge. Public guide publication and installed verification remain separate.
+## 2026-09-22 — Hub #9 bounded source compatibility candidate
+
+The Hub #9 coordinator synchronized the owner-approved scope reduction and current
+in-progress state. The shared-monitoring guide now separates #9's small everyday
+compatibility suite from #30's performance qualification. It retains #30's report
+as a completion input and keeps installed-client and visible-device acceptance
+with their owners. Refreshed backlog inputs retain current source receipts;
+no architecture ownership or command flow changed, so diagram sources are unchanged.
+
+Guide generation, five maintenance tests and browser/print checks passed. The
+candidate HTML SHA-256 is
+`16b813fe25e7c75307f7faf23cf8056219a2718e45eee7ed63169b0351e705af`.
+This entry records an unmerged source candidate. Public publication and live
+verification are outside this delivery and remain separate.
