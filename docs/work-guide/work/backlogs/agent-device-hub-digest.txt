@@ -2,7 +2,7 @@
 #3 [CLOSED] Implement the reusable agent-state core and provider emitters
 #4 [CLOSED] Define versioned controller capabilities and integration APIs
 #5 [CLOSED] Host shared monitoring and route commands to existing controllers
-#6 [OPEN] Build the shared Codex-integration frontend
+#6 [CLOSED] Build the shared Codex-integration frontend
 #7 [CLOSED] Provide reusable local MCP transport and device tools
 #8 [CLOSED] Package reversible shared hooks and collector ownership migration
 #9 [OPEN] Verify shared status and command routing across both device integrations

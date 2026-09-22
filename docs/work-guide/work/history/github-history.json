@@ -1,15 +1,25 @@
 {
- "fetchedAt": "2026-09-21T21:50:20.573612+00:00",
+ "fetchedAt": "2026-09-22T00:49:57.038761+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-21T21:45:30Z",
+   "pushedAt": "2026-09-22T00:49:22Z",
    "defaultBranch": "main",
-   "headSha": "f6bee907e06177c6dc8abde0075d73cc391784e9",
-   "mainCommitCount": 52,
+   "headSha": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
+   "mainCommitCount": 54,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
+     "date": "2026-09-22T00:44:48Z",
+     "message": "Add BUNNY activity and component integration dashboard (#127)"
+    },
+    {
+     "sha": "012de557257940cc66913c64012cf4d85e13fb91",
+     "date": "2026-09-21T21:57:27Z",
+     "message": "Reconcile completed shared setup delivery in the work guide (#130)"
+    },
     {
      "sha": "f6bee907e06177c6dc8abde0075d73cc391784e9",
      "date": "2026-09-21T21:45:30Z",
@@ -665,6 +675,14 @@
      "mergedAt": "2026-09-21T21:27:42Z"
     },
     {
+     "number": 127,
+     "title": "Add BUNNY activity and component integration dashboard",
+     "createdAt": "2026-09-21T21:19:43Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
+     "base": "main",
+     "mergedAt": "2026-09-22T00:44:48Z"
+    },
+    {
      "number": 128,
      "title": "Reconcile completed standalone MCP delivery in the guide",
      "createdAt": "2026-09-21T21:33:39Z",
@@ -679,14 +697,22 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/129",
      "base": "main",
      "mergedAt": "2026-09-21T21:45:30Z"
+    },
+    {
+     "number": 130,
+     "title": "Reconcile completed shared setup delivery in the guide",
+     "createdAt": "2026-09-21T21:53:08Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/130",
+     "base": "main",
+     "mergedAt": "2026-09-21T21:57:28Z"
     }
    ],
    "openPRs": [
     {
-     "number": 127,
-     "title": "Add BUNNY activity and component integration dashboard",
-     "createdAt": "2026-09-21T21:19:43Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
+     "number": 131,
+     "title": "Track Pixoo monitoring packaging and pending acceptance",
+     "createdAt": "2026-09-22T00:46:51Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
      "base": "main"
     }
    ],
@@ -730,6 +756,14 @@
      "createdAt": "2026-09-07T02:22:03Z",
      "stateReason": "completed",
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/5"
+    },
+    {
+     "number": 6,
+     "title": "Build the shared Codex-integration frontend",
+     "closedAt": "2026-09-22T00:48:59Z",
+     "createdAt": "2026-09-07T02:24:02Z",
+     "stateReason": "completed",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/6"
     },
     {
      "number": 7,
@@ -836,7 +870,7 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
     }
    ],
-   "openIssueCount": 58,
+   "openIssueCount": 57,
    "issueCreatedRange": [
     "2026-09-07T02:21:57Z",
     "2026-09-21T19:37:29Z"
@@ -1347,7 +1381,7 @@
   },
   "divoom-app-upgrade": {
    "createdAt": "2026-09-05T22:00:30Z",
-   "pushedAt": "2026-09-21T18:34:17Z",
+   "pushedAt": "2026-09-22T00:46:19Z",
    "defaultBranch": "main",
    "headSha": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
    "mainCommitCount": 27,
@@ -1684,7 +1718,7 @@
     },
     {
      "number": 63,
-     "title": "Render shared agent monitoring as paged 64×64 dashboards",
+     "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
      "createdAt": "2026-09-20T23:45:42Z",
      "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
      "base": "main",
@@ -1699,7 +1733,15 @@
      "mergedAt": "2026-09-21T18:34:18Z"
     }
    ],
-   "openPRs": [],
+   "openPRs": [
+    {
+     "number": 65,
+     "title": "Package shared monitoring setup and Pixoo acceptance runbook",
+     "createdAt": "2026-09-22T00:46:21Z",
+     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/65",
+     "base": "main"
+    }
+   ],
    "closedIssues": [
     {
      "number": 1,
@@ -1839,7 +1881,7 @@
     },
     {
      "number": 32,
-     "title": "Render the 64×64 agent monitoring dashboard and preview",
+     "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
      "closedAt": "2026-09-21T00:04:22Z",
      "createdAt": "2026-09-07T00:55:32Z",
      "stateReason": "completed",
