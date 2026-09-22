@@ -388,8 +388,10 @@ This local cross-repository check needs explicit prepared private sources; ordin
 CI retains its existing component, contract, browser and package tests without
 adding private repository credentials. Run `npm run typecheck`,
 `npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
-`npm run check:workflow`, `npm run test:workflow` and
-`node --test tests/compatibility_process.test.mjs` alongside the source check.
+`npm run check:workflow` and `npm run test:workflow` alongside the source check.
+The Hub command includes `tests/compatibility_process.test.mjs`, so both required
+contracts/state CI jobs check forced process cleanup and failed preflight reports
+without private source access.
 No product code or contract changes are intended. The #30 performance report is
 a separate required completion input. Source compatibility does not install
 hooks, start an actual agent client or establish visible-device behavior.
