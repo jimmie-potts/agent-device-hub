@@ -40,11 +40,15 @@ Each user-facing component SHALL use common identity, navigation, status, settin
 - **THEN** each appears in common navigation with only supported authorized actions and explanations for unavailable operations
 
 ### Requirement: General device controls
-The dashboard SHALL offer screen power, brightness, saved-playlist selection and the declared playback actions inside a component's existing view when the controller v1 snapshot declares that capability and the credential has control scope. Each control MUST submit exactly one valid controller v1 command through the existing hub route with the observed request ticket, configuration revision and generation, and MUST show the receipt or typed failure with pending, conflict and uncertain states. A disabled control MUST name the missing capability, scope or mode. The dashboard MUST NOT change a mode as a side effect of another command, submit compound writes, restore a previous state automatically or retry an uncertain command.
+The dashboard SHALL offer power, brightness, saved-playlist selection, the declared playback actions and saved-scene activation inside a component's existing view when the controller v1 snapshot declares that capability and the credential has control scope. Each control MUST submit exactly one valid controller v1 command through the existing hub route with the observed request ticket, configuration revision and generation, and MUST show the receipt or typed failure with pending, conflict and uncertain states. A disabled control MUST name the missing capability, scope or mode. The dashboard MUST NOT change a mode as a side effect of another command, submit compound writes, restore a previous state automatically or retry an uncertain command. For a controller whose brightness command is a persisting override, the view MUST present the desired brightness as an override that lasts until the next explicit mode command and MUST show no override as unknown rather than as a value.
 
 #### Scenario: Declared capability with control scope
 - **WHEN** the Pixoo snapshot declares power, brightness and media and the credential has control scope
 - **THEN** the power, brightness, playlist and playback controls are enabled and each submits one guarded controller v1 command whose outcome is shown
+
+#### Scenario: Nanoleaf power and brightness in every mode
+- **WHEN** the Nanoleaf snapshot declares power and brightness and the wall is in Work, Quiet or Free
+- **THEN** the power and brightness controls are enabled, each submits one guarded controller v1 command without a mode command, and an accepted brightness is shown as an override that persists until the next explicit mode command
 
 #### Scenario: Missing capability or read-only credential
 - **WHEN** a component does not declare a capability or the credential lacks control scope
@@ -59,7 +63,7 @@ The dashboard SHALL offer screen power, brightness, saved-playlist selection and
 - **THEN** the command is submitted in Monitor or Media without changing the mode, and the view explains that screen-off pauses playback and screen-on does not resume it
 
 ### Requirement: Content controls gated by status presentation
-The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, show the reason, and offer a one-click explicit switch to Media through the existing mode control. Returning to Monitor MUST use the existing mode control. Because the Pixoo controller does not declare controller v1 modes, the Pixoo mode control and the explicit switch SHALL submit the device-owned Pixoo integration extension's mode operation through the hub's existing integration route with that extension's request ID, configuration revision and generation guards; controllers that declare controller v1 modes keep the controller v1 mode command. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed.
+The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, and SHALL disable Nanoleaf scene activation while the wall presents agent status in Work or Quiet, while a mode change is pending or while the mode is unknown. In each case the view MUST show the reason and offer a one-click explicit switch to Media or Free through the existing mode control. Returning to Monitor, Work or Quiet MUST use the existing mode control. Because the Pixoo controller does not declare controller v1 modes, the Pixoo mode control and the explicit switch SHALL submit the device-owned Pixoo integration extension's mode operation through the hub's existing integration route with that extension's request ID, configuration revision and generation guards; controllers that declare controller v1 modes, including Nanoleaf, keep the controller v1 mode command for both the mode control and the explicit switch. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed. Scenes SHALL be listed only from the controller v1 `scenes` capability, labelled by the user-chosen names the device-owned integration extension supplies and by ID otherwise; browser and hub configuration MUST contribute no scene identities or names.
 
 #### Scenario: Monitor gating with explicit switch
 - **WHEN** Pixoo is in Monitor and the user activates the explicit switch
@@ -68,6 +72,18 @@ The dashboard SHALL disable Pixoo playlist selection and playback actions while 
 #### Scenario: Playback in Media
 - **WHEN** Pixoo is in Media and the user selects a declared playlist ID or activates a declared playback action
 - **THEN** exactly one media command for that ID or action is submitted and its receipt is shown without a mode change
+
+#### Scenario: Work or Quiet gating with explicit Free switch
+- **WHEN** the Nanoleaf wall is in Work or Quiet and the user activates the explicit switch
+- **THEN** one controller v1 mode command to Free is submitted, no scene command is sent, and scene activation becomes available only after the Free mode is observed with no pending mode change
+
+#### Scenario: Scene activation in Free
+- **WHEN** the wall is in Free and the user activates a declared scene
+- **THEN** exactly one scene command for that scene ID is submitted, its receipt is shown without a mode change, and the scene is labelled by its user-chosen name when the integration snapshot supplies one and by ID otherwise
+
+#### Scenario: Scene rejected by the controller
+- **WHEN** the controller rejects a scene command with a typed failure because its mode changed after the browser observed Free
+- **THEN** the typed failure is shown, no command is repeated, and the control stays available for a fresh explicit action
 
 ### Requirement: Reconnect without losing intent
 The dashboard SHALL obtain authoritative snapshots on resync or expired cursors, reject superseded results, bound reconnect work, preserve focus and drafts, and keep slow/offline device status independent.

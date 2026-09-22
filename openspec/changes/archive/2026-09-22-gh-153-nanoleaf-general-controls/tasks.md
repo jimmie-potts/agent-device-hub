@@ -13,5 +13,5 @@
 ## 3. Qualification and delivery
 
 - [x] 3.1 Extend browser and matrix scenarios for read-only credentials, no observed sessions, reconnect with a preserved scene selection and focus, unknown observation, keyboard access, reduced motion, narrow layout and axe checks on the Nanoleaf view; refresh the committed evidence receipts.
-- [ ] 3.2 Update the dashboard README, development notes, README and architecture mentions and the work guide inputs and generated output; verify guide generation, maintenance tests and browser checks.
-- [ ] 3.3 Run the shared build, type, hub, workflow and dashboard checks; present the exact UI candidate for human approval in the PR, synchronize the spec delta and archive this change. Independent reviews, current-head CI, renewed UI approval after changes, guarded merge after the Nanoleaf #64 hub companion and Pixoo #151 candidates merge, and merged-main readback remain SDLC gates after archive.
+- [x] 3.2 Update the dashboard README, development notes, README and architecture mentions and the work guide inputs and generated output; verify guide generation, maintenance tests and browser checks.
+- [x] 3.3 Run the shared build, type, hub, workflow and dashboard checks; present the exact UI candidate for human approval in the PR, synchronize the spec delta and archive this change. Independent reviews, current-head CI, renewed UI approval after changes, guarded merge after the Nanoleaf #64 hub companion and Pixoo #151 candidates merge, and merged-main readback remain SDLC gates after archive.

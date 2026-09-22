@@ -1,3 +1,34 @@
+## September 22, 2026: Nanoleaf general controls candidate
+
+Hub PR #162 carries the source candidate for Hub #153: power, brightness and
+saved-scene activation in the existing Nanoleaf component view on the
+capabilities Nanoleaf #64 declares at `8062849`, one guarded controller v1
+command each through the existing hub route. Brightness is shown as an override
+until the next explicit mode command; scenes are disabled in Work and Quiet or
+while a mode change is pending, with an explicit Free switch through the
+controller v1 mode command, and are labelled by user-chosen names from the
+`nanoleaf.integration/1.0` snapshot or by ID. OpenSpec change
+`gh-153-nanoleaf-general-controls` records the `unified-dashboard` delta. The
+candidate is stacked on the #64 hub companion PR #161 and the Pixoo PR #160 and
+merges only after them. Nothing is installed or operated; #155 owns the wall
+acceptance.
+
+This entry reconciles the guide inputs of the two concurrent candidates and
+refreshes the three backlogs at the snapshot time recorded in
+`work/backlogs/snapshot.json`. Hub #153 moved from backlog to in progress with
+its blocked label retained for the merge order; the controls guide's Nanoleaf
+row and the controls-music next step name all three open PRs. Ownership,
+transports, physical writers and pinned architecture viewers are unchanged: the
+browser remains a client of the hub route and the Nanoleaf worker remains the
+only light writer.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+the HTML SHA-256 is recorded on the PR. This candidate is a mixed change, so
+every configured CI job applies and the Nanoleaf view needs explicit human UI
+approval recorded on the PR. A linked follow-up will record merge, issue closure
+and acceptance facts unavailable before merge. Public guide publication and live
+verification remain separate and were not requested.
+
 ## September 22, 2026: Nanoleaf native controls delivered
 
 Nanoleaf #64 closed as completed after
