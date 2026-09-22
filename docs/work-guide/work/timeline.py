@@ -27,8 +27,8 @@ SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later'
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H123'], guide='shared-codex', main=True),
-        dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123'], guide='shared-codex', main=True),
+        dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35', 'H151', 'N64', 'H153', 'P67', 'H152', 'H154', 'H155'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
@@ -85,8 +85,8 @@ TRACKS = [
     ]),
     ('Nanoleaf Linux runtime', [
         dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations'),
-        dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
-        dict(id='n-linux-portability', x=2, label='Architecture documentation', issues=['H43'], guide='hosting-migrations'),
+        dict(id='n-linux-acceptance', x=1, label='Linux installation accepted', issues=[], guide='hosting-migrations'),
+        dict(id='n-linux-portability', x=2, label='Architecture documented', issues=[], guide='hosting-migrations'),
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),

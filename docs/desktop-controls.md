@@ -40,8 +40,13 @@ does not apply a preset or replay old presses.
 
 The initial preset meanings are accepted intent. Exact per-device operations,
 participation defaults and restoration baselines must be refined in
-[#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) after the
-[general-control definition #31](https://github.com/jimmie-potts/agent-device-hub/issues/31).
+[#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) within the
+[general-control definition #31](https://github.com/jimmie-potts/agent-device-hub/issues/31),
+accepted on September 22, 2026 and recorded in
+[ADR 0005](decisions/0005-general-device-controls.md). That record defines
+general control, status presentation, takeover and restoration; presets reuse
+those terms and its mode-independent power/brightness and explicit-restoration
+rules.
 
 | Desk preset | Intended result |
 | --- | --- |
