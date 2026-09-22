@@ -76,7 +76,8 @@ acceptance) keep their own scope; #42 keeps its blocked label until its owner
 releases it.
 
 This entry refreshes the three backlogs and repository history, retains #41 as
-a closed reference, records it as completed in the Lines + Light Panels guide,
+a closed reference with comment links only (its delivery-claim comment names a
+local worktree path), records it as completed in the Lines + Light Panels guide,
 moves the guide's next step and the reviewed parallel unit to #42, and corrects
 the worker row to the Linux runtime. The refresh also picked up new Hub #158
 (iPhone Apple Music sources), which joins the controls and music guide and the
@@ -85,7 +86,7 @@ open candidate. Ownership, transports, physical writers and the pinned
 architecture viewers do not change, so no diagram is redrawn. Guide generation,
 nine maintenance tests, the browser check and generated-output consistency
 pass; HTML SHA-256:
-`a1b2e411ef1e97d60087ed9cc0c30208a01830257f7401791bcf125a9bf34c72`.
+`d36be03d25dacf308e9a914b5f1093687aaf43e8a4a84cab1dc7bad99b6e57fd`.
 Public publication and live verification are separate and are not claimed here.
 
 ## September 22, 2026: Guide clarity source closeout

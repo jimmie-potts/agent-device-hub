@@ -60,7 +60,7 @@ def refresh_repo(repo):
         raw = api(f'{base}/issues/{number}')
         comments, comment_sizes = pages(f'{base}/issues/{number}/comments')
         comment_rows = [{'url': c['html_url'], 'createdAt': c['created_at'], 'updatedAt': c['updated_at']} for c in comments]
-        references_only = (repo == 'codex-nanoleaf' and number in (30, 54, 55)) or (repo == 'divoom-app-upgrade' and number in (30, 34))
+        references_only = (repo == 'codex-nanoleaf' and number in (30, 41, 54, 55)) or (repo == 'divoom-app-upgrade' and number in (30, 34))
         # Linux and physical-delivery comments may include private metadata. Keep
         # acceptance links in Git; inspect full comments through GitHub on demand.
         if not references_only:
