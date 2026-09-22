@@ -1,15 +1,20 @@
 {
- "fetchedAt": "2026-09-22T02:56:38.166621+00:00",
+ "fetchedAt": "2026-09-22T03:06:40.329531+00:00",
  "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
  "repositories": {
   "agent-device-hub": {
    "createdAt": "2026-09-07T02:05:13Z",
-   "pushedAt": "2026-09-22T02:52:01Z",
+   "pushedAt": "2026-09-22T03:03:02Z",
    "defaultBranch": "main",
-   "headSha": "4f90164519167da3d7952d81a7a6211602ef28d5",
-   "mainCommitCount": 62,
+   "headSha": "1dda5e9432422f3a36f483be317b2962d799d937",
+   "mainCommitCount": 63,
    "firstCommitAt": "2026-09-07T02:05:14Z",
    "mainCommits": [
+    {
+     "sha": "1dda5e9432422f3a36f483be317b2962d799d937",
+     "date": "2026-09-22T03:01:15Z",
+     "message": "Reconcile compatibility delivery and issue closure in the guide (#145)"
+    },
     {
      "sha": "4f90164519167da3d7952d81a7a6211602ef28d5",
      "date": "2026-09-22T02:52:01Z",
@@ -809,16 +814,17 @@
      "url": "https://github.com/jimmie-potts/agent-device-hub/pull/142",
      "base": "main",
      "mergedAt": "2026-09-22T02:42:18Z"
+    },
+    {
+     "number": 145,
+     "title": "Reconcile compatibility delivery and issue closure in the guide",
+     "createdAt": "2026-09-22T02:57:44Z",
+     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/145",
+     "base": "main",
+     "mergedAt": "2026-09-22T03:01:15Z"
     }
    ],
    "openPRs": [
-    {
-     "number": 141,
-     "title": "Reconcile desktop-control documentation completion in the guide",
-     "createdAt": "2026-09-22T02:29:13Z",
-     "url": "https://github.com/jimmie-potts/agent-device-hub/pull/141",
-     "base": "main"
-    },
     {
      "number": 143,
      "title": "Record 85HA keyboard and N30 mouse qualification findings",

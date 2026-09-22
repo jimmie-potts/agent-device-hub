@@ -1,0 +1,231 @@
+{
+  "formatVersion": "1.0",
+  "ownerId": "owner",
+  "revision": 8,
+  "lastCommitAtMs": 1029,
+  "consumers": [
+    {
+      "id": "pixoo",
+      "clearOnNewTurn": true
+    },
+    {
+      "id": "nanoleaf",
+      "clearOnNewTurn": false
+    }
+  ],
+  "sessions": [
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "session"
+      },
+      "turn": {
+        "status": "unknown"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "unknown",
+      "attention": [
+        {
+          "id": {
+            "status": "known",
+            "id": "approval"
+          },
+          "kind": "approval",
+          "turn": {
+            "status": "known",
+            "id": "turn-one"
+          }
+        }
+      ],
+      "notices": [
+        {
+          "id": "4081f6be010b403366e5c5e34066581b153e48f36af67e21c3a949db9cf1a592",
+          "kind": "turn-ended",
+          "turn": {
+            "status": "known",
+            "id": "turn-one"
+          },
+          "acknowledgedBy": []
+        },
+        {
+          "id": "d976a714af467af9fd1cc8cfbc37dcf732a01b00701e097885ba909c7239ea97",
+          "kind": "turn-ended",
+          "turn": {
+            "status": "unknown"
+          },
+          "acknowledgedBy": []
+        }
+      ],
+      "read": "unknown",
+      "unavailable": [
+        {
+          "kind": "evidence.unavailable",
+          "dimension": "turn",
+          "reason": "ambiguous"
+        },
+        {
+          "kind": "evidence.unavailable",
+          "dimension": "ordering",
+          "reason": "ambiguous"
+        },
+        {
+          "kind": "evidence.unavailable",
+          "dimension": "activity",
+          "reason": "ambiguous"
+        }
+      ],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 1018,
+      "observedAtMs": 1017,
+      "retiredTurns": [],
+      "seen": [
+        {
+          "key": "edab9a0d965107945cd11350d6e892ab703ba81df92378940ae2f4e3a368d568",
+          "content": "edab9a0d965107945cd11350d6e892ab703ba81df92378940ae2f4e3a368d568"
+        },
+        {
+          "key": "6bdff90070ae8a0d4cd9305ed947349c2cd2f882a984e2d652a27f3a856a7f12",
+          "content": "6bdff90070ae8a0d4cd9305ed947349c2cd2f882a984e2d652a27f3a856a7f12"
+        },
+        {
+          "key": "a35ae1b21f4066770325c8a15c8a17cb2cddc2a528d3682cf400f81d1b2260e1",
+          "content": "a35ae1b21f4066770325c8a15c8a17cb2cddc2a528d3682cf400f81d1b2260e1"
+        },
+        {
+          "key": "ed10c158a81ba86b235333dfc7ff534d7d963e20c0a56bd52c1c3d6b6643e291",
+          "content": "ed10c158a81ba86b235333dfc7ff534d7d963e20c0a56bd52c1c3d6b6643e291"
+        },
+        {
+          "key": "02e2e8560ff2b23af0f79560122b15c6dd68347ce6088c9ec9da2e7b9fc0241d",
+          "content": "02e2e8560ff2b23af0f79560122b15c6dd68347ce6088c9ec9da2e7b9fc0241d"
+        }
+      ],
+      "watermarks": [],
+      "label": "Chosen task"
+    },
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "other-session"
+      },
+      "turn": {
+        "status": "known",
+        "id": "other-turn"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "unknown",
+      "attention": [],
+      "notices": [
+        {
+          "id": "854c1b1fdcfa19f9b1adc24c29c972f53a501401dbd2d4b95c2c9da6548b6ec6",
+          "kind": "turn-ended",
+          "turn": {
+            "status": "known",
+            "id": "other-turn"
+          },
+          "acknowledgedBy": []
+        }
+      ],
+      "read": "unknown",
+      "unavailable": [
+        {
+          "kind": "evidence.unavailable",
+          "dimension": "ordering",
+          "reason": "missing"
+        },
+        {
+          "kind": "evidence.unavailable",
+          "dimension": "activity",
+          "reason": "ambiguous"
+        }
+      ],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 1028,
+      "observedAtMs": 1027,
+      "retiredTurns": [],
+      "seen": [
+        {
+          "key": "d3e1063444757fc4c07e3b3a099585282d8d360ccaf4f7c84f20e87fe054ba69",
+          "content": "d3e1063444757fc4c07e3b3a099585282d8d360ccaf4f7c84f20e87fe054ba69"
+        },
+        {
+          "key": "72832d7cb31228484a020a38a9b7a53012756e55d872853ab22c7dbfc82e1b57",
+          "content": "72832d7cb31228484a020a38a9b7a53012756e55d872853ab22c7dbfc82e1b57"
+        }
+      ],
+      "watermarks": []
+    }
+  ],
+  "journal": [
+    {
+      "revision": 1,
+      "atMs": 1003,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "turn.started",
+      "outcome": "applied"
+    },
+    {
+      "revision": 2,
+      "atMs": 1007,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "attention.approval",
+      "outcome": "applied"
+    },
+    {
+      "revision": 3,
+      "atMs": 1011,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "turn.ended",
+      "outcome": "ambiguous"
+    },
+    {
+      "revision": 4,
+      "atMs": 1015,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "turn.started",
+      "outcome": "ambiguous"
+    },
+    {
+      "revision": 5,
+      "atMs": 1019,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "turn.ended",
+      "outcome": "ambiguous"
+    },
+    {
+      "revision": 6,
+      "atMs": 1021,
+      "sessionKey": "137e283a6a6984983477885e7781889bee8b8d39f7864b937542435c187aa98e",
+      "kind": "label",
+      "outcome": "applied"
+    },
+    {
+      "revision": 7,
+      "atMs": 1025,
+      "sessionKey": "738955827a490b4154fbbc7afbd45f7733f0f261fddd6b1717e8a4f395a8ed42",
+      "kind": "turn.started",
+      "outcome": "applied"
+    },
+    {
+      "revision": 8,
+      "atMs": 1029,
+      "sessionKey": "738955827a490b4154fbbc7afbd45f7733f0f261fddd6b1717e8a4f395a8ed42",
+      "kind": "turn.ended",
+      "outcome": "ambiguous"
+    }
+  ]
+}

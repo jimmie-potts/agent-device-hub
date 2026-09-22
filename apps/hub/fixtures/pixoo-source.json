@@ -11,7 +11,8 @@
     "apps/server/src/monitor.ts": "2e0ef03325c74da6c5bc90ce010940dbd27acd87ea048b96756cb79d6e4e3354",
     "apps/server/src/monitor-storage.ts": "610d7904d81fe3b11639a33b70571148fdb6046312c8559ebdb52725eb1b3883",
     "apps/server/src/mcp-config.ts": "6353f5ba9559442cfdc8e2f690617690c27a6b310bcdbd467322e9acf7a8ff01",
-    "apps/server/src/monitor-cli.ts": "8e6bb05f5241f0de3310df82801a308641840fb7202380839c08ebe557c949db"
+    "apps/server/src/monitor-cli.ts": "8e6bb05f5241f0de3310df82801a308641840fb7202380839c08ebe557c949db",
+    "apps/server/src/agent-dashboard.ts": "8d51abd355d8a78fc0e0ff92be0262264b15b9f682320c5b7560d1f0f8e8fdb5"
   },
   "fixtureSha256": "6fb0387ec76ef3088004dabcc876fcf4169eb202c847249d00aba7d9c179cf14"
 }
