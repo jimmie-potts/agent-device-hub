@@ -19,7 +19,8 @@ export function evaluate(report){
   profiles.push(summary);
  }
  for(const key of scenarios)if(report.scenarios?.[key]!==true)problems.push(`scenario-${key}`);
- if(!Array.isArray(report.allHookMs)||report.allHookMs.length<targets.samples*2||!report.allHookMs.every(n=>valid(n)&&n<=targets.hardHookMs))problems.push('hard-deadline');
+ if(!Array.isArray(report.allHookMs)||!report.allHookMs.length||!report.allHookMs.every(n=>valid(n)&&n<=targets.hardHookMs))problems.push('hard-deadline');
+ if(Array.isArray(report.allHookMs)&&report.allHookMs.length<targets.samples*2)problems.push('incomplete-hook-samples');
  if(!valid(report.peakHubRssMiB)||report.peakHubRssMiB>targets.hubRssMiB)problems.push('hub-rss');
  return {qualified:problems.length===0,problems,profiles,targets};
 }

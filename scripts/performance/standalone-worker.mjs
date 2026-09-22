@@ -45,6 +45,24 @@ async function proxy(nanoleaf=false){
   });outgoing.setTimeout(2900,()=>outgoing.destroy());outgoing.on('error',()=>{res.writeHead(503);res.end('{}');});outgoing.end(body);
  });await new Promise(r=>server.listen(0,'127.0.0.1',r));servers.push(server);return 'http://127.0.0.1:'+server.address().port;
 }
+// A browser-only streaming gateway can sever its feed without disturbing consumers.
+async function browserGateway(){
+ let offline=false,connections=0;const feeds=new Set();
+ const server=createServer((req,res)=>{
+  if(offline){req.resume();res.writeHead(503);res.end();return;}
+  const forwarded={...req.headers,host:new URL(hubUrl).host};
+  if(forwarded.origin)forwarded.origin=hubUrl;
+  const upstream=request(hubUrl+req.url,{method:req.method,headers:forwarded},response=>{
+   res.writeHead(response.statusCode,response.headers);response.pipe(res);
+   if(req.url==='/api/monitor/v1/changes'){connections++;feeds.add(res);res.once('close',()=>feeds.delete(res));}
+  });
+  upstream.on('error',()=>{if(!res.headersSent)res.writeHead(503);res.end();});
+  res.once('close',()=>upstream.destroy());req.pipe(upstream);
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));servers.push(server);
+ return {url:'http://127.0.0.1:'+server.address().port,connections:()=>connections,
+  disconnect(){offline=true;for(const res of feeds)res.destroy();},reconnect(){offline=false;}};
+}
 async function rss(){if(!hub)return;try{const s=await readFile('/proc/'+hub.c.pid+'/status','utf8');report.peakHubRssMiB=Math.max(report.peakHubRssMiB,Number(/^VmHWM:\s+(\d+)/m.exec(s)?.[1])/1024);}catch{}}
 async function start(){const start=performance.now();hub=child('/node',['/runtime/hub/apps/hub/dist/cli.js','serve','/state/hub.json']);const value=await hub.next();assert.equal(value.ready,true);hubUrl=value.url;const ms=performance.now()-start;assert(ms<=targets.readinessMs);return ms;}
 async function hook(session,turn,kind='UserPromptSubmit',config='/state/producer.json',holdInput=false){
@@ -112,9 +130,19 @@ try{
  });
  await scenario('dashboard',async()=>{
   const {chromium}=await import('playwright');browser=await chromium.launch({executablePath:'/browser/chrome-headless-shell',headless:true,args:['--no-sandbox']});context=await browser.newContext();page=await context.newPage();page.setDefaultTimeout(5000);
-  await page.goto(hubUrl);await page.getByLabel('Hub browser access token').fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
-  await batch(10);await context.setOffline(true);await wait(1100);await context.setOffline(false);
-  const begin=performance.now();await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByText('Connected',{exact:true}).waitFor();assert(performance.now()-begin<=5000);await page.getByRole('button',{name:/^Activity/}).click();
+  const gateway=await browserGateway();await page.goto(gateway.url);await page.getByLabel('Hub browser access token').fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
+  await batch(10);await page.getByRole('button',{name:'Connections',exact:true}).click();
+  const facts=page.locator('section:visible');await facts.getByText('Connected',{exact:true}).waitFor();
+  const before=gateway.connections();assert(before>0);gateway.disconnect();
+  await facts.getByText('Reconnecting',{exact:true}).waitFor();
+  const event=await hook('dashboard-reconnect','turn-reconnect');await receive([event]);
+  const expected=admissions.get(event.session+'|'+event.turn).revision;
+  const begin=performance.now();gateway.reconnect();
+  await facts.getByText('Connected',{exact:true}).waitFor();
+  await page.waitForFunction(revision=>Number(document.querySelector('#main')?.getAttribute('data-revision'))>=revision,expected);
+  const recoveryMs=performance.now()-begin;assert(recoveryMs<=targets.readinessMs);assert(gateway.connections()>before);
+  report.observations.dashboardReconnect={observedDisconnected:true,connectionsBefore:before,connectionsAfter:gateway.connections(),postOutageRevision:expected,receivedRevision:Number(await page.locator('#main').getAttribute('data-revision')),recoveryMs};
+  await page.getByRole('button',{name:/^Activity/}).click();
  });
  await scenario('control',async()=>{
   const before=await json(hubUrl,'/api/controllers/v1/pixoo/integration/snapshot');

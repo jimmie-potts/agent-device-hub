@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MAX_OUTPUT = 1_000_000
 
 
-def namespace_command(readonly, entry):
+def namespace_command(readonly, entry, writable=()):
     if sys.platform != 'linux' or not shutil.which('bwrap'):
         raise ValueError('linux-bubblewrap-required')
     args=[shutil.which('bwrap'),'--unshare-all','--as-pid-1','--die-with-parent','--new-session',
@@ -28,10 +28,12 @@ def namespace_command(readonly, entry):
           '--chdir','/state']
     for source,destination in readonly:
         args += ['--ro-bind',str(Path(source).resolve()),destination]
+    for source,destination in writable:
+        args += ['--bind',str(Path(source).resolve()),destination]
     return args+entry
 
 
-def supervise(args, timeout=120):
+def supervise(args, timeout=120, capture=False):
     """Acquire the owned init pidfd before releasing source execution.
 
     Uses the same handshake/cleanup boundary as linux_hook.py. PID namespace
@@ -111,7 +113,8 @@ def supervise(args, timeout=120):
     if not released:error=error or 'startup-handshake-failed'
     return {'result':result,'cleanup':gone,'error':error,'exitCode':child.returncode,
             'elapsedMs':round((time.monotonic()-started)*1000,3),
-            'stderr':streams['err'].decode('utf8',errors='replace')[:2000]}
+            'stderr':streams['err'].decode('utf8',errors='replace')[:2000],
+            **({'stdout':streams['out'].decode('utf8',errors='replace')} if capture else {})}
 
 
 
@@ -140,22 +143,61 @@ def copy_tree(source, destination):
     shutil.copytree(source,destination,symlinks=True,ignore=shutil.ignore_patterns('.git','.env','*.env','__pycache__'))
 
 
-def stage_hub(destination):
+def stage_hub(destination, source_root=ROOT):
     destination.mkdir()
-    shutil.copy2(ROOT/'package.json',destination/'package.json')
-    copy_tree(ROOT/'node_modules',destination/'node_modules')
+    shutil.copy2(source_root/'package.json',destination/'package.json')
+    copy_tree(source_root/'node_modules',destination/'node_modules')
     for group in ['packages','apps/hub']:
-        source=ROOT/group
+        source=source_root/group
         targets=list(source.iterdir()) if group=='packages' else [source]
         for package in targets:
-            out=destination/package.relative_to(ROOT);out.mkdir(parents=True)
+            out=destination/package.relative_to(source_root);out.mkdir(parents=True)
             for name in ['package.json','dist','schemas','bin','public','fixtures','node_modules']:
                 item=package/name
                 if item.is_dir():copy_tree(item,out/name)
                 elif item.is_file():shutil.copy2(item,out/name)
     scripts=destination/'scripts/performance';scripts.mkdir(parents=True)
     for name in ['standalone-worker.mjs','standalone-report.mjs','standalone-nanoleaf.py','standalone-pixoo.mjs']:
-        shutil.copy2(ROOT/'scripts/performance'/name,scripts/name)
+        shutil.copy2(source_root/'scripts/performance'/name,scripts/name)
+
+
+def stage_cache(lockfile, cache, target):
+    """Copy only locked registry tarballs, never the user's config/logs/cache tree."""
+    import base64
+    target=Path(target)/'_cacache'
+    copied=0
+    for package in json.loads(Path(lockfile).read_text())['packages'].values():
+        url=package.get('resolved','')
+        if not url.startswith('https://registry.npmjs.org/'):
+            if url.startswith(('http:', 'https:')):raise ValueError('unsupported-registry')
+            continue
+        key='make-fetch-happen:request-cache:'+url
+        hashed=hashlib.sha256(key.encode()).hexdigest()
+        index=Path('index-v5')/hashed[:2]/hashed[2:4]/hashed[4:]
+        if not (cache/index).exists():
+            if package.get('optional'):continue
+            raise ValueError('missing-offline-dependency')
+        entries=[json.loads(line.split('\t',1)[1]) for line in (cache/index).read_text().splitlines() if '\t' in line]
+        entries=[item for item in entries if item.get('key')==key and item.get('integrity')]
+        if not entries:raise ValueError('invalid-cache-entry')
+        item=entries[-1];algorithm,encoded=item['integrity'].split('-',1)
+        if algorithm not in ('sha512','sha256'):raise ValueError('invalid-cache-integrity')
+        digest_bytes=base64.b64decode(encoded,validate=True);hexdigest=digest_bytes.hex()
+        content=Path('content-v2')/algorithm/hexdigest[:2]/hexdigest[2:4]/hexdigest[4:]
+        data=(cache/content).read_bytes()
+        if hashlib.new(algorithm,data).digest()!=digest_bytes:raise ValueError('cache-integrity-mismatch')
+        dest=target/content;dest.parent.mkdir(parents=True,exist_ok=True)
+        if not dest.exists():dest.write_bytes(data)
+        # Cache request metadata can contain credentials. Retain only response facts.
+        metadata=item.get('metadata',{})
+        safe={k:item[k] for k in ('key','integrity','time','size') if k in item}
+        safe['metadata']={'url':url,'time':metadata.get('time',item.get('time')),'reqHeaders':{},
+                          'resHeaders':{k:v for k,v in metadata.get('resHeaders',{}).items() if k.lower() in ('content-type','content-length','cache-control','date','etag','last-modified')}}
+        encoded_json=json.dumps(safe,separators=(',',':'))
+        dest=target/index;dest.parent.mkdir(parents=True,exist_ok=True)
+        dest.write_text('\n'+hashlib.sha1(encoded_json.encode()).hexdigest()+'\t'+encoded_json+'\n')
+        copied+=1
+    return copied
 
 
 def main():
@@ -167,6 +209,7 @@ def main():
     parser.add_argument('--node',type=Path,required=True)
     parser.add_argument('--browser',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--npm-cache',type=Path,default=Path.home()/'.npm/_cacache')
     parser.add_argument('--smoke',action='store_true',help='Development-only, incomplete sample count; never qualifies')
     args=parser.parse_args()
     if args.output.exists():raise ValueError('output-already-exists')
@@ -181,9 +224,9 @@ def main():
         if dirty and not args.smoke:raise ValueError('commit-candidate-before-qualification')
         report['sourceClean']=not bool(dirty)
         node=args.node.resolve();browser=args.browser.resolve()
-        version=subprocess.check_output([str(node),'--version'],text=True).strip()
-        if not version.startswith('v24.'):raise ValueError('node-24-required')
-        report['runtimes']={'node':version,'nodeSha256':digest(node),'python':platform.python_version(),'browserSha256':digest(browser)}
+        if browser.name!='chrome-headless-shell' or browser.parent.name not in ('chrome-headless-shell-linux64','chrome-headless-shell-linux-arm64') or not (browser.parent/'icudtl.dat').is_file():
+            raise ValueError('dedicated-playwright-browser-directory-required')
+        report['runtimes']={'nodeSha256':digest(node),'python':platform.python_version(),'browserSha256':digest(browser)}
         pin=json.loads((ROOT/'apps/hub/fixtures/pixoo-source.json').read_text())
         nano=json.loads((ROOT/'apps/hub/fixtures/nanoleaf-shared-source.json').read_text())
         report['consumerRevisions']={'pixoo':pin['revision'],'nanoleaf':nano['revision']}
@@ -194,12 +237,27 @@ def main():
             for directory,files in [(px,pin['sourceFiles']),(nl,nano['files'])]:
                 for path,expected in files.items():
                     if digest(directory/path)!=expected:raise ValueError('source-pin-mismatch')
-            build_env={**os.environ,'PATH':str(node.parent)+':'+os.environ.get('PATH','')}
-            # Dependency setup and compilation precede isolation and all timing.
-            with (args.output/'preparation.log').open('w') as log:
-                for command,cwd in [(['npm','ci','--offline','--ignore-scripts'],px),(['npm','run','build:types'],px),(['npm','run','build'],ROOT)]:
-                    subprocess.run(command,cwd=cwd,env=build_env,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=180)
-            stage_hub(runtime/'hub')
+            hub_source=root/'hub-source';hub_source.mkdir()
+            archive(ROOT,report['hubRevision'],hub_source)
+            copy_tree(ROOT/'node_modules',hub_source/'node_modules')
+            # Smoke runs exercise current uncommitted tooling, but never qualify.
+            if args.smoke:
+                for item in (ROOT/'scripts/performance').glob('standalone*'):
+                    if item.is_file():shutil.copy2(item,hub_source/'scripts/performance'/item.name)
+            report['preparedRegistryPackages']=stage_cache(px/'package-lock.json',args.npm_cache,root/'cache')
+            # Preparation has the same isolation and descendant ownership as measurement.
+            # Only our temporary staging directory is writable; HOME/environment stay private.
+            # Pixoo's pinned archive is placed at /work/pixoo for the build driver.
+            (root/'pixoo').symlink_to('runtime/pixoo',target_is_directory=True)
+            prepare=namespace_command([(node,'/node'),(ROOT/'scripts/performance/standalone-prepare.py','/prepare.py')],
+                    ['/usr/bin/python3','-I','-B','/prepare.py'],writable=[(root,'/work')])
+            preparation=supervise(prepare,timeout=540,capture=True)
+            (args.output/'preparation.log').write_text(preparation.pop('stdout','')+preparation.get('stderr',''))
+            report['preparation']=preparation
+            if preparation['error'] or not preparation['cleanup'] or not preparation['result']:
+                raise ValueError('confined-preparation-failed')
+            report['runtimes'].update(preparation['result'])
+            stage_hub(runtime/'hub',hub_source)
             # Do not mount the source repositories or any personal runtime tree.
             # Pin hashes describe source; runtime manifest also identifies the executed build.
             manifest={str(p.relative_to(runtime)):({'link':str(p.readlink())} if p.is_symlink() else {'sha256':digest(p)}) for p in runtime.rglob('*') if p.is_file() or p.is_symlink()}

@@ -11,12 +11,16 @@ the qualified run and every development/qualification attempt.
 ## Run
 
 Use Node 24, system Python 3.12/3.14, bubblewrap and an installed Playwright
-Chromium headless shell. Run `npm ci` in a clean, committed Hub worktree first.
+Chromium headless shell in its dedicated `chrome-headless-shell-linux64` or
+`chrome-headless-shell-linux-arm64` distribution directory. Run `npm ci` in a clean, committed Hub worktree first.
 The two source repositories must contain the exact revisions recorded in
 `apps/hub/fixtures/pixoo-source.json` and `nanoleaf-shared-source.json`. Dependency
 archives for Pixoo must already be available in npm's cache; missing offline
-inputs fail preparation. Preparation extracts committed sources into temporary
-folders, runs an offline dependency setup and builds, then stages the runtime.
+inputs fail preparation. `--npm-cache` can name a cache content directory,
+defaulting to `~/.npm/_cacache`. The launcher copies only locked registry tarballs
+and sanitized cache metadata. It extracts committed sources, then runs dependency
+setup and both builds under namespace/pidfd supervision with fresh HOME/environment
+and only owned writable staging. No user npm configuration or logs are mounted.
 It neither checks out nor changes either consumer repository.
 
 ```bash
@@ -78,7 +82,8 @@ large rendering suite here.
 
 ## Isolation and limits
 
-Measured processes see read-only staged source/runtime inputs, system libraries,
+Preparation processes see explicit source/dependency inputs and owned writable
+staging. Measured processes see read-only staged runtime inputs, system libraries,
 a fresh temporary home/state and private PID/network/mount namespaces. They
 cannot see the host home, mounted Windows files, live databases, device network
 or host loopback services. The real Pixoo controller, player and presentation use its fake display adapter.
@@ -86,7 +91,7 @@ Nanoleaf projects state with physical worker launch suppressed. The supervisor a
 measurement handshake; success, failure and timeout verify that init has exited,
 which terminates its detached descendants too. Missing isolation fails closed.
 
-The namespace has a 540-second wall limit and the supervisor caps output.
+Each preparation/measurement namespace has a 540-second wall limit and the supervisor caps output.
 The measurement process runs the host as a separate child and samples its
 lifetime high-water RSS; this is host RSS, not total browser/consumer/harness
 memory. Existing bounded host/consumer contract tests complement burst evidence.

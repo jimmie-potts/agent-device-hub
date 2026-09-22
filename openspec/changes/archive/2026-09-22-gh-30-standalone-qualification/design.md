@@ -26,3 +26,17 @@ Measure the real hook and real consumer code in a repeatable disposable environm
 ## Migration Plan
 
 Not applicable. This adds source tooling and does not deploy, switch an owner or alter an installation. Existing migration tests remain unchanged.
+
+## Review corrections
+
+Q1-STD-001 required preparation to satisfy the same confinement boundary as
+measurement. Copy only tarballs named by the pinned lockfile and sanitized cache
+metadata, then run dependency setup and compilation in a supervised private
+namespace with disposable writable staging. No inherited environment, personal
+configuration or live source checkout is available to build scripts.
+
+SPEC-Q1-001 required positive reconnect evidence. A browser-only streaming gateway
+severs the feed while real consumers continue. The driver must observe the
+disconnected UI, establish a new feed, and receive a post-outage revision within
+the unchanged recovery target. Prior receipts remain preserved; they do not
+supply these additional acceptance observations.
