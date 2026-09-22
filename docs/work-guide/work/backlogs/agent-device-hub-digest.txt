@@ -56,7 +56,7 @@
 #65 [OPEN] Implement local Wispr and Codex controls for 8BitDo
 #66 [OPEN] Install and verify 8BitDo Wispr and Codex shortcuts
 #67 [OPEN] Implement Work, Free and Quiet desk preset coordination
-#68 [OPEN] Bind Big B to desk preset cycling with visible results
+#68 [OPEN] Bind a selected control to desk preset cycling with visible results
 #69 [OPEN] Verify desk preset switching, manual handoff and restoration
 #70 [OPEN] Add customizable button mappings and saved control profiles
 #71 [OPEN] Add Music desk presets after playback and participation qualification
@@ -74,3 +74,4 @@
 #137 [CLOSED] Support best-effort Codex current status across successive turns
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability
+#148 [OPEN] Clarify work-guide story status and actionable delivery paths

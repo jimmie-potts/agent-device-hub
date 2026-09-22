@@ -11,6 +11,21 @@ Divoom/Pixoo. GitHub issues remain authoritative for scope and status. The HTML
 is a dated, reviewed view of those records. Its backlog, source review and
 history timestamps describe separate evidence; none means a live dashboard.
 
+Issue links show an icon and status text: Open, In progress, In review, Blocked,
+Completed or Closed. Completed requires GitHub's completed closure reason;
+other closures remain Closed. Active work retains a blocked qualifier when a
+blocked label or open prerequisite applies. Repository colors still identify
+Hub, Nanoleaf and Pixoo. Counts include only open issues.
+
+Each guide starts with its outcome and next step. Closed stories and detailed
+evidence are expandable; search, Expand all and printing reveal them. The
+parallel-work cards list selected independent units. A blocked or deferred label,
+open prerequisite, active owner or closure removes a unit from the candidate
+group. Missing dependencies fail the build instead of implying readiness.
+`work/guide_paths.py` owns the reading paths and selected units;
+`work/guide_status.py` derives their status and scheduling gates from the saved
+snapshot. `work/guide_reading.css` styles these controls.
+
 ## Planning and delivery checkpoints
 
 The shared checkpoint contract was introduced by

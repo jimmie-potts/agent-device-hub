@@ -1,3 +1,31 @@
+## September 22, 2026: Story status and actionable guide paths
+
+Hub #148 makes issue status visible on every issue link, with text and symbols
+for open, active, review, blocked, completed and other closed work. Completion
+uses the saved GitHub closure reason. Blocked labels and open native prerequisites
+remain visible even when an issue is in progress or review.
+
+All twelve guides now start with their outcome and next action. Closed rows and
+long evidence notes are expandable; search and print reveal them and restore the
+prior state. The overview separates delivered work, Hub #32 milestone review,
+and selected independent units. Parallel candidates are withheld when their
+saved status is blocked, deferred, active or closed. Dependency data must be
+complete. The roadmap starts folded and shows order without claiming readiness. Review caught its old ready marker on blocked input qualification; a regression now guards that contradiction. Routing and architecture are unchanged.
+The desktop-control prose also follows the current Big B dictation / separate
+Big A Enter defaults recorded in its owning issues.
+
+The coordinator refreshed all three backlogs and reconciled 92 open issues,
+including this maintenance story. Nine maintenance regressions and browser
+checks passed at six widths from 320 to 1440 px, including keyboard status links,
+search, evidence disclosures, navigation, viewers and real PDF restoration.
+The status-link regression failed before the change because completed links had
+no visible completion state. The exact HTML hash and review/CI receipts belong
+to the source PR. This guide-only change has no product behavior or contract
+delta and therefore needs no product OpenSpec change. The guide UI approval
+exemption applies; independent reviews and the guide-only CI evidence remain
+required. The user requested both repository delivery and public publication.
+Public publication follows the verified merged source and is not claimed here.
+
 ## September 22, 2026: Pixoo installed monitoring acceptance
 
 The owner installed Hub 0.2.0 / agent-state 2.0.0 from source `013b829` while
