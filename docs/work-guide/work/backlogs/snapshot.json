@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-22T01:20:24.356028+00:00",
-  "refreshedAt": "2026-09-22T01:20:36.279742+00:00",
+  "startedAt": "2026-09-22T01:43:48.016583+00:00",
+  "refreshedAt": "2026-09-22T01:43:59.568039+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -149,7 +149,7 @@
           "number": 30,
           "state": "CLOSED",
           "commentPages": [
-            2
+            3
           ],
           "commentBodiesStored": false
         },
