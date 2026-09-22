@@ -17,6 +17,10 @@ const count:Check = value => Number.isSafeInteger(value) && (value as number) >=
 const settings:Check = value => shape(value,{}, {style:one('classic','project'),coverage:one('whole','status')});
 const element:Check = value => shape(value,{id:line},{projectId:nullableProject,signature:one(0,1)});
 const identity:Check = value => shape(value,{provider:one('codex','claude'),client:one('cli','desktop','code'),hostId:id,sourceId:id,sessionId:id});
+const sceneId:Check = matches(/^scene-[a-f0-9]{64}(?![\s\S])/);
+// User-chosen Nanoleaf app names within the shared 80-character label bound, exactly as the source emits them; never titles or paths.
+const sceneName:Check = value => typeof value === 'string' && [...value].length >= 1 && [...value].length <= 80;
+const scene:Check = value => shape(value,{id:sceneId},{name:sceneName});
 const failure:Check = value => shape(value,{code:one('unauthenticated','forbidden','unsupported-capability','invalid-request','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','capacity','external-control','transport-failure','uncertain-result')});
 
 export const validateIntegrationReceipt:Check = value => shape(value,{
@@ -36,4 +40,7 @@ export const validateIntegrationSnapshot:Check = value => shape(value,{
     ['mode.set',(c:unknown) => shape(c,{supported:one(true),scope:one('control'),route:one('/controller/v1/commands')})]
   ]))),
   limits:v => shape(v,{maxItems:one(1000),maxPending:one(1),maxReceipts:one(256),maxBodyBytes:one(65536)})
+},{
+  // Nanoleaf #64: discovered saved scenes; ids match the shared v1 `scenes` capability.
+  scenes:list(scene,256)
 });

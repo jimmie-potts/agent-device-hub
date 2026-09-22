@@ -43,8 +43,8 @@ PATHS = {
     ),
     'controls-music': (
         'Extend the shared integration UI into general controls, then music.',
-        'The general-control definition is closed and the Pixoo controls candidate is in review under Hub PR #160. Start the Nanoleaf capability work in parallel; the Nanoleaf view and hardware acceptances follow it. Playback and participation policy precede music UI and device effects.',
-        ['H151', 'N64'],
+        'The general-control definition is closed and Nanoleaf #64 delivered the native capabilities. The Pixoo controls candidate is in review under Hub PR #160; the Nanoleaf view no longer waits on a native prerequisite, and both hardware acceptances follow their views. Playback and participation policy precede music UI and device effects.',
+        ['H151'],
     ),
     'hosting-migrations': (
         'Make runtime ownership and hosting portable without sharing private databases.',
@@ -68,8 +68,6 @@ PATHS = {
 PARALLEL = [
     ('H151', 'Pixoo general controls', 'controls-music',
      'Add the accepted Pixoo controls to the existing component view. Pixoo needs no wire change; the candidate needs human UI approval before merge.'),
-    ('N64', 'Nanoleaf native controls', 'controls-music',
-     'Declare power, brightness and saved-scene capabilities on the protected controller API with fake devices. The hub view and physical acceptance follow.'),
     ('N42', 'Nanoleaf runtime worker', 'nanoleaf-devices',
      'Integrate independent device projections through the existing Linux worker on the delivered #41 contract. Its blocked label waits for the owner to release it.'),
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',

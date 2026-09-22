@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T14:52:13.539262+00:00",
+  "fetchedAt": "2026-09-22T20:51:31.784616+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T14:50:13Z",
+      "pushedAt": "2026-09-22T16:28:14Z",
       "defaultBranch": "main",
-      "headSha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
-      "mainCommitCount": 71,
+      "headSha": "f5e71ce36f026de843994dd797aed38dd7be9ff2",
+      "mainCommitCount": 72,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "f5e71ce36f026de843994dd797aed38dd7be9ff2",
+          "date": "2026-09-22T16:28:14Z",
+          "message": "Record Nanoleaf native controls and accept discovered scenes (#161)"
+        },
         {
           "sha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
           "date": "2026-09-22T10:29:21Z",
@@ -926,6 +931,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/159",
           "base": "main",
           "mergedAt": "2026-09-22T10:29:21Z"
+        },
+        {
+          "number": 161,
+          "title": "Record Nanoleaf native controls and accept discovered scenes",
+          "createdAt": "2026-09-22T15:02:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/161",
+          "base": "main",
+          "mergedAt": "2026-09-22T16:28:14Z"
         }
       ],
       "openPRs": [
@@ -941,6 +954,13 @@
           "title": "Add Pixoo general controls to the BUNNY component view",
           "createdAt": "2026-09-22T14:50:15Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/160",
+          "base": "main"
+        },
+        {
+          "number": 162,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T16:22:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
           "base": "main"
         }
       ],
@@ -1180,12 +1200,17 @@
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-22T14:43:21Z",
+      "pushedAt": "2026-09-22T15:49:43Z",
       "defaultBranch": "main",
-      "headSha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
-      "mainCommitCount": 29,
+      "headSha": "80628498136203a8f5fcb06ab5fa306e961e2def",
+      "mainCommitCount": 30,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "80628498136203a8f5fcb06ab5fa306e961e2def",
+          "date": "2026-09-22T15:49:43Z",
+          "message": "Expose native power, brightness and saved-scene controls on the controller API (#66)"
+        },
         {
           "sha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
           "date": "2026-09-22T10:12:12Z",
@@ -1524,17 +1549,17 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/65",
           "base": "main",
           "mergedAt": "2026-09-22T10:12:12Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 66,
           "title": "Expose native power, brightness and saved-scene controls on the controller API",
           "createdAt": "2026-09-22T14:43:59Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/66",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-22T15:49:43Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 2,
@@ -1703,9 +1728,17 @@
           "createdAt": "2026-09-09T22:37:08Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/55"
+        },
+        {
+          "number": 64,
+          "title": "Expose native power, brightness and saved-scene controls through the protected controller API",
+          "closedAt": "2026-09-22T15:54:37Z",
+          "createdAt": "2026-09-22T05:37:36Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/64"
         }
       ],
-      "openIssueCount": 20,
+      "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-22T05:37:36Z"

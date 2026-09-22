@@ -28,4 +28,4 @@
 #53 [CLOSED] Integrate Prism crystal artwork and two-zone wall animation
 #54 [CLOSED] Support a fresh Linux installation of the Nanoleaf services
 #55 [CLOSED] Install and verify the Linux Nanoleaf runtime in WSL
-#64 [OPEN] Expose native power, brightness and saved-scene controls through the protected controller API
+#64 [CLOSED] Expose native power, brightness and saved-scene controls through the protected controller API
