@@ -23,12 +23,29 @@ function retire(session:Session,turn:KnownId) {
     session.retiredTurns=session.retiredTurns.slice(-LIMITS.retiredTurns);
   }
 }
+function mergeMetadata(session:Session,event:Envelope):{changed:boolean;ambiguous:boolean} {
+  let changed=false,ambiguous=false;
+  if(event.parent.status!=='unknown'){
+    const matches=session.parent.status===event.parent.status&&(event.parent.status!=='known'||
+      session.parent.status==='known'&&identityKey(session.parent.identity)===identityKey(event.parent.identity));
+    if(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous')){
+      changed=session.parent.status!=='unknown';session.parent={status:'unknown'};ambiguous=true;
+    }else if(!matches){
+      changed=true;
+      if(session.parent.status!=='unknown'){
+        session.parent={status:'unknown'};unavailable(session,'parent','ambiguous');ambiguous=true;
+      }else session.parent=event.parent;
+    }
+  }
+  if(event.label&&session.label!==event.label.value){session.label=event.label.value;changed=true;}
+  if(event.projectId&&session.projectId!==event.projectId){session.projectId=event.projectId;changed=true;}
+  return {changed,ambiguous};
+}
 function selectTurn(session:Session,turn:KnownId,consumers:Consumer[],recover=false) {
   const oldTurn=session.turn;
   if(!sameTurn(oldTurn,turn))retire(session,oldTurn);
   for(const notice of session.notices){
     if(notice.turn.status==='unknown'||sameTurn(notice.turn,turn)||(!recover&&!sameTurn(notice.turn,oldTurn)))continue;
-    retire(session,notice.turn);
     for(const consumer of consumers)if(consumer.clearOnNewTurn&&!notice.acknowledgedBy.includes(consumer.id))notice.acknowledgedBy.push(consumer.id);
   }
   session.turn=turn;
@@ -52,6 +69,11 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     read:'unknown',unavailable:[],ordering:event.ordering,lastEvidenceAtMs:now,observedAtMs:event.observedAtMs,
     retiredTurns:[],seen:[],watermarks:[]};
   const remember=()=>{session.seen.push({key,content});session.seen=session.seen.slice(-LIMITS.seen);};
+  const repeatedActivity=():Reduction=>{
+    const metadata=mergeMetadata(session,event);
+    if(!metadata.changed)return {outcome:'duplicate',fresh:false};
+    remember();return {session,outcome:metadata.ambiguous?'ambiguous':'applied',fresh:false};
+  };
   if(event.event.kind==='notice.acknowledged'){
     const acknowledgment=event.event;
     const notice=session.notices.find(item=>item.id===acknowledgment.noticeId);
@@ -65,10 +87,10 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   if(retired&&eventDimension==='activity')return {outcome:'stale',fresh:false};
   const completed=event.turn.status==='known'&&session.notices.some(notice=>sameTurn(notice.turn,event.turn));
   if(order.status==='unknown'&&eventDimension==='activity'){
-    if(completed&&event.event.kind==='turn.ended')return {outcome:'duplicate',fresh:false};
+    if(completed&&event.event.kind==='turn.ended')return sameTurn(session.turn,event.turn)?repeatedActivity():{outcome:'duplicate',fresh:false};
     if(completed&&(event.event.kind==='turn.started'||event.event.kind==='activity.observed'))return {outcome:'stale',fresh:false};
     if(previous&&event.event.kind==='turn.started'&&sameTurn(previous.turn,event.turn)&&
-      (previous.activity!=='unknown'||previous.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')))return {outcome:'duplicate',fresh:false};
+      (previous.activity!=='unknown'||previous.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')))return repeatedActivity();
   }
   const watermark=order.status==='known'?session.watermarks.find(item=>item.dimension===eventDimension&&item.epoch===order.epoch):undefined;
   if(order.status==='known'&&watermark&&order.sequence<=watermark.sequence)return {outcome:'stale',fresh:false};
@@ -105,16 +127,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     if(watermark)watermark.sequence=order.sequence;
     else session.watermarks.push({dimension:eventDimension,epoch:order.epoch,sequence:order.sequence});
   }
-  if(event.parent.status!=='unknown'){
-    if(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous')){session.parent={status:'unknown'};ambiguous=true;}
-    else if(session.parent.status!=='unknown'&&(session.parent.status!==event.parent.status||
-      (session.parent.status==='known'&&event.parent.status==='known'&&identityKey(session.parent.identity)!==identityKey(event.parent.identity)))){
-      session.parent={status:'unknown'};unavailable(session,'parent','ambiguous');ambiguous=true;
-    }
-    else session.parent=event.parent;
-  }
-  if(event.label)session.label=event.label.value;
-  if(event.projectId)session.projectId=event.projectId;
+  if(mergeMetadata(session,event).ambiguous)ambiguous=true;
   switch(event.event.kind){
     case 'session.started':
     case 'turn.started':

@@ -153,6 +153,50 @@ test('fresh selection can recover activity while conflicting parent evidence sta
   assert.equal(session.attention.length,1);
 });
 
+for(const kind of ['turn.started','turn.ended','turn.interrupted'])test(`repeated starts preserve changed parent evidence without replaying ${kind}`,async t=>{
+  const storage=new MemoryStorage();let now=1000;
+  let owner=await createAgentState(options(storage,()=>now));t.after(()=>owner.shutdown());
+  const parent=id=>({status:'known',identity:{...identity,sessionId:id}});
+  await owner.ingest(hook('UserPromptSubmit','a'));
+  if(kind!=='turn.started')await owner.ingest({...hook('Stop','a',1001),event:{kind}});
+  const before=owner.snapshot().sessions[0];
+  await owner.shutdown();owner=await createAgentState(options(storage,()=>now));now+=300000;
+  // A repeated stop also carries independent metadata, without restoring its notice.
+  const name=kind==='turn.ended'?'Stop':'UserPromptSubmit';
+  assert.equal((await owner.ingest({...hook(name,'a',now),parent:parent('parent-a')})).outcome,'applied');
+  assert.equal(owner.snapshot().sessions[0].parent.identity.sessionId,'parent-a');
+  assert.equal((await owner.ingest({...hook(name,'a',++now),parent:parent('parent-b')})).outcome,'ambiguous');
+  const session=owner.snapshot().sessions[0];
+  assert.deepEqual(session.parent,{status:'unknown'});
+  assert.ok(session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous'));
+  assert.equal(session.activity,before.activity);assert.deepEqual(session.turn,before.turn);
+  assert.deepEqual(session.notices,before.notices);assert.equal(session.lastEvidenceAtMs,before.lastEvidenceAtMs);
+  assert.equal(session.observedAtMs,before.observedAtMs);assert.equal(session.freshness,'uncertain');
+  assert.equal(session.restartUncertain,true);
+  const revision=owner.snapshot().revision;
+  assert.equal((await owner.ingest({...hook(name,'a',++now),parent:parent('parent-b')})).outcome,'duplicate');
+  assert.equal(owner.snapshot().revision,revision);
+});
+
+test('retained completions do not evict the 256 most recently superseded turns',async t=>{
+  const storage=new MemoryStorage();let owner=await createAgentState(options(storage));t.after(()=>owner.shutdown());
+  for(let i=0;i<128;i++){
+    await owner.ingest(hook('UserPromptSubmit',`done-${i}`,1000+i*2));
+    await owner.ingest(hook('Stop',`done-${i}`,1001+i*2));
+  }
+  for(let i=0;i<=256;i++)await owner.ingest(hook('UserPromptSubmit',`active-${i}`,2000+i));
+  const exported=await owner.exportState();assert.equal(validateExport(exported).ok,true);
+  assert.deepEqual(exported.sessions[0].retiredTurns,Array.from({length:256},(_,i)=>`active-${i}`));
+  await owner.shutdown();owner=await createAgentState(options(storage));
+  for(const turn of ['active-0','active-100','active-255','done-0'])
+    assert.equal((await owner.ingest(hook('UserPromptSubmit',turn,3000))).outcome,'stale');
+  assert.equal(owner.snapshot().sessions[0].turn.id,'active-256');
+  assert.equal(owner.snapshot().sessions[0].restartUncertain,true);
+  await owner.ingest(hook('UserPromptSubmit','active-257',3001));
+  assert.equal((await owner.ingest(hook('UserPromptSubmit','active-0',3002))).outcome,'applied');
+  assert.equal(owner.snapshot().sessions[0].notices.length,128);
+});
+
 test('retired identities use a bounded FIFO across restart; retained completions outlive retry-key eviction',async t=>{
   const storage=new MemoryStorage();let owner=await createAgentState(options(storage));t.after(()=>owner.shutdown());
   await owner.ingest(hook('Stop','completed'));
