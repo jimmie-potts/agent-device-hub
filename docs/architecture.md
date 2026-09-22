@@ -472,8 +472,12 @@ unknown components expose unavailable controls. No database, reducer, device
 writer or physical effect scheduler moves into the browser.
 
 PR #127 records Hub #6's human UI approval and source-delivery evidence.
-Installation, physical acceptance, general controls and full editor migration
-remain separately owned work.
+[#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) adds Pixoo
+screen power, brightness, playlist and playback controls to the same view under
+ADR 0005: one guarded controller v1 command per control, Monitor gating with an
+explicit Media switch through the Pixoo integration mode operation, and no
+automatic restoration. Installation, physical acceptance, Nanoleaf general
+controls and full editor migration remain separately owned work.
 
 ## Standalone MCP composition
 

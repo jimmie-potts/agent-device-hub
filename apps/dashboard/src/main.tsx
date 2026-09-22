@@ -1,8 +1,8 @@
-import React, {useEffect,useRef,useState} from 'react';
+import React, {useEffect,useId,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
-import type {Snapshot,Mode} from '../../../packages/contracts/src/types';
-import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,type Context,type Component} from './client';
+import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
+import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,type GeneralReasons,type Context,type Component} from './client';
 import './style.css';
 
 type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
@@ -14,34 +14,54 @@ const key=(s:SessionSnapshot)=>JSON.stringify(s.identity);
 const text=(value:unknown):string=>value===undefined||value===null?'Unknown':typeof value==='object'&&'status' in value&&(value as {status:string}).status==='unknown'?'Unknown':typeof value==='object'?JSON.stringify(value):String(value);
 const nano=(value:Nano|Pixoo|undefined):value is Nano=>value?.apiVersion==='nanoleaf.integration/1.0';
 const pixoo=(value:Nano|Pixoo|undefined):value is Pixoo=>value?.apiVersion==='pixoo-integration/1.0';
+const title=(value:string)=>value.charAt(0).toUpperCase()+value.slice(1);
+/** The Pixoo integration envelope. Mode and view changes share the extension's ticket, revision and generation guards. */
+const pixooRequest=(s:Pixoo,component:Component,action:unknown)=>({apiVersion:s.apiVersion,controllerId:component.controllerId,deviceId:component.deviceId,requestId:s.nextRequestId,expectedConfigurationRevision:s.configurationRevision,expectedGeneration:s.generation,action});
+type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string;failure?:{code:string}};
+/** A later snapshot can carry the terminal outcome for a submitted ticket; queued receipts are not terminal. */
+function observedResult(source:unknown,ticket:unknown):string|undefined{
+ if(ticket===undefined||!source||typeof source!=='object')return;
+ const observed=source as {outcomes?:ObservedReceipt[];state?:{lastOutcome?:{status:string;receipt?:ObservedReceipt}}};
+ const records=[...(observed.outcomes??[]),...(observed.state?.lastOutcome?.status==='known'&&observed.state.lastOutcome.receipt?[observed.state.lastOutcome.receipt]:[])];
+ const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
+ if(result&&result.outcome!=='queued')return `Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`;
+}
+/** One-click commands use the latest observed snapshot at activation and stay busy until the refreshed snapshot arrives, so the next activation carries fresh guards. Only an accepted ticket is watched for its terminal outcome; a rejected ticket may be consumed by another client. An uncertain result locks the group until the user loads current values. */
+function useCommand(api:Api,path:string,refresh:()=>void|Promise<void>,source:unknown){
+ const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<{label:string;ticket:unknown}>();
+ useEffect(()=>{const message=submitted&&observedResult(source,submitted.ticket);if(message)setStatus(`${submitted.label}: ${message}`);},[source,submitted]);
+ async function run(label:string,request:unknown){if(busy||locked)return;setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
+  try {const result=await api.request<Record<string,unknown>>(path,request);const failure=result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String((result.failure as {code:unknown}).code):'';setStatus(`${label}: ${String(result.outcome??'configuration accepted')}${failure}. Physical result is not confirmed.`);if(!failure)setSubmitted({label,ticket:(request as {requestId?:unknown}).requestId});}
+  catch(error){const result=failureMessage(error);setStatus(`${label}: ${result.message}`);setLocked(result.locked);}
+  finally{await refresh();setBusy(false);}
+ }
+ return {status,busy,locked,run,unlock:()=>{setLocked(false);setStatus('');setSubmitted(undefined);void refresh();}};
+}
 function Badge({children,warning=false}:{children:React.ReactNode;warning?:boolean}){return <span className={'badge'+(warning?' warning':'')}>{children}</span>;}
 function Facts({items}:{items:[string,React.ReactNode][]}){return <dl>{items.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;}
 
-type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,string>;disabled?:string;api:Api;path:string;build:(source:T,values:Record<string,string>)=>unknown;refresh:()=>void;children:(values:Record<string,string>,change:(name:string,value:string)=>void)=>React.ReactNode};
-function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,children}:FormProps<T>){
+type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,string>;disabled?:string;api:Api;path:string;build:(source:T,values:Record<string,string>)=>unknown;refresh:()=>void|Promise<void>;submitLabel?:string;children:(values:Record<string,string>,change:(name:string,value:string)=>void)=>React.ReactNode};
+function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,submitLabel,children}:FormProps<T>){
+ const heading=useId();
  const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null),[status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
  const values=draft?.values??initial,dirty=draft!==null;
  const conflict=dirty&&!locked&&draft.revision!==revision;
  useEffect(()=>{
-  if(!draft||!locked||!source||typeof source!=='object')return;
-  type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string;failure?:{code:string}};
-  const observed=source as {outcomes?:ObservedReceipt[];state?:{lastOutcome?:{status:string;receipt?:ObservedReceipt}}};
-  const ticket=(draft.source as {nextRequestId?:unknown}).nextRequestId;
-  const records=[...(observed.outcomes??[]),...(observed.state?.lastOutcome?.status==='known'&&observed.state.lastOutcome.receipt?[observed.state.lastOutcome.receipt]:[])];
-  const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
-  if(result&&result.outcome!=='queued')setStatus(`Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`);
+  if(!draft||!locked)return;
+  const message=observedResult(source,(draft.source as {nextRequestId?:unknown}).nextRequestId);
+  if(message)setStatus(message);
  },[source,draft,locked]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
  async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;setBusy(true);setStatus('Submitting…');
-  try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);refresh();}
-  catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);refresh();}
+  try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);void refresh();}
+  catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);void refresh();}
   finally{setBusy(false);}
  }
- return <form className="edit" onSubmit={submit}><h3>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Changed by another client. Your edit is retained. Discard it to load the current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">Apply {title.toLowerCase()}</button>{dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);setLocked(false);setStatus('');}}>Discard edit / load current</button>}</div><p role="status">{status}</p></form>;
+ return <form className="edit" aria-labelledby={heading} onSubmit={submit}><h3 id={heading}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Changed by another client. Your edit is retained. Discard it to load the current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">{submitLabel??`Apply ${title.toLowerCase()}`}</button>{dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);setLocked(false);setStatus('');}}>Discard edit / load current</button>}</div><p role="status">{status}</p></form>;
 }
 function Select({label,value,onChange,options}:{label:string;value:string;onChange:(v:string)=>void;options:{value:string;label:string}[]}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;}
 const options=(values:string[])=>values.map(value=>({value,label:value}));
-function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:()=>void;now:number;sessions:SessionSnapshot[]}){
+function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:()=>void|Promise<void>;now:number;sessions:SessionSnapshot[]}){
  const snapshot=device.snapshot,integr=device.integration;
  const disabled=!context.control?'Your credential is read-only':device.error?'Controller observations are stale':!snapshot?'No controller snapshot':snapshot.state.externalControl.status==='known'&&snapshot.state.externalControl.owner==='external'?'Device is externally controlled':undefined;
  const path=`/api/controllers/v1/${encodeURIComponent(component.id)}`;
@@ -49,17 +69,24 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  const supportedModes=modes?.supported?modes.values.filter(m=>component.kind==='nanoleaf'?['Work','Quiet','Free'].includes(m):component.kind==='pixoo'?['Monitor','Media'].includes(m):false):[];
  const editor=safeEditorUrl(component.editorUrl);
  const elapsed=device.received?Math.max(0,now-device.received):0;
+ // Pixoo presents agent status in Monitor. Content controls wait for the observed Media mode; nothing switches or restores on its own.
+ const pixooMode=pixoo(integr)?{mode:integr.configuration.mode,pending:integr.pendingMode}:undefined;
+ const content=pixooMode?(pixooMode.pending?`Pixoo is switching to ${title(pixooMode.pending)}; wait for the observed mode`:pixooMode.mode!=='media'?'Pixoo is in Monitor and presents agent status; playlist and playback controls need Media':undefined):undefined;
+ const reasons=generalReasons({snapshot,control:context.control,common:device.error?'Controller observations are stale':snapshot?.state.externalControl.status==='known'&&snapshot.state.externalControl.owner==='external'?'Device is externally controlled':undefined,content});
+ const switchCommand=useCommand(api,path+'/integration/commands',refresh,integr);
+ const switchToMedia=pixoo(integr)&&pixooMode&&pixooMode.mode!=='media'&&!pixooMode.pending?<div className="switch"><div className="actions"><button type="button" disabled={!!disabled||switchCommand.busy||switchCommand.locked} onClick={()=>void switchCommand.run('Switch to Media',pixooRequest(integr,component,{operation:'mode',mode:'media'}))}>Switch to Media</button>{switchCommand.locked&&<button type="button" className="secondary" onClick={switchCommand.unlock}>Load current / unlock</button>}</div><p className="hint">One explicit mode command through the existing mode control. Returning to Monitor uses the same control.{disabled?` Unavailable: ${disabled}`:''}</p><p role="status">{switchCommand.status}</p></div>:undefined;
  return <><header className="section-heading"><div><p className="eyebrow">COMPONENT / {component.kind}</p><h2>{component.id}</h2></div><Badge warning={!!device.error}>{device.error?'Stale / unavailable':snapshot?.serviceHealth??'Unknown'}</Badge></header>
  <p className="muted">{component.controllerId} / {component.deviceId}</p>
  <Facts items={[
- ['Selected mode',nano(integr)?integr.mode:pixoo(integr)?integr.configuration.mode:snapshot?.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:'Unknown'],
+ ['Selected mode',nano(integr)?integr.mode:pixooMode?`${title(pixooMode.mode)}${pixooMode.pending?` (switching to ${title(pixooMode.pending)})`:''}`:snapshot?.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:'Unknown'],
  ['Desired state',snapshot?`Mode ${snapshot.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:'unknown'} · Power ${snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'unknown'} · Brightness ${snapshot.state.desired.brightness.status==='known'?snapshot.state.desired.brightness.value+'%':'unknown'}`:'Unknown'],['Pending changes',snapshot?snapshot.state.pending.length?`${snapshot.state.pending.length} queued: ${snapshot.state.pending.map(p=>p.command.kind).join(', ')}`:'None':'Unknown'],
  ['Last successful transmission',snapshot?.state.lastSuccessfulSend.status==='known'?`Sent ${snapshot.state.lastSuccessfulSend.operationIds.join(', ')} · physical result unknown`:'Unknown'],['Last outcome',snapshot?.state.lastOutcome.status==='known'?`${snapshot.state.lastOutcome.receipt.outcome}${snapshot.state.lastOutcome.receipt.failure?' · '+snapshot.state.lastOutcome.receipt.failure.code:''}`:'Unknown'],
  ['External control',snapshot?.state.externalControl.status==='known'?snapshot.state.externalControl.owner:'Unknown'],['Observation age',snapshot?.state.observation.status==='known'?age(snapshot.state.observation.evidenceAgeMs+elapsed):'Unknown'],
  ['Snapshot fetched',device.received?`${age(elapsed)} ago`:'Never'],['Integration outcomes',nano(integr)?integr.outcomes.length?integr.outcomes.map(r=>`${r.outcome}${r.failure?' · '+r.failure.code:''}`).join('; '):'None recorded':pixoo(integr)?integr.lastOutcome?`${integr.lastOutcome.status}${integr.lastOutcome.code?' · '+integr.lastOutcome.code:''}`:'None recorded':'Unknown'],['Integration pending',nano(integr)?`${integr.pending.length} commands; wall edits ${integr.wallPending?'pending':'none'}`:pixoo(integr)?integr.pendingMode??'None':'Unknown']
  ]}/>{device.error&&<p role="status" className="warning">{device.error}. Last evidence is retained. Other components remain independent.</p>}
- <h3>Available integration</h3><p>{supportedModes.length?supportedModes.join(' · '):'Mode control unavailable: no supported integration mode declared.'}</p>
- {snapshot&&supportedModes.length>0&&<EditForm title="Mode" source={snapshot} revision={`${snapshot.configurationRevision}:${JSON.stringify(snapshot.generation)}`} initial={{mode:snapshot.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:supportedModes[0]}} disabled={disabled} api={api} path={path+'/commands'} build={(s,v)=>makeCommand(s,{kind:'mode.set',mode:v.mode as Mode})} refresh={refresh}>{(v,c)=><><Select label="Device mode" value={v.mode} onChange={x=>c('mode',x)} options={options(supportedModes)}/><p className="hint">{component.kind==='nanoleaf'?'Work participates; Quiet and Free preserve the owning controller’s policies.':'Monitor presents agent activity. Media opts out; collection continues. This does not start playback.'}</p></>}</EditForm>}
+ <h3>Available integration</h3><p>{pixoo(integr)?integr.capabilities.modes.map(title).join(' · '):supportedModes.length?supportedModes.join(' · '):'Mode control unavailable: no supported integration mode declared.'}</p>
+ {pixoo(integr)&&<EditForm title="Mode" source={integr} revision={`${integr.configurationRevision}:${integr.generation}`} initial={{mode:integr.configuration.mode}} disabled={disabled} api={api} path={path+'/integration/commands'} build={(s,v)=>pixooRequest(s,component,{operation:'mode',mode:v.mode})} refresh={refresh}>{(v,c)=><><Select label="Device mode" value={v.mode} onChange={x=>c('mode',x)} options={integr.capabilities.modes.map(m=>({value:m,label:title(m)}))}/><p className="hint">Monitor presents agent activity. Media opts out; collection continues. This does not start playback. Pending mode: {integr.pendingMode?title(integr.pendingMode):'none'}.</p></>}</EditForm>}
+ {snapshot&&supportedModes.length>0&&!pixoo(integr)&&<EditForm title="Mode" source={snapshot} revision={`${snapshot.configurationRevision}:${JSON.stringify(snapshot.generation)}`} initial={{mode:snapshot.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:supportedModes[0]}} disabled={disabled} api={api} path={path+'/commands'} build={(s,v)=>makeCommand(s,{kind:'mode.set',mode:v.mode as Mode})} refresh={refresh}>{(v,c)=><><Select label="Device mode" value={v.mode} onChange={x=>c('mode',x)} options={options(supportedModes)}/><p className="hint">{component.kind==='nanoleaf'?'Work participates; Quiet and Free preserve the owning controller’s policies.':'Monitor presents agent activity. Media opts out; collection continues. This does not start playback.'}</p></>}</EditForm>}
  {nano(integr)&&<>
  <EditForm title="Integration settings" source={integr} revision={integr.revision} initial={{style:integr.settings.style??'classic',coverage:integr.settings.coverage??'whole'}} disabled={disabled??(!integr.capabilities['settings.set']?.supported?'Settings are not supported':undefined)} api={api} path={path+'/integration/commands'} build={(s,v)=>({apiVersion:s.apiVersion,controllerId:s.identity.controllerId,deviceId:s.identity.deviceId,requestId:s.nextRequestId,expectedRevision:s.revision,command:{kind:'settings.set',style:v.style,coverage:v.coverage}})} refresh={refresh}>{(v,c)=><><Select label="Layout style" value={v.style} onChange={x=>c('style',x)} options={options(['classic','project'])}/><Select label="Coverage" value={v.coverage} onChange={x=>c('coverage',x)} options={options(['whole','status'])}/></>}</EditForm>
  <p className="hint">Session source: {integr.source}. Mappings use controller-declared neutral identifiers.</p>
@@ -67,8 +94,31 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  </>}
  {pixoo(integr)&&<EditForm title="Monitor view" source={integr} revision={`${integr.configurationRevision}:${integr.generation}`} initial={{q:integr.configuration.filter.q??'',provider:integr.configuration.filter.provider??'',projectId:integr.configuration.filter.projectId??'',session:integr.configuration.filter.session?JSON.stringify(integr.configuration.filter.session):'',cadence:String(integr.configuration.cadenceMs)}} disabled={disabled} api={api} path={path+'/integration/commands'} build={(s,v)=>({apiVersion:s.apiVersion,controllerId:component.controllerId,deviceId:component.deviceId,requestId:s.nextRequestId,expectedConfigurationRevision:s.configurationRevision,expectedGeneration:s.generation,action:{operation:'view',filter:{...(v.q?{q:v.q}:{}),...(v.provider?{provider:v.provider}:{}),...(v.projectId?{projectId:v.projectId}:{}),...(v.session?{session:JSON.parse(v.session)}:{})},cadenceMs:Number(v.cadence)}})} refresh={refresh}>{(v,c)=><><label>Label / ID filter<input maxLength={120} value={v.q} onChange={e=>c('q',e.target.value)}/></label><Select label="Monitor provider" value={v.provider} onChange={x=>c('provider',x)} options={[{value:'',label:'All providers'},...options(['codex','claude'])]}/><label>Project ID<input maxLength={128} pattern="[A-Za-z0-9_.-]*" value={v.projectId} onChange={e=>c('projectId',e.target.value)}/></label><Select label="Monitor session" value={v.session} onChange={x=>c('session',x)} options={[{value:'',label:'All sessions'},...(v.session&&!sessions.some(s=>JSON.stringify(s.identity)===v.session)?[{value:v.session,label:'Previously selected session'}]:[]),...sessions.map(s=>({value:JSON.stringify(s.identity),label:s.label??s.identity.sessionId}))]}/><label>Update interval (ms)<input type="number" min={integr.capabilities.minimumCadenceMs} max={integr.capabilities.maximumCadenceMs} step="1" value={v.cadence} onChange={e=>c('cadence',e.target.value)}/></label><p className="hint">Filters can produce an empty monitor view. Participation: {integr.participating?'yes':'no'}; source: {integr.sourceConnection}.</p></>}</EditForm>}
  {!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
- <p className="hint">General power, brightness, scenes and media controls are outside this Codex-integration view. Exact previews are not available.</p>{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:<p className="hint">Advanced editor unavailable: no validated link configured.</p>}
+ <p className="eyebrow general">GENERAL CONTROLS</p>
+ {snapshot?<GeneralControls component={component} snapshot={snapshot} reasons={reasons} api={api} path={path+'/commands'} refresh={refresh} extra={switchToMedia}/>:<p className="hint">General controls unavailable: no controller snapshot.</p>}
+ <p className="hint">Scenes and rendition selection are not part of this view. Exact previews are not available.</p>{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:<p className="hint">Advanced editor unavailable: no validated link configured.</p>}
  </>;
+}
+const actionLabels:Record<string,string>={pause:'Pause',resume:'Resume',stop:'Stop',next:'Next',previous:'Previous',clear:'Clear','restart-with-changes':'Restart with changes'};
+/** Capability-driven general controls. Each control submits one guarded controller v1 command; a disabled control names its reason. */
+function GeneralControls({component,snapshot,reasons,api,path,refresh,extra}:{component:Component;snapshot:Snapshot;reasons:GeneralReasons;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
+ const revision=`${snapshot.configurationRevision}:${JSON.stringify(snapshot.generation)}`,pixel=component.kind==='pixoo';
+ const brightness=snapshot.capabilities.brightness,range=brightness.supported?brightness:{minimum:0,maximum:100},draft=brightnessDraft(snapshot);
+ const power=pixel?'Screen power':'Power';
+ return <>
+ <EditForm title={power} source={snapshot} revision={revision} initial={{on:snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'on'}} disabled={reasons.power} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'power.set',on:v.on==='on'})} refresh={refresh}>{(v,c)=><><Select label={power} value={v.on} onChange={x=>c('on',x)} options={[{value:'on',label:'On'},{value:'off',label:'Off'}]}/><p className="hint">{pixel?'Screen off pauses playback; screen on does not resume it. Power works in Monitor and Media and does not change the mode.':'Power does not change the device mode.'}</p></>}</EditForm>
+ <EditForm title="Brightness" source={snapshot} revision={revision} initial={{percent:String(draft.value)}} disabled={reasons.brightness} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'brightness.set',percent:Number(v.percent)})} refresh={refresh}>{(v,c)=><><label>Brightness (%)<input type="range" min={range.minimum} max={range.maximum} step={1} value={v.percent} onChange={e=>c('percent',e.target.value)}/></label><p className="hint">Selected {v.percent}% of {range.minimum}–{range.maximum}. {draft.source==='unknown'?'Current brightness is unknown; the slider starts at a placeholder, not an observed value.':`Current ${draft.source} brightness is ${draft.value}%.`} Brightness works in every mode and does not change the mode.</p></>}</EditForm>
+ <MediaControls snapshot={snapshot} reason={reasons.media} api={api} path={path} refresh={refresh} extra={extra}/>
+ </>;
+}
+function MediaControls({snapshot,reason,api,path,refresh,extra}:{snapshot:Snapshot;reason?:string;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
+ const heading=useId();
+ const media=snapshot.capabilities.media,playlists=media.supported?media.playlistIds:[],actions:MediaAction[]=media.supported?media.actions:[];
+ const [playlistId,setPlaylistId]=useState('');const selected=playlists.includes(playlistId)?playlistId:playlists[0]??'';
+ const command=useCommand(api,path,refresh,snapshot);
+ const disabled=reason??(!playlists.length&&!actions.length?'No playlists or playback actions are declared':undefined);
+ const run=(label:string,cmd:Command)=>void command.run(label,makeCommand(snapshot,cmd));
+ return <div className="edit" role="group" aria-labelledby={heading}><h3 id={heading}>Media</h3><fieldset disabled={!!disabled||command.busy||command.locked}><Select label="Saved playlist" value={selected} onChange={setPlaylistId} options={playlists.length?playlists.map(id=>({value:id,label:id})):[{value:'',label:'No saved playlists declared'}]}/><p className="hint">Playlists are listed by controller-declared ID. Starting a playlist or a playback action does not change the mode.{!playlists.length&&!disabled?' Unavailable: Start playlist has no declared saved playlist; playback actions remain available.':''}</p><div className="actions"><button type="button" disabled={!selected} onClick={()=>run('Start playlist',{kind:'media.start',playlistId:selected})}>Start playlist</button>{actions.map(action=><button key={action} type="button" className="secondary" onClick={()=>run(actionLabels[action]??action,{kind:'media.control',action})}>{actionLabels[action]??action}</button>)}</div></fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{extra}{command.locked&&<div className="actions"><button type="button" className="secondary" onClick={command.unlock}>Load current / unlock</button></div>}<p role="status">{command.status}</p></div>;
 }
 function NanoMappings({integration:s,disabled,api,path,refresh}:{integration:Nano;disabled?:string;api:Api;path:string;refresh:()=>void}){
  const [elementId,setElementId]=useState(''),[taskId,setTaskId]=useState(''),[projectId,setProjectId]=useState('');
@@ -94,21 +144,24 @@ function SessionView({session:s,monitor,context,api,refresh,stale,elapsed}:{sess
 }
 function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  const [context,setContext]=useState<Context>(),[monitor,setMonitor]=useState<Monitor>(),[devices,setDevices]=useState<Record<string,Device>>({}),[view,setView]=useState('activity'),[q,setQ]=useState(''),[provider,setProvider]=useState(''),[error,setError]=useState(''),[feed,setFeed]=useState(false),[now,setNow]=useState(Date.now()),[received,setReceived]=useState(0);
- const refreshRef=useRef<()=>void>(()=>{}),deviceRefresh=useRef<(id:string)=>void>(()=>{});
+ const refreshRef=useRef<()=>void>(()=>{}),deviceRefresh=useRef<(id:string)=>Promise<void>>(async()=>{});
  useEffect(()=>{
-  const stop=new AbortController();let busy=false,again=false;const deviceBusy=new Set<string>(),deviceAgain=new Set<string>();let current:Context|undefined,latestMonitor:Monitor|undefined;
+  const stop=new AbortController();let busy=false,again=false;const deviceBusy=new Set<string>(),deviceAgain=new Set<string>(),deviceWaiters=new Map<string,(()=>void)[]>();let current:Context|undefined,latestMonitor:Monitor|undefined;
   const update=(id:string,value:Partial<Device>)=>{if(!stop.signal.aborted)setDevices(old=>({...old,[id]:{...old[id],...value}}));};
-  async function refreshDevice(c:Component){if(stop.signal.aborted)return;if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return;}deviceBusy.add(c.id);
+  // Resolves after a read that started after this call completed, so a caller can wait for authoritative guards.
+  async function refreshDevice(c:Component):Promise<void>{if(stop.signal.aborted)return;
+   if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return new Promise<void>(resolve=>{const waiters=deviceWaiters.get(c.id)??[];waiters.push(resolve);deviceWaiters.set(c.id,waiters);});}
+   deviceBusy.add(c.id);
    try {const snapshot=await api.request<Snapshot>(`/api/controllers/v1/${c.id}/snapshot`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
     if(['nanoleaf','pixoo'].includes(c.kind))integration=await api.request<Nano|Pixoo>(`/api/controllers/v1/${c.id}/integration/snapshot`,undefined,stop.signal);
     update(c.id,{snapshot,integration,error:undefined,received:Date.now()});
-   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);if(deviceAgain.delete(c.id))void refreshDevice(c);}
+   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);if(deviceAgain.delete(c.id)&&!stop.signal.aborted)void refreshDevice(c);else{const waiters=deviceWaiters.get(c.id)??[];deviceWaiters.delete(c.id);waiters.forEach(resolve=>resolve());}}
   }
   async function refresh(){if(busy){again=true;return;}busy=true;
    try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);if(latestMonitor&&latestMonitor.ownerId===next.ownerId&&latestMonitor.snapshot.revision>next.snapshot.revision){setError('stale-snapshot');return;}latestMonitor=next;setMonitor(next);setReceived(Date.now());setError('');}
    catch(e){if(!stop.signal.aborted)setError(e instanceof ApiError?e.code:'unavailable');}finally{busy=false;if(again&&!stop.signal.aborted){again=false;void refresh();}}
   }
-  refreshRef.current=()=>void refresh();deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);if(c)void refreshDevice(c);};
+  refreshRef.current=()=>void refresh();deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);return c?refreshDevice(c):Promise.resolve();};
   void refresh().then(()=>current?.components.forEach(c=>void refreshDevice(c)));
   void api.feed(stop.signal,()=>void refresh(),value=>{if(!stop.signal.aborted)setFeed(value);});
   const interval=setInterval(()=>{void refresh();current?.components.forEach(c=>void refreshDevice(c));},5000),clock=setInterval(()=>setNow(Date.now()),1000);

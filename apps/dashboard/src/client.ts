@@ -8,6 +8,25 @@ export function safeEditorUrl(value:unknown):string|undefined {
 export function makeCommand(snapshot:Snapshot,command:Command):Request {
  return {apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:structuredClone(snapshot.nextRequestId),expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:structuredClone(snapshot.generation),command};
 }
+export type GeneralReasons={power?:string;brightness?:string;media?:string};
+/** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. */
+export function generalReasons({snapshot,control,common,content}:{snapshot:Pick<Snapshot,'capabilities'>|undefined;control:boolean;common?:string;content?:string}):GeneralReasons {
+ const reason=(name:'power'|'brightness'|'media',label:string,gate?:string)=>{
+  if(!snapshot)return 'No controller snapshot';
+  if(!snapshot.capabilities[name].supported)return `${label} is not declared by this controller`;
+  if(!control)return 'Your credential is read-only';
+  return common??gate;
+ };
+ return {power:reason('power','Power'),brightness:reason('brightness','Brightness'),media:reason('media','Media',content)};
+}
+/** The brightness draft starts from desired evidence, then observed evidence; missing evidence stays visibly unknown. */
+export function brightnessDraft(snapshot:Pick<Snapshot,'state'|'capabilities'>):{value:number;source:'desired'|'observed'|'unknown'} {
+ const desired=snapshot.state.desired.brightness,observation=snapshot.state.observation;
+ if(desired.status==='known')return {value:desired.value,source:'desired'};
+ if(observation.status==='known'&&observation.brightness.status==='known')return {value:observation.brightness.value,source:'observed'};
+ const range=snapshot.capabilities.brightness;
+ return {value:range.supported?Math.round((range.minimum+range.maximum)/2):50,source:'unknown'};
+}
 export class ApiError extends Error {constructor(public code:string,public status=0,public detail:unknown=undefined){super(code);}}
 export class Api {
  private mutations=new Map<string,number>();

@@ -1,3 +1,35 @@
+## September 22, 2026: Pixoo general controls candidate
+
+Hub PR #160 carries the source candidate for Hub #151: screen power,
+brightness, saved-playlist selection and the six playback actions in the
+existing Pixoo component view, one guarded controller v1 command each through
+the existing hub route. Content controls are disabled in Monitor with an explicit
+Media switch through the Pixoo integration mode operation, because Pixoo `main`
+c81bc31 declares controller v1 modes unsupported; the fake Pixoo now declares the
+real capabilities. OpenSpec change `gh-151-pixoo-general-controls` records the
+`unified-dashboard` delta and is archived on the branch. Two rounds of
+independent Standards and Specification review approved head `259efd8` with P3
+dispositions, all six hosted jobs passed there, and the owner approved the UI
+candidate. Nothing is installed or operated; #154 owns the display acceptance.
+
+This entry reconciles the candidate with the concurrent Nanoleaf #64 closeout
+(Hub PR #161) and refreshes the three backlogs and the paginated history at
+2026-09-22T20:51Z. Hub #151 is in review, so it leaves the parallel candidate
+cards while it stays a primary open issue; the controls guide's Pixoo row and
+next step name the candidate, and the Nanoleaf rows keep the #64 completion
+recorded by #161. There are 93 primary open issues, 12 guides, nine viewers, 52
+roadmap nodes and 124 merged PRs in this snapshot. Ownership, transports,
+physical writers and pinned architecture viewers are unchanged: the browser
+remains a client of the hub route.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+HTML SHA-256 `6f91a6d6e0ab107d35ba0c8d1964393fb77fbc9243d0abce695d23fdbc597c74`.
+This candidate is a mixed change, so every configured CI job applies, and the
+guide merge changes no product UI, so the recorded approval stands. A linked
+follow-up will record merge, issue closure and acceptance facts unavailable
+before merge. Public guide publication and live verification remain separate
+and were not requested.
+
 ## September 22, 2026: Nanoleaf native controls delivered
 
 Nanoleaf #64 closed as completed after

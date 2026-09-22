@@ -43,7 +43,7 @@ PATHS = {
     ),
     'controls-music': (
         'Extend the shared integration UI into general controls, then music.',
-        'The general-control definition is closed and Nanoleaf #64 delivered the native capabilities. Start the Pixoo controls slice; the Nanoleaf view no longer waits on a native prerequisite, and both hardware acceptances follow their views. Playback and participation policy precede music UI and device effects.',
+        'The general-control definition is closed and Nanoleaf #64 delivered the native capabilities. The Pixoo controls candidate is in review under Hub PR #160; the Nanoleaf view no longer waits on a native prerequisite, and both hardware acceptances follow their views. Playback and participation policy precede music UI and device effects.',
         ['H151'],
     ),
     'hosting-migrations': (
