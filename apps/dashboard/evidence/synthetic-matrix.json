@@ -11,8 +11,10 @@
     "general controls submit one guarded controller v1 command each in Media without changing the mode",
     "Monitor disables playlist and playback controls with the reason and a one-click explicit switch to Media",
     "general control drafts survive concurrent edits; typed conflicts and uncertain results never retry",
-    "read-only credentials and undeclared capabilities name their reasons"
+    "read-only credentials and undeclared capabilities name their reasons",
+    "Nanoleaf power and brightness work in Work; scenes wait for the explicit Free switch and each control sends one guarded command",
+    "a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry"
   ],
   "pixelReadDelayMs": 800,
-  "independentDeviceReadMs": 1.9854089999998905
+  "independentDeviceReadMs": 3.780337999999574
 }

@@ -8,16 +8,30 @@ export function safeEditorUrl(value:unknown):string|undefined {
 export function makeCommand(snapshot:Snapshot,command:Command):Request {
  return {apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:structuredClone(snapshot.nextRequestId),expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:structuredClone(snapshot.generation),command};
 }
-export type GeneralReasons={power?:string;brightness?:string;media?:string};
-/** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. */
+export type GeneralReasons={power?:string;brightness?:string;media?:string;scenes?:string};
+/** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. Content gating applies to media and scenes only. */
 export function generalReasons({snapshot,control,common,content}:{snapshot:Pick<Snapshot,'capabilities'>|undefined;control:boolean;common?:string;content?:string}):GeneralReasons {
- const reason=(name:'power'|'brightness'|'media',label:string,gate?:string)=>{
+ const reason=(name:'power'|'brightness'|'media'|'scenes',label:string,gate?:string)=>{
   if(!snapshot)return 'No controller snapshot';
-  if(!snapshot.capabilities[name].supported)return `${label} is not declared by this controller`;
+  if(!snapshot.capabilities[name].supported)return `${label} not declared by this controller`;
   if(!control)return 'Your credential is read-only';
   return common??gate;
  };
- return {power:reason('power','Power'),brightness:reason('brightness','Brightness'),media:reason('media','Media',content)};
+ return {power:reason('power','Power is'),brightness:reason('brightness','Brightness is'),media:reason('media','Media is',content),scenes:reason('scenes','Scenes are',content)};
+}
+/** Scenes come only from the controller v1 declaration. A user-chosen name from the integration snapshot labels a scene when supplied; nothing else is copied. */
+export function sceneOptions(snapshot:Pick<Snapshot,'capabilities'>,integration:{scenes?:{id:string;name?:string}[]}|undefined):{value:string;label:string}[] {
+ const scenes=snapshot.capabilities.scenes;if(!scenes.supported)return [];
+ const names=new Map((integration?.scenes??[]).filter(s=>typeof s.name==='string').map(s=>[s.id,s.name as string]));
+ return scenes.sceneIds.map(id=>({value:id,label:names.get(id)??id}));
+}
+/** Nanoleaf presents agent status in Work and Quiet. Scenes wait for an observed Free mode with no pending mode change; nothing switches or restores on its own. */
+export function nanoleafContentReason(snapshot:Pick<Snapshot,'state'>):string|undefined {
+ const pending=snapshot.state.pending.find(p=>p.command.kind==='mode.set');
+ if(pending&&pending.command.kind==='mode.set')return `Nanoleaf is switching to ${pending.command.mode}; wait for the observed mode`;
+ const mode=snapshot.state.desired.mode;
+ if(mode.status!=='known')return 'Nanoleaf mode is unknown; scene activation needs an observed Free mode';
+ return mode.value==='Free'?undefined:`Nanoleaf is in ${mode.value} and presents agent status; scene activation needs Free`;
 }
 /** The brightness draft starts from desired evidence, then observed evidence; missing evidence stays visibly unknown. */
 export function brightnessDraft(snapshot:Pick<Snapshot,'state'|'capabilities'>):{value:number;source:'desired'|'observed'|'unknown'} {

@@ -16,7 +16,7 @@ async function applyNano(name){
 const timings=[],renderTimings=[];let feedConnections=0;page.on('request',r=>{if(r.url().endsWith('/changes'))feedConnections++;});
 try {
  await page.route('**/api/dashboard/v1/context',async route=>{const response=await route.fetch();if(response.status()!==200){await route.fulfill({response});return;}const value=await response.json();value.components.push({id:'synthetic',kind:'sensor',controllerId:'test',deviceId:'sensor',health:'unknown',pending:0});await route.fulfill({response,json:value});});
- await page.route('**/api/controllers/v1/synthetic/snapshot',async route=>{const value=structuredClone(f.states.wall);value.identity={controllerId:'test',deviceId:'sensor',sourceId:'test',controllerEpoch:'epoch'};value.capabilities.modes={supported:false};await route.fulfill({json:value});});
+ await page.route('**/api/controllers/v1/synthetic/snapshot',async route=>{const value=structuredClone(f.states.wall);value.identity={controllerId:'test',deviceId:'sensor',sourceId:'test',controllerEpoch:'epoch'};value.capabilities={power:{supported:false},brightness:{supported:false},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};await route.fulfill({json:value});});
  await page.goto(f.hub.url);await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();
  await page.getByRole('heading',{name:'Build the integration',exact:true}).waitFor();
  await page.getByLabel('Find a session').fill('no-match');await page.getByRole('heading',{name:'No matching sessions'}).waitFor();await page.getByLabel('Find a session').fill('');

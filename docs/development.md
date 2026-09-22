@@ -345,6 +345,18 @@ checks that general commands are schema-validated and scoped before any
 controller request. The fake Pixoo declares the capabilities of Pixoo `main`
 `c81bc31`, with controller v1 modes unsupported; the dashboard README records
 the mapping. Human UI approval of the candidate is recorded in its PR.
+
+Hub #153 adds Nanoleaf scenarios to the same matrix: power and brightness in
+Work with the override hint, Work gating with the explicit Free switch through
+the controller v1 mode command, one guarded scene command with a preserved
+selection and focus across reconnect, and a controller-side scene rejection,
+revision conflict and uncertain result with no retry. The fake Nanoleaf declares
+the capabilities of Nanoleaf `main` `8062849` and rejects a scene outside Free
+with `unsupported-capability` before any write; the hub route test checks that
+scene commands are schema-validated before forwarding. Client unit tests cover
+the scene availability order, name-or-ID labelling from the integration snapshot
+and the Work/Quiet/pending/unknown gating. Human UI approval of the candidate is
+recorded in its PR.
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`
