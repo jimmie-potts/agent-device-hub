@@ -135,4 +135,6 @@ The [integration dashboard](apps/dashboard/README.md) implements Hub #6
 for activity, components and connections. It uses the existing protected hub and
 controller services, with source-only synthetic browser checks. PR #127 records
 human UI approval and source-delivery evidence. Installation and physical
-acceptance remain separate.
+acceptance remain separate. [ADR 0005](docs/decisions/0005-general-device-controls.md)
+defines the general device controls that extend these views; their bounded
+issues are in the [roadmap](docs/roadmap.md#general-device-controls).

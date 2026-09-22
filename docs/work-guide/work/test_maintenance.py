@@ -41,10 +41,10 @@ class GuideMaintenance(unittest.TestCase):
                 '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
             path = candidate / 'work/backlogs/device-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['n']['issues']['nodes'] if row['number'] == 41)
+            issue = next(row for row in native['data']['p']['issues']['nodes'] if row['number'] == 61)
             issue['blockedBy']['nodes'].append({
-                'number': 55, 'state': 'OPEN',
-                'repository': {'nameWithOwner': 'jimmie-potts/codex-nanoleaf'}})
+                'number': 11, 'state': 'OPEN',
+                'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
             issue['blockedBy']['totalCount'] += 1
             path.write_text(json.dumps(native))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
@@ -52,9 +52,9 @@ class GuideMaintenance(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             before, after = document.split('<h3>Hold or coordinate first</h3>')
-            self.assertNotIn('data-unit="N41"', before)
-            self.assertIn('data-unit="N41" data-scheduling="blocked"', after)
-            self.assertIn('Waiting for codex-nanoleaf #55.', after)
+            self.assertNotIn('data-unit="P61"', before)
+            self.assertIn('data-unit="P61" data-scheduling="blocked"', after)
+            self.assertIn('Waiting for divoom-app-upgrade #11.', after)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
         from html.parser import HTMLParser
@@ -86,6 +86,9 @@ class GuideMaintenance(unittest.TestCase):
             self.assertIn('Completed', text)
             self.assertIn('✓', text)
         for attrs, text in links.links['N41']:
+            self.assertEqual(attrs.get('data-status'), 'completed')
+            self.assertIn('Completed', text)
+        for attrs, text in links.links['N10']:
             self.assertEqual(attrs.get('data-status'), 'open')
             self.assertIn('Open', text)
         for attrs, text in links.links['H64']:

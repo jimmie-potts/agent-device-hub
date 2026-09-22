@@ -8,13 +8,13 @@ PATHS = {
     ),
     'shared-codex': (
         'One shared task state, consistent device status, and a common integration UI.',
-        'Reconcile Hub #32 against its delivered source and installed receipts. Its milestone checklist and blocked label are still open; inspect the remaining criteria before choosing more implementation.',
-        ['H32'],
+        'The Codex-first milestone is closed. Remaining items here are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
+        ['H138'],
     ),
     'nanoleaf-devices': (
         'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'Start with the device-state and geometry foundation. Worker and rendering work follow that contract; two-device installation comes last.',
-        ['N41'],
+        'The device-state and geometry foundation is delivered. Next, integrate independent device projections through the existing Linux worker; rendering and two-device installation follow.',
+        ['N42'],
     ),
     'tidbyt-lifx': (
         'Add automatic task status to Tidbyt and LIFX through their own controllers.',
@@ -28,7 +28,7 @@ PATHS = {
     ),
     'desktop-controls': (
         'Use local Wispr and Codex shortcuts, then add optional shared desk presets.',
-        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets also wait for the Codex milestone and general-control definition.',
+        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets keep their blocked and deferred labels until the owner selects them, now that the general-control definition is closed.',
         ['H64'],
     ),
     'nanoleaf-presentation': (
@@ -43,13 +43,13 @@ PATHS = {
     ),
     'controls-music': (
         'Extend the shared integration UI into general controls, then music.',
-        'Finish the Codex milestone before refining general controls. Playback and participation policy precede music UI and device effects.',
-        ['H31'],
+        'The general-control definition is closed. Start the Pixoo controls slice and the Nanoleaf capability work in parallel; the Nanoleaf view and hardware acceptances follow them. Playback and participation policy precede music UI and device effects.',
+        ['H151', 'N64'],
     ),
     'hosting-migrations': (
         'Make runtime ownership and hosting portable without sharing private databases.',
-        'Reconcile the Linux installation record before the Hub adoption document. Hosting, dedicated hardware and source moves are separate choices with separate evidence.',
-        ['N55', 'H43'],
+        'The Linux installation and its architecture record are complete. Hosting, dedicated hardware and source moves remain separate deferred choices with separate evidence.',
+        [],
     ),
     'assistant-access': (
         'Add approved automation and access methods on top of working controls.',
@@ -66,8 +66,12 @@ PATHS = {
 # These are reviewed independent units, not an automatic list of every issue
 # without a native blocker. Their labels and dependencies can withhold a card.
 PARALLEL = [
-    ('N41', 'Nanoleaf device foundation', 'nanoleaf-devices',
-     'Own the Nanoleaf storage and geometry contract. Use isolated source fixtures; worker integration follows this story.'),
+    ('H151', 'Pixoo general controls', 'controls-music',
+     'Add the accepted Pixoo controls to the existing component view. Pixoo needs no wire change; the candidate needs human UI approval before merge.'),
+    ('N64', 'Nanoleaf native controls', 'controls-music',
+     'Declare power, brightness and saved-scene capabilities on the protected controller API with fake devices. The hub view and physical acceptance follow.'),
+    ('N42', 'Nanoleaf runtime worker', 'nanoleaf-devices',
+     'Integrate independent device projections through the existing Linux worker on the delivered #41 contract. Its blocked label waits for the owner to release it.'),
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',
      'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
     ('H15', 'Tidbyt connection findings', 'tidbyt-lifx',

@@ -186,8 +186,10 @@ owns the first shared frontend milestone. The accepted progression is:
 2. After #32 acceptance,
    [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) defines general
    controls in the same application, usable without an active agent session.
-   The supported feature set and its implementation issues retain their later
-   planning and acceptance gates.
+   That definition was accepted on September 22, 2026 and recorded in
+   [ADR 0005](decisions/0005-general-device-controls.md); its bounded issues
+   are listed under [general device controls](#general-device-controls) and
+   retain their own planning and acceptance gates.
 3. Across both phases, each additional user-facing BUNNY component adopts the
    common view pattern as its capabilities are delivered. Its owning issues
    retain their existing prerequisites and track required API, UI and validation
@@ -198,6 +200,33 @@ editing and Pixoo playlist editing remain linked initially; full editor
 migration, new effects and exact previews have separate follow-on scope.
 These requirements refine the existing phases without changing dependencies,
 issue readiness or implementation status.
+
+## General device controls
+
+[ADR 0005](decisions/0005-general-device-controls.md) records the definition
+accepted under [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31)
+on September 22, 2026. Controls stay in each component's existing BUNNY view and
+submit one guarded controller v1 command each. Power and brightness are
+mode-independent; content controls are disabled while a device presents agent
+status, with an explicit switch; nothing restores automatically. Required issue
+links match the native dependency graph checked September 22, 2026.
+
+| Issue | Outcome | Required source prerequisites |
+| --- | --- | --- |
+| [#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) | Add Pixoo power, brightness, playlist and playback controls to the BUNNY component view | [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64) | Declare native power, brightness and saved-scene capabilities on the protected controller API | [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [#153](https://github.com/jimmie-potts/agent-device-hub/issues/153) | Add Nanoleaf power, brightness and scene controls to the BUNNY component view | [Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67) | Expose user-entered playlist names through the Pixoo integration extension; non-blocking for #151 | [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [#152](https://github.com/jimmie-potts/agent-device-hub/issues/152) | Add media tools to the hub MCP device tool set | [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
+| [#154](https://github.com/jimmie-potts/agent-device-hub/issues/154) | Install and verify Pixoo general controls on the physical display | [#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) |
+| [#155](https://github.com/jimmie-potts/agent-device-hub/issues/155) | Install and verify Nanoleaf general controls on the installed wall | [#153](https://github.com/jimmie-potts/agent-device-hub/issues/153), [Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64) |
+
+Pixoo needs no wire change and ships first. Tidbyt, LIFX and PC lighting stay
+unavailable until their controllers declare capabilities through their own
+issues; [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) and
+desk presets in [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
+consume this definition. Source prerequisite closure grants no installation,
+UI approval or device-operation permission; #154 and #155 keep their own gates.
 
 ## Stages and gates
 

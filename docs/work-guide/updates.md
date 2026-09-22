@@ -1,3 +1,94 @@
+## September 22, 2026: General-control definition closeout
+
+Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical
+to reviewed head `f918779`. Both independent Standards and Specification
+reviews passed with recorded P3 dispositions, and all six PR and all six
+merged-main jobs succeeded. Hub #31 is closed as completed with its ten
+planning criteria checked and its closing record posted.
+
+This follow-up refreshes the three backlogs, native dependencies and the
+paginated history at 2026-09-22T06:07Z, retains #31 as a completed reference,
+removes it from open coverage and the remaining-work map, and rewrites the
+overview, controls and desktop-control next steps so they no longer wait on
+the definition. Hub #151 and Nanoleaf #64 have no open native prerequisites
+and appear as parallel candidates; Pixoo #67 is listed as a non-blocking
+companion; #153, #154 and #155 remain blocked by their listed prerequisites. There are 94 primary open issues,
+12 guides, nine viewers, 52 roadmap nodes and 119 merged PRs in this snapshot.
+Architecture diagrams, ownership, transports and physical writers are unchanged.
+
+Generation, nine maintenance tests, browser/print checks and generated-output
+consistency pass; HTML SHA-256 `0fafa2b15ca5ee830f90e8855d96c865e796fbda5fa6d85c35be1713e395b385`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception
+receipt, recorded on the PR. No product behavior or OpenSpec delta. Public
+guide publication and live verification remain separate and were not requested.
+
+## September 22, 2026: General-control definition and concurrent closures
+
+Hub #31's general-control definition was accepted in a grouped question round
+and recorded in ADR 0005, with pointers in architecture, roadmap, desktop
+controls and the README. The tracker now holds the bounded issues: Hub #151
+(Pixoo controls), #152 (hub MCP media tools), #153 (Nanoleaf controls), #154
+and #155 (hardware acceptance), Nanoleaf #64 (native capabilities) and Pixoo
+#67 (playlist names), with native blocked-by links and refined notes on #67
+and #56. Hub #31 stays open and in progress until this documentation PR merges
+and its merged-revision CI is read back; a follow-up refresh records closure.
+
+The same snapshot records three concurrent closures made by other sessions
+today: Hub #32 (Codex-first milestone, completed on its reconciled dependency
+table), Nanoleaf #55 (installed Linux runtime, completed on existing evidence)
+and Hub #43 (architecture record, completed on its earlier PRs #84 and #98).
+Their guide rows now read as completed, the shared-codex and hosting next steps
+no longer point at them, and Hub #31, #32 and #43 join the direct acceptance
+reads. The controls guide gains rows for the new issues; #151 and Nanoleaf #64
+are listed as parallel candidates and are withheld until #31 closes.
+
+Refreshed all three backlogs and native dependencies at
+2026-09-22T05:45Z: 95 primary open issues, 12 guides, nine viewers, 52 roadmap
+nodes. Architecture diagrams, history inputs, ownership, transports and
+physical writers are unchanged. Generation, nine maintenance tests and the
+browser/print checks pass; HTML SHA-256 `75575f090d6d5740d7408fcfb00e607de9d58606301d0c3ba9b0ec1ec9d6dea9`.
+This is a mixed change with documentation outside `docs/work-guide/`, so all
+configured CI jobs apply. Public publication and live verification remain
+separate and were not requested.
+
+## September 22, 2026: Nanoleaf device-aware state foundation
+
+Nanoleaf #41 delivered the storage and geometry shape that the Lines and
+Light Panels sequence builds on. The private configuration now registers each
+device by id, kind, address and token reference, with the original Lines device
+keeping the #28 controller identity `wall`. Placements, comets, Line
+preferences, display cache, map settings, pending edits, Locate, mode metadata
+and the saved scene are keyed by device, with uniqueness on device plus slot
+and device plus element. Existing Linux state upgrades in place inside the
+existing initialization, guarded and idempotent; a committed pre-change fixture
+proves that tasks, epochs, preferences, the active comet, pending edits and
+controller history survive. The layout file holds one entry per device with
+each element's id, number and zones; legacy files still load. ADR 0009 and the
+`device-state` specification record the decisions.
+
+Nanoleaf PR #65 merged as `773d3ca7d97a1fb585baba8e3d9c19c197f337c4` after independent Standards and
+Specification reviews and all nine PR checks passed; all merged-main checks
+passed before #41 closed as completed. This is source-only: no installation,
+hook, service or light change, and the worker still renders the original
+device. #42 (runtime worker), #43 (NL22 rendering) and #46 (installed
+acceptance) keep their own scope; #42 keeps its blocked label until its owner
+releases it.
+
+This entry refreshes the three backlogs and repository history, retains #41 as
+a closed reference with comment links only (its delivery-claim comment names a
+local worktree path), records it as completed in the Lines + Light Panels guide,
+moves the guide's next step and the reviewed parallel unit to #42, and corrects
+the worker row to the Linux runtime. The refresh also picked up new Hub #158
+(iPhone Apple Music sources), which joins the controls and music guide and the
+Apple Music roadmap node. The blocker regression now uses Pixoo #61 as its
+open candidate. Ownership, transports, physical writers and the pinned
+architecture viewers do not change, so no diagram is redrawn. Guide generation,
+nine maintenance tests, the browser check and generated-output consistency
+pass; HTML SHA-256:
+`d36be03d25dacf308e9a914b5f1093687aaf43e8a4a84cab1dc7bad99b6e57fd`.
+Public publication and live verification are separate and are not claimed here.
+
 ## September 22, 2026 UTC: Owner-revised programmable A/B defaults
 
 The owner changed the version 1 defaults to B=Wispr hold/release and A=Enter
