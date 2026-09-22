@@ -11,7 +11,9 @@ complete backlog refresh also includes the newly published Hub #137-#139 in
 shared-monitor coverage. It does not implement those issues. The diagram's
 planned ownership and command flow are unchanged; existing source pins remain
 their dated source baseline. Hardware identity comes from the owner's #64
-delivery-task photos, which remain outside Git.
+delivery-task photos, which remain outside Git. Reconciled #63 closure and
+refreshed paginated history, including the merged #63 and standalone
+qualification work; their delivery remains distinct from #64.
 
 Guide generation and five maintenance tests passed. Browser checks passed
 coverage, links, navigation, search, diagram interactions and print restoration
