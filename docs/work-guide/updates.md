@@ -1,3 +1,22 @@
+## September 22, 2026: Guide clarity source closeout
+
+Hub PR #149 merged as `56e5667342cd446a229a4234dadf13fe3d07b0a2`.
+Final independent Standards and Specification reviews found no remaining
+findings. Nine maintenance tests and the six-width browser/PDF suite passed.
+The merged guide matches the reviewed head exactly. All 18 changed paths were
+under `docs/work-guide/`; both unchanged workflow filters explain the zero
+PR and merged-revision runs, checks and commit statuses. No protection or
+required check was bypassed.
+
+Issue #148 is closed as completed for its source acceptance, with its workflow
+label cleared. This follow-up refreshes the three backlogs, retains #148 as a
+completed reference and removes it from open coverage and the remaining-work
+map. The development guide now points to the next separately scoped design
+choice. Public publication and live verification follow this reviewed merged
+snapshot; they are not inferred from the Hub merge. No architecture or runtime
+behavior changes. Generation, nine maintenance checks, browser/PDF checks and
+output consistency are recorded with this candidate.
+
 ## September 22, 2026: Story status and actionable guide paths
 
 Hub #148 makes issue status visible on every issue link, with text and symbols

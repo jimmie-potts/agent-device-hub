@@ -74,4 +74,4 @@
 #137 [CLOSED] Support best-effort Codex current status across successive turns
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability
-#148 [OPEN] Clarify work-guide story status and actionable delivery paths
+#148 [CLOSED] Clarify work-guide story status and actionable delivery paths
