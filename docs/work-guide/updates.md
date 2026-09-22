@@ -10,12 +10,12 @@ long evidence notes are expandable; search and print reveal them and restore the
 prior state. The overview separates delivered work, Hub #32 milestone review,
 and selected independent units. Parallel candidates are withheld when their
 saved status is blocked, deferred, active or closed. Dependency data must be
-complete. The roadmap starts folded; its routing and architecture are unchanged.
+complete. The roadmap starts folded and shows order without claiming readiness. Review caught its old ready marker on blocked input qualification; a regression now guards that contradiction. Routing and architecture are unchanged.
 The desktop-control prose also follows the current Big B dictation / separate
 Big A Enter defaults recorded in its owning issues.
 
 The coordinator refreshed all three backlogs and reconciled 92 open issues,
-including this maintenance story. Eight maintenance regressions and browser
+including this maintenance story. Nine maintenance regressions and browser
 checks passed at six widths from 320 to 1440 px, including keyboard status links,
 search, evidence disclosures, navigation, viewers and real PDF restoration.
 The status-link regression failed before the change because completed links had

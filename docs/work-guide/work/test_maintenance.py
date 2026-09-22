@@ -9,6 +9,13 @@ import unittest
 
 
 class GuideMaintenance(unittest.TestCase):
+    def test_roadmap_order_does_not_claim_blocked_work_is_ready(self):
+        source = Path(__file__).resolve().parent.parent
+        document = (source / 'outputs/agent-device-work-guides.html').read_text()
+        self.assertFalse('class="node ready"' in document, 'Roadmap still claims readiness')
+        self.assertFalse('ready for selection now' in document)
+        self.assertFalse('Now · ready or independent' in document)
+
     def test_status_and_parallel_candidates_respect_gates(self):
         from guide_status import issue_status, scheduling_state
 

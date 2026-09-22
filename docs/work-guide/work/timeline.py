@@ -23,24 +23,24 @@ MILESTONES = {
 
 # Roadmap columns order each track. Cross-track prerequisites come from arrows,
 # not from the shared Codex milestone's position in a different row.
-SLOTS = ['Now · ready or independent', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
+SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
+        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H123'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
-        dict(id='n-status-fix', x=0, label='Current status delivered', issues=[], guide='shared-codex', ready=True),
+        dict(id='n-status-fix', x=0, label='Current status delivered', issues=[], guide='shared-codex'),
         dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
     ]),
     ('Reliable event history', [
         dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
     ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H64'], guide='desktop-controls', ready=True),
+        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H64'], guide='desktop-controls'),
         dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
@@ -84,7 +84,7 @@ TRACKS = [
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
     ('Nanoleaf Linux runtime', [
-        dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations', ready=True),
+        dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-acceptance', x=1, label='Linux installed acceptance', issues=['N55'], guide='hosting-migrations'),
         dict(id='n-linux-portability', x=2, label='Architecture documentation', issues=['H43'], guide='hosting-migrations'),
     ]),
@@ -204,7 +204,7 @@ def roadmap_map(issues, guides_by_id):
             nodes[item['id']] = dict(item, cx=cx, cy=cy, track=track)
     parts = [f'<svg class="roadmap" viewBox="0 0 {width} {height}" role="img" aria-labelledby="roadmap-title roadmap-desc" preserveAspectRatio="xMidYMid meet">',
              '<title id="roadmap-title">Ordered roadmap of the remaining work guides</title>',
-             '<desc id="roadmap-desc">Rows are work tracks. Columns order stages from ready now to deferred; they are not dates. Solid connectors show order within a track; dashed connectors show cross-track prerequisites. Each node links to its work guide and lists its issues.</desc>',
+             '<desc id="roadmap-desc">Rows are work tracks. Columns order stages from first to deferred; they are not dates. Solid connectors show order within a track; dashed connectors show cross-track prerequisites. Each node links to its work guide and lists its issues.</desc>',
              '<defs><marker id="road-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8z"/></marker></defs>']
     for slot, name in enumerate(SLOTS):
         sx = left + slot_w * slot
@@ -231,7 +231,7 @@ def roadmap_map(issues, guides_by_id):
         tip = (' · '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]} {issues[k]["title"]}' for k in keys) if len(keys) <= 4
                else f'{len(keys)} issues: ' + ', '.join(f'{REPO_LABEL[k[0]]} #{issues[k]["number"]}' for k in keys))
         guide = guides_by_id[node['guide']]
-        classes = 'node' + (' main' if node.get('main') else '') + (' ready' if node.get('ready') else '')
+        classes = 'node' + (' main' if node.get('main') else '')
         repos = ' '.join(k for k, v in repo_counts.items() if v)
         parts.append(f'<a class="{classes}" href="#{node["guide"]}" data-node="{node["id"]}" data-repos="{repos}" data-tip="{esc(node["label"])}" data-detail="{esc(tip)}" data-guide="{esc(guide)}" aria-label="{esc(node["label"])}: {len(open_keys)} open issues in guide {esc(guide)}. {esc(tip)}">'
                      f'<rect x="{node["cx"] - node_w / 2:.1f}" y="{node["cy"] - node_h / 2:.1f}" width="{node_w}" height="{node_h}" rx="3"/>'
