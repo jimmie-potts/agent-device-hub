@@ -71,6 +71,6 @@
 #103 [CLOSED] Document the composable BUNNY system design
 #107 [CLOSED] Consolidate Hub CI into five Ubuntu checks
 #123 [OPEN] Re-evaluate Linux performance budgets and reduce hub memory use
-#137 [OPEN] Support best-effort Codex current status across successive turns
+#137 [CLOSED] Support best-effort Codex current status across successive turns
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability

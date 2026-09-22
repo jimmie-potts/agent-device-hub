@@ -33,7 +33,7 @@ TRACKS = [
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
-        dict(id='n-status-fix', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
+        dict(id='n-status-fix', x=0, label='Current status delivered', issues=[], guide='shared-codex', ready=True),
         dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
     ]),
     ('Reliable event history', [
