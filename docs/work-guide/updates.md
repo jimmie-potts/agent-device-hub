@@ -1838,6 +1838,23 @@ application tests, 10 workflow fixtures and 54 browser tests. The merged source
 tree matches the reviewed candidate. The linked delivery receipt records
 merged-main CI separately. Issue #30 remains open for physical measurements and the method/cadence decision.
 
+
+## 2026-09-21 — Hub #6 dashboard candidate
+
+The issue is in review in PR #127 after its three source prerequisites closed. The
+candidate adds the shared React/TypeScript integration frontend using the current
+approved Nanoleaf Prism/Neon visual language, typed owning-controller commands,
+scoped context and a third synthetic component fixture. The user approved the
+source UI candidate. Independent final review, renewed hosted CI and source
+merge remain pending.
+
+Refreshed backlog inputs and regenerated the shared Codex guide. Preserved the
+merged Hub #5 reconciliation. Existing architecture diagrams retain their planned
+dashboard designation because #6 is not source-delivered; no diagram flow or
+ownership claim changes at this checkpoint. Installation, physical acceptance
+and public guide publication remain separate. Validation is recorded with the
+candidate's delivery evidence.
+
 ## September 21, 2026: Pixoo #34 source packaging candidate
 
 The Pixoo #34 delivery coordinator prepared shared setup package reuse,

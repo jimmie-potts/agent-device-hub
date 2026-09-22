@@ -1,0 +1,14 @@
+{
+  "synthetic": true,
+  "physical": false,
+  "passed": true,
+  "checks": [
+    "empty sessions retain useful controls; keyboard and all view accessibility",
+    "slow device serializes explicit commands while another device remains responsive",
+    "terminal integration failures, known evidence and external control are visible",
+    "rejected older snapshots cannot refresh evidence; expired cursor resync preserves drafts",
+    "partial receipt preserves confirmed transmission in browser feedback"
+  ],
+  "pixelReadDelayMs": 800,
+  "independentDeviceReadMs": 3.3616060000003927
+}

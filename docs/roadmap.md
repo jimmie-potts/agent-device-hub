@@ -128,12 +128,13 @@ introduced by the documentation bootstrap.
 [The Codex-first goal #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
 owns the first shared frontend milestone. The accepted progression is:
 
-1. [#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) builds the
+1. [#6](https://github.com/jimmie-potts/agent-device-hub/issues/6) supplies the
    shared status and integration-control UI in apps/dashboard, using the approved
    Nanoleaf visual language and interactions. It establishes reusable navigation
    and component views for available status, settings and supported controls.
    A third synthetic component verifies that pattern without adding production
-   hardware prerequisites.
+   hardware prerequisites. PR #127 records source-delivery evidence; installation
+   and physical acceptance remain separate.
 2. After #32 acceptance,
    [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) defines general
    controls in the same application, usable without an active agent session.

@@ -70,6 +70,18 @@ Rollback after accepted writes uses the same procedure with the current hub as s
 
 The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-potts/hub/migration-routes` alongside its host API. The source checks exercise disposable state and real owning-service code; they do not migrate a personal installation or establish physical display accuracy.
 
+## Browser frontend
+
+The packaged hub serves BUNNY at `/`, with fixed `/dashboard.js` and
+`/dashboard.css` assets and a restrictive same-origin content security policy.
+`GET /api/dashboard/v1/context` authenticates with read scope and exposes only
+that principal's registered component aliases, control permission and configured
+monitor consumers. Native controller credentials and endpoint URLs are excluded.
+Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
+HTTP editor links without query/fragment. Existing API-only configurations remain
+valid. See [the dashboard guide](../dashboard/README.md) for provisioning,
+capability-based views and synthetic verification.
+
 ## Optional local MCP
 
 Set the optional private configuration field `mcp` to `true` to mount `/mcp` on the same loopback listener. Omitted or false leaves it disabled. This is source configuration support; enabling an installed service still needs separate authorization. The handler reuses `@jimmie-potts/device-mcp` 1.0.0, its pinned SDK and supported protocols, and the host's current machine-credential verifier. MCP does not require the browser mutation header; existing REST protections are unchanged.
