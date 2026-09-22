@@ -15,7 +15,7 @@ This companion extends the hub's exact-shape `validateIntegrationSnapshot` to
 accept the optional `scenes` list, re-pins `nanoleaf-source.json` and
 `compatibility-nanoleaf-source.json` to `8062849` with fresh file hashes, updates
 the check script's receipt literal, and records the rerun of the bounded
-cross-device compatibility suite (12 scenarios passed) against Hub `HUBREV`,
+cross-device compatibility suite (12 scenarios passed) against Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
 Pixoo `28f4875` and Nanoleaf `8062849` in `docs/cross-device-compatibility.md`.
 The receipt is kept with the companion PR. Nanoleaf #64 joins the reference-only
 direct reads of the backlog refresh.

@@ -5,7 +5,7 @@ standalone Linux/WSL combination with synthetic input, the real dashboard and
 owning consumers. The command and preparation steps are in
 [development.md](development.md#bounded-cross-device-compatibility).
 
-The tested product source is Hub `HUBREV`,
+The tested product source is Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
 Pixoo `28f4875b7a0f0e57ca6f25d9971e125e927a5503` and Nanoleaf
 `80628498136203a8f5fcb06ab5fa306e961e2def`. The runner rebuilds Hub and Pixoo
 from the prepared source before importing them. Nanoleaf's shared-input module
@@ -25,7 +25,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 
 | Scenario | Observed result |
 | --- | --- |
-| Source combination | Hub `HUBSHORT`, Pixoo `28f4875`, Nanoleaf `8062849`; full source IDs above and verified files in the JSON receipt kept with the companion PR for Nanoleaf #64 |
+| Source combination | Hub `36090dd`, Pixoo `28f4875`, Nanoleaf `8062849`; full source IDs above and verified files in the JSON receipt kept with the companion PR for Nanoleaf #64 |
 | Runtime and packages | Node 24.21.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts, agent-state and device-mcp `1.0.0`; hub `0.1.0` |
 | APIs | Lifecycle/state and controller `1.0`, `nanoleaf.integration/1.0`, `pixoo-integration/1.0` |
 | Empty state | No sessions in the hub, dashboard or either consumer |
