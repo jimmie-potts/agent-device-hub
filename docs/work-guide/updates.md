@@ -1,3 +1,27 @@
+## September 22, 2026: Hub #30 qualification closeout
+
+PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
+independent reviews and all six PR jobs passed. All six merged-main jobs passed
+in Checks run 35679809596 and Work guide run 35679809755 before #30 closed.
+All seven current acceptance criteria are checked; historical criteria and failed
+receipts remain unchanged. The committed receipt measures 487 synthetic hooks,
+with hook p95 58/78 ms for one/ten tasks, consumer receipt p95 below one second,
+and 151 MiB peak Hub RSS. Preparation, every scenario and cleanup passed.
+
+Refreshed paginated history and backlog inputs, retained closed #30 as a direct
+reference, removed it from remaining-work coverage and roadmap counts, and
+updated the shared-monitor guide and recommendation. The coordinator owns this
+linked guide-only follow-up. Generation, five maintenance tests, browser/print
+checks and generated-output consistency are recorded with its candidate.
+The architecture viewers retain their existing source pins and ownership.
+The refresh also observes concurrent #63 closure after PR #140. It retains that
+reference and removes it from open-work counts; its coordinator owns the
+separate desktop-control closeout in PR #141.
+
+This records source qualification with pinned real consumers and fake transports.
+It makes no new installation, real-client or physical acceptance claim. Public
+guide publication and live verification remain pending separate authorization.
+
 ## 2026-09-22 — Hub #30 standalone qualification candidate
 
 The source command now has a retained passing run at Hub
