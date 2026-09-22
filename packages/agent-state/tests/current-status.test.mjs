@@ -153,7 +153,7 @@ test('fresh selection can recover activity while conflicting parent evidence sta
   assert.equal(session.attention.length,1);
 });
 
-for(const kind of ['turn.started','turn.ended','turn.interrupted'])test(`repeated starts preserve changed parent evidence without replaying ${kind}`,async t=>{
+for(const [kind,name] of [['turn.started','UserPromptSubmit'],['turn.ended','Stop'],['turn.ended','UserPromptSubmit'],['turn.interrupted','UserPromptSubmit']])test(`repeated ${name} preserves changed parent evidence without replaying ${kind}`,async t=>{
   const storage=new MemoryStorage();let now=1000;
   let owner=await createAgentState(options(storage,()=>now));t.after(()=>owner.shutdown());
   const parent=id=>({status:'known',identity:{...identity,sessionId:id}});
@@ -161,8 +161,7 @@ for(const kind of ['turn.started','turn.ended','turn.interrupted'])test(`repeate
   if(kind!=='turn.started')await owner.ingest({...hook('Stop','a',1001),event:{kind}});
   const before=owner.snapshot().sessions[0];
   await owner.shutdown();owner=await createAgentState(options(storage,()=>now));now+=300000;
-  // A repeated stop also carries independent metadata, without restoring its notice.
-  const name=kind==='turn.ended'?'Stop':'UserPromptSubmit';
+  // Starts and stops carry independent metadata even after the turn completes.
   assert.equal((await owner.ingest({...hook(name,'a',now),parent:parent('parent-a')})).outcome,'applied');
   assert.equal(owner.snapshot().sessions[0].parent.identity.sessionId,'parent-a');
   assert.equal((await owner.ingest({...hook(name,'a',++now),parent:parent('parent-b')})).outcome,'ambiguous');
@@ -174,7 +173,7 @@ for(const kind of ['turn.started','turn.ended','turn.interrupted'])test(`repeate
   assert.equal(session.observedAtMs,before.observedAtMs);assert.equal(session.freshness,'uncertain');
   assert.equal(session.restartUncertain,true);
   const revision=owner.snapshot().revision;
-  assert.equal((await owner.ingest({...hook(name,'a',++now),parent:parent('parent-b')})).outcome,'duplicate');
+  assert.equal((await owner.ingest({...hook(name,'a',++now),parent:parent('parent-b')})).outcome,kind==='turn.ended'&&name==='UserPromptSubmit'?'stale':'duplicate');
   assert.equal(owner.snapshot().revision,revision);
 });
 

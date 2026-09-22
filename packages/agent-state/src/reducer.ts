@@ -69,9 +69,9 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     read:'unknown',unavailable:[],ordering:event.ordering,lastEvidenceAtMs:now,observedAtMs:event.observedAtMs,
     retiredTurns:[],seen:[],watermarks:[]};
   const remember=()=>{session.seen.push({key,content});session.seen=session.seen.slice(-LIMITS.seen);};
-  const repeatedActivity=():Reduction=>{
+  const repeatedActivity=(unchanged:'duplicate'|'stale'='duplicate'):Reduction=>{
     const metadata=mergeMetadata(session,event);
-    if(!metadata.changed)return {outcome:'duplicate',fresh:false};
+    if(!metadata.changed)return {outcome:unchanged,fresh:false};
     remember();return {session,outcome:metadata.ambiguous?'ambiguous':'applied',fresh:false};
   };
   if(event.event.kind==='notice.acknowledged'){
@@ -88,7 +88,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   const completed=event.turn.status==='known'&&session.notices.some(notice=>sameTurn(notice.turn,event.turn));
   if(order.status==='unknown'&&eventDimension==='activity'){
     if(completed&&event.event.kind==='turn.ended')return sameTurn(session.turn,event.turn)?repeatedActivity():{outcome:'duplicate',fresh:false};
-    if(completed&&(event.event.kind==='turn.started'||event.event.kind==='activity.observed'))return {outcome:'stale',fresh:false};
+    if(completed&&(event.event.kind==='turn.started'||event.event.kind==='activity.observed'))return sameTurn(session.turn,event.turn)?repeatedActivity('stale'):{outcome:'stale',fresh:false};
     if(previous&&event.event.kind==='turn.started'&&sameTurn(previous.turn,event.turn)&&
       (previous.activity!=='unknown'||previous.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')))return repeatedActivity();
   }
