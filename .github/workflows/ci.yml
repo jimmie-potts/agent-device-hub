@@ -36,6 +36,7 @@ jobs:
           sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
           bwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true
           npm run test:performance:linux
+          npm run test:performance:standalone
   contracts:
     name: Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}
     strategy:

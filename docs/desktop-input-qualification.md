@@ -234,7 +234,7 @@ presets, calls the hub/controllers or operates lights/displays.
 ## Acceptance mapping and handoff
 
 Assessment refreshed against Hub main
-`0d1b0930efae23912b942f6e65560763402fe665`: medium complexity from interacting
+`8411413fa43329dba6e25acc4cb715ffbba7887f`: medium complexity from interacting
 vendor/input/app interfaces; high uncertainty from
 unobserved held events and unqualified N30 input translation; medium impact because trials can disrupt input and need
 restoration. Documentation work is ready; live qualification is pending.

@@ -23,6 +23,29 @@ visual-check result. Candidate screenshots were inspected separately.
 Source review, hosted CI, merge and live qualification remain pending. Public
 publication is outside this source task's authority and has not been performed.
 
+## 2026-09-22 — Hub #30 standalone qualification candidate
+
+The source command now has a retained passing run at Hub
+`d9f5e7e1129f048f8caee046f8f6644e043ec6e2`: 400 warmed events,
+487 hooks overall, hook p95 58/78 ms for one/ten tasks, each consumer receipt
+p95 below one second and 151 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves eight non-qualifying development attempts and all four
+full runs. Review required confined preparation and positive reconnect evidence;
+the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
+
+Updated shared-monitor qualification, sequencing and recommendation text, and
+refreshed the complete backlog snapshot. Assigned concurrently published Hub
+#137/#138/#139 to the shared-monitor guide without changing their scope or status. Preserved the concurrent Pixoo #34 and
+Nanoleaf #30 guide updates from PRs #131/#134. Issue #30 remains open until
+independent review, CI, merge and merged-source checks pass. Existing architecture
+flows and ownership do not change, so diagram sources/receipts remain unchanged.
+No application UI changed. Guide generation, maintenance and browser checks are
+required on this candidate; results are recorded in the PR receipt.
+
+The public edition still records source `260707019b7ff83d57e31d91ae1e1582c3734589`.
+This source delivery does not publish the public guide or claim new installation,
+real-client or physical acceptance.
+
 ## September 22, 2026: Hub #63 desktop-control documentation candidate
 
 The delivery coordinator added `docs/desktop-controls.md` and discovery,
