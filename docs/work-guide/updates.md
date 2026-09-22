@@ -1964,3 +1964,43 @@ Generation, five maintenance tests, browser/print checks and output consistency
 pass for the reconciled candidate. Architecture viewers retain their dated
 source pins and proposal labels; this status reconciliation does not redraw them
 or claim installation. Public publication remains pending separate authority.
+
+## 2026-09-21 — Nanoleaf #30 personal installation
+
+The owner replaced formal migration/rollback acceptance with a one-off Linux/WSL
+update and basic real Codex Desktop/CLI-to-light checks. A reusable updater,
+Windows/Claude qualification, the shared frontend and integrated performance
+qualification no longer gate this issue. Their separate work is not marked done.
+
+The owner ran the prepared update from an ordinary WSL terminal. The installed
+bridge matches Nanoleaf `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`;
+all three existing services restarted. Hub source
+`f6bee907e06177c6dc8abde0075d73cc391784e9` was packaged and installed,
+its monitor service started, and Nanoleaf reported shared input with a current
+feed and Work mode. All 65 installed Hub manifest entries match their hashes.
+Both exact real-client test tasks reached the shared host and Nanoleaf with
+turn-ended notices and matching identity sets, without duplicate identities.
+The Desktop retry passed after the owner trusted its new hooks. Shared selection
+survived restart of all four services. The owner reported completed tasks and
+light color changes. Quiet, Free and Work each returned confirmed transmission
+with no uncertain operations, ending in Work. No separate optical claim is made
+for each mode. The wall map returned HTTP 200 and rendered its SVG without page
+errors. The Desktop backend was 0.155.0-alpha.9.2; the GUI About build was not
+reported.
+
+The task terminal cannot access the user service manager or write a real Codex
+CLI session; the owner runs those commands in the ordinary WSL terminal.
+The native Codex CLI is 0.153.4. Source checks were reused from the delivery
+record: 231 Nanoleaf tests, 18 setup tests and isolated cross-consumer checks.
+
+Updated the shared-integration row and refreshed backlog inputs. Architecture
+contracts and diagram ownership are unchanged. Public publication and live
+public-guide verification are separate and were not performed. Local guide
+validation and the companion PR reviews are recorded with this candidate.
+
+Nanoleaf #30 is now closed with all five reduced acceptance criteria checked.
+The owner also added Pixoo with new-turn clearing and a dedicated private
+read/control credential. Saved consumers were reconciled, and authenticated
+read/control checks passed. Pixoo device acceptance remains separate.
+The refresh retains #30 as a direct closed reference without importing private
+operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
