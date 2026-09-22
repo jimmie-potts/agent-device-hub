@@ -341,7 +341,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -591,7 +591,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
