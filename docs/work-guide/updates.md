@@ -1,3 +1,18 @@
+## September 22, 2026: Hub #9 final source compatibility candidate
+
+The #9 coordinator verified #30 closure and PR #135 merge `8411413`, and
+linked its final acceptance report without repeating measurements. Reconciled
+the concurrent main changes and refreshed the complete backlog. The guide keeps
+#9 separate from delivered performance qualification and records source review
+in progress. The new compatibility table preserves the distinct Nanoleaf/runtime
+pins and installed/physical boundaries. Existing diagram ownership and command
+flows are unchanged, so no viewer source or receipt changes apply.
+
+Guide generation, five maintenance tests, browser/print and output consistency
+checks passed for this final candidate. Public publication and live verification remain
+outside this source delivery. Source merge and issue closure will be reconciled
+in a linked guide-only follow-up after their authoritative readback.
+
 ## September 22, 2026: Hub #30 qualification closeout
 
 PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
@@ -2084,3 +2099,18 @@ read/control credential. Saved consumers were reconciled, and authenticated
 read/control checks passed. Pixoo device acceptance remains separate.
 The refresh retains #30 as a direct closed reference without importing private
 operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
+
+## 2026-09-22 — Hub #9 bounded source compatibility candidate
+
+The Hub #9 coordinator synchronized the owner-approved scope reduction and current
+in-progress state. The shared-monitoring guide now separates #9's small everyday
+compatibility suite from #30's performance qualification. It retains #30's report
+as a completion input and keeps installed-client and visible-device acceptance
+with their owners. Refreshed backlog inputs retain current source receipts;
+no architecture ownership or command flow changed, so diagram sources are unchanged.
+
+Guide generation, five maintenance tests and browser/print checks passed. The
+candidate HTML SHA-256 is
+`16b813fe25e7c75307f7faf23cf8056219a2718e45eee7ed63169b0351e705af`.
+This entry records an unmerged source candidate. Public publication and live
+verification are outside this delivery and remain separate.
