@@ -31,10 +31,16 @@ Its completed qualification remains linked, with primary coverage and the
 remaining-work roadmap reconciled. Independent reviews are renewed for this
 combined comparison. No #30 tracker or product changes are made here.
 
+A second guard stopped after the owning #30 guide closeout, PR #142, merged
+as `10493718ee01dee78c290294f751829dd60ea91d`. This candidate preserves that
+closeout narrative, milestone and direct #63 reads, then adds the remaining
+#63 completion details and regenerates from another complete refresh. The
+latest fixed comparison receives fresh local checks and both reviews.
+
 Guide generation, all five maintenance tests, six-width browser checks and
 print expansion/restoration passed: 94 primary open issues, 12 guides, nine
-unchanged viewers and 109 merged PRs. Guide SHA-256:
-`1271a0933a526b7d6affbe8e846890b5178efb1aef9c69c42bbfae700cc234ca`.
+unchanged viewers and 110 merged PRs. Guide SHA-256:
+`89b1436e29fd5803718cff61db2c52b67bc9be2920c45edd61b5b9bb9964d646`.
 This follow-up uses the
 existing guide-only CI filter exception with fixed-comparison scope, local
 checks and independent reviews. Public publication remains outside this
@@ -42,6 +48,30 @@ delivery; the unauthenticated landing page still serves the older guide hash
 `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
 No installation, real input/app qualification, transport or visible-device
 acceptance is claimed by this documentation work.
+
+## September 22, 2026: Hub #30 qualification closeout
+
+PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
+independent reviews and all six PR jobs passed. All six merged-main jobs passed
+in Checks run 35679809596 and Work guide run 35679809755 before #30 closed.
+All seven current acceptance criteria are checked; historical criteria and failed
+receipts remain unchanged. The committed receipt measures 487 synthetic hooks,
+with hook p95 58/78 ms for one/ten tasks, consumer receipt p95 below one second,
+and 151 MiB peak Hub RSS. Preparation, every scenario and cleanup passed.
+
+Refreshed paginated history and backlog inputs, retained closed #30 as a direct
+reference, removed it from remaining-work coverage and roadmap counts, and
+updated the shared-monitor guide and recommendation. The coordinator owns this
+linked guide-only follow-up. Generation, five maintenance tests, browser/print
+checks and generated-output consistency are recorded with its candidate.
+The architecture viewers retain their existing source pins and ownership.
+The refresh also observes concurrent #63 closure after PR #140. It retains that
+reference and removes it from open-work counts; its coordinator owns the
+separate desktop-control closeout in PR #141.
+
+This records source qualification with pinned real consumers and fake transports.
+It makes no new installation, real-client or physical acceptance claim. Public
+guide publication and live verification remain pending separate authorization.
 
 ## 2026-09-22 — Hub #30 standalone qualification candidate
 
