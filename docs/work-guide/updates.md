@@ -1837,3 +1837,15 @@ after all five current-head jobs passed and both independent reviewers approved
 application tests, 10 workflow fixtures and 54 browser tests. The merged source
 tree matches the reviewed candidate. The linked delivery receipt records
 merged-main CI separately. Issue #30 remains open for physical measurements and the method/cadence decision.
+
+## September 21, 2026: Pixoo #34 source packaging candidate
+
+The Pixoo #34 delivery coordinator prepared shared setup package reuse,
+disposable simulator rehearsal and the operator acceptance sequence. Refreshed
+the backlog and remaining-work narrative to show source work in progress while
+retaining installation, required-client, Nanoleaf coexistence/cutover, physical
+and Hub #6 frontend gates. The issue remains open and blocked. No source merge
+or live acceptance is predicted. Architecture ownership and command flow remain
+as documented for Hub #8; no diagram redraw is needed. Public publication is
+outside this delivery. Candidate generation, maintenance and browser checks
+are recorded in the companion PR.
