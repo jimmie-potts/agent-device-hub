@@ -17,5 +17,9 @@ if command == ['fixture-poll']:
     state = shared.source_config(directory, bridge)
     result = shared.accept(directory, bridge, shared.fetch_snapshot(state['config']), generation=state['generation'])
     print(json.dumps({'accepted': result}))
+elif command == ['fixture-projection']:
+    # Read the actual owning projection; the physical worker remains disabled.
+    with bridge.connect_state(directory) as db:
+        print(json.dumps([{'id': row[0], 'status': row[1]} for row in db.execute('SELECT id,status FROM sessions')]))
 else:
     shared.command(command, bridge)

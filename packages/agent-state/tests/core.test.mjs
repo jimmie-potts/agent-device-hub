@@ -28,15 +28,16 @@ test('an unordered turn cannot retire a turn supported by a later qualified sequ
   await owner.shutdown();
 });
 
-test('unordered successive turns retain completion and expose an unknown current turn',async()=>{
+test('unordered successive starts select by receipt and reject a superseded completion',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));
   for(const turn_id of ['turn-1','turn-3','turn-2'])await owner.ingest(hook('UserPromptSubmit',{session_id:identity.sessionId,turn_id}));
   const result=await owner.ingest(hook('Stop',{session_id:identity.sessionId,turn_id:'turn-3'}));
-  assert.notEqual(result.outcome,'stale');
+  assert.equal(result.outcome,'stale');
   const session=owner.snapshot().sessions[0];
-  assert.deepEqual(session.turn,{status:'unknown'});
-  assert.ok(session.unavailable.some(item=>item.dimension==='turn'&&item.reason==='ambiguous'));
-  assert.ok(session.notices.some(notice=>notice.turn.id==='turn-3'));
+  assert.deepEqual(session.turn,{status:'known',id:'turn-2'});
+  assert.equal(session.activity,'active');
+  assert.deepEqual(session.ordering,{status:'unknown'});
+  assert.equal(session.notices.length,0);
   await owner.shutdown();
 });
 

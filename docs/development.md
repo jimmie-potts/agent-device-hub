@@ -56,7 +56,8 @@ npm run test:workflow
 Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
-standalone-hub-host and standalone-hub-mcp.
+standalone-hub-host, standalone-hub-mcp, shared-monitor-installation and
+unified-dashboard.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -354,9 +355,23 @@ node scripts/check-hub-shared-consumers.mjs /absolute/pixoo-source /absolute/nan
 The command verifies pinned source hashes and uses disposable state plus a
 suppressed physical worker launch. It covers setup/revocation, two consumer
 projections, fenced handoff, legacy selection and latest-state rollback.
+It also runs ordinary unordered start/stop/next-start hooks, rejects late retired
+activity and exercises Nanoleaf's actual manual acknowledgment without clearing
+Pixoo's notice. The actual Pixoo pager and Nanoleaf stored projection receive
+the same selected activity while retaining their independent presentation rules.
 The existing `check-hub-pixoo.mjs` additionally verifies labels/notices,
 acknowledgment and renderer continuity. These require separately available
 source archives; neither is a personal installation or a physical check.
+
+For Hub #137, `test:agent-state:built` includes current-status policy, retirement
+eviction, old-export recovery, freshness/restart and TypeScript/Python snapshot
+compatibility. The original ordinary-provider regression failed before the fix.
+`test:setup:built` runs the packaged Desktop hook against the real host and reopens
+the same synthetic store. `test:hub:package:built` repeats that check after an
+offline archive installation. Existing CI runs these suites on Python 3.12 and
+3.14. Run the pinned consumer check above locally as well. Publish new state
+2.0.0 and Hub 0.2.0 archives with hashes and the merged source revision; preserve
+previous release bytes. Package version changes do not change snapshot/storage 1.0.
 
 ## Standalone hub MCP checks
 

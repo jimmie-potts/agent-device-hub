@@ -17,6 +17,23 @@ function dimension(event:Envelope):string {
   if(event.event.kind==='evidence.unavailable')return `unavailable:${event.event.dimension}`;
   return 'activity';
 }
+function retire(session:Session,turn:KnownId) {
+  if(turn.status==='known'&&!session.retiredTurns.includes(turn.id)){
+    session.retiredTurns.push(turn.id);
+    session.retiredTurns=session.retiredTurns.slice(-LIMITS.retiredTurns);
+  }
+}
+function selectTurn(session:Session,turn:KnownId,consumers:Consumer[],recover=false) {
+  const oldTurn=session.turn;
+  if(!sameTurn(oldTurn,turn))retire(session,oldTurn);
+  for(const notice of session.notices){
+    if(notice.turn.status==='unknown'||sameTurn(notice.turn,turn)||(!recover&&!sameTurn(notice.turn,oldTurn)))continue;
+    retire(session,notice.turn);
+    for(const consumer of consumers)if(consumer.clearOnNewTurn&&!notice.acknowledgedBy.includes(consumer.id))notice.acknowledgedBy.push(consumer.id);
+  }
+  session.turn=turn;
+  if(recover)session.unavailable=session.unavailable.filter(item=>item.dimension!=='turn'&&item.dimension!=='activity');
+}
 export function reduceSession(previous:Session|undefined,event:Envelope,now:number,consumers:Consumer[]):Reduction {
   const key=deduplicationKey(event)!.key;
   const {eventId,...withoutId}=event;
@@ -42,36 +59,49 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     if(!notice.acknowledgedBy.includes(acknowledgment.consumerId))notice.acknowledgedBy.push(acknowledgment.consumerId);
     remember();return {session,outcome:'applied',fresh:false};
   }
-  if(event.turn.status==='known'&&session.retiredTurns.includes(event.turn.id))return {outcome:'stale',fresh:false};
   const eventDimension=dimension(event);
   const order=event.ordering;
+  const retired=event.turn.status==='known'&&session.retiredTurns.includes(event.turn.id);
+  if(retired&&eventDimension==='activity')return {outcome:'stale',fresh:false};
+  const completed=event.turn.status==='known'&&session.notices.some(notice=>sameTurn(notice.turn,event.turn));
+  if(order.status==='unknown'&&eventDimension==='activity'){
+    if(completed&&event.event.kind==='turn.ended')return {outcome:'duplicate',fresh:false};
+    if(completed&&(event.event.kind==='turn.started'||event.event.kind==='activity.observed'))return {outcome:'stale',fresh:false};
+    if(previous&&event.event.kind==='turn.started'&&sameTurn(previous.turn,event.turn)&&
+      (previous.activity!=='unknown'||previous.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')))return {outcome:'duplicate',fresh:false};
+  }
   const watermark=order.status==='known'?session.watermarks.find(item=>item.dimension===eventDimension&&item.epoch===order.epoch):undefined;
   if(order.status==='known'&&watermark&&order.sequence<=watermark.sequence)return {outcome:'stale',fresh:false};
   const orderedActivity=eventDimension==='activity'&&watermark!==undefined;
+  const bestEffort=order.status==='unknown'&&!session.watermarks.some(item=>item.dimension==='activity')&&session.ordering.status==='unknown';
+  const selectedStart=bestEffort&&event.event.kind==='turn.started'&&event.turn.status==='known';
+  const matchingStop=bestEffort&&event.event.kind==='turn.ended'&&sameTurn(session.turn,event.turn)&&
+    !session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous');
+  const canSelect=!retired&&(eventDimension==='activity'||order.status==='known');
   let ambiguous=false;
-  if(previous&&event.turn.status==='known'&&session.turn.status==='known'&&!sameTurn(event.turn,session.turn)){
+  if(selectedStart)selectTurn(session,event.turn,consumers,true);
+  else if(canSelect&&previous&&event.turn.status==='known'&&session.turn.status==='known'&&!sameTurn(event.turn,session.turn)){
     const comparable=order.status==='known'&&previous.ordering.status==='known'&&order.epoch===previous.ordering.epoch;
     if(comparable&&previous.ordering.status==='known'&&order.sequence<=previous.ordering.sequence)return {outcome:'stale',fresh:false};
     if(comparable){
-      if(session.retiredTurns.length>=LIMITS.retiredTurns)return {outcome:'ambiguous',fresh:false,capacity:true};
-      const oldTurn=session.turn;session.retiredTurns.push(oldTurn.id);session.turn=event.turn;
-      for(const notice of session.notices)if(sameTurn(notice.turn,oldTurn))for(const consumer of consumers){
-        if(consumer.clearOnNewTurn&&!notice.acknowledgedBy.includes(consumer.id))notice.acknowledgedBy.push(consumer.id);
-      }
+      selectTurn(session,event.turn,consumers);
     }else{
-      // Receipt order cannot select the current turn or retire either candidate.
+      // Only an eligible start can select by receipt order. Other conflicts stay unknown.
+      if(bestEffort)retire(session,session.turn);
       session.turn={status:'unknown'};ambiguous=true;
       unavailable(session,'turn','ambiguous');unavailable(session,'ordering','ambiguous');
     }
-  }else if(session.turn.status==='unknown'&&event.turn.status==='known'){
+  }else if(canSelect&&session.turn.status==='unknown'&&event.turn.status==='known'){
     if(session.unavailable.some(item=>item.dimension==='turn'&&item.reason==='ambiguous'))ambiguous=true;
     else session.turn=event.turn;
   }
   if(event.turn.status==='unknown')unavailable(session,'turn','missing');
-  if(order.status==='unknown'){session.ordering={status:'unknown'};unavailable(session,'ordering','missing');}
+  if(order.status==='unknown'){if(!retired)session.ordering={status:'unknown'};unavailable(session,'ordering','missing');}
   else{
-    if(previous?.ordering.status==='known'&&previous.ordering.epoch!==order.epoch){ambiguous=true;unavailable(session,'ordering','ambiguous');}
-    if(session.ordering.status!=='known'||session.ordering.epoch!==order.epoch||session.ordering.sequence<order.sequence)session.ordering=order;
+    if(!retired){
+      if(previous?.ordering.status==='known'&&previous.ordering.epoch!==order.epoch){ambiguous=true;unavailable(session,'ordering','ambiguous');}
+      if(session.ordering.status!=='known'||session.ordering.epoch!==order.epoch||session.ordering.sequence<order.sequence)session.ordering=order;
+    }
     if(watermark)watermark.sequence=order.sequence;
     else session.watermarks.push({dimension:eventDimension,epoch:order.epoch,sequence:order.sequence});
   }
@@ -118,8 +148,9 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     case 'evidence.unavailable':unavailable(session,event.event.dimension,event.event.reason);break;
   }
   if(eventDimension==='activity'){
-    const conflict=previous&&previous.activity!=='unknown'&&previous.activity!==session.activity&&!orderedActivity;
-    if(conflict||session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')){
+    const conflict=previous&&previous.activity!=='unknown'&&previous.activity!==session.activity&&!orderedActivity&&!selectedStart&&!matchingStop;
+    const missingStart=event.event.kind==='turn.started'&&event.turn.status==='unknown';
+    if(conflict||missingStart||ambiguous||session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous')){
       session.activity='unknown';unavailable(session,'activity','ambiguous');ambiguous=true;
     }
   }

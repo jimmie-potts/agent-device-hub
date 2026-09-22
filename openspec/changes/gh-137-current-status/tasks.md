@@ -1,14 +1,14 @@
 ## 1. Current-turn contract and reducer
 
-- [ ] 1.1 Obtain independent specification and quality inspection of this design against #137 and current source before accepting its dependent implementation.
-- [ ] 1.2 Demonstrate the ordinary normalized start/stop/next-start regression failing, implement eligible current-turn selection and matching completion, and retain the same test passing.
-- [ ] 1.3 Verify delayed/duplicate events, genuine ordering, missing identity, two sessions, independent attention/acknowledgment, differing consumer policies and 256-entry retirement eviction with focused reducer tests.
-- [ ] 1.4 Verify recovery from a frozen old ambiguous export, restart/freshness, retained state and existing TypeScript/Python snapshot compatibility without a schema migration.
+- [x] 1.1 Obtain independent specification and quality inspection of this design against #137 and current source before accepting its dependent implementation.
+- [x] 1.2 Demonstrate the ordinary normalized start/stop/next-start regression failing, implement eligible current-turn selection and matching completion, and retain the same test passing.
+- [x] 1.3 Verify delayed/duplicate events, genuine ordering, missing identity, two sessions, independent attention/acknowledgment, differing consumer policies and 256-entry retirement eviction with focused reducer tests.
+- [x] 1.4 Verify recovery from a frozen old ambiguous export, restart/freshness, retained state and existing TypeScript/Python snapshot compatibility without a schema migration.
 
 ## 2. Hook, consumer and distribution integration
 
 - [ ] 2.1 Exercise actual packaged hooks against the host for ordinary unordered lifecycle, duplicates, session isolation and privacy/authentication/deadlines; require the same behavior from the isolated new Hub archive.
-- [ ] 2.2 Verify both pinned real consumer projections using disposable state and fake device transports, including selected activity and independent completion acknowledgment.
+- [x] 2.2 Verify both pinned real consumer projections using disposable state and fake device transports, including selected activity and independent completion acknowledgment.
 - [ ] 2.3 Publish candidate package versions in source, update exact build pins, and verify reproducible agent-state/Hub archives and external consumer imports with unchanged version 1.0 schemas.
 
 ## 3. Documentation and whole-candidate validation
