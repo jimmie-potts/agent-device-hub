@@ -1,3 +1,26 @@
+## September 22, 2026: Hub #9 source delivery closeout
+
+PR #136 merged as `4f90164519167da3d7952d81a7a6211602ef28d5`, with the
+reviewed tree preserved. Both final independent reviews and all six PR checks
+passed. All six merged-main checks passed in Checks run 35681040338 and Work
+guide run 35681040292 before #9 closed. All five reduced acceptance criteria are
+checked; the seven-task OpenSpec plan is archived with no product specification
+deltas. Twelve compatibility scenarios passed using synthetic metadata, real
+consumer code and fake physical boundaries. The delivered #30 report supplies
+the separate performance input at its own recorded revisions.
+
+The #9 coordinator owns this linked guide-only follow-up. Refreshed paginated
+backlog/history inputs, retained #9 as a closed direct reference, removed it
+from remaining-work coverage, and updated the shared-monitoring row. Architecture
+ownership and command flows are unchanged; viewer sources/receipts remain intact.
+Generation, five maintenance tests, browser/print and output consistency results
+are recorded with this candidate. The guide-only CI exception is assessed from
+the full changed-file list and both workflow triggers.
+
+No installation, real client or physical acceptance is claimed. The public guide
+still records source `260707019b7ff83d57e31d91ae1e1582c3734589`; publication and
+live website verification remain outside this source delivery.
+
 ## September 22, 2026: Hub #9 final source compatibility candidate
 
 The #9 coordinator verified #30 closure and PR #135 merge `8411413`, and
@@ -2109,7 +2132,7 @@ records the delayed-unseen-start limit, old-store recovery, independent consumer
 policies and the separate installed Pixoo #34 retest. Reset #138 and history #139
 remain separate work. No hooks, personal service, state store or device changed.
 
-Refreshed all three backlogs after incorporating PRs #135, #136 and #140.
+Refreshed all three backlogs after incorporating PRs #135, #136, #140 and the #145 closure refresh.
 The closed issues #9, #30 and #63 remain reference links and leave open-work counts. Retained the added status/recovery/history roadmap tracks.
 The change affects reduction inside the existing state owner; no architecture
 component, ownership arrow, transport or physical writer changes, so diagram
