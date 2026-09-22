@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {mkdir,writeFile,readFile,access} from 'node:fs/promises';
 import {createInterface} from 'node:readline';
 import {performance} from 'node:perf_hooks';
-import {evaluate,targets} from './standalone-report.mjs';
+import {evaluate,targets,writeReport} from './standalone-report.mjs';
 console.log('{"ready":true}');
 await new Promise(resolve=>process.stdin.once('data',bytes=>{assert.equal(bytes.toString(),'1');resolve();}));
 const report={formatVersion:1,profiles:[],scenarios:{},failures:[],allHookMs:[],peakHubRssMiB:0,observations:{},
@@ -159,6 +159,6 @@ finally{
  if(nano)await nano.stop().catch(()=>{report.failures.push('nanoleaf-cleanup');});
  for(const s of servers){s.closeAllConnections();await new Promise(r=>s.close(r));}
  for(const c of children)c.kill('SIGKILL');
- report.evaluation=evaluate(report);console.log(JSON.stringify({result:report}));
+ report.evaluation=evaluate(report);await writeReport(report);
  process.exit(report.evaluation.qualified?0:1);
 }

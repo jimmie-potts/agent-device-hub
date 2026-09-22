@@ -23,3 +23,8 @@ export function evaluate(report){
  if(!valid(report.peakHubRssMiB)||report.peakHubRssMiB>targets.hubRssMiB)problems.push('hub-rss');
  return {qualified:problems.length===0,problems,profiles,targets};
 }
+
+// A full receipt is larger than a pipe buffer. Await the write before exit.
+export function writeReport(result){
+ return new Promise((resolve,reject)=>process.stdout.write(JSON.stringify({result})+'\n',error=>error?reject(error):resolve()));
+}

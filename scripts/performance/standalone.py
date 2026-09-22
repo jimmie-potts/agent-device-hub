@@ -105,6 +105,7 @@ def supervise(args, timeout=120):
             value=json.loads(line)
             if isinstance(value,dict) and 'result' in value:result=value['result']
         except ValueError:pass
+    if result is None:error=error or 'missing-result'
     if child.returncode!=0:error=error or 'child-failed'
     if not gone:error=error or 'cleanup-unverified'
     if not released:error=error or 'startup-handshake-failed'
