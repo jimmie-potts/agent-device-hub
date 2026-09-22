@@ -4,9 +4,11 @@ Work source: [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/6
 Evidence collected September 22, 2026 UTC, September 21 in America/New_York.
 
 The source investigation identifies supported interfaces and a bounded trial
-plan. **No physical control has qualified for implementation yet.** Owner photographs identify the N Edition keyboard, model 85HA, and mouse
-model 85CA. The latter matches the N30, not the earlier R8 candidate. Event
-identities and genuine held output remain unknown. This report does not complete #64 or make
+plan for the [accepted desktop controls](desktop-controls.md).
+**No physical control has qualified for implementation yet.** Owner photographs
+identify the N Edition keyboard, model 85HA, and mouse model 85CA. The latter
+matches the N30, not the earlier R8 candidate. Event identities and genuine held
+output remain unknown. This report does not complete #64 or make
 [Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) ready.
 
 The owner expects to use 2.4 GHz receivers and reports that both devices support
@@ -49,7 +51,7 @@ acceptance results remain unknown, including rows with documented support.
 | --- | --- | --- | --- | --- |
 | N Edition keyboard connection | Supported D/O | Supported D/O | Supported D/O | [Keyboard product page][keyboard] and owner packaging |
 | N30 mouse connection | Unsupported D as a mouse-to-PC cable mode | Supported D/O | Unsupported D | [N30 product page][mouse] lists its receiver connection; the USB receiver is not a wired mouse mode |
-| Keyboard fast mapping at its control panel | Supported D, held output unknown | Supported D, held output unknown | Supported D, held output unknown | [Keyboard manual][keyboard-manual], English page 05; no host software required, transport retention untested |
+| Keyboard fast mapping at its control panel | Mode-specific behavior unknown | Mode-specific behavior unknown | Mode-specific behavior unknown | [Keyboard manual][keyboard-manual], English page 05 documents on-device chord assignment without host software; it does not qualify each transport's held output or retention |
 | Keyboard Ultimate Software configuration by mode | Unknown | Unknown | Unknown | Family support is documented; mode-specific editing not established |
 | N30 vendor custom mapping | Not applicable | Unknown; no supported configuration route found | Not applicable | [N30 manual][mouse-manual] documents its existing controls, not custom mapping |
 | Mapping retention after closing software or reconnecting | Unknown for keyboard | Unknown | Unknown for keyboard | Observe the chosen keyboard profile separately from mouse behavior |
@@ -232,7 +234,7 @@ presets, calls the hub/controllers or operates lights/displays.
 ## Acceptance mapping and handoff
 
 Assessment refreshed against Hub main
-`25590e9c95ce334a516d2de0494584d67ea15a26`: medium complexity from interacting
+`0d1b0930efae23912b942f6e65560763402fe665`: medium complexity from interacting
 vendor/input/app interfaces; high uncertainty from
 unobserved held events and unqualified N30 input translation; medium impact because trials can disrupt input and need
 restoration. Documentation work is ready; live qualification is pending.

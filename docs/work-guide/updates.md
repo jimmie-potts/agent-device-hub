@@ -1,3 +1,61 @@
+## September 22, 2026 UTC: Hub #64 source qualification candidate
+
+The owner supplied packaging photos identifying the N Edition keyboard 85HA
+and N30 mouse 85CA. The qualification report corrects the R8 assumption,
+records documented controls and unknown event behavior, and prepares a
+reversible operator trial. #64 remains incomplete; #65 is not made ready.
+No input experiment, personal setup or device operation ran.
+
+Updated the desktop-controls guide and desktop-input diagram wording. The
+complete backlog refresh also includes the newly published Hub #137-#139 in
+shared-monitor coverage. It does not implement those issues. The diagram's
+planned ownership and command flow are unchanged; existing source pins remain
+their dated source baseline. Hardware identity comes from the owner's #64
+delivery-task photos, which remain outside Git.
+
+Guide generation and five maintenance tests passed. Browser checks passed
+coverage, links, navigation, search, diagram interactions and print restoration
+across six widths. All nine Archify artifacts passed 9/9 deterministic checks.
+The standalone desktop-input viewer check reports the same vertical overflow
+at all four sizes as the existing artifact, with identical dimensions and no
+horizontal overflow. This known viewer limitation remains; it is not a passing
+visual-check result. Candidate screenshots were inspected separately.
+Source review, hosted CI, merge and live qualification remain pending. Public
+publication is outside this source task's authority and has not been performed.
+
+## September 22, 2026: Hub #63 desktop-control documentation candidate
+
+The delivery coordinator added `docs/desktop-controls.md` and discovery,
+architecture and roadmap links for the accepted 8BitDo/Wispr/Codex direction.
+The document distinguishes control profiles, button bindings and desk presets;
+it preserves native controller modes, manual ownership and separate evidence
+for source, installation, hardware/input, apps, transport and visible restoration.
+No product behavior or wire-contract delta is introduced, so no new OpenSpec
+capability is needed. Qualification and implementation remain in #64–#71.
+
+The desktop-controls guide now links the canonical document and records #63's
+in-progress state. PC-lighting PR #59 is merged and retains its separate scope.
+The refreshed backlogs preserve the independent local shortcut path and the
+Codex-first/general-control prerequisites for shared presets. The existing input
+and preset diagrams already represent these accepted flows; no diagram content,
+source pin or architecture-review date changes.
+
+The complete refresh also found newly published #137–#139. Their existing
+current-status, optional recovery and deferred-history scopes now have primary
+coverage and roadmap nodes; this documentation task implements none of them.
+Initial generation rejected their missing coverage before that reconciliation.
+
+Node 24.21.0 setup and both workflow checks passed: 10 current specifications,
+9 archived changes and 15 workflow tests. All 42 local Markdown links/anchors
+passed. Guide generation, five maintenance tests and six-width browser/print
+checks passed with 96 primary open issues, 12 guides and nine unchanged diagrams.
+The public landing-page read returned HTTP 200 with the older hash below.
+The issue remains open until independent Standards/Specification reviews, all
+six applicable PR checks, guarded merge and merged-main checks pass. A linked guide follow-up will reconcile closure and
+newly verified history. Public publication remains separate; the public README
+still identifies Hub source `260707019b7ff83d57e31d91ae1e1582c3734589` and guide
+hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+
 ## September 22, 2026: Pixoo #34 reduced installed scope
 
 The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo
@@ -2004,25 +2062,3 @@ read/control credential. Saved consumers were reconciled, and authenticated
 read/control checks passed. Pixoo device acceptance remains separate.
 The refresh retains #30 as a direct closed reference without importing private
 operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
-# September 22, 2026 UTC: Hub #64 source qualification candidate
-
-The owner supplied packaging photos identifying the N Edition keyboard 85HA
-and N30 mouse 85CA. The qualification report corrects the R8 assumption,
-records documented controls and unknown event behavior, and prepares a
-reversible operator trial. #64 remains incomplete; #65 is not made ready.
-No input experiment, personal setup or device operation ran.
-
-Updated the desktop-controls guide and desktop-input diagram wording. The
-complete backlog refresh also includes the newly published Hub #137-#139 in
-shared-monitor coverage. It does not implement those issues. The diagram's
-planned ownership and command flow are unchanged; existing source pins remain
-their dated source baseline. Hardware identity comes from the owner's #64
-delivery-task photos, which remain outside Git.
-
-Guide generation and five maintenance tests passed. Browser checks passed
-coverage, links, navigation, search, diagram interactions and print restoration
-across six widths. All nine Archify artifacts passed 9/9 deterministic checks.
-The separate desktop-input viewer check found vertical overflow; its comparison
-with the baseline and the final candidate evidence remain in the delivery task.
-Source review, hosted CI, merge and live qualification remain pending. Public
-publication is outside this source task's authority and has not been performed.

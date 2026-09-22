@@ -51,7 +51,7 @@
 #60 [OPEN] Qualify Varmilo VA108M-RGB lighting through supported interfaces
 #61 [OPEN] Add a qualified Varmilo keyboard adapter to PC lighting
 #62 [OPEN] Install and verify Varmilo keyboard status without affecting typing
-#63 [OPEN] Document desktop controls, control profiles and desk presets
+#63 [CLOSED] Document desktop controls, control profiles and desk presets
 #64 [OPEN] Qualify 8BitDo controls and Wispr hold-to-dictate mappings
 #65 [OPEN] Implement local Wispr and Codex controls for 8BitDo
 #66 [OPEN] Install and verify 8BitDo Wispr and Codex shortcuts

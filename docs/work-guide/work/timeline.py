@@ -27,13 +27,20 @@ SLOTS = ['Now · ready or independent', 'Next in this track', 'Following stage',
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance', ready=True),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H30', 'H123', 'H9', 'P34', 'H137', 'H138', 'H139'], guide='shared-codex', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['H32', 'P61', 'H30', 'H123', 'H9', 'P34'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H31', 'H35'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
+    ('Monitor status and recovery', [
+        dict(id='n-status-fix', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
+        dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
+    ]),
+    ('Reliable event history', [
+        dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
+    ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H63', 'H64'], guide='desktop-controls', ready=True),
+        dict(id='n-desk-doc', x=0, label='Input qualification', issues=['H64'], guide='desktop-controls', ready=True),
         dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
