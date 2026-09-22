@@ -1,10 +1,10 @@
 {
-  "fetchedAt": "2026-09-22T03:33:58.581165+00:00",
+  "fetchedAt": "2026-09-22T03:43:10.847060+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T03:28:58Z",
+      "pushedAt": "2026-09-22T03:35:18Z",
       "defaultBranch": "main",
       "headSha": "2855be7af01265e82012e131838e94d45c83e62f",
       "mainCommitCount": 65,
@@ -857,6 +857,13 @@
           "createdAt": "2026-09-22T02:38:29Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
           "base": "main"
+        },
+        {
+          "number": 147,
+          "title": "Record installed Pixoo monitoring acceptance in the guide",
+          "createdAt": "2026-09-22T03:35:20Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
+          "base": "main"
         }
       ],
       "closedIssues": [
@@ -1565,12 +1572,17 @@
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-22T03:32:49Z",
+      "pushedAt": "2026-09-22T03:37:52Z",
       "defaultBranch": "main",
-      "headSha": "37031be56007b6b890ec7a2098aa6e283d9d01fa",
-      "mainCommitCount": 28,
+      "headSha": "c81bc31c59068e00bf9d15a81577863ba9446931",
+      "mainCommitCount": 29,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "c81bc31c59068e00bf9d15a81577863ba9446931",
+          "date": "2026-09-22T03:37:52Z",
+          "message": "Record installed Pixoo monitoring acceptance and operator steps (#66)"
+        },
         {
           "sha": "37031be56007b6b890ec7a2098aa6e283d9d01fa",
           "date": "2026-09-22T00:50:20Z",
@@ -1928,17 +1940,17 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/65",
           "base": "main",
           "mergedAt": "2026-09-22T00:50:20Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 66,
           "title": "Record installed Pixoo monitoring acceptance",
           "createdAt": "2026-09-22T03:32:51Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/66",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-22T03:37:53Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -2093,6 +2105,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/33"
         },
         {
+          "number": 34,
+          "title": "Set up and verify basic Codex Desktop monitoring on Pixoo",
+          "closedAt": "2026-09-22T03:37:54Z",
+          "createdAt": "2026-09-07T00:55:42Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/34"
+        },
+        {
           "number": 36,
           "title": "Record shared agent-device-hub ownership and migration dependencies",
           "closedAt": "2026-09-07T03:01:12Z",
@@ -2125,7 +2145,7 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
         }
       ],
-      "openIssueCount": 15,
+      "openIssueCount": 14,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
         "2026-09-20T20:59:48Z"

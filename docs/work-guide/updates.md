@@ -8,8 +8,11 @@ Explicit notice dismissal and active-playback Monitor/Media pause/resume checks
 passed. Monitor is the selected final mode. Precise optical timing, firmware
 variants and multi-client coverage are not claimed.
 
-Pixoo PR #66 records the dated evidence and restart/disconnection instructions.
-Issue #34 remains open until that documentation and its checks are delivered.
+Pixoo PR #66 merged as `c81bc31c59068e00bf9d15a81577863ba9446931`,
+recording dated evidence and restart/disconnection instructions. Both independent
+reviews and all five PR plus all five merged-main checks passed. Issue #34 is
+closed for the reduced installed scope. This refresh retains it as a completed
+reference and removes it from open-work coverage.
 The guide coordinator owns this companion; public publication remains separate.
 The best-effort status policy can still misselect an unseen delayed start.
 Task reset and reliable history remain separate features.
