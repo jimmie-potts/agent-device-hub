@@ -9,6 +9,90 @@ import unittest
 
 
 class GuideMaintenance(unittest.TestCase):
+    def test_roadmap_order_does_not_claim_blocked_work_is_ready(self):
+        source = Path(__file__).resolve().parent.parent
+        document = (source / 'outputs/agent-device-work-guides.html').read_text()
+        self.assertFalse('class="node ready"' in document, 'Roadmap still claims readiness')
+        self.assertFalse('ready for selection now' in document)
+        self.assertFalse('Now · ready or independent' in document)
+
+    def test_status_and_parallel_candidates_respect_gates(self):
+        from guide_status import issue_status, scheduling_state
+
+        def issue(state='OPEN', reason=None, *labels):
+            return {'state': state, 'stateReason': reason,
+                    'labels': [{'name': label} for label in labels]}
+
+        self.assertEqual(issue_status(issue('CLOSED', 'not_planned')), 'closed')
+        self.assertEqual(issue_status(issue('CLOSED', None)), 'closed')
+        self.assertEqual(issue_status(issue('CLOSED', 'completed', 'blocked')), 'completed')
+        self.assertEqual(issue_status(issue('OPEN', None, 'status:in-progress')), 'in-progress')
+        self.assertEqual(scheduling_state(issue('OPEN', None, 'blocked'), []), 'blocked')
+        self.assertEqual(scheduling_state(issue('OPEN', None, 'deferred'), []), 'deferred')
+        self.assertEqual(scheduling_state(issue('OPEN', None, 'status:review'), []), 'active')
+        self.assertEqual(scheduling_state(issue(), [{'state': 'OPEN'}]), 'blocked')
+        self.assertEqual(scheduling_state(issue(), [{'state': 'CLOSED'}]), 'candidate')
+
+    def test_parallel_recommendation_is_withheld_when_a_blocker_appears(self):
+        source = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:
+            candidate = Path(directory) / 'guide'
+            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
+                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            path = candidate / 'work/backlogs/device-native-deps.json'
+            native = json.loads(path.read_text())
+            issue = next(row for row in native['data']['n']['issues']['nodes'] if row['number'] == 41)
+            issue['blockedBy']['nodes'].append({
+                'number': 55, 'state': 'OPEN',
+                'repository': {'nameWithOwner': 'jimmie-potts/codex-nanoleaf'}})
+            issue['blockedBy']['totalCount'] += 1
+            path.write_text(json.dumps(native))
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            before, after = document.split('<h3>Hold or coordinate first</h3>')
+            self.assertNotIn('data-unit="N41"', before)
+            self.assertIn('data-unit="N41" data-scheduling="blocked"', after)
+            self.assertIn('Waiting for codex-nanoleaf #55.', after)
+
+    def test_issue_links_explain_completion_without_relying_on_color(self):
+        from html.parser import HTMLParser
+
+        class Links(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.links, self.current = {}, None
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'a' and 'data-issue' in attrs:
+                    self.current = [attrs, '']
+
+            def handle_data(self, text):
+                if self.current:
+                    self.current[1] += text
+
+            def handle_endtag(self, tag):
+                if tag == 'a' and self.current:
+                    self.links.setdefault(self.current[0]['data-issue'], []).append(self.current)
+                    self.current = None
+
+        source = Path(__file__).resolve().parent.parent
+        links = Links()
+        links.feed((source / 'outputs/agent-device-work-guides.html').read_text())
+        for attrs, text in links.links['P34']:
+            self.assertEqual(attrs.get('data-status'), 'completed')
+            self.assertIn('Completed', text)
+            self.assertIn('✓', text)
+        for attrs, text in links.links['N41']:
+            self.assertEqual(attrs.get('data-status'), 'open')
+            self.assertIn('Open', text)
+        for attrs, text in links.links['H64']:
+            self.assertEqual(attrs.get('data-status'), 'review')
+            self.assertIn('In review', text)
+            self.assertIn('blocked', text)
+
     def test_checkpoint_dependency_is_external_to_primary_coverage(self):
         source = Path(__file__).resolve().parent.parent
         backlogs = source / 'work/backlogs'

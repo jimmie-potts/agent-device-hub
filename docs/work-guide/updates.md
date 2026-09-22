@@ -1,34 +1,41 @@
 ## September 22, 2026 UTC: Owner-revised programmable A/B defaults
 
 The owner changed the version 1 defaults to B=Wispr hold/release and A=Enter
-on a separate deliberate press, with both bindings editable in version 1.
-Updated the accepted definitions in #63-#71 and the #31/#35 references. #65 now
-requires saved, editable A/B assignments and default restoration; #66 covers
-their installed acceptance. #70 extends that initial configuration to broader
-controls and saved profiles. #68 now uses an explicitly chosen preset binding
-instead of reserving B. States, labels, milestones, assignees and dependency
-relationships were preserved. No linked implementation or closure is claimed.
+on a separate deliberate press, with both bindings editable, saved and
+restorable in #65. Updated #63-#71 and the #31/#35 references without changing
+states, labels, milestones, assignees or dependency relationships. #70 extends
+A/B configuration to broader controls and profiles. #68 uses an explicitly
+selected preset binding. No linked implementation or closure is claimed.
+
+The approved A/B trial passed. A recorded an Enter down/up pair. B recorded a
+1,758 ms Ctrl+Win overlap and both releases. The owner confirmed held dictation,
+release-to-insert without Enter, and a separate A newline in blank Notepad,
+then cleared both temporary assignments and reopened Wispr. The initial empty
+captures and the first observer's repeat cutoff remain recorded. Its replacement
+passed the failing repeat/release regression and adjacent checks. Typed text,
+audio, photos and raw traces remain outside Git. Receiver identity, persistence,
+recovery, coexistence and selective N30/Codex routing remain unresolved. #64
+stays incomplete and #65 remains blocked.
 
 Updated desktop controls, architecture, roadmap, qualification and guide inputs.
-The desktop-input sequence now shows B dictation and a separate A Enter action;
-the preset sequence shows a configured binding. Both cite the pinned revised
+The desktop-input sequence shows B dictation and a separate A Enter action;
+the preset sequence uses a selected binding. Both cite the pinned revised
 desktop-control document. Other architecture sources retain their baseline
-pins. All nine regenerated diagrams passed 9/9 deterministic checks. Guide
-generation, five maintenance tests and browser/print checks passed for the
-revised candidate. The refreshed snapshot contains 92 open issues, 131 linked issues and
-116 merged PRs. It retains Pixoo #34 as a completed installed acceptance
-reference and assigns the newly created Hub #148 to guide maintenance.
+pins. Reconciled main `56e5667`, retaining #148 status/readability behavior and
+#34 installed acceptance. Closed #148 remains a reference outside open counts.
 
-The owner approved temporary A/B mapping, focused observation, a brief Notepad
-dictation/Enter trial and restoration, confirming both buttons were unmodified.
-The first separate-browser capture returned no allowed events before focus
-loss. A later assignment retry produced a complete A Enter pair and B Ctrl+Win
-down edges. The observer stopped B at its repeat limit after 1,307 ms, before
-release. A revised temporary observer preserves the release check; its synthetic
-regression passed. Complete B release, dictation and restoration remain pending.
-Earlier N30 results remain valid within their recorded limits.
-New scope, source and base require renewed independent review and CI. Merge,
-issue completion and public guide publication remain pending.
+All nine regenerated diagrams passed 9/9 deterministic checks. The combined
+guide passed generation, nine maintenance tests and six-width browser/print
+checks. The snapshot contains 91 open issues, 131 linked issues, 52 roadmap
+nodes and 117 merged PRs. Both changed standalone viewers still fail Archify's
+first-screen vertical-containment check at all four desktop sizes, without
+horizontal overflow. The desktop-input diagram is taller after adding A's
+separate action. This remains a failed browser check, separate from deterministic
+validation and the guide's passing checks. Screenshots were inspected.
+
+New scope, source and base require renewed independent review and hosted CI.
+Merge and issue completion remain pending. Public publication is separate and
+has not been performed by this delivery.
 
 ## September 22, 2026 UTC: Hub #64 authorized N30 observations
 
@@ -77,6 +84,52 @@ horizontal overflow. This known viewer limitation remains; it is not a passing
 visual-check result. Candidate screenshots were inspected separately.
 Source review, hosted CI, merge and live qualification remain pending. Public
 publication is outside this source task's authority and has not been performed.
+## September 22, 2026: Story status and actionable guide paths
+
+Hub #148 makes issue status visible on every issue link, with text and symbols
+for open, active, review, blocked, completed and other closed work. Completion
+uses the saved GitHub closure reason. Blocked labels and open native prerequisites
+remain visible even when an issue is in progress or review.
+
+All twelve guides now start with their outcome and next action. Closed rows and
+long evidence notes are expandable; search and print reveal them and restore the
+prior state. The overview separates delivered work, Hub #32 milestone review,
+and selected independent units. Parallel candidates are withheld when their
+saved status is blocked, deferred, active or closed. Dependency data must be
+complete. The roadmap starts folded and shows order without claiming readiness. Review caught its old ready marker on blocked input qualification; a regression now guards that contradiction. Routing and architecture are unchanged.
+The desktop-control prose also follows the current Big B dictation / separate
+Big A Enter defaults recorded in its owning issues.
+
+The coordinator refreshed all three backlogs and reconciled 92 open issues,
+including this maintenance story. Nine maintenance regressions and browser
+checks passed at six widths from 320 to 1440 px, including keyboard status links,
+search, evidence disclosures, navigation, viewers and real PDF restoration.
+The status-link regression failed before the change because completed links had
+no visible completion state. The exact HTML hash and review/CI receipts belong
+to the source PR. This guide-only change has no product behavior or contract
+delta and therefore needs no product OpenSpec change. The guide UI approval
+exemption applies; independent reviews and the guide-only CI evidence remain
+required. The user requested both repository delivery and public publication.
+Public publication follows the verified merged source and is not claimed here.
+
+## September 22, 2026: Pixoo installed monitoring acceptance
+
+The owner installed Hub 0.2.0 / agent-state 2.0.0 from source `013b829` while
+retaining the shared owner and private store. The actual Desktop/Ubuntu WSL
+sequence passed active, idle, next active and automatic Pixoo notice clearing.
+The owner confirmed both readable rows and the amber T on the physical Pixoo.
+Explicit notice dismissal and active-playback Monitor/Media pause/resume checks
+passed. Monitor is the selected final mode. Precise optical timing, firmware
+variants and multi-client coverage are not claimed.
+
+Pixoo PR #66 merged as `c81bc31c59068e00bf9d15a81577863ba9446931`,
+recording dated evidence and restart/disconnection instructions. Both independent
+reviews and all five PR plus all five merged-main checks passed. Issue #34 is
+closed for the reduced installed scope. This refresh retains it as a completed
+reference and removes it from open-work coverage.
+The guide coordinator owns this companion; public publication remains separate.
+The best-effort status policy can still misselect an unseen delayed start.
+Task reset and reliable history remain separate features.
 
 ## September 22, 2026: Hub #9 source delivery closeout
 

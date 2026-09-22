@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-09-22T04:03:46.039914+00:00",
-  "refreshedAt": "2026-09-22T04:03:59.397576+00:00",
+  "startedAt": "2026-09-22T04:08:37.198231+00:00",
+  "refreshedAt": "2026-09-22T04:08:50.783511+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 57,
+      "openIssues": 56,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        59
+        58
       ],
       "openPRs": 2,
       "prPageSizes": [
@@ -68,6 +68,14 @@
           "state": "CLOSED",
           "commentPages": [
             4
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 148,
+          "state": "CLOSED",
+          "commentPages": [
+            0
           ],
           "commentBodiesStored": true
         },
@@ -332,7 +340,7 @@
       ]
     }
   },
-  "openIssues": 92,
+  "openIssues": 91,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#54/#55 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

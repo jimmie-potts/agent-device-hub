@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T04:03:57.462670+00:00",
+  "fetchedAt": "2026-09-22T04:09:16.162836+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T04:03:28Z",
+      "pushedAt": "2026-09-22T04:08:28Z",
       "defaultBranch": "main",
-      "headSha": "7c5957f7eed4bf8d52b6c68ae63c113c3788a834",
-      "mainCommitCount": 66,
+      "headSha": "56e5667342cd446a229a4234dadf13fe3d07b0a2",
+      "mainCommitCount": 67,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "56e5667342cd446a229a4234dadf13fe3d07b0a2",
+          "date": "2026-09-22T04:05:41Z",
+          "message": "Make guide status and next steps clear (#149)"
+        },
         {
           "sha": "7c5957f7eed4bf8d52b6c68ae63c113c3788a834",
           "date": "2026-09-22T03:45:52Z",
@@ -861,6 +866,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
           "base": "main",
           "mergedAt": "2026-09-22T03:45:53Z"
+        },
+        {
+          "number": 149,
+          "title": "Make guide status and next steps clear",
+          "createdAt": "2026-09-22T03:59:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/149",
+          "base": "main",
+          "mergedAt": "2026-09-22T04:05:42Z"
         }
       ],
       "openPRs": [
@@ -872,10 +885,10 @@
           "base": "main"
         },
         {
-          "number": 149,
-          "title": "Make guide status and next steps clear",
-          "createdAt": "2026-09-22T03:59:09Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/149",
+          "number": 150,
+          "title": "Record completed guide clarity work",
+          "createdAt": "2026-09-22T04:08:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/150",
           "base": "main"
         }
       ],
@@ -1063,9 +1076,17 @@
           "createdAt": "2026-09-22T01:53:34Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/137"
+        },
+        {
+          "number": 148,
+          "title": "Clarify work-guide story status and actionable delivery paths",
+          "closedAt": "2026-09-22T04:06:30Z",
+          "createdAt": "2026-09-22T03:47:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/148"
         }
       ],
-      "openIssueCount": 57,
+      "openIssueCount": 56,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-22T03:47:34Z"

@@ -1,15 +1,17 @@
 # 8BitDo and Wispr qualification
 
 Work source: [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64).
-Evidence collected September 22, 2026 UTC, September 21 in America/New_York.
+Evidence collected September 22, 2026 UTC.
 
 The source investigation identifies supported interfaces and a bounded trial
 plan for the [accepted desktop controls](desktop-controls.md).
-**No physical control has qualified for implementation yet.** Owner photographs
+**Route qualification remains incomplete.** Owner photographs
 identify the N Edition keyboard, model 85HA, and mouse model 85CA. The latter
 matches the N30, not the earlier R8 candidate. An authorized browser check now
-associates its four D-pad directions with distinct events. Receiver identities,
-genuine keyboard held output and the complete mapping route remain unknown.
+associates its four D-pad directions with distinct events. A separate authorized
+trial records Big A as Enter and Big B as a held Ctrl+Win chord with both keys
+released. The owner also passed the brief Wispr/Notepad trial and cleared both
+temporary assignments. Receiver identities and the N30 mapping route remain unknown.
 This report does not complete #64 or make
 [Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) ready.
 
@@ -34,22 +36,23 @@ are independent. A supported result under `D` never implies an `L` pass.
 
 | Item | Evidence on the collection date | Remaining qualification |
 | --- | --- | --- |
-| Keyboard and Dual Super Buttons | O: packaging identifies Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons; owner reports working keyboard and connected accessory | Exact attachment port, firmware, receiver identity, active mode and Big A/B outputs |
+| Keyboard and Dual Super Buttons | O: packaging identifies Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons; owner reports working keyboard and connected accessory. L via O: mapped A Enter pair and B Ctrl+Win hold/release | Exact attachment port, firmware, receiver identity, active mode, persistence and recovery |
 | Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver identity, firmware, raw Windows events and controlled hold behavior |
 | USB/HID identities | No inventory result | Record VID/PID, interface/usage and connection under operator supervision; omit serials and instance paths from shared evidence |
 | Ultimate Software V2 | D: keyboard support is documented; N30 custom mapping support is not established | Keyboard software version, exposed controls and profile persistence; do not apply R8 capabilities to N30 |
-| Wispr | O: current push-to-talk setting is Ctrl+Win. S: local directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Running version, conflicts and insertion behavior; directory names do not identify the active installation |
+| Wispr | O: current push-to-talk setting is Ctrl+Win. S: local directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Running version and broader conflicts; brief insertion trial passed below, but directory names do not identify the active installation |
 | Codex | D: current Windows defaults below | Installed version, customized bindings, package identity and foreground behavior |
 | CHOMPI bridge | S: local C# source inspected; no Git commit exists in that checkout | Installed binary revision and coexistence; no bridge was launched or changed |
-| Live input/application results | L via O: authorized focused N30 browser observations; no app action or Wispr trial | Receiver-attributed events, held output, application results and recovery |
+| Live input/application results | L via O: focused N30/Super Buttons events, successful brief Wispr/Notepad trial and mapping restoration | Receiver-attributed events, Codex routing, persistence and recovery |
 
 The WSL-to-Windows inventory failed with `UtilBindVsockAnyPort:307` both in the
 normal context and after an approved sandbox escalation. The native Node tool
 also failed before execution because of `sandboxCwd`. The mounted Windows app
 package directory denied access. These are inventory gaps, not evidence that
-hardware or software is absent. The later N30 check used only focused browser
-listeners. No system-wide listener, injected keystrokes, dictation, vendor
-configuration writes or service changes ran.
+hardware or software is absent. The later N30 and Super Buttons checks used
+focused browser listeners. The owner performed separately authorized temporary
+A/B fast mappings. No system-wide listener, adapter injection or service change
+ran. Application and restoration results are recorded separately below.
 
 ## Authorized N30 browser observations
 
@@ -117,10 +120,10 @@ four existing navigation controls, not R8 programmable side buttons. Observe
 their actual Windows events before choosing a translation. Neither the manual
 nor the product page establishes N30 vendor custom profiles. [N30 manual][mouse-manual]
 
-| Physical control | Documented assignment/default | USB event/hold/release | 2.4 GHz event/hold/release | Bluetooth event/hold/release | Initial disposition |
+| Physical control | Documented assignment/default | USB event/hold/release | 2.4 GHz event/hold/release | Bluetooth event/hold/release | Qualification disposition |
 | --- | --- | --- | --- | --- | --- |
-| Attached Big A | Programmable D | Unknown | Unknown | Unknown | Candidate for a separate Enter action; qualify edges and repeat policy |
-| Attached Big B | Programmable D | Unknown | Unknown | Unknown | Candidate for Wispr after true hold/release qualification |
+| Attached Big A | Programmable D | Unknown | L via O: Enter down/up, 144 ms, no repeat; receiver attribution unknown | Unknown | Separate Enter input and Notepad action observed; cleared after trial; persistence/recovery pending |
+| Attached Big B | Programmable D | Unknown | L via O: Ctrl+Win down/up, 1,758 ms overlap, 50+ repeats; receiver attribution unknown | Unknown | Held chord/release and Wispr trial observed; cleared after trial; persistence/recovery pending |
 | Keyboard A | Programmable D | Unknown | Unknown | Unknown | Preserve assignment; distinguish from attached Big A |
 | Keyboard B | Programmable D | Unknown | Unknown | Unknown | Preserve assignment; distinguish from attached Big B |
 | Other typing/function keys | Exact remappable set unknown | Unknown | Unknown | Unknown | Inventory vendor-exposed controls; preserve typing |
@@ -185,17 +188,19 @@ mappings, ordinary typing or CHOMPI. [Wispr shortcuts][wispr]
 
 ## Route decision and unresolved gates
 
-**Selected route for the next trial:** the keyboard's documented on-device fast mapping, with a direct held Wispr chord considered
-first for Big B over 2.4 GHz, plus a separate Enter assignment for Big A. For the N30, preserve its existing hardware
+**Selected keyboard route:** the documented on-device fast mapping produced
+Big B Ctrl+Win hold/release and a separate Big A Enter action in the authorized
+trial. The owner reports 2.4 GHz operation. For the N30, preserve its existing hardware
 outputs and assess the smallest Windows-local adapter that translates the four
 D-pad controls only in Codex. Keep keyboard assignment in the keyboard, Wispr
 bindings in Wispr, and mouse application scope/action policy in the Windows
-component. Retention across power or reconnect still needs evidence. This is a trial selection; no complete runtime route is
-qualified and AC2 remains open.
+component. Retention across power or reconnect and the version 1 configuration
+interface still need evidence. The N30 route remains an investigation choice;
+no complete four-action mapping route is qualified and AC2 remains open.
 
 | Route | Assessment | Evidence needed before adoption |
 | --- | --- | --- |
-| Keyboard fast mapping for B=Wispr and A=Enter | Selected first trial, using the existing Wispr modifier chord and a separate Enter assignment | Genuine B chord hold/release, independent A action, repeat policy, conflicts, persistence and rollback; qualify how the version 1 configuration owns and changes both assignments |
+| Keyboard fast mapping for B=Wispr and A=Enter | Selected; observed held chord/release, independent Enter, brief Wispr/Notepad results and per-button cancellation | Broader repeat/conflict/recovery behavior, persistence, and how the version 1 configuration owns and changes both assignments |
 | N30 vendor mapping alone | No supported custom four-action mapping route established by current sources | A model-specific supported interface would be needed; R8 software evidence does not qualify N30 |
 | N30 existing outputs plus a small Windows adapter | Selected mouse investigation route; four distinct browser outputs observed | Receiver-attributed native events, suppression of original actions only within Codex, pass-through elsewhere, controlled hold/repeat, recovery and coexistence |
 | CHOMPI bridge unchanged | Source approach is useful; current MIDI bindings do not handle 8BitDo | Separate input ownership and acceptance; do not migrate or add bindings to the bridge in this issue |
@@ -256,7 +261,28 @@ B recorded ControlLeft and MetaLeft down, with 1,307 ms of observed overlap
 before the observer stopped at 50 repeated keydowns. That cutoff leaves release
 unobserved; it does not establish stuck keys or a complete hold/release result.
 The original empty captures remain part of the evidence, and their cause is
-unproven. Dictation, final restoration and complete B release remain pending.
+unproven.
+
+The revised observer keeps a saturated `50+` repeat count and continues until
+release, focus loss, its edge limit or the unchanged 15-second deadline. Its
+SHA-256 is `d0e0ec9fbc5e7c0e3b206aa7632a6d3ea9251d5223e8d870de033147c7e98d9e`.
+The same regression failed against the first observer's repeat cutoff and
+passed after correction, including both release edges. These automated checks
+use synthetic Linux Chromium events and do not establish physical behavior.
+
+The owner's repeat with revision 2 recorded ControlLeft and MetaLeft down,
+1,758 ms of overlap, then both keys up. It completed with `50+` repeats and no
+recorded key remaining down. This is a complete held-chord observation, shorter
+than the requested three seconds. It establishes the reported input interval,
+not a three-second measurement. In the subsequent approved Notepad trial, the
+owner confirmed that B recorded while held, stopped on release and inserted
+text without an automatic Enter. A separate A press added one newline. No
+dictated text or audio was retained in this report.
+
+The owner then confirmed both temporary assignments cleared through the
+manual's per-button cancellation and reopened Wispr. This closes the bounded
+trial and its restoration requirement. It does not establish persistence,
+reconnect/sleep recovery, CHOMPI coexistence or installed Codex action routing.
 
 The local-controls owner operates the devices and observes application results.
 The exact hardware, input observer and trial scope must be identified before
@@ -311,16 +337,16 @@ presets, calls the hub/controllers or operates lights/displays.
 ## Acceptance mapping and handoff
 
 Assessment refreshed against the owner's revised A/B defaults and incorporated Hub main
-`2855be7af01265e82012e131838e94d45c83e62f`: medium complexity from interacting
+`56e5667342cd446a229a4234dadf13fe3d07b0a2`: medium complexity from interacting
 vendor/input/app interfaces; high uncertainty from
-unobserved held events and unqualified N30 input translation; medium impact because trials can disrupt input and need
+unqualified N30 input translation and version 1 configuration ownership; medium impact because trials can disrupt input and need
 restoration. Documentation work is ready; live qualification is pending.
 
 | Criterion | Evidence prepared | Remaining completion condition |
 | --- | --- | --- |
-| AC1 | Sourced control/connection matrix, owner-reported connection and four distinct browser outputs; unsupported and unknown cells retained | Exact installed inventory and remaining applicable per-control observations |
-| AC2 | Compared routes, selected next trial, ownership boundary and reversible sequence | A supported route for the actual controls; settle mapping persistence and focus/hold behavior |
-| AC3 | D/S/O/L separation and dated owner-supplied N30 observations, including recording and context limits; no complete route pass claimed | Add remaining authorized event/application and restoration receipts as trials run |
+| AC1 | Sourced control/connection matrix, four distinct N30 outputs, A Enter and B held chord; unsupported/unknown cells retained | Exact installed inventory and remaining applicable per-control observations |
+| AC2 | Compared routes, observed keyboard mapping/Wispr path, ownership boundary and successful per-button cancellation | A supported N30 translation route; settle configuration ownership, persistence and app focus |
+| AC3 | D/S/O/L separation, dated input observations, brief Wispr/Notepad outcome and restoration; no complete N30 route pass claimed | Add remaining authorized event/application and restoration receipts as trials run |
 | AC4 | Gaps below identify owners and dependent gates | Review the final positive or negative qualification without enabling unsupported controls |
 
 The #64 coordinator owns physical-to-packaging verification, per-control evidence, final
