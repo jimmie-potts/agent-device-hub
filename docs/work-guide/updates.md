@@ -24,7 +24,7 @@ clears; the controls guide's Nanoleaf row and the controls-music next step name
 the merged Pixoo candidate and this open one.
 The paginated history records PR #160's merge, PR #163's guide closeout and
 #151's completed closure; earlier entries are unchanged. There are 92 primary open issues, 12
-guides, nine viewers, 52 roadmap nodes and 125 merged PRs in this snapshot.
+guides, nine viewers, 52 roadmap nodes and 126 merged PRs in this snapshot.
 Ownership, transports, physical writers and pinned architecture viewers are
 unchanged: the browser remains a client of the hub route and the Nanoleaf worker
 remains the only light writer.
