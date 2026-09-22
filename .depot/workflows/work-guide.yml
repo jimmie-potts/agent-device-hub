@@ -1,0 +1,54 @@
+# Depot CI Migration
+# Source: .github/workflows/work-guide.yml
+#
+# Changes made:
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+name: Work guide
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/work-guide/**']
+  pull_request:
+    paths-ignore: ['docs/work-guide/**']
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  guide:
+    name: Work guide build and browser checks
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 docs/work-guide/work/build_guide.py
+      - run: git diff --exit-code -- docs/work-guide/outputs
+      - run: python3 docs/work-guide/work/test_maintenance.py
+      - name: Check system design documents
+        run: python3 docs/system-design/check.py
+      - name: Prepare the pinned browser checker
+        run: |
+          npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0
+          node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Check the guide and capture review evidence
+        run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs
+      - name: Check system design navigation and print output
+        run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: work-guide-review
+          path: |
+            docs/work-guide/work/guide-*.png
+            docs/work-guide/work/guide-print-check.pdf
+            docs/work-guide/work/guide-verification.json
+            ${{ runner.temp }}/bunny-design-review
+          if-no-files-found: error
+          retention-days: 14
