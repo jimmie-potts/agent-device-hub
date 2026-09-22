@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T06:07:00.363529+00:00",
+  "fetchedAt": "2026-09-22T10:17:52.044843+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T06:00:08Z",
+      "pushedAt": "2026-09-22T06:15:11Z",
       "defaultBranch": "main",
-      "headSha": "0ba711d8f01eb35574ca449c89e537b69fbb5b18",
-      "mainCommitCount": 69,
+      "headSha": "dd00c7846d6f6da79a09948b925ddda0e9c342b7",
+      "mainCommitCount": 70,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "dd00c7846d6f6da79a09948b925ddda0e9c342b7",
+          "date": "2026-09-22T06:15:11Z",
+          "message": "Record the closed general-control definition in the guide (#157)"
+        },
         {
           "sha": "0ba711d8f01eb35574ca449c89e537b69fbb5b18",
           "date": "2026-09-22T06:00:07Z",
@@ -900,6 +905,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/156",
           "base": "main",
           "mergedAt": "2026-09-22T06:00:08Z"
+        },
+        {
+          "number": 157,
+          "title": "Record the closed general-control definition in the guide",
+          "createdAt": "2026-09-22T06:08:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/157",
+          "base": "main",
+          "mergedAt": "2026-09-22T06:15:11Z"
         }
       ],
       "openPRs": [
@@ -1129,10 +1142,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/148"
         }
       ],
-      "openIssueCount": 58,
+      "openIssueCount": 59,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-22T05:38:42Z"
+        "2026-09-22T06:22:18Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1142,17 +1155,22 @@
         "2026-09-12": 1,
         "2026-09-20": 2,
         "2026-09-21": 1,
-        "2026-09-22": 9
+        "2026-09-22": 10
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-21T00:04:05Z",
+      "pushedAt": "2026-09-22T10:12:12Z",
       "defaultBranch": "main",
-      "headSha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
-      "mainCommitCount": 28,
+      "headSha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
+      "mainCommitCount": 29,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
+          "date": "2026-09-22T10:12:12Z",
+          "message": "Introduce device-aware Nanoleaf state and geometry contracts (#65)"
+        },
         {
           "sha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
           "date": "2026-09-21T00:04:04Z",
@@ -1478,6 +1496,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/63",
           "base": "main",
           "mergedAt": "2026-09-21T00:04:05Z"
+        },
+        {
+          "number": 65,
+          "title": "Introduce device-aware Nanoleaf state and geometry contracts",
+          "createdAt": "2026-09-22T06:50:15Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/65",
+          "base": "main",
+          "mergedAt": "2026-09-22T10:12:12Z"
         }
       ],
       "openPRs": [],
@@ -1603,6 +1629,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
         },
         {
+          "number": 41,
+          "title": "Introduce device-aware Nanoleaf state and geometry contracts",
+          "closedAt": "2026-09-22T10:17:19Z",
+          "createdAt": "2026-09-07T18:43:18Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/41"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -1643,7 +1677,7 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/55"
         }
       ],
-      "openIssueCount": 21,
+      "openIssueCount": 20,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-22T05:37:36Z"

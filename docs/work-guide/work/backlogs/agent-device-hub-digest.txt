@@ -80,3 +80,4 @@
 #153 [OPEN] Add Nanoleaf general controls to the BUNNY component view
 #154 [OPEN] Install and verify Pixoo general controls on the physical display
 #155 [OPEN] Install and verify Nanoleaf general controls on the installed wall
+#158 [OPEN] Qualify iPhone Apple Music now-playing sources through the apartment speakers

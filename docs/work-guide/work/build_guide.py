@@ -75,8 +75,8 @@ GUIDES = [
     dict(id='nanoleaf-devices', short='Lines + Light Panels', title='Add Nanoleaf Light Panels alongside Lines', phase='Independent feature',
          intro='This Nanoleaf sequence can use existing automatic task ingestion without waiting for shared monitoring.',
          headers=['Order', 'Issue', 'Result'], rows=[
-             ['01 / State and geometry', '[[N41]]', 'Device-aware state, identities, geometry, and migration contracts.'],
-             ['02 / Windows worker', '[[N42]]', 'Independent device assignments, scheduling, modes, and recovery through the Windows worker.'],
+             ['Completed / State and geometry', '[[N41]]', 'Device registry with the original Lines device `wall`, device-scoped placements, comets, preferences, settings, pending edits, Locate, mode and scene, a per-device layout shape, and the guarded in-place Linux migration proven by a committed pre-change fixture. Nanoleaf PR #65 merged as 773d3ca after independent Standards and Specification reviews and all nine PR checks; all merged-main checks passed before #41 closed. Source only: no installation, hook, service or light change.'],
+             ['02 / Runtime worker', '[[N42]]', 'Independent device assignments, scheduling, modes, and recovery through the existing Linux worker.'],
              ['03 / Panel effects', '[[N43]]', 'NL22 triangle geometry and task effects.'],
              ['04 / Map and tray', '[[N44]]', 'Lines and Panels together in the wall map and tray.'],
              ['05 / Upgrade tooling', '[[N45]]', 'Enrollment, reversible upgrades, and rollback tooling.'],
@@ -158,6 +158,7 @@ GUIDES = [
              ['Nanoleaf controls', '[[N64]] → [[H153]] → [[H155]]', 'Nanoleaf #64 declares native power, brightness and saved-scene capabilities on the protected controller API, owns the Work/Quiet brightness-override policy and accepts scenes only in Free as a one-shot write. Hub #153 then adds the view controls. Physical acceptance on the installed wall is [[H155]].'],
              ['Non-blocking companions', '[[P67]] [[H152]]', 'Pixoo #67 adds user-entered playlist names to the Pixoo integration extension so the view can label playlists; the UI ships with IDs until then. Hub #152 adds media tools to the hub MCP device tool set, preferably after #151.'],
              ['Windows playback', '[[H36]]', 'Qualify and build the Apple Music connector.'],
+             ['iPhone playback sources', '[[H158]]', 'Qualify how BUNNY sees iPhone Apple Music playing over AirPlay to the apartment speakers, starting with the Sonos local API, as a second playback source for [[H36]]. Deferred and ready; it does not change the Windows connector.'],
              ['Participation and interruption', '[[H40]]', 'Define per-device music and alert policy. Settle this alongside connector qualification, before effects take over devices. This is a recommended sequence.'],
              ['Common music controls', '[[H37]]', 'Add music controls to the shared UI and Codex tools.'],
              ['Device presentations', '[[H38]] [[H39]]', 'Add Pixoo/Tidbyt now-playing cards, song-change lighting, and Nanoleaf scene qualification.'],

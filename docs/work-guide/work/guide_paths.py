@@ -13,8 +13,8 @@ PATHS = {
     ),
     'nanoleaf-devices': (
         'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'Start with the device-state and geometry foundation. Worker and rendering work follow that contract; two-device installation comes last.',
-        ['N41'],
+        'The device-state and geometry foundation is delivered. Next, integrate independent device projections through the existing Linux worker; rendering and two-device installation follow.',
+        ['N42'],
     ),
     'tidbyt-lifx': (
         'Add automatic task status to Tidbyt and LIFX through their own controllers.',
@@ -70,8 +70,8 @@ PARALLEL = [
      'Add the accepted Pixoo controls to the existing component view. Pixoo needs no wire change; the candidate needs human UI approval before merge.'),
     ('N64', 'Nanoleaf native controls', 'controls-music',
      'Declare power, brightness and saved-scene capabilities on the protected controller API with fake devices. The hub view and physical acceptance follow.'),
-    ('N41', 'Nanoleaf device foundation', 'nanoleaf-devices',
-     'Own the Nanoleaf storage and geometry contract. Use isolated source fixtures; worker integration follows this story.'),
+    ('N42', 'Nanoleaf runtime worker', 'nanoleaf-devices',
+     'Integrate independent device projections through the existing Linux worker on the delivered #41 contract. Its blocked label waits for the owner to release it.'),
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',
      'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
     ('H15', 'Tidbyt connection findings', 'tidbyt-lifx',
