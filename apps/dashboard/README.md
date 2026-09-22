@@ -3,8 +3,8 @@
 The React/TypeScript frontend reads the shared hub and submits explicit integration
 commands to its existing services. It creates no collector or device writer.
 Activity, component and connection views remain useful without an active task.
-General power/brightness/scene/media controls, exact previews and full editor
-migration remain outside Hub #6.
+Hub #151 adds Pixoo general controls to the same component view. Nanoleaf
+general controls, exact previews and full editor migration remain separate work.
 
 ## Build and access
 
@@ -53,6 +53,41 @@ layout, coverage, element/project/task mapping and project colors. Pixoo control
 include monitor filters and cadence. Advanced editors remain links. The UI never
 translates these into a global mode or exposes raw commands.
 
+## General controls
+
+The component view offers screen power, brightness, saved-playlist selection and
+the declared playback actions from the controller v1 capability object. Every
+control submits one guarded controller v1 command through the existing hub route
+with the observed request ticket, configuration revision and generation. A
+disabled control names the missing capability, the read-only scope, stale or
+external-control evidence, or the Pixoo mode. Components without a declared
+capability, such as Nanoleaf today, show the same disabled controls with reasons.
+
+Pixoo declares screen power, brightness 0–100 and media with pause, resume, stop,
+next, previous and clear plus discovered playlist IDs, checked at Pixoo `main`
+`c81bc31c59068e00bf9d15a81577863ba9446931`. Controller v1 modes are unsupported
+there, so the Pixoo Monitor/Media mode control uses the delivered integration
+extension's mode operation with its own ticket, revision and generation guards.
+The browser fixture declares the same capabilities. Playlist selection and
+playback actions are disabled while Pixoo is in Monitor or a mode change is
+pending. The view names the reason and offers one explicit "Switch to Media"
+command through that mode control; returning to Monitor uses the same control.
+No command changes the mode as a side effect, nothing restores automatically,
+and the hub stores no baseline and runs no timer. Screen off pauses playback and
+screen on does not resume it. Playlists are listed by ID until
+[Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67)
+supplies user-entered names.
+
+Power and brightness use the draft pattern below; the brightness slider starts
+from desired, then observed evidence, and says when the current brightness is
+unknown. Playlist start, playback actions and the Media switch are one-click
+commands that use the latest observed snapshot and stay busy until the refreshed
+snapshot arrives, so a following activation carries fresh guards. Only an
+accepted ticket is watched for its terminal outcome; a rejected ticket may be
+consumed by another client. A typed conflict is shown and the action stays
+available; an uncertain result locks the group until "Load current / unlock". Physical acceptance on the
+display is [Hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
+
 ## Intent and observation
 
 Drafts pin the observed controller revision/generation and server-issued ticket.
@@ -82,16 +117,21 @@ The starting point is Nanoleaf `main` at
 forward cyan selection, magenta pending states, compact controls, a quiet grid,
 local Bahnschrift/Segoe UI typography and focus-preserving interaction. It does
 not copy wall geometry, physical Locate controls or animation rendering. This new
-candidate requires its own explicit human approval.
+candidate requires its own explicit human approval. The Hub #151 general-control
+candidate requires renewed approval, recorded in its PR.
 
 `npm run test:dashboard` checks command guards and links.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
 expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,
 known observations, external control, focus, keyboard, reduced motion, responsive
-layout and automated accessibility. `DASHBOARD_RECEIPTS` selects an external
+layout and automated accessibility. The Hub #151 matrix scenarios add guarded
+general commands in Media, Monitor gating with the explicit switch and a pending
+mode, concurrent edits with typed conflicts and locked uncertain actions, and
+read-only or undeclared capabilities with named reasons. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,
-static-asset protections, invalid links and packaged installation. Source/browser
+static-asset protections, invalid links, packaged installation and that general
+commands are validated and scoped before any controller request. Source/browser
 checks do not establish installed-client or physical acceptance.
