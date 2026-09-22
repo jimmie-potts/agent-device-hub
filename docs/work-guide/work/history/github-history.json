@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T00:56:32.281816+00:00",
+  "fetchedAt": "2026-09-22T01:05:21.876394+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T00:54:33Z",
+      "pushedAt": "2026-09-22T01:01:10Z",
       "defaultBranch": "main",
-      "headSha": "35041f15bf4960a2460ed3004b1db918379c91d0",
-      "mainCommitCount": 55,
+      "headSha": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+      "mainCommitCount": 56,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+          "date": "2026-09-22T01:01:10Z",
+          "message": "docs: narrow Hub 30 to everyday standalone qualification (#133)"
+        },
         {
           "sha": "35041f15bf4960a2460ed3004b1db918379c91d0",
           "date": "2026-09-22T00:54:33Z",
@@ -718,6 +723,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/132",
           "base": "main",
           "mergedAt": "2026-09-22T00:54:33Z"
+        },
+        {
+          "number": 133,
+          "title": "docs: simplify Hub 30 standalone qualification scope",
+          "createdAt": "2026-09-22T00:57:01Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/133",
+          "base": "main",
+          "mergedAt": "2026-09-22T01:01:10Z"
         }
       ],
       "openPRs": [

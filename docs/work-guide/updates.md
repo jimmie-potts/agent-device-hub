@@ -1,3 +1,52 @@
+## September 22, 2026: Pixoo #34 reduced installed scope
+
+The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo
+working/completed-task check, notice clearing/dismissal and basic Monitor/Media
+behavior. CLI/Claude qualification, migration, extended failure matrices and a
+shared-frontend trial are no longer #34 completion requirements. The issue body
+records that decision; older entries below describe the superseded scope.
+
+Source PR #65 and all five merged-main checks are complete. Installation and
+real-task/display observations remain pending. The Nanoleaf task is still
+configuring the existing shared host, so the Pixoo coordinator is preparing its
+consumer without concurrently changing that installation. No device commands
+or personal configuration writes are claimed here.
+
+This guide also preserves the separately merged Hub #30 scope revision from
+PR #133. Hub #30 closes on standalone source qualification, independently of
+live installation and physical timing. Public publication remains separate.
+
+## September 22, 2026: Hub #30 personal-project scope revision
+
+The owner approved standalone Linux/WSL qualification for everyday Codex
+monitoring. The saved Hub #30 body now requires real Pixoo/Nanoleaf consumers
+with synthetic input, disposable state and fake device transports; hook-return
+and consumer-receipt timing; normal/concurrent use; a short overload burst; and
+ordinary reconnect, unavailable-consumer and host-restart checks. One command
+and a concise report replace the broad multi-host qualification programme.
+
+Embedded-host hardening in Pixoo #61 is no longer a prerequisite for implementing
+or closing Hub #30. Existing #61 acceptance remains unchanged. Historical
+percentile ceilings are diagnostic comparisons for the revised #30; practical
+standalone targets must be defined before qualification runs. The 3,000 ms hard
+hook deadline, 256 MiB service RSS ceiling, bounded resources, confinement,
+cleanup and single-owner protections remain required. Historical budgets and
+failed receipts remain unchanged and do not become passing evidence.
+
+The coordinating writer updated only Hub #30's body, preserving its title,
+labels and open state, then refreshed the guide backlogs and shared-Codex
+sequence. This is a planning change with no product behavior delta, so no new
+OpenSpec change is needed. Architecture ownership and command flows are
+unchanged; diagram artifacts and their source-review dates need no update.
+Implementation, qualification, installation and physical acceptance are not
+claimed. Public publication remains outside this revision.
+
+Guide generation, all five maintenance tests, six-width browser checks and print
+expansion/restoration passed. The guide contains 94 primary open issues, 12
+guides and nine diagrams. The initial refresh detected Hub #6 closing during
+this task; its separately merged guide PR #132 was incorporated before these
+checks. No diagram artifacts or product tests were changed.
+
 ## September 21, 2026: Hub #6 source completion
 
 [PR #127](https://github.com/jimmie-potts/agent-device-hub/pull/127) merged as
