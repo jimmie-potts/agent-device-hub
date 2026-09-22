@@ -54,13 +54,13 @@ def refresh_repo(repo):
     assert all(i['state'] == 'OPEN' for i in issues)
     assert len({i['number'] for i in issues}) == len(issues)
     # Comments are acceptance evidence for these direct status reads.
-    targets = {'agent-device-hub': [2, 5, 30, 31, 32, 43, 50, 63, 83, 91, 148], 'codex-nanoleaf': [26, 29, 30, 34, 37, 49, 52, 53, 54, 55], 'divoom-app-upgrade': [12, 26, 29, 30, 31, 32, 33, 34, 37, 46]}[repo]
+    targets = {'agent-device-hub': [2, 5, 30, 31, 32, 43, 50, 63, 83, 91, 148], 'codex-nanoleaf': [26, 29, 30, 34, 37, 41, 49, 52, 53, 54, 55], 'divoom-app-upgrade': [12, 26, 29, 30, 31, 32, 33, 34, 37, 46]}[repo]
     direct = []
     for number in targets:
         raw = api(f'{base}/issues/{number}')
         comments, comment_sizes = pages(f'{base}/issues/{number}/comments')
         comment_rows = [{'url': c['html_url'], 'createdAt': c['created_at'], 'updatedAt': c['updated_at']} for c in comments]
-        references_only = (repo == 'codex-nanoleaf' and number in (30, 54, 55)) or (repo == 'divoom-app-upgrade' and number in (30, 34))
+        references_only = (repo == 'codex-nanoleaf' and number in (30, 41, 54, 55)) or (repo == 'divoom-app-upgrade' and number in (30, 34))
         # Linux and physical-delivery comments may include private metadata. Keep
         # acceptance links in Git; inspect full comments through GitHub on demand.
         if not references_only:

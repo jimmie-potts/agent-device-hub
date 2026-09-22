@@ -16,11 +16,11 @@
 #31 [OPEN] Adopt shared OpenSpec validation tooling
 #34 [CLOSED] Verify local Codex control of the Nanoleaf lights
 #37 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
-#41 [OPEN] Introduce device-aware Nanoleaf state and geometry contracts
+#41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
 #42 [OPEN] Run independent Lines and Light Panels projections in the Nanoleaf runtime
 #43 [OPEN] Render task effects on NL22 Light Panels
-#44 [OPEN] Manage Lines and Light Panels together in the wall map and tray
-#45 [OPEN] Add controller enrollment and reversible multi-device upgrades
+#44 [OPEN] Manage Lines and Light Panels together in the wall map
+#45 [OPEN] Enroll a second Nanoleaf device on the Linux runtime
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
 #49 [CLOSED] Expose Nanoleaf integration settings and assignments to the shared frontend

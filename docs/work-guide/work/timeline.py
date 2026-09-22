@@ -29,7 +29,7 @@ TRACKS = [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H35', 'H151', 'N64', 'H153', 'P67', 'H152', 'H154', 'H155'], guide='controls-music', main=True),
-        dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
+        dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H158', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
@@ -47,7 +47,7 @@ TRACKS = [
         dict(id='n-desk-later', x=4, label='Profiles · Music preset', issues=['H70', 'H71'], guide='desktop-controls'),
     ]),
     ('Nanoleaf Lines + Light Panels', [
-        dict(id='n-nl-state', x=0, label='State + geometry', issues=['N41'], guide='nanoleaf-devices'),
+        dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-worker', x=1, label='Worker + panel effects', issues=['N42', 'N43'], guide='nanoleaf-devices'),
         dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44', 'N45'], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=3, label='Installed acceptance', issues=['N46'], guide='nanoleaf-devices'),

@@ -52,6 +52,43 @@ This is a mixed change with documentation outside `docs/work-guide/`, so all
 configured CI jobs apply. Public publication and live verification remain
 separate and were not requested.
 
+## September 22, 2026: Nanoleaf device-aware state foundation
+
+Nanoleaf #41 delivered the storage and geometry shape that the Lines and
+Light Panels sequence builds on. The private configuration now registers each
+device by id, kind, address and token reference, with the original Lines device
+keeping the #28 controller identity `wall`. Placements, comets, Line
+preferences, display cache, map settings, pending edits, Locate, mode metadata
+and the saved scene are keyed by device, with uniqueness on device plus slot
+and device plus element. Existing Linux state upgrades in place inside the
+existing initialization, guarded and idempotent; a committed pre-change fixture
+proves that tasks, epochs, preferences, the active comet, pending edits and
+controller history survive. The layout file holds one entry per device with
+each element's id, number and zones; legacy files still load. ADR 0009 and the
+`device-state` specification record the decisions.
+
+Nanoleaf PR #65 merged as `773d3ca7d97a1fb585baba8e3d9c19c197f337c4` after independent Standards and
+Specification reviews and all nine PR checks passed; all merged-main checks
+passed before #41 closed as completed. This is source-only: no installation,
+hook, service or light change, and the worker still renders the original
+device. #42 (runtime worker), #43 (NL22 rendering) and #46 (installed
+acceptance) keep their own scope; #42 keeps its blocked label until its owner
+releases it.
+
+This entry refreshes the three backlogs and repository history, retains #41 as
+a closed reference with comment links only (its delivery-claim comment names a
+local worktree path), records it as completed in the Lines + Light Panels guide,
+moves the guide's next step and the reviewed parallel unit to #42, and corrects
+the worker row to the Linux runtime. The refresh also picked up new Hub #158
+(iPhone Apple Music sources), which joins the controls and music guide and the
+Apple Music roadmap node. The blocker regression now uses Pixoo #61 as its
+open candidate. Ownership, transports, physical writers and the pinned
+architecture viewers do not change, so no diagram is redrawn. Guide generation,
+nine maintenance tests, the browser check and generated-output consistency
+pass; HTML SHA-256:
+`d36be03d25dacf308e9a914b5f1093687aaf43e8a4a84cab1dc7bad99b6e57fd`.
+Public publication and live verification are separate and are not claimed here.
+
 ## September 22, 2026: Guide clarity source closeout
 
 Hub PR #149 merged as `56e5667342cd446a229a4234dadf13fe3d07b0a2`.
