@@ -112,17 +112,19 @@ for current readiness and successful qualification evidence.
 | --- | --- | --- |
 | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63) | Document accepted desktop controls | None |
 | [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) | Qualify hardware, Wispr hold/release and Codex mappings | None |
-| [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) | Implement independent local Wispr/Codex controls | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63), successful [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) qualification |
+| [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) | Implement editable A/B defaults in version 1 and independent Codex mouse controls | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63), successful [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) qualification |
 | [#66](https://github.com/jimmie-potts/agent-device-hub/issues/66) | Install and verify local shortcuts and restoration | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) |
 | [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) | Coordinate Work, Free and Quiet desk presets | [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63), Codex-first [#32](https://github.com/jimmie-potts/agent-device-hub/issues/32), general-control definition [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31), host [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5), [Nanoleaf #49](https://github.com/jimmie-potts/codex-nanoleaf/issues/49), [Pixoo #33](https://github.com/jimmie-potts/divoom-app-upgrade/issues/33) |
-| [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68) | Bind Big B and show requested/per-device results | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65), [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) |
+| [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68) | Bind a selected control to presets and show requested/per-device results | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65), [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67) |
 | [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) | Verify preset switching, manual handoff and restoration | [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68), shared producer setup [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [#70](https://github.com/jimmie-potts/agent-device-hub/issues/70) | Add saved profiles and supported remapping | [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65) |
 | [#71](https://github.com/jimmie-potts/agent-device-hub/issues/71) | Add a later Music preset | [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68), playback [#36](https://github.com/jimmie-potts/agent-device-hub/issues/36), participation/interruption policy [#40](https://github.com/jimmie-potts/agent-device-hub/issues/40) |
 
 The independent #64 → #65 → #66 path consumes #63's decisions but does not wait
 for the hub, shared monitoring, #31, #32 or Music. Wispr retains its own service
-requirements. Manual preset dispatch does not require the future automation
+requirements. Version 1 defaults A to a separate Enter press and B to Wispr
+hold/release, with both bindings editable in #65. Broader profile editing in #70
+is not an A/B configuration prerequisite. Manual preset dispatch does not require the future automation
 engine. #31 owns general-control definition after #32 acceptance; desktop
 presets consume it without expanding or reversing that scope.
 
@@ -131,7 +133,7 @@ PC-lighting participation need their own supported adapters/capabilities and
 acceptance. They do not block a supported Nanoleaf/Pixoo release. The separate
 [PC-lighting documentation PR #59](https://github.com/jimmie-potts/agent-device-hub/pull/59)
 is merged and is not a desktop-control prerequisite. #70's optional preset actions
-need the preset service and Big B delivery, while its basic local profile editor
+need the preset service and configured preset-binding delivery, while its basic local profile editor
 does not wait for them or Music. #71 must add
 [#38](https://github.com/jimmie-potts/agent-device-hub/issues/38) and/or
 [#39](https://github.com/jimmie-potts/agent-device-hub/issues/39) for the chosen

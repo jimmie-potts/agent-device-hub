@@ -1,6 +1,8 @@
 # Desktop controls, control profiles and desk presets
 
-Status: Accepted direction from [Hub #63](https://github.com/jimmie-potts/agent-device-hub/issues/63).
+Status: Accepted direction from [Hub #63](https://github.com/jimmie-potts/agent-device-hub/issues/63),
+revised by the owner during [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64)
+on September 22, 2026 UTC.
 The 8BitDo input integration, profile editor and desk-preset service remain future
 work. This document records decisions and qualification boundaries; it does not
 establish installed mappings or device support.
@@ -15,14 +17,25 @@ independent Wispr and mouse path to ship earlier.
 
 | Control | Requested behavior | Boundary |
 | --- | --- | --- |
-| Big A on the Dual Super Buttons | Hold to dictate through Wispr Flow; release to insert text | Message submission remains a separate user action. Genuine press/hold/release support must qualify. |
-| Big B on the Dual Super Buttons | Each fresh press cycles Work → Free → Quiet → Work | Available after the shared preset service and binding qualify. Music joins later through its own integrations. |
+| Big A on the Dual Super Buttons | Enter on a separate deliberate press | Releasing B or inserting dictation never triggers A. Enter acts in the intended focused field under the configured scope. |
+| Big B on the Dual Super Buttons | Hold the qualified Wispr shortcut, currently Ctrl+Win, to dictate; release to insert text | Genuine press/hold/release support must qualify. Release adds no Enter or message submission. |
 | First Codex mouse mapping | Next task needing attention, command menu, previous task, next task | Apply within Codex. Preserve ordinary behavior outside Codex and on unassigned controls. Physical button identities and exact shortcuts await qualification. |
 
-Wispr and basic mouse dispatch work independently of the hub, shared monitoring,
+Both A and B must be programmable in version 1 under
+[#65](https://github.com/jimmie-potts/agent-device-hub/issues/65). The user can change
+and save supported assignments without changing code or rebuilding, and restore
+the A=Enter/B=Wispr defaults. Applying configuration alone sends no input or device
+commands. The later broad profile editor in #70 does not gate A/B editing.
+
+These defaults replace the earlier A=Wispr/B=preset decision. Preset cycling
+later uses an explicitly selected qualified binding; neither button is reserved
+for it. The initial cycle remains Work → Free → Quiet → Work, with Music added
+only after its integrations qualify.
+
+The A/B bindings and basic mouse dispatch work independently of the hub, shared monitoring,
 general controls, Music and model calls. Wispr retains responsibility for speech
-processing and its own availability requirements. Big B remains unavailable until
-its service exists; presses must not accumulate for later execution.
+processing and its own availability requirements. A preset action remains
+unavailable until its service exists; presses must not accumulate for later execution.
 
 A manual change in a device's own app remains until the next explicit preset
 request. That request applies the next preset to configured, participating,
@@ -35,7 +48,7 @@ does not apply a preset or replay old presses.
 | Term | Meaning |
 | --- | --- |
 | Control profile | A saved mapping of physical controls and gestures to actions, including application scope. Selecting it alone sends no device commands. |
-| Button binding | One assignment within a control profile, such as a qualified Big A hold/release gesture bound to Wispr dictation. |
+| Button binding | One assignment within a control profile, such as a qualified Big B hold/release gesture bound to Wispr dictation. |
 | Desk preset | An explicit collection of supported actions on configured participating lights and displays. A binding may request it when the service is available. |
 
 The initial preset meanings are accepted intent. Exact per-device operations,
@@ -67,7 +80,8 @@ implementation issues; this document selects none of them.
 
 The local path resolves a qualified physical control and gesture, checks its
 profile and application scope, then dispatches to the owning app. Wispr receives
-its qualified dictation binding. Codex receives its qualified navigation or
+its qualified dictation binding from B. A separately requests Enter in the
+intended focused field. Codex receives its qualified navigation or
 command-menu action. The existing CHOMPI bridge and vendor mappings retain their
 ownership. Reuse the bridge's approach only where suitable; its three MIDI
 bindings are not an implemented 8BitDo or saved-profile system.
@@ -133,15 +147,15 @@ separately authorized installation and app/input acceptance in
 Shared presets [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
 wait for the [Codex-first milestone #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
 and #31's general-control definition, as well as the source dependencies in the
-roadmap. The shared preset service and #65 then feed Big B and visible results
+roadmap. The shared preset service and #65 then feed a user-selected preset binding and visible results
 in [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
 [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) owns installed
 switching, manual handoff and restoration acceptance, including the shared
 producer setup for full agent-status observations.
 
-Saved profiles and customization
+Broader saved profiles and customization
 [#70](https://github.com/jimmie-potts/agent-device-hub/issues/70) follow #65.
-Cover every remappable control exposed by the qualified hardware, with saved
+Extend version 1's A/B configuration to every remappable control exposed by the qualified hardware, with saved
 profiles, supported app/hub actions, custom keyboard shortcuts and recoverable
 defaults. Unsupported controls stay explicit. Arbitrary scripts, shell execution,
 raw device commands and multi-step macros are outside the first customization

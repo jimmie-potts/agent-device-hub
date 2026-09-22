@@ -19,6 +19,13 @@ These are owner reports of basic operation and attachment; no receiver inventory
 independently verifies the active transport. The photos identify packaging and
 do not establish firmware. Private photos stay outside Git.
 
+During this qualification the owner revised the defaults to **Big B = Wispr
+hold/release** and **Big A = Enter on a separate press**. Both bindings must be
+programmable in version 1 under #65, with saved assignments and recoverable
+defaults. Broader profile editing remains #70. Presets later use an explicitly
+selected qualified binding, without reserving A or B. The owner also read Wispr's
+current push-to-talk setting as Ctrl+Win; its running version remains unknown.
+
 ## Evidence and inventory
 
 `D` means official documentation, `S` inspected source or filesystem artifact,
@@ -31,7 +38,7 @@ are independent. A supported result under `D` never implies an `L` pass.
 | Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver identity, firmware, raw Windows events and controlled hold behavior |
 | USB/HID identities | No inventory result | Record VID/PID, interface/usage and connection under operator supervision; omit serials and instance paths from shared evidence |
 | Ultimate Software V2 | D: keyboard support is documented; N30 custom mapping support is not established | Keyboard software version, exposed controls and profile persistence; do not apply R8 capabilities to N30 |
-| Wispr | S: local application directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Running version, active shortcut, conflicts and insertion behavior; directory names do not identify the active installation |
+| Wispr | O: current push-to-talk setting is Ctrl+Win. S: local directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Running version, conflicts and insertion behavior; directory names do not identify the active installation |
 | Codex | D: current Windows defaults below | Installed version, customized bindings, package identity and foreground behavior |
 | CHOMPI bridge | S: local C# source inspected; no Git commit exists in that checkout | Installed binary revision and coexistence; no bridge was launched or changed |
 | Live input/application results | L via O: authorized focused N30 browser observations; no app action or Wispr trial | Receiver-attributed events, held output, application results and recovery |
@@ -112,8 +119,8 @@ nor the product page establishes N30 vendor custom profiles. [N30 manual][mouse-
 
 | Physical control | Documented assignment/default | USB event/hold/release | 2.4 GHz event/hold/release | Bluetooth event/hold/release | Initial disposition |
 | --- | --- | --- | --- | --- | --- |
-| Attached Big A | Programmable D | Unknown | Unknown | Unknown | Candidate for Wispr after true hold/release qualification |
-| Attached Big B | Programmable D | Unknown | Unknown | Unknown | Preset action unavailable until separate delivery |
+| Attached Big A | Programmable D | Unknown | Unknown | Unknown | Candidate for a separate Enter action; qualify edges and repeat policy |
+| Attached Big B | Programmable D | Unknown | Unknown | Unknown | Candidate for Wispr after true hold/release qualification |
 | Keyboard A | Programmable D | Unknown | Unknown | Unknown | Preserve assignment; distinguish from attached Big A |
 | Keyboard B | Programmable D | Unknown | Unknown | Unknown | Preserve assignment; distinguish from attached Big B |
 | Other typing/function keys | Exact remappable set unknown | Unknown | Unknown | Unknown | Inventory vendor-exposed controls; preserve typing |
@@ -164,10 +171,12 @@ bindings can be retained by adding another shortcut. Reset replaces custom
 bindings without undo. Double-tapping push-to-talk can enter hands-free mode.
 [Wispr shortcuts][wispr]
 
-The integration must never append Enter or another submit action. A real trial
-must distinguish held dictation from a tap/macro and observe release, insertion
-and the absence of submission. Wispr retains speech processing and service
-availability. The operator's existing settings remain authoritative.
+Wispr release or text insertion must never automatically append Enter or another
+submit action. Big A's Enter default requires a separate deliberate press under
+the configured scope. A real trial must distinguish held dictation from a
+tap/macro, observe release and insertion, then observe A independently. Wispr
+retains speech processing and service availability. The operator's existing
+Wispr setting remains authoritative.
 
 For the mouse, do not use Wispr's global mouse bindings as a Codex focus router:
 its assigned clicks can be suppressed in other apps. `Ctrl+K` is also a reserved
@@ -177,7 +186,7 @@ mappings, ordinary typing or CHOMPI. [Wispr shortcuts][wispr]
 ## Route decision and unresolved gates
 
 **Selected route for the next trial:** the keyboard's documented on-device fast mapping, with a direct held Wispr chord considered
-first for Big A over 2.4 GHz. For the N30, preserve its existing hardware
+first for Big B over 2.4 GHz, plus a separate Enter assignment for Big A. For the N30, preserve its existing hardware
 outputs and assess the smallest Windows-local adapter that translates the four
 D-pad controls only in Codex. Keep keyboard assignment in the keyboard, Wispr
 bindings in Wispr, and mouse application scope/action policy in the Windows
@@ -186,7 +195,7 @@ qualified and AC2 remains open.
 
 | Route | Assessment | Evidence needed before adoption |
 | --- | --- | --- |
-| Keyboard fast mapping directly to Wispr | Selected first trial, using the existing modifier chord without a macro | Genuine chord hold/release, conflicts, persistence and rollback |
+| Keyboard fast mapping for B=Wispr and A=Enter | Selected first trial, using the existing Wispr modifier chord and a separate Enter assignment | Genuine B chord hold/release, independent A action, repeat policy, conflicts, persistence and rollback; qualify how the version 1 configuration owns and changes both assignments |
 | N30 vendor mapping alone | No supported custom four-action mapping route established by current sources | A model-specific supported interface would be needed; R8 software evidence does not qualify N30 |
 | N30 existing outputs plus a small Windows adapter | Selected mouse investigation route; four distinct browser outputs observed | Receiver-attributed native events, suppression of original actions only within Codex, pass-through elsewhere, controlled hold/repeat, recovery and coexistence |
 | CHOMPI bridge unchanged | Source approach is useful; current MIDI bindings do not handle 8BitDo | Separate input ownership and acceptance; do not migrate or add bindings to the bridge in this issue |
@@ -224,11 +233,16 @@ limits. [Microsoft SendInput][sendinput]
 
 ## Remaining reversible operator trial
 
-Only the focused N30 browser observation above has live-trial authorization and
-results. The sequence below remains a plan except for owner-reported connection,
-accessory attachment and the initial N30 event observations. Keyboard mapping,
-Wispr dictation, app dispatch and recovery experiments need their own concrete,
-bounded authorization before operation.
+The focused N30 browser observation above has authorization and results. The
+owner also approved a bounded A/B trial and confirmed that both buttons are
+unmodified. That trial temporarily maps B to Ctrl+Win and A to Enter, observes
+their browser events with Wispr quit, then uses one short Wispr dictation and
+a separate Enter press in blank Notepad before restoration. Its results are
+pending. The prepared observer records only selected modifier/Enter codes,
+transitions, overlapping hold duration and bounded repeats; it stops on release,
+focus loss or after 15 seconds. It cannot identify the receiver or prove an app
+outcome. Broader Codex dispatch, reconnect, sleep and coexistence trials below
+still need separately scoped authorization.
 
 The local-controls owner operates the devices and observes application results.
 The exact hardware, input observer and trial scope must be identified before
@@ -249,10 +263,11 @@ keystrokes, window titles, clipboard contents, audio or dictated text.
    direction. Determine whether keyboard A/B and attached A/B collide. Record
    duplicate or unavailable controls as such. Stop on an unexpected action.
 4. After approving the temporary `Ctrl+Win` assignment and checking the active
-   Wispr binding, use the keyboard manual's fast-mapping procedure for Big A.
+   Wispr binding, use the keyboard manual's fast-mapping procedure for Big B.
    Check both edges with the observer first. If it emits
    only a complete tap or repeats an action, it fails push-to-talk qualification.
-   Any added Wispr shortcut must preserve the prior binding.
+   Any added Wispr shortcut must preserve the prior binding. Observe a separate
+   Big A Enter assignment without linking it to B release or insertion.
 5. In an operator-chosen disposable text field, observe one short dictation,
    release and insertion with no send action. Keep the content out of the
    evidence. Check cancellation, double-tap behavior, held modifiers and a focus
@@ -305,7 +320,7 @@ negative hardware finding and cannot be called a completed qualification.
 [Hub #66](https://github.com/jimmie-potts/agent-device-hub/issues/66) owns the
 later installed local-controls acceptance, not a waiver of #64's route evidence.
 [Hub #70](https://github.com/jimmie-potts/agent-device-hub/issues/70) can expose
-only controls the hardware actually supports. Big B preset service/binding
+only controls the hardware actually supports. The later preset service/binding
 work stays with [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
 and [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
 
