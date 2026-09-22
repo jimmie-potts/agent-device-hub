@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 59,
+        "totalCount": 58,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -337,16 +337,6 @@
             }
           },
           {
-            "number": 31,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 35,
             "blockedBy": {
               "totalCount": 0,
@@ -589,7 +579,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -834,7 +824,7 @@
                 },
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1060,7 +1050,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1078,7 +1068,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1096,7 +1086,7 @@
               "nodes": [
                 {
                   "number": 31,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }

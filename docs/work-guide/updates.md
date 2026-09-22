@@ -1,3 +1,28 @@
+## September 22, 2026: General-control definition closeout
+
+Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical
+to reviewed head `f918779`. Both independent Standards and Specification
+reviews passed with recorded P3 dispositions, and all six PR and all six
+merged-main jobs succeeded. Hub #31 is closed as completed with its ten
+planning criteria checked and its closing record posted.
+
+This follow-up refreshes the three backlogs, native dependencies and the
+paginated history at 2026-09-22T06:07Z, retains #31 as a completed reference,
+removes it from open coverage and the remaining-work map, and rewrites the
+overview, controls and desktop-control next steps so they no longer wait on
+the definition. Hub #151 and Nanoleaf #64 have no open native prerequisites
+and appear as parallel candidates; Pixoo #67 is listed as a non-blocking
+companion; #153, #154 and #155 remain blocked by their listed prerequisites. There are 94 primary open issues,
+12 guides, nine viewers, 52 roadmap nodes and 119 merged PRs in this snapshot.
+Architecture diagrams, ownership, transports and physical writers are unchanged.
+
+Generation, nine maintenance tests, browser/print checks and generated-output
+consistency pass; HTML SHA-256 `0fafa2b15ca5ee830f90e8855d96c865e796fbda5fa6d85c35be1713e395b385`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception
+receipt, recorded on the PR. No product behavior or OpenSpec delta. Public
+guide publication and live verification remain separate and were not requested.
+
 ## September 22, 2026: General-control definition and concurrent closures
 
 Hub #31's general-control definition was accepted in a grouped question round

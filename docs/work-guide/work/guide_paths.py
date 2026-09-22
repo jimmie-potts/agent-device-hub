@@ -28,7 +28,7 @@ PATHS = {
     ),
     'desktop-controls': (
         'Use local Wispr and Codex shortcuts, then add optional shared desk presets.',
-        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets also wait for the general-control definition in Hub #31 to close.',
+        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets keep their blocked and deferred labels until the owner selects them, now that the general-control definition is closed.',
         ['H64'],
     ),
     'nanoleaf-presentation': (
@@ -43,8 +43,8 @@ PATHS = {
     ),
     'controls-music': (
         'Extend the shared integration UI into general controls, then music.',
-        'The general-control definition is accepted. Close Hub #31 with its documentation PR, then start the Pixoo controls slice and the Nanoleaf capability work in parallel. Playback and participation policy precede music UI and device effects.',
-        ['H31', 'H151', 'N64'],
+        'The general-control definition is closed. Start the Pixoo controls slice and the Nanoleaf capability work in parallel; the Nanoleaf view and hardware acceptances follow them. Playback and participation policy precede music UI and device effects.',
+        ['H151', 'N64'],
     ),
     'hosting-migrations': (
         'Make runtime ownership and hosting portable without sharing private databases.',

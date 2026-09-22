@@ -1,15 +1,35 @@
 {
-  "fetchedAt": "2026-09-22T03:43:10.847060+00:00",
+  "fetchedAt": "2026-09-22T06:07:00.363529+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T03:35:18Z",
+      "pushedAt": "2026-09-22T06:00:08Z",
       "defaultBranch": "main",
-      "headSha": "2855be7af01265e82012e131838e94d45c83e62f",
-      "mainCommitCount": 65,
+      "headSha": "0ba711d8f01eb35574ca449c89e537b69fbb5b18",
+      "mainCommitCount": 69,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "0ba711d8f01eb35574ca449c89e537b69fbb5b18",
+          "date": "2026-09-22T06:00:07Z",
+          "message": "Define general device controls and record concurrent closures (#156)"
+        },
+        {
+          "sha": "f11334de55b700f8723387dfc15157f57ecd7388",
+          "date": "2026-09-22T04:11:10Z",
+          "message": "Record completed guide clarity delivery (#150)"
+        },
+        {
+          "sha": "56e5667342cd446a229a4234dadf13fe3d07b0a2",
+          "date": "2026-09-22T04:05:41Z",
+          "message": "Make guide status and next steps clear (#149)"
+        },
+        {
+          "sha": "7c5957f7eed4bf8d52b6c68ae63c113c3788a834",
+          "date": "2026-09-22T03:45:52Z",
+          "message": "Record installed Pixoo monitoring acceptance in the guide (#147)"
+        },
         {
           "sha": "2855be7af01265e82012e131838e94d45c83e62f",
           "date": "2026-09-22T03:28:58Z",
@@ -848,6 +868,38 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/146",
           "base": "main",
           "mergedAt": "2026-09-22T03:28:58Z"
+        },
+        {
+          "number": 147,
+          "title": "Record installed Pixoo monitoring acceptance in the guide",
+          "createdAt": "2026-09-22T03:35:20Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:45:53Z"
+        },
+        {
+          "number": 149,
+          "title": "Make guide status and next steps clear",
+          "createdAt": "2026-09-22T03:59:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/149",
+          "base": "main",
+          "mergedAt": "2026-09-22T04:05:42Z"
+        },
+        {
+          "number": 150,
+          "title": "Record completed guide clarity work",
+          "createdAt": "2026-09-22T04:08:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/150",
+          "base": "main",
+          "mergedAt": "2026-09-22T04:11:10Z"
+        },
+        {
+          "number": 156,
+          "title": "Define general device controls and record concurrent closures",
+          "createdAt": "2026-09-22T05:48:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/156",
+          "base": "main",
+          "mergedAt": "2026-09-22T06:00:08Z"
         }
       ],
       "openPRs": [
@@ -856,13 +908,6 @@
           "title": "Record 85HA keyboard and N30 mouse qualification findings",
           "createdAt": "2026-09-22T02:38:29Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
-          "base": "main"
-        },
-        {
-          "number": 147,
-          "title": "Record installed Pixoo monitoring acceptance in the guide",
-          "createdAt": "2026-09-22T03:35:20Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
           "base": "main"
         }
       ],
@@ -964,12 +1009,36 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
         },
         {
+          "number": 31,
+          "title": "Define agent-independent device controls after Codex integration acceptance",
+          "closedAt": "2026-09-22T06:00:09Z",
+          "createdAt": "2026-09-07T20:09:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/31"
+        },
+        {
+          "number": 32,
+          "title": "Deliver Codex-first shared monitoring and integration controls",
+          "closedAt": "2026-09-22T05:01:35Z",
+          "createdAt": "2026-09-07T20:09:28Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/32"
+        },
+        {
           "number": 33,
           "title": "Document assistant direction and remove stale skill references",
           "closedAt": "2026-09-07T21:50:50Z",
           "createdAt": "2026-09-07T21:37:55Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+        },
+        {
+          "number": 43,
+          "title": "Adopt the Nanoleaf Linux runtime and update architecture documentation",
+          "closedAt": "2026-09-22T05:42:00Z",
+          "createdAt": "2026-09-07T21:58:20Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
         },
         {
           "number": 49,
@@ -1050,12 +1119,20 @@
           "createdAt": "2026-09-22T01:53:34Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/137"
+        },
+        {
+          "number": 148,
+          "title": "Clarify work-guide story status and actionable delivery paths",
+          "closedAt": "2026-09-22T04:06:30Z",
+          "createdAt": "2026-09-22T03:47:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/148"
         }
       ],
-      "openIssueCount": 56,
+      "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-22T01:53:35Z"
+        "2026-09-22T05:38:42Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1065,7 +1142,7 @@
         "2026-09-12": 1,
         "2026-09-20": 2,
         "2026-09-21": 1,
-        "2026-09-22": 3
+        "2026-09-22": 9
       }
     },
     "codex-nanoleaf": {
@@ -1556,18 +1633,27 @@
           "createdAt": "2026-09-09T22:36:42Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
+        },
+        {
+          "number": 55,
+          "title": "Install and verify the Linux Nanoleaf runtime in WSL",
+          "closedAt": "2026-09-22T05:36:46Z",
+          "createdAt": "2026-09-09T22:37:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/55"
         }
       ],
       "openIssueCount": 21,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-09T22:37:08Z"
+        "2026-09-22T05:37:36Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
         "2026-09-06": 7,
         "2026-09-07": 26,
-        "2026-09-09": 4
+        "2026-09-09": 4,
+        "2026-09-22": 1
       }
     },
     "divoom-app-upgrade": {
@@ -2145,10 +2231,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
         }
       ],
-      "openIssueCount": 14,
+      "openIssueCount": 15,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-20T20:59:48Z"
+        "2026-09-22T05:37:38Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -2156,7 +2242,8 @@
         "2026-09-07": 14,
         "2026-09-08": 1,
         "2026-09-09": 1,
-        "2026-09-20": 1
+        "2026-09-20": 1,
+        "2026-09-22": 1
       }
     }
   }
