@@ -166,15 +166,15 @@
   {
    "id": "clients",
    "type": "frontend",
-   "label": "Clients",
-   "sublabel": "dashboard · MCP · desk presets",
+   "label": "BUNNY clients",
+   "sublabel": "dashboard · MCP",
    "row": 2,
    "col": 0,
    "size": [
     150,
     62
    ],
-   "tag": "planned"
+   "tag": "source delivered"
   },
   {
    "id": "routing",
@@ -360,7 +360,7 @@
    "dot": "rose",
    "title": "Command path",
    "items": [
-    "Dashboard, MCP and desk presets send explicit requests",
+    "Dashboard and MCP send requests; desk presets remain planned",
     "Registered routing sends each command to its existing owner",
     "Per-device queues: an offline device cannot stall another"
    ]

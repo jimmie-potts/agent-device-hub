@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T00:51:00.594778+00:00",
+  "fetchedAt": "2026-09-22T00:56:32.281816+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T00:49:22Z",
+      "pushedAt": "2026-09-22T00:54:33Z",
       "defaultBranch": "main",
-      "headSha": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
-      "mainCommitCount": 54,
+      "headSha": "35041f15bf4960a2460ed3004b1db918379c91d0",
+      "mainCommitCount": 55,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "35041f15bf4960a2460ed3004b1db918379c91d0",
+          "date": "2026-09-22T00:54:33Z",
+          "message": "docs: reconcile completed shared dashboard delivery (#132)"
+        },
         {
           "sha": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
           "date": "2026-09-22T00:44:48Z",
@@ -705,6 +710,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/130",
           "base": "main",
           "mergedAt": "2026-09-21T21:57:28Z"
+        },
+        {
+          "number": 132,
+          "title": "docs: record completed shared dashboard delivery",
+          "createdAt": "2026-09-22T00:52:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/132",
+          "base": "main",
+          "mergedAt": "2026-09-22T00:54:33Z"
         }
       ],
       "openPRs": [

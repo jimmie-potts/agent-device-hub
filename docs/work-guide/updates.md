@@ -1,3 +1,35 @@
+## September 21, 2026: Hub #6 source completion
+
+[PR #127](https://github.com/jimmie-potts/agent-device-hub/pull/127) merged as
+`5724f51168ff4dec7fde0aa8644bb4e809547af0`. The user approved the source UI;
+independent Standards and Specification reviews accepted the final comparison
+with no remaining P0-P2 findings. All six PR checks and all six merged-main
+checks passed before issue #6 closed. The known P3 navigation collision for
+component aliases `activity` and `connections` remains a frontend maintenance
+follow-up documented in PR #127.
+
+The delivery coordinator owns this guide companion. It refreshes the three
+backlogs and paginated histories, removes completed #6 from primary coverage
+and the remaining-work roadmap, and records the delivered BUNNY dashboard.
+The shared-system diagram now distinguishes delivered dashboard/MCP clients
+from planned desk presets. Hub source receipts pin the merged revision and
+include the dashboard README. The guide covers 94 primary open issues,
+12 guides, nine diagrams and 102 merged PRs.
+
+Generation, five maintenance tests, six-width browser checks and print checks
+passed. All nine diagram deliveries passed 9/9 artifact checks. The changed
+shared-system viewer passed Archify browser checks at all four required desktop
+sizes, with light/dark endpoint captures. Its desktop, mobile and print renders
+were inspected. The other viewers retain their documented baseline limitations.
+Guide SHA-256: `6a211405fd20b7da814e5a826161f0076d36710f7e18a49e6892e1656dcb50f6`.
+This guide-only follow-up uses the SDLC path-filter exception with local evidence
+and independent reviews; it adds no product behavior or OpenSpec capability.
+
+Personal installation, actual-client qualification and physical acceptance remain
+separate. The public guide remains the earlier
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e` edition;
+this source delivery does not authorize public publication.
+
 ## September 21, 2026: Hub #13 source completion
 
 [PR #126](https://github.com/jimmie-potts/agent-device-hub/pull/126) merged as

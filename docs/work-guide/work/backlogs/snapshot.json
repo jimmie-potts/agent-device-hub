@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-22T00:55:32.951414+00:00",
-  "refreshedAt": "2026-09-22T00:55:45.646313+00:00",
+  "startedAt": "2026-09-22T00:56:32.321874+00:00",
+  "refreshedAt": "2026-09-22T00:56:43.364613+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -68,7 +68,7 @@
         {
           "number": 6,
           "state": "CLOSED",
-          "purpose": "Completed contract/MCP baseline"
+          "purpose": "Closed guide reference"
         },
         {
           "number": 7,

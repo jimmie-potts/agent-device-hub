@@ -75,7 +75,7 @@ def refresh_repo(repo):
             baseline = normalize(api(f'{base}/issues/{number}'))
             assert baseline['state'] == 'CLOSED'
             issues.append(baseline)
-            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (8, 13, 49, 54, 80, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
+            direct.append({'number': number, 'state': baseline['state'], 'purpose': 'Closed guide reference' if number in (6, 8, 13, 49, 54, 80, 100, 103, 107) else 'Completed state baseline' if number == 3 else 'Completed contract/MCP baseline'})
     prs, pr_sizes = pages(f'{base}/pulls?state=open')
     def write(name, value):
         (DEST / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + '\n')
