@@ -56,8 +56,8 @@ npm run test:workflow
 Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
-standalone-hub-host, standalone-hub-mcp, shared-monitor-installation and
-unified-dashboard.
+standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
+unified-dashboard and standalone-monitor-qualification.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -376,3 +376,21 @@ previous release bytes. Package version changes do not change snapshot/storage 1
 ## Standalone hub MCP checks
 
 `npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
+
+## Everyday standalone qualification
+
+Hub #30 adds `npm run test:performance:standalone` for report completeness,
+negative acceptance and PID/network/mount confinement, including timeout and
+detached-child cleanup. Use Node 24 and system Python 3.12/3.14 with bubblewrap.
+The existing Ubuntu workflow job runs these checks after its namespace preflight.
+They do not benchmark timing or fetch private consumer repositories. Run the
+shared build/type, contract/lifecycle/state, MCP, hub, dashboard and workflow
+checks alongside them; the actual specification inventory also includes
+`standalone-monitor-qualification` once synchronized.
+
+The separately authorized local command is `npm run qualify:standalone --` with
+the arguments in [the qualification runbook](performance-standalone.md). It
+prepares pinned consumer sources, then measures only inside a disposable isolated
+Linux namespace. Setup/build time is excluded from runtime timings. No installed
+hook, agent client, physical device or live state is used. The report retains
+failures and is not a substitute for installed or physical acceptance.

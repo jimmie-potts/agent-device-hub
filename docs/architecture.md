@@ -347,6 +347,44 @@ Source delivery adds no installed service or device operation. Full live lifecyc
 acceptance uses #8, and each physical target keeps its own evidence and permission
 gate. Windows vendor adapters remain on the PC during later hub-host migration.
 
+## Desktop controls and desk presets
+
+[The desktop-control direction](desktop-controls.md) records accepted defaults
+and the qualification/delivery backlog in
+[#63](https://github.com/jimmie-potts/agent-device-hub/issues/63) and its linked tickets.
+The input integration and desk-preset service remain planned. The hub repository
+owns their source; physical input handling stays Windows-local beside Wispr and
+Codex. Their implementation issues select packages, runtime and installation paths.
+
+A control profile maps physical controls and gestures to actions with explicit
+application scope. A button binding is one assignment. Selecting a profile alone
+sends no device commands. A desk preset defines explicit supported actions on
+configured participating lights and displays through the existing command owners.
+
+Big A holds the qualified Wispr dictation binding and releases it to insert text;
+submission remains a separate user action. The first mouse mapping requests next
+task needing attention, command menu, previous task and next task within Codex,
+preserving ordinary behavior elsewhere. This local path does not wait for shared
+monitoring, general controls, Music or model calls. Wispr keeps its own speech
+processing and availability requirements. Preserve vendor mappings and the
+existing CHOMPI bridge; its MIDI bindings do not establish 8BitDo/profile support.
+
+Big B later requests Work → Free → Quiet → Work through the hub's preset service.
+This shared path follows the Codex-first milestone and general-control definition.
+It invokes existing authenticated app/controller services and their queues,
+preserving one writer per physical device and private controller databases.
+Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media keep their native semantics;
+desk presets introduce no common device-mode enum or silent takeover.
+
+Manual device-app changes persist until the next explicit preset request and its
+supported ownership handoff. Startup, view/profile selection and reconnect do not
+apply presets or replay input. Requested preset, per-device transport outcomes
+and fresh visible observations stay distinct, including partial/uncertain results.
+Source, installation, hardware/input, application and physical acceptance each
+need their own evidence. Music policy remains owned by
+[#40](https://github.com/jimmie-potts/agent-device-hub/issues/40); PC lighting is a
+separate optional participant with its own qualification gates.
+
 ## Alternatives and consequences
 
 Copying the Nanoleaf reducer into Pixoo would duplicate provider assumptions and

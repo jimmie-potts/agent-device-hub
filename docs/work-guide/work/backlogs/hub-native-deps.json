@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 57,
+        "totalCount": 60,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -1115,6 +1115,44 @@
           },
           {
             "number": 123,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 137,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 138,
+            "blockedBy": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "number": 137,
+                  "state": "OPEN",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/agent-device-hub"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 139,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {
