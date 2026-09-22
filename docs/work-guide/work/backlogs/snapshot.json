@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-22T00:49:42.854985+00:00",
-  "refreshedAt": "2026-09-22T00:49:53.915100+00:00",
+  "startedAt": "2026-09-22T00:55:11.056646+00:00",
+  "refreshedAt": "2026-09-22T00:55:22.827865+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -207,11 +207,11 @@
       "openIssues": 15,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        16
+        15
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
