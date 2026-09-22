@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-22T00:55:11.056646+00:00",
-  "refreshedAt": "2026-09-22T00:55:22.827865+00:00",
+  "startedAt": "2026-09-22T01:20:24.356028+00:00",
+  "refreshedAt": "2026-09-22T01:20:36.279742+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 57,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        58
+        57
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
@@ -118,10 +118,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 22,
+      "openIssues": 21,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        22
+        21
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -144,6 +144,14 @@
             3
           ],
           "commentBodiesStored": true
+        },
+        {
+          "number": 30,
+          "state": "CLOSED",
+          "commentPages": [
+            2
+          ],
+          "commentBodiesStored": false
         },
         {
           "number": 34,
@@ -290,7 +298,7 @@
       ]
     }
   },
-  "openIssues": 94,
+  "openIssues": 93,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
-  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
+  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

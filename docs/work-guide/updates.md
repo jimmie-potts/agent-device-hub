@@ -1,3 +1,21 @@
+## September 22, 2026: Pixoo #34 reduced installed scope
+
+The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo
+working/completed-task check, notice clearing/dismissal and basic Monitor/Media
+behavior. CLI/Claude qualification, migration, extended failure matrices and a
+shared-frontend trial are no longer #34 completion requirements. The issue body
+records that decision; older entries below describe the superseded scope.
+
+Source PR #65 and all five merged-main checks are complete. Installation and
+real-task/display observations remain pending. The Nanoleaf task is still
+configuring the existing shared host, so the Pixoo coordinator is preparing its
+consumer without concurrently changing that installation. No device commands
+or personal configuration writes are claimed here.
+
+This guide also preserves the separately merged Hub #30 scope revision from
+PR #133. Hub #30 closes on standalone source qualification, independently of
+live installation and physical timing. Public publication remains separate.
+
 ## September 22, 2026: Hub #30 personal-project scope revision
 
 The owner approved standalone Linux/WSL qualification for everyday Codex
@@ -1917,3 +1935,72 @@ dashboard designation because #6 is not source-delivered; no diagram flow or
 ownership claim changes at this checkpoint. Installation, physical acceptance
 and public guide publication remain separate. Validation is recorded with the
 candidate's delivery evidence.
+
+## September 21, 2026: Pixoo #34 source packaging candidate
+
+The Pixoo #34 delivery coordinator prepared shared setup package reuse,
+disposable simulator rehearsal and the operator acceptance sequence. Refreshed
+the backlog and remaining-work narrative to show source work in progress while
+retaining installation, required-client, Nanoleaf coexistence/cutover, physical
+and Hub #6 frontend gates. The issue remains open and blocked. No source merge
+or live acceptance is predicted. Architecture ownership and command flow remain
+as documented for Hub #8; no diagram redraw is needed. Public publication is
+outside this delivery. Candidate generation, maintenance and browser checks
+are recorded in the companion PR.
+
+### Source merge reconciliation
+
+Pixoo PR #65 merged as `37031be56007b6b890ec7a2098aa6e283d9d01fa` after both
+independent reviews and all five PR jobs passed. Its tree matches the reviewed
+candidate; merged-main CI is recorded separately in the delivery PR. Issue #34
+remains open for installation, required-client and physical acceptance. Hub #6
+closed during this delivery after PR #127, so its source prerequisite is now
+available; the installed frontend trial still needs authorization.
+
+Refreshed paginated repository history and issue inputs, retained Hub #6 as a
+closed reference, and removed it from remaining-work coverage and roadmap
+counts. The initial refresh correctly failed coverage until that reconciliation.
+Generation, five maintenance tests, browser/print checks and output consistency
+pass for the reconciled candidate. Architecture viewers retain their dated
+source pins and proposal labels; this status reconciliation does not redraw them
+or claim installation. Public publication remains pending separate authority.
+
+## 2026-09-21 — Nanoleaf #30 personal installation
+
+The owner replaced formal migration/rollback acceptance with a one-off Linux/WSL
+update and basic real Codex Desktop/CLI-to-light checks. A reusable updater,
+Windows/Claude qualification, the shared frontend and integrated performance
+qualification no longer gate this issue. Their separate work is not marked done.
+
+The owner ran the prepared update from an ordinary WSL terminal. The installed
+bridge matches Nanoleaf `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`;
+all three existing services restarted. Hub source
+`f6bee907e06177c6dc8abde0075d73cc391784e9` was packaged and installed,
+its monitor service started, and Nanoleaf reported shared input with a current
+feed and Work mode. All 65 installed Hub manifest entries match their hashes.
+Both exact real-client test tasks reached the shared host and Nanoleaf with
+turn-ended notices and matching identity sets, without duplicate identities.
+The Desktop retry passed after the owner trusted its new hooks. Shared selection
+survived restart of all four services. The owner reported completed tasks and
+light color changes. Quiet, Free and Work each returned confirmed transmission
+with no uncertain operations, ending in Work. No separate optical claim is made
+for each mode. The wall map returned HTTP 200 and rendered its SVG without page
+errors. The Desktop backend was 0.155.0-alpha.9.2; the GUI About build was not
+reported.
+
+The task terminal cannot access the user service manager or write a real Codex
+CLI session; the owner runs those commands in the ordinary WSL terminal.
+The native Codex CLI is 0.153.4. Source checks were reused from the delivery
+record: 231 Nanoleaf tests, 18 setup tests and isolated cross-consumer checks.
+
+Updated the shared-integration row and refreshed backlog inputs. Architecture
+contracts and diagram ownership are unchanged. Public publication and live
+public-guide verification are separate and were not performed. Local guide
+validation and the companion PR reviews are recorded with this candidate.
+
+Nanoleaf #30 is now closed with all five reduced acceptance criteria checked.
+The owner also added Pixoo with new-turn clearing and a dedicated private
+read/control credential. Saved consumers were reconciled, and authenticated
+read/control checks passed. Pixoo device acceptance remains separate.
+The refresh retains #30 as a direct closed reference without importing private
+operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
