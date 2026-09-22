@@ -18,14 +18,12 @@ keyboard focus through a submitted control after an accessibility review
 finding; that round changed no represented fact, and this entry records it.
 This entry refreshes the three backlogs at the snapshot time recorded in
 `work/backlogs/snapshot.json`. Hub #151 closed as completed after PR #160
-merged, so it leaves open coverage, its candidate card and the timeline node:
-the controls guide now carries a completed Pixoo reference row, a separate
-display-acceptance row for #154, and #151 joins the direct reference reads.
-Hub #153 is in progress with its blocked label retained until the merge order
+merged; PR #163 recorded that closure in the guide and this refresh merges it,
+keeping its completed Pixoo row and next-step text. Hub #153 is in progress with its blocked label retained until the merge order
 clears; the controls guide's Nanoleaf row and the controls-music next step name
 the merged Pixoo candidate and this open one.
-The paginated history now records PR #160's merge and #151's completed
-closure; earlier entries are unchanged. There are 92 primary open issues, 12
+The paginated history records PR #160's merge, PR #163's guide closeout and
+#151's completed closure; earlier entries are unchanged. There are 92 primary open issues, 12
 guides, nine viewers, 52 roadmap nodes and 125 merged PRs in this snapshot.
 Ownership, transports, physical writers and pinned architecture viewers are
 unchanged: the browser remains a client of the hub route and the Nanoleaf worker
@@ -37,6 +35,34 @@ every configured CI job applies and the Nanoleaf view needs explicit human UI
 approval recorded on the PR. A linked follow-up will record merge, issue closure
 and acceptance facts unavailable before merge. Public guide publication and live
 verification remain separate and were not requested.
+## September 22, 2026: Pixoo general controls closeout
+
+Hub PR #160 merged by guarded squash as `d91bee7a60953e67fdfeff06d93e275746182ba8`,
+identical to reviewed head `01332e1`. Three rounds of independent Standards and
+Specification review approved the candidate, the last with P3 dispositions only;
+all six PR jobs passed at `01332e1` and all six merged-main jobs passed
+([Checks 35783532183](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35783532183),
+[Work guide 35783532214](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35783532214)).
+The owner approved the UI candidate at `259efd8`, and Hub #151 closed as
+completed on 2026-09-22 with its seven acceptance criteria checked and the
+review label removed. Nothing is installed or operated; #154 owns the display.
+
+This follow-up refreshes the three backlogs, native dependencies and the
+paginated history at 2026-09-22T21:01Z, records #151 as a completed reference
+in the controls guide (removed from open coverage, the roadmap node and the
+parallel units), rewrites the controls next step and the overview's next
+decision, and adds #151 to the direct-read targets. The Nanoleaf view #153 is
+in progress and stays a primary open issue. There are 92 primary open issues,
+12 guides, nine viewers, 52 roadmap nodes and 125 merged PRs in this snapshot.
+Architecture diagrams, ownership, transports and physical writers are
+unchanged: the browser remains a client of the hub route.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+HTML SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception receipt,
+recorded on the PR. No product behavior or OpenSpec delta. Public guide
+publication and live verification remain separate and were not requested.
 
 ## September 22, 2026: Pixoo general controls candidate
 

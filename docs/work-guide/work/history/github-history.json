@@ -1,10 +1,10 @@
 {
-  "fetchedAt": "2026-09-22T21:10:47.724024+00:00",
+  "fetchedAt": "2026-09-22T21:01:47.579288+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T21:03:23Z",
+      "pushedAt": "2026-09-22T20:56:41Z",
       "defaultBranch": "main",
       "headSha": "d91bee7a60953e67fdfeff06d93e275746182ba8",
       "mainCommitCount": 73,
@@ -967,13 +967,6 @@
           "title": "Add Nanoleaf general controls to the BUNNY component view",
           "createdAt": "2026-09-22T16:22:37Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
-          "base": "main"
-        },
-        {
-          "number": 163,
-          "title": "Record the completed Pixoo general controls in the guide",
-          "createdAt": "2026-09-22T21:03:25Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/163",
           "base": "main"
         }
       ],
