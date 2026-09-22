@@ -1,3 +1,19 @@
+## September 22, 2026: Pixoo installed monitoring acceptance
+
+The owner installed Hub 0.2.0 / agent-state 2.0.0 from source `013b829` while
+retaining the shared owner and private store. The actual Desktop/Ubuntu WSL
+sequence passed active, idle, next active and automatic Pixoo notice clearing.
+The owner confirmed both readable rows and the amber T on the physical Pixoo.
+Explicit notice dismissal and active-playback Monitor/Media pause/resume checks
+passed. Monitor is the selected final mode. Precise optical timing, firmware
+variants and multi-client coverage are not claimed.
+
+Pixoo PR #66 records the dated evidence and restart/disconnection instructions.
+Issue #34 remains open until that documentation and its checks are delivered.
+The guide coordinator owns this companion; public publication remains separate.
+The best-effort status policy can still misselect an unseen delayed start.
+Task reset and reliable history remain separate features.
+
 ## September 22, 2026: Hub #9 source delivery closeout
 
 PR #136 merged as `4f90164519167da3d7952d81a7a6211602ef28d5`, with the
