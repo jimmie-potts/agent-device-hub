@@ -75,7 +75,7 @@
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability
 #148 [CLOSED] Clarify work-guide story status and actionable delivery paths
-#151 [OPEN] Add Pixoo general controls to the BUNNY component view
+#151 [CLOSED] Add Pixoo general controls to the BUNNY component view
 #152 [OPEN] Add media tools to the hub MCP device tool set
 #153 [OPEN] Add Nanoleaf general controls to the BUNNY component view
 #154 [OPEN] Install and verify Pixoo general controls on the physical display
