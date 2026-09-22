@@ -1,10 +1,31 @@
+## September 22, 2026 UTC: Hub #64 authorized N30 observations
+
+The owner reports that the keyboard and mouse now work and the large A/B
+accessory is attached. An explicitly authorized focused browser check observed
+N30 Up as `PageUp`, Down as `PageDown`, Left as mouse button `3` and Right as
+mouse button `4`. Left/Right appeared in a separate Windows browser after
+producing no allowed events in Codex's preview. The report preserves both
+observations, operator attribution, the 20-event cutoffs and the unknown
+interception mechanism. Receiver identity, controlled holds and application
+acceptance remain unresolved. #64 stays incomplete and #65 remains blocked.
+
+Updated the qualification report, desktop-controls reference and guide
+qualification/recommendation text. The current architecture's ownership and
+command flow do not change, so this observation update does not alter the
+diagram artifacts. Guide generation and browser validation for this update
+remain pending. The prior candidate's six hosted jobs and Standards review
+passed; its Specification review withheld approval for missing route evidence.
+Those receipts do not approve this subsequent evidence update. No mapping,
+adapter installation, microphone use or public publication occurred.
+
 ## September 22, 2026 UTC: Hub #64 source qualification candidate
 
 The owner supplied packaging photos identifying the N Edition keyboard 85HA
 and N30 mouse 85CA. The qualification report corrects the R8 assumption,
-records documented controls and unknown event behavior, and prepares a
+records documented controls and initially unknown event behavior, and prepares a
 reversible operator trial. #64 remains incomplete; #65 is not made ready.
-No input experiment, personal setup or device operation ran.
+At that initial source stage, no input experiment, personal setup or device
+operation had run. The later authorized N30 observations are recorded above.
 
 Updated the desktop-controls guide and desktop-input diagram wording. The
 complete backlog refresh also includes the newly published Hub #137-#139 in

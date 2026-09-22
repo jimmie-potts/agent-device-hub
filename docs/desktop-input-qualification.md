@@ -7,15 +7,17 @@ The source investigation identifies supported interfaces and a bounded trial
 plan for the [accepted desktop controls](desktop-controls.md).
 **No physical control has qualified for implementation yet.** Owner photographs
 identify the N Edition keyboard, model 85HA, and mouse model 85CA. The latter
-matches the N30, not the earlier R8 candidate. Event identities and genuine held
-output remain unknown. This report does not complete #64 or make
+matches the N30, not the earlier R8 candidate. An authorized browser check now
+associates its four D-pad directions with distinct events. Receiver identities,
+genuine keyboard held output and the complete mapping route remain unknown.
+This report does not complete #64 or make
 [Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) ready.
 
-The owner expects to use 2.4 GHz receivers and reports that both devices support
-that connection. Neither device has been used yet. Treat this as an intended
-connection, not an observed active connection. The photos show packaging; they
-do not prove firmware, a connected device, or an input test. Private photos stay
-outside Git.
+The owner selected 2.4 GHz receivers and subsequently reported that both devices
+are connected and working. The large A/B accessory is plugged into the keyboard.
+These are owner reports of basic operation and attachment; no receiver inventory
+independently verifies the active transport. The photos identify packaging and
+do not establish firmware. Private photos stay outside Git.
 
 ## Evidence and inventory
 
@@ -25,27 +27,67 @@ are independent. A supported result under `D` never implies an `L` pass.
 
 | Item | Evidence on the collection date | Remaining qualification |
 | --- | --- | --- |
-| Keyboard and Dual Super Buttons | O: packaging photo reads Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons | Attachment port, firmware, receiver identity and current mode |
-| Mouse | O: packaging photo reads 85CA, 2.4G, 1000 DPI and AA battery; its design matches the official N30 product/manual | Receiver identity, firmware and actual event outputs |
+| Keyboard and Dual Super Buttons | O: packaging identifies Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons; owner reports working keyboard and connected accessory | Exact attachment port, firmware, receiver identity, active mode and Big A/B outputs |
+| Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver identity, firmware, raw Windows events and controlled hold behavior |
 | USB/HID identities | No inventory result | Record VID/PID, interface/usage and connection under operator supervision; omit serials and instance paths from shared evidence |
 | Ultimate Software V2 | D: keyboard support is documented; N30 custom mapping support is not established | Keyboard software version, exposed controls and profile persistence; do not apply R8 capabilities to N30 |
 | Wispr | S: local application directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Running version, active shortcut, conflicts and insertion behavior; directory names do not identify the active installation |
 | Codex | D: current Windows defaults below | Installed version, customized bindings, package identity and foreground behavior |
 | CHOMPI bridge | S: local C# source inspected; no Git commit exists in that checkout | Installed binary revision and coexistence; no bridge was launched or changed |
-| Live input/application results | L: none | All operator trials below remain unexecuted |
+| Live input/application results | L via O: authorized focused N30 browser observations; no app action or Wispr trial | Receiver-attributed events, held output, application results and recovery |
 
 The WSL-to-Windows inventory failed with `UtilBindVsockAnyPort:307` both in the
 normal context and after an approved sandbox escalation. The native Node tool
 also failed before execution because of `sandboxCwd`. The mounted Windows app
 package directory denied access. These are inventory gaps, not evidence that
-hardware or software is absent. No input listeners, keystroke injection,
-dictation, vendor writes, service changes or device operations ran.
+hardware or software is absent. The later N30 check used only focused browser
+listeners. No system-wide listener, injected keystrokes, dictation, vendor
+configuration writes or service changes ran.
+
+## Authorized N30 browser observations
+
+The owner authorized the prepared local page with "Run the N30 input check".
+It observes allowlisted navigation/modifier keys, mouse-button numbers and wheel
+direction only while armed and focused. Each direction has a 15-second deadline
+and a 20-event cap. It changes no mappings, has no microphone or network access,
+and retains results only in page memory until the owner copies them.
+
+The owner first ran the check inside Codex and confirmed that the pointer stayed
+inside the observation box for Left and Right. After those directions produced
+no allowed events, the owner supplied the requested repeat from a separate
+Windows browser. Its name and version were not supplied.
+
+| Physical direction | Codex preview observation | Separate Windows browser observation | Finding and limit |
+| --- | --- | --- | --- |
+| Up | `PageUp`: 10 initial downs, one repeated down and 9 ups; 20-event cap | Not repeated | A PageUp down/up path and a repeat were observed. Recording ended on a down, so its missing corresponding up does not establish a stuck control. |
+| Down | `PageDown`: 10 down/up pairs; 20-event cap | Not repeated | PageDown down/up observed; no controlled hold trial. |
+| Left | No allowed event in 15 seconds | Mouse button `3`: 10 down/up pairs; 20-event cap | Distinct browser button events observed outside the preview. |
+| Right | No allowed event in 15 seconds | Mouse button `4`: 10 down/up pairs; 20-event cap | Distinct browser button events observed outside the preview. |
+
+The repeated taps reached the recorder's limit, so retain its incomplete status.
+They establish event presence without qualifying a timed hold or recovery. The
+preview and separate-browser difference does not identify the interception
+mechanism. Missing preview events are not an unsupported-control finding.
+
+Physical direction and device attribution come from the operator. Browser events
+do not establish VID/PID, receiver identity, Windows raw codes, selective
+suppression or Codex action dispatch. The observer cannot distinguish the N30's
+PageUp/PageDown from those keys on another keyboard. Separate local Chromium
+checks exercised its focus, privacy, timeout and event-cap behavior with simulated
+inputs; those checks are not physical acceptance.
+
+Observer SHA-256:
+`abde4df3317554401224df2a22d1c61179e58e0d1c98f8ab6905b2e7504d92df`.
+The temporary page and raw owner traces remain outside Git. The
+[issue receipt](https://github.com/jimmie-potts/agent-device-hub/issues/64#issuecomment-5770483024)
+records the dated result and remaining qualification.
 
 ## Capability matrix
 
 `Supported` and `Unsupported` below apply only to the cited product family or
-API. `Unknown` means the source does not establish that cell. All installed
-acceptance results remain unknown, including rows with documented support.
+API. `Unknown` means the available evidence does not establish that cell.
+The browser observations above are partial input evidence; no complete
+installed input/application route has qualified.
 
 | Capability | USB cable | 2.4 GHz receiver | Bluetooth | Source and limit |
 | --- | --- | --- | --- | --- |
@@ -81,10 +123,10 @@ nor the product page establishes N30 vendor custom profiles. [N30 manual][mouse-
 | Pair button | Reassignment unknown | Unknown | Unknown | Unknown | Preserve pairing function |
 | Fast-mapping button | Setup/cancellation D; reassignment unknown | Unknown | Unknown | Unknown | Preserve configuration function |
 | Profile button | Configuration function; reassignment unknown | Unknown | Unknown | Unknown | Vendor profile is not a hub desk preset |
-| N30 D-pad D | Page Up D; custom mapping unknown | Unsupported transport | Unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Up |
-| N30 D-pad E | Back D; custom mapping unknown | Unsupported transport | Unknown | Unsupported transport | Candidate trigger; suppress original navigation only in Codex |
-| N30 D-pad F | Page Down D; custom mapping unknown | Unsupported transport | Unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Down |
-| N30 D-pad G | Forward D; custom mapping unknown | Unsupported transport | Unknown | Unsupported transport | Candidate trigger; preserve original action outside Codex |
+| N30 D-pad D | Page Up D; custom mapping unknown | Unsupported transport | L via O: browser `PageUp` down/up and one repeat; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Up |
+| N30 D-pad E | Back D; custom mapping unknown | Unsupported transport | L via O: browser button `3` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; suppress original navigation only in Codex |
+| N30 D-pad F | Page Down D; custom mapping unknown | Unsupported transport | L via O: browser `PageDown` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Down |
+| N30 D-pad G | Forward D; custom mapping unknown | Unsupported transport | L via O: browser button `4` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; preserve original action outside Codex |
 | N30 A/B | Ordinary left/right click D | Unsupported transport | Unknown | Unsupported transport | Preserve clicks; these are not the keyboard's Big A/B |
 | N30 C | Touch scrolling D | Unsupported transport | Unknown | Unsupported transport | Preserve scrolling; no middle-click claim |
 | N30 power control | Power function D; reassignment unknown | Unsupported transport | Unknown | Unsupported transport | Preserve power function |
@@ -94,10 +136,10 @@ inputs; an attached button is not assumed to enumerate as a separate USB
 keyboard. [Keyboard FAQ][keyboard-faq]
 
 Windows `RAWMOUSE` defines left, right, middle, `XBUTTON1` and `XBUTTON2`
-transitions. This does not tell us whether the N30's D-pad emits mouse buttons,
-keyboard Page Up/Down, or another documented input. Capture only its selected
-controls before selecting a parser. Do not infer raw codes from the manual's
-application-action names. [Microsoft RAWMOUSE][rawmouse]
+transitions. The observed browser key codes and button numbers do not establish
+those native events or their device identity. Capture only the selected controls
+before selecting a native parser. Do not infer raw codes from the manual's
+application-action names or browser button numbers. [Microsoft RAWMOUSE][rawmouse]
 
 ## Application bindings and ownership
 
@@ -146,7 +188,7 @@ qualified and AC2 remains open.
 | --- | --- | --- |
 | Keyboard fast mapping directly to Wispr | Selected first trial, using the existing modifier chord without a macro | Genuine chord hold/release, conflicts, persistence and rollback |
 | N30 vendor mapping alone | No supported custom four-action mapping route established by current sources | A model-specific supported interface would be needed; R8 software evidence does not qualify N30 |
-| N30 existing outputs plus a small Windows adapter | Selected mouse investigation route for Codex focus and repeat policy | Actual D/E/F/G events, suppression of original actions only within Codex, pass-through elsewhere, recovery and coexistence |
+| N30 existing outputs plus a small Windows adapter | Selected mouse investigation route; four distinct browser outputs observed | Receiver-attributed native events, suppression of original actions only within Codex, pass-through elsewhere, controlled hold/repeat, recovery and coexistence |
 | CHOMPI bridge unchanged | Source approach is useful; current MIDI bindings do not handle 8BitDo | Separate input ownership and acceptance; do not migrate or add bindings to the bridge in this issue |
 | Firmware replacement, custom USB protocol or a new driver | Outside accepted scope | No implementation or experiment proposed |
 
@@ -180,7 +222,13 @@ receipts separate from observed Codex/Wispr results; an unknown focus or failed
 release must stop dispatch. Do not elevate an input adapter to bypass those
 limits. [Microsoft SendInput][sendinput]
 
-## Reversible operator trial, not yet authorized or run
+## Remaining reversible operator trial
+
+Only the focused N30 browser observation above has live-trial authorization and
+results. The sequence below remains a plan except for owner-reported connection,
+accessory attachment and the initial N30 event observations. Keyboard mapping,
+Wispr dictation, app dispatch and recovery experiments need their own concrete,
+bounded authorization before operation.
 
 The local-controls owner operates the devices and observes application results.
 The exact hardware, input observer and trial scope must be identified before
@@ -241,9 +289,9 @@ restoration. Documentation work is ready; live qualification is pending.
 
 | Criterion | Evidence prepared | Remaining completion condition |
 | --- | --- | --- |
-| AC1 | Sourced control/connection matrix, explicit unsupported and unknown cells | Exact installed inventory and applicable per-control observations |
+| AC1 | Sourced control/connection matrix, owner-reported connection and four distinct browser outputs; unsupported and unknown cells retained | Exact installed inventory and remaining applicable per-control observations |
 | AC2 | Compared routes, selected next trial, ownership boundary and reversible sequence | A supported route for the actual controls; settle mapping persistence and focus/hold behavior |
-| AC3 | D/S/O/L separation and dated observations; no live pass claimed | Add authorized event/application and restoration receipts if trials run |
+| AC3 | D/S/O/L separation and dated owner-supplied N30 observations, including recording and context limits; no complete route pass claimed | Add remaining authorized event/application and restoration receipts as trials run |
 | AC4 | Gaps below identify owners and dependent gates | Review the final positive or negative qualification without enabling unsupported controls |
 
 The #64 coordinator owns physical-to-packaging verification, per-control evidence, final

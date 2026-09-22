@@ -91,8 +91,9 @@ belong in #67's issue-linked specification.
 The official references below were checked on September 22, 2026. They describe
 published capabilities. The owner's packaging photos identify the N Edition
 keyboard 85HA and N30 mouse 85CA. The [qualification report](desktop-input-qualification.md)
-records those observations, the per-control matrix and the remaining input and
-application trials. Connected identities and installed settings remain unverified.
+records those observations, owner-reported basic operation, the N30's four
+distinct browser outputs and the remaining input and application trials.
+Connected receiver identities and installed settings remain unverified.
 
 | Source | Published fact | Still unverified here |
 | --- | --- | --- |
