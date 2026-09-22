@@ -5,7 +5,7 @@
 #6 [CLOSED] Build the shared Codex-integration frontend
 #7 [CLOSED] Provide reusable local MCP transport and device tools
 #8 [CLOSED] Package reversible shared hooks and collector ownership migration
-#9 [OPEN] Verify shared status and command routing across both device integrations
+#9 [CLOSED] Verify shared status and command routing across both device integrations
 #10 [OPEN] Publish shared OpenSpec validation tooling
 #11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
 #13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
