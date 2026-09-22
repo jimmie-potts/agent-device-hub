@@ -183,5 +183,15 @@
     "error": null,
     "problems": [],
     "sha256": "69a7c73e282e171006c3b84fcc459e7462bbfe5db234ec52653a3044ac2d90be"
+  },
+  {
+    "attempt": "gh30-qualified-4",
+    "qualified": true,
+    "hubRevision": "d9f5e7e1129f048f8caee046f8f6644e043ec6e2",
+    "smoke": false,
+    "cleanup": true,
+    "error": null,
+    "problems": [],
+    "sha256": "5d89f8c18d5173d962a7b0d8a2ee3ee564cba9af0ba70e1fa1a6de86446c7c4d"
   }
 ]

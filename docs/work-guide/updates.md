@@ -1,10 +1,10 @@
 ## 2026-09-22 — Hub #30 standalone qualification candidate
 
 The source command now has a retained passing run at Hub
-`e7136a9c6cb73a059c71afea06d870477c98a5aa`: 400 warmed events,
-487 hooks overall, hook p95 56/87 ms for one/ten tasks, each consumer receipt
-p95 below one second and 153 MiB peak Hub RSS. All scenarios and cleanup passed.
-The receipt preserves eight non-qualifying development attempts and all three
+`d9f5e7e1129f048f8caee046f8f6644e043ec6e2`: 400 warmed events,
+487 hooks overall, hook p95 58/78 ms for one/ten tasks, each consumer receipt
+p95 below one second and 151 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves eight non-qualifying development attempts and all four
 full runs. Review required confined preparation and positive reconnect evidence;
 the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
 
