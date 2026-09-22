@@ -5,20 +5,12 @@ standalone Linux/WSL combination with synthetic input, the real dashboard and
 owning consumers. The command and preparation steps are in
 [development.md](development.md#bounded-cross-device-compatibility).
 
-## Tested combination
-
-| Input | Revision or version |
-| --- | --- |
-| Hub product source | `25590e9c95ce334a516d2de0494584d67ea15a26`; this candidate adds verification tooling only |
-| Pixoo | `28f4875b7a0f0e57ca6f25d9971e125e927a5503` |
-| Nanoleaf shared feed and settings | `f12ac6653a9f3267fa9ef62a2d6667072183d8b3` |
-| Runtime | Node 24.21.0, system Python 3.14.4; Playwright Chromium |
-| Wire contracts | Lifecycle/state and controller API `1.0`; `nanoleaf.integration/1.0`; `pixoo-integration/1.0` |
-
-The JSON receipt records package versions, the verified owning-source file lists,
-Hub revision and verification-script hashes. No older-version compatibility is
-claimed. The Nanoleaf pin combines shared-input and settings code in one source
-archive; its shared-input module has the same SHA-256 as the existing #8/#30 pin.
+The tested product source is Hub `25590e9c95ce334a516d2de0494584d67ea15a26`,
+Pixoo `28f4875b7a0f0e57ca6f25d9971e125e927a5503` and Nanoleaf
+`f12ac6653a9f3267fa9ef62a2d6667072183d8b3`. The runner rebuilds Hub and Pixoo
+from the prepared source before importing them. Nanoleaf's shared-input module
+has the same SHA-256 as the existing #8/#30 pin; this newer archive also includes
+the settings API. No older-version compatibility is claimed.
 
 ## Source results
 
@@ -29,6 +21,9 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 
 | Scenario | Observed result |
 | --- | --- |
+| Source combination | Hub `25590e9`, Pixoo `28f4875`, Nanoleaf `f12ac66`; full source IDs above and verified files in the JSON receipt |
+| Runtime and packages | Node 24.21.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts, agent-state and device-mcp `1.0.0`; hub `0.1.0` |
+| APIs | Lifecycle/state and controller `1.0`, `nanoleaf.integration/1.0`, `pixoo-integration/1.0` |
 | Empty state | No sessions in the hub, dashboard or either consumer |
 | Two Codex sessions in one project | Distinct identities and matching activity |
 | Continuing question and blocked approval | Matching attention, with both meanings visible in the dashboard |
@@ -41,22 +36,18 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 | Disconnected Pixoo | Nanoleaf continues receiving current state; dashboard reports unavailable controller health |
 | Pixoo reconnect | Current state returns without automatically reactivating presentation |
 | Standalone restart | Labels/notices survive; stale evidence stays uncertain; recovered snapshots do not replay celebrations or restart effect epochs |
+| Reused migration/setup checks | [Shared consumer check](../scripts/check-hub-shared-consumers.mjs), [migration tests](../apps/hub/tests/migration.test.mjs), [setup tests](../apps/hub/tests/setup.test.mjs) |
+| Reused protocol/provider checks | [Host MCP](../apps/hub/tests/mcp.test.mjs), [core semantics](../packages/agent-state/tests/core.test.mjs), [TypeScript/Python contract commands](development.md#controller-contract-checks) |
+| Reused frontend checks | [Browser scenarios](../apps/dashboard/tests/browser.mjs), [browser matrix](../apps/dashboard/tests/matrix.mjs) |
+| Performance input | [#30 report in PR #135](https://github.com/jimmie-potts/agent-device-hub/pull/135), pending source delivery |
+| Installed-client and physical evidence | Not performed by this suite; retain separately owned receipts linked by #9 |
 
 The runner closes its owned browser and services and removes disposable state.
 Its receipt records cleanup separately and fails if cleanup fails. It refuses to
 overwrite an earlier report.
 
-## Existing evidence reused
-
-- [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8):
-  `scripts/check-hub-shared-consumers.mjs`, `apps/hub/tests/migration.test.mjs`
-  and setup tests own detailed handoff, rollback and credential behavior.
-- [#13](https://github.com/jimmie-potts/agent-device-hub/issues/13):
-  `apps/hub/tests/mcp.test.mjs` owns protocol, concurrency, replay and failure cases.
-- `packages/agent-state/tests/core.test.mjs` and the shared TypeScript/Python
-  corpora own detailed provider, ordering, notice and freshness semantics.
-- `apps/dashboard/tests/browser.mjs` and `matrix.mjs` own the broader interface,
-  concurrent-edit, reconnect and accessibility checks.
+Reused coverage is linked to [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8)
+and [#13](https://github.com/jimmie-potts/agent-device-hub/issues/13).
 
 ## Performance and delivery limits
 
@@ -94,3 +85,10 @@ The final committed-candidate receipt and review/CI results belong in the PR.
 These are verification-tool corrections; no product behavior or acceptance target
 was relaxed. Since this adds checks for existing behavior, no production-code
 red/green change or new product specification is claimed.
+
+Independent candidate review identified missing preflight receipts, stale build
+provenance and a Pixoo shutdown timeout that could leave an owned process alive.
+Focused negative checks demonstrated the missing receipt and verify forced exit
+and reaping of an unresponsive fixture. The runner now records preflight failure,
+rebuilds before imports and supervises its own Pixoo process. These changes do not
+alter device/runtime behavior or qualify production recovery.

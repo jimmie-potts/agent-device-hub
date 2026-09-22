@@ -376,7 +376,8 @@ Run from the Hub worktree:
 node scripts/check-hub-compatibility.mjs /absolute/pixoo-source /absolute/nanoleaf-source /tmp/new-compatibility-report.json
 ```
 
-The report path must be new. The runner verifies the listed owning-source hashes,
+The report path must be new. The runner records preflight failures, verifies the listed owning-source hashes,
+and rebuilds Hub/Pixoo before importing their build output. It
 starts disposable local services with fake physical boundaries, and drives the
 real dashboard and MCP. It tests shared lifecycle semantics, labels, monitor
 acknowledgment, native settings/modes, duplicate/late events, one disconnected
@@ -387,7 +388,8 @@ This local cross-repository check needs explicit prepared private sources; ordin
 CI retains its existing component, contract, browser and package tests without
 adding private repository credentials. Run `npm run typecheck`,
 `npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
-`npm run check:workflow` and `npm run test:workflow` alongside the source check.
+`npm run check:workflow`, `npm run test:workflow` and
+`node --test tests/compatibility_process.test.mjs` alongside the source check.
 No product code or contract changes are intended. The #30 performance report is
 a separate required completion input. Source compatibility does not install
 hooks, start an actual agent client or establish visible-device behavior.

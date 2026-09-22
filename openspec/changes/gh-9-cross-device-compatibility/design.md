@@ -9,9 +9,9 @@ Test one standalone configuration using synthetic Codex and Claude lifecycle met
 ## Decisions
 
 - Keep this as verification tooling with `skip_specs: true`. A design is warranted by cross-process setup, cleanup and consumer recovery, although product requirements are unchanged.
-- Run the standalone host against a new temporary store. Prepare exact pinned source archives in separate temporary directories; build Pixoo there. Use simulator transport and the existing Nanoleaf disposable owning-service fixture, suppressing physical worker launch.
+- Run the standalone host against a new temporary store. Prepare exact pinned source archives in separate temporary directories; rebuild Hub and Pixoo before importing their build output. Record source cleanliness and script hashes. Use simulator transport and the existing Nanoleaf disposable owning-service fixture, suppressing physical worker launch.
 - Observe lifecycle state through both owning consumers and the dashboard. Assert identity, attention/notices and read-evidence semantics. Exercise both interface routes against the actual owning command handlers.
-- Use bounded waits for asynchronous consumer/browser updates. Always close owned processes and temporary state. Record failed execution instead of replacing it with a success result.
+- Use bounded waits for asynchronous consumer/browser updates. Reserve the report before preflight. Supervise owned child handles, terminate an unresponsive process group and await exit before deleting temporary state. Record failed execution instead of replacing it with a success result.
 - Reuse component tests for exhaustive edge cases. Require a small shared scenario set for duplicates, late events, one disconnected consumer and restart. Reference migration/MCP suites by source path.
 - #30 is a required report input for final acceptance, not an input to these independent checks. Do not archive, merge or close #9 without the required acceptance evidence.
 

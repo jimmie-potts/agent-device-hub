@@ -9,8 +9,7 @@ import {createInterface} from 'node:readline';
 import {createServer} from 'node:net';
 import {pathToFileURL} from 'node:url';
 import {chromium} from 'playwright';
-import {startHub} from '../apps/hub/dist/server.js';
-import {launchOwner, stopOwner} from '../apps/hub/dist/migration.js';
+import {ownedChild} from './compatibility-process.mjs';
 
 const [pixooSource, nanoSource, output] = process.argv.slice(2);
 for (const path of [pixooSource, nanoSource, output]) {
@@ -18,33 +17,15 @@ for (const path of [pixooSource, nanoSource, output]) {
 }
 const hash = value => createHash('sha256').update(value).digest('hex');
 const pins = {};
-for (const [name, source, file] of [
-  ['pixoo', pixooSource, 'pixoo-source.json'],
-  ['nanoleaf', nanoSource, 'compatibility-nanoleaf-source.json'],
-]) {
-  const pin = JSON.parse(await readFile(new URL('../apps/hub/fixtures/' + file, import.meta.url)));
-  for (const [path, expected] of Object.entries(pin.sourceFiles)) {
-    assert.equal(hash(await readFile(join(source, path))), expected, name + ' source mismatch: ' + path);
-  }
-  pins[name] = {revision: pin.revision, verifiedFiles: Object.keys(pin.sourceFiles)};
-}
-// Refuse to replace a prior attempt, including failed evidence.
-await writeFile(output, JSON.stringify({status: 'running', pins}), {flag: 'wx', mode: 0o600});
-const root = await mkdtemp(join(tmpdir(), 'hub-compatibility-'));
+// Reserve the report before preflight; never overwrite an earlier attempt.
+await writeFile(output, JSON.stringify({status: 'running'}), {flag: 'wx', mode: 0o600});
+let root;
 const token = 'h'.repeat(43);
 const headers = {authorization: 'Bearer ' + token, 'content-type': 'application/json', 'x-pixoo-request': '1'};
 const scenarios = [];
 let hub, pixoo, browser, nano, lines, nanoExit;
-let stage = 'setup';
-let report = {pins, startedAt: new Date().toISOString(), hubRevision: execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim(),
-  runnerSha256: hash(await readFile(new URL(import.meta.url))),
-  nanoleafFixtureSha256: hash(await readFile(new URL('./compatibility-nanoleaf.py', import.meta.url))),
-  node: process.version, physical: false, installedClients: false};
-report.packages = {};
-for (const path of ['packages/contracts', 'packages/lifecycle-contracts', 'packages/agent-state', 'packages/mcp', 'apps/hub']) {
-  const manifest = JSON.parse(await readFile(new URL('../' + path + '/package.json', import.meta.url)));
-  report.packages[manifest.name] = manifest.version;
-}
+let stage = 'preflight';
+let report = {pins, startedAt: new Date().toISOString(), physical: false, installedClients: false};
 const delay = ms => new Promise(r => setTimeout(r, ms));
 async function bounded(promise, label, ms = 8000) {
   let timer;
@@ -72,6 +53,40 @@ async function until(check, label) {
   throw new Error(label + ' timeout');
 }
 try {
+  for (const [name, source, file] of [
+    ['pixoo', pixooSource, 'pixoo-source.json'],
+    ['nanoleaf', nanoSource, 'compatibility-nanoleaf-source.json'],
+  ]) {
+    const pin = JSON.parse(await readFile(new URL('../apps/hub/fixtures/' + file, import.meta.url)));
+    for (const [path, expected] of Object.entries(pin.sourceFiles)) {
+      assert.equal(hash(await readFile(join(source, path))), expected, name + ' source mismatch: ' + path);
+    }
+    pins[name] = {revision: pin.revision, verifiedFiles: Object.keys(pin.sourceFiles)};
+  }
+  report = {...report,pins, hubRevision: execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim(),
+    hubSourceClean: execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], {encoding: 'utf8'}).trim() === '',
+    runnerSha256: hash(await readFile(new URL(import.meta.url))),
+    processHelperSha256: hash(await readFile(new URL('./compatibility-process.mjs', import.meta.url))),
+    nanoleafFixtureSha256: hash(await readFile(new URL('./compatibility-nanoleaf.py', import.meta.url))),
+    node: process.version, physical: false, installedClients: false};
+  report.packages = {};
+  for (const path of ['packages/contracts', 'packages/lifecycle-contracts', 'packages/agent-state', 'packages/mcp', 'apps/hub']) {
+    const manifest = JSON.parse(await readFile(new URL('../' + path + '/package.json', import.meta.url)));
+    report.packages[manifest.name] = manifest.version;
+  }
+  root = await mkdtemp(join(tmpdir(), 'hub-compatibility-'));
+  stage = 'build';
+  async function build(directory) {
+    const buildProcess = ownedChild('npm', ['run', 'build'], {cwd: directory, env: process.env, stdio: ['ignore', 'pipe', 'pipe']});
+    let diagnostics = '';
+    for (const stream of [buildProcess.child.stdout, buildProcess.child.stderr]) stream.on('data', value => {diagnostics = (diagnostics + value).slice(-8000);});
+    try {const [code] = await bounded(buildProcess.exited, 'source build', 120000);assert.equal(code, 0, diagnostics);}
+    finally {await buildProcess.stop();}
+  }
+  await build(new URL('../', import.meta.url).pathname);
+  await build(pixooSource);
+  const {startHub} = await import('../apps/hub/dist/server.js');
+  stage = 'setup';
   nano = spawn('/usr/bin/python3', ['-B', new URL('./compatibility-nanoleaf.py', import.meta.url).pathname, nanoSource],
     {env: {PATH: '/usr/bin:/bin', TMPDIR: root}, stdio: ['pipe', 'pipe', 'pipe']});
   let diagnostics = '';
@@ -101,8 +116,22 @@ try {
   hub = await startHub(options);
   options.port = Number(new URL(hub.url).port);
   await writeFile(join(local, 'agent-monitor/config.json'), JSON.stringify({version: 1, mode: 'remote', ownerId: 'compatibility', endpoint: hub.url + '/api/monitor/v1', token}), {mode: 0o600});
-  pixoo = await launchOwner({kind: 'pixoo', entrypoint: join(pixooSource, 'apps/server/dist/main.js'), args: [], token: monitorToken,
-    environment: {PIXOO_MODE: 'simulator', PIXOO_DATA_DIR: local, PIXOO_PORT: String(pixooPort), PIXOO_MONITOR_ENABLED: '1', PIXOO_CONTROLLER_ENABLED: '1'}});
+  async function launchPixoo() {
+    const owner = ownedChild(process.execPath, [join(pixooSource, 'apps/server/dist/main.js')], {
+      env: {PIXOO_MODE: 'simulator', PIXOO_DATA_DIR: local, PIXOO_PORT: String(pixooPort), PIXOO_MONITOR_ENABLED: '1', PIXOO_CONTROLLER_ENABLED: '1'},
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    owner.child.stderr.resume();
+    const input = createInterface({input: owner.child.stdout});
+    const ready = new Promise(resolveReady => input.on('line', line => {
+      if (line === `Pixoo simulator listening on http://127.0.0.1:${pixooPort}`) resolveReady();
+    }));
+    try {
+      await bounded(Promise.race([ready, owner.exited.then(() => {throw new Error('Pixoo exited before readiness');})]), 'Pixoo readiness');
+      return {...owner, url: `http://127.0.0.1:${pixooPort}`};
+    } catch (error) {await owner.stop();throw error;}
+  }
+  pixoo = await launchPixoo();
   await nanoCall('configure', {endpoint: hub.url + '/api/monitor/v1', token});
   browser = await chromium.launch({headless: true});
   const page = await browser.newPage();
@@ -212,14 +241,13 @@ try {
   await page.getByRole('button', {name: 'Connect', exact: true}).click();
   await page.getByRole('button', {name: /^Activity /}).click();
   stage = 'disconnected consumer';
-  await stopOwner(pixoo); pixoo = undefined;
+  await pixoo.stop(); pixoo = undefined;
   await send(envelope('activity.observed', {turn: {status: 'known', id: 'turn-two'}}));
   const revision = (await view()).snapshot.revision;
   await until(async () => (await nanoCall('poll')).revision === revision, 'healthy Nanoleaf consumer');
   await until(async () => (await request(hub.url, '/api/dashboard/v1/context')).components.find(c => c.id === 'pixel').health === 'unavailable', 'offline controller health');
   scenarios.push({name: stage, outcome: 'passed'});
-  pixoo = await launchOwner({kind: 'pixoo', entrypoint: join(pixooSource, 'apps/server/dist/main.js'), args: [], token: monitorToken,
-    environment: {PIXOO_MODE: 'simulator', PIXOO_DATA_DIR: local, PIXOO_PORT: String(pixooPort), PIXOO_MONITOR_ENABLED: '1', PIXOO_CONTROLLER_ENABLED: '1'}});
+  pixoo = await launchPixoo();
   await compatible('consumer reconnect');
   assert.equal((await request(pixoo.url, '/api/integration/v1/view', pixooHeaders)).integration.participating, false,
     'Pixoo reconnect must not reactivate presentation');
@@ -245,7 +273,7 @@ try {
   process.exitCode = 1;
 } finally {
   const cleanup = await Promise.allSettled([
-    browser?.close(), hub?.close(), pixoo ? stopOwner(pixoo) : undefined,
+    browser?.close(), hub?.close(), pixoo?.stop(),
     (async () => {
       if (!nano) return;
       if (nano.exitCode === null) {
@@ -255,7 +283,7 @@ try {
       } else assert.equal(nano.exitCode, 0);
     })(),
   ]);
-  await rm(root, {recursive: true, force: true});
+  if (root) await rm(root, {recursive: true, force: true});
   report.cleanup = cleanup.every(result => result.status === 'fulfilled');
   if (!report.cleanup) {report.status = 'failed';process.exitCode = 1;}
   await writeFile(output, JSON.stringify(report, null, 2) + '\n', {mode: 0o600});
