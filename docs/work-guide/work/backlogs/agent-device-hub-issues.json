@@ -2046,24 +2046,21 @@
   },
   {
     "number": 148,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Clarify work-guide story status and actionable delivery paths",
-    "body": "## Outcome\n\nMake the cross-project work guide show story status at each issue link and give readers a short, current route through remaining work.\n\n## Acceptance criteria\n\n- Issue links visibly distinguish open, in-progress/review, completed and blocked work using an icon and text. Color alone is insufficient; links remain readable, accessible and clickable. Closed issues without completed evidence remain labeled closed.\n- Status comes from the refreshed GitHub snapshot, workflow labels and native prerequisites. Repeated references use the same status. Open counts retain exactly one primary guide per issue.\n- Each guide leads with its outcome and next action. Completed delivery evidence remains available without dominating the remaining-work view.\n- A concise overview explains what is delivered, the next milestone, and independent work that can proceed in parallel. Recommendations respect unresolved dependencies, deferred scope and physical authorization boundaries.\n- Preserve search, anchors, navigation, expand/collapse, architecture viewers, responsive layouts and print state restoration. Regenerate the guide and record maintenance, browser and output-consistency checks.\n\n## Scope and delivery\n\nThis is guide presentation and documentation tooling under docs/work-guide/. It changes no product behavior or contracts, so no product OpenSpec change is needed. Existing Prism artwork/motion work in #85-#87 and connector routing in #73 remain separate.\n\nUse the repository SDLC, isolated worktree, independent Standards and Specification reviews and the guide-only CI exception when its evidence applies. Source delivery and public publication remain separate; the user's selected destination controls publication.\n",
+    "body": "## Outcome\n\nMake the cross-project work guide show story status at each issue link and give readers a short, current route through remaining work.\n\n## Acceptance criteria\n\n- Issue links visibly distinguish open, in-progress/review, completed and blocked work using an icon and text. Color alone is insufficient; links remain readable, accessible and clickable. Closed issues without completed evidence remain labeled closed.\n- Status comes from the refreshed GitHub snapshot, workflow labels and native prerequisites. Repeated references use the same status. Open counts retain exactly one primary guide per issue.\n- Each guide leads with its outcome and next action. Completed delivery evidence remains available without dominating the remaining-work view.\n- A concise overview explains what is delivered, the next milestone, and independent work that can proceed in parallel. Recommendations respect unresolved dependencies, deferred scope and physical authorization boundaries.\n- Preserve search, anchors, navigation, expand/collapse, architecture viewers, responsive layouts and print state restoration. Regenerate the guide and record maintenance, browser and output-consistency checks.\n\n## Scope and delivery\n\nThis is guide presentation and documentation tooling under docs/work-guide/. It changes no product behavior or contracts, so no product OpenSpec change is needed. Existing Prism artwork/motion work in #85-#87 and connector routing in #73 remain separate.\n\nUse the repository SDLC, isolated worktree, independent Standards and Specification reviews and the guide-only CI exception when its evidence applies. Source delivery and public publication remain separate; the user's selected destination controls publication.\n\n## Source delivery receipt\n\nSource PR #149 merged as `56e5667342cd446a229a4234dadf13fe3d07b0a2` after final independent Standards and Specification reviews found no remaining findings. Nine maintenance checks and the full six-width browser/PDF suite passed. The merged guide exactly matches the reviewed candidate; no output drift. Both unchanged workflows intentionally filtered this guide-only comparison, with zero merged-revision runs/checks/statuses and the required local evidence. The guide source acceptance above is complete. The coordinator is reconciling this closure into a follow-up guide PR and then publishing the user-requested public edition; publication and live verification are separate pending stages.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/148",
-    "updatedAt": "2026-09-22T03:47:34Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-22T04:06:31Z",
+    "closedAt": "2026-09-22T04:06:30Z",
     "labels": [
       {
         "name": "documentation"
-      },
-      {
-        "name": "status:in-progress"
       }
     ],
     "milestone": null,
     "comments": [],
     "commentCount": 0,
-    "commentsRefreshed": false
+    "commentsRefreshed": true
   }
 ]

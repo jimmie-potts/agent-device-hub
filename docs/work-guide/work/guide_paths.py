@@ -58,8 +58,8 @@ PATHS = {
     ),
     'development-workflow': (
         'Keep delivery evidence readable and validation affordable.',
-        'Finish this guide clarity update. Prism styling, connector repair and shared tooling remain separately scoped work.',
-        ['H148'],
+        'Choose the next documentation or tooling task. Prism design comes before its artwork and publication steps; connector repair and shared tooling keep their own scopes.',
+        ['H85'],
     ),
 }
 
