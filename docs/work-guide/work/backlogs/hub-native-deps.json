@@ -2,64 +2,11 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 58,
+        "totalCount": 57,
         "pageInfo": {
           "hasNextPage": false
         },
         "nodes": [
-          {
-            "number": 9,
-            "blockedBy": {
-              "totalCount": 6,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 13,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 29,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                },
-                {
-                  "number": 33,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
-                  }
-                },
-                {
-                  "number": 8,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 7,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 6,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
           {
             "number": 10,
             "blockedBy": {
