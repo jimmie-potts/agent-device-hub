@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 22,
+        "totalCount": 21,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -178,31 +178,6 @@
                 "hasNextPage": false
               },
               "nodes": []
-            }
-          },
-          {
-            "number": 30,
-            "blockedBy": {
-              "totalCount": 2,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 8,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 29,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                }
-              ]
             }
           },
           {
