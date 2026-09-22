@@ -8,6 +8,17 @@ export function safeEditorUrl(value:unknown):string|undefined {
 export function makeCommand(snapshot:Snapshot,command:Command):Request {
  return {apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:structuredClone(snapshot.nextRequestId),expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:structuredClone(snapshot.generation),command};
 }
+export type GeneralReasons={power?:string;brightness?:string;media?:string};
+/** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. */
+export function generalReasons({snapshot,control,common,content}:{snapshot:Pick<Snapshot,'capabilities'>|undefined;control:boolean;common?:string;content?:string}):GeneralReasons {
+ const reason=(name:'power'|'brightness'|'media',label:string,gate?:string)=>{
+  if(!snapshot)return 'No controller snapshot';
+  if(!snapshot.capabilities[name].supported)return `${label} is not declared by this controller`;
+  if(!control)return 'Your credential is read-only';
+  return common??gate;
+ };
+ return {power:reason('power','Power'),brightness:reason('brightness','Brightness'),media:reason('media','Media',content)};
+}
 export class ApiError extends Error {constructor(public code:string,public status=0,public detail:unknown=undefined){super(code);}}
 export class Api {
  private mutations=new Map<string,number>();

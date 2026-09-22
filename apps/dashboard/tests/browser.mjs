@@ -22,7 +22,7 @@ try {
  await page.getByLabel('Find a session').fill('no-match');await page.getByRole('heading',{name:'No matching sessions'}).waitFor();await page.getByLabel('Find a session').fill('');
  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Device mode').first().waitFor();
  assert.equal(f.writes.length,0,'opening/filtering/selecting does not command controllers');
- await page.getByRole('button',{name:'synthetic sensor',exact:true}).click();await page.getByText('Settings unavailable: this component has no supported integration extension.',{exact:true}).waitFor();assert.equal(await page.locator('section:visible').getByRole('button',{name:/^Apply/}).count(),0);await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();
+ await page.getByRole('button',{name:'synthetic sensor',exact:true}).click();await page.getByText('Settings unavailable: this component has no supported integration extension.',{exact:true}).waitFor();assert.equal(await page.locator('section:visible').getByRole('button',{name:/^Apply/,disabled:false}).count(),0,'an undeclared component offers no enabled control');await page.locator('section:visible').getByText('Unavailable: Power is not declared by this controller',{exact:true}).waitFor();await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();
  await page.screenshot({path:output+'/component-desktop.png',fullPage:true});
  const mode=page.getByLabel('Device mode').first();await mode.selectOption('Quiet');await page.getByRole('button',{name:'Apply mode',exact:true}).first().click();
  await page.getByText('queued. Physical result is not confirmed.',{exact:true}).waitFor();assert.equal(f.writes.length,1);assert.equal(f.writes[0].command.command.mode,'Quiet');

@@ -7,8 +7,12 @@
     "slow device serializes explicit commands while another device remains responsive",
     "terminal integration failures, known evidence and external control are visible",
     "rejected older snapshots cannot refresh evidence; expired cursor resync preserves drafts",
-    "partial receipt preserves confirmed transmission in browser feedback"
+    "partial receipt preserves confirmed transmission in browser feedback",
+    "general controls submit one guarded controller v1 command each in Media without changing the mode",
+    "Monitor disables playlist and playback controls with the reason and a one-click explicit switch to Media",
+    "general control drafts survive concurrent edits; typed conflicts and uncertain results never retry",
+    "read-only credentials and undeclared capabilities name their reasons"
   ],
   "pixelReadDelayMs": 800,
-  "independentDeviceReadMs": 3.3616060000003927
+  "independentDeviceReadMs": 2.0854890000000523
 }

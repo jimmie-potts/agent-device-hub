@@ -16,7 +16,14 @@ export async function fixture({empty=false}={}){
  const pixoo=JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json','utf8')).snapshot;
  pixoo.identity={controllerId:'pixel-controller',deviceId:'pixel',sourceId:'pixel'};
  const states={wall:structuredClone(template),pixel:structuredClone(template)};
- for(const [id,s] of Object.entries(states)){s.identity={controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,sourceId:id,controllerEpoch:'epoch'};s.capabilities.modes={supported:true,values:id==='wall'?['Work','Quiet','Free']:['Monitor','Media']};s.state.desired.mode={status:'known',value:id==='wall'?'Work':'Media'};s.state.externalControl={status:'unknown'};s.state.observation={status:'unknown'};s.state.lastSuccessfulSend={status:'unknown'};s.state.lastOutcome={status:'unknown'};s.state.pending=[];}
+ for(const [id,s] of Object.entries(states)){s.identity={controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,sourceId:id,controllerEpoch:'epoch'};s.state.desired.mode={status:'known',value:id==='wall'?'Work':'Media'};s.state.externalControl={status:'unknown'};s.state.observation={status:'unknown'};s.state.lastSuccessfulSend={status:'unknown'};s.state.lastOutcome={status:'unknown'};s.state.pending=[];}
+ // Pixoo main c81bc31 declares power, brightness 0-100 and media with six actions plus discovered playlist IDs; controller v1 modes are unsupported and Monitor/Media use the integration extension. Nanoleaf declares only Work/Quiet/Free.
+ states.pixel.capabilities={power:{supported:true},brightness:{supported:true,minimum:0,maximum:100},media:{supported:true,actions:['pause','resume','stop','next','previous','clear'],playlistIds:['playlist-morning','playlist-evening'],renditionIds:[]},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};
+ states.pixel.state.desired={power:{status:'known',value:true},brightness:{status:'known',value:60},mode:{status:'unknown'}};
+ states.wall.capabilities={power:{supported:false},brightness:{supported:false},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:true,values:['Work','Quiet','Free']}};
+ states.wall.state.desired.power={status:'unknown'};states.wall.state.desired.brightness={status:'unknown'};
+ const media={playlistId:null,actions:[]};
+ const supports=(c,command)=>command.kind==='mode.set'?!!c.modes?.supported&&c.modes.values.includes(command.mode):command.kind==='power.set'?c.power.supported:command.kind==='brightness.set'?c.brightness.supported:command.kind==='media.start'?c.media.supported&&c.media.playlistIds.includes(command.playlistId):command.kind==='media.control'?c.media.supported&&c.media.actions.includes(command.action):false;
  const writes=[],requests=[];let offline=false,uncertain=false,delay=0,queued=false;
  const controllers=[];
  for(const id of ['wall','pixel']){
@@ -32,9 +39,14 @@ export async function fixture({empty=false}={}){
    if(uncertain){req.socket.destroy();return;}
    if(!integration){if(!validate('request',command)){send(400,{failure:{code:'invalid-request'}});return;}
     const conflict=command.expectedConfigurationRevision!==state.configurationRevision||JSON.stringify(command.expectedGeneration)!==JSON.stringify(state.generation);
-    const receipt={apiVersion:'1.0',controllerId:state.identity.controllerId,deviceId:id,requestId:command.requestId,configurationRevision:state.configurationRevision,generation:state.generation,outcome:conflict?'failed':'queued',priorEffects:'none',completedOperations:[],uncertainOperations:[],...(conflict?{failure:{code:'revision-conflict'}}:{})};
-    if(!conflict){state.configurationRevision++;state.nextRequestId.sequence++;state.state.desired.mode={status:'known',value:command.command.mode};if(id==='wall')nano.mode=command.command.mode;else pixoo.configuration.mode=command.command.mode.toLowerCase();}
-    send(conflict?409:200,receipt);return;
+    const failure=conflict?'revision-conflict':!supports(state.capabilities,command.command)?'unsupported-capability':undefined;
+    const receipt={apiVersion:'1.0',controllerId:state.identity.controllerId,deviceId:id,requestId:command.requestId,configurationRevision:state.configurationRevision,generation:state.generation,outcome:failure?'failed':'queued',priorEffects:'none',completedOperations:[],uncertainOperations:[],...(failure?{failure:{code:failure}}:{})};
+    if(!failure){const c=command.command;state.configurationRevision++;state.nextRequestId.sequence++;
+     if(c.kind==='mode.set'){state.state.desired.mode={status:'known',value:c.mode};if(id==='wall')nano.mode=c.mode;}
+     else {if(c.kind==='power.set')state.state.desired.power={status:'known',value:c.on};if(c.kind==='brightness.set')state.state.desired.brightness={status:'known',value:c.percent};if(c.kind==='media.start')media.playlistId=c.playlistId;if(c.kind==='media.control')media.actions.push(c.action);
+      // Like the real controller, general commands are queued first and report a sent outcome on the next snapshot; the mode never changes as a side effect.
+      state.state.lastSuccessfulSend={status:'known',requestId:structuredClone(command.requestId),clock:state.sampleClock,operationIds:[c.kind]};state.state.lastOutcome={status:'known',receipt:{...structuredClone(receipt),outcome:'sent',priorEffects:'confirmed-transmission',completedOperations:[c.kind]}};}}
+    send(failure==='revision-conflict'?409:failure?422:200,receipt);return;
    }
    if(id==='wall'){
     if(!validateRequest(command)){send(400,{failure:{code:'invalid-request'}});return;}
@@ -57,5 +69,5 @@ export async function fixture({empty=false}={}){
  let seq=0;
  async function event(kind,extra={}){const value={apiVersion:'1.0',identity,turn:{status:'known',id:'turn-one'},parent:{status:'unknown'},event:{kind},observedAtMs:Date.now(),ordering:{status:'known',epoch:'fixture',sequence:seq++},...extra};const r=await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(value)});if(!r.ok)throw new Error('fixture-event-'+r.status);return r.json();}
  if(!empty)await event('session.started',{label:{origin:'user',value:'Build the integration'}});
- return {hub,token,reader,reconnect(){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}]);},writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+ return {hub,token,reader,media,reconnect(){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}]);},writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }
