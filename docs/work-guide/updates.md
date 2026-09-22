@@ -28,6 +28,64 @@ The existing shared-system diagram still describes the same clients, registered 
 
 # Guide maintenance history
 
+## September 21, 2026: Hub #8 source completion
+
+[PR #129](https://github.com/jimmie-potts/agent-device-hub/pull/129) merged as
+`f6bee907e06177c6dc8abde0075d73cc391784e9` after both independent reviews and
+all five PR jobs passed. All five merged-main jobs passed before issue #8 was
+closed as completed. This follow-up records source acceptance, refreshes all
+three backlogs and paginated histories, removes #8 from primary open coverage
+and the remaining-work roadmap, and pins the setup/migration diagram to the
+merged source. The Hub #8 delivery coordinator owns this completion companion.
+
+The guide covers 95 primary open issues, 12 guides, nine diagrams and
+100 merged PRs. Reversible setup, credential ownership, explicit Nanoleaf
+selection and fenced migration are source-delivered. Personal installation,
+actual-client qualification, integrated performance and physical acceptance
+remain separate. This follow-up changes only guide files and adds no product
+behavior or OpenSpec capability.
+
+Generation, five maintenance tests and guide browser/print checks passed.
+All nine diagram deliveries passed 9/9 artifact checks. The changed migration
+viewer retains its known vertical overflow; no standalone containment repair
+is claimed. Desktop/mobile/print captures were inspected.
+Guide SHA-256: `ca8c9574de6ac79a480d232ecbb0b162db56aea5cd4aa8e71916d5326359d53d`.
+
+The public landing page remains the earlier
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e` edition.
+Public copying, deployment and full live-site verification remain pending
+separate publication authority. No personal installation or device operation
+was performed. The companion PR records exact guide-only filtering evidence.
+
+## September 21, 2026: Hub #8 setup candidate
+
+The Hub #8 delivery coordinator updated the shared-host guide and migration
+sequence for the owner-selected Linux/WSL source scope. The candidate adds
+reversible setup, private receipt ownership, verified credential revocation,
+and explicit Nanoleaf preflight/selection while host writes remain fenced.
+The source fixtures exercise real pinned Pixoo/Nanoleaf code with disposable
+state and no physical worker. Installation and actual-client qualification
+remain pending. No personal settings, live state or devices were changed.
+
+Refreshed all three backlogs and retained primary coverage of
+96 open issues across 12 guides and nine diagrams.
+Generation, five maintenance tests and guide browser/print checks passed.
+All nine Archify deliveries passed 9/9 artifact checks. The changed sequence
+was inspected in light/dark desktop renders; the separate standalone browser
+check still fails its known vertical overflow requirement. No layout repair
+or first-screen containment pass is claimed. The guide's scrolling/zooming
+presentation remains usable. HTML SHA-256: `3238b53989d418b35c0a14ce06daeecda1ffbd37671c820b33e73920c0bffb38`.
+
+The public landing page still serves
+`4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+It differs from this candidate. Public publication and live verification of a
+new edition remain pending separate authority. Source merge and saved issue
+completion facts will be reconciled in a linked follow-up after verification.
+
+The candidate was reconciled with merged MCP PR #126 and its guide follow-up #128. The refreshed tracker
+shows #13 closed, so its primary coverage and roadmap entry were removed; its
+source behavior and shared host/package checks are preserved.
+
 ## September 21, 2026: Hub #5 source completion
 
 [PR #121](https://github.com/jimmie-potts/agent-device-hub/pull/121) merged as
@@ -1786,8 +1844,9 @@ merged-main CI separately. Issue #30 remains open for physical measurements and 
 The issue is in review in PR #127 after its three source prerequisites closed. The
 candidate adds the shared React/TypeScript integration frontend using the current
 approved Nanoleaf Prism/Neon visual language, typed owning-controller commands,
-scoped context and a third synthetic component fixture. Human UI approval,
-independent final review, hosted CI and source merge remain pending.
+scoped context and a third synthetic component fixture. The user approved the
+source UI candidate. Independent final review, renewed hosted CI and source
+merge remain pending.
 
 Refreshed backlog inputs and regenerated the shared Codex guide. Preserved the
 merged Hub #5 reconciliation. Existing architecture diagrams retain their planned

@@ -5058,19 +5058,19 @@
         </g>
         </g>
 
-        <g data-edge-from="tooling" data-edge-to="pixoo" data-edge-label="quiesce selected route and old owner" data-edge-key="1">
-          <path data-composition-edge-from="tooling" data-composition-edge-to="pixoo" data-composition-points="302.8,254;455.6,254" d="M 302.8 254 L 455.6 254" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+        <g data-edge-from="tooling" data-edge-to="producers" data-edge-label="remove old setup; verify access revoked" data-edge-key="1">
+          <path data-composition-edge-from="tooling" data-composition-edge-to="producers" data-composition-points="302.8,254;789.2,254" d="M 302.8 254 L 789.2 254" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="279.6" y="234" width="199.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="379.20000000000005" y="244" class="t-security" font-size="9" text-anchor="middle">quiesce selected route and old owner</text>
+          <rect x="438.6" y="234" width="214.8" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="244" class="t-security" font-size="9" text-anchor="middle">remove old setup; verify access revoked</text>
         </g>
         </g>
 
-        <g data-edge-from="tooling" data-edge-to="producers" data-edge-label="pause ingestion (hooks stay fail-open)" data-edge-key="2">
-          <path data-composition-edge-from="tooling" data-composition-edge-to="producers" data-composition-points="302.8,298;789.2,298" d="M 302.8 298 L 789.2 298" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+        <g data-edge-from="tooling" data-edge-to="pixoo" data-edge-label="quiesce old owner; preserve state" data-edge-key="2">
+          <path data-composition-edge-from="tooling" data-composition-edge-to="pixoo" data-composition-points="302.8,298;455.6,298" d="M 302.8 298 L 455.6 298" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="441.2" y="278" width="209.6" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="288" class="t-security" font-size="9" text-anchor="middle">pause ingestion (hooks stay fail-open)</text>
+          <rect x="287.40000000000003" y="278" width="183.6" height="16" rx="3" class="c-mask"/>
+          <text x="379.20000000000005" y="288" class="t-security" font-size="9" text-anchor="middle">quiesce old owner; preserve state</text>
         </g>
         </g>
 
@@ -5115,19 +5115,19 @@
         <text data-detail="fine" x="314.8" y="550" class="t-dim" font-size="7">remote mode never starts a second local reducer</text>
         </g>
 
-        <g data-edge-from="tooling" data-edge-to="producers" data-edge-label="stage producer route; retain enablement" data-edge-key="8">
+        <g data-edge-from="tooling" data-edge-to="producers" data-edge-label="fresh setup receipt; stage disabled route" data-edge-key="8">
           <path data-composition-edge-from="tooling" data-composition-edge-to="producers" data-composition-points="302.8,590;789.2,590" d="M 302.8 590 L 789.2 590" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="438.6" y="570" width="214.8" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="580" class="t-backend" font-size="9" text-anchor="middle">stage producer route; retain enablement</text>
+          <rect x="433.4" y="570" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="580" class="t-backend" font-size="9" text-anchor="middle">fresh setup receipt; stage disabled route</text>
         </g>
         </g>
 
-        <g data-edge-from="tooling" data-edge-to="consumers" data-edge-label="switch consumer endpoint" data-edge-key="9">
+        <g data-edge-from="tooling" data-edge-to="consumers" data-edge-label="Pixoo route; Nanoleaf preflight / select" data-edge-key="9">
           <path data-composition-edge-from="tooling" data-composition-edge-to="consumers" data-composition-points="302.8,634;956,634" d="M 302.8 634 L 956 634" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="561" y="614" width="136.8" height="16" rx="3" class="c-mask"/>
-          <text x="629.4" y="624" class="t-backend" font-size="9" text-anchor="middle">switch consumer endpoint</text>
+          <rect x="519.4" y="614" width="220" height="16" rx="3" class="c-mask"/>
+          <text x="629.4" y="624" class="t-backend" font-size="9" text-anchor="middle">Pixoo route; Nanoleaf preflight / select</text>
         </g>
         </g>
 
@@ -5155,11 +5155,11 @@
         </g>
         </g>
 
-        <g data-edge-from="tooling" data-edge-to="hub" data-edge-label="quiesce new owner" data-edge-key="13">
+        <g data-edge-from="tooling" data-edge-to="hub" data-edge-label="revoke setup; quiesce new owner" data-edge-key="13">
           <path data-composition-edge-from="tooling" data-composition-edge-to="hub" data-composition-points="302.8,824;622.4000000000001,824" d="M 302.8 824 L 622.4000000000001 824" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="412.40000000000003" y="804" width="100.4" height="16" rx="3" class="c-mask"/>
-          <text x="462.6" y="814" class="t-messagebus" font-size="9" text-anchor="middle">quiesce new owner</text>
+          <rect x="376" y="804" width="173.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="462.6" y="814" class="t-messagebus" font-size="9" text-anchor="middle">revoke setup; quiesce new owner</text>
         </g>
         </g>
 
@@ -5248,8 +5248,8 @@
           <text data-detail="context" x="796.2" y="111" class="t-muted" font-size="7" text-anchor="middle">provider hooks</text>
         </g>
 
-        <g id="node-consumers" data-node-id="consumers" data-node-label="Consumers" tabindex="0" role="button" aria-label="Focus Consumers, selected Pixoo facade, Sequence participant" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="selected Pixoo facade" data-node-context="Sequence participant">
-          <title>Consumers · selected Pixoo facade · Sequence participant</title>
+        <g id="node-consumers" data-node-id="consumers" data-node-label="Consumers" tabindex="0" role="button" aria-label="Focus Consumers, Pixoo and Nanoleaf, Sequence participant" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="Pixoo and Nanoleaf" data-node-context="Sequence participant">
+          <title>Consumers · Pixoo and Nanoleaf · Sequence participant</title>
           <rect x="896" y="72" width="134" height="54" rx="6" class="c-mask"/>
           <rect x="896" y="72" width="134" height="54" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(902 78) scale(0.6875)">
@@ -5259,7 +5259,7 @@
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="963" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Consumers</text>
-          <text data-detail="context" x="963" y="111" class="t-muted" font-size="7" text-anchor="middle">selected Pixoo facade</text>
+          <text data-detail="context" x="963" y="111" class="t-muted" font-size="7" text-anchor="middle">Pixoo and Nanoleaf</text>
         </g>
 
         <!-- Legend -->
@@ -5500,7 +5500,7 @@
           <h3>Owned elsewhere</h3>
         </div>
         <ul>
-          <li>&bull; Hub #5 verifies source migration; #8 owns installed cutover</li>
+          <li>&bull; Hub #8 source adds reversible setup and Nanoleaf cutover</li>
           <li>&bull; Controller databases stay private; Windows/WSL never share a mounted SQLite file</li>
           <li>&bull; Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate</li>
         </ul>

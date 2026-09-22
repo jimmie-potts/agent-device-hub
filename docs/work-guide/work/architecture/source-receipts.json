@@ -1,30 +1,30 @@
 {
-  "reviewedAt": "2026-09-21T20:48:45.246511+00:00",
+  "reviewedAt": "2026-09-21T21:46:41.813820+00:00",
   "sourceRevisions": {
-    "agent-device-hub": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+    "agent-device-hub": "f6bee907e06177c6dc8abde0075d73cc391784e9",
     "codex-nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f",
     "divoom-app-upgrade": "28f4875b7a0f0e57ca6f25d9971e125e927a5503"
   },
   "files": [
     {
       "repo": "agent-device-hub",
-      "revision": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
       "path": "docs/architecture.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/2c3bb4117bab0f845a95048b4ce72a49e915cfdc/docs/architecture.md",
-      "sha256": "3787a07dc331a017c19b3a2f5e200094caafae2b5924ecf98f05fd06520c179e"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/docs/architecture.md",
+      "sha256": "1beba82a1de821474516b61515f96f685a8bcf7fc033a0afd5a79861ecd238ac"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
       "path": "docs/controller-contract.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/2c3bb4117bab0f845a95048b4ce72a49e915cfdc/docs/controller-contract.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/docs/controller-contract.md",
       "sha256": "f43b99b568bb849023beecb30a08d423b5bc57e8553255c9f0b610defb9a5b19"
     },
     {
       "repo": "agent-device-hub",
-      "revision": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
       "path": "packages/mcp/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/2c3bb4117bab0f845a95048b4ce72a49e915cfdc/packages/mcp/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/packages/mcp/README.md",
       "sha256": "fe5f59ea69708b18435a60a279d5a10fbde9239a76efd48046fc6fbc84946b6a"
     },
     {
@@ -148,9 +148,9 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
       "path": "packages/agent-state/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/2c3bb4117bab0f845a95048b4ce72a49e915cfdc/packages/agent-state/README.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/packages/agent-state/README.md",
       "sha256": "cc06db6c8a82c88cb93b1f999fa621efadad9d4130e7f9d54521edfc892ffd14"
     },
     {
@@ -225,10 +225,17 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "2c3bb4117bab0f845a95048b4ce72a49e915cfdc",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
       "path": "apps/hub/README.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/2c3bb4117bab0f845a95048b4ce72a49e915cfdc/apps/hub/README.md",
-      "sha256": "1348fdd917cb567cdd4659e7bf11ac837105f78b9eedd961fdcb3b609daf5c53"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/apps/hub/README.md",
+      "sha256": "7163ddd730282ce06feb21f4a24e9e64b458a8a0367ca48e0f5c9a808f073081"
+    },
+    {
+      "repo": "agent-device-hub",
+      "revision": "f6bee907e06177c6dc8abde0075d73cc391784e9",
+      "path": "apps/hub/SETUP.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/f6bee907e06177c6dc8abde0075d73cc391784e9/apps/hub/SETUP.md",
+      "sha256": "f27cb6b3dc027677fb12daaf898e1da41c7ff09c2039103e3b71dc0922363fcf"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",

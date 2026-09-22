@@ -48,6 +48,8 @@
     "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
     "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
     "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs",
+    "test:setup": "npm run build && npm run test:setup:built",
+    "test:setup:built": "node --test apps/hub/tests/setup*.test.mjs",
     "test:hub:mcp": "npm run build && npm run test:hub:mcp:built",
     "test:hub:mcp:built": "node --test apps/hub/tests/mcp.test.mjs"
   },

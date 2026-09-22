@@ -1,3 +1,4 @@
+import {verifyNanoleaf,type NanoleafRoute} from './setup-consumer.js';
 import {managedPixooConsumer,type ManagedOwner} from './migration.js';
 import {DatabaseSync} from 'node:sqlite';
 import {open,lstat,realpath,mkdir,rename,rm,readFile} from 'node:fs/promises';
@@ -119,15 +120,18 @@ export async function releaseRoute(route:StagedRoute):Promise<void>{
  finally{staged.unlock();}
 }
 
-export type ActivationPlan={producers:StagedRoute[];consumers:{id:string;route:StagedRoute;owner:ManagedOwner}[]};
+export type ActivationPlan={producers:StagedRoute[];consumers:({id:string;route:StagedRoute;owner:ManagedOwner}|{id:'nanoleaf';nanoleaf:NanoleafRoute})[]};
 async function get(endpoint:string,token:string):Promise<unknown>{
  const response=await fetch(endpoint,{redirect:'error',signal:AbortSignal.timeout(2500),headers:{authorization:`Bearer ${token}`}});
  const value=await responseJson(response,16*1024*1024);if(!response.ok)throw new Error('route-not-ready');return value;
 }
 /** Files are enabled while admission is STILL fenced. The caller opens admission synchronously afterward. */
 export async function prepareActivation(plan:ActivationPlan,origin:string,ownerId:string,consumers:Consumer[],snapshot:()=>Snapshot):Promise<void>{
+ if(!object(plan))throw new Error('incomplete-routes');
  if(!Array.isArray(plan.producers)||plan.producers.length<1||plan.producers.length>32||!Array.isArray(plan.consumers)||plan.consumers.length!==consumers.length||new Set(plan.consumers.map(c=>c.id)).size!==consumers.length||consumers.some(c=>!plan.consumers.some(route=>route.id===c.id)))throw new Error('incomplete-routes');
- const records=[...plan.producers,...plan.consumers.map(c=>c.route)];if(new Set(records).size!==records.length)throw new Error('duplicate-route');
+ if(plan.consumers.some(c=>!object(c)||!(c.id==='pixoo'&&exact(c,['id','route','owner'])||c.id==='nanoleaf'&&exact(c,['id','nanoleaf']))))throw new Error('consumer-not-ready');
+ const pixoo=plan.consumers.filter((c):c is {id:string;route:StagedRoute;owner:ManagedOwner}=>'route' in c);
+ const records=[...plan.producers,...pixoo.map(c=>c.route)];if(new Set(records).size!==records.length)throw new Error('duplicate-route');
  const selected=records.map(receipt=>{const record=stages.get(receipt);if(!record)throw new Error('unstaged-route');return record;});
  const checkFiles=async()=>{for(const record of selected)if(!(await read(record.file.path)).bytes.equals(record.file.bytes))throw new Error('route-changed');};
  await checkFiles();
@@ -136,7 +140,7 @@ export async function prepareActivation(plan:ActivationPlan,origin:string,ownerI
   const authority=await get(origin+'/api/hub/v1/authority?scope=ingest',record.file.value.token as string);
   if(!object(authority)||authority.ownerId!==ownerId||authority.scope!=='ingest')throw new Error('producer-not-ready');
  }
- for(const consumer of plan.consumers){const record=stages.get(consumer.route)!;
+ for(const consumer of pixoo){const record=stages.get(consumer.route)!;
   if(record.kind!=='pixoo'||consumer.id!=='pixoo'||record.file.value.endpoint!==origin+'/api/monitor/v1'||record.file.value.ownerId!==ownerId)throw new Error('wrong-consumer-route');
   const facade=managedPixooConsumer(consumer.owner,record.file.path,hash(record.file.bytes));if(facade.endpoint===origin+'/api/monitor/v1')throw new Error('consumer-not-ready');
   const authority=await get(origin+'/api/hub/v1/authority?scope=control',record.file.value.token as string);
@@ -146,11 +150,13 @@ export async function prepareActivation(plan:ActivationPlan,origin:string,ownerI
   const checked=validateSnapshot(value.snapshot),current=snapshot();
   // Clock/freshness projection may advance between reads; compare durable session fields.
   const durable=(state:Snapshot)=>state.sessions.map(({observationAgeMs,freshness,restartUncertain,children,...session})=>session);
-  if(!checked.ok||checked.value.revision!==current.revision||canonical(durable(checked.value))!==canonical(durable(current))||checked.value.collector!=='quiesced')throw new Error('consumer-not-ready');
+  if(!checked.ok||checked.value.revision!==current.revision||canonical(durable(checked.value))!==canonical(durable(current))||checked.value.collector!==current.collector)throw new Error('consumer-not-ready');
  }
+ for(const consumer of plan.consumers)if('nanoleaf' in consumer)await verifyNanoleaf(consumer.nanoleaf,origin,ownerId,snapshot());
  await checkFiles();
  for(const receipt of plan.producers){const record=stages.get(receipt)!;await updateStage(record,{...record.file.value,enabled:record.enabled});}
  await checkFiles();
- for(const consumer of plan.consumers){const record=stages.get(consumer.route)!;managedPixooConsumer(consumer.owner,record.file.path,hash(record.file.bytes));}
+ for(const consumer of pixoo){const record=stages.get(consumer.route)!;managedPixooConsumer(consumer.owner,record.file.path,hash(record.file.bytes));}
+ for(const consumer of plan.consumers)if('nanoleaf' in consumer)await verifyNanoleaf(consumer.nanoleaf,origin,ownerId,snapshot());
  // Locks remain held until the caller commits activation or explicitly abandons the attempt.
 }
