@@ -22,7 +22,7 @@ Refreshed all three backlogs and native dependencies at
 2026-09-22T05:45Z: 95 primary open issues, 12 guides, nine viewers, 52 roadmap
 nodes. Architecture diagrams, history inputs, ownership, transports and
 physical writers are unchanged. Generation, nine maintenance tests and the
-browser/print checks pass; HTML SHA-256 `8d3e66b1cb9e1ff767412cb7db54fb822a678c0fbffd3d894fa200aae0b7a990`.
+browser/print checks pass; HTML SHA-256 `75575f090d6d5740d7408fcfb00e607de9d58606301d0c3ba9b0ec1ec9d6dea9`.
 This is a mixed change with documentation outside `docs/work-guide/`, so all
 configured CI jobs apply. Public publication and live verification remain
 separate and were not requested.

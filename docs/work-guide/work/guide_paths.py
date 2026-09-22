@@ -28,7 +28,7 @@ PATHS = {
     ),
     'desktop-controls': (
         'Use local Wispr and Codex shortcuts, then add optional shared desk presets.',
-        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets also wait for the Codex milestone and general-control definition.',
+        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets also wait for the general-control definition in Hub #31 to close.',
         ['H64'],
     ),
     'nanoleaf-presentation': (
