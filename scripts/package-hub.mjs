@@ -18,7 +18,7 @@ try {
   run([join(root,'scripts/package-agent-state.mjs')],root);
   run([join(root,'scripts/package-mcp.mjs')],root);
   const stage=join(scratch,'stage');await mkdir(stage);
-  for(const name of ['package.json','src','dist','tests','fixtures','bin','README.md','SETUP.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
+  for(const name of ['package.json','src','dist','public','tests','fixtures','bin','README.md','SETUP.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
   const dependencies=Object.keys(metadata.dependencies);
   metadata.bundleDependencies=dependencies;

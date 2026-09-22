@@ -91,7 +91,7 @@ Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal GitHub CI has five jobs, all on `ubuntu-latest`:
+Normal GitHub CI has six jobs, all on `ubuntu-latest`:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -100,9 +100,10 @@ Normal GitHub CI has five jobs, all on `ubuntu-latest`:
 | Contracts and state, Python 3.14 | The same suites on the second supported Python version |
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
+| Dashboard | Node 24 build/type, controller-backed browser fixtures and accessibility |
 
 Each combined contracts/state job installs dependencies, builds and typechecks
-once before running its suites. The core workflow performs three full builds
+once before running its suites. The core workflow performs four full builds
 across its jobs. Local validation runs the same commands. Later runtime and
 browser changes must add their own issue-appropriate checks.
 
@@ -326,6 +327,14 @@ worker fixture. Native tokens never enter the printed receipt. These local
 cross-repository checks complement CI's pinned fixtures and isolated package tests;
 CI does not fetch another private repository with broader credentials.
 
+## Dashboard checks
+
+Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
+`npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`
+and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
+synthetic state and fake controllers. The dashboard CI job runs these checks;
+shared hub, contract/state, MCP and workflow jobs remain required. No check
+installs a personal service, opens live state or contacts hardware.
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`

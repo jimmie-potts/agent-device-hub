@@ -225,7 +225,7 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-The planned shared frontend in apps/dashboard is BUNNY's central interface. Build on
+The shared frontend in apps/dashboard is BUNNY's central interface. It uses
 the approved Nanoleaf visual language and interaction patterns. Each current
 and future user-facing component joins the same navigation and reusable views
 for its available status, settings and supported controls, with specialized
@@ -240,8 +240,8 @@ acceptance work. They do not block the first Codex-integration release.
 [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) later extends the
 same application with general controls that work without an agent session.
 Routine supported operations belong in the central UI; full migration of the
-linked advanced editors remains separate follow-on work. This is planned
-frontend structure, not an implemented dashboard or automatic device support.
+linked advanced editors remains separate follow-on work. Additional production
+components require their own delivered integration and acceptance.
 
 Exact hub previews are deferred for a future scope decision. Device rendering
 contracts and parity checks are prerequisites for any later preview issue, not
@@ -398,6 +398,25 @@ latest state into a fresh host store; Pixoo retains its private media directory
 and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
+
+## BUNNY frontend, Hub #6
+
+The implementation in `apps/dashboard` provides React/TypeScript activity, component
+and connection views served by `apps/hub` at the same origin. A dedicated scoped
+hub credential stays in page memory. Native controller credentials remain in the
+hub's private configuration. The authenticated dashboard context exposes permitted
+component identities and supported editor links, never arbitrary proxy targets.
+
+The component view owns browser navigation, drafts and displayed observations.
+Typed controls submit existing owning-service commands with their request and
+revision identity. Feed resync and periodic snapshots refresh evidence without
+replaying writes. Nanoleaf/Pixoo settings retain their device-specific meanings;
+unknown components expose unavailable controls. No database, reducer, device
+writer or physical effect scheduler moves into the browser.
+
+PR #127 records Hub #6's human UI approval and source-delivery evidence.
+Installation, physical acceptance, general controls and full editor migration
+remain separately owned work.
 
 ## Standalone MCP composition
 
