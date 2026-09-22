@@ -9,12 +9,15 @@ The tested product source is Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
 Pixoo `28f4875b7a0f0e57ca6f25d9971e125e927a5503` and Nanoleaf
 `80628498136203a8f5fcb06ab5fa306e961e2def`. The runner rebuilds Hub and Pixoo
 from the prepared source before importing them. Nanoleaf's shared-input module
-has the same SHA-256 as the existing #8/#30 pin; this archive includes the
-settings API and, since Nanoleaf #64, the native power, brightness and
-saved-scene capabilities with a `scenes` list in the integration snapshot. The
-earlier accepted run used Hub `10493718ee01dee78c290294f751829dd60ea91d` and
-Nanoleaf `f12ac6653a9f3267fa9ef62a2d6667072183d8b3`; this rerun re-pins Nanoleaf
-only. No older-version compatibility is claimed.
+no longer matches the #8/#30 pin in `nanoleaf-shared-source.json` (revision
+`5375a308`): Nanoleaf #65 added device columns and a legacy-backup restore path,
+so shared-input coverage here comes from this rerun and is not carried over.
+This archive includes the settings API and, since Nanoleaf #64, the native
+power, brightness and saved-scene capabilities with a `scenes` list in the
+integration snapshot. The earlier accepted run used Hub
+`10493718ee01dee78c290294f751829dd60ea91d` and Nanoleaf
+`f12ac6653a9f3267fa9ef62a2d6667072183d8b3`; this rerun re-pins Nanoleaf only.
+No older-version compatibility is claimed.
 
 ## Source results
 
