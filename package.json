@@ -51,7 +51,9 @@
     "test:setup": "npm run build && npm run test:setup:built",
     "test:setup:built": "node --test apps/hub/tests/setup*.test.mjs",
     "test:hub:mcp": "npm run build && npm run test:hub:mcp:built",
-    "test:hub:mcp:built": "node --test apps/hub/tests/mcp.test.mjs"
+    "test:hub:mcp:built": "node --test apps/hub/tests/mcp.test.mjs",
+    "test:performance:standalone": "/usr/bin/python3 -B -m unittest discover -s tests/performance_standalone -v && node --test tests/standalone_report.test.mjs",
+    "qualify:standalone": "/usr/bin/python3 -B scripts/performance/standalone.py"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

@@ -20,10 +20,21 @@ own implementation, qualification and acceptance requirements. No product or
 wire-contract delta, OpenSpec capability, diagram redraw or source-pin change
 is introduced.
 
+The first merge guard stopped after concurrent PR #135 advanced main to
+`8411413fa43329dba6e25acc4cb715ffbba7887f`. This branch merges that revision,
+preserves its qualification source and maintenance entry, and regenerates the
+guide from a complete fresh snapshot. That snapshot also confirms #30 is closed
+after all six merged-main jobs passed in
+[Checks](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35679809596)
+and [Work guide](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35679809755).
+Its completed qualification remains linked, with primary coverage and the
+remaining-work roadmap reconciled. Independent reviews are renewed for this
+combined comparison. No #30 tracker or product changes are made here.
+
 Guide generation, all five maintenance tests, six-width browser checks and
-print expansion/restoration passed: 95 primary open issues, 12 guides, nine
-unchanged viewers and 108 merged PRs. Guide SHA-256:
-`cec272dbe78cb9ad227f1995a3719249668049869b8d4c19d60fc5386d653ba8`.
+print expansion/restoration passed: 94 primary open issues, 12 guides, nine
+unchanged viewers and 109 merged PRs. Guide SHA-256:
+`1271a0933a526b7d6affbe8e846890b5178efb1aef9c69c42bbfae700cc234ca`.
 This follow-up uses the
 existing guide-only CI filter exception with fixed-comparison scope, local
 checks and independent reviews. Public publication remains outside this
@@ -31,6 +42,29 @@ delivery; the unauthenticated landing page still serves the older guide hash
 `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
 No installation, real input/app qualification, transport or visible-device
 acceptance is claimed by this documentation work.
+
+## 2026-09-22 — Hub #30 standalone qualification candidate
+
+The source command now has a retained passing run at Hub
+`d9f5e7e1129f048f8caee046f8f6644e043ec6e2`: 400 warmed events,
+487 hooks overall, hook p95 58/78 ms for one/ten tasks, each consumer receipt
+p95 below one second and 151 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves eight non-qualifying development attempts and all four
+full runs. Review required confined preparation and positive reconnect evidence;
+the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
+
+Updated shared-monitor qualification, sequencing and recommendation text, and
+refreshed the complete backlog snapshot. Assigned concurrently published Hub
+#137/#138/#139 to the shared-monitor guide without changing their scope or status. Preserved the concurrent Pixoo #34 and
+Nanoleaf #30 guide updates from PRs #131/#134. Issue #30 remains open until
+independent review, CI, merge and merged-source checks pass. Existing architecture
+flows and ownership do not change, so diagram sources/receipts remain unchanged.
+No application UI changed. Guide generation, maintenance and browser checks are
+required on this candidate; results are recorded in the PR receipt.
+
+The public edition still records source `260707019b7ff83d57e31d91ae1e1582c3734589`.
+This source delivery does not publish the public guide or claim new installation,
+real-client or physical acceptance.
 
 ## September 22, 2026: Hub #63 desktop-control documentation candidate
 

@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T02:27:13.482506+00:00",
+  "fetchedAt": "2026-09-22T02:38:19.222763+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T02:24:57Z",
+      "pushedAt": "2026-09-22T02:37:27Z",
       "defaultBranch": "main",
-      "headSha": "0d1b0930efae23912b942f6e65560763402fe665",
-      "mainCommitCount": 59,
+      "headSha": "8411413fa43329dba6e25acc4cb715ffbba7887f",
+      "mainCommitCount": 60,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "8411413fa43329dba6e25acc4cb715ffbba7887f",
+          "date": "2026-09-22T02:32:01Z",
+          "message": "Qualify everyday standalone monitoring with real consumers (#135)"
+        },
         {
           "sha": "0d1b0930efae23912b942f6e65560763402fe665",
           "date": "2026-09-22T02:21:29Z",
@@ -764,6 +769,14 @@
           "mergedAt": "2026-09-22T01:24:53Z"
         },
         {
+          "number": 135,
+          "title": "Qualify everyday standalone monitoring with real consumers",
+          "createdAt": "2026-09-22T01:44:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/135",
+          "base": "main",
+          "mergedAt": "2026-09-22T02:32:01Z"
+        },
+        {
           "number": 140,
           "title": "Document desktop controls, control profiles and desk presets",
           "createdAt": "2026-09-22T02:14:54Z",
@@ -855,6 +868,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/14"
         },
         {
+          "number": 30,
+          "title": "Qualify latency and failure isolation for shared Codex monitoring",
+          "closedAt": "2026-09-22T02:35:49Z",
+          "createdAt": "2026-09-07T20:09:18Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
+        },
+        {
           "number": 33,
           "title": "Document assistant direction and remove stale skill references",
           "closedAt": "2026-09-07T21:50:50Z",
@@ -935,7 +956,7 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
         }
       ],
-      "openIssueCount": 59,
+      "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-22T01:53:35Z"

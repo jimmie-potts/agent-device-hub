@@ -21,7 +21,7 @@
 #24 [OPEN] Verify the deferred Tidbyt-to-Tronbyt transition
 #25 [OPEN] Plan and migrate Pixoo into the hub monorepo
 #26 [OPEN] Plan and migrate Nanoleaf into the hub monorepo
-#30 [OPEN] Qualify latency and failure isolation for shared Codex monitoring
+#30 [CLOSED] Qualify latency and failure isolation for shared Codex monitoring
 #31 [OPEN] Define agent-independent device controls after Codex integration acceptance
 #32 [OPEN] Deliver Codex-first shared monitoring and integration controls
 #35 [OPEN] Track future personal assistant, music and hosting work
