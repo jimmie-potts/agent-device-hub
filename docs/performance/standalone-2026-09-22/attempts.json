@@ -1,0 +1,163 @@
+[
+  {
+    "attempt": "gh30-smoke-1",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "run:The expression evaluated to a falsy value:\n\n  assert(!(await nano.call({operation:'configure',endpoint:nanoEndpoint+'/api/monitor/v1',token})).error)\n",
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "scenario-burst",
+      "scenario-dashboard",
+      "scenario-control",
+      "scenario-stalledConsumer",
+      "scenario-offlineConsumer",
+      "scenario-hostOutage",
+      "scenario-restart",
+      "scenario-exclusiveOwner",
+      "scenario-noReplay",
+      "hard-deadline"
+    ],
+    "sha256": "599df47fe8f586fc623d2fdbec590aa55cf46387076d6599918e20dbd994ebd7"
+  },
+  {
+    "attempt": "gh30-smoke-2",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "run:{\"error\":\"FeedError\",\"code\":\"feed-rejected\"}",
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "scenario-burst",
+      "scenario-dashboard",
+      "scenario-control",
+      "scenario-stalledConsumer",
+      "scenario-offlineConsumer",
+      "scenario-hostOutage",
+      "scenario-restart",
+      "scenario-exclusiveOwner",
+      "scenario-noReplay",
+      "hard-deadline"
+    ],
+    "sha256": "61e2b5b4e86dda94e934fc09593daeccb8bfad1a10c5ceeaac041d73fa7f1a76"
+  },
+  {
+    "attempt": "gh30-smoke-3",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "run:consumer-receipt-timeout",
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "scenario-burst",
+      "scenario-dashboard",
+      "scenario-control",
+      "scenario-stalledConsumer",
+      "scenario-offlineConsumer",
+      "scenario-hostOutage",
+      "scenario-restart",
+      "scenario-exclusiveOwner",
+      "scenario-noReplay"
+    ],
+    "sha256": "84012c4589d6e385114d684c2bbfabb1c8d110ae90847b13abfef3e6365aa0ea"
+  },
+  {
+    "attempt": "gh30-smoke-4",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "run:consumer-receipt-timeout",
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "scenario-burst",
+      "scenario-dashboard",
+      "scenario-control",
+      "scenario-stalledConsumer",
+      "scenario-offlineConsumer",
+      "scenario-hostOutage",
+      "scenario-restart",
+      "scenario-exclusiveOwner",
+      "scenario-noReplay"
+    ],
+    "sha256": "54ed41a0fca6f713af103fe5dcfb9a00f2974fbcb6f7fced400a2bc93d71115e"
+  },
+  {
+    "attempt": "gh30-smoke-5",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "dashboard:locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /Sources/ })\n",
+      "run:locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: /Sources/ })\n",
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "scenario-dashboard",
+      "scenario-control",
+      "scenario-hostOutage",
+      "scenario-restart",
+      "scenario-exclusiveOwner",
+      "scenario-noReplay"
+    ],
+    "sha256": "7c099fcba5a6025f0b8781ad7ae54f6dfb71620ab05321cd1294723e2d61b900"
+  },
+  {
+    "attempt": "gh30-smoke-6",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "incomplete-profile-1",
+      "incomplete-profile-10"
+    ],
+    "sha256": "022b3d88602559dda756b1d188f027b21b4f6d7ef3366787180bc93b557a31c8"
+  },
+  {
+    "attempt": "gh30-smoke-7",
+    "qualified": false,
+    "hubRevision": "bd5dd61f1354fe0a0a0b4090e57afb85b1d40da7",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "incomplete-profile-1",
+      "incomplete-profile-10"
+    ],
+    "sha256": "c3a863696144afab9e621856824d94e20964bfc1a8933ddaec150cd45b3ec7ad"
+  },
+  {
+    "attempt": "gh30-qualified-1",
+    "qualified": false,
+    "hubRevision": "a4327b99c2f2ca322bc3d307e18e21a1b93c94e7",
+    "smoke": false,
+    "cleanup": true,
+    "error": null,
+    "problems": null,
+    "sha256": "2461ffc43047fec927da5e59764138e91c0f2643ae3a8bc6365b43d3c6317323"
+  },
+  {
+    "attempt": "gh30-qualified-2",
+    "qualified": true,
+    "hubRevision": "3f58f2018639a4aff4ce12c6dd3e3dce3d3e0365",
+    "smoke": false,
+    "cleanup": true,
+    "error": null,
+    "problems": [],
+    "sha256": "9e027baf797e297413b6148e8d2e9a1901a6f463720d659b43e8fe0b2c8c63d0"
+  }
+]

@@ -5,6 +5,9 @@ standalone Linux/WSL source route for personal use. Embedded-host performance in
 Pixoo #61, installation, actual agent-client compatibility and physical accuracy
 remain separate. This does not deploy or migrate a personal installation.
 
+The [September 22 receipt](performance/standalone-2026-09-22/README.md) records
+the qualified run and every development/qualification attempt.
+
 ## Run
 
 Use Node 24, system Python 3.12/3.14, bubblewrap and an installed Playwright

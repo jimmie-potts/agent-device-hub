@@ -1,3 +1,24 @@
+## 2026-09-22 — Hub #30 standalone qualification candidate
+
+The source command now has a retained passing run at Hub
+`3f58f2018639a4aff4ce12c6dd3e3dce3d3e0365`: 400 warmed events,
+486 hooks overall, hook p95 55/73 ms for one/ten tasks, each consumer receipt
+p95 below one second and 148 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves seven non-qualifying development attempts and the failed
+first full report. Targets and historical receipts were not relaxed or rewritten.
+
+Updated shared-monitor qualification, sequencing and recommendation text, and
+refreshed the complete backlog snapshot. Preserved the concurrent Pixoo #34 and
+Nanoleaf #30 guide updates from PRs #131/#134. Issue #30 remains open until
+independent review, CI, merge and merged-source checks pass. Existing architecture
+flows and ownership do not change, so diagram sources/receipts remain unchanged.
+No application UI changed. Guide generation, maintenance and browser checks are
+required on this candidate; results are recorded in the PR receipt.
+
+The public edition still records source `260707019b7ff83d57e31d91ae1e1582c3734589`.
+This source delivery does not publish the public guide or claim new installation,
+real-client or physical acceptance.
+
 ## September 22, 2026: Pixoo #34 reduced installed scope
 
 The owner selected one Codex Desktop path through Ubuntu WSL, a short Pixoo

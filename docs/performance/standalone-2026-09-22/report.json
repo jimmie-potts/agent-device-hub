@@ -1,0 +1,4250 @@
+{
+  "formatVersion": 1,
+  "startedAt": "2026-09-22T01:36:24.516788+00:00",
+  "qualified": true,
+  "scope": "Standalone source qualification only; no installation, live client or physical evidence.",
+  "host": {
+    "kernel": "6.6.87.2-microsoft-standard-WSL2",
+    "architecture": "x86_64",
+    "loadBefore": [
+      0.9052734375,
+      0.81689453125,
+      0.904296875
+    ],
+    "loadAfter": [
+      0.1650390625,
+      0.52294921875,
+      0.76806640625
+    ]
+  },
+  "failures": [],
+  "smoke": false,
+  "hubRevision": "3f58f2018639a4aff4ce12c6dd3e3dce3d3e0365",
+  "sourceClean": true,
+  "runtimes": {
+    "node": "v24.20.0",
+    "nodeSha256": "89af8424dd53e560b1933f87ba650d8bf57c83ca5a04600eefb31f416aabbae7",
+    "python": "3.14.4",
+    "browserSha256": "ded93a9c9a53a1ae040f08124badcca95c938e9d5015ff340c3b5538c41bf39e"
+  },
+  "consumerRevisions": {
+    "pixoo": "28f4875b7a0f0e57ca6f25d9971e125e927a5503",
+    "nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f"
+  },
+  "runtimeManifestSha256": "8ae53cb8910aae37a1e9788c1073a41a772f6b484647dca99ceaab54aec9c12e",
+  "execution": {
+    "result": {
+      "formatVersion": 1,
+      "profiles": [
+        {
+          "tasks": 1,
+          "samples": [
+            {
+              "session": "task-0",
+              "turn": "turn-1",
+              "hookMs": 56.596982000000025,
+              "admissionRevision": 2,
+              "observedAtMs": 1790040998817,
+              "pixooMs": 230.27020599999992,
+              "nanoleafMs": 958.3204399999997
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-2",
+              "hookMs": 50.16013900000007,
+              "admissionRevision": 3,
+              "observedAtMs": 1790040999820,
+              "pixooMs": 256.70913500000006,
+              "nanoleafMs": 959.6494680000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-3",
+              "hookMs": 49.8898979999999,
+              "admissionRevision": 4,
+              "observedAtMs": 1790041000822,
+              "pixooMs": 255.9204149999996,
+              "nanoleafMs": 958.241125
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-4",
+              "hookMs": 52.149899000000005,
+              "admissionRevision": 5,
+              "observedAtMs": 1790041001826,
+              "pixooMs": 257.71212099999957,
+              "nanoleafMs": 957.4700819999998
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-5",
+              "hookMs": 48.68442200000027,
+              "admissionRevision": 6,
+              "observedAtMs": 1790041002827,
+              "pixooMs": 283.26562900000044,
+              "nanoleafMs": 957.6986189999998
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-6",
+              "hookMs": 46.02132999999958,
+              "admissionRevision": 7,
+              "observedAtMs": 1790041003825,
+              "pixooMs": 309.600907,
+              "nanoleafMs": 985.0007530000003
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-7",
+              "hookMs": 51.34050399999978,
+              "admissionRevision": 8,
+              "observedAtMs": 1790041004856,
+              "pixooMs": 283.72200000000066,
+              "nanoleafMs": 955.4516739999999
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-8",
+              "hookMs": 48.37379999999939,
+              "admissionRevision": 9,
+              "observedAtMs": 1790041005853,
+              "pixooMs": 310.00632399999995,
+              "nanoleafMs": 961.431152000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-9",
+              "hookMs": 62.32358600000043,
+              "admissionRevision": 10,
+              "observedAtMs": 1790041006869,
+              "pixooMs": 316.9332089999989,
+              "nanoleafMs": 966.1572020000003
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-10",
+              "hookMs": 49.80581600000005,
+              "admissionRevision": 11,
+              "observedAtMs": 1790041007879,
+              "pixooMs": 310.93390799999906,
+              "nanoleafMs": 957.5785759999999
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-11",
+              "hookMs": 48.69376799999918,
+              "admissionRevision": 12,
+              "observedAtMs": 1790041008880,
+              "pixooMs": 336.3417129999998,
+              "nanoleafMs": 982.3931080000002
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-12",
+              "hookMs": 54.39927799999896,
+              "admissionRevision": 13,
+              "observedAtMs": 1790041009910,
+              "pixooMs": 308.93696999999884,
+              "nanoleafMs": 954.3121909999991
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-13",
+              "hookMs": 52.00194800000099,
+              "admissionRevision": 14,
+              "observedAtMs": 1790041010910,
+              "pixooMs": 336.9114360000003,
+              "nanoleafMs": 954.3063299999994
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-14",
+              "hookMs": 54.06211699999949,
+              "admissionRevision": 15,
+              "observedAtMs": 1790041011912,
+              "pixooMs": 363.49075599999924,
+              "nanoleafMs": 952.9785319999992
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-15",
+              "hookMs": 50.356519999999364,
+              "admissionRevision": 16,
+              "observedAtMs": 1790041012909,
+              "pixooMs": 389.3297050000001,
+              "nanoleafMs": 980.3256760000022
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-16",
+              "hookMs": 48.12564999999813,
+              "admissionRevision": 17,
+              "observedAtMs": 1790041013931,
+              "pixooMs": 389.812334000002,
+              "nanoleafMs": 981.0983560000022
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-17",
+              "hookMs": 47.42194600000221,
+              "admissionRevision": 18,
+              "observedAtMs": 1790041014953,
+              "pixooMs": 390.3855939999994,
+              "nanoleafMs": 982.6374360000009
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-18",
+              "hookMs": 53.16001200000028,
+              "admissionRevision": 19,
+              "observedAtMs": 1790041015982,
+              "pixooMs": 364.8352190000005,
+              "nanoleafMs": 957.4170200000008
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-19",
+              "hookMs": 47.126595999998244,
+              "admissionRevision": 20,
+              "observedAtMs": 1790041016981,
+              "pixooMs": 389.52236099999936,
+              "nanoleafMs": 981.0729199999987
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-20",
+              "hookMs": 50.66907100000026,
+              "admissionRevision": 21,
+              "observedAtMs": 1790041018006,
+              "pixooMs": 388.46792500000083,
+              "nanoleafMs": 979.695211000002
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-21",
+              "hookMs": 54.19447999999829,
+              "admissionRevision": 22,
+              "observedAtMs": 1790041019033,
+              "pixooMs": 364.91193900000144,
+              "nanoleafMs": 957.027906000003
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-22",
+              "hookMs": 50.285360999998375,
+              "admissionRevision": 23,
+              "observedAtMs": 1790041020033,
+              "pixooMs": 389.4913850000012,
+              "nanoleafMs": 982.1883369999996
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-23",
+              "hookMs": 52.36405499999819,
+              "admissionRevision": 24,
+              "observedAtMs": 1790041021061,
+              "pixooMs": 364.2633849999984,
+              "nanoleafMs": 956.9277069999989
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-24",
+              "hookMs": 51.803468999998586,
+              "admissionRevision": 25,
+              "observedAtMs": 1790041022064,
+              "pixooMs": 390.0952240000006,
+              "nanoleafMs": 954.1311900000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-25",
+              "hookMs": 47.79739000000336,
+              "admissionRevision": 26,
+              "observedAtMs": 1790041023060,
+              "pixooMs": 416.8399099999988,
+              "nanoleafMs": 982.0114600000015
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-26",
+              "hookMs": 49.549268999999185,
+              "admissionRevision": 27,
+              "observedAtMs": 1790041024085,
+              "pixooMs": 417.29661900000065,
+              "nanoleafMs": 983.3935239999992
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-27",
+              "hookMs": 49.47740800000247,
+              "admissionRevision": 28,
+              "observedAtMs": 1790041025111,
+              "pixooMs": 417.55725299999904,
+              "nanoleafMs": 957.4920669999992
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-28",
+              "hookMs": 52.148889000000054,
+              "admissionRevision": 29,
+              "observedAtMs": 1790041026114,
+              "pixooMs": 416.993516999999,
+              "nanoleafMs": 954.175349000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-29",
+              "hookMs": 55.128343000000314,
+              "admissionRevision": 30,
+              "observedAtMs": 1790041027116,
+              "pixooMs": 418.37182699999903,
+              "nanoleafMs": 956.2413739999974
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-30",
+              "hookMs": 48.79374599999937,
+              "admissionRevision": 31,
+              "observedAtMs": 1790041028115,
+              "pixooMs": 443.70140000000174,
+              "nanoleafMs": 981.5633340000022
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-31",
+              "hookMs": 50.445801999998366,
+              "admissionRevision": 32,
+              "observedAtMs": 1790041029140,
+              "pixooMs": 443.15577699999994,
+              "nanoleafMs": 981.0289239999984
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-32",
+              "hookMs": 50.55546199999662,
+              "admissionRevision": 33,
+              "observedAtMs": 1790041030165,
+              "pixooMs": 445.01785799999925,
+              "nanoleafMs": 982.5506290000048
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-33",
+              "hookMs": 52.70976099999825,
+              "admissionRevision": 34,
+              "observedAtMs": 1790041031193,
+              "pixooMs": 420.7169769999964,
+              "nanoleafMs": 959.8710829999982
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-34",
+              "hookMs": 49.873018000005686,
+              "admissionRevision": 35,
+              "observedAtMs": 1790041032196,
+              "pixooMs": 444.1544520000025,
+              "nanoleafMs": 982.5632350000014
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-35",
+              "hookMs": 47.220635999998194,
+              "admissionRevision": 36,
+              "observedAtMs": 1790041033220,
+              "pixooMs": 444.1527920000008,
+              "nanoleafMs": 982.6454269999958
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-36",
+              "hookMs": 53.09923300000082,
+              "admissionRevision": 37,
+              "observedAtMs": 1790041034248,
+              "pixooMs": 423.1605580000032,
+              "nanoleafMs": 962.642098999997
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-37",
+              "hookMs": 54.500388000000385,
+              "admissionRevision": 38,
+              "observedAtMs": 1790041035258,
+              "pixooMs": 419.8628730000055,
+              "nanoleafMs": 958.2991340000008
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-38",
+              "hookMs": 53.07759299999452,
+              "admissionRevision": 39,
+              "observedAtMs": 1790041036263,
+              "pixooMs": 418.2463330000028,
+              "nanoleafMs": 955.5135630000004
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-39",
+              "hookMs": 50.78223199999775,
+              "admissionRevision": 40,
+              "observedAtMs": 1790041037263,
+              "pixooMs": 444.34886499999993,
+              "nanoleafMs": 956.3115249999973
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-40",
+              "hookMs": 46.71058500000072,
+              "admissionRevision": 41,
+              "observedAtMs": 1790041038260,
+              "pixooMs": 473.71906200000376,
+              "nanoleafMs": 960.0650730000052
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-41",
+              "hookMs": 51.4983579999971,
+              "admissionRevision": 42,
+              "observedAtMs": 1790041039266,
+              "pixooMs": 472.1876640000046,
+              "nanoleafMs": 957.0969800000021
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-42",
+              "hookMs": 48.15586099999928,
+              "admissionRevision": 43,
+              "observedAtMs": 1790041040265,
+              "pixooMs": 496.9585819999993,
+              "nanoleafMs": 981.8035559999989
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-43",
+              "hookMs": 54.133098999998765,
+              "admissionRevision": 44,
+              "observedAtMs": 1790041041294,
+              "pixooMs": 471.7787149999931,
+              "nanoleafMs": 957.024390999999
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-44",
+              "hookMs": 53.970000000001164,
+              "admissionRevision": 45,
+              "observedAtMs": 1790041042299,
+              "pixooMs": 471.36494200000016,
+              "nanoleafMs": 954.1990159999987
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-45",
+              "hookMs": 46.594404999996186,
+              "admissionRevision": 46,
+              "observedAtMs": 1790041043294,
+              "pixooMs": 499.37069099999644,
+              "nanoleafMs": 959.7975229999938
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-46",
+              "hookMs": 55.9099669999996,
+              "admissionRevision": 47,
+              "observedAtMs": 1790041044302,
+              "pixooMs": 499.3544810000021,
+              "nanoleafMs": 957.5730370000019
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-47",
+              "hookMs": 51.519107000000076,
+              "admissionRevision": 48,
+              "observedAtMs": 1790041045305,
+              "pixooMs": 499.58970899999986,
+              "nanoleafMs": 959.030402999997
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-48",
+              "hookMs": 46.627432000001136,
+              "admissionRevision": 49,
+              "observedAtMs": 1790041046304,
+              "pixooMs": 525.2447219999958,
+              "nanoleafMs": 983.6001899999974
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-49",
+              "hookMs": 47.367935000002035,
+              "admissionRevision": 50,
+              "observedAtMs": 1790041047329,
+              "pixooMs": 527.0845499999996,
+              "nanoleafMs": 984.5643829999972
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-50",
+              "hookMs": 50.71034099999815,
+              "admissionRevision": 51,
+              "observedAtMs": 1790041048357,
+              "pixooMs": 525.6878450000004,
+              "nanoleafMs": 957.5372110000026
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-51",
+              "hookMs": 49.47706599999947,
+              "admissionRevision": 52,
+              "observedAtMs": 1790041049358,
+              "pixooMs": 552.085186999997,
+              "nanoleafMs": 956.7837329999966
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-52",
+              "hookMs": 53.3857050000006,
+              "admissionRevision": 53,
+              "observedAtMs": 1790041050362,
+              "pixooMs": 550.8995579999973,
+              "nanoleafMs": 955.3561629999967
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-53",
+              "hookMs": 49.92355700000189,
+              "admissionRevision": 54,
+              "observedAtMs": 1790041051361,
+              "pixooMs": 577.9905230000004,
+              "nanoleafMs": 982.9969300000012
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-54",
+              "hookMs": 52.72381000000314,
+              "admissionRevision": 55,
+              "observedAtMs": 1790041052390,
+              "pixooMs": 553.9697830000005,
+              "nanoleafMs": 957.889403000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-55",
+              "hookMs": 49.701107000000775,
+              "admissionRevision": 56,
+              "observedAtMs": 1790041053391,
+              "pixooMs": 578.6381429999965,
+              "nanoleafMs": 983.110593999998
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-56",
+              "hookMs": 52.42915999999968,
+              "admissionRevision": 57,
+              "observedAtMs": 1790041054420,
+              "pixooMs": 557.0801799999972,
+              "nanoleafMs": 962.4232560000019
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-57",
+              "hookMs": 54.02467700000125,
+              "admissionRevision": 58,
+              "observedAtMs": 1790041055430,
+              "pixooMs": 553.9029179999998,
+              "nanoleafMs": 959.6619339999961
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-58",
+              "hookMs": 50.94153399999777,
+              "admissionRevision": 59,
+              "observedAtMs": 1790041056433,
+              "pixooMs": 555.6078000000052,
+              "nanoleafMs": 960.4146920000057
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-59",
+              "hookMs": 49.5174260000058,
+              "admissionRevision": 60,
+              "observedAtMs": 1790041057436,
+              "pixooMs": 580.3196840000019,
+              "nanoleafMs": 956.6749190000046
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-60",
+              "hookMs": 49.22758600000088,
+              "admissionRevision": 61,
+              "observedAtMs": 1790041058435,
+              "pixooMs": 607.6673729999966,
+              "nanoleafMs": 957.8446960000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-61",
+              "hookMs": 51.74997599999915,
+              "admissionRevision": 62,
+              "observedAtMs": 1790041059439,
+              "pixooMs": 607.5592499999984,
+              "nanoleafMs": 958.4702780000007
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-62",
+              "hookMs": 48.69186300000001,
+              "admissionRevision": 63,
+              "observedAtMs": 1790041060440,
+              "pixooMs": 634.2796420000013,
+              "nanoleafMs": 984.609375
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-63",
+              "hookMs": 50.70564299999387,
+              "admissionRevision": 64,
+              "observedAtMs": 1790041061468,
+              "pixooMs": 608.5547110000043,
+              "nanoleafMs": 959.520537000004
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-64",
+              "hookMs": 48.21839400000317,
+              "admissionRevision": 65,
+              "observedAtMs": 1790041062469,
+              "pixooMs": 633.6916699999929,
+              "nanoleafMs": 984.2366980000006
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-65",
+              "hookMs": 51.23972499999218,
+              "admissionRevision": 66,
+              "observedAtMs": 1790041063498,
+              "pixooMs": 607.6688539999886,
+              "nanoleafMs": 958.7501429999975
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-66",
+              "hookMs": 53.42292699999234,
+              "admissionRevision": 67,
+              "observedAtMs": 1790041064504,
+              "pixooMs": 607.3111579999968,
+              "nanoleafMs": 958.0503229999886
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-67",
+              "hookMs": 56.39966100000311,
+              "admissionRevision": 68,
+              "observedAtMs": 1790041065511,
+              "pixooMs": 609.873058000012,
+              "nanoleafMs": 961.2337170000101
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-68",
+              "hookMs": 47.243556999994325,
+              "admissionRevision": 69,
+              "observedAtMs": 1790041066513,
+              "pixooMs": 610.4629509999941,
+              "nanoleafMs": 961.8396379999904
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-69",
+              "hookMs": 56.83628399998997,
+              "admissionRevision": 70,
+              "observedAtMs": 1790041067524,
+              "pixooMs": 608.7009350000008,
+              "nanoleafMs": 959.0702899999887
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-70",
+              "hookMs": 48.39889199999743,
+              "admissionRevision": 71,
+              "observedAtMs": 1790041068526,
+              "pixooMs": 635.9114390000032,
+              "nanoleafMs": 959.4698000000062
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-71",
+              "hookMs": 51.64310899999691,
+              "admissionRevision": 72,
+              "observedAtMs": 1790041069530,
+              "pixooMs": 636.4615539999941,
+              "nanoleafMs": 962.191559999992
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-72",
+              "hookMs": 49.45125699999335,
+              "admissionRevision": 73,
+              "observedAtMs": 1790041070534,
+              "pixooMs": 638.8306329999905,
+              "nanoleafMs": 960.4839199999988
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-73",
+              "hookMs": 48.88944500000798,
+              "admissionRevision": 74,
+              "observedAtMs": 1790041071537,
+              "pixooMs": 662.3965420000022,
+              "nanoleafMs": 959.2308150000026
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-74",
+              "hookMs": 47.384966999990866,
+              "admissionRevision": 75,
+              "observedAtMs": 1790041072537,
+              "pixooMs": 688.579952,
+              "nanoleafMs": 959.6899459999986
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-75",
+              "hookMs": 49.22600799999782,
+              "admissionRevision": 76,
+              "observedAtMs": 1790041073539,
+              "pixooMs": 690.4414779999934,
+              "nanoleafMs": 960.9943930000009
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-76",
+              "hookMs": 54.49364099999366,
+              "admissionRevision": 77,
+              "observedAtMs": 1790041074547,
+              "pixooMs": 689.3610449999978,
+              "nanoleafMs": 960.4484019999945
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-77",
+              "hookMs": 50.5024310000008,
+              "admissionRevision": 78,
+              "observedAtMs": 1790041075552,
+              "pixooMs": 689.6423059999943,
+              "nanoleafMs": 960.5641689999902
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-78",
+              "hookMs": 52.78804400000081,
+              "admissionRevision": 79,
+              "observedAtMs": 1790041076559,
+              "pixooMs": 688.5011719999893,
+              "nanoleafMs": 959.6025359999912
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-79",
+              "hookMs": 51.19537499999569,
+              "admissionRevision": 80,
+              "observedAtMs": 1790041077562,
+              "pixooMs": 690.8553399999946,
+              "nanoleafMs": 960.016752999989
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-80",
+              "hookMs": 49.12904800000251,
+              "admissionRevision": 81,
+              "observedAtMs": 1790041078565,
+              "pixooMs": 717.6923719999904,
+              "nanoleafMs": 960.2139199999947
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-81",
+              "hookMs": 49.2044889999961,
+              "admissionRevision": 82,
+              "observedAtMs": 1790041079568,
+              "pixooMs": 743.0976609999925,
+              "nanoleafMs": 960.0348299999896
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-82",
+              "hookMs": 50.71612599999935,
+              "admissionRevision": 83,
+              "observedAtMs": 1790041080571,
+              "pixooMs": 744.6096989999933,
+              "nanoleafMs": 960.4937559999962
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-83",
+              "hookMs": 50.52134500000102,
+              "admissionRevision": 84,
+              "observedAtMs": 1790041081576,
+              "pixooMs": 743.5741609999968,
+              "nanoleafMs": 962.2994999999937
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-84",
+              "hookMs": 52.81857599999057,
+              "admissionRevision": 85,
+              "observedAtMs": 1790041082584,
+              "pixooMs": 743.4995530000015,
+              "nanoleafMs": 960.4840229999973
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-85",
+              "hookMs": 52.89483600000676,
+              "admissionRevision": 86,
+              "observedAtMs": 1790041083591,
+              "pixooMs": 742.6109589999978,
+              "nanoleafMs": 961.3530979999923
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-86",
+              "hookMs": 55.409196000007796,
+              "admissionRevision": 87,
+              "observedAtMs": 1790041084599,
+              "pixooMs": 746.9880779999949,
+              "nanoleafMs": 963.3319049999991
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-87",
+              "hookMs": 51.60359800000151,
+              "admissionRevision": 88,
+              "observedAtMs": 1790041085608,
+              "pixooMs": 744.5690980000072,
+              "nanoleafMs": 961.6308270000009
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-88",
+              "hookMs": 50.43475000000035,
+              "admissionRevision": 89,
+              "observedAtMs": 1790041086612,
+              "pixooMs": 743.6402789999993,
+              "nanoleafMs": 960.2487659999897
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-89",
+              "hookMs": 55.22705400000268,
+              "admissionRevision": 90,
+              "observedAtMs": 1790041087620,
+              "pixooMs": 745.3309159999917,
+              "nanoleafMs": 963.0796969999938
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-90",
+              "hookMs": 51.55546400000458,
+              "admissionRevision": 91,
+              "observedAtMs": 1790041088629,
+              "pixooMs": 744.4288919999963,
+              "nanoleafMs": 961.9066119999916
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-91",
+              "hookMs": 50.269258000000264,
+              "admissionRevision": 92,
+              "observedAtMs": 1790041089633,
+              "pixooMs": 744.8004349999974,
+              "nanoleafMs": 962.2724869999947
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-92",
+              "hookMs": 53.34856299999228,
+              "admissionRevision": 93,
+              "observedAtMs": 1790041090642,
+              "pixooMs": 744.6739920000109,
+              "nanoleafMs": 961.5708210000012
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-93",
+              "hookMs": 49.63859600000433,
+              "admissionRevision": 94,
+              "observedAtMs": 1790041091646,
+              "pixooMs": 742.5576810000057,
+              "nanoleafMs": 959.1319680000015
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-94",
+              "hookMs": 51.47084499998891,
+              "admissionRevision": 95,
+              "observedAtMs": 1790041092649,
+              "pixooMs": 745.8228270000109,
+              "nanoleafMs": 963.2007390000072
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-95",
+              "hookMs": 48.3527000000031,
+              "admissionRevision": 96,
+              "observedAtMs": 1790041093654,
+              "pixooMs": 747.4194600000046,
+              "nanoleafMs": 965.1318210000027
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-96",
+              "hookMs": 53.927576000001864,
+              "admissionRevision": 97,
+              "observedAtMs": 1790041094665,
+              "pixooMs": 744.9306769999966,
+              "nanoleafMs": 962.0915299999906
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-97",
+              "hookMs": 54.22855700000946,
+              "admissionRevision": 98,
+              "observedAtMs": 1790041095674,
+              "pixooMs": 747.08662799999,
+              "nanoleafMs": 964.6079309999914
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-98",
+              "hookMs": 55.26411000000371,
+              "admissionRevision": 99,
+              "observedAtMs": 1790041096686,
+              "pixooMs": 746.4192150000017,
+              "nanoleafMs": 963.7032179999951
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-99",
+              "hookMs": 50.90358999998716,
+              "admissionRevision": 100,
+              "observedAtMs": 1790041097694,
+              "pixooMs": 744.4505669999926,
+              "nanoleafMs": 962.1456009999965
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-100",
+              "hookMs": 47.107635000007576,
+              "admissionRevision": 101,
+              "observedAtMs": 1790041098698,
+              "pixooMs": 744.9824600000138,
+              "nanoleafMs": 962.0714500000031
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-101",
+              "hookMs": 49.30632500001229,
+              "admissionRevision": 102,
+              "observedAtMs": 1790041099701,
+              "pixooMs": 745.3538190000108,
+              "nanoleafMs": 961.5850560000108
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-102",
+              "hookMs": 52.66486000000441,
+              "admissionRevision": 103,
+              "observedAtMs": 1790041100709,
+              "pixooMs": 744.5498970000044,
+              "nanoleafMs": 961.301925000007
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-103",
+              "hookMs": 51.792176000002655,
+              "admissionRevision": 104,
+              "observedAtMs": 1790041101715,
+              "pixooMs": 744.6127419999975,
+              "nanoleafMs": 961.542042000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-104",
+              "hookMs": 50.12288100000296,
+              "admissionRevision": 105,
+              "observedAtMs": 1790041102720,
+              "pixooMs": 744.3394889999909,
+              "nanoleafMs": 961.1023209999985
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-105",
+              "hookMs": 48.83075200000894,
+              "admissionRevision": 106,
+              "observedAtMs": 1790041103722,
+              "pixooMs": 745.6152960000036,
+              "nanoleafMs": 962.5546769999928
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-106",
+              "hookMs": 49.813337999992655,
+              "admissionRevision": 107,
+              "observedAtMs": 1790041104727,
+              "pixooMs": 746.2521679999918,
+              "nanoleafMs": 963.7598209999996
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-107",
+              "hookMs": 52.33305900001142,
+              "admissionRevision": 108,
+              "observedAtMs": 1790041105735,
+              "pixooMs": 744.2484489999915,
+              "nanoleafMs": 961.3252209999919
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-108",
+              "hookMs": 54.71244899999874,
+              "admissionRevision": 109,
+              "observedAtMs": 1790041106745,
+              "pixooMs": 746.0267969999986,
+              "nanoleafMs": 963.0654079999949
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-109",
+              "hookMs": 49.747686999995494,
+              "admissionRevision": 110,
+              "observedAtMs": 1790041107749,
+              "pixooMs": 745.1390949999914,
+              "nanoleafMs": 962.4233109999914
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-110",
+              "hookMs": 53.209474000002956,
+              "admissionRevision": 111,
+              "observedAtMs": 1790041108758,
+              "pixooMs": 744.9616620000015,
+              "nanoleafMs": 962.0894039999985
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-111",
+              "hookMs": 47.32586499999161,
+              "admissionRevision": 112,
+              "observedAtMs": 1790041109761,
+              "pixooMs": 770.3522030000022,
+              "nanoleafMs": 961.7555060000013
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-112",
+              "hookMs": 56.66568299999926,
+              "admissionRevision": 113,
+              "observedAtMs": 1790041110771,
+              "pixooMs": 775.0048719999904,
+              "nanoleafMs": 964.6800579999981
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-113",
+              "hookMs": 53.269902999993064,
+              "admissionRevision": 114,
+              "observedAtMs": 1790041111782,
+              "pixooMs": 770.0083319999976,
+              "nanoleafMs": 959.3443549999938
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-114",
+              "hookMs": 49.23563299998932,
+              "admissionRevision": 115,
+              "observedAtMs": 1790041112784,
+              "pixooMs": 770.8405860000057,
+              "nanoleafMs": 960.7270030000072
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-115",
+              "hookMs": 49.596466999995755,
+              "admissionRevision": 116,
+              "observedAtMs": 1790041113787,
+              "pixooMs": 795.2109259999997,
+              "nanoleafMs": 958.4963330000028
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-116",
+              "hookMs": 52.59955800000171,
+              "admissionRevision": 117,
+              "observedAtMs": 1790041114792,
+              "pixooMs": 798.2325910000072,
+              "nanoleafMs": 961.6281670000026
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-117",
+              "hookMs": 48.415290999997524,
+              "admissionRevision": 118,
+              "observedAtMs": 1790041115795,
+              "pixooMs": 797.2420069999935,
+              "nanoleafMs": 959.8854270000011
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-118",
+              "hookMs": 48.76404300000286,
+              "admissionRevision": 119,
+              "observedAtMs": 1790041116797,
+              "pixooMs": 799.2807949999988,
+              "nanoleafMs": 963.0170910000015
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-119",
+              "hookMs": 51.75339700000768,
+              "admissionRevision": 120,
+              "observedAtMs": 1790041117805,
+              "pixooMs": 796.6972550000064,
+              "nanoleafMs": 960.9552650000114
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-120",
+              "hookMs": 53.641004000004614,
+              "admissionRevision": 121,
+              "observedAtMs": 1790041118810,
+              "pixooMs": 805.4623520000023,
+              "nanoleafMs": 970.7316169999976
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-121",
+              "hookMs": 53.89984600000025,
+              "admissionRevision": 122,
+              "observedAtMs": 1790041119828,
+              "pixooMs": 801.2152639999986,
+              "nanoleafMs": 965.4443549999996
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-122",
+              "hookMs": 54.47044900000037,
+              "admissionRevision": 123,
+              "observedAtMs": 1790041120840,
+              "pixooMs": 803.1844229999988,
+              "nanoleafMs": 967.8126469999988
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-123",
+              "hookMs": 50.41661099999328,
+              "admissionRevision": 124,
+              "observedAtMs": 1790041121851,
+              "pixooMs": 801.3936070000054,
+              "nanoleafMs": 964.8850840000086
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-124",
+              "hookMs": 55.15009200001077,
+              "admissionRevision": 125,
+              "observedAtMs": 1790041122864,
+              "pixooMs": 801.2040960000013,
+              "nanoleafMs": 964.610222000003
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-125",
+              "hookMs": 52.136788000003435,
+              "admissionRevision": 126,
+              "observedAtMs": 1790041123873,
+              "pixooMs": 801.7826750000095,
+              "nanoleafMs": 966.5152600000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-126",
+              "hookMs": 51.85458699999435,
+              "admissionRevision": 127,
+              "observedAtMs": 1790041124884,
+              "pixooMs": 801.4528339999961,
+              "nanoleafMs": 964.9556900000025
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-127",
+              "hookMs": 56.03473299999314,
+              "admissionRevision": 128,
+              "observedAtMs": 1790041125898,
+              "pixooMs": 800.007512000011,
+              "nanoleafMs": 963.5564270000032
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-128",
+              "hookMs": 51.34838299998955,
+              "admissionRevision": 129,
+              "observedAtMs": 1790041126905,
+              "pixooMs": 798.3350840000057,
+              "nanoleafMs": 961.4734060000046
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-129",
+              "hookMs": 55.82334399998945,
+              "admissionRevision": 130,
+              "observedAtMs": 1790041127915,
+              "pixooMs": 798.8215459999919,
+              "nanoleafMs": 962.831972999993
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-130",
+              "hookMs": 52.39143800002057,
+              "admissionRevision": 131,
+              "observedAtMs": 1790041128923,
+              "pixooMs": 800.8719649999985,
+              "nanoleafMs": 964.9678419999836
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-131",
+              "hookMs": 54.53656900001806,
+              "admissionRevision": 132,
+              "observedAtMs": 1790041129934,
+              "pixooMs": 799.4299070000125,
+              "nanoleafMs": 963.225523000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-132",
+              "hookMs": 53.1324420000019,
+              "admissionRevision": 133,
+              "observedAtMs": 1790041130944,
+              "pixooMs": 799.3846480000066,
+              "nanoleafMs": 964.3752490000043
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-133",
+              "hookMs": 48.50606099999277,
+              "admissionRevision": 134,
+              "observedAtMs": 1790041131949,
+              "pixooMs": 797.6224609999917,
+              "nanoleafMs": 961.3893260000041
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-134",
+              "hookMs": 55.46326299998327,
+              "admissionRevision": 135,
+              "observedAtMs": 1790041132959,
+              "pixooMs": 798.8788260000001,
+              "nanoleafMs": 962.8039629999839
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-135",
+              "hookMs": 52.80195000002277,
+              "admissionRevision": 136,
+              "observedAtMs": 1790041133967,
+              "pixooMs": 801.182209999999,
+              "nanoleafMs": 964.8822349999973
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-136",
+              "hookMs": 52.09934799998882,
+              "admissionRevision": 137,
+              "observedAtMs": 1790041134977,
+              "pixooMs": 800.3990469999844,
+              "nanoleafMs": 963.6775510000007
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-137",
+              "hookMs": 47.863727000018116,
+              "admissionRevision": 138,
+              "observedAtMs": 1790041135981,
+              "pixooMs": 799.1175490000169,
+              "nanoleafMs": 962.8188760000048
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-138",
+              "hookMs": 48.191439000016544,
+              "admissionRevision": 139,
+              "observedAtMs": 1790041136985,
+              "pixooMs": 799.366880000016,
+              "nanoleafMs": 962.929346000019
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-139",
+              "hookMs": 50.616849999991246,
+              "admissionRevision": 140,
+              "observedAtMs": 1790041137991,
+              "pixooMs": 801.3985110000067,
+              "nanoleafMs": 965.1398380000028
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-140",
+              "hookMs": 52.338698999985354,
+              "admissionRevision": 141,
+              "observedAtMs": 1790041139000,
+              "pixooMs": 800.9880800000101,
+              "nanoleafMs": 963.6789320000098
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-141",
+              "hookMs": 50.70205100000021,
+              "admissionRevision": 142,
+              "observedAtMs": 1790041140006,
+              "pixooMs": 802.0426530000113,
+              "nanoleafMs": 966.047820000007
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-142",
+              "hookMs": 51.671623000002,
+              "admissionRevision": 143,
+              "observedAtMs": 1790041141016,
+              "pixooMs": 800.1585039999918,
+              "nanoleafMs": 963.84951
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-143",
+              "hookMs": 54.25801699998556,
+              "admissionRevision": 144,
+              "observedAtMs": 1790041142026,
+              "pixooMs": 800.2993230000138,
+              "nanoleafMs": 963.3225849999872
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-144",
+              "hookMs": 53.70863500001724,
+              "admissionRevision": 145,
+              "observedAtMs": 1790041143035,
+              "pixooMs": 800.396218000009,
+              "nanoleafMs": 963.9282839999942
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-145",
+              "hookMs": 49.05276399999275,
+              "admissionRevision": 146,
+              "observedAtMs": 1790041144041,
+              "pixooMs": 798.188181000005,
+              "nanoleafMs": 960.8190729999915
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-146",
+              "hookMs": 54.71038699999917,
+              "admissionRevision": 147,
+              "observedAtMs": 1790041145049,
+              "pixooMs": 800.2462790000136,
+              "nanoleafMs": 964.657686999999
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-147",
+              "hookMs": 53.65741300000809,
+              "admissionRevision": 148,
+              "observedAtMs": 1790041146060,
+              "pixooMs": 800.1326070000068,
+              "nanoleafMs": 963.8389130000141
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-148",
+              "hookMs": 52.150187999999616,
+              "admissionRevision": 149,
+              "observedAtMs": 1790041147068,
+              "pixooMs": 803.563605000003,
+              "nanoleafMs": 967.3607909999846
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-149",
+              "hookMs": 50.31918900000164,
+              "admissionRevision": 150,
+              "observedAtMs": 1790041148078,
+              "pixooMs": 802.3569039999857,
+              "nanoleafMs": 966.7281669999938
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-150",
+              "hookMs": 49.868126999994274,
+              "admissionRevision": 151,
+              "observedAtMs": 1790041149087,
+              "pixooMs": 796.8703939999978,
+              "nanoleafMs": 960.7512609999976
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-151",
+              "hookMs": 48.61280200001784,
+              "admissionRevision": 152,
+              "observedAtMs": 1790041150090,
+              "pixooMs": 800.5340129999968,
+              "nanoleafMs": 963.9142279999796
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-152",
+              "hookMs": 47.22864600000321,
+              "admissionRevision": 153,
+              "observedAtMs": 1790041151094,
+              "pixooMs": 823.7232990000048,
+              "nanoleafMs": 960.6287540000048
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-153",
+              "hookMs": 49.20941499999026,
+              "admissionRevision": 154,
+              "observedAtMs": 1790041152097,
+              "pixooMs": 825.4795670000021,
+              "nanoleafMs": 962.0418499999796
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-154",
+              "hookMs": 45.705669000017224,
+              "admissionRevision": 155,
+              "observedAtMs": 1790041153098,
+              "pixooMs": 851.4751850000175,
+              "nanoleafMs": 962.3518400000175
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-155",
+              "hookMs": 48.01428900001338,
+              "admissionRevision": 156,
+              "observedAtMs": 1790041154102,
+              "pixooMs": 852.2479889999959,
+              "nanoleafMs": 961.0832850000006
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-156",
+              "hookMs": 47.884149000019534,
+              "admissionRevision": 157,
+              "observedAtMs": 1790041155104,
+              "pixooMs": 855.0387099999934,
+              "nanoleafMs": 965.2700349999941
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-157",
+              "hookMs": 48.69258199998876,
+              "admissionRevision": 158,
+              "observedAtMs": 1790041156111,
+              "pixooMs": 851.454029000015,
+              "nanoleafMs": 960.9844230000162
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-158",
+              "hookMs": 58.21470499999123,
+              "admissionRevision": 159,
+              "observedAtMs": 1790041157123,
+              "pixooMs": 855.3088900000148,
+              "nanoleafMs": 965.3173760000209
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-159",
+              "hookMs": 51.56730999998399,
+              "admissionRevision": 160,
+              "observedAtMs": 1790041158132,
+              "pixooMs": 852.6590319999959,
+              "nanoleafMs": 962.719878999982
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-160",
+              "hookMs": 47.7770399999863,
+              "admissionRevision": 161,
+              "observedAtMs": 1790041159136,
+              "pixooMs": 852.8249720000022,
+              "nanoleafMs": 963.3609110000252
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-161",
+              "hookMs": 49.51128800000879,
+              "admissionRevision": 162,
+              "observedAtMs": 1790041160141,
+              "pixooMs": 852.3327099999879,
+              "nanoleafMs": 962.2330760000041
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-162",
+              "hookMs": 51.78496799999266,
+              "admissionRevision": 163,
+              "observedAtMs": 1790041161149,
+              "pixooMs": 850.9033319999871,
+              "nanoleafMs": 960.856386999978
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-163",
+              "hookMs": 47.62812899998971,
+              "admissionRevision": 164,
+              "observedAtMs": 1790041162151,
+              "pixooMs": 853.4166130000085,
+              "nanoleafMs": 963.5734689999954
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-164",
+              "hookMs": 54.008168000000296,
+              "admissionRevision": 165,
+              "observedAtMs": 1790041163161,
+              "pixooMs": 851.1523719999823,
+              "nanoleafMs": 961.6059119999991
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-165",
+              "hookMs": 49.40045700001065,
+              "admissionRevision": 166,
+              "observedAtMs": 1790041164165,
+              "pixooMs": 853.676363000006,
+              "nanoleafMs": 963.6862989999936
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-166",
+              "hookMs": 53.74316800001543,
+              "admissionRevision": 167,
+              "observedAtMs": 1790041165176,
+              "pixooMs": 853.0383300000103,
+              "nanoleafMs": 962.8482810000132
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-167",
+              "hookMs": 52.559840000001714,
+              "admissionRevision": 168,
+              "observedAtMs": 1790041166184,
+              "pixooMs": 853.8178850000259,
+              "nanoleafMs": 963.0331710000173
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-168",
+              "hookMs": 49.87422499997774,
+              "admissionRevision": 169,
+              "observedAtMs": 1790041167190,
+              "pixooMs": 852.0853099999949,
+              "nanoleafMs": 962.1030320000136
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-169",
+              "hookMs": 49.77597899999819,
+              "admissionRevision": 170,
+              "observedAtMs": 1790041168195,
+              "pixooMs": 852.0251140000182,
+              "nanoleafMs": 962.379866000003
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-170",
+              "hookMs": 45.87518000000273,
+              "admissionRevision": 171,
+              "observedAtMs": 1790041169197,
+              "pixooMs": 852.7629780000134,
+              "nanoleafMs": 962.6873389999964
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-171",
+              "hookMs": 48.972083000000566,
+              "admissionRevision": 172,
+              "observedAtMs": 1790041170202,
+              "pixooMs": 854.0025030000252,
+              "nanoleafMs": 964.1786130000255
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-172",
+              "hookMs": 55.373884000000544,
+              "admissionRevision": 173,
+              "observedAtMs": 1790041171215,
+              "pixooMs": 851.7864729999856,
+              "nanoleafMs": 961.214380999998
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-173",
+              "hookMs": 48.85258299999987,
+              "admissionRevision": 174,
+              "observedAtMs": 1790041172218,
+              "pixooMs": 851.4317590000283,
+              "nanoleafMs": 960.2309660000028
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-174",
+              "hookMs": 49.36289499999839,
+              "admissionRevision": 175,
+              "observedAtMs": 1790041173221,
+              "pixooMs": 851.1744450000115,
+              "nanoleafMs": 961.1765829999931
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-175",
+              "hookMs": 50.77574199999799,
+              "admissionRevision": 176,
+              "observedAtMs": 1790041174226,
+              "pixooMs": 858.0107900000003,
+              "nanoleafMs": 969.8364000000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-176",
+              "hookMs": 51.11024299997371,
+              "admissionRevision": 177,
+              "observedAtMs": 1790041175239,
+              "pixooMs": 856.6389740000013,
+              "nanoleafMs": 967.3281200000201
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-177",
+              "hookMs": 54.940858999994816,
+              "admissionRevision": 178,
+              "observedAtMs": 1790041176254,
+              "pixooMs": 855.2362169999979,
+              "nanoleafMs": 964.6509260000021
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-178",
+              "hookMs": 54.26114600000437,
+              "admissionRevision": 179,
+              "observedAtMs": 1790041177265,
+              "pixooMs": 855.6593799999973,
+              "nanoleafMs": 965.3919809999934
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-179",
+              "hookMs": 48.582603000017116,
+              "admissionRevision": 180,
+              "observedAtMs": 1790041178271,
+              "pixooMs": 855.192784999992,
+              "nanoleafMs": 965.163475999987
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-180",
+              "hookMs": 53.62992499998654,
+              "admissionRevision": 181,
+              "observedAtMs": 1790041179282,
+              "pixooMs": 853.8798209999804,
+              "nanoleafMs": 963.8892239999841
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-181",
+              "hookMs": 47.94135899998946,
+              "admissionRevision": 182,
+              "observedAtMs": 1790041180286,
+              "pixooMs": 852.4433270000154,
+              "nanoleafMs": 962.164889000007
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-182",
+              "hookMs": 53.5516040000075,
+              "admissionRevision": 183,
+              "observedAtMs": 1790041181294,
+              "pixooMs": 851.4382880000048,
+              "nanoleafMs": 961.5486410000012
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-183",
+              "hookMs": 51.41582500000368,
+              "admissionRevision": 184,
+              "observedAtMs": 1790041182300,
+              "pixooMs": 850.365621999983,
+              "nanoleafMs": 959.8766419999884
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-184",
+              "hookMs": 53.9589660000056,
+              "admissionRevision": 185,
+              "observedAtMs": 1790041183306,
+              "pixooMs": 853.0611659999995,
+              "nanoleafMs": 962.5598760000139
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-185",
+              "hookMs": 53.042554000014206,
+              "admissionRevision": 186,
+              "observedAtMs": 1790041184314,
+              "pixooMs": 851.9096609999833,
+              "nanoleafMs": 961.7304509999813
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-186",
+              "hookMs": 52.78862099998514,
+              "admissionRevision": 187,
+              "observedAtMs": 1790041185321,
+              "pixooMs": 855.5371389999927,
+              "nanoleafMs": 965.7437119999959
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-187",
+              "hookMs": 47.14016699997592,
+              "admissionRevision": 188,
+              "observedAtMs": 1790041186327,
+              "pixooMs": 851.4126360000228,
+              "nanoleafMs": 961.5404189999972
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-188",
+              "hookMs": 51.57001699999091,
+              "admissionRevision": 189,
+              "observedAtMs": 1790041187333,
+              "pixooMs": 853.257127000019,
+              "nanoleafMs": 963.6379000000015
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-189",
+              "hookMs": 48.596489999996265,
+              "admissionRevision": 190,
+              "observedAtMs": 1790041188338,
+              "pixooMs": 851.3478469999973,
+              "nanoleafMs": 960.6362179999996
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-190",
+              "hookMs": 47.693078000011155,
+              "admissionRevision": 191,
+              "observedAtMs": 1790041189339,
+              "pixooMs": 878.5822519999929,
+              "nanoleafMs": 960.5495360000059
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-191",
+              "hookMs": 53.220094000018435,
+              "admissionRevision": 192,
+              "observedAtMs": 1790041190346,
+              "pixooMs": 879.2849059999862,
+              "nanoleafMs": 962.6023470000073
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-192",
+              "hookMs": 52.16468899999745,
+              "admissionRevision": 193,
+              "observedAtMs": 1790041191353,
+              "pixooMs": 880.5476609999896,
+              "nanoleafMs": 963.5171599999885
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-193",
+              "hookMs": 51.019433000008576,
+              "admissionRevision": 194,
+              "observedAtMs": 1790041192361,
+              "pixooMs": 879.9264289999846,
+              "nanoleafMs": 963.179398999986
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-194",
+              "hookMs": 49.1122139999934,
+              "admissionRevision": 195,
+              "observedAtMs": 1790041193365,
+              "pixooMs": 878.3046600000234,
+              "nanoleafMs": 962.1143130000273
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-195",
+              "hookMs": 52.90149299998302,
+              "admissionRevision": 196,
+              "observedAtMs": 1790041194372,
+              "pixooMs": 881.3583309999958,
+              "nanoleafMs": 964.8395050000108
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-196",
+              "hookMs": 51.784265999973286,
+              "admissionRevision": 197,
+              "observedAtMs": 1790041195382,
+              "pixooMs": 880.3011019999976,
+              "nanoleafMs": 963.8682640000188
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-197",
+              "hookMs": 49.27598599999328,
+              "admissionRevision": 198,
+              "observedAtMs": 1790041196387,
+              "pixooMs": 880.2420989999955,
+              "nanoleafMs": 963.9450539999816
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-198",
+              "hookMs": 49.65583599999081,
+              "admissionRevision": 199,
+              "observedAtMs": 1790041197393,
+              "pixooMs": 880.7337460000126,
+              "nanoleafMs": 964.6873520000081
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-199",
+              "hookMs": 51.60312899999553,
+              "admissionRevision": 200,
+              "observedAtMs": 1790041198402,
+              "pixooMs": 882.6257700000133,
+              "nanoleafMs": 965.4790510000021
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-200",
+              "hookMs": 52.173789000022225,
+              "admissionRevision": 201,
+              "observedAtMs": 1790041199411,
+              "pixooMs": 881.2875800000038,
+              "nanoleafMs": 963.6028700000024
+            }
+          ]
+        },
+        {
+          "tasks": 10,
+          "samples": [
+            {
+              "session": "task-0",
+              "turn": "turn-201",
+              "hookMs": 68.27778599999147,
+              "admissionRevision": 207,
+              "observedAtMs": 1790041200427,
+              "pixooMs": 876.5444279999938,
+              "nanoleafMs": 964.6247049999947
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-201",
+              "hookMs": 59.89615699998103,
+              "admissionRevision": 204,
+              "observedAtMs": 1790041200426,
+              "pixooMs": 878.4237220000068,
+              "nanoleafMs": 966.5038690000074
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-201",
+              "hookMs": 54.09216100000776,
+              "admissionRevision": 202,
+              "observedAtMs": 1790041200424,
+              "pixooMs": 879.4479920000012,
+              "nanoleafMs": 967.5282189999998
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-201",
+              "hookMs": 55.17832300000009,
+              "admissionRevision": 203,
+              "observedAtMs": 1790041200426,
+              "pixooMs": 878.643213000003,
+              "nanoleafMs": 966.7235199999996
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-201",
+              "hookMs": 59.02442199998768,
+              "admissionRevision": 205,
+              "observedAtMs": 1790041200426,
+              "pixooMs": 878.1498109999811,
+              "nanoleafMs": 966.2298979999905
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-201",
+              "hookMs": 64.60356600000523,
+              "admissionRevision": 208,
+              "observedAtMs": 1790041200429,
+              "pixooMs": 875.7481949999928,
+              "nanoleafMs": 963.8280519999971
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-201",
+              "hookMs": 58.223678000009386,
+              "admissionRevision": 206,
+              "observedAtMs": 1790041200427,
+              "pixooMs": 877.752164000005,
+              "nanoleafMs": 965.8320110000204
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-201",
+              "hookMs": 73.18755599998985,
+              "admissionRevision": 211,
+              "observedAtMs": 1790041200435,
+              "pixooMs": 869.7539600000018,
+              "nanoleafMs": 957.8336070000078
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-201",
+              "hookMs": 67.72595100000035,
+              "admissionRevision": 210,
+              "observedAtMs": 1790041200434,
+              "pixooMs": 870.1646420000179,
+              "nanoleafMs": 958.2441790000012
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-201",
+              "hookMs": 62.62581699999282,
+              "admissionRevision": 209,
+              "observedAtMs": 1790041200433,
+              "pixooMs": 870.8586030000006,
+              "nanoleafMs": 958.9377500000119
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-202",
+              "hookMs": 64.7311879999761,
+              "admissionRevision": 215,
+              "observedAtMs": 1790041201441,
+              "pixooMs": 866.5299639999866,
+              "nanoleafMs": 956.7212589999835
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-202",
+              "hookMs": 53.215783999999985,
+              "admissionRevision": 212,
+              "observedAtMs": 1790041201439,
+              "pixooMs": 867.4670279999846,
+              "nanoleafMs": 957.6578229999868
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-202",
+              "hookMs": 58.870731000002706,
+              "admissionRevision": 214,
+              "observedAtMs": 1790041201440,
+              "pixooMs": 867.0274760000175,
+              "nanoleafMs": 957.2179410000099
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-202",
+              "hookMs": 62.452335999987554,
+              "admissionRevision": 216,
+              "observedAtMs": 1790041201441,
+              "pixooMs": 866.2490220000036,
+              "nanoleafMs": 956.4392470000021
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-202",
+              "hookMs": 64.7328180000186,
+              "admissionRevision": 217,
+              "observedAtMs": 1790041201442,
+              "pixooMs": 864.3122450000083,
+              "nanoleafMs": 954.502290000004
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-202",
+              "hookMs": 51.39395600001444,
+              "admissionRevision": 213,
+              "observedAtMs": 1790041201440,
+              "pixooMs": 867.2043870000052,
+              "nanoleafMs": 957.393871999986
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-202",
+              "hookMs": 67.48503000001074,
+              "admissionRevision": 219,
+              "observedAtMs": 1790041201448,
+              "pixooMs": 859.3507420000096,
+              "nanoleafMs": 949.5398770000029
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-202",
+              "hookMs": 68.50673599998117,
+              "admissionRevision": 220,
+              "observedAtMs": 1790041201448,
+              "pixooMs": 858.5429489999951,
+              "nanoleafMs": 948.7315839999937
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-202",
+              "hookMs": 62.56607800000347,
+              "admissionRevision": 218,
+              "observedAtMs": 1790041201447,
+              "pixooMs": 860.5598380000156,
+              "nanoleafMs": 950.7485230000166
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-202",
+              "hookMs": 68.0147649999999,
+              "admissionRevision": 221,
+              "observedAtMs": 1790041201451,
+              "pixooMs": 856.2226680000022,
+              "nanoleafMs": 946.4110430000001
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-203",
+              "hookMs": 52.52961300002062,
+              "admissionRevision": 222,
+              "observedAtMs": 1790041202441,
+              "pixooMs": 893.0763450000086,
+              "nanoleafMs": 954.9145189999836
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-203",
+              "hookMs": 58.93114100000821,
+              "admissionRevision": 225,
+              "observedAtMs": 1790041202448,
+              "pixooMs": 886.7570520000008,
+              "nanoleafMs": 948.5949259999907
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-203",
+              "hookMs": 55.61761599997408,
+              "admissionRevision": 224,
+              "observedAtMs": 1790041202446,
+              "pixooMs": 888.8858270000201,
+              "nanoleafMs": 950.7236110000231
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-203",
+              "hookMs": 52.329770999989705,
+              "admissionRevision": 223,
+              "observedAtMs": 1790041202445,
+              "pixooMs": 889.8816769999976,
+              "nanoleafMs": 951.7200209999864
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-203",
+              "hookMs": 58.32283799999277,
+              "admissionRevision": 226,
+              "observedAtMs": 1790041202449,
+              "pixooMs": 885.8163780000177,
+              "nanoleafMs": 947.6546420000086
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-203",
+              "hookMs": 61.29129200000898,
+              "admissionRevision": 228,
+              "observedAtMs": 1790041202450,
+              "pixooMs": 884.7379129999899,
+              "nanoleafMs": 946.5761769999808
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-203",
+              "hookMs": 67.34123900000122,
+              "admissionRevision": 231,
+              "observedAtMs": 1790041202457,
+              "pixooMs": 877.8522919999959,
+              "nanoleafMs": 939.6904859999777
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-203",
+              "hookMs": 57.07263300000341,
+              "admissionRevision": 227,
+              "observedAtMs": 1790041202450,
+              "pixooMs": 884.944874000008,
+              "nanoleafMs": 946.7830679999897
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-203",
+              "hookMs": 60.113684999989346,
+              "admissionRevision": 229,
+              "observedAtMs": 1790041202451,
+              "pixooMs": 883.5034370000067,
+              "nanoleafMs": 945.3413210000144
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-203",
+              "hookMs": 61.02900999999838,
+              "admissionRevision": 230,
+              "observedAtMs": 1790041202455,
+              "pixooMs": 879.4549490000063,
+              "nanoleafMs": 941.2928829999873
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-204",
+              "hookMs": 62.93851999999606,
+              "admissionRevision": 236,
+              "observedAtMs": 1790041203444,
+              "pixooMs": 917.952913999994,
+              "nanoleafMs": 980.4683030000015
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-204",
+              "hookMs": 51.06640499999048,
+              "admissionRevision": 232,
+              "observedAtMs": 1790041203440,
+              "pixooMs": 921.3094560000172,
+              "nanoleafMs": 983.8242550000141
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-204",
+              "hookMs": 57.11280299999635,
+              "admissionRevision": 235,
+              "observedAtMs": 1790041203442,
+              "pixooMs": 919.487832999992,
+              "nanoleafMs": 982.0023119999969
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-204",
+              "hookMs": 50.678681999997934,
+              "admissionRevision": 233,
+              "observedAtMs": 1790041203442,
+              "pixooMs": 919.8496640000085,
+              "nanoleafMs": 982.3639930000063
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-204",
+              "hookMs": 52.228719000006095,
+              "admissionRevision": 234,
+              "observedAtMs": 1790041203442,
+              "pixooMs": 919.6335929999768,
+              "nanoleafMs": 982.1479919999838
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-204",
+              "hookMs": 58.80925099999877,
+              "admissionRevision": 237,
+              "observedAtMs": 1790041203447,
+              "pixooMs": 915.3873130000138,
+              "nanoleafMs": 977.9013720000221
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-204",
+              "hookMs": 60.75476999999955,
+              "admissionRevision": 238,
+              "observedAtMs": 1790041203450,
+              "pixooMs": 911.869497000007,
+              "nanoleafMs": 974.3834659999993
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-204",
+              "hookMs": 61.60732400001143,
+              "admissionRevision": 239,
+              "observedAtMs": 1790041203451,
+              "pixooMs": 911.1469840000209,
+              "nanoleafMs": 973.6604530000186
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-204",
+              "hookMs": 62.695200000016484,
+              "admissionRevision": 240,
+              "observedAtMs": 1790041203453,
+              "pixooMs": 909.5820569999923,
+              "nanoleafMs": 972.0953159999917
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-204",
+              "hookMs": 64.5123710000189,
+              "admissionRevision": 241,
+              "observedAtMs": 1790041203453,
+              "pixooMs": 909.4087770000042,
+              "nanoleafMs": 971.9219960000191
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-205",
+              "hookMs": 60.76221899999655,
+              "admissionRevision": 244,
+              "observedAtMs": 1790041204472,
+              "pixooMs": 892.3779290000093,
+              "nanoleafMs": 954.1665229999926
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-205",
+              "hookMs": 56.1158089999808,
+              "admissionRevision": 243,
+              "observedAtMs": 1790041204472,
+              "pixooMs": 892.5443400000222,
+              "nanoleafMs": 954.3323540000129
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-205",
+              "hookMs": 52.23243999999249,
+              "admissionRevision": 242,
+              "observedAtMs": 1790041204472,
+              "pixooMs": 892.8293009999907,
+              "nanoleafMs": 954.6173349999881
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-205",
+              "hookMs": 58.45497900000191,
+              "admissionRevision": 245,
+              "observedAtMs": 1790041204477,
+              "pixooMs": 888.109037999995,
+              "nanoleafMs": 949.8972420000064
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-205",
+              "hookMs": 64.62639600000693,
+              "admissionRevision": 248,
+              "observedAtMs": 1790041204478,
+              "pixooMs": 886.8228430000017,
+              "nanoleafMs": 948.6103969999822
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-205",
+              "hookMs": 58.18720700000995,
+              "admissionRevision": 246,
+              "observedAtMs": 1790041204477,
+              "pixooMs": 887.8591069999966,
+              "nanoleafMs": 949.6465709999902
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-205",
+              "hookMs": 59.53430199998547,
+              "admissionRevision": 247,
+              "observedAtMs": 1790041204477,
+              "pixooMs": 887.6553959999874,
+              "nanoleafMs": 949.4431299999997
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-205",
+              "hookMs": 63.042989999987185,
+              "admissionRevision": 249,
+              "observedAtMs": 1790041204485,
+              "pixooMs": 879.7452409999969,
+              "nanoleafMs": 941.5326350000105
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-205",
+              "hookMs": 65.20060900002136,
+              "admissionRevision": 251,
+              "observedAtMs": 1790041204486,
+              "pixooMs": 879.2320789999794,
+              "nanoleafMs": 941.0196429999778
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-205",
+              "hookMs": 61.67916400000104,
+              "admissionRevision": 250,
+              "observedAtMs": 1790041204485,
+              "pixooMs": 879.5162000000128,
+              "nanoleafMs": 941.303774
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-206",
+              "hookMs": 62.686578000022564,
+              "admissionRevision": 255,
+              "observedAtMs": 1790041205475,
+              "pixooMs": 899.9958869999973,
+              "nanoleafMs": 962.0411810000078
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-206",
+              "hookMs": 57.66430499998387,
+              "admissionRevision": 254,
+              "observedAtMs": 1790041205473,
+              "pixooMs": 901.5772149999975,
+              "nanoleafMs": 963.6247490000096
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-206",
+              "hookMs": 50.122950999997556,
+              "admissionRevision": 252,
+              "observedAtMs": 1790041205472,
+              "pixooMs": 903.4036320000014,
+              "nanoleafMs": 965.4511560000246
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-206",
+              "hookMs": 51.50591700000223,
+              "admissionRevision": 253,
+              "observedAtMs": 1790041205473,
+              "pixooMs": 901.8080959999934,
+              "nanoleafMs": 963.8558699999994
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-206",
+              "hookMs": 62.373686999984784,
+              "admissionRevision": 257,
+              "observedAtMs": 1790041205476,
+              "pixooMs": 899.1692329999933,
+              "nanoleafMs": 961.216637000005
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-206",
+              "hookMs": 58.27801899999031,
+              "admissionRevision": 256,
+              "observedAtMs": 1790041205476,
+              "pixooMs": 899.3310740000161,
+              "nanoleafMs": 961.3781880000024
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-206",
+              "hookMs": 63.191090000007534,
+              "admissionRevision": 258,
+              "observedAtMs": 1790041205478,
+              "pixooMs": 897.2698749999981,
+              "nanoleafMs": 959.3170390000159
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-206",
+              "hookMs": 64.26507500000298,
+              "admissionRevision": 259,
+              "observedAtMs": 1790041205481,
+              "pixooMs": 894.8958939999866,
+              "nanoleafMs": 956.9602690000029
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-206",
+              "hookMs": 65.46142099998542,
+              "admissionRevision": 260,
+              "observedAtMs": 1790041205482,
+              "pixooMs": 893.2781770000001,
+              "nanoleafMs": 955.3426520000212
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-206",
+              "hookMs": 67.43786999999429,
+              "admissionRevision": 261,
+              "observedAtMs": 1790041205486,
+              "pixooMs": 889.0165670000133,
+              "nanoleafMs": 951.0782319999998
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-207",
+              "hookMs": 64.53308399999514,
+              "admissionRevision": 267,
+              "observedAtMs": 1790041206488,
+              "pixooMs": 900.0776740000001,
+              "nanoleafMs": 963.4324020000058
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-207",
+              "hookMs": 49.92963699999382,
+              "admissionRevision": 262,
+              "observedAtMs": 1790041206480,
+              "pixooMs": 908.0640910000075,
+              "nanoleafMs": 971.4183190000185
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-207",
+              "hookMs": 55.9955450000125,
+              "admissionRevision": 265,
+              "observedAtMs": 1790041206487,
+              "pixooMs": 901.4803110000212,
+              "nanoleafMs": 964.8344389999984
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-207",
+              "hookMs": 49.45414700001129,
+              "admissionRevision": 263,
+              "observedAtMs": 1790041206483,
+              "pixooMs": 904.87922599999,
+              "nanoleafMs": 968.2335639999947
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-207",
+              "hookMs": 55.92243400000734,
+              "admissionRevision": 266,
+              "observedAtMs": 1790041206488,
+              "pixooMs": 900.3391449999763,
+              "nanoleafMs": 963.6935529999901
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-207",
+              "hookMs": 49.29641000000993,
+              "admissionRevision": 264,
+              "observedAtMs": 1790041206485,
+              "pixooMs": 903.2947779999813,
+              "nanoleafMs": 966.6490559999947
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-207",
+              "hookMs": 59.242628000007244,
+              "admissionRevision": 268,
+              "observedAtMs": 1790041206489,
+              "pixooMs": 899.3643710000033,
+              "nanoleafMs": 962.7187189999968
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-207",
+              "hookMs": 63.9264409999887,
+              "admissionRevision": 270,
+              "observedAtMs": 1790041206494,
+              "pixooMs": 894.0737620000145,
+              "nanoleafMs": 957.4276800000225
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-207",
+              "hookMs": 64.39844300001278,
+              "admissionRevision": 271,
+              "observedAtMs": 1790041206499,
+              "pixooMs": 889.5911759999872,
+              "nanoleafMs": 952.9451339999796
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-207",
+              "hookMs": 57.51364200000535,
+              "admissionRevision": 269,
+              "observedAtMs": 1790041206494,
+              "pixooMs": 894.8795059999975,
+              "nanoleafMs": 958.2334139999875
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-208",
+              "hookMs": 57.387335999985225,
+              "admissionRevision": 273,
+              "observedAtMs": 1790041207496,
+              "pixooMs": 904.8674239999964,
+              "nanoleafMs": 966.29880400002
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-208",
+              "hookMs": 50.80742199998349,
+              "admissionRevision": 272,
+              "observedAtMs": 1790041207495,
+              "pixooMs": 905.9654129999981,
+              "nanoleafMs": 967.3962729999912
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-208",
+              "hookMs": 57.5901329999906,
+              "admissionRevision": 274,
+              "observedAtMs": 1790041207499,
+              "pixooMs": 901.8490189999866,
+              "nanoleafMs": 963.2797290000017
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-208",
+              "hookMs": 59.65008200000739,
+              "admissionRevision": 275,
+              "observedAtMs": 1790041207500,
+              "pixooMs": 901.119286000001,
+              "nanoleafMs": 962.5502160000033
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-208",
+              "hookMs": 61.44014000002062,
+              "admissionRevision": 276,
+              "observedAtMs": 1790041207503,
+              "pixooMs": 898.6193750000093,
+              "nanoleafMs": 960.0501050000021
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-208",
+              "hookMs": 66.06279100000393,
+              "admissionRevision": 278,
+              "observedAtMs": 1790041207504,
+              "pixooMs": 895.8681429999997,
+              "nanoleafMs": 957.2986429999874
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-208",
+              "hookMs": 67.77150400000392,
+              "admissionRevision": 279,
+              "observedAtMs": 1790041207506,
+              "pixooMs": 895.3325150000164,
+              "nanoleafMs": 956.7629550000129
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-208",
+              "hookMs": 59.876983000023756,
+              "admissionRevision": 277,
+              "observedAtMs": 1790041207503,
+              "pixooMs": 898.1238929999818,
+              "nanoleafMs": 959.5536729999876
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-208",
+              "hookMs": 68.09781999999541,
+              "admissionRevision": 280,
+              "observedAtMs": 1790041207507,
+              "pixooMs": 893.6699620000145,
+              "nanoleafMs": 955.099682
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-208",
+              "hookMs": 69.69295699999202,
+              "admissionRevision": 281,
+              "observedAtMs": 1790041207515,
+              "pixooMs": 886.3937690000166,
+              "nanoleafMs": 947.8234990000201
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-209",
+              "hookMs": 53.59810799997649,
+              "admissionRevision": 283,
+              "observedAtMs": 1790041208507,
+              "pixooMs": 901.7538110000023,
+              "nanoleafMs": 963.6795830000192
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-209",
+              "hookMs": 49.06429300000309,
+              "admissionRevision": 282,
+              "observedAtMs": 1790041208505,
+              "pixooMs": 903.1822180000017,
+              "nanoleafMs": 965.1096200000029
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-209",
+              "hookMs": 56.52093599998625,
+              "admissionRevision": 285,
+              "observedAtMs": 1790041208508,
+              "pixooMs": 900.9795979999762,
+              "nanoleafMs": 962.9070599999977
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-209",
+              "hookMs": 51.750104999984615,
+              "admissionRevision": 284,
+              "observedAtMs": 1790041208506,
+              "pixooMs": 901.5296499999822,
+              "nanoleafMs": 963.4569519999786
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-209",
+              "hookMs": 56.54016799997771,
+              "admissionRevision": 286,
+              "observedAtMs": 1790041208513,
+              "pixooMs": 895.6611919999996,
+              "nanoleafMs": 957.5885340000095
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-209",
+              "hookMs": 67.12599400000181,
+              "admissionRevision": 290,
+              "observedAtMs": 1790041208519,
+              "pixooMs": 889.2649640000018,
+              "nanoleafMs": 951.1922159999958
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-209",
+              "hookMs": 61.90506199997617,
+              "admissionRevision": 289,
+              "observedAtMs": 1790041208517,
+              "pixooMs": 891.1898430000001,
+              "nanoleafMs": 953.1168550000002
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-209",
+              "hookMs": 57.751092999998946,
+              "admissionRevision": 288,
+              "observedAtMs": 1790041208516,
+              "pixooMs": 892.3840879999916,
+              "nanoleafMs": 954.3107999999775
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-209",
+              "hookMs": 53.27468200001749,
+              "admissionRevision": 287,
+              "observedAtMs": 1790041208516,
+              "pixooMs": 892.5684390000242,
+              "nanoleafMs": 954.4931320000032
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-209",
+              "hookMs": 63.8588410000084,
+              "admissionRevision": 291,
+              "observedAtMs": 1790041208521,
+              "pixooMs": 887.9586290000007,
+              "nanoleafMs": 949.8832119999861
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-210",
+              "hookMs": 65.18942800001241,
+              "admissionRevision": 296,
+              "observedAtMs": 1790041209519,
+              "pixooMs": 895.0791479999898,
+              "nanoleafMs": 957.399523
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-210",
+              "hookMs": 54.77534199997899,
+              "admissionRevision": 293,
+              "observedAtMs": 1790041209516,
+              "pixooMs": 898.1969220000028,
+              "nanoleafMs": 960.5164970000042
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-210",
+              "hookMs": 56.74046900001122,
+              "admissionRevision": 294,
+              "observedAtMs": 1790041209517,
+              "pixooMs": 896.8296759999939,
+              "nanoleafMs": 959.1492409999773
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-210",
+              "hookMs": 49.28924399998505,
+              "admissionRevision": 292,
+              "observedAtMs": 1790041209516,
+              "pixooMs": 898.4992230000207,
+              "nanoleafMs": 960.8189380000113
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-210",
+              "hookMs": 56.85239900002489,
+              "admissionRevision": 295,
+              "observedAtMs": 1790041209518,
+              "pixooMs": 896.6124050000217,
+              "nanoleafMs": 958.9320400000142
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-210",
+              "hookMs": 61.32756999999401,
+              "admissionRevision": 297,
+              "observedAtMs": 1790041209521,
+              "pixooMs": 893.831062000012,
+              "nanoleafMs": 956.1503669999947
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-210",
+              "hookMs": 63.23702800000319,
+              "admissionRevision": 298,
+              "observedAtMs": 1790041209521,
+              "pixooMs": 893.6243810000014,
+              "nanoleafMs": 955.943545999995
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-210",
+              "hookMs": 67.30887699997402,
+              "admissionRevision": 300,
+              "observedAtMs": 1790041209526,
+              "pixooMs": 888.7223300000187,
+              "nanoleafMs": 951.041435000021
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-210",
+              "hookMs": 67.95453099999577,
+              "admissionRevision": 301,
+              "observedAtMs": 1790041209526,
+              "pixooMs": 888.3329880000092,
+              "nanoleafMs": 950.6520130000135
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-210",
+              "hookMs": 60.699637999990955,
+              "admissionRevision": 299,
+              "observedAtMs": 1790041209525,
+              "pixooMs": 889.7706639999815,
+              "nanoleafMs": 952.0895389999787
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-211",
+              "hookMs": 59.16512900000089,
+              "admissionRevision": 304,
+              "observedAtMs": 1790041210521,
+              "pixooMs": 895.0473110000021,
+              "nanoleafMs": 956.7352120000287
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-211",
+              "hookMs": 51.693926000007195,
+              "admissionRevision": 302,
+              "observedAtMs": 1790041210522,
+              "pixooMs": 895.641843999998,
+              "nanoleafMs": 957.3296749999863
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-211",
+              "hookMs": 64.74484300002223,
+              "admissionRevision": 307,
+              "observedAtMs": 1790041210531,
+              "pixooMs": 886.2982209999755,
+              "nanoleafMs": 947.9865319999808
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-211",
+              "hookMs": 60.41354500001762,
+              "admissionRevision": 306,
+              "observedAtMs": 1790041210528,
+              "pixooMs": 889.7035669999896,
+              "nanoleafMs": 951.3917979999969
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-211",
+              "hookMs": 51.1121839999978,
+              "admissionRevision": 303,
+              "observedAtMs": 1790041210522,
+              "pixooMs": 895.3005129999947,
+              "nanoleafMs": 956.988433999999
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-211",
+              "hookMs": 55.764595000015106,
+              "admissionRevision": 305,
+              "observedAtMs": 1790041210528,
+              "pixooMs": 889.9123679999902,
+              "nanoleafMs": 951.5996389999927
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-211",
+              "hookMs": 68.26755099999718,
+              "admissionRevision": 310,
+              "observedAtMs": 1790041210534,
+              "pixooMs": 883.7682490000152,
+              "nanoleafMs": 945.4554000000062
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-211",
+              "hookMs": 61.43711100000655,
+              "admissionRevision": 308,
+              "observedAtMs": 1790041210533,
+              "pixooMs": 884.886314000003,
+              "nanoleafMs": 946.5732250000001
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-211",
+              "hookMs": 63.07968799999799,
+              "admissionRevision": 309,
+              "observedAtMs": 1790041210533,
+              "pixooMs": 884.4736730000004,
+              "nanoleafMs": 946.160693999991
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-211",
+              "hookMs": 67.50755700000445,
+              "admissionRevision": 311,
+              "observedAtMs": 1790041210535,
+              "pixooMs": 882.779355000006,
+              "nanoleafMs": 944.4660460000159
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-212",
+              "hookMs": 55.811876000021584,
+              "admissionRevision": 313,
+              "observedAtMs": 1790041211525,
+              "pixooMs": 898.689040999976,
+              "nanoleafMs": 961.2441759999783
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-212",
+              "hookMs": 57.595323999994434,
+              "admissionRevision": 314,
+              "observedAtMs": 1790041211526,
+              "pixooMs": 897.7079760000051,
+              "nanoleafMs": 960.2619009999908
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-212",
+              "hookMs": 50.21395599999232,
+              "admissionRevision": 312,
+              "observedAtMs": 1790041211524,
+              "pixooMs": 899.9012709999806,
+              "nanoleafMs": 962.4555059999984
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-212",
+              "hookMs": 61.22345800002222,
+              "admissionRevision": 316,
+              "observedAtMs": 1790041211529,
+              "pixooMs": 894.5812420000148,
+              "nanoleafMs": 957.1357969999954
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-212",
+              "hookMs": 56.295555999997305,
+              "admissionRevision": 315,
+              "observedAtMs": 1790041211527,
+              "pixooMs": 896.316839999985,
+              "nanoleafMs": 958.8712949999899
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-212",
+              "hookMs": 65.4585210000223,
+              "admissionRevision": 318,
+              "observedAtMs": 1790041211531,
+              "pixooMs": 892.4739129999944,
+              "nanoleafMs": 955.0279079999891
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-212",
+              "hookMs": 60.27830499998527,
+              "admissionRevision": 317,
+              "observedAtMs": 1790041211531,
+              "pixooMs": 892.6869239999796,
+              "nanoleafMs": 955.2409789999947
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-212",
+              "hookMs": 69.53453699999955,
+              "admissionRevision": 320,
+              "observedAtMs": 1790041211532,
+              "pixooMs": 891.3475529999996,
+              "nanoleafMs": 953.901428000012
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-212",
+              "hookMs": 63.95178199998918,
+              "admissionRevision": 319,
+              "observedAtMs": 1790041211531,
+              "pixooMs": 892.2539920000127,
+              "nanoleafMs": 954.8080769999942
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-212",
+              "hookMs": 68.78215300000738,
+              "admissionRevision": 321,
+              "observedAtMs": 1790041211535,
+              "pixooMs": 889.2382679999864,
+              "nanoleafMs": 951.7918629999913
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-213",
+              "hookMs": 54.894020000007,
+              "admissionRevision": 323,
+              "observedAtMs": 1790041212530,
+              "pixooMs": 899.4322819999943,
+              "nanoleafMs": 961.4270670000114
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-213",
+              "hookMs": 49.14109400002053,
+              "admissionRevision": 322,
+              "observedAtMs": 1790041212529,
+              "pixooMs": 900.4968250000093,
+              "nanoleafMs": 962.4914599999902
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-213",
+              "hookMs": 61.125769000005675,
+              "admissionRevision": 326,
+              "observedAtMs": 1790041212536,
+              "pixooMs": 893.9525700000231,
+              "nanoleafMs": 955.947525000025
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-213",
+              "hookMs": 53.54124399999273,
+              "admissionRevision": 324,
+              "observedAtMs": 1790041212534,
+              "pixooMs": 894.9962650000234,
+              "nanoleafMs": 956.9912100000074
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-213",
+              "hookMs": 68.09474999998929,
+              "admissionRevision": 329,
+              "observedAtMs": 1790041212540,
+              "pixooMs": 889.9163869999757,
+              "nanoleafMs": 951.9112519999908
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-213",
+              "hookMs": 53.977316000004066,
+              "admissionRevision": 325,
+              "observedAtMs": 1790041212534,
+              "pixooMs": 894.7648340000014,
+              "nanoleafMs": 956.7591289999837
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-213",
+              "hookMs": 58.67943700001342,
+              "admissionRevision": 327,
+              "observedAtMs": 1790041212537,
+              "pixooMs": 892.3754970000009,
+              "nanoleafMs": 954.3695120000048
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-213",
+              "hookMs": 60.6784050000133,
+              "admissionRevision": 328,
+              "observedAtMs": 1790041212539,
+              "pixooMs": 890.6936310000019,
+              "nanoleafMs": 952.6871749999991
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-213",
+              "hookMs": 68.971544,
+              "admissionRevision": 331,
+              "observedAtMs": 1790041212544,
+              "pixooMs": 885.6104380000033,
+              "nanoleafMs": 947.6038920000137
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-213",
+              "hookMs": 63.821549999993294,
+              "admissionRevision": 330,
+              "observedAtMs": 1790041212543,
+              "pixooMs": 886.2467509999988,
+              "nanoleafMs": 948.2401449999888
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-214",
+              "hookMs": 57.28253000002587,
+              "admissionRevision": 333,
+              "observedAtMs": 1790041213540,
+              "pixooMs": 895.2925070000056,
+              "nanoleafMs": 957.7150729999994
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-214",
+              "hookMs": 50.38744700001553,
+              "admissionRevision": 332,
+              "observedAtMs": 1790041213535,
+              "pixooMs": 900.2715439999884,
+              "nanoleafMs": 962.6940299999842
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-214",
+              "hookMs": 72.52001800001017,
+              "admissionRevision": 339,
+              "observedAtMs": 1790041213545,
+              "pixooMs": 889.9078680000093,
+              "nanoleafMs": 952.3306239999947
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-214",
+              "hookMs": 55.6225909999921,
+              "admissionRevision": 334,
+              "observedAtMs": 1790041213541,
+              "pixooMs": 894.6080329999968,
+              "nanoleafMs": 957.030808999989
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-214",
+              "hookMs": 60.733284999994794,
+              "admissionRevision": 336,
+              "observedAtMs": 1790041213543,
+              "pixooMs": 892.4087080000027,
+              "nanoleafMs": 954.83131400001
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-214",
+              "hookMs": 71.99606599999242,
+              "admissionRevision": 340,
+              "observedAtMs": 1790041213547,
+              "pixooMs": 888.3224509999854,
+              "nanoleafMs": 950.7449659999984
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-214",
+              "hookMs": 55.10091899998952,
+              "admissionRevision": 335,
+              "observedAtMs": 1790041213541,
+              "pixooMs": 894.1156979999796,
+              "nanoleafMs": 956.5382830000017
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-214",
+              "hookMs": 59.88206000000355,
+              "admissionRevision": 337,
+              "observedAtMs": 1790041213543,
+              "pixooMs": 892.2491889999947,
+              "nanoleafMs": 954.6711739999882
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-214",
+              "hookMs": 61.32420600001933,
+              "admissionRevision": 338,
+              "observedAtMs": 1790041213545,
+              "pixooMs": 890.6482879999967,
+              "nanoleafMs": 953.0701830000035
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-214",
+              "hookMs": 68.50368900000467,
+              "admissionRevision": 341,
+              "observedAtMs": 1790041213548,
+              "pixooMs": 887.0883749999921,
+              "nanoleafMs": 949.510409999988
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-215",
+              "hookMs": 58.614136999996845,
+              "admissionRevision": 343,
+              "observedAtMs": 1790041214544,
+              "pixooMs": 899.9465589999745,
+              "nanoleafMs": 962.3977639999939
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-215",
+              "hookMs": 66.38056300001335,
+              "admissionRevision": 346,
+              "observedAtMs": 1790041214546,
+              "pixooMs": 898.6762199999939,
+              "nanoleafMs": 961.126964999974
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-215",
+              "hookMs": 52.171578000008594,
+              "admissionRevision": 342,
+              "observedAtMs": 1790041214545,
+              "pixooMs": 900.3016110000026,
+              "nanoleafMs": 962.7525259999966
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-215",
+              "hookMs": 60.28967499997816,
+              "admissionRevision": 345,
+              "observedAtMs": 1790041214546,
+              "pixooMs": 898.924450999999,
+              "nanoleafMs": 961.3756559999892
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-215",
+              "hookMs": 55.884786000009626,
+              "admissionRevision": 344,
+              "observedAtMs": 1790041214545,
+              "pixooMs": 899.7974090000207,
+              "nanoleafMs": 962.2485739999975
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-215",
+              "hookMs": 67.40076700001373,
+              "admissionRevision": 348,
+              "observedAtMs": 1790041214547,
+              "pixooMs": 898.383587999997,
+              "nanoleafMs": 960.834113000019
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-215",
+              "hookMs": 62.931337000016356,
+              "admissionRevision": 347,
+              "observedAtMs": 1790041214547,
+              "pixooMs": 898.5414390000224,
+              "nanoleafMs": 960.9921940000204
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-215",
+              "hookMs": 71.62513499998022,
+              "admissionRevision": 350,
+              "observedAtMs": 1790041214550,
+              "pixooMs": 895.0703429999994,
+              "nanoleafMs": 957.5208279999788
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-215",
+              "hookMs": 66.33270699999412,
+              "admissionRevision": 349,
+              "observedAtMs": 1790041214550,
+              "pixooMs": 895.2874939999892,
+              "nanoleafMs": 957.737559000001
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-215",
+              "hookMs": 70.78338300000178,
+              "admissionRevision": 351,
+              "observedAtMs": 1790041214554,
+              "pixooMs": 890.9594950000173,
+              "nanoleafMs": 953.4095200000156
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-216",
+              "hookMs": 57.592932999978075,
+              "admissionRevision": 352,
+              "observedAtMs": 1790041215555,
+              "pixooMs": 912.1982619999908,
+              "nanoleafMs": 974.5470280000009
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-216",
+              "hookMs": 70.03733900000225,
+              "admissionRevision": 356,
+              "observedAtMs": 1790041215560,
+              "pixooMs": 908.1128740000131,
+              "nanoleafMs": 970.4612199999974
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-216",
+              "hookMs": 57.52201300000888,
+              "admissionRevision": 353,
+              "observedAtMs": 1790041215556,
+              "pixooMs": 911.8430100000114,
+              "nanoleafMs": 974.19165600001
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-216",
+              "hookMs": 59.27915900002699,
+              "admissionRevision": 354,
+              "observedAtMs": 1790041215556,
+              "pixooMs": 911.3511780000117,
+              "nanoleafMs": 973.6996940000099
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-216",
+              "hookMs": 75.50498599998537,
+              "admissionRevision": 358,
+              "observedAtMs": 1790041215562,
+              "pixooMs": 905.9261439999973,
+              "nanoleafMs": 968.2746500000067
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-216",
+              "hookMs": 59.67744200001471,
+              "admissionRevision": 355,
+              "observedAtMs": 1790041215559,
+              "pixooMs": 909.5742190000019,
+              "nanoleafMs": 971.9223349999811
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-216",
+              "hookMs": 67.04590500000631,
+              "admissionRevision": 357,
+              "observedAtMs": 1790041215561,
+              "pixooMs": 907.3663550000056,
+              "nanoleafMs": 969.7144010000047
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-216",
+              "hookMs": 78.88473900000099,
+              "admissionRevision": 360,
+              "observedAtMs": 1790041215567,
+              "pixooMs": 900.8148199999996,
+              "nanoleafMs": 963.16245600002
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-216",
+              "hookMs": 79.76305400001002,
+              "admissionRevision": 361,
+              "observedAtMs": 1790041215567,
+              "pixooMs": 900.581869000016,
+              "nanoleafMs": 962.9294949999894
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-216",
+              "hookMs": 69.61157700000331,
+              "admissionRevision": 359,
+              "observedAtMs": 1790041215565,
+              "pixooMs": 902.8685189999815,
+              "nanoleafMs": 965.2162449999887
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-217",
+              "hookMs": 55.941265000001295,
+              "admissionRevision": 362,
+              "observedAtMs": 1790041216574,
+              "pixooMs": 910.5407640000049,
+              "nanoleafMs": 973.0597989999806
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-217",
+              "hookMs": 61.43436099999235,
+              "admissionRevision": 364,
+              "observedAtMs": 1790041216576,
+              "pixooMs": 908.7841670000053,
+              "nanoleafMs": 971.3022619999829
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-217",
+              "hookMs": 63.965262000012444,
+              "admissionRevision": 365,
+              "observedAtMs": 1790041216579,
+              "pixooMs": 906.3347450000001,
+              "nanoleafMs": 968.852979999996
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-217",
+              "hookMs": 55.24108200002229,
+              "admissionRevision": 363,
+              "observedAtMs": 1790041216576,
+              "pixooMs": 909.2904440000129,
+              "nanoleafMs": 971.8088990000251
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-217",
+              "hookMs": 70.19836999999825,
+              "admissionRevision": 367,
+              "observedAtMs": 1790041216581,
+              "pixooMs": 903.416962999996,
+              "nanoleafMs": 965.9349879999936
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-217",
+              "hookMs": 65.07965599998715,
+              "admissionRevision": 366,
+              "observedAtMs": 1790041216579,
+              "pixooMs": 905.7935730000027,
+              "nanoleafMs": 968.3108479999937
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-217",
+              "hookMs": 74.80195100000128,
+              "admissionRevision": 369,
+              "observedAtMs": 1790041216585,
+              "pixooMs": 900.3148990000191,
+              "nanoleafMs": 962.8320340000209
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-217",
+              "hookMs": 69.7566780000052,
+              "admissionRevision": 368,
+              "observedAtMs": 1790041216584,
+              "pixooMs": 901.0174410000036,
+              "nanoleafMs": 963.533666000003
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-217",
+              "hookMs": 75.19713099999353,
+              "admissionRevision": 370,
+              "observedAtMs": 1790041216588,
+              "pixooMs": 897.4653960000142,
+              "nanoleafMs": 959.98151100002
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-217",
+              "hookMs": 78.13376499997685,
+              "admissionRevision": 371,
+              "observedAtMs": 1790041216588,
+              "pixooMs": 897.1737040000153,
+              "nanoleafMs": 959.689589000016
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-218",
+              "hookMs": 52.37721999999485,
+              "admissionRevision": 372,
+              "observedAtMs": 1790041217591,
+              "pixooMs": 902.5347890000266,
+              "nanoleafMs": 964.9592740000226
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-218",
+              "hookMs": 58.06657399999676,
+              "admissionRevision": 374,
+              "observedAtMs": 1790041217594,
+              "pixooMs": 899.1202840000042,
+              "nanoleafMs": 961.5451889999968
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-218",
+              "hookMs": 52.91137099999469,
+              "admissionRevision": 373,
+              "observedAtMs": 1790041217593,
+              "pixooMs": 900.6274609999964,
+              "nanoleafMs": 963.0523560000001
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-218",
+              "hookMs": 72.46841999999015,
+              "admissionRevision": 379,
+              "observedAtMs": 1790041217601,
+              "pixooMs": 892.1564429999853,
+              "nanoleafMs": 954.581428000005
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-218",
+              "hookMs": 57.284121000004234,
+              "admissionRevision": 375,
+              "observedAtMs": 1790041217594,
+              "pixooMs": 898.935433000006,
+              "nanoleafMs": 961.3599580000155
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-218",
+              "hookMs": 59.115449000004446,
+              "admissionRevision": 376,
+              "observedAtMs": 1790041217598,
+              "pixooMs": 894.9787450000003,
+              "nanoleafMs": 957.4031600000162
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-218",
+              "hookMs": 64.67007500000182,
+              "admissionRevision": 378,
+              "observedAtMs": 1790041217601,
+              "pixooMs": 892.8599859999958,
+              "nanoleafMs": 955.2843409999914
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-218",
+              "hookMs": 74.83496199999354,
+              "admissionRevision": 381,
+              "observedAtMs": 1790041217606,
+              "pixooMs": 886.5662580000062,
+              "nanoleafMs": 948.9901430000027
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-218",
+              "hookMs": 69.74662299998454,
+              "admissionRevision": 380,
+              "observedAtMs": 1790041217603,
+              "pixooMs": 890.8696969999874,
+              "nanoleafMs": 953.2935219999927
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-218",
+              "hookMs": 56.819029000005685,
+              "admissionRevision": 377,
+              "observedAtMs": 1790041217600,
+              "pixooMs": 893.1373569999996,
+              "nanoleafMs": 955.5611620000273
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-219",
+              "hookMs": 58.2879060000123,
+              "admissionRevision": 383,
+              "observedAtMs": 1790041218602,
+              "pixooMs": 902.1217659999966,
+              "nanoleafMs": 964.0694490000024
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-219",
+              "hookMs": 60.331735999992816,
+              "admissionRevision": 384,
+              "observedAtMs": 1790041218602,
+              "pixooMs": 901.8641749999952,
+              "nanoleafMs": 963.8114280000154
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-219",
+              "hookMs": 69.32961600000272,
+              "admissionRevision": 387,
+              "observedAtMs": 1790041218609,
+              "pixooMs": 895.3365549999871,
+              "nanoleafMs": 957.2840079999878
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-219",
+              "hookMs": 49.24297499997192,
+              "admissionRevision": 382,
+              "observedAtMs": 1790041218601,
+              "pixooMs": 902.9622999999847,
+              "nanoleafMs": 964.9097929999989
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-219",
+              "hookMs": 62.784886000008555,
+              "admissionRevision": 386,
+              "observedAtMs": 1790041218608,
+              "pixooMs": 896.2824100000144,
+              "nanoleafMs": 958.2299029999995
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-219",
+              "hookMs": 58.24178599999868,
+              "admissionRevision": 385,
+              "observedAtMs": 1790041218606,
+              "pixooMs": 898.0473479999928,
+              "nanoleafMs": 959.9946509999863
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-219",
+              "hookMs": 67.2747570000065,
+              "admissionRevision": 388,
+              "observedAtMs": 1790041218609,
+              "pixooMs": 895.0099639999971,
+              "nanoleafMs": 956.9572570000018
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-219",
+              "hookMs": 68.78612299999804,
+              "admissionRevision": 389,
+              "observedAtMs": 1790041218611,
+              "pixooMs": 892.3982829999877,
+              "nanoleafMs": 954.3453659999941
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-219",
+              "hookMs": 70.30699099999038,
+              "admissionRevision": 390,
+              "observedAtMs": 1790041218612,
+              "pixooMs": 892.1548420000181,
+              "nanoleafMs": 954.1018550000153
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-219",
+              "hookMs": 73.00137199999881,
+              "admissionRevision": 391,
+              "observedAtMs": 1790041218615,
+              "pixooMs": 889.2348469999852,
+              "nanoleafMs": 951.1817999999912
+            },
+            {
+              "session": "task-0",
+              "turn": "turn-220",
+              "hookMs": 54.901591000001645,
+              "admissionRevision": 392,
+              "observedAtMs": 1790041219611,
+              "pixooMs": 903.5061960000021,
+              "nanoleafMs": 965.7830290000129
+            },
+            {
+              "session": "task-1",
+              "turn": "turn-220",
+              "hookMs": 56.4620270000014,
+              "admissionRevision": 393,
+              "observedAtMs": 1790041219614,
+              "pixooMs": 901.2906060000241,
+              "nanoleafMs": 963.5670480000263
+            },
+            {
+              "session": "task-2",
+              "turn": "turn-220",
+              "hookMs": 58.44887500000186,
+              "admissionRevision": 394,
+              "observedAtMs": 1790041219614,
+              "pixooMs": 901.0358449999767,
+              "nanoleafMs": 963.3123869999836
+            },
+            {
+              "session": "task-3",
+              "turn": "turn-220",
+              "hookMs": 60.33083500000066,
+              "admissionRevision": 395,
+              "observedAtMs": 1790041219616,
+              "pixooMs": 900.1029310000013,
+              "nanoleafMs": 962.3794730000081
+            },
+            {
+              "session": "task-4",
+              "turn": "turn-220",
+              "hookMs": 70.65182200001436,
+              "admissionRevision": 398,
+              "observedAtMs": 1790041219617,
+              "pixooMs": 898.1998930000118,
+              "nanoleafMs": 960.4762750000227
+            },
+            {
+              "session": "task-5",
+              "turn": "turn-220",
+              "hookMs": 60.95504799997434,
+              "admissionRevision": 396,
+              "observedAtMs": 1790041219616,
+              "pixooMs": 899.8362999999954,
+              "nanoleafMs": 962.1122120000073
+            },
+            {
+              "session": "task-6",
+              "turn": "turn-220",
+              "hookMs": 63.14173799997661,
+              "admissionRevision": 397,
+              "observedAtMs": 1790041219615,
+              "pixooMs": 899.4395690000092,
+              "nanoleafMs": 961.7152709999937
+            },
+            {
+              "session": "task-7",
+              "turn": "turn-220",
+              "hookMs": 69.92465800000355,
+              "admissionRevision": 399,
+              "observedAtMs": 1790041219618,
+              "pixooMs": 897.829361000011,
+              "nanoleafMs": 960.1046630000055
+            },
+            {
+              "session": "task-8",
+              "turn": "turn-220",
+              "hookMs": 75.99035599999479,
+              "admissionRevision": 401,
+              "observedAtMs": 1790041219628,
+              "pixooMs": 887.1889629999932,
+              "nanoleafMs": 949.4640249999939
+            },
+            {
+              "session": "task-9",
+              "turn": "turn-220",
+              "hookMs": 70.247080000001,
+              "admissionRevision": 400,
+              "observedAtMs": 1790041219623,
+              "pixooMs": 892.8341279999877,
+              "nanoleafMs": 955.1088100000052
+            }
+          ]
+        }
+      ],
+      "scenarios": {
+        "confinement": true,
+        "startup": true,
+        "burst": true,
+        "stalledConsumer": true,
+        "offlineConsumer": true,
+        "dashboard": true,
+        "control": true,
+        "exclusiveOwner": true,
+        "hostOutage": true,
+        "restart": true,
+        "noReplay": true
+      },
+      "failures": [],
+      "allHookMs": [
+        54.711910999999986,
+        56.596982000000025,
+        50.16013900000007,
+        49.8898979999999,
+        52.149899000000005,
+        48.68442200000027,
+        46.02132999999958,
+        51.34050399999978,
+        48.37379999999939,
+        62.32358600000043,
+        49.80581600000005,
+        48.69376799999918,
+        54.39927799999896,
+        52.00194800000099,
+        54.06211699999949,
+        50.356519999999364,
+        48.12564999999813,
+        47.42194600000221,
+        53.16001200000028,
+        47.126595999998244,
+        50.66907100000026,
+        54.19447999999829,
+        50.285360999998375,
+        52.36405499999819,
+        51.803468999998586,
+        47.79739000000336,
+        49.549268999999185,
+        49.47740800000247,
+        52.148889000000054,
+        55.128343000000314,
+        48.79374599999937,
+        50.445801999998366,
+        50.55546199999662,
+        52.70976099999825,
+        49.873018000005686,
+        47.220635999998194,
+        53.09923300000082,
+        54.500388000000385,
+        53.07759299999452,
+        50.78223199999775,
+        46.71058500000072,
+        51.4983579999971,
+        48.15586099999928,
+        54.133098999998765,
+        53.970000000001164,
+        46.594404999996186,
+        55.9099669999996,
+        51.519107000000076,
+        46.627432000001136,
+        47.367935000002035,
+        50.71034099999815,
+        49.47706599999947,
+        53.3857050000006,
+        49.92355700000189,
+        52.72381000000314,
+        49.701107000000775,
+        52.42915999999968,
+        54.02467700000125,
+        50.94153399999777,
+        49.5174260000058,
+        49.22758600000088,
+        51.74997599999915,
+        48.69186300000001,
+        50.70564299999387,
+        48.21839400000317,
+        51.23972499999218,
+        53.42292699999234,
+        56.39966100000311,
+        47.243556999994325,
+        56.83628399998997,
+        48.39889199999743,
+        51.64310899999691,
+        49.45125699999335,
+        48.88944500000798,
+        47.384966999990866,
+        49.22600799999782,
+        54.49364099999366,
+        50.5024310000008,
+        52.78804400000081,
+        51.19537499999569,
+        49.12904800000251,
+        49.2044889999961,
+        50.71612599999935,
+        50.52134500000102,
+        52.81857599999057,
+        52.89483600000676,
+        55.409196000007796,
+        51.60359800000151,
+        50.43475000000035,
+        55.22705400000268,
+        51.55546400000458,
+        50.269258000000264,
+        53.34856299999228,
+        49.63859600000433,
+        51.47084499998891,
+        48.3527000000031,
+        53.927576000001864,
+        54.22855700000946,
+        55.26411000000371,
+        50.90358999998716,
+        47.107635000007576,
+        49.30632500001229,
+        52.66486000000441,
+        51.792176000002655,
+        50.12288100000296,
+        48.83075200000894,
+        49.813337999992655,
+        52.33305900001142,
+        54.71244899999874,
+        49.747686999995494,
+        53.209474000002956,
+        47.32586499999161,
+        56.66568299999926,
+        53.269902999993064,
+        49.23563299998932,
+        49.596466999995755,
+        52.59955800000171,
+        48.415290999997524,
+        48.76404300000286,
+        51.75339700000768,
+        53.641004000004614,
+        53.89984600000025,
+        54.47044900000037,
+        50.41661099999328,
+        55.15009200001077,
+        52.136788000003435,
+        51.85458699999435,
+        56.03473299999314,
+        51.34838299998955,
+        55.82334399998945,
+        52.39143800002057,
+        54.53656900001806,
+        53.1324420000019,
+        48.50606099999277,
+        55.46326299998327,
+        52.80195000002277,
+        52.09934799998882,
+        47.863727000018116,
+        48.191439000016544,
+        50.616849999991246,
+        52.338698999985354,
+        50.70205100000021,
+        51.671623000002,
+        54.25801699998556,
+        53.70863500001724,
+        49.05276399999275,
+        54.71038699999917,
+        53.65741300000809,
+        52.150187999999616,
+        50.31918900000164,
+        49.868126999994274,
+        48.61280200001784,
+        47.22864600000321,
+        49.20941499999026,
+        45.705669000017224,
+        48.01428900001338,
+        47.884149000019534,
+        48.69258199998876,
+        58.21470499999123,
+        51.56730999998399,
+        47.7770399999863,
+        49.51128800000879,
+        51.78496799999266,
+        47.62812899998971,
+        54.008168000000296,
+        49.40045700001065,
+        53.74316800001543,
+        52.559840000001714,
+        49.87422499997774,
+        49.77597899999819,
+        45.87518000000273,
+        48.972083000000566,
+        55.373884000000544,
+        48.85258299999987,
+        49.36289499999839,
+        50.77574199999799,
+        51.11024299997371,
+        54.940858999994816,
+        54.26114600000437,
+        48.582603000017116,
+        53.62992499998654,
+        47.94135899998946,
+        53.5516040000075,
+        51.41582500000368,
+        53.9589660000056,
+        53.042554000014206,
+        52.78862099998514,
+        47.14016699997592,
+        51.57001699999091,
+        48.596489999996265,
+        47.693078000011155,
+        53.220094000018435,
+        52.16468899999745,
+        51.019433000008576,
+        49.1122139999934,
+        52.90149299998302,
+        51.784265999973286,
+        49.27598599999328,
+        49.65583599999081,
+        51.60312899999553,
+        52.173789000022225,
+        54.09216100000776,
+        55.17832300000009,
+        59.89615699998103,
+        59.02442199998768,
+        58.223678000009386,
+        68.27778599999147,
+        64.60356600000523,
+        62.62581699999282,
+        67.72595100000035,
+        73.18755599998985,
+        53.215783999999985,
+        51.39395600001444,
+        58.870731000002706,
+        64.7311879999761,
+        62.452335999987554,
+        64.7328180000186,
+        62.56607800000347,
+        67.48503000001074,
+        68.50673599998117,
+        68.0147649999999,
+        52.52961300002062,
+        52.329770999989705,
+        55.61761599997408,
+        58.93114100000821,
+        58.32283799999277,
+        57.07263300000341,
+        61.29129200000898,
+        60.113684999989346,
+        61.02900999999838,
+        67.34123900000122,
+        51.06640499999048,
+        50.678681999997934,
+        52.228719000006095,
+        57.11280299999635,
+        62.93851999999606,
+        58.80925099999877,
+        60.75476999999955,
+        61.60732400001143,
+        62.695200000016484,
+        64.5123710000189,
+        52.23243999999249,
+        56.1158089999808,
+        60.76221899999655,
+        58.45497900000191,
+        58.18720700000995,
+        59.53430199998547,
+        64.62639600000693,
+        63.042989999987185,
+        61.67916400000104,
+        65.20060900002136,
+        50.122950999997556,
+        51.50591700000223,
+        57.66430499998387,
+        62.686578000022564,
+        58.27801899999031,
+        62.373686999984784,
+        63.191090000007534,
+        64.26507500000298,
+        65.46142099998542,
+        67.43786999999429,
+        49.92963699999382,
+        49.45414700001129,
+        49.29641000000993,
+        55.9955450000125,
+        55.92243400000734,
+        64.53308399999514,
+        59.242628000007244,
+        57.51364200000535,
+        63.9264409999887,
+        64.39844300001278,
+        50.80742199998349,
+        57.387335999985225,
+        57.5901329999906,
+        59.65008200000739,
+        61.44014000002062,
+        59.876983000023756,
+        66.06279100000393,
+        67.77150400000392,
+        68.09781999999541,
+        69.69295699999202,
+        49.06429300000309,
+        53.59810799997649,
+        51.750104999984615,
+        56.52093599998625,
+        56.54016799997771,
+        53.27468200001749,
+        57.751092999998946,
+        61.90506199997617,
+        67.12599400000181,
+        63.8588410000084,
+        49.28924399998505,
+        54.77534199997899,
+        56.74046900001122,
+        56.85239900002489,
+        65.18942800001241,
+        61.32756999999401,
+        63.23702800000319,
+        60.699637999990955,
+        67.30887699997402,
+        67.95453099999577,
+        51.693926000007195,
+        51.1121839999978,
+        59.16512900000089,
+        55.764595000015106,
+        60.41354500001762,
+        64.74484300002223,
+        61.43711100000655,
+        63.07968799999799,
+        68.26755099999718,
+        67.50755700000445,
+        50.21395599999232,
+        55.811876000021584,
+        57.595323999994434,
+        56.295555999997305,
+        61.22345800002222,
+        60.27830499998527,
+        65.4585210000223,
+        63.95178199998918,
+        69.53453699999955,
+        68.78215300000738,
+        49.14109400002053,
+        54.894020000007,
+        53.54124399999273,
+        53.977316000004066,
+        61.125769000005675,
+        58.67943700001342,
+        60.6784050000133,
+        68.09474999998929,
+        63.821549999993294,
+        68.971544,
+        50.38744700001553,
+        57.28253000002587,
+        55.6225909999921,
+        55.10091899998952,
+        60.733284999994794,
+        59.88206000000355,
+        61.32420600001933,
+        72.52001800001017,
+        71.99606599999242,
+        68.50368900000467,
+        52.171578000008594,
+        58.614136999996845,
+        55.884786000009626,
+        60.28967499997816,
+        66.38056300001335,
+        62.931337000016356,
+        67.40076700001373,
+        66.33270699999412,
+        71.62513499998022,
+        70.78338300000178,
+        57.592932999978075,
+        57.52201300000888,
+        59.27915900002699,
+        59.67744200001471,
+        70.03733900000225,
+        67.04590500000631,
+        75.50498599998537,
+        69.61157700000331,
+        78.88473900000099,
+        79.76305400001002,
+        55.941265000001295,
+        55.24108200002229,
+        61.43436099999235,
+        63.965262000012444,
+        65.07965599998715,
+        70.19836999999825,
+        69.7566780000052,
+        74.80195100000128,
+        75.19713099999353,
+        78.13376499997685,
+        52.37721999999485,
+        52.91137099999469,
+        58.06657399999676,
+        57.284121000004234,
+        59.115449000004446,
+        56.819029000005685,
+        64.67007500000182,
+        72.46841999999015,
+        69.74662299998454,
+        74.83496199999354,
+        49.24297499997192,
+        58.2879060000123,
+        60.331735999992816,
+        58.24178599999868,
+        62.784886000008555,
+        69.32961600000272,
+        67.2747570000065,
+        68.78612299999804,
+        70.30699099999038,
+        73.00137199999881,
+        54.901591000001645,
+        56.4620270000014,
+        58.44887500000186,
+        60.33083500000066,
+        60.95504799997434,
+        63.14173799997661,
+        70.65182200001436,
+        69.92465800000355,
+        70.247080000001,
+        75.99035599999479,
+        215.28357299999334,
+        223.3530299999984,
+        227.35672300000442,
+        155.42460899997968,
+        233.39766099999542,
+        235.5722759999917,
+        175.60688000000664,
+        163.71100599999772,
+        259.8939550000068,
+        193.8133439999947,
+        195.32176999998046,
+        270.61935500000254,
+        169.92683899999247,
+        183.66918900000746,
+        278.5712109999731,
+        209.03526899998542,
+        227.6253180000058,
+        194.5516260000004,
+        202.557163999998,
+        224.63285900000483,
+        220.6690870000166,
+        240.4237809999904,
+        251.36234600000898,
+        241.71014199999627,
+        319.46361599999364,
+        327.49086300001363,
+        276.8545729999896,
+        264.56050099999993,
+        285.59533300000476,
+        352.7048589999904,
+        289.4585509999888,
+        272.9538599999796,
+        220.31021500000497,
+        273.77232799999183,
+        232.901692000014,
+        233.32198899998912,
+        241.74603300000308,
+        243.03332399998908,
+        246.52462499999092,
+        249.83457000000635,
+        257.40378399999463,
+        259.6516039999842,
+        264.21116400000756,
+        270.43299999999,
+        277.5978560000076,
+        282.3361880000157,
+        286.4812379999785,
+        289.33115899999393,
+        292.986865999992,
+        297.05701899999985,
+        53.60990500001935,
+        62.42861500001163,
+        62.88676600001054,
+        77.56983299998683,
+        78.28084799999488,
+        86.24619299999904,
+        83.50938999999198,
+        94.71681100002024,
+        98.62372799997684,
+        104.73608800000511,
+        56.33325599998352,
+        111.43233700000565,
+        115.30399600000237,
+        124.03518700000132,
+        125.7024730000121,
+        134.5474240000185,
+        137.22923599998467,
+        141.92867700001807,
+        145.69789300000411,
+        149.94039699999848,
+        153.6815410000272,
+        60.299514999991516,
+        61.3452399999951,
+        70.1719199999934,
+        70.78578900001594,
+        73.07620299997507,
+        77.04482999999891,
+        88.88639599998714,
+        99.34158400000888,
+        95.66456599999219,
+        98.85615500001586,
+        55.608084000006784,
+        55.58702400000766,
+        50.406990000017686,
+        2911.788419999997
+      ],
+      "peakHubRssMiB": 148.09765625,
+      "observations": {
+        "netNamespace": "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT                                                       \n",
+        "startupMs": 231.20182,
+        "firstCall": {
+          "session": "task-0",
+          "turn": "turn-0",
+          "hookMs": 54.711910999999986,
+          "admissionRevision": 1,
+          "observedAtMs": 1790040997797,
+          "pixooMs": 244.05676700000004,
+          "nanoleafMs": 970.30339
+        },
+        "burst": {
+          "sent": 50,
+          "admitted": 50,
+          "rejected": 0,
+          "reportedRejected": 0,
+          "lossCount": 0
+        },
+        "stalled": "Paused SSE reader did not delay either real consumer; expired cursor received resync.",
+        "consumerRecoveryMs": 989.2321729999967,
+        "integrationControl": "Hub routed a guarded monitor filter change to the real Pixoo controller, ControlService and MonitorPresentation while both consumers received ten events.",
+        "fakePixooFrames": 225,
+        "restartMs": 1379.6052569999883,
+        "noReplay": "Nanoleaf reconnect leaves no comets and preserves activity epochs; Pixoo projects the same current revision. Existing presentation regressions cover physical-writer seams separately."
+      },
+      "boundaries": {
+        "hook": "Driver monotonic spawn through process close, including stdin and admission.",
+        "receipt": "Driver monotonic forwarding-start through real consumer projection reply; conservative proxy and IPC overhead included.",
+        "polling": "Nanoleaf real Poller one-second cadence; Pixoo facade refresh once per second. Driver inspects at 25 ms intervals.",
+        "p99": "Not reported: 200 warm samples per profile are not enough for tail qualification.",
+        "physical": false,
+        "installedClient": false
+      },
+      "evaluation": {
+        "qualified": true,
+        "problems": [],
+        "profiles": [
+          {
+            "tasks": 1,
+            "samples": 200,
+            "hookMs": {
+              "p95": 55.409196000007796,
+              "max": 62.32358600000043,
+              "p99": null
+            },
+            "pixooMs": {
+              "p95": 878.3046600000234,
+              "max": 882.6257700000133,
+              "p99": null
+            },
+            "nanoleafMs": {
+              "p95": 982.5632350000014,
+              "max": 985.0007530000003,
+              "p99": null
+            }
+          },
+          {
+            "tasks": 10,
+            "samples": 200,
+            "hookMs": {
+              "p95": 72.52001800001017,
+              "max": 79.76305400001002,
+              "p99": null
+            },
+            "pixooMs": {
+              "p95": 911.1469840000209,
+              "max": 921.3094560000172,
+              "p99": null
+            },
+            "nanoleafMs": {
+              "p95": 973.6604530000186,
+              "max": 983.8242550000141,
+              "p99": null
+            }
+          }
+        ],
+        "targets": {
+          "samples": 200,
+          "hookP95Ms": {
+            "1": 250,
+            "10": 500
+          },
+          "consumerP95Ms": 1500,
+          "hardHookMs": 3000,
+          "readinessMs": 5000,
+          "hubRssMiB": 256
+        }
+      }
+    },
+    "cleanup": true,
+    "error": null,
+    "exitCode": 0,
+    "elapsedMs": 239098.47,
+    "stderr": ""
+  },
+  "finishedAt": "2026-09-22T01:40:36.377667+00:00"
+}
