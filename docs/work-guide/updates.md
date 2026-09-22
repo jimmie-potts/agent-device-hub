@@ -8,8 +8,8 @@ in progress. The new compatibility table preserves the distinct Nanoleaf/runtime
 pins and installed/physical boundaries. Existing diagram ownership and command
 flows are unchanged, so no viewer source or receipt changes apply.
 
-Guide generation, maintenance, browser/print and output consistency checks are
-required for this final candidate. Public publication and live verification remain
+Guide generation, five maintenance tests, browser/print and output consistency
+checks passed for this final candidate. Public publication and live verification remain
 outside this source delivery. Source merge and issue closure will be reconciled
 in a linked guide-only follow-up after their authoritative readback.
 
