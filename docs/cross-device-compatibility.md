@@ -5,12 +5,19 @@ standalone Linux/WSL combination with synthetic input, the real dashboard and
 owning consumers. The command and preparation steps are in
 [development.md](development.md#bounded-cross-device-compatibility).
 
-The tested product source is Hub `10493718ee01dee78c290294f751829dd60ea91d`,
+The tested product source is Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
 Pixoo `28f4875b7a0f0e57ca6f25d9971e125e927a5503` and Nanoleaf
-`f12ac6653a9f3267fa9ef62a2d6667072183d8b3`. The runner rebuilds Hub and Pixoo
+`80628498136203a8f5fcb06ab5fa306e961e2def`. The runner rebuilds Hub and Pixoo
 from the prepared source before importing them. Nanoleaf's shared-input module
-has the same SHA-256 as the existing #8/#30 pin; this newer archive also includes
-the settings API. No older-version compatibility is claimed.
+no longer matches the #8/#30 pin in `nanoleaf-shared-source.json` (revision
+`5375a308`): Nanoleaf #65 added device columns and a legacy-backup restore path,
+so shared-input coverage here comes from this rerun and is not carried over.
+This archive includes the settings API and, since Nanoleaf #64, the native
+power, brightness and saved-scene capabilities with a `scenes` list in the
+integration snapshot. The earlier accepted run used Hub
+`10493718ee01dee78c290294f751829dd60ea91d` and Nanoleaf
+`f12ac6653a9f3267fa9ef62a2d6667072183d8b3`; this rerun re-pins Nanoleaf only.
+No older-version compatibility is claimed.
 
 ## Source results
 
@@ -21,8 +28,8 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 
 | Scenario | Observed result |
 | --- | --- |
-| Source combination | Hub `1049371`, Pixoo `28f4875`, Nanoleaf `f12ac66`; full source IDs above and verified files in the JSON receipt |
-| Runtime and packages | Node 24.21.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts, agent-state and device-mcp `1.0.0`; hub `0.1.0` |
+| Source combination | Hub `36090dd`, Pixoo `28f4875`, Nanoleaf `8062849`; full source IDs above and verified files in the JSON receipt kept with the companion PR for Nanoleaf #64 |
+| Runtime and packages | Node 24.20.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts and device-mcp `1.0.0`, agent-state `2.0.0`; hub `0.2.0` |
 | APIs | Lifecycle/state and controller `1.0`, `nanoleaf.integration/1.0`, `pixoo-integration/1.0` |
 | Empty state | No sessions in the hub, dashboard or either consumer |
 | Two Codex sessions in one project | Distinct identities and matching activity |
@@ -31,7 +38,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 | Frontend label and acknowledgment | Shared label applied; dashboard acknowledgment retained; provider read remains unknown |
 | Duplicate and prior-turn events | No extra notice/revision; late prior-turn end rejected as stale |
 | Claude smoke | One synthetic Claude session reaches both consumers and the dashboard |
-| Frontend Nanoleaf settings | Real owner queues and applies the layout setting; physical outcome remains unknown |
+| Frontend Nanoleaf settings | Real owner queues and applies the layout setting; physical outcome remains unknown. The disposable worker fixture discovers no scenes, so the extension snapshot carried an empty `scenes` list through the extended validator; populated lists are covered by the hub's own validator tests |
 | MCP Pixoo mode | Discovered device tool applies Monitor through the real owning controller with simulator transport |
 | Disconnected Pixoo | Nanoleaf continues receiving current state; dashboard reports unavailable controller health |
 | Pixoo reconnect | Current state returns without automatically reactivating presentation |

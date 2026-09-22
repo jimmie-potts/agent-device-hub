@@ -27,6 +27,12 @@ test('integration projection rejects unexpected private data and invalid receipt
  assert.equal(validateIntegrationSnapshot(snapshot),true);
  assert.equal(validateIntegrationSnapshot({...snapshot,token:'PRIVATE_CANARY'}),false);
  assert.equal(validateIntegrationSnapshot({...snapshot,projects:[{id:'project-'+'a'.repeat(64),color:'#ffffff',title:'PRIVATE_CANARY'}]}),false);
+ const sceneId='scene-'+'c'.repeat(64);
+ assert.equal(validateIntegrationSnapshot({...snapshot,scenes:[{id:sceneId,name:'Beach Waves'},{id:'scene-'+'d'.repeat(64)}]}),true);
+ assert.equal(validateIntegrationSnapshot({...snapshot,scenes:[{id:sceneId,name:'x'.repeat(81)}]}),false);
+ assert.equal(validateIntegrationSnapshot({...snapshot,scenes:[{id:'Beach Waves'}]}),false);
+ assert.equal(validateIntegrationSnapshot({...snapshot,scenes:[{id:sceneId,name:'Beach Waves',path:'/private/PRIVATE_CANARY'}]}),false);
+ assert.equal(validateIntegrationSnapshot({...snapshot,scenes:Array.from({length:257},(_,i)=>({id:'scene-'+i.toString(16).padStart(64,'0')}))}),false);
  assert.equal(validateIntegrationReceipt({apiVersion:'nanoleaf.integration/1.0',requestId:snapshot.nextRequestId,outcome:'applied',priorEffects:'configuration',physicalOutcome:'unknown'}),true);
  assert.equal(validateIntegrationReceipt({apiVersion:'nanoleaf.integration/1.0',requestId:snapshot.nextRequestId,outcome:'applied',priorEffects:'none',physicalOutcome:'sent'}),false);
 });

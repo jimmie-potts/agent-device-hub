@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-22T10:25:21.205894+00:00",
-  "refreshedAt": "2026-09-22T10:25:38.067276+00:00",
+  "startedAt": "2026-09-22T16:06:40.804983+00:00",
+  "refreshedAt": "2026-09-22T16:06:56.886888+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 59,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        62
       ],
-      "openPRs": 2,
+      "openPRs": 3,
       "prPageSizes": [
-        2
+        3
       ],
       "paginationComplete": true,
       "directReads": [
@@ -176,10 +176,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 20,
+      "openIssues": 19,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        19
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -231,7 +231,7 @@
           "number": 41,
           "state": "CLOSED",
           "commentPages": [
-            5
+            6
           ],
           "commentBodiesStored": false
         },
@@ -272,6 +272,14 @@
           "state": "CLOSED",
           "commentPages": [
             4
+          ],
+          "commentBodiesStored": false
+        },
+        {
+          "number": 64,
+          "state": "CLOSED",
+          "commentPages": [
+            2
           ],
           "commentBodiesStored": false
         }
@@ -372,7 +380,7 @@
       ]
     }
   },
-  "openIssues": 94,
+  "openIssues": 93,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
-  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#54/#55 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
+  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#41/#54/#55/#64 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

@@ -1093,7 +1093,7 @@
                 },
                 {
                   "number": 64,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
@@ -1129,7 +1129,7 @@
               "nodes": [
                 {
                   "number": 64,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }

@@ -1,3 +1,44 @@
+## September 22, 2026: Nanoleaf native controls delivered
+
+Nanoleaf #64 closed as completed after
+[codex-nanoleaf PR #66](https://github.com/jimmie-potts/codex-nanoleaf/pull/66)
+merged as `80628498136203a8f5fcb06ab5fa306e961e2def` (reviewed head `468b797`,
+identical tree) and its nine merged-main checks passed. The protected controller
+now declares power, brightness and discovered saved scenes as supported
+controller v1 capabilities, executes them as one journaled write each through the
+single worker, treats power and brightness as overrides until the next explicit
+mode command, accepts scenes only in Free, and lists scene names only in the
+`nanoleaf.integration/1.0` snapshot. Source tests with fake devices only; the
+installed wall is hub #155.
+
+This companion extends the hub's exact-shape `validateIntegrationSnapshot` to
+accept the optional `scenes` list, re-pins `nanoleaf-source.json` and
+`compatibility-nanoleaf-source.json` to `8062849` with fresh file hashes, updates
+the check script's receipt literal, and records the rerun of the bounded
+cross-device compatibility suite (12 scenarios passed) against Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
+Pixoo `28f4875` and Nanoleaf `8062849` in `docs/cross-device-compatibility.md`.
+The receipt is kept with the companion PR. Nanoleaf #64 joins the reference-only
+direct reads of the backlog refresh, and the snapshot's comment-scope note now
+lists every reference-only Nanoleaf issue. The validator accepts scene names
+exactly as the source emits them within the label bound. Review corrected the
+compatibility record's runtime row, the overview's next-decision card and the
+N64 narrative's Free-brightness rule before merge.
+
+Refreshed all three backlogs, native dependencies and the paginated history at
+2026-09-22T16:06Z: 93 primary open issues, 12 guides, nine viewers, 52 roadmap nodes,
+123 merged PRs. N64 moves from open coverage, the general-controls timeline node
+and the parallel units to a completed reference in the controls guide; the
+Nanoleaf controls row now runs #153 to #155, and the controls next step no longer
+waits on a native prerequisite. Architecture diagrams, ownership, transports and
+physical writers are unchanged: the Nanoleaf worker remains the sole light
+writer and the controller route and extension version are the same, so no viewer
+is re-rendered.
+
+Generation, nine maintenance tests and the browser/print checks pass; HTML
+SHA-256 `f8c9626fb49eed3d7f975f4bda46e91f4bc51b1e87bf8fde5e0b69d603d8a015`. This is a mixed change with files outside
+`docs/work-guide/`, so all configured CI jobs apply. Public guide publication
+and live verification remain separate and were not requested.
+
 ## September 22, 2026: General-control definition closeout
 
 Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical
