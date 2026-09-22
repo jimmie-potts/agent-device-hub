@@ -1,15 +1,40 @@
 {
-  "fetchedAt": "2026-09-22T02:36:22.720707+00:00",
+  "fetchedAt": "2026-09-22T03:31:51.428941+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T02:32:01Z",
+      "pushedAt": "2026-09-22T03:28:58Z",
       "defaultBranch": "main",
-      "headSha": "8411413fa43329dba6e25acc4cb715ffbba7887f",
-      "mainCommitCount": 60,
+      "headSha": "2855be7af01265e82012e131838e94d45c83e62f",
+      "mainCommitCount": 65,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "2855be7af01265e82012e131838e94d45c83e62f",
+          "date": "2026-09-22T03:28:58Z",
+          "message": "Reconcile current-status releases and completed issue in the guide (#146)"
+        },
+        {
+          "sha": "013b829a851277cd0cfbaeaba6d6d0dfc32727c7",
+          "date": "2026-09-22T03:12:54Z",
+          "message": "Fix ordinary Codex current status across successive turns (#144)"
+        },
+        {
+          "sha": "1dda5e9432422f3a36f483be317b2962d799d937",
+          "date": "2026-09-22T03:01:15Z",
+          "message": "Reconcile compatibility delivery and issue closure in the guide (#145)"
+        },
+        {
+          "sha": "4f90164519167da3d7952d81a7a6211602ef28d5",
+          "date": "2026-09-22T02:52:01Z",
+          "message": "Verify bounded standalone cross-device compatibility (#136)"
+        },
+        {
+          "sha": "10493718ee01dee78c290294f751829dd60ea91d",
+          "date": "2026-09-22T02:42:18Z",
+          "message": "Reconcile standalone qualification delivery and issue closure (#142)"
+        },
         {
           "sha": "8411413fa43329dba6e25acc4cb715ffbba7887f",
           "date": "2026-09-22T02:32:01Z",
@@ -777,27 +802,60 @@
           "mergedAt": "2026-09-22T02:32:01Z"
         },
         {
+          "number": 136,
+          "title": "Verify bounded standalone cross-device compatibility",
+          "createdAt": "2026-09-22T01:51:59Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/136",
+          "base": "main",
+          "mergedAt": "2026-09-22T02:52:02Z"
+        },
+        {
           "number": 140,
           "title": "Document desktop controls, control profiles and desk presets",
           "createdAt": "2026-09-22T02:14:54Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/140",
           "base": "main",
           "mergedAt": "2026-09-22T02:21:29Z"
+        },
+        {
+          "number": 142,
+          "title": "Record standalone qualification completion in the work guide",
+          "createdAt": "2026-09-22T02:38:25Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/142",
+          "base": "main",
+          "mergedAt": "2026-09-22T02:42:18Z"
+        },
+        {
+          "number": 144,
+          "title": "Fix ordinary Codex current status across successive turns",
+          "createdAt": "2026-09-22T02:46:53Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/144",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:12:54Z"
+        },
+        {
+          "number": 145,
+          "title": "Reconcile compatibility delivery and issue closure in the guide",
+          "createdAt": "2026-09-22T02:57:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/145",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:01:15Z"
+        },
+        {
+          "number": 146,
+          "title": "Reconcile current-status releases and completed issue in the guide",
+          "createdAt": "2026-09-22T03:24:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/146",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:28:58Z"
         }
       ],
       "openPRs": [
         {
-          "number": 136,
-          "title": "Verify bounded standalone cross-device compatibility",
-          "createdAt": "2026-09-22T01:51:59Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/136",
-          "base": "main"
-        },
-        {
-          "number": 141,
-          "title": "Reconcile desktop-control documentation completion in the guide",
-          "createdAt": "2026-09-22T02:29:13Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/141",
+          "number": 143,
+          "title": "Record 85HA keyboard and N30 mouse qualification findings",
+          "createdAt": "2026-09-22T02:38:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
           "base": "main"
         }
       ],
@@ -865,6 +923,14 @@
           "createdAt": "2026-09-07T02:24:05Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/8"
+        },
+        {
+          "number": 9,
+          "title": "Verify shared status and command routing across both device integrations",
+          "closedAt": "2026-09-22T02:55:48Z",
+          "createdAt": "2026-09-07T02:24:07Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/9"
         },
         {
           "number": 13,
@@ -969,9 +1035,17 @@
           "createdAt": "2026-09-20T17:44:01Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/107"
+        },
+        {
+          "number": 137,
+          "title": "Support best-effort Codex current status across successive turns",
+          "closedAt": "2026-09-22T03:12:55Z",
+          "createdAt": "2026-09-22T01:53:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/137"
         }
       ],
-      "openIssueCount": 58,
+      "openIssueCount": 56,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-22T01:53:35Z"

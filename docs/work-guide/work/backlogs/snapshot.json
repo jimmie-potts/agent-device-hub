@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-22T02:33:54.866108+00:00",
-  "refreshedAt": "2026-09-22T02:34:06.301478+00:00",
+  "startedAt": "2026-09-22T03:32:14.283176+00:00",
+  "refreshedAt": "2026-09-22T03:32:27.855952+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 59,
+      "openIssues": 56,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        57
       ],
-      "openPRs": 2,
+      "openPRs": 1,
       "prPageSizes": [
-        2
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -32,8 +32,24 @@
           "commentBodiesStored": true
         },
         {
+          "number": 30,
+          "state": "CLOSED",
+          "commentPages": [
+            9
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 50,
           "state": "OPEN",
+          "commentPages": [
+            0
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 63,
+          "state": "CLOSED",
           "commentPages": [
             0
           ],
@@ -81,6 +97,11 @@
           "purpose": "Closed guide reference"
         },
         {
+          "number": 9,
+          "state": "CLOSED",
+          "purpose": "Closed guide reference"
+        },
+        {
           "number": 13,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
@@ -92,11 +113,6 @@
         },
         {
           "number": 54,
-          "state": "CLOSED",
-          "purpose": "Closed guide reference"
-        },
-        {
-          "number": 63,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         },
@@ -117,6 +133,11 @@
         },
         {
           "number": 107,
+          "state": "CLOSED",
+          "purpose": "Closed guide reference"
+        },
+        {
+          "number": 137,
           "state": "CLOSED",
           "purpose": "Closed guide reference"
         }
@@ -303,7 +324,7 @@
       ]
     }
   },
-  "openIssues": 95,
+  "openIssues": 92,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#54/#55 and Pixoo #30 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

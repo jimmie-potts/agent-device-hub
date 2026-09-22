@@ -64,6 +64,56 @@ Before an owner move, stop configuration edits, inspect every producer and consu
 
 For legacy Nanoleaf rollback, call `rollbackNanoleaf(command)`. It selects and verifies `legacy` through the owning CLI, preserving the latest legacy configuration. It does not restore a backup hook file or resurrect entries the user removed. Before a state-owner rollback, remove the current setup while its owner can confirm revocation, stop its facade, export the **latest** state, verify that owner's exit, and import into another empty host store. Install a fresh receipt and repeat consumer readiness/activation. The original occupied embedded store is never restarted as an automatic fallback. Pixoo remains a remote facade of the selected fresh host, and Nanoleaf's explicit legacy path is restored when requested.
 
+## Update the current-status package
+
+Hub 0.2.0 bundles agent-state 2.0.0 for [Hub #137](https://github.com/jimmie-potts/agent-device-hub/issues/137).
+Lifecycle, snapshot and durable export formats remain 1.0. This update changes
+current-turn selection and needs no database reset, new installer or owner move.
+Perform these steps only under a separate installed-update request with a named
+owner and the actual installation paths.
+
+1. Obtain the new Hub archive, SHA-256 sidecar and source receipt from the
+   [Hub 0.2.0 release](https://github.com/jimmie-potts/agent-device-hub/releases/tag/hub-v0.2.0).
+   Verify `sha256sum -c jimmie-potts-hub-0.2.0.tgz.sha256` in the download directory.
+   The receipt must name the merged source revision and bundled state 2.0.0.
+   Keep the prior program artifact and its receipt. Never replace an older release asset.
+2. Inventory the existing executable/service, hook command, producer receipt,
+   owner/source IDs, consumer policies, credentials and private store location.
+   Keep the same values. Do not route a second owner to the store or alter
+   Nanoleaf/Pixoo selection or device workers for this code update.
+3. Stop the one monitor host through its existing service manager and verify
+   process exit. Retain a private consistent backup of its state directory and
+   configuration. Include SQLite sidecars where present. Stop concurrent setup
+   edits; hooks may fail open while the host is unavailable. Do not delete or
+   edit the database, lease/fence records or setup receipts.
+4. Replace the program package using the installation's existing mechanism and
+   Node 24. Keep hook/service executable paths consistent with the reviewed
+   installation. Verify the installed package manifest and bundled state version.
+   Run the packaged synthetic `tests/setup-hook.test.mjs` in disposable state
+   before exposing the updated host to the existing store.
+5. Restart that same owner against the same store. Verify authenticated health,
+   owner/source/consumer identity and retained labels/notices/attention. Restored
+   sessions should remain uncertain until accepted fresh evidence. A valid start
+   for a new known turn must recover old activity/turn ambiguity in place.
+6. Under the separate [Pixoo #34](https://github.com/jimmie-potts/divoom-app-upgrade/issues/34)
+   acceptance request, record actual Desktop start A, stop A, start B and matching
+   identity in the shared feed. Expect active, idle, active and configured notice
+   clearing. Provider ordering stays unknown; success and readership remain
+   unproven. The named owner records the installed versions, source/hash receipt,
+   retained-state checks and real-client observations. Physical display evidence
+   has its own authorized sequence.
+
+An unseen delayed start can temporarily select the wrong turn and clear a notice.
+Recent retired IDs are protected within the 256-entry FIFO; retained completed
+turn notices add protection. Very old evicted IDs and identities absent from an
+old export cannot be rejected reliably. This release adds no full event history.
+
+For an authorized program rollback, stop the new owner first, retain the latest
+store and reinstall the prior verified program artifact. It can read format 1.0
+but restores the older conservative status behavior. Do not overwrite new
+notices or acknowledgments with the pre-update database backup. A failed reopen
+requires inspection by the installation owner, not a live database reset.
+
 ## Failure recovery and evidence
 
 An apply failure retains an `applying` receipt and disabled producer. Re-plan and retry with the same input/authority after resolving the reported conflict. A removal failure retains `removing` intent; retry after restoring access to the owning service and inspecting the latest removal diff. Never remove the receipt to bypass revocation. If the process died holding `setup.lock`, the named owner must establish that the setup coordinator is gone and no other setup runs, inspect the receipt and affected files, then remove only that empty lock directory before retrying. Unknown owned-entry edits need explicit reconciliation; automatic whole-file recovery is refused.

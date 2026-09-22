@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 1.0.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -56,21 +56,40 @@ and its parent. The normalizer does not reuse the parent's turn ID for the child
 
 Activity, continuing questions, blocked attention, completion notices, read
 evidence and unavailable evidence remain separate. An interruption or runtime
-end retains notices. An evidenced new turn clears prior-turn notices only for
-consumers configured with `clearOnNewTurn`. Without comparable ordering, the
-current turn becomes unknown when different known turns conflict, neither turn
-is permanently retired, and notice acknowledgment stays explicit. Contradictory
-unordered activity also becomes unknown. Further receipt alone cannot remove
-that ambiguity. Correlated attention and completion notices remain available
-under their original turn identities.
-Attention resolution requires matching known turn and attention IDs.
+end retains notices. A selected new turn clears prior known-turn completion
+notices only for consumers configured with `clearOnNewTurn`. Attention resolution
+requires matching known turn and attention IDs, including after that turn retires.
+An unordered attention event does not select a different current turn.
+
+When provider ordering is unknown and no qualified activity ordering governs the
+session, a valid start for an unremembered known turn selects it as active. A
+matching stop makes it idle and retains a completion notice. Ordinary Codex
+Desktop `UserPromptSubmit A`, `Stop A`, `UserPromptSubmit B` therefore produces
+active, idle, active. This is a best-effort calculation from receipt order.
+An unseen delayed start can select the wrong turn or clear a notice prematurely.
+IDs are opaque; neither their spelling nor receipt timestamps prove provider order.
+The snapshot continues to report unknown ordering.
+
+Known retired activity and starts for retained completed turns cannot replace
+current activity. Repeated unordered starts/stops do not refresh evidence or
+restore a cleared notice, even when their receipt timestamp changes. A missing
+turn or a conflicting stop for an unselected turn leaves uncertainty visible.
+A genuinely new eligible start recovers activity/turn ambiguity, including in a
+saved version 1.0 session, while retaining parent/order uncertainty, labels,
+attention, read evidence and unrelated notices. Unknown-turn notices remain
+explicit. Old stores retain only hash keys for some observations, so historical
+turn identities that were never saved cannot be reconstructed or rejected reliably.
 
 A qualified sequence can establish a newer turn even when its first received
 observation is attention or completion. The owner retains that observation
 immediately. A delayed start cannot erase it or revive activity after a newer
 completion for the same turn.
 
-Known retired turns and per-dimension sequence watermarks reject stale changes.
+Remembered retired turns and per-dimension sequence watermarks reject stale changes.
+The most recent 256 distinct retirements are kept in a FIFO. A further retirement
+evicts the oldest ID, allowing current activity to continue. Retained known-turn
+completion notices also prevent unordered reactivation. An ancient event whose
+identity and sequence evidence have both expired may be accepted as unseen.
 The last 256 validated deduplication keys per session suppress retries. Reuse of
 a native event ID with different content records ambiguity. Known-turn notice
 IDs are stable even after the retry window expires. Unknown ordering is visible;
@@ -111,6 +130,13 @@ clock advance. Quiesced or stopped stores prune when ownership resumes.
 Capacity rejection is observable and retains existing state and notices. A host
 must surface saturation for operator action; it must not silently discard state
 to make room. Revision exhaustion also rejects admission.
+
+Provider observations, calculated current state and diagnostics have separate
+roles. Envelopes preserve available qualified identity/order evidence; snapshots
+contain the current calculation; journal rows contain mutation summaries, not
+raw envelopes. The journal cannot reconstruct a complete event history or make
+old status reliable. Native envelope event IDs retain deduplication/collision
+checks. An unqualified raw hook `event_id` remains outside the normalizer allowlist.
 
 Only lifecycle allowlisted metadata reaches storage, diagnostic entries or
 transport. Normalizers select fields before creating the envelope; they exclude
@@ -162,7 +188,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 1.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -176,6 +202,12 @@ shut it down and verify release, then create the new owner with `importState` an
 an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
 Version 1.0 has no predecessor migration; unsupported versions fail closed.
+Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
+It opens an existing compatible store directly. The frozen pre-change
+[ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
+resetting state. An older package can read the same shape but restores its older
+conservative behavior. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)
+keeps owner/source configuration and the existing store.
 If cutover fails, first stop/release the new owner before restarting the old
 store. Rollback after new writes requires an explicit reconciled export, because
 the old copy lacks those writes. No migration accesses controller databases.

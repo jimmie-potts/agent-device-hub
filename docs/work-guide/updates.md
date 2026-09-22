@@ -46,6 +46,68 @@ visual-check result. Candidate screenshots were inspected separately.
 Source review, hosted CI, merge and live qualification remain pending. Public
 publication is outside this source task's authority and has not been performed.
 
+## September 22, 2026: Hub #9 source delivery closeout
+
+PR #136 merged as `4f90164519167da3d7952d81a7a6211602ef28d5`, with the
+reviewed tree preserved. Both final independent reviews and all six PR checks
+passed. All six merged-main checks passed in Checks run 35681040338 and Work
+guide run 35681040292 before #9 closed. All five reduced acceptance criteria are
+checked; the seven-task OpenSpec plan is archived with no product specification
+deltas. Twelve compatibility scenarios passed using synthetic metadata, real
+consumer code and fake physical boundaries. The delivered #30 report supplies
+the separate performance input at its own recorded revisions.
+
+The #9 coordinator owns this linked guide-only follow-up. Refreshed paginated
+backlog/history inputs, retained #9 as a closed direct reference, removed it
+from remaining-work coverage, and updated the shared-monitoring row. Architecture
+ownership and command flows are unchanged; viewer sources/receipts remain intact.
+Generation, five maintenance tests, browser/print and output consistency results
+are recorded with this candidate. The guide-only CI exception is assessed from
+the full changed-file list and both workflow triggers.
+
+No installation, real client or physical acceptance is claimed. The public guide
+still records source `260707019b7ff83d57e31d91ae1e1582c3734589`; publication and
+live website verification remain outside this source delivery.
+
+## September 22, 2026: Hub #9 final source compatibility candidate
+
+The #9 coordinator verified #30 closure and PR #135 merge `8411413`, and
+linked its final acceptance report without repeating measurements. Reconciled
+the concurrent main changes and refreshed the complete backlog. The guide keeps
+#9 separate from delivered performance qualification and records source review
+in progress. The new compatibility table preserves the distinct Nanoleaf/runtime
+pins and installed/physical boundaries. Existing diagram ownership and command
+flows are unchanged, so no viewer source or receipt changes apply.
+
+Guide generation, five maintenance tests, browser/print and output consistency
+checks passed for this final candidate. Public publication and live verification remain
+outside this source delivery. Source merge and issue closure will be reconciled
+in a linked guide-only follow-up after their authoritative readback.
+
+## September 22, 2026: Hub #30 qualification closeout
+
+PR #135 merged as `8411413fa43329dba6e25acc4cb715ffbba7887f` after both
+independent reviews and all six PR jobs passed. All six merged-main jobs passed
+in Checks run 35679809596 and Work guide run 35679809755 before #30 closed.
+All seven current acceptance criteria are checked; historical criteria and failed
+receipts remain unchanged. The committed receipt measures 487 synthetic hooks,
+with hook p95 58/78 ms for one/ten tasks, consumer receipt p95 below one second,
+and 151 MiB peak Hub RSS. Preparation, every scenario and cleanup passed.
+
+Refreshed paginated history and backlog inputs, retained closed #30 as a direct
+reference, removed it from remaining-work coverage and roadmap counts, and
+updated the shared-monitor guide and recommendation. The coordinator owns this
+linked guide-only follow-up. Generation, five maintenance tests, browser/print
+checks and generated-output consistency are recorded with its candidate.
+The architecture viewers retain their existing source pins and ownership.
+The refresh also observes concurrent #63 closure after PR #140. It retains that
+reference and removes it from open-work counts; its coordinator owns the
+separate desktop-control closeout in PR #141.
+
+This records source qualification with pinned real consumers and fake transports.
+It makes no new installation, real-client or physical acceptance claim. Public
+guide publication and live verification remain pending separate authorization.
+
 ## 2026-09-22 — Hub #30 standalone qualification candidate
 
 The source command now has a retained passing run at Hub
@@ -2108,3 +2170,74 @@ read/control credential. Saved consumers were reconciled, and authenticated
 read/control checks passed. Pixoo device acceptance remains separate.
 The refresh retains #30 as a direct closed reference without importing private
 operational comment bodies. Acceptance receipt: https://github.com/jimmie-potts/codex-nanoleaf/issues/30#issuecomment-5769876793.
+
+
+## 2026-09-22 - Hub #137 current-status candidate
+
+Prepared best-effort current-turn selection in the shared reducer, agent-state
+2.0.0 and Hub 0.2.0, with unchanged snapshot/storage 1.0. The candidate guide
+records the delayed-unseen-start limit, old-store recovery, independent consumer
+policies and the separate installed Pixoo #34 retest. Reset #138 and history #139
+remain separate work. No hooks, personal service, state store or device changed.
+
+Refreshed all three backlogs after incorporating PRs #135, #136, #140 and the #145 closure refresh.
+The closed issues #9, #30 and #63 remain reference links and leave open-work counts. Retained the added status/recovery/history roadmap tracks.
+The change affects reduction inside the existing state owner; no architecture
+component, ownership arrow, transport or physical writer changes, so diagram
+source pins and viewers remain unchanged.
+
+Generation, five maintenance tests and desktop/mobile/print browser checks pass.
+The candidate has 93 primary open issues, 12 guides and nine architecture viewers.
+Final source reviews, hosted CI, merge and immutable release receipts follow this
+candidate. A linked completion refresh will record facts unavailable before
+merge. Public guide publication and installed verification remain separate.
+## 2026-09-22 — Hub #9 bounded source compatibility candidate
+
+The Hub #9 coordinator synchronized the owner-approved scope reduction and current
+in-progress state. The shared-monitoring guide now separates #9's small everyday
+compatibility suite from #30's performance qualification. It retains #30's report
+as a completion input and keeps installed-client and visible-device acceptance
+with their owners. Refreshed backlog inputs retain current source receipts;
+no architecture ownership or command flow changed, so diagram sources are unchanged.
+
+Guide generation, five maintenance tests and browser/print checks passed. The
+candidate HTML SHA-256 is
+`16b813fe25e7c75307f7faf23cf8056219a2718e45eee7ed63169b0351e705af`.
+This entry records an unmerged source candidate. Public publication and live
+verification are outside this delivery and remain separate.
+
+## 2026-09-22 - Hub #137 source and release completion
+
+Reconciled [source PR #144](https://github.com/jimmie-potts/agent-device-hub/pull/144)
+at `013b829a851277cd0cfbaeaba6d6d0dfc32727c7`, the verified agent-state 2.0.0
+and Hub 0.2.0 releases, and the completed eight-item issue checklist. The merged
+tree matches reviewed `b1eff926`. Both independent reviews, all six PR jobs and
+all six merged-main jobs passed. Fresh source builds and both CI Python jobs
+reproduce the released archive hashes; all downloaded assets match their
+prepared bytes. Release assets include checksums and merged-source receipts.
+
+GitHub recorded issue closure at merge time. Main checks and release publication
+were subsequently verified before the coordinator completed the checklist and
+removed the review label. This entry records those stages separately.
+
+Updated the shared-monitoring guide, Pixoo #34 handoff and status/recovery track.
+Retained #137 as a closed reference, removed it from open-work coverage, and
+refreshed all three backlogs plus paginated repository history. There are 92
+primary open issues, 12 guides, nine viewers, 52 roadmap nodes and 113 merged PRs
+in this snapshot. Reset #138 and reliable history #139 remain separate work.
+The policy stays inside the existing state reducer, so ownership, transports,
+physical writers and pinned architecture viewers do not change.
+
+Guide generation, five maintenance tests, desktop/mobile/print browser checks
+and generated-output consistency pass. HTML SHA-256:
+`9595ae1cfe67fa2fd3f1743ead4b862c8aa17fad118165846c461908f1c0af69`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception receipt.
+No new product behavior or OpenSpec delta is introduced.
+
+Public guide publication, installation and the real Desktop/Pixoo retest remain
+separate. The public readback still serves Hub source `2607070`, landing-page
+hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
+The named installation owner follows the packaged update instructions and Pixoo
+#34 for the remaining installed acceptance. This source task changes no personal
+hook, live database, service or physical device.

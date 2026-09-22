@@ -5,7 +5,7 @@
 #6 [CLOSED] Build the shared Codex-integration frontend
 #7 [CLOSED] Provide reusable local MCP transport and device tools
 #8 [CLOSED] Package reversible shared hooks and collector ownership migration
-#9 [OPEN] Verify shared status and command routing across both device integrations
+#9 [CLOSED] Verify shared status and command routing across both device integrations
 #10 [OPEN] Publish shared OpenSpec validation tooling
 #11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
 #13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
@@ -21,7 +21,7 @@
 #24 [OPEN] Verify the deferred Tidbyt-to-Tronbyt transition
 #25 [OPEN] Plan and migrate Pixoo into the hub monorepo
 #26 [OPEN] Plan and migrate Nanoleaf into the hub monorepo
-#30 [OPEN] Qualify latency and failure isolation for shared Codex monitoring
+#30 [CLOSED] Qualify latency and failure isolation for shared Codex monitoring
 #31 [OPEN] Define agent-independent device controls after Codex integration acceptance
 #32 [OPEN] Deliver Codex-first shared monitoring and integration controls
 #35 [OPEN] Track future personal assistant, music and hosting work
@@ -71,6 +71,6 @@
 #103 [CLOSED] Document the composable BUNNY system design
 #107 [CLOSED] Consolidate Hub CI into five Ubuntu checks
 #123 [OPEN] Re-evaluate Linux performance budgets and reduce hub memory use
-#137 [OPEN] Support best-effort Codex current status across successive turns
+#137 [CLOSED] Support best-effort Codex current status across successive turns
 #138 [OPEN] Add per-task recovery for incorrect shared monitor status
 #139 [OPEN] Add reliable shared agent-event history as a separate capability

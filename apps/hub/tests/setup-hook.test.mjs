@@ -1,12 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:http';
+import {createHash} from 'node:crypto';
 import {hookCommand} from '../dist/setup.js';
+import {startHub} from '../dist/server.js';
 async function run(config,payload){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,config],{stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',v=>stdout+=v);child.stderr.on('data',v=>stderr+=v);child.on('error',reject);child.on('exit',code=>resolve({code,stdout,stderr}));child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));});}
+test('packaged Desktop hook drives successive turns through the real host and existing store',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-hook-current-')),token='k'.repeat(43);let hub;
+ t.after(async()=>{await hub?.close();await rm(directory,{recursive:true,force:true});});
+ const options={directory:join(directory,'state'),ownerId:'owner',consumers:[{id:'pixoo',clearOnNewTurn:true},{id:'nanoleaf',clearOnNewTurn:false}],controllers:[],port:0,
+  credentials:[{id:'producer',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','ingest'],devices:[]}]};
+ const config=join(directory,'producer.json'),headers={authorization:'Bearer '+token};
+ async function open(){hub=await startHub(options);await writeFile(config,JSON.stringify({enabled:true,qualified:true,source:{provider:'codex',client:'desktop',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:hub.url+'/api/monitor/v1/events',token}),{mode:0o600});}
+ const view=async()=>{const response=await fetch(hub.url+'/api/monitor/v1/sessions',{headers});assert.equal(response.status,200);return (await response.json()).snapshot;};
+ async function emit(name,turn,session='ordinary'){assert.deepEqual(await run(config,{hook_event_name:name,session_id:session,turn_id:turn,event_id:'unqualified-repeated-id',prompt:'PRIVATE_CANARY',cwd:'/private/secret'}),{code:0,stdout:'',stderr:''});}
+ await mkdir(options.directory,{mode:0o700});
+ await open();await emit('UserPromptSubmit','a');assert.equal((await view()).sessions[0].activity,'active');
+ await emit('Stop','a');let snapshot=await view();assert.equal(snapshot.sessions[0].activity,'idle');assert.equal(snapshot.sessions[0].notices.length,1);
+ await emit('UserPromptSubmit','b');snapshot=await view();const revision=snapshot.revision;
+ assert.equal(snapshot.sessions[0].activity,'active');assert.equal(snapshot.sessions[0].turn.id,'b');assert.deepEqual(snapshot.sessions[0].ordering,{status:'unknown'});
+ assert.deepEqual(snapshot.sessions[0].notices[0].acknowledgedBy,['pixoo']);
+ for(const [name,turn] of [['UserPromptSubmit','b'],['Stop','a'],['UserPromptSubmit','a']])await emit(name,turn);
+ assert.equal((await view()).revision,revision);
+ await emit('Stop','other-turn','other-session');snapshot=await view();assert.equal(snapshot.sessions[0].turn.id,'b');assert.equal(snapshot.sessions[1].activity,'idle');
+ assert.doesNotMatch(JSON.stringify(snapshot),/PRIVATE_CANARY|\/private\/secret|unqualified-repeated-id/);
+ await hub.close();hub=undefined;await open();assert.equal((await view()).sessions[0].restartUncertain,true);
+ await emit('Stop','b');snapshot=await view();assert.equal(snapshot.sessions[0].activity,'idle');assert.equal(snapshot.sessions[0].restartUncertain,false);assert.equal(snapshot.sessions[0].notices.length,2);
+});
 test('qualified Codex and Claude hooks authenticate metadata and discard private content',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'hub-hook-'));t.after(()=>rm(directory,{recursive:true,force:true}));const requests=[];
  const server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{requests.push({headers:req.headers,body:JSON.parse(body)});res.end('{}');});});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));

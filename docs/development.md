@@ -355,13 +355,61 @@ node scripts/check-hub-shared-consumers.mjs /absolute/pixoo-source /absolute/nan
 The command verifies pinned source hashes and uses disposable state plus a
 suppressed physical worker launch. It covers setup/revocation, two consumer
 projections, fenced handoff, legacy selection and latest-state rollback.
+It also runs ordinary unordered start/stop/next-start hooks, rejects late retired
+activity and exercises Nanoleaf's actual manual acknowledgment without clearing
+Pixoo's notice. The actual Pixoo pager and Nanoleaf stored projection receive
+the same selected activity while retaining their independent presentation rules.
 The existing `check-hub-pixoo.mjs` additionally verifies labels/notices,
 acknowledgment and renderer continuity. These require separately available
 source archives; neither is a personal installation or a physical check.
 
+For Hub #137, `test:agent-state:built` includes current-status policy, retirement
+eviction, old-export recovery, freshness/restart and TypeScript/Python snapshot
+compatibility. The original ordinary-provider regression failed before the fix.
+`test:setup:built` runs the packaged Desktop hook against the real host and reopens
+the same synthetic store. `test:hub:package:built` repeats that check after an
+offline archive installation. Existing CI runs these suites on Python 3.12 and
+3.14. Run the pinned consumer check above locally as well. Publish new state
+2.0.0 and Hub 0.2.0 archives with hashes and the merged source revision; preserve
+previous release bytes. Package version changes do not change snapshot/storage 1.0.
+
 ## Standalone hub MCP checks
 
 `npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
+
+## Bounded cross-device compatibility
+
+Hub #9 adds verification tooling for the standalone Linux/WSL setup. Build this
+Hub worktree with Node 24 using `npm ci` and `npm run build`. Prepare Pixoo at
+`apps/hub/fixtures/pixoo-source.json` and Nanoleaf at
+`apps/hub/fixtures/compatibility-nanoleaf-source.json` in disposable source
+archives. Build Pixoo with Node 24 `npm ci` and `npm run build`; use system
+Python 3.12 or 3.14 for Nanoleaf and installed Playwright Chromium for the browser.
+Run from the Hub worktree:
+
+```bash
+node scripts/check-hub-compatibility.mjs /absolute/pixoo-source /absolute/nanoleaf-source /tmp/new-compatibility-report.json
+```
+
+The report path must be new. The runner records preflight failures, verifies the listed owning-source hashes,
+and rebuilds Hub/Pixoo before importing their build output. It
+starts disposable local services with fake physical boundaries, and drives the
+real dashboard and MCP. It tests shared lifecycle semantics, labels, monitor
+acknowledgment, native settings/modes, duplicate/late events, one disconnected
+consumer and host restart. The JSON report records tested revisions, scenarios,
+failures and cleanup. Retain failed reports; do not overwrite them on reruns.
+
+This local cross-repository check needs explicit prepared private sources; ordinary
+CI retains its existing component, contract, browser and package tests without
+adding private repository credentials. Run `npm run typecheck`,
+`npm run test:hub:built`, `npm run test:dashboard`, `npm run test:dashboard:browser`,
+`npm run check:workflow` and `npm run test:workflow` alongside the source check.
+The Hub command includes `tests/compatibility_process.test.mjs`, so both required
+contracts/state CI jobs check forced process cleanup and failed preflight reports
+without private source access.
+No product code or contract changes are intended. The #30 performance report is
+a separate required completion input. Source compatibility does not install
+hooks, start an actual agent client or establish visible-device behavior.
 
 ## Everyday standalone qualification
 
