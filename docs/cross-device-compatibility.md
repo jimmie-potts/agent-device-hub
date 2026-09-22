@@ -12,7 +12,7 @@ owning consumers. The command and preparation steps are in
 | Hub product source | `25590e9c95ce334a516d2de0494584d67ea15a26`; this candidate adds verification tooling only |
 | Pixoo | `28f4875b7a0f0e57ca6f25d9971e125e927a5503` |
 | Nanoleaf shared feed and settings | `f12ac6653a9f3267fa9ef62a2d6667072183d8b3` |
-| Runtime | Node 24.21.0, system Python 3.12; Playwright Chromium |
+| Runtime | Node 24.21.0, system Python 3.14.4; Playwright Chromium |
 | Wire contracts | Lifecycle/state and controller API `1.0`; `nanoleaf.integration/1.0`; `pixoo-integration/1.0` |
 
 The JSON receipt records package versions, the verified owning-source file lists,
