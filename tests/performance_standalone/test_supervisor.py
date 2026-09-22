@@ -77,7 +77,8 @@ socket.on('error',()=>{require('node:child_process').spawn(process.execPath,['-e
                 (package/'package.json').write_text(json.dumps({'name':'confined-fixture','version':'1.0.0','scripts':{task:'node probe.cjs'}}))
                 (package/'package-lock.json').write_text(json.dumps({'name':'confined-fixture','version':'1.0.0','lockfileVersion':3,'packages':{'':{'name':'confined-fixture','version':'1.0.0'}}}))
                 (package/'probe.cjs').write_text(script)
-            command=m.namespace_command([(Path(shutil.which('node')).resolve(),'/node'),(ROOT/'scripts/performance/standalone-prepare.py','/prepare.py')],['/usr/bin/python3','-I','-B','/prepare.py'],writable=[(work,'/work')])
+            npm_root,npm_cli=m.npm_runtime()
+            command=m.namespace_command([(Path(shutil.which('node')).resolve(),'/node'),(npm_root,str(npm_root)),(ROOT/'scripts/performance/standalone-prepare.py','/prepare.py')],['/usr/bin/python3','-I','-B','/prepare.py',str(npm_cli)],writable=[(work,'/work')])
             with patch.dict(os.environ,{'QUALIFICATION_PRIVATE_CANARY':'private'}):
                 result=m.supervise(command,timeout=30)
             self.assertIsNone(result['error'],result)

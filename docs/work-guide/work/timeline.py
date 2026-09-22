@@ -32,6 +32,11 @@ TRACKS = [
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
+    ('Monitor status and recovery', [
+        dict(id='n-current-status', x=0, label='Best-effort current status', issues=['H137'], guide='shared-codex'),
+        dict(id='n-task-reset', x=1, label='Per-task recovery', issues=['H138'], guide='shared-codex'),
+        dict(id='n-reliable-history', x=4, label='Reliable history refinement', issues=['H139'], guide='shared-codex'),
+    ]),
     ('Desktop controls (shortcut path)', [
         dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H63', 'H64'], guide='desktop-controls', ready=True),
         dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),

@@ -9,6 +9,7 @@ print('{"ready":true}', flush=True)
 assert sys.stdin.read(1) == '1'
 os.mkdir('/tmp/bin')
 os.symlink('/node', '/tmp/bin/node')
+os.symlink(sys.argv[1], '/tmp/bin/npm')
 os.environ['PATH'] = '/tmp/bin:/usr/bin'
 os.environ['npm_config_cache'] = '/work/cache'
 version = subprocess.check_output(['/node', '--version'], text=True).strip()

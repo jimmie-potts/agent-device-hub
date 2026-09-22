@@ -161,6 +161,15 @@ def stage_hub(destination, source_root=ROOT):
         shutil.copy2(source_root/'scripts/performance'/name,scripts/name)
 
 
+def npm_runtime():
+    command=shutil.which('npm')
+    if not command:raise ValueError('npm-runtime-required')
+    cli=Path(command).resolve()
+    if cli.name!='npm-cli.js' or not (cli.parents[1]/'package.json').is_file():
+        raise ValueError('npm-distribution-required')
+    return cli.parents[1],cli
+
+
 def stage_cache(lockfile, cache, target):
     """Copy only locked registry tarballs, never the user's config/logs/cache tree."""
     import base64
@@ -249,8 +258,9 @@ def main():
             # Only our temporary staging directory is writable; HOME/environment stay private.
             # Pixoo's pinned archive is placed at /work/pixoo for the build driver.
             (root/'pixoo').symlink_to('runtime/pixoo',target_is_directory=True)
-            prepare=namespace_command([(node,'/node'),(ROOT/'scripts/performance/standalone-prepare.py','/prepare.py')],
-                    ['/usr/bin/python3','-I','-B','/prepare.py'],writable=[(root,'/work')])
+            npm_root,npm_cli=npm_runtime()
+            prepare=namespace_command([(node,'/node'),(npm_root,str(npm_root)),(ROOT/'scripts/performance/standalone-prepare.py','/prepare.py')],
+                    ['/usr/bin/python3','-I','-B','/prepare.py',str(npm_cli)],writable=[(root,'/work')])
             preparation=supervise(prepare,timeout=540,capture=True)
             (args.output/'preparation.log').write_text(preparation.pop('stdout','')+preparation.get('stderr',''))
             report['preparation']=preparation

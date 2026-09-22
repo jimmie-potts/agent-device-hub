@@ -10,7 +10,7 @@ the qualified run and every development/qualification attempt.
 
 ## Run
 
-Use Node 24, system Python 3.12/3.14, system npm at `/usr/bin/npm`, bubblewrap and an installed Playwright
+Use Node 24, system Python 3.12/3.14, an npm distribution on PATH, bubblewrap and an installed Playwright
 Chromium headless shell in its dedicated `chrome-headless-shell-linux64` or
 `chrome-headless-shell-linux-arm64` distribution directory. Run `npm ci` in a clean, committed Hub worktree first.
 The two source repositories must contain the exact revisions recorded in
@@ -20,7 +20,8 @@ inputs fail preparation. `--npm-cache` can name a cache content directory,
 defaulting to `~/.npm/_cacache`. The launcher copies only locked registry tarballs
 and sanitized cache metadata. It extracts committed sources, then runs dependency
 setup and both builds under namespace/pidfd supervision with fresh HOME/environment
-and only owned writable staging. No user npm configuration or logs are mounted.
+and only owned writable staging. The selected npm distribution is mounted read-only at its original path.
+No user npm configuration or logs are mounted.
 It neither checks out nor changes either consumer repository.
 
 ```bash

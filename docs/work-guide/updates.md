@@ -9,7 +9,8 @@ full runs. Review required confined preparation and positive reconnect evidence;
 the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
 
 Updated shared-monitor qualification, sequencing and recommendation text, and
-refreshed the complete backlog snapshot. Preserved the concurrent Pixoo #34 and
+refreshed the complete backlog snapshot. Assigned concurrently published Hub
+#137/#138/#139 to the shared-monitor guide without changing their scope or status. Preserved the concurrent Pixoo #34 and
 Nanoleaf #30 guide updates from PRs #131/#134. Issue #30 remains open until
 independent review, CI, merge and merged-source checks pass. Existing architecture
 flows and ownership do not change, so diagram sources/receipts remain unchanged.
