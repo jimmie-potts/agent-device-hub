@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-22T15:55:09.284495+00:00",
+  "fetchedAt": "2026-09-22T20:51:31.784616+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T15:09:08Z",
+      "pushedAt": "2026-09-22T16:28:14Z",
       "defaultBranch": "main",
-      "headSha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
-      "mainCommitCount": 71,
+      "headSha": "f5e71ce36f026de843994dd797aed38dd7be9ff2",
+      "mainCommitCount": 72,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "f5e71ce36f026de843994dd797aed38dd7be9ff2",
+          "date": "2026-09-22T16:28:14Z",
+          "message": "Record Nanoleaf native controls and accept discovered scenes (#161)"
+        },
         {
           "sha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
           "date": "2026-09-22T10:29:21Z",
@@ -926,6 +931,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/159",
           "base": "main",
           "mergedAt": "2026-09-22T10:29:21Z"
+        },
+        {
+          "number": 161,
+          "title": "Record Nanoleaf native controls and accept discovered scenes",
+          "createdAt": "2026-09-22T15:02:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/161",
+          "base": "main",
+          "mergedAt": "2026-09-22T16:28:14Z"
         }
       ],
       "openPRs": [
@@ -944,10 +957,10 @@
           "base": "main"
         },
         {
-          "number": 161,
-          "title": "Record Nanoleaf native controls and accept discovered scenes",
-          "createdAt": "2026-09-22T15:02:23Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/161",
+          "number": 162,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T16:22:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
           "base": "main"
         }
       ],
@@ -2087,7 +2100,7 @@
         },
         {
           "number": 63,
-          "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
+          "title": "Render shared agent monitoring as paged 64×64 dashboards",
           "createdAt": "2026-09-20T23:45:42Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
           "base": "main",
@@ -2258,7 +2271,7 @@
         },
         {
           "number": 32,
-          "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
+          "title": "Render the 64×64 agent monitoring dashboard and preview",
           "closedAt": "2026-09-21T00:04:22Z",
           "createdAt": "2026-09-07T00:55:32Z",
           "stateReason": "completed",

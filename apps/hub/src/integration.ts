@@ -18,8 +18,8 @@ const settings:Check = value => shape(value,{}, {style:one('classic','project'),
 const element:Check = value => shape(value,{id:line},{projectId:nullableProject,signature:one(0,1)});
 const identity:Check = value => shape(value,{provider:one('codex','claude'),client:one('cli','desktop','code'),hostId:id,sourceId:id,sessionId:id});
 const sceneId:Check = matches(/^scene-[a-f0-9]{64}(?![\s\S])/);
-// User-chosen Nanoleaf app names within the shared 80-character label bound; never titles or paths.
-const sceneName:Check = value => typeof value === 'string' && !/[\r\n]/.test(value) && [...value].length >= 1 && [...value].length <= 80;
+// User-chosen Nanoleaf app names within the shared 80-character label bound, exactly as the source emits them; never titles or paths.
+const sceneName:Check = value => typeof value === 'string' && [...value].length >= 1 && [...value].length <= 80;
 const scene:Check = value => shape(value,{id:sceneId},{name:sceneName});
 const failure:Check = value => shape(value,{code:one('unauthenticated','forbidden','unsupported-capability','invalid-request','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','capacity','external-control','transport-failure','uncertain-result')});
 
