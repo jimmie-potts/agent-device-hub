@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-22T15:54:52.344197+00:00",
-  "refreshedAt": "2026-09-22T15:55:09.253228+00:00",
+  "startedAt": "2026-09-22T16:06:40.804983+00:00",
+  "refreshedAt": "2026-09-22T16:06:56.886888+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -382,5 +382,5 @@
   },
   "openIssues": 93,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
-  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#54/#55 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
+  "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Nanoleaf #30/#41/#54/#55/#64 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

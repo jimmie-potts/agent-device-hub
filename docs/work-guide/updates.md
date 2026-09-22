@@ -18,10 +18,14 @@ the check script's receipt literal, and records the rerun of the bounded
 cross-device compatibility suite (12 scenarios passed) against Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
 Pixoo `28f4875` and Nanoleaf `8062849` in `docs/cross-device-compatibility.md`.
 The receipt is kept with the companion PR. Nanoleaf #64 joins the reference-only
-direct reads of the backlog refresh.
+direct reads of the backlog refresh, and the snapshot's comment-scope note now
+lists every reference-only Nanoleaf issue. The validator accepts scene names
+exactly as the source emits them within the label bound. Review corrected the
+compatibility record's runtime row, the overview's next-decision card and the
+N64 narrative's Free-brightness rule before merge.
 
 Refreshed all three backlogs, native dependencies and the paginated history at
-2026-09-22T15:55Z: 93 primary open issues, 12 guides, nine viewers, 52 roadmap nodes,
+2026-09-22T16:06Z: 93 primary open issues, 12 guides, nine viewers, 52 roadmap nodes,
 123 merged PRs. N64 moves from open coverage, the general-controls timeline node
 and the parallel units to a completed reference in the controls guide; the
 Nanoleaf controls row now runs #153 to #155, and the controls next step no longer
@@ -31,7 +35,7 @@ writer and the controller route and extension version are the same, so no viewer
 is re-rendered.
 
 Generation, nine maintenance tests and the browser/print checks pass; HTML
-SHA-256 `ddc0d2896ffcef8b70538fbf46f43bae82b7f1422bf01bafd326ab80445d61ea`. This is a mixed change with files outside
+SHA-256 `f8c9626fb49eed3d7f975f4bda46e91f4bc51b1e87bf8fde5e0b69d603d8a015`. This is a mixed change with files outside
 `docs/work-guide/`, so all configured CI jobs apply. Public guide publication
 and live verification remain separate and were not requested.
 

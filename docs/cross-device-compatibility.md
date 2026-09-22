@@ -26,7 +26,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 | Scenario | Observed result |
 | --- | --- |
 | Source combination | Hub `36090dd`, Pixoo `28f4875`, Nanoleaf `8062849`; full source IDs above and verified files in the JSON receipt kept with the companion PR for Nanoleaf #64 |
-| Runtime and packages | Node 24.21.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts, agent-state and device-mcp `1.0.0`; hub `0.1.0` |
+| Runtime and packages | Node 24.20.0, Python 3.14.4, Playwright Chromium; device-contracts, agent-lifecycle-contracts and device-mcp `1.0.0`, agent-state `2.0.0`; hub `0.2.0` |
 | APIs | Lifecycle/state and controller `1.0`, `nanoleaf.integration/1.0`, `pixoo-integration/1.0` |
 | Empty state | No sessions in the hub, dashboard or either consumer |
 | Two Codex sessions in one project | Distinct identities and matching activity |
@@ -35,7 +35,7 @@ connections, preserves notices and checks Nanoleaf effect epochs/suppression.
 | Frontend label and acknowledgment | Shared label applied; dashboard acknowledgment retained; provider read remains unknown |
 | Duplicate and prior-turn events | No extra notice/revision; late prior-turn end rejected as stale |
 | Claude smoke | One synthetic Claude session reaches both consumers and the dashboard |
-| Frontend Nanoleaf settings | Real owner queues and applies the layout setting; physical outcome remains unknown. The extension snapshot now carries the discovered `scenes` list, accepted by the extended validator |
+| Frontend Nanoleaf settings | Real owner queues and applies the layout setting; physical outcome remains unknown. The disposable worker fixture discovers no scenes, so the extension snapshot carried an empty `scenes` list through the extended validator; populated lists are covered by the hub's own validator tests |
 | MCP Pixoo mode | Discovered device tool applies Monitor through the real owning controller with simulator transport |
 | Disconnected Pixoo | Nanoleaf continues receiving current state; dashboard reports unavailable controller health |
 | Pixoo reconnect | Current state returns without automatically reactivating presentation |

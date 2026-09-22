@@ -1,10 +1,10 @@
 {
-  "fetchedAt": "2026-09-22T15:55:09.284495+00:00",
+  "fetchedAt": "2026-09-22T16:06:56.916107+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T15:09:08Z",
+      "pushedAt": "2026-09-22T15:57:39Z",
       "defaultBranch": "main",
       "headSha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
       "mainCommitCount": 71,
@@ -2087,7 +2087,7 @@
         },
         {
           "number": 63,
-          "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
+          "title": "Render shared agent monitoring as paged 64×64 dashboards",
           "createdAt": "2026-09-20T23:45:42Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
           "base": "main",
@@ -2258,7 +2258,7 @@
         },
         {
           "number": 32,
-          "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
+          "title": "Render the 64×64 agent monitoring dashboard and preview",
           "closedAt": "2026-09-21T00:04:22Z",
           "createdAt": "2026-09-07T00:55:32Z",
           "stateReason": "completed",
