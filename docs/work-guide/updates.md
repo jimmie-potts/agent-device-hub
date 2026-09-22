@@ -1,3 +1,25 @@
+## September 22, 2026: Nanoleaf native controls companion (in progress)
+
+Companion to [codex-nanoleaf PR #66](https://github.com/jimmie-potts/codex-nanoleaf/pull/66)
+for Nanoleaf #64, which declares power, brightness and discovered saved scenes as
+supported controller v1 capabilities, executes them through the existing single
+worker, and lists scene names only in the `nanoleaf.integration/1.0` snapshot.
+This entry is recorded before that PR merges; the merged revision, fixture
+re-pin, backlog refresh and history follow in this same hub PR once it lands.
+
+The hub's exact-shape `validateIntegrationSnapshot` now accepts an optional
+`scenes` list (opaque `scene-` ids, optional user-chosen names within the
+80-character bound, at most 256) so a Nanoleaf source at or after #66 can be
+read; tests reject over-long names, non-opaque ids, extra keys and 257 entries.
+`refresh_backlogs.py` adds Nanoleaf #64 as a reference-only direct read.
+
+Architecture diagrams, ownership, transports and physical writers are unchanged:
+the Nanoleaf worker remains the sole light writer and the controller route and
+extension version are the same, so no viewer is re-rendered. Guide HTML and
+backlogs are not rebuilt in this draft; they are rebuilt with the post-merge
+refresh. Public guide publication and live verification are separate and were
+not requested.
+
 ## September 22, 2026: General-control definition closeout
 
 Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical
