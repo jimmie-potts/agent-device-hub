@@ -55,6 +55,10 @@ For a session without qualified activity ordering, a valid start with known sess
 - **WHEN** comparable qualified ordering is available, or an unordered observation conflicts with a session's qualified activity ordering
 - **THEN** existing sequence and epoch checks remain effective and the receipt fallback cannot retire a turn supported by that ordering
 
+#### Scenario: Qualified attention arrives before its turn start
+- **WHEN** a newer comparable qualified attention observation precedes the delivery of its earlier turn start
+- **THEN** the attention observation establishes its turn and preserves its attention immediately, retires the old turn and clears only enabled old-turn notices, and the delayed start cannot undo that observation
+
 ### Requirement: Bounded current-status memory
 Remembered retired turn identities SHALL be bounded to the most recent 256 distinct retirements per session. Adding another retirement SHALL evict the oldest remembered retirement without deleting labels, notices, attention or diagnostic history. Retained completion notices SHALL continue to prevent reactivation of their known turns. Events older than all applicable identity and sequence evidence MUST NOT be claimed to be rejectable. Diagnostic journal retention MUST remain separate from current-status memory and MUST NOT be represented as complete event history.
 
