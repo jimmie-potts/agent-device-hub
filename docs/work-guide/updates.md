@@ -1866,3 +1866,20 @@ or live acceptance is predicted. Architecture ownership and command flow remain
 as documented for Hub #8; no diagram redraw is needed. Public publication is
 outside this delivery. Candidate generation, maintenance and browser checks
 are recorded in the companion PR.
+
+### Source merge reconciliation
+
+Pixoo PR #65 merged as `37031be56007b6b890ec7a2098aa6e283d9d01fa` after both
+independent reviews and all five PR jobs passed. Its tree matches the reviewed
+candidate; merged-main CI is recorded separately in the delivery PR. Issue #34
+remains open for installation, required-client and physical acceptance. Hub #6
+closed during this delivery after PR #127, so its source prerequisite is now
+available; the installed frontend trial still needs authorization.
+
+Refreshed paginated repository history and issue inputs, retained Hub #6 as a
+closed reference, and removed it from remaining-work coverage and roadmap
+counts. The initial refresh correctly failed coverage until that reconciliation.
+Generation, five maintenance tests, browser/print checks and output consistency
+pass for the reconciled candidate. Architecture viewers retain their dated
+source pins and proposal labels; this status reconciliation does not redraw them
+or claim installation. Public publication remains pending separate authority.

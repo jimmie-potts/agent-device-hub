@@ -5,12 +5,12 @@
     "body": "Pixoo #34 now has a source packaging candidate at https://github.com/jimmie-potts/divoom-app-upgrade/pull/65. Refresh the shared guide's backlog and remaining-work narrative to show that work while retaining installation, client, physical and Hub #6 frontend gates.\n\nThe same delivery coordinator owns both PRs. This guide candidate records source work in progress, not a predicted merge or issue closure. A completion reconciliation will record the actual source result. No architecture ownership or command flow changes, so no diagram redraw is needed. Public publication remains outside scope.\n\nValidation: guide generation, all five maintenance tests, generated-output no-drift check and browser/print checks pass. HTML SHA-256: a81b5e245e1e4dbc2ad0653e190723443fb52ece911706df507203802bb868df. Browser checks cover six widths, links, controls, nine companion viewers and print restoration, with no errors.\n\nGuide-only CI receipt: base 012de557257940cc66913c64012cf4d85e13fb91; all six changed paths are under docs/work-guide/. Both unchanged workflow triggers exclude that directory for pull_request and main push. Independent Standards and Specification review, provider readbacks and guarded merge remain required. Protection reads return the account-plan HTTP 403; repository procedural gates remain in force.\n",
     "state": "open",
     "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
-    "updated_at": "2026-09-22T00:47:01Z",
+    "updated_at": "2026-09-22T00:49:22Z",
     "draft": false,
     "head": {
       "label": "jimmie-potts:codex/pixoo-gh34-guide",
       "ref": "codex/pixoo-gh34-guide",
-      "sha": "ce0ffa2fa999c538317f8ae76e2842181a6efb25",
+      "sha": "2c17dad2d433e7152ac377bbf9059ccf35d068c7",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -101,7 +101,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-22T00:44:53Z",
-        "pushed_at": "2026-09-22T00:46:50Z",
+        "pushed_at": "2026-09-22T00:51:56Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 59,
+        "open_issues_count": 58,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 59,
+        "open_issues": 58,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -230,7 +230,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-22T00:44:53Z",
-        "pushed_at": "2026-09-22T00:46:50Z",
+        "pushed_at": "2026-09-22T00:51:56Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 59,
+        "open_issues_count": 58,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "private",
         "forks": 0,
-        "open_issues": 59,
+        "open_issues": 58,
         "watchers": 0,
         "default_branch": "main"
       }
