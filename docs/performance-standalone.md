@@ -10,7 +10,7 @@ the qualified run and every development/qualification attempt.
 
 ## Run
 
-Use Node 24, system Python 3.12/3.14, bubblewrap and an installed Playwright
+Use Node 24, system Python 3.12/3.14, system npm at `/usr/bin/npm`, bubblewrap and an installed Playwright
 Chromium headless shell in its dedicated `chrome-headless-shell-linux64` or
 `chrome-headless-shell-linux-arm64` distribution directory. Run `npm ci` in a clean, committed Hub worktree first.
 The two source repositories must contain the exact revisions recorded in

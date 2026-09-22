@@ -1,11 +1,12 @@
 ## 2026-09-22 — Hub #30 standalone qualification candidate
 
 The source command now has a retained passing run at Hub
-`3f58f2018639a4aff4ce12c6dd3e3dce3d3e0365`: 400 warmed events,
-486 hooks overall, hook p95 55/73 ms for one/ten tasks, each consumer receipt
-p95 below one second and 148 MiB peak Hub RSS. All scenarios and cleanup passed.
-The receipt preserves seven non-qualifying development attempts and the failed
-first full report. Targets and historical receipts were not relaxed or rewritten.
+`e7136a9c6cb73a059c71afea06d870477c98a5aa`: 400 warmed events,
+487 hooks overall, hook p95 56/87 ms for one/ten tasks, each consumer receipt
+p95 below one second and 153 MiB peak Hub RSS. All scenarios and cleanup passed.
+The receipt preserves eight non-qualifying development attempts and all three
+full runs. Review required confined preparation and positive reconnect evidence;
+the final run covers both with unchanged targets. Targets and historical receipts were not relaxed or rewritten.
 
 Updated shared-monitor qualification, sequencing and recommendation text, and
 refreshed the complete backlog snapshot. Preserved the concurrent Pixoo #34 and

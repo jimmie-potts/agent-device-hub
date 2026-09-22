@@ -141,6 +141,20 @@
     "sha256": "c3a863696144afab9e621856824d94e20964bfc1a8933ddaec150cd45b3ec7ad"
   },
   {
+    "attempt": "gh30-smoke-8",
+    "qualified": false,
+    "hubRevision": "f18e24a5d50ff903c396e8fbc786c8d3c6ffdfc2",
+    "smoke": true,
+    "cleanup": true,
+    "error": "child-failed",
+    "problems": [
+      "incomplete-profile-1",
+      "incomplete-profile-10",
+      "hard-deadline"
+    ],
+    "sha256": "0d3e7d4112708c3a173c423fc4b9d9c7269dc2cf4e20a47511fdaeb2b223fc45"
+  },
+  {
     "attempt": "gh30-qualified-1",
     "qualified": false,
     "hubRevision": "a4327b99c2f2ca322bc3d307e18e21a1b93c94e7",
@@ -159,5 +173,15 @@
     "error": null,
     "problems": [],
     "sha256": "9e027baf797e297413b6148e8d2e9a1901a6f463720d659b43e8fe0b2c8c63d0"
+  },
+  {
+    "attempt": "gh30-qualified-3",
+    "qualified": true,
+    "hubRevision": "e7136a9c6cb73a059c71afea06d870477c98a5aa",
+    "smoke": false,
+    "cleanup": true,
+    "error": null,
+    "problems": [],
+    "sha256": "69a7c73e282e171006c3b84fcc459e7462bbfe5db234ec52653a3044ac2d90be"
   }
 ]
