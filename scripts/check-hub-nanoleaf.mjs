@@ -20,5 +20,5 @@ try{
  const applied=await client.integrationReceipt(request.requestId);assert.equal(applied.body.outcome,'applied');assert.equal(applied.body.physicalOutcome,'unknown');
  const updated=await client.integrationSnapshot();assert.equal(updated.settings.style,'project');
  assert.equal((await client.integrationCommand(request)).body.outcome,'applied');
- console.log(JSON.stringify({contract:snapshot.apiVersion,source:'f12ac6653a9f3267fa9ef62a2d6667072183d8b3',http:true,queued:true,applied:true,replay:true,physical:false}));
+ console.log(JSON.stringify({contract:snapshot.apiVersion,source:'80628498136203a8f5fcb06ab5fa306e961e2def',http:true,queued:true,applied:true,replay:true,physical:false}));
 }finally{client?.close();child.stdin.end('stop\n');await new Promise(r=>child.once('exit',r));}
