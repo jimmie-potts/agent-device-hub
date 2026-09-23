@@ -1,12 +1,13 @@
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
-import {createHash, randomUUID, timingSafeEqual} from 'node:crypto';
+import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
 import {ControllerClient, type ControllerConfig} from './controllers.js';
 import {prepareActivation,type ActivationPlan} from './migration-routes.js';
 import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
+import {startBrowserLaunch} from './browser-launch.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
@@ -91,6 +92,20 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let active = 0, rejected = 0, closing = false;
   let origin = '';
   let mcp: HubMcp | undefined;
+  let closeBrowserLaunch: (()=>Promise<void>) | undefined;
+  const launchCodes=new Map<string,number>();
+  const browserSessions=new Map<string,{credential:Credential;expires:number}>();
+  const pruneBrowser=()=>{
+    const now=Date.now();
+    for(const [code,expiry] of launchCodes)if(expiry<=now)launchCodes.delete(code);
+    for(const [hash,session] of browserSessions)if(session.expires<=now)browserSessions.delete(hash);
+  };
+  const issueLaunch=()=>{
+    if(closing)throw new Error('host-closing');
+    pruneBrowser();if(launchCodes.size>=8)throw new Error('launch-capacity');
+    const code=randomBytes(32).toString('base64url');launchCodes.set(code,Date.now()+30000);
+    return {url:origin,code};
+  };
   const feedEpoch = randomUUID();let feedSequence = 0, feedSignature = '';
   const feedHistory: {sequence:number; body:string}[] = [];
   const ledger = (principal: string) => {
@@ -99,10 +114,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     return value;
   };
   const ticket = (entry: Ledger) => `${entry.epoch}:${entry.sequence}`;
-  const authenticate = (token:string):Credential|null => {
+  const authenticateConfigured = (token:string):Credential|null => {
     if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
     const digest = createHash('sha256').update(token).digest();
     return currentCredentials.find(c => timingSafeEqual(digest,Buffer.from(c.digest,'hex'))) ?? null;
+  };
+  const authenticate = (token:string):Credential|null => {
+    const configured=authenticateConfigured(token);if(configured)return configured;
+    if(!/^[A-Za-z0-9_-]{43}$/.test(token))return null;
+    pruneBrowser();return browserSessions.get(createHash('sha256').update(token).digest('hex'))?.credential??null;
   };
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
     const token = req.headers.authorization;
@@ -178,11 +198,28 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if (!mcp || url.search) throw new HttpError('not-found',404);
           await mcp.handle(req,res);return;
         }
+        if(req.method==='POST'&&path==='/api/dashboard/v1/launch'&&!url.search){
+          if(req.headers.host!==origin.slice(7)||req.headers.origin!==origin||![undefined,'same-origin'].includes(req.headers['sec-fetch-site'] as string|undefined)||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
+          const input=await body(req,128);
+          if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
+          pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
+          launchCodes.delete(input.code);
+          if(browserSessions.size>=16)browserSessions.delete(browserSessions.keys().next().value!);
+          const token=randomBytes(32).toString('base64url');
+          const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys()]};
+          browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
+          json(res,200,{token,expiresInSeconds:8*60*60});return;
+        }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1]);
-        if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
+        if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
+          const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
+          browserSessions.delete(principal.digest);
+          for(const [stream,id] of streamOwners)if(id===principal.id)stream.destroy();
+          json(res,200,{disconnected:true});
+        } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
           json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
@@ -259,13 +296,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   } catch (error) { await owner.shutdown();throw error; }
   origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
   try {
-    if (options.mcp) mcp = createHubMcp({origin,clients,authenticate,principal:(id,scope,device) => {
+    if (options.mcp) mcp = createHubMcp({origin,clients,authenticate:authenticateConfigured,principal:(id,scope,device) => {
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
     },sessions,command});
+    closeBrowserLaunch=await startBrowserLaunch(options.directory,issueLaunch);
   } catch(error) {
-    await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
+    await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
   let closePromise: Promise<void> | undefined;
   return {
@@ -290,14 +328,19 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
 
     replaceCredentials(input:Credential[]) {
       currentCredentials = credentials(input);
+      launchCodes.clear();browserSessions.clear();
       for (const stream of streams) stream.destroy();
       for (const key of ledgers.keys()) if (!currentCredentials.some(c => c.id === key)) ledgers.delete(key);
     },
     close(): Promise<void> {
       return closePromise ??= (async () => {
-        closing = true;await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
+        closing = true;launchCodes.clear();browserSessions.clear();
+        let launchFailure:unknown;
+        try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
+        await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();
+        if(launchFailure)throw launchFailure;
       })();
     }
   };
