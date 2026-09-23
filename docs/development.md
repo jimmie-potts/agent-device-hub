@@ -81,7 +81,7 @@ controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
 standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
 unified-dashboard, standalone-monitor-qualification, tidbyt-cloud-controller and
-tidbyt-agent-status.
+tidbyt-agent-status, plus tidbyt-status-installation.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -310,6 +310,12 @@ Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
 
 ## Tidbyt controller checks
+
+The runner tests in the same `test:tidbyt` suite cover authenticated loopback
+feed reads, wrong-owner and malformed responses, body/time bounds, private
+configuration, local process exclusion, crash release and shutdown. They use
+a real in-memory shared owner with fake cloud transport and run in the existing
+Tidbyt CI jobs. No installed service or physical device participates.
 
 Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
 controller. Use Node 24 and Python 3.12 or 3.14. Run `npm run build`,
