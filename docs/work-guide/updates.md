@@ -13,14 +13,14 @@ acceptance is #155.
 This follow-up refreshes the three backlogs and the paginated history at the
 snapshot time recorded in `work/backlogs/snapshot.json`, retains #153 as a
 completed reference with a direct read, removes it from open coverage and the
-timeline node, and rewrites the controls guide's Nanoleaf row and the
-controls-music next step so both view slices read as delivered and the two
-hardware acceptances follow. There are 91 primary open issues, 12 guides, nine
+timeline node, and rewrites the controls guide's Nanoleaf row, the
+controls-music next step and the overview's next-decision card so both view
+slices read as delivered and the two hardware acceptances follow. There are 91 primary open issues, 12 guides, nine
 viewers, 52 roadmap nodes and 128 merged PRs in this snapshot. Architecture
 diagrams, ownership, transports and physical writers are unchanged.
 
 Generation, nine maintenance tests, browser/print checks and generated-output
-consistency pass; HTML SHA-256 `82f0eb560d202589b1567e060cc1cdc6ee9faae41599ecf674d4a9c01b915082`.
+consistency pass; HTML SHA-256 `df6cf685dc3e743afe07e791a8f5521ca1f3a6dc1eba46e6fd7937559789a354`.
 This follow-up changes only `docs/work-guide/**`; the Depot workflow path
 filters intentionally omit hosted checks and require the SDLC exception
 receipt, recorded on the PR. No product behavior or OpenSpec delta. Public
