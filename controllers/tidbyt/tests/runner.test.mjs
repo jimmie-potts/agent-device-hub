@@ -48,6 +48,10 @@ test('private configuration rejects unsafe inputs without echoing their contents
     writeFileSync(s.configFile,JSON.stringify({...s.value,hubUrl}));
     assert.throws(()=>loadRunnerConfig(s.configFile),{message:'invalid-runner-config'});
   }
+  for(const ownerId of [null,true,123,['owner'],{}]){
+    writeFileSync(s.configFile,JSON.stringify({...s.value,ownerId}));
+    assert.throws(()=>loadRunnerConfig(s.configFile),{message:'invalid-runner-config'});
+  }
   writeFileSync(s.configFile,JSON.stringify(s.value));
   mkdirSync(join(s.dir,'.git'));writeFileSync(join(s.dir,'.git/HEAD'),'ref: refs/heads/main');
   assert.throws(()=>loadRunnerConfig(s.configFile),{message:'invalid-runner-config'});

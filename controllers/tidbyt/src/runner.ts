@@ -25,7 +25,8 @@ export class HubStatusFeed implements StatusFeed {
   readonly #token: string;
   constructor(options: { hubUrl: string; ownerId: string; token: string }) {
     this.#url = hubOrigin(options.hubUrl) + '/api/monitor/v1/sessions';
-    if (!TOKEN.test(options.token) || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.ownerId)) fail('invalid-runner-config');
+    if (typeof options.token !== 'string' || !TOKEN.test(options.token)
+      || typeof options.ownerId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.ownerId)) fail('invalid-runner-config');
     this.#owner = options.ownerId;
     this.#token = options.token;
   }
