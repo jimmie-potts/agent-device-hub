@@ -4,12 +4,13 @@ import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 import {validate} from '@jimmie-potts/device-contracts';
+import {requestBrowserLaunch} from '../../hub/dist/browser-launch.js';
 const browser=await chromium.launch({headless:true});
 const checks=[];let independentDeviceReadMs;
 const visible=(page,role,name)=>page.getByRole(role,{name,exact:true}).filter({visible:true});
 // A following edit starts only after the refreshed snapshot is rendered, so it carries fresh guards; a stale draft would surface as the controller's typed conflict.
 const settled=async(page,text)=>{await page.waitForFunction(t=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent.includes(t)),text);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));};
-async function scenario(name,run,options){const f=await fixture(options),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message));try{await page.goto(f.hub.url);await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();await run(f,page);assert.deepEqual(errors,[]);checks.push(name);}catch(error){console.error(name,await page.locator('section:visible').innerText());throw error;}finally{await context.close();await f.close();}}
+async function scenario(name,run,options){const f=await fixture(options),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message));try{await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();await run(f,page);assert.deepEqual(errors,[]);checks.push(name);}catch(error){console.error(name,await page.locator('section:visible').innerText());throw error;}finally{await context.close();await f.close();}}
 async function until(condition){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout');await new Promise(r=>setTimeout(r,25));}}
 async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 try {
@@ -95,7 +96,7 @@ try {
   await visible(page,'button','Load current / unlock').click();await page.getByRole('button',{name:'Resume',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(f.writes.length,before+2);
  });
  await scenario('read-only credentials and undeclared capabilities name their reasons',async(f,page)=>{
-  await page.getByRole('button',{name:'Disconnect',exact:true}).click();await page.getByLabel('Hub browser access token').fill(f.reader);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();
+  await page.getByRole('button',{name:'Disconnect',exact:true}).click();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.reader);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();
   f.states.pixel.state.desired.brightness={status:'unknown'};
   await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
   await page.locator('section:visible').getByText('Current brightness is unknown; the slider starts at a placeholder, not an observed value.',{exact:false}).waitFor();assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).inputValue(),'50');
@@ -152,5 +153,18 @@ try {
   const submitted=f.writes.length;f.setUncertain(true);await visible(page,'button','Activate scene').click();await page.locator('section:visible [role=status]').filter({hasText:'Uncertain result. Do not repeat this command.'}).waitFor();await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted+1,'uncertain scene command is not retried');assert.equal(await visible(page,'button','Activate scene').isDisabled(),true,'uncertain result stays locked');f.setUncertain(false);
   await visible(page,'button','Load current / unlock').click();await page.getByRole('button',{name:'Activate scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(f.writes.length,submitted+1);assert.equal(f.writes.filter(w=>w.integration).length,0);
  });
+ {
+  const f=await fixture({empty:true}),context=await browser.newContext(),page=await context.newPage();
+  try{
+   const launch=await requestBrowserLaunch(f.hub.directory);
+   await page.goto(launch.url+'/#launch='+launch.code);
+   await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
+   assert.equal(new URL(page.url()).hash,'','the one-time launch code is removed from browser history');
+   assert.equal(f.writes.length,0,'launch and inspection do not command devices');
+   await page.reload();await page.getByText('Open BUNNY with the Hub launcher.').waitFor();
+   await page.goto(launch.url+'/#launch='+launch.code);await page.reload();await page.getByText('That launch expired or failed. Run the launcher again.').waitFor();
+   checks.push('one-click owner launch, history clearing, no-write inspection and reload');
+  }finally{await context.close();await f.close();}
+ }
  const receipt={synthetic:true,physical:false,passed:true,checks,pixelReadDelayMs:800,independentDeviceReadMs};const output=process.env.DASHBOARD_RECEIPTS??'/tmp/gh6-dashboard-receipts';await mkdir(output,{recursive:true});await writeFile(output+'/matrix.json',JSON.stringify(receipt,null,2));console.log(JSON.stringify(receipt));
 }finally{await browser.close();}

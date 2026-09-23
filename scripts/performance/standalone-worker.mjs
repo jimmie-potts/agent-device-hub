@@ -130,7 +130,7 @@ try{
  });
  await scenario('dashboard',async()=>{
   const {chromium}=await import('playwright');browser=await chromium.launch({executablePath:'/browser/chrome-headless-shell',headless:true,args:['--no-sandbox']});context=await browser.newContext();page=await context.newPage();page.setDefaultTimeout(5000);
-  const gateway=await browserGateway();await page.goto(gateway.url);await page.getByLabel('Hub browser access token').fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
+  const gateway=await browserGateway();await page.goto(gateway.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
   await batch(10);await page.getByRole('button',{name:'Connections',exact:true}).click();
   const facts=page.locator('section:visible');await facts.getByText('Connected',{exact:true}).waitFor();
   const before=gateway.connections();assert(before>0);gateway.disconnect();

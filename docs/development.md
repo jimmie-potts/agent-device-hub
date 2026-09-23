@@ -372,6 +372,13 @@ synthetic state and fake controllers. The dashboard CI job runs these checks;
 shared hub, contract/state, MCP and workflow jobs remain required. No check
 installs a personal service, opens live state or contacts hardware.
 
+Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
+`npm run test:hub:package` with disposable owner-launch and browser-session
+checks. Cover single-use and expired codes, rejected cross-origin exchanges,
+read/control alias bounds without ingest/admin/MCP access, disconnect, reload
+and inspection without device writes. The existing Dashboard CI job and shared
+Hub/package jobs run these checks on Node 24. They do not use the installed Hub.
+
 Hub #151 extends the matrix with general-control scenarios: one guarded command
 per control in Media, Monitor gating with the explicit Media switch and a pending
 mode, concurrent edits with typed conflicts and locked uncertain actions, and
