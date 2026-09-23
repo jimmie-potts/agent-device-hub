@@ -174,18 +174,22 @@ application-action names or browser button numbers. [Microsoft RAWMOUSE][rawmous
 
 ## Application bindings and ownership
 
-The four requested Codex actions have these documented Windows defaults. The
-installed app can customize shortcuts, so confirm its Settings > Keyboard
-Shortcuts before any trial. Previous/next chat or tab must be checked against
-the intended task navigation in the active view. Back/forward navigation is a
-different command. [Codex command reference][codex]
+The trial used the documented Windows defaults below, and the owner reported
+that all four actions passed in the active Codex view. Saved shortcut settings
+were not retained. Previous/next task or tab remains view-dependent; browser
+Back/Forward is a different action. Recheck configured bindings if the app
+version, settings or intended view changes. [Codex command reference][codex]
 
-| Accepted action | Documented Windows binding | Installed result |
+| Accepted action | Windows binding used in the trial | Temporary route result |
 | --- | --- | --- |
-| Next task needing attention | `Ctrl+Alt+A` | Unknown |
-| Command menu | `Ctrl+Shift+P`, alternatively `Ctrl+K` | Unknown |
-| Previous task | `Ctrl+Shift+Tab` | Unknown |
-| Next task | `Ctrl+Tab` | Unknown |
+| Next task needing attention | `Ctrl+Alt+A` | Owner-reported pass; saved custom binding not retained |
+| Command menu | `Ctrl+Shift+P` | Owner-reported pass; saved custom binding not retained |
+| Previous task/tab | `Ctrl+Shift+Tab` | Owner-reported pass; saved custom binding not retained |
+| Next task/tab | `Ctrl+Tab` | Owner-reported pass; saved custom binding not retained |
+
+These are the aggregate owner-reported results recorded below, not separate
+per-action event traces. The documented command-menu alternative `Ctrl+K` was
+not part of the trial.
 
 Wispr documents `Ctrl+Win` for Windows push-to-talk and
 `Ctrl+Win+Space` for hands-free mode. A new binding needs a modifier and at most
