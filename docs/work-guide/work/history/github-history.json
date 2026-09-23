@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-23T08:27:44.529414+00:00",
+  "fetchedAt": "2026-09-23T19:02:40.331889+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T08:26:53Z",
+      "pushedAt": "2026-09-23T18:58:38Z",
       "defaultBranch": "main",
-      "headSha": "eeaa76439ba449adcd447750c0996817d12d6e7c",
-      "mainCommitCount": 90,
+      "headSha": "ea5cd958c221123cfb0a451d84d065359a9cd958",
+      "mainCommitCount": 91,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "ea5cd958c221123cfb0a451d84d065359a9cd958",
+          "date": "2026-09-23T08:33:11Z",
+          "message": "Sync work guide after approval recovery source delivery (#190)"
+        },
         {
           "sha": "eeaa76439ba449adcd447750c0996817d12d6e7c",
           "date": "2026-09-23T08:13:01Z",
@@ -1157,6 +1162,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/187",
           "base": "main",
           "mergedAt": "2026-09-23T08:13:01Z"
+        },
+        {
+          "number": 190,
+          "title": "Sync work guide after approval recovery delivery",
+          "createdAt": "2026-09-23T08:29:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/190",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:33:11Z"
         }
       ],
       "openPRs": [
@@ -1516,12 +1529,17 @@
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T08:18:52Z",
+      "pushedAt": "2026-09-23T08:54:43Z",
       "defaultBranch": "main",
-      "headSha": "680acb5c22baafad60f849afd72bcfdabc6bbabf",
-      "mainCommitCount": 34,
+      "headSha": "643a04ec444a55b89d3f31296873a963e76d107c",
+      "mainCommitCount": 35,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "643a04ec444a55b89d3f31296873a963e76d107c",
+          "date": "2026-09-23T08:54:43Z",
+          "message": "Add NL22 Light Panels enrollment and removal commands (#79)"
+        },
         {
           "sha": "680acb5c22baafad60f849afd72bcfdabc6bbabf",
           "date": "2026-09-23T08:18:51Z",
@@ -1925,6 +1943,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/73",
           "base": "main",
           "mergedAt": "2026-09-23T08:18:52Z"
+        },
+        {
+          "number": 79,
+          "title": "Add NL22 Light Panels enrollment and removal commands",
+          "createdAt": "2026-09-23T08:39:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/79",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:54:43Z"
         }
       ],
       "openPRs": [],
@@ -2082,6 +2108,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/43"
         },
         {
+          "number": 45,
+          "title": "Enroll a second Nanoleaf device on the Linux runtime",
+          "closedAt": "2026-09-23T08:58:00Z",
+          "createdAt": "2026-09-07T18:43:24Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -2154,7 +2188,7 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72"
         }
       ],
-      "openIssueCount": 21,
+      "openIssueCount": 20,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-23T08:26:05Z"

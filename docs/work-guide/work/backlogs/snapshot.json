@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-23T08:25:29.311575+00:00",
-  "refreshedAt": "2026-09-23T08:25:50.595241+00:00",
+  "startedAt": "2026-09-23T19:04:20.340505+00:00",
+  "refreshedAt": "2026-09-23T19:04:42.308112+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 58,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        59
+        60
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -179,7 +179,7 @@
           "number": 185,
           "state": "CLOSED",
           "commentPages": [
-            4
+            6
           ],
           "commentBodiesStored": true
         },
@@ -256,10 +256,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 18,
+      "openIssues": 20,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        20
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -399,7 +399,15 @@
           "number": 72,
           "state": "CLOSED",
           "commentPages": [
-            4
+            6
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 45,
+          "state": "CLOSED",
+          "commentPages": [
+            5
           ],
           "commentBodiesStored": true
         }
@@ -500,7 +508,7 @@
       ]
     }
   },
-  "openIssues": 92,
+  "openIssues": 94,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15, Nanoleaf #30/#41/#42/#54/#55/#64 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

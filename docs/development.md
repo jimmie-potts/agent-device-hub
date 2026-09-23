@@ -56,6 +56,16 @@ remain outside Git. This documentation workflow starts no application, installs
 no hooks and contacts no devices. Product contracts and runtime acceptance remain
 with their existing owners. No new OpenSpec capability is introduced by the atlas.
 
+For an authorized public atlas publication, export from the exact validated Hub
+revision with `python3 docs/system-design/export_public.py /absolute/new/site-stage`.
+The exporter stages the generated guide as `site-stage/index.html`, its nine
+architecture viewers, and the atlas reading pages, bundled reference assets and
+downloadable schema/API metadata under `site-stage/atlas/`. It records atlas
+hashes in `atlas/manifest.json`, rewrites links for the public layout and adds
+return navigation to the work guide. Run it against a clean
+`git archive` as well as the worktree; the archive check catches missing tracked
+SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
+
 ## Workflow commands
 
 Use Node 24 and npm from the assigned worktree root:

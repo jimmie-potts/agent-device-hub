@@ -13,7 +13,7 @@ PATHS = {
     ),
     'nanoleaf-devices': (
         'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'Device state, the runtime worker and panel effects are delivered in source. The combined wall map #44 comes next, then enrollment #45 and separately authorized installed acceptance #46.',
+        'Device state, the runtime worker and panel effects are delivered in source. Source enrollment #45 is complete. The combined wall map #44 and separately authorized installed acceptance #46 remain.',
         ['N44'],
     ),
     'tidbyt-lifx': (

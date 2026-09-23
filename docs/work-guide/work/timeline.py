@@ -52,9 +52,14 @@ TRACKS = [
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-worker', x=1, label='Worker + panel effects delivered', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44', 'N45'], guide='nanoleaf-devices'),
+        dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44'], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=3, label='Installed acceptance', issues=['N46'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
+    ]),
+    ('Nanoleaf wall map hierarchy', [
+        dict(id='n-map-projects', x=1, label='Current projects first', issues=['N76'], guide='nanoleaf-presentation'),
+        dict(id='n-map-tasks', x=1, label='Priority tasks first', issues=['N77'], guide='nanoleaf-presentation'),
+        dict(id='n-map-layout', x=2, label='Simplify default layout', issues=['N78'], guide='nanoleaf-presentation'),
     ]),
     ('Nanoleaf rendering + displays', [
         dict(id='n-np-fix', x=0, label='External-scene findings delivered', issues=[], guide='nanoleaf-presentation'),
