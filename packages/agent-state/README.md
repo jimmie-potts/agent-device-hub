@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.1 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -21,6 +21,7 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 | `subscribe(consumerId, cursor?)` | One bounded async iterator per registered consumer. Revision notifications tell the consumer to read `snapshot()`. |
 | `acknowledge(identity, noticeId, consumerId)` | Durably acknowledges that notice for that consumer. It does not prove readership or clear attention. |
 | `setLabel(identity, stringOrNull)` | Persists an explicit user label or removes it. It does not refresh session evidence. |
+| `recoverApproval(identity, turnId, expectedRevision)` | Explicitly retires one uncertain unknown-ID approval for that exact session and turn. Requires the current revision; does not act on the provider permission. |
 | `journal()` / `maintain()` | Read retained diagnostics or force durable retention maintenance. |
 | `exportState()` | Quiesces admission, drains accepted work, and returns a validated frozen version 1.0 export. |
 | `shutdown()` | Quiesces and drains admission, settles outstanding storage before releasing ownership, and closes subscriptions. |
@@ -41,6 +42,14 @@ loads whichever atomic revision actually committed. Errors contain fixed codes.
 `MemoryStorage` is a reference test adapter with an in-process lease; production
 hosts must implement durable storage and cross-process exclusivity. Keep that
 database private to its host. Never share a live database between Windows and WSL.
+
+Explicit approval recovery returns a guarded result and records an
+`attention.resolved` journal entry with `outcome: ambiguous` and a distinct
+`recoveryJournalKey(identity, turnId)` session hash. Ordinary provider entries
+use the identity hash, so the recovery key identifies this action after restart
+when its identity and turn are known. The existing version 1.0 journal form
+keeps rollback readers compatible. The entry records monitor recovery, not
+evidence that Codex resolved the permission; it does not identify the actor.
 
 ## State and uncertainty
 
@@ -188,7 +197,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.1 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -203,6 +212,7 @@ an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
 Version 1.0 has no predecessor migration; unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
+Package 2.0.1 adds explicit approval recovery without changing those schemas.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. An older package can read the same shape but restores its older

@@ -12,7 +12,7 @@ import {HttpError, canonical, exact, id, object} from './common.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; clock?:()=>number};
 type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
 type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
@@ -71,7 +71,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
-  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
+  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,...(options.clock ? {clock:options.clock} : {}),...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
     lease = await storage.acquire(ownerId,signal) as HubLease;
     if (lease.fenced() && !staged) { await lease.release(); throw new Error('owner-quiesced'); }
     if (staged) lease.setFence(true);
@@ -136,13 +136,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   };
   async function command(principal: Credential, input: unknown) {
     if (!object(input) || typeof input.requestId !== 'string' || input.requestId.length > 100) throw new HttpError('invalid-input',400);
-    const keys = input.operation === 'label' ? ['operation','requestId','identity','label'] : input.operation === 'acknowledge' ? ['operation','requestId','identity','noticeId','consumerId'] : ['operation','requestId'];
-    if (!exact(input,keys) || !['label','acknowledge','quiesce'].includes(input.operation as string)) throw new HttpError('invalid-input',400);
+    const keys = input.operation === 'label' ? ['operation','requestId','identity','label'] : input.operation === 'acknowledge' ? ['operation','requestId','identity','noticeId','consumerId'] : input.operation === 'recover-approval' ? ['operation','requestId','identity','turnId','expectedRevision'] : ['operation','requestId'];
+    if (!exact(input,keys) || !['label','acknowledge','recover-approval','quiesce'].includes(input.operation as string)) throw new HttpError('invalid-input',400);
     if (input.operation !== 'quiesce' && (!object(input.identity) || !exact(input.identity,['provider','client','hostId','sourceId','sessionId']) ||
         !['codex','claude'].includes(input.identity.provider as string) || !['cli','desktop','code'].includes(input.identity.client as string) ||
         !id(input.identity.hostId) || !id(input.identity.sourceId) || !id(input.identity.sessionId))) throw new HttpError('invalid-input',400);
     if (input.operation === 'label' && input.label !== null && (typeof input.label !== 'string' || input.label.length > 160)) throw new HttpError('invalid-input',400);
     if (input.operation === 'acknowledge' && (!id(input.noticeId) || !options.consumers.some(c => c.id === input.consumerId))) throw new HttpError('invalid-input',400);
+    if (input.operation === 'recover-approval' && (!id(input.turnId) || !Number.isSafeInteger(input.expectedRevision) || (input.expectedRevision as number)<0)) throw new HttpError('invalid-input',400);
     if (input.operation === 'quiesce' && !principal.scopes.includes('admin')) throw new HttpError('forbidden',403);
     if (staged && input.operation !== 'quiesce') throw new HttpError('owner-quiesced',503);
     const entry = ledger(principal.id), fingerprint = canonical(input), old = entry.results.get(input.requestId);
@@ -163,6 +164,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     const result = Promise.resolve().then(async () => {
       if (input.operation === 'label') return owner.setLabel(input.identity as Identity,input.label as string | null);
       if (input.operation === 'acknowledge') return owner.acknowledge(input.identity as Identity,input.noticeId as string,input.consumerId as string);
+      if (input.operation === 'recover-approval') return owner.recoverApproval(input.identity as Identity,input.turnId as string,input.expectedRevision as number);
       // Persist before releasing an export, including if export subsequently fails.
       lease!.setFence(true); activationAllowed=false; return exported ??= owner.exportState();
     });

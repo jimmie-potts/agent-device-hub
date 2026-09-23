@@ -52,3 +52,10 @@ The deliverable SHALL run both existing Codex/Claude protocol profiles and suppo
 #### Scenario: Isolated consumer
 - **WHEN** the archive is installed offline into a fresh consumer
 - **THEN** the host MCP tests run without sibling checkouts, personal credentials, installed agents or physical devices
+
+### Requirement: Explicit MCP approval recovery
+The host MCP SHALL offer approval recovery as a control tool with exact session identity, turn and expected revision. Its description SHALL state that the tool is for an explicit user request, changes monitoring state only and does not grant or deny Codex permission.
+
+#### Scenario: Authorized recovery tool
+- **WHEN** an authorized MCP client invokes recovery after reading a current session snapshot
+- **THEN** it sends one guarded host command and reports its fixed result without device or provider permission effects

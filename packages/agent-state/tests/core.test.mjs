@@ -1,12 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAgentState, MemoryStorage, validateSnapshot} from '../dist/index.js';
+import {createHash} from 'node:crypto';
+import {createAgentState, MemoryStorage, recoveryJournalKey, validateSnapshot} from '../dist/index.js';
 import {normalizeHook} from '../dist/providers.js';
 
 const identity={provider:'codex',client:'cli',hostId:'host-1',sourceId:'source-1',sessionId:'session-1'};
 const envelope=(kind,sequence=1,extra={})=>({apiVersion:'1.0',identity,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event:{kind},observedAtMs:1000,ordering:{status:'known',epoch:'epoch-1',sequence},...extra});
 const options=(storage,clock=()=>1000)=>({storage,ownerId:'owner-1',consumers:[{id:'pixoo',clearOnNewTurn:true},{id:'nanoleaf',clearOnNewTurn:false}],clock});
 const hook=(name,raw)=>normalizeHook(raw,{provider:'codex',client:'cli',hostId:identity.hostId,sourceId:identity.sourceId,hook:name},1000);
+
+test('explicit recovery retires only an uncertain uncorrelated approval',async()=>{
+  let clock=1000;
+  const storage=new MemoryStorage();
+  const owner=await createAgentState(options(storage,()=>clock));
+  await owner.ingest(hook('UserPromptSubmit',{session_id:identity.sessionId,turn_id:'turn-1'}));
+  await owner.ingest(hook('PermissionRequest',{session_id:identity.sessionId,turn_id:'turn-1'}));
+  const before=owner.snapshot();
+  assert.equal(before.sessions[0].attention[0].kind,'approval');
+  assert.equal((await owner.recoverApproval(identity,'turn-1',before.revision)).ok,false);
+  clock+=300000;
+  const result=await owner.recoverApproval(identity,'turn-1',before.revision);
+  assert.equal(result.ok,true);
+  const after=owner.snapshot();
+  assert.equal(after.sessions[0].attention.length,0);
+  assert.equal(after.sessions[0].freshness,'uncertain');
+  assert.equal(after.sessions[0].activity,before.sessions[0].activity);
+  assert.equal(after.sessions[0].lastEvidenceAtMs,before.sessions[0].lastEvidenceAtMs);
+  assert.deepEqual([owner.journal().at(-1).kind,owner.journal().at(-1).outcome],['attention.resolved','ambiguous']);
+  assert.equal(owner.journal().at(-1).sessionKey,recoveryJournalKey(identity,'turn-1'));
+  const reordered={sessionId:identity.sessionId,sourceId:identity.sourceId,hostId:identity.hostId,client:identity.client,provider:identity.provider};
+  assert.equal(recoveryJournalKey(reordered,'turn-1'),recoveryJournalKey(identity,'turn-1'));
+  assert.notEqual(owner.journal().at(-1).sessionKey,createHash('sha256').update(JSON.stringify(identity)).digest('hex'));
+  assert.equal((await owner.recoverApproval(identity,'turn-1',before.revision)).ok,false);
+  await owner.shutdown();
+  const restored=await createAgentState(options(storage,()=>clock));
+  assert.equal(restored.snapshot().sessions[0].attention.length,0);
+  assert.equal(restored.journal().at(-1).sessionKey,recoveryJournalKey(identity,'turn-1'));
+  await restored.shutdown();
+});
 
 test('child permission requests remain on the child established by its start',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));

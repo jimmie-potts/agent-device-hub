@@ -22,7 +22,7 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | --- | --- |
 | `GET /api/monitor/v1/sessions` | Selected-owner envelope; `matches` only with a search filter; optional `q` up to 120 characters and `provider` |
 | `POST /api/monitor/v1/events` | Shared lifecycle event, maximum 2048 bytes, ingest scope |
-| `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment or quiesce, using the latest server-issued request ID |
+| `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment, explicit approval recovery or quiesce, using the latest server-issued request ID |
 | `GET /api/monitor/v1/changes` | Bounded SSE notifications and resync; fetch a current sessions snapshot rather than replaying effects |
 | `GET /api/hub/v1/health` | Shared collector health and separate controller status, without refreshing device observations |
 | `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias |
@@ -38,7 +38,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 | Boundary | Contract and evidence |
 | --- | --- |
-| Shared state | `@jimmie-potts/agent-state` 2.0.0; lifecycle and export 1.0; no second reducer |
+| Shared state | `@jimmie-potts/agent-state` 2.0.1; lifecycle and export 1.0; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |

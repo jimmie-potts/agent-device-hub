@@ -12,6 +12,7 @@ export {MemoryStorage} from './memory-storage.js';
 export {validateSnapshot,validateExport,migrateExport} from './validation.js';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+export const recoveryJournalKey=(identity:Identity,turnId:string)=>hash(['approval-recovery',identityKey(identity),turnId]);
 const id=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9_.-]{1,128}(?![\s\S])/.test(value);
 function freeze<T>(value:T):T {
   if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}
@@ -99,10 +100,10 @@ export async function createAgentState(options:Options) {
     });
     tail=result;return result;
   }
-  async function commit(session:Session|undefined,kind:string,outcome:'applied'|'ambiguous'='applied'):Promise<Outcome> {
+  async function commit(session:Session|undefined,kind:string,outcome:'applied'|'ambiguous'='applied',journalKey?:string):Promise<Outcome> {
     if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
     const at=now(),revision=data.revision+1;
-    const journal=session?{revision,atMs:at,sessionKey:hash(session.identity),kind,outcome}:undefined;
+    const journal=session?{revision,atMs:at,sessionKey:journalKey??hash(session.identity),kind,outcome}:undefined;
     const change:Commit={expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs:at-LIMITS.journalAgeMs,
       ...(session?{session}:{}),...(journal?{journal}:{})};
     await io(signal=>lease.commit(freeze(structuredClone(change)),signal));
@@ -160,6 +161,27 @@ export async function createAgentState(options:Options) {
         if(!notice)return {ok:false,code:'invalid-operation'};
         if(notice.acknowledgedBy.includes(consumerId))return {ok:true,revision:data.revision,outcome:'duplicate'};
         notice.acknowledgedBy.push(consumerId);return commit(session,'notice.acknowledged');
+      });
+    },
+    recoverApproval(identity:Identity,turnId:string,expectedRevision:number):Promise<Outcome>{
+      if(!identify(identity)||!id(turnId)||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
+        return Promise.resolve({ok:false,code:'invalid-operation'});
+      const selected=structuredClone(identity);
+      return queue(async()=>{
+        if(data.revision!==expectedRevision)return {ok:false,code:'revision-conflict'};
+        const previous=get(selected);
+        if(!previous||previous.turn.status!=='known'||previous.turn.id!==turnId||
+          !(restarted.has(identityKey(selected))||now()-previous.lastEvidenceAtMs>=LIMITS.staleMs))
+          return {ok:false,code:'invalid-operation'};
+        const targets=previous.attention.filter(item=>item.kind==='approval'&&item.id.status==='unknown'&&
+          item.turn.status==='known'&&item.turn.id===turnId);
+        if(targets.length!==1)return {ok:false,code:'invalid-operation'};
+        const next=structuredClone(previous);
+        next.attention.splice(next.attention.findIndex(item=>item.kind==='approval'&&item.id.status==='unknown'&&
+          item.turn.status==='known'&&item.turn.id===turnId),1);
+        // The distinct hash records explicit recovery in the existing version 1.0
+        // journal shape without claiming provider resolution or breaking rollback.
+        return commit(next,'attention.resolved','ambiguous',recoveryJournalKey(selected,turnId));
       });
     },
     snapshot():Snapshot{

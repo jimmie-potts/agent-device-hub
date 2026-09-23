@@ -132,3 +132,14 @@ Remembered retired turn identities SHALL be bounded to the most recent 256 disti
 #### Scenario: Restart and freshness
 - **WHEN** the owner restarts or the session has no fresh evidence for five minutes
 - **THEN** restart/freshness uncertainty remains visible, duplicate delivery cannot make it current, and retained stale-event protection survives restart
+
+### Requirement: Explicit uncertain approval recovery
+The owner SHALL allow an authorized host to retire exactly one unknown-ID approval for an exact session and known turn only when that session is uncertain and the request names the current owner revision. It SHALL persist a distinguishable recovery diagnostic in the compatible version 1.0 journal and preserve unrelated attention, activity, notices and uncertainty. Recovery SHALL NOT approve or deny a provider permission or infer that work succeeded. A fresh provider observation MAY create a new approval marker.
+
+#### Scenario: Recover one old uncorrelated approval
+- **WHEN** an explicit operation names a session, its current known turn and revision with exactly one unknown-ID approval and uncertain session freshness
+- **THEN** only that approval is removed in a durable new revision while other state remains and a recovery journal entry is retained
+
+#### Scenario: Reject ambiguous or changed evidence
+- **WHEN** evidence is fresh, the revision or turn changed, or zero or multiple matching approvals exist
+- **THEN** the owner rejects recovery without changing state
