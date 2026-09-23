@@ -174,7 +174,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert.equal(await dialog.locator('.brief-repo').textContent(),new URL(issue.url).pathname.split('/').slice(1,3).join('/'));
        assert.equal(await dialog.locator('.brief-number').textContent(),`#${issue.number}`); assert.equal(await dialog.locator('#brief-title').textContent(),issue.title);
        const link=dialog.locator('.brief-link'); assert.equal(await link.getAttribute('href'),issue.url); assert.equal(await link.getAttribute('target'),'_blank'); assert.equal(await link.getAttribute('rel'),'noopener noreferrer');
-       assert.equal(await badge.getAttribute('href'),issue.url,'The badge keeps its GitHub link'); assert.equal(await dialog.evaluate(d=>d.contains(document.activeElement)),true,'Focus moves into the brief');
+       assert.equal(await badge.getAttribute('href'),issue.url,'The badge keeps its GitHub link'); assert(await dialog.locator('[data-action][aria-pressed="true"]').evaluate(b=>b===document.activeElement),'Focus moves to the selected action');
        const p=await actions();
        for(const text of Object.values(p)) assert(text.includes(issue.url),'Every prompt names the full issue URL');
        assert(p.explain.includes(`"${issue.title}"`)&&/Read-only: don't change files, branches or GitHub\./.test(p.explain),'Explain is read-only');
@@ -194,6 +194,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.equal(await dialog.locator('#brief-title').textContent(),hostile); assert.equal(await dialog.locator('img').count(),0); await dialog.locator('[data-action="explain"]').click(); assert((await prompt.inputValue()).includes(`("${hostile}")`));
      await page.waitForTimeout(50); assert.equal(await page.evaluate(()=>window.briefInjected),undefined,'Title markup never executes');
      await page.evaluate(()=>{document.querySelector('#issue-briefs').textContent=window.savedBriefs;}); await page.keyboard.press('Escape');
+     // An explicit opener from another view gets focus back, not the element focused before the call.
+     const other=page.locator('.guide a.issue.repo-N[data-issue]').first(); await page.locator('#search').focus();
+     assert.equal(await page.evaluate(([key,from])=>window.openBrief(key,from),[await other.getAttribute('data-issue'),await other.elementHandle()]),true);
+     await page.keyboard.press('Escape'); assert(await focusedOn(other),'Closing returns focus to the explicit opener');
      assert.equal(await page.evaluate(()=>window.openBrief('H999999')),false,'Unknown keys do not open a brief'); assert.equal(await isOpen(),false);
      // Copy writes to the clipboard; a denied or missing Clipboard API selects the prompt for manual copying.
      const badge=page.locator('.guide a.issue.repo-H[data-issue]').first(); await badge.click(); await dialog.locator('[data-action="implement"]').click(); const expected=await prompt.inputValue();
