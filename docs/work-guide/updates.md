@@ -29,8 +29,8 @@ No assertion was removed. All nine diagrams passed 9/9 deterministic checks.
 The mouse viewer passed its standalone browser check. The preset viewer retains
 vertical overflow (heights 1372/1500/1500/1526 at the four desktop sizes), without
 horizontal overflow; it is not a visual-check pass. Screenshots were inspected.
-Guide HTML SHA-256: `e5e33746fb4b55824b08eb79db1e67902625f576d17deb8293dce077efee799e`.
-Independent-review and hosted-CI results remain revision-specific PR evidence.
+Guide HTML SHA-256: `544b84087ee0a26e172373241c2de86f53bc8e9fb017084494e2495773bfb75d`.
+Independent review found and removed one stale A/B-editor claim in the architecture introduction; the generator and output now state the keyboard-owned boundary. No behavior assertion was removed. Independent-review and hosted-CI results remain revision-specific PR evidence.
 
 ## September 22, 2026: Pixoo general controls closeout
 
