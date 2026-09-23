@@ -201,8 +201,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.equal(await page.evaluate(()=>window.openBrief('H999999')),false,'Unknown keys do not open a brief'); assert.equal(await isOpen(),false);
      // Copy writes to the clipboard; a denied or missing Clipboard API selects the prompt for manual copying.
      const badge=page.locator('.guide a.issue.repo-H[data-issue]').first(); await badge.click(); await dialog.locator('[data-action="implement"]').click(); const expected=await prompt.inputValue();
-     // The real file:// clipboard copies when permission is granted. Default clipboard permission varies across Chromium
-     // versions (153 grants writes), so the denied and missing cases are simulated in the page.
+     // The real file:// clipboard copies when permission is granted. Default clipboard permission depends on the browser
+     // build (full Chromium grants writes; chrome-headless-shell rejects them), so denied and missing are simulated here.
      await page.context().grantPermissions(['clipboard-read','clipboard-write']);
      await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
      assert.equal(await status.textContent(),'Copied.'); assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),expected,'Copy writes the prompt to the clipboard');
@@ -216,7 +216,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert(await selectedAll(),`A ${clipboard} clipboard selects the prompt`); assert(/copy it manually/.test(await status.textContent()));
      }
      await page.screenshot({path:path.join(root,'work/guide-brief-fallback-mobile.png')});
-     await dialog.locator('.brief-close').click(); assert(await focusedOn(badge)); await page.evaluate(()=>{delete navigator.clipboard;});
+     await dialog.locator('.brief-close').click(); assert(await focusedOn(badge)); await page.evaluate(()=>{delete navigator.clipboard; delete navigator.clipboard.writeText;});
      assert.equal(await page.locator('#search').evaluate(e=>e.placeholder.length>0),true); assert(/task brief/i.test(await page.locator('.search-meta').textContent()),'Search hint explains that issue links open a brief');}
     // Exercise a real PDF from filtered, mixed expansion state, plus repeated print events.
     await page.locator('#collapse-all').click();await page.locator('#local-acceptance > summary').click();await page.locator('#search').fill('N30');
