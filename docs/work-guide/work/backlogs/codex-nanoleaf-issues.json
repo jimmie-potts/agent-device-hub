@@ -1239,25 +1239,43 @@
   },
   {
     "number": 74,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Investigate and resolve retained shared unread indicators",
     "body": "## Desired outcome\n\nThe wall map's task count reflects current, actionable shared state. Resolved or acknowledged work leaves the indicator set when the shared owner provides reliable evidence; genuinely unread notices and unresolved attention remain visible.\n\n## Evidence and question\n\nTwo screenshots on 2026-09-23 showed 71, then 72 tasks in the right column. An aggregate, read-only inspection of the installed Linux state at the second observation found 65 unread, 5 blocked and 2 working sessions, matching the 72 displayed tasks. The shared snapshot had 119 sessions, including 47 idle sessions that the map did not display. This establishes where the count comes from, not whether the 65 unread notices are still actionable. The installed runtime may differ from later source releases.\n\nThe map server includes every session in working, question, blocked or unread status. The shared consumer derives unread from owner read and notice evidence. Trace that evidence before changing retention or presentation.\n\n## Scope\n\nInvestigate representative unread sessions from source observation through shared owner, Nanoleaf projection and map count using sanitized aggregate evidence. Classify legitimate unread state, unavailable read evidence, delayed or missed transitions, and projection defects. Repair a confirmed defect in its owning repository, or create and link the exact upstream issue if this repository cannot own the fix. Document the supported per-notice recovery path when state is legitimately retained without read evidence.\n\nDo not clear unread by age, truncate the API count, write Codex's private state, bulk-acknowledge notices, or reset the installed database. The approval-specific recovery delivered in [Nanoleaf #72](https://github.com/jimmie-potts/codex-nanoleaf/issues/72) and [Hub #185](https://github.com/jimmie-potts/agent-device-hub/issues/185) is related but does not establish the cause of this unread count.\n\n## Acceptance criteria\n\n- [ ] A sanitized count breakdown reconciles owner sessions and notices, projected statuses, and map tasks for a fixed snapshot. It explains which records should still appear and why.\n- [ ] Focused fixtures cover a genuinely unread notice, qualified read evidence, explicit acknowledgment, a new turn under the configured consumer policy, uncertain or unavailable evidence, and restart/reconnect. Counts and Line allocation follow the documented state in each case.\n- [ ] Any confirmed lifecycle defect is fixed at the owning boundary and verified without dropping genuine notices. If the observed growth is expected under the available evidence, record that finding and a specific supported cleanup action or separately scoped follow-up rather than claiming a code fix.\n- [ ] A corrected indicator leaves the visible task count and waiting allocation without disturbing other tasks, project preferences, modes, scenes or device ownership.\n\n## Verification and delivery\n\nUse isolated shared snapshots and fake device transport. Run `python3 scripts/check.py`; run `npm run test:browser` if the map or API changes. Follow the applicable OpenSpec and workflow checks for a behavior change. Source-only delivery through the repository PR and review gates; installed and physical-light acceptance remain separate. No live task acknowledgment or installation is authorized by this issue.\n\n## Dependencies\n\nNo implementation prerequisite. Coordinate owner-side findings with the Hub rather than adding provider event interpretation to the Nanoleaf consumer. Pair the count diagnosis with the task-list presentation issue, which must keep the full count truthful.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74",
-    "updatedAt": "2026-09-23T08:24:55Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T20:49:41Z",
+    "closedAt": "2026-09-23T20:49:39Z",
     "labels": [
       {
         "name": "bug"
-      },
-      {
-        "name": "status:backlog"
       }
     ],
     "milestone": null,
-    "comments": [],
-    "commentCount": 0,
-    "commentsRefreshed": false
+    "comments": [
+      {
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74#issuecomment-5801665974",
+        "createdAt": "2026-09-23T19:40:50Z",
+        "updatedAt": "2026-09-23T19:40:50Z"
+      },
+      {
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74#issuecomment-5802042440",
+        "createdAt": "2026-09-23T20:03:20Z",
+        "updatedAt": "2026-09-23T20:03:20Z"
+      },
+      {
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74#issuecomment-5802657000",
+        "createdAt": "2026-09-23T20:46:35Z",
+        "updatedAt": "2026-09-23T20:46:35Z"
+      },
+      {
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74#issuecomment-5802699317",
+        "createdAt": "2026-09-23T20:49:38Z",
+        "updatedAt": "2026-09-23T20:49:38Z"
+      }
+    ],
+    "commentCount": 4,
+    "commentsRefreshed": true
   },
   {
     "number": 75,
@@ -1337,6 +1355,28 @@
     "labels": [
       {
         "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 81,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Queue the completion comet when a subagent delays a parent's unread",
+    "body": "## Problem\n\nAfter [#74](https://github.com/jimmie-potts/codex-nanoleaf/issues/74) ([PR #80](https://github.com/jimmie-potts/codex-nanoleaf/pull/80)), subagent sessions count as part of their parent task. A parent's completion can then skip its celebration comet. This happens when the parent's turn ends while the owner still counts a subagent active.\n\nWhen the parent's turn-ended notice first appears, the task still shows working because of that subagent, so no comet is queued. When the subagent later finishes or goes silent, the task becomes unread. By then the notice was already present in the prior snapshot, and the consumer queues comets only for notices that are new relative to the prior snapshot. The unread color and its outward wave still show; only the one-time comet is lost. This was found in PR #80's round-5 Standards review, finding S12.\n\n## Desired outcome\n\nA top-level completion notice queues one completion comet the first time its task becomes visibly unread, even when a subagent delayed that transition. A notice that was already celebrated is never celebrated again. That includes a task that returns to unread after a subagent's later work.\n\n## Scope and acceptance criteria\n\n- [ ] The parent's notice arrives while a subagent is counted active. The subagent then finishes or goes silent, and exactly one comet is queued in Work.\n- [ ] A notice that was already celebrated while its task was unread is not celebrated again when a later subagent run ends.\n- [ ] Interruption, resync, stale evidence and Free/Quiet keep their existing comet rules. Started comet reservations are unaffected.\n- [ ] Any retained celebration state is private and survives restart without replaying old comets. Legacy mode is unchanged.\n\n## Verification\n\nAdd focused `tests/test_shared_input.py` cases using the fake clock and isolated state, and run `python3 scripts/check.py`. If behavior changes, update the `shared-session-consumer` spec through an OpenSpec change.\n\n## Dependencies\n\nRequires #74 / PR #80 to be merged. This is source-only work; it needs no installation or device checks.\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/81",
+    "updatedAt": "2026-09-23T20:38:17Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "bug"
       },
       {
         "name": "status:backlog"

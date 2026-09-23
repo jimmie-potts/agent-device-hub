@@ -18,13 +18,13 @@ PATHS = {
     ),
     'tidbyt-lifx': (
         'Add automatic task status to Tidbyt and LIFX through their own controllers.',
-        'The Tidbyt cloud controller source is delivered. Automatic status #19 settles layout, push cadence and rotation with the owner, then installed acceptance #21 follows. LIFX connection qualification #17 remains independent.',
-        ['H19', 'H17'],
+        'Tidbyt status and the LIFX controller are delivered in source. Resolve shared-owner capacity #195 before resuming Tidbyt installed acceptance #21. LIFX automatic status #20 remains a separate next feature.',
+        ['H20'],
     ),
     'pc-lighting': (
         'Add Corsair task lighting, with optional Strimer and keyboard support.',
-        'Resolve the open documentation gate before selecting qualification. Keep optional devices on separate tracks and retain negative or unknown support findings.',
-        ['H50'],
+        'The documentation issue #50 is closed. Select and refine qualification next, keeping optional devices on separate tracks and retaining negative or unknown support findings.',
+        ['H51'],
     ),
     'desktop-controls': (
         'Use local Codex mouse shortcuts, then add optional shared desk presets.',
@@ -58,8 +58,8 @@ PATHS = {
     ),
     'development-workflow': (
         'Keep delivery evidence readable and validation affordable.',
-        'Choose the next documentation or tooling task. Prism design comes before its artwork and publication steps; connector repair and shared tooling keep their own scopes.',
-        ['H85'],
+        'Start mobile task briefs #196, current public GitHub status #197 and Neon/Prism design #85. The first combined public release #87 follows those features and presentation #86. Direct app coordination remains deferred.',
+        ['H196', 'H197', 'H85'],
     ),
 }
 
@@ -68,8 +68,8 @@ PATHS = {
 PARALLEL = [
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',
      'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
-    ('H19', 'Tidbyt automatic status', 'tidbyt-lifx',
-     'Build status on the delivered #16 controller after settling layout, push cadence and rotation with the owner. Installed acceptance #21 needs its own authorization.'),
-    ('H17', 'LIFX connection findings', 'tidbyt-lifx',
-     'Qualify the LAN connection independently of Tidbyt. Its controller and physical acceptance follow its own findings.'),
+    ('H196', 'Mobile task briefs', 'development-workflow',
+     'Prepare copyable task context for the existing Codex and Claude apps using the current guide styles.'),
+    ('H197', 'Current public GitHub status', 'development-workflow',
+     'Add a dated public status projection with explicit freshness; coordinate shared guide files with the task-brief owner.'),
 ]

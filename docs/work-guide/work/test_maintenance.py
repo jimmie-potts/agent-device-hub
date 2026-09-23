@@ -93,9 +93,9 @@ class GuideMaintenance(unittest.TestCase):
             self.assertEqual(attrs.get('data-status'), 'open')
             self.assertIn('Open', text)
         for attrs, text in links.links['H50']:
-            self.assertEqual(attrs.get('data-status'), 'review')
-            self.assertIn('In review', text)
-            self.assertIn('blocked', text)
+            self.assertEqual(attrs.get('data-status'), 'completed')
+            self.assertIn('Completed', text)
+            self.assertNotIn('blocked', text)
 
     def test_checkpoint_dependency_is_external_to_primary_coverage(self):
         source = Path(__file__).resolve().parent.parent
@@ -171,6 +171,10 @@ class GuideMaintenance(unittest.TestCase):
         for _,items in timeline.TRACKS:
             for a,b in zip(items,items[1:]):
                 actual.update((left,right) for left in a['issues'] for right in b['issues'] if left in starts)
+        nodes = {item['id']: item for _, items in timeline.TRACKS for item in items}
+        for source, target, _ in timeline.CROSS:
+            actual.update((left, right) for left in nodes[source]['issues']
+                          for right in nodes[target]['issues'] if left in starts)
         self.assertEqual(actual,expected)
 
     def test_linux_acceptance_keeps_comment_references_without_private_content(self):

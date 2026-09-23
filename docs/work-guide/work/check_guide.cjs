@@ -56,7 +56,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#timeline > summary').click();
     assert.equal(await page.locator('.next-action').count(),count,'Every guide leads with its next step');
     assert.equal(await page.locator('.delivery-evidence[open],.guide-evidence[open]').count(),0,'Evidence starts folded');
-    for(const [key,status,label] of [['P34','completed','Completed'],['N46','blocked','Blocked'],['H50','review','In review']]) {
+    for(const [key,status,label] of [['P34','completed','Completed'],['N46','blocked','Blocked'],['H50','completed','Completed']]) {
       const refs=page.locator(`a[data-issue="${key}"]`);
       assert(await refs.evaluateAll((es,status)=>es.every(e=>e.dataset.status===status),status));
       assert(await refs.evaluateAll((es,label)=>es.every(e=>e.querySelector('.issue-status').textContent.includes(label)),label));
