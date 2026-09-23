@@ -204,7 +204,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
           pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
           launchCodes.delete(input.code);
-          if(browserSessions.size>=16)throw new HttpError('capacity',429);
+          if(browserSessions.size>=16)browserSessions.delete(browserSessions.keys().next().value!);
           const token=randomBytes(32).toString('base64url');
           const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys()]};
           browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});

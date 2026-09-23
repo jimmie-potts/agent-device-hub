@@ -8,6 +8,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {startHub} from '../dist/server.js';
 import {requestBrowserLaunch} from '../dist/browser-launch.js';
+import {startBrowserLaunch} from '../dist/browser-launch.js';
 
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const post=(url,body,headers={})=>fetch(url,{method:'POST',headers:{'content-type':'application/json','x-pixoo-request':'1',...headers},body:JSON.stringify(body)});
@@ -63,5 +64,37 @@ test('owner CLI opens one-time URL without printing the code',async()=>{
   let stdout='',stderr='';child.stdout.on('data',chunk=>stdout+=chunk);child.stderr.on('data',chunk=>stderr+=chunk);
   const [code]=await once(child,'exit');assert.equal(code,0,stderr);const url=await readFile(capture,'utf8');const parsed=new URL(url);assert.equal(parsed.origin,hub.url);assert.match(parsed.hash,/^#launch=[A-Za-z0-9_-]{43}$/);assert.equal(stdout.includes(parsed.hash.slice(8)),false);
   const response=await post(hub.url+'/api/dashboard/v1/launch',{code:parsed.hash.slice(8)},{origin:hub.url});assert.equal(response.status,200);
+ }finally{await hub?.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('unclean shutdown leaves a socket that is safely reclaimed on restart',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-browser-restart-'));
+ const path=join(directory,'bunny-launch.sock');
+ const child=spawn(process.execPath,['-e',"const {createServer}=require('node:net');createServer(()=>{}).listen(process.argv[1],()=>process.stdout.write('ready\\n'));",path],{stdio:['ignore','pipe','pipe']});
+ try{
+  await once(child.stdout,'data');
+  await assert.rejects(startBrowserLaunch(directory,()=>({url:'http://127.0.0.1:1234',code:'a'.repeat(43)})),/launch-socket-in-use/);
+  child.kill('SIGKILL');await once(child,'exit');
+  assert.equal((await lstat(path)).isSocket(),true);
+  const close=await startBrowserLaunch(directory,()=>({url:'http://127.0.0.1:1234',code:'a'.repeat(43)}));
+  assert.equal((await requestBrowserLaunch(directory)).code,'a'.repeat(43));
+  await close();
+  await assert.rejects(lstat(path),{code:'ENOENT'});
+ }finally{if(child.exitCode===null)child.kill('SIGKILL');await rm(directory,{recursive:true,force:true});}
+});
+
+test('repeated reloads do not exhaust browser access',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-browser-repeat-'));let hub;
+ try{
+  hub=await startHub({directory,ownerId:'owner',consumers:[],controllers:[],credentials:[{id:'reader',digest:digest('r'.repeat(43)),scopes:['read'],devices:[]}]});
+  let oldest;
+  for(let index=0;index<17;index++){
+   const launch=await requestBrowserLaunch(directory);
+   const response=await post(hub.url+'/api/dashboard/v1/launch',{code:launch.code},{origin:hub.url});
+   assert.equal(response.status,200,`launch ${index+1}`);
+   const token=(await response.json()).token;
+   if(index===0)oldest=token;
+  }
+  assert.equal((await fetch(hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${oldest}`}})).status,401);
  }finally{await hub?.close();await rm(directory,{recursive:true,force:true});}
 });

@@ -94,11 +94,12 @@ The page removes the fragment from history before exchanging the code. The
 resulting bearer stays in page memory for up to eight hours, with `read` and
 `control` on the host's configured aliases and no `ingest` or `admin`. The
 browser bearer cannot authenticate MCP. Disconnect revokes it; reload discards
-it, so use the launcher again. Existing machine and manual browser credentials
+it, so use the launcher again. At the 16-session limit, a new launch revokes
+the oldest browser session. Existing machine and manual browser credentials
 remain configured separately. The private socket is removed on orderly
-shutdown. If startup reports an occupied socket after a crash, establish that
-the old host is gone and inspect the private path before removing only that
-stale socket. Do not clear the state-owner database or start a second owner.
+shutdown. On restart, the host removes an unresponsive socket only when it is
+still the same owner-owned socket; a live socket blocks startup. Do not clear
+the state-owner database or start a second owner.
 
 This source command does not update the running installation. A named owner
 must install a reviewed Hub package and wire the shortcut to its actual private

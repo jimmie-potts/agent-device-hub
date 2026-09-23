@@ -5,9 +5,25 @@ import {join} from 'node:path';
 export type BrowserLaunch = {url:string;code:string};
 const socketPath=(directory:string)=>join(directory,'bunny-launch.sock');
 
+async function removeStaleSocket(path:string):Promise<void>{
+ const previous=await lstat(path).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+ if(!previous)return;
+ if(!previous.isSocket()||previous.uid!==process.getuid!())throw new Error('invalid-launch-socket');
+ const stale=await new Promise<boolean>((resolve,reject)=>{
+  const probe=createConnection(path);
+  probe.setTimeout(1500,()=>probe.destroy(new Error('launch-probe-timeout')));
+  probe.once('connect',()=>{probe.destroy();resolve(false);});
+  probe.once('error',error=>{if((error as NodeJS.ErrnoException).code==='ECONNREFUSED')resolve(true);else reject(error);});
+ });
+ if(!stale)throw new Error('launch-socket-in-use');
+ const current=await lstat(path).catch(error=>{if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;});
+ if(current&&current.dev===previous.dev&&current.ino===previous.ino)await unlink(path);
+}
+
 /** The private Hub state directory is validated and owned by the Linux process. */
 export async function startBrowserLaunch(directory:string,issue:()=>BrowserLaunch):Promise<()=>Promise<void>> {
  const path=socketPath(directory);
+ await removeStaleSocket(path);
  const server:Server=createServer(socket=>{
   socket.setTimeout(1500,()=>socket.destroy());
   try{socket.end(JSON.stringify(issue())+'\n');}catch{socket.destroy();}
