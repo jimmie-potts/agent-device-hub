@@ -12,7 +12,7 @@ export {MemoryStorage} from './memory-storage.js';
 export {validateSnapshot,validateExport,migrateExport} from './validation.js';
 
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const recoveryJournalKey=(identity:Identity,turnId:string)=>hash(['approval-recovery',identity,turnId]);
+export const recoveryJournalKey=(identity:Identity,turnId:string)=>hash(['approval-recovery',identityKey(identity),turnId]);
 const id=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9_.-]{1,128}(?![\s\S])/.test(value);
 function freeze<T>(value:T):T {
   if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}

@@ -28,6 +28,8 @@ test('explicit recovery retires only an uncertain uncorrelated approval',async()
   assert.equal(after.sessions[0].lastEvidenceAtMs,before.sessions[0].lastEvidenceAtMs);
   assert.deepEqual([owner.journal().at(-1).kind,owner.journal().at(-1).outcome],['attention.resolved','ambiguous']);
   assert.equal(owner.journal().at(-1).sessionKey,recoveryJournalKey(identity,'turn-1'));
+  const reordered={sessionId:identity.sessionId,sourceId:identity.sourceId,hostId:identity.hostId,client:identity.client,provider:identity.provider};
+  assert.equal(recoveryJournalKey(reordered,'turn-1'),recoveryJournalKey(identity,'turn-1'));
   assert.notEqual(owner.journal().at(-1).sessionKey,createHash('sha256').update(JSON.stringify(identity)).digest('hex'));
   assert.equal((await owner.recoverApproval(identity,'turn-1',before.revision)).ok,false);
   await owner.shutdown();
