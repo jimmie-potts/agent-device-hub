@@ -16,6 +16,29 @@ const credentials=[{id:'writer',digest:hash(token),scopes:['read','ingest','cont
 const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},
  turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:1,ordering:{status:'unknown'}};
 
+test('approval recovery requires control authority, exact revision and stale evidence',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-approval-'));let hub,clock=1000;
+ try{
+  hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:[],clock:()=>clock});
+  const call=(path,body,credential=token)=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${credential}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  await call('/api/monitor/v1/events',{...event,event:{kind:'attention.approval',attention:{status:'unknown'}}});
+  let view=await (await call('/api/monitor/v1/sessions')).json();
+  const command={operation:'recover-approval',requestId:view.nextRequestId,identity:event.identity,turnId:'turn',expectedRevision:view.snapshot.revision};
+  assert.equal((await call('/api/monitor/v1/commands',command,readToken)).status,403);
+  assert.deepEqual(await (await call('/api/monitor/v1/commands',command)).json(),{ok:false,code:'invalid-operation'});
+  clock+=300000;
+  view=await (await call('/api/monitor/v1/sessions')).json();
+  const recover={...command,requestId:view.nextRequestId};
+  const applied=await (await call('/api/monitor/v1/commands',recover)).json();
+  assert.equal(applied.ok,true);
+  assert.deepEqual(await (await call('/api/monitor/v1/commands',recover)).json(),applied);
+  view=await (await call('/api/monitor/v1/sessions')).json();
+  assert.equal(view.snapshot.sessions[0].attention.length,0);
+  assert.equal(view.snapshot.sessions[0].freshness,'uncertain');
+  assert.deepEqual(await (await call('/api/monitor/v1/commands',{...command,requestId:view.nextRequestId})).json(),{ok:false,code:'revision-conflict'});
+ }finally{await hub?.close();await rm(directory,{recursive:true,force:true});}
+});
+
 test('authenticated Pixoo-compatible reads, scoped writes, replay and restart fence',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'hub-http-'));let hub;
   try {

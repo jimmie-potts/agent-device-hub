@@ -58,7 +58,7 @@ test('session tools retain evidence and share HTTP command replay without read e
 for(const profile of ['codex-protocol-fixture','claude-protocol-fixture'])for(const version of ['2025-11-25','2025-06-18'])test(`${profile} ${version} host discovery/auth/permissions`,async t=>{
  const readerToken='r'.repeat(43),hub=await fixture(t,{credentials:[credential,{...credential,id:'reader',digest:hash(readerToken),scopes:['read']}]});
  const c=client(hub,token,version,profile);assert.equal((await c.initialize()).status,200);
- const list=await c.rpc('tools/list',{});assert.deepEqual(list.body.result.tools.map(t=>t.name).sort(),['hub_acknowledge','hub_devices','hub_label','hub_sessions']);
+ const list=await c.rpc('tools/list',{});assert.deepEqual(list.body.result.tools.map(t=>t.name).sort(),['hub_acknowledge','hub_devices','hub_label','hub_recover_approval','hub_sessions']);
  assert.deepEqual((await c.call('hub_devices')).structuredContent.data.result,{devices:[]});
  const reader=client(hub,readerToken,version,profile);await reader.initialize();
  assert.deepEqual((await reader.rpc('tools/list',{})).body.result.tools.map(t=>t.name).sort(),['hub_devices','hub_sessions']);
@@ -189,6 +189,22 @@ test('stale session evidence and exact acknowledgment remain separate from reads
  const notice=before.snapshot.sessions[0].notices[0];assert.deepEqual(notice.acknowledgedBy,[]);
  const result=await c.call('hub_acknowledge',{request_id:before.nextRequestId,identity:event.identity,noticeId:notice.id,consumerId:'view'});assert.equal(result.isError,false);
  const after=(await c.call('hub_sessions')).structuredContent.data.result;assert.deepEqual(after.snapshot.sessions[0].notices[0].acknowledgedBy,['view']);assert.equal(after.snapshot.sessions[0].read,'unknown');
+});
+
+test('MCP approval recovery requires an explicit guarded call and leaves activity unchanged',async t=>{
+ const now=Date.now();t.mock.timers.enable({apis:['Date'],now});
+ const hub=await fixture(t),c=client(hub);await c.initialize();
+ await http(hub,'/api/monitor/v1/events',{...event,event:{kind:'attention.approval',attention:{status:'unknown'}}});
+ t.mock.timers.setTime(now+300001);
+ const before=(await c.call('hub_sessions')).structuredContent.data.result;
+ const request={request_id:before.nextRequestId,identity:event.identity,turn_id:event.turn.id,expected_revision:before.snapshot.revision};
+ const result=await c.call('hub_recover_approval',request);
+ assert.equal(result.isError,false);
+ assert.equal(result.structuredContent.data.result.ok,true);
+ const after=(await c.call('hub_sessions')).structuredContent.data.result;
+ assert.equal(after.snapshot.sessions[0].attention.length,0);
+ assert.equal(after.snapshot.sessions[0].activity,before.snapshot.sessions[0].activity);
+ assert.equal(after.snapshot.sessions[0].freshness,'uncertain');
 });
 
 test('reserved aliases, unknown tools, raw selectors and session admission are bounded',async t=>{

@@ -162,6 +162,25 @@ export async function createAgentState(options:Options) {
         notice.acknowledgedBy.push(consumerId);return commit(session,'notice.acknowledged');
       });
     },
+    recoverApproval(identity:Identity,turnId:string,expectedRevision:number):Promise<Outcome>{
+      if(!identify(identity)||!id(turnId)||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
+        return Promise.resolve({ok:false,code:'invalid-operation'});
+      const selected=structuredClone(identity);
+      return queue(async()=>{
+        if(data.revision!==expectedRevision)return {ok:false,code:'revision-conflict'};
+        const previous=get(selected);
+        if(!previous||previous.turn.status!=='known'||previous.turn.id!==turnId||
+          !(restarted.has(identityKey(selected))||now()-previous.lastEvidenceAtMs>=LIMITS.staleMs))
+          return {ok:false,code:'invalid-operation'};
+        const targets=previous.attention.filter(item=>item.kind==='approval'&&item.id.status==='unknown'&&
+          item.turn.status==='known'&&item.turn.id===turnId);
+        if(targets.length!==1)return {ok:false,code:'invalid-operation'};
+        const next=structuredClone(previous);
+        next.attention.splice(next.attention.findIndex(item=>item.kind==='approval'&&item.id.status==='unknown'&&
+          item.turn.status==='known'&&item.turn.id===turnId),1);
+        return commit(next,'attention.recovered');
+      });
+    },
     snapshot():Snapshot{
       const at=now();
       const sessions:Snapshot['sessions']=data.sessions.map(session=>{

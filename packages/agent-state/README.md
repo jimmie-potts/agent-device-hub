@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.1 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -21,6 +21,7 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 | `subscribe(consumerId, cursor?)` | One bounded async iterator per registered consumer. Revision notifications tell the consumer to read `snapshot()`. |
 | `acknowledge(identity, noticeId, consumerId)` | Durably acknowledges that notice for that consumer. It does not prove readership or clear attention. |
 | `setLabel(identity, stringOrNull)` | Persists an explicit user label or removes it. It does not refresh session evidence. |
+| `recoverApproval(identity, turnId, expectedRevision)` | Explicitly retires one uncertain unknown-ID approval for that exact session and turn. Requires the current revision; does not act on the provider permission. |
 | `journal()` / `maintain()` | Read retained diagnostics or force durable retention maintenance. |
 | `exportState()` | Quiesces admission, drains accepted work, and returns a validated frozen version 1.0 export. |
 | `shutdown()` | Quiesces and drains admission, settles outstanding storage before releasing ownership, and closes subscriptions. |

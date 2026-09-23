@@ -1,7 +1,7 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '2.0.0';
+export const VERSION = '2.0.1';
 export const FORMAT_VERSION = '1.0';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
   journalEvents:10000, journalAgeMs:86400000, staleMs:300000, deadlineMs:3000,
@@ -33,7 +33,7 @@ export interface StorageLease {
 }
 export interface Storage { acquire(ownerId:string, signal:AbortSignal):Promise<StorageLease>; }
 export type Outcome = {ok:true; revision:number; outcome:'applied'|'duplicate'|'stale'|'ambiguous'} |
-  {ok:false; code:'invalid-event'|'invalid-operation'|'capacity'|'unavailable'|'storage-failed'};
+  {ok:false; code:'invalid-event'|'invalid-operation'|'revision-conflict'|'capacity'|'unavailable'|'storage-failed'};
 export type SessionSnapshot = Omit<Session,'retiredTurns'|'seen'|'watermarks'> & {
   observationAgeMs:number; freshness:'current'|'uncertain'; restartUncertain:boolean;
   children:{active:number; uncertain:number};
