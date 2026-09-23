@@ -70,7 +70,8 @@ Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
 standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
-unified-dashboard, standalone-monitor-qualification and tidbyt-cloud-controller.
+unified-dashboard, standalone-monitor-qualification, tidbyt-cloud-controller and
+tidbyt-agent-status.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -314,8 +315,13 @@ fake `fetch`, with authentication, 429, timeout, transport and redaction cases,
 and the private credential file. For the controller queue it covers target
 validation, bounded admission, duplicate/conflict/join handling, FIFO overlap,
 cancellation, uncertain results with no replay, unsupported v1 commands,
-authentication and rate-limit holds, close, read-only refresh and stale evidence.
-Every receipt and snapshot is checked with the controller v1 `validate()`. The
+authentication and rate-limit holds, close, read-only refresh and stale evidence,
+and queued installation removal. Hub #19 adds status tests: the view and frame
+drawer over multiple, child, idle, overflow, acknowledged, read, unlabelled and
+stale sessions, and the publisher against a real in-memory agent-state owner with
+fake timers and a fake connection. The publisher cases cover coalescing, the
+15-second minimum, the 10-minute refresh, idle removal, an unavailable or slow
+feed, and failed and uncertain writes. Every receipt and snapshot is checked with the controller v1 `validate()`. The
 Python check decodes the committed golden images with Pillow, independently of
 the encoder. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.

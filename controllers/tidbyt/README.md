@@ -2,12 +2,13 @@
 
 Status: the source for a fake-tested cloud controller is here as the private
 workspace package `@jimmie-potts/tidbyt-controller` 0.1.0. It is an in-process
-TypeScript library. It has no network listener or service, isn't installed
-anywhere, and hasn't been hooked up to agent status.
+TypeScript library. It has no network listener or service and isn't installed
+anywhere. Since #19 it includes a fake-tested agent status publisher. Nothing
+connects it to a running hub feed yet; #21 owns that installation.
 
-This controller will display automatic agent status using Tidbyt's official
-cloud first. It will consume the feed of the selected shared agent-state
-owner. A later Tronbyt connection will reuse the same renderer and device queue.
+This controller displays automatic agent status through Tidbyt's official
+cloud. It consumes the feed of the selected shared agent-state owner. A later
+Tronbyt connection will reuse the same renderer and device queue.
 The [shared architecture](../../docs/architecture.md) and
 [ADR 0003](../../docs/decisions/0003-device-controller-monorepo.md) own that direction.
 
@@ -19,8 +20,9 @@ The [shared architecture](../../docs/architecture.md) and
   under `fixtures/` are checked byte for byte in TypeScript and decoded
   independently by Pillow.
 - **Cloud connection** (`src/connection.ts`): background pushes to one configured
-  installation through `POST /v0/devices/{device}/push`, plus a read-only
-  installation listing. It classifies each result once and never retries it.
+  installation through `POST /v0/devices/{device}/push`, removal of that
+  installation through `DELETE /v0/devices/{device}/installations/{installation}`,
+  and a read-only installation listing. It classifies each result once and never retries it.
   Foreground pushes are declared unsupported, so the current app keeps
   rotating. The [push qualification](https://github.com/jimmie-potts/agent-device-hub/issues/16#issuecomment-5789545093)
   records the cloud behavior this relies on.
@@ -32,15 +34,22 @@ The [shared architecture](../../docs/architecture.md) and
   group- or world-readable files. Secrets never come from arguments or the
   environment, and errors never repeat file contents.
 - **Controller** (`src/controller.ts`): the only writer for one Tidbyt. See below.
+- **Agent status** (`src/status.ts`, `src/font.ts`, `src/publisher.ts`): a pure view
+  and 64×32 frame drawer over one agent-state snapshot, and a publisher that
+  submits pushes and removals through the controller. See
+  [Agent status decisions](#agent-status-decisions).
 
 ## Display profile and queue
 
 Controller v1 has no frame command, so display writes use the controller-local
-`tidbyt-display` 1.0.0 profile. A request is the v1 envelope (`apiVersion`,
+`tidbyt-display` 1.1.0 profile. A request is the v1 envelope (`apiVersion`,
 `controllerId`, `deviceId`, `requestId`, `expectedConfigurationRevision`,
 `expectedGeneration`) with the command
-`{kind:"tidbyt.display", frame:{width:64,height:32,encoding:"rgb24-base64",data}}`.
-`data` is canonical base64 of exactly 6144 bytes. Receipts and the embedded
+`{kind:"tidbyt.display", frame:{width:64,height:32,encoding:"rgb24-base64",data}}`
+or, since 1.1.0, `{kind:"tidbyt.remove"}`. `data` is canonical base64 of
+exactly 6144 bytes. A removal deletes the configured installation. It follows
+the same admission, FIFO order, generation check, holds and receipts as a push,
+with operation ID `remove`. Receipts and the embedded
 controller snapshot are schema-valid [controller v1](../../docs/controller-contract.md)
 objects. The shared contract is unchanged. The profile is validated in
 TypeScript only and has no version negotiation; a future network surface (#21)
@@ -93,10 +102,42 @@ configuration selector is only the controller side of that transition. The
 physical change needs confirmed Tidbyt generation, explicit authorization and
 a recovery plan. Never enable both backend writers or use automatic failover.
 
-The status implementation will settle layout, session selection, update cadence,
-notice handling and rotation/takeover/restore policy before readiness. Preserve
-shared activity, attention, acknowledgment, optional read evidence and freshness
-as distinct values. Shared payloads use neutral IDs or user-chosen labels.
+## Agent status decisions
+
+The user settled these on 2026-09-23 for #19. The
+[archived design](../../openspec/changes/archive/2026-09-23-gh-19-tidbyt-agent-status/design.md)
+and the [tidbyt-agent-status spec](../../openspec/specs/tidbyt-agent-status/spec.md)
+hold the details.
+
+- **Layout.** Up to four 8-pixel rows, one per root session: a colored marker, a
+  label of up to ten characters and a state word. `ASK` (amber) means the
+  session has attention, `RUN` (blue) means it is active, and `DONE` (green)
+  means a turn-ended notice has not been acknowledged. Rows are ordered `ASK`,
+  `RUN`, `DONE`, then newest evidence first. With more than four sessions,
+  three rows are drawn and the fourth reads `+N MORE`. Child sessions and
+  sessions with nothing outstanding are not shown.
+- **Labels.** The session's user label, then its user-chosen project ID, then a
+  neutral ID: `C` (Claude) or `X` (Codex) and four hex digits of the identity
+  hash. No title, prompt or other agent content is drawn.
+- **Uncertainty.** A session with uncertain freshness is dimmed and its marker
+  becomes `?`. If the feed can't be read within 3 s or its collector isn't
+  running, every row from the last good snapshot is marked that way, or the
+  frame reads `FEED ?`. Read evidence doesn't retire `DONE`. By default any
+  consumer's acknowledgment does; the publisher can name specific consumers.
+- **Cadence.** Push only when the frame changes, at most once every 15 s,
+  coalescing to the latest state. Push an unchanged frame again after 10
+  minutes. Re-read the feed every 30 s and on each change notice. #16 saw no
+  rate limit, and a 429 still triggers the controller's hold.
+- **Rotation.** Status is a background installation in the normal rotation.
+  Foreground takeover is not qualified. When a readable feed shows nothing to
+  display, the publisher removes the installation once, including a leftover
+  one at start. An unavailable feed never removes it.
+- **Failures.** A failed write is not replayed. A later write is a fresh request
+  for the current state, no sooner than 15 s later. An uncertain write makes
+  installation presence unknown.
+
+Shared activity, attention, acknowledgment, read evidence and freshness stay
+distinct. The publisher never reduces lifecycle events or acknowledges notices.
 
 ## Issues
 
