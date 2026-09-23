@@ -1,15 +1,30 @@
 {
-  "fetchedAt": "2026-09-23T07:26:02.132030+00:00",
+  "fetchedAt": "2026-09-23T08:27:44.529414+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T07:20:32Z",
+      "pushedAt": "2026-09-23T08:26:53Z",
       "defaultBranch": "main",
-      "headSha": "1338c03e925050e65d4ef4c7a2fd601d3feccce1",
-      "mainCommitCount": 87,
+      "headSha": "eeaa76439ba449adcd447750c0996817d12d6e7c",
+      "mainCommitCount": 90,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "eeaa76439ba449adcd447750c0996817d12d6e7c",
+          "date": "2026-09-23T08:13:01Z",
+          "message": "Add guarded recovery for uncertain Codex approvals (#187)"
+        },
+        {
+          "sha": "0c4cdefa17d21b35ef09b82c625a38a9e2f466aa",
+          "date": "2026-09-23T07:47:01Z",
+          "message": "Make the remaining work-guide diagrams readable and consistent (#184)"
+        },
+        {
+          "sha": "133cd145cec0b623afcbf8d193242037f4e37e06",
+          "date": "2026-09-23T07:29:02Z",
+          "message": "Refresh the work guide to current issue state (#183)"
+        },
         {
           "sha": "1338c03e925050e65d4ef4c7a2fd601d3feccce1",
           "date": "2026-09-23T07:17:50Z",
@@ -1118,14 +1133,45 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/180",
           "base": "main",
           "mergedAt": "2026-09-23T07:17:50Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 183,
           "title": "Refresh the work guide to current issue state",
           "createdAt": "2026-09-23T07:20:33Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/183",
+          "base": "main",
+          "mergedAt": "2026-09-23T07:29:03Z"
+        },
+        {
+          "number": 184,
+          "title": "Make the remaining work-guide diagrams readable and consistent",
+          "createdAt": "2026-09-23T07:39:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/184",
+          "base": "main",
+          "mergedAt": "2026-09-23T07:47:01Z"
+        },
+        {
+          "number": 187,
+          "title": "Add guarded recovery for uncertain Codex approvals",
+          "createdAt": "2026-09-23T08:01:56Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/187",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:13:01Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 188,
+          "title": "Prepare complete BUNNY atlas for public guide publication",
+          "createdAt": "2026-09-23T08:20:33Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/188",
+          "base": "main"
+        },
+        {
+          "number": 189,
+          "title": "Show shared agent status on the Tidbyt",
+          "createdAt": "2026-09-23T08:27:12Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/189",
           "base": "main"
         }
       ],
@@ -1427,18 +1473,34 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/172"
         },
         {
+          "number": 173,
+          "title": "Make the remaining work-guide architecture diagrams readable and consistent",
+          "closedAt": "2026-09-23T07:48:43Z",
+          "createdAt": "2026-09-23T05:15:11Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/173"
+        },
+        {
           "number": 179,
           "title": "Open BUNNY through a local owner launcher without manual browser tokens",
           "closedAt": "2026-09-23T07:20:50Z",
           "createdAt": "2026-09-23T06:38:35Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179"
+        },
+        {
+          "number": 185,
+          "title": "Add explicit recovery for uncertain approval attention",
+          "closedAt": "2026-09-23T08:22:06Z",
+          "createdAt": "2026-09-23T07:44:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185"
         }
       ],
       "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-23T07:06:34Z"
+        "2026-09-23T07:59:03Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1449,17 +1511,22 @@
         "2026-09-20": 2,
         "2026-09-21": 1,
         "2026-09-22": 10,
-        "2026-09-23": 10
+        "2026-09-23": 12
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T05:31:19Z",
+      "pushedAt": "2026-09-23T08:18:52Z",
       "defaultBranch": "main",
-      "headSha": "cbb948516eb161d551d817c7ee2870b2b74dc9cb",
-      "mainCommitCount": 33,
+      "headSha": "680acb5c22baafad60f849afd72bcfdabc6bbabf",
+      "mainCommitCount": 34,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "680acb5c22baafad60f849afd72bcfdabc6bbabf",
+          "date": "2026-09-23T08:18:51Z",
+          "message": "Clear stale red after explicit owner approval recovery (#73)"
+        },
         {
           "sha": "cbb948516eb161d551d817c7ee2870b2b74dc9cb",
           "date": "2026-09-23T05:31:19Z",
@@ -1850,6 +1917,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/71",
           "base": "main",
           "mergedAt": "2026-09-23T05:25:39Z"
+        },
+        {
+          "number": 73,
+          "title": "Clear stale red after explicit owner approval recovery",
+          "createdAt": "2026-09-23T08:02:09Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/73",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:18:52Z"
         }
       ],
       "openPRs": [],
@@ -2069,12 +2144,20 @@
           "createdAt": "2026-09-23T04:58:54Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/70"
+        },
+        {
+          "number": 72,
+          "title": "Stale shared approval evidence keeps two Nanoleaf Lines red",
+          "closedAt": "2026-09-23T08:22:10Z",
+          "createdAt": "2026-09-23T07:37:40Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72"
         }
       ],
-      "openIssueCount": 16,
+      "openIssueCount": 21,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-23T04:58:54Z"
+        "2026-09-23T08:26:05Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -2082,7 +2165,7 @@
         "2026-09-07": 26,
         "2026-09-09": 4,
         "2026-09-22": 1,
-        "2026-09-23": 2
+        "2026-09-23": 8
       }
     },
     "divoom-app-upgrade": {
