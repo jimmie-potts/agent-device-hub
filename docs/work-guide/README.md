@@ -71,27 +71,34 @@ This task's coordinator owns the hub source PR and the linked public publication
 PR. After a guide change merges and all applicable main CI jobs pass, or the
 [guide-only CI receipt](../sdlc.md#guide-only-ci-exception) is verified:
 
-1. Use the validated output from that exact hub revision. Copy
-   `outputs/agent-device-work-guides.html` to the public repository's `index.html`
-   and copy the nine `outputs/architecture/*.html` viewers to `architecture/`.
-   Publish only these ten HTML files, `.nojekyll` and the public README.
+1. Use the validated output from that exact hub revision. Run
+   `python3 docs/system-design/export_public.py /absolute/new/site-stage` from
+   a clean archive of the same Hub revision. The exporter stages the guide as
+   `index.html`, nine viewers under `architecture/`, and the atlas under
+   `atlas/`. It changes the guide's local atlas link to the public path. Copy
+   these staged bytes into the public repository. The public allowlist is these
+   ten guide/viewer HTML files,
+   the exporter-manifested atlas files, `.nojekyll` and the public README. Do not
+   copy atlas authoring sources, generators, tests, fixtures or caches.
    Inspect their contents as well as filenames for credentials, private runtime
    data, personal paths, and unrelated material before public copying. Repair
    such content in the owning inputs and regenerate before renewed review.
-2. Update the public README with the hub source revision and guide SHA-256.
+2. Update the public README with the hub source revision, guide SHA-256, atlas
+   manifest SHA-256 and atlas entry-point URL.
    Retain the snapshot dates in the generated HTML. Do not refresh data or edit
    generated content in the public repository.
 3. Open a public-repository PR from an isolated branch/worktree. Link the hub
    companion PR and obtain independent Standards and Specification reviews of
-   the fixed candidate. Validate the guide and relative viewer links, confirm
-   the file allowlist and hashes, and pass all configured CI before guarded merge.
+   the fixed candidate. Validate the guide, atlas and relative viewer links,
+   confirm the file allowlist and hashes, and pass all configured CI before
+   guarded merge. Atlas UI outside `docs/work-guide/` needs explicit human
+   approval of the fixed candidate under `docs/sdlc.md`.
 4. GitHub Pages publishes the public repository's merged `main`. Read the
-   successful deployment and verify the unauthenticated HTTPS landing page and
-   all nine viewers against the source hashes. Record both PRs, source and
-   published revisions, and the deployment result in the delivery receipt.
-   Verify every required URL without authentication and compare every served
-   HTML file with its reviewed source hash. A repository hash, successful Pages
-   response, or representative viewer check alone is incomplete acceptance.
+   successful deployment and verify the unauthenticated HTTPS landing page,
+   all nine viewers and every atlas-manifested file against the reviewed source
+   hashes. Record both PRs, source and published revisions, and the deployment
+   result in the delivery receipt. A repository hash, successful Pages response
+   or representative page check alone is incomplete acceptance.
 
 Copying from the private hub to the public repository is an explicit publication
 step. There is no automatic cross-repository sync or new access token. A hub

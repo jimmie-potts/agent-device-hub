@@ -353,14 +353,14 @@
     "title": "Add automatic agent status to Tidbyt",
     "body": "## Outcome\n\nShow shared agent status on the Tidbyt.\n\n## Decide with the user before starting\n\n- The 64×32 layout for working, needs attention and done, and which session shows when several are active.\n- How often to push. The cloud push API has rate limits; #16 records what it saw.\n- Rotation: whether status runs as a background installation in rotation or takes over the display, and whether it is removed when no session is active.\n\n## Scope\n\n- Consume the selected shared state owner's feed (the #3 core). Do not build a second reducer. Missing evidence does not mean done, read or connected. Show neutral IDs or user-chosen labels, never copied titles or agent content.\n- Render frames through #16's renderer and send them through its queue.\n- Fake feed and fake transport tests cover multiple sessions, a stale feed and a failed push.\n\n## Acceptance criteria\n\n- [ ] The decisions above are recorded in `controllers/tidbyt/README.md`.\n- [ ] Status rendering implemented and tested with fakes; repository checks pass.\n\n## Prerequisites\n\n- https://github.com/jimmie-potts/agent-device-hub/issues/16\n- https://github.com/jimmie-potts/agent-device-hub/issues/3 (closed)\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/31 (closed)\n\nScope trimmed for a personal project on 2026-09-23. Follow AGENTS.md and docs/sdlc.md. The real display is verified in #21.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/19",
-    "updatedAt": "2026-09-23T08:17:15Z",
+    "updatedAt": "2026-09-23T08:27:14Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:in-progress"
+        "name": "status:review"
       }
     ],
     "milestone": null,
@@ -2415,7 +2415,7 @@
     "title": "Add explicit recovery for uncertain approval attention",
     "body": "## Outcome\nGive a user a protected, explicit way to retire one uncorrelated, uncertain approval indicator in shared agent state. This unblocks [Nanoleaf #72](https://github.com/jimmie-potts/codex-nanoleaf/issues/72) without claiming that Codex granted or denied the underlying permission.\n\n## Evidence and boundary\nThe qualified Codex producer maps `PermissionRequest` to `attention.approval` with an unknown attention ID and currently emits no correlated `attention.resolved` event. The reducer intentionally cannot clear unknown attention by guessing. The two Nanoleaf #72 records have old approval attention and uncertain freshness while the shared feed remains connected. Official Codex hook documentation lists `turn_id` and `tool_name` for `PermissionRequest` but no `tool_use_id`; `PostToolUse` has a tool-call ID. A general automatic match is therefore unproven. See [Codex hooks](https://learn.chatgpt.com/docs/hooks#permissionrequest).\n\nHub #138 resets activity and explicitly retains unresolved attention; this issue is a separate, narrow attention recovery operation.\n\n## Scope and acceptance criteria\n- [x] Add a protected, revision-guarded operation that targets exactly one session and one currently uncertain approval attention item. Require an explicit user action; no timeout or automatic clearing. Reject stale revision, absent/ambiguous target, and unauthorized requests without modifying state.\n- [x] Retire only that shared monitor attention marker. Preserve other attention, activity, notices, labels, preferences, other sessions, and diagnostic evidence. The action does not approve/deny a Codex permission, invoke Codex, acknowledge a notice, or write a device.\n- [x] Return an auditable result that a consumer can distinguish from ordinary stale snapshots. Preserve replay and restart behavior. Fresh later approval evidence can create a new indicator.\n- [x] Document the limited meaning and privacy boundary. Keep unknown provider correlation explicit; do not infer resolution from `Stop`, elapsed time, or a same-name tool call.\n- [x] Regression tests cover exact targeting, authorization, revision/replay, persistence, concurrent/other attention, no agent/device action, and consumer recovery from an uncertain snapshot.\n\n## Verification and delivery\nSource-only, including a linked Nanoleaf consumer update under #72. Use isolated state and fake transports. Follow Hub and Nanoleaf review, CI, guarded merge, and guide synchronization gates. Installation and physical acceptance require separate authorization.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185",
-    "updatedAt": "2026-09-23T08:22:08Z",
+    "updatedAt": "2026-09-23T18:05:09Z",
     "closedAt": "2026-09-23T08:22:06Z",
     "labels": [
       {
@@ -2447,9 +2447,21 @@
         "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791509619",
         "createdAt": "2026-09-23T08:22:05Z",
         "updatedAt": "2026-09-23T08:22:05Z"
+      },
+      {
+        "body": "The linked shared work guide source is now synchronized: Hub PR #190 merged as `ea5cd958c221123cfb0a451d84d065359a9cd958`, with the protected recovery flow and this delivery recorded in `docs/work-guide/updates.md`. Its reviewed candidate and merged tree are identical. The documented guide-only CI filter applied to all 15 changed paths; the PR records local guide/browser/workflow checks, independent reviews, and the merge readback. Public guide publication, package release, installation, and physical-light verification remain separate.\n",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791658634",
+        "createdAt": "2026-09-23T08:34:08Z",
+        "updatedAt": "2026-09-23T08:34:08Z"
+      },
+      {
+        "body": "Installed Hub 0.2.1 with agent-state 2.0.1 into the existing Linux shared-monitor owner alongside the Nanoleaf bridge update from merged Nanoleaf revision `680acb5c22baafad60f849afd72bcfdabc6bbabf`. The private Hub package SHA-256 is `01e832e4d4f6e848fc2a9fb550da1f51740210d80fa854000b459d55cb4d8c3d`. The prior program and a consistent private state backup were retained. The same monitor service restarted with zero restarts; the Nanoleaf consumer reconnected as current with 120 sessions. No owner move, credential change, database reset, explicit approval recovery, or physical-light verification occurred.\n",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5800220822",
+        "createdAt": "2026-09-23T18:05:09Z",
+        "updatedAt": "2026-09-23T18:05:09Z"
       }
     ],
-    "commentCount": 4,
+    "commentCount": 6,
     "commentsRefreshed": true
   },
   {

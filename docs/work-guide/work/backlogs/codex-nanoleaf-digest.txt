@@ -20,7 +20,7 @@
 #42 [CLOSED] Run independent Lines and Light Panels projections in the Nanoleaf runtime
 #43 [CLOSED] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
 #44 [OPEN] Switch the wall map between Lines and Light Panels
-#45 [OPEN] Enroll a second Nanoleaf device on the Linux runtime
+#45 [CLOSED] Enroll a second Nanoleaf device on the Linux runtime
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
 #49 [CLOSED] Expose Nanoleaf integration settings and assignments to the shared frontend
@@ -33,3 +33,6 @@
 #72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
 #74 [OPEN] Investigate and resolve retained shared unread indicators
 #75 [OPEN] Provide source-backed labels and project associations for shared tasks
+#76 [OPEN] Show current projects first and hide inactive saved projects
+#77 [OPEN] Limit and prioritize tasks in the wall map inspector
+#78 [OPEN] Reduce default wall map controls and repeated status text
