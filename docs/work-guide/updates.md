@@ -1,3 +1,19 @@
+## September 22, 2026: Depot CI cutover candidate
+
+The Depot copies of the Checks and Work guide workflows entered Hub `main` in
+commit `17e003f`. Hub PR #164 updates workflow tests and delivery documentation
+to use those copies as the CI gate. The original GitHub Actions workflows are
+disabled in repository settings. The change does not affect device work, issue
+states, guide sections, diagrams or public guide content. Guide inputs and
+generated HTML retain their existing snapshot dates.
+
+Node 24 `npm ci`, `npm run check:workflow` and `npm run test:workflow` pass.
+The workflow check reports 11 valid specifications and 13 valid archived changes;
+all 15 workflow tests pass. Guide generation, maintenance and browser checks are
+successful. The browser check covers desktop, mobile and print; generated HTML
+is unchanged at SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
+Publication and live verification are separate.
+
 ## September 22, 2026: Nanoleaf general controls candidate
 
 Hub PR #162 carries the source candidate for Hub #153: power, brightness and

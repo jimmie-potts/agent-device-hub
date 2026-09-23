@@ -165,7 +165,7 @@ test('initialization preserves personal Codex prompts with current integrations 
   }
 });
 
-// Parse the workflow so formatting changes do not alter the scheduling checks.
+// Parse the Depot workflows so formatting changes do not alter scheduling checks.
 const YAML = require('yaml');
 
 const expectedTriggers = {
@@ -181,17 +181,17 @@ test('both workflows exclude only guide-only changes', () => {
     ['source', ['docs/work-guide/updates.md', 'packages/mcp/src/server.ts'], false],
     ['root documentation', ['docs/work-guide/updates.md', 'docs/development.md'], false],
     ['dependency', ['docs/work-guide/updates.md', 'package-lock.json'], false],
-    ['workflow', ['docs/work-guide/README.md', '.github/workflows/ci.yml'], false],
+    ['workflow', ['docs/work-guide/README.md', '.depot/workflows/ci.yml'], false],
     ['rename out', ['docs/work-guide/work/build_guide.py', 'docs/build_guide.py'], false],
     ['similarly named folder', ['docs/work-guides/new.md'], false],
   ];
   for (const file of ['ci.yml', 'work-guide.yml']) {
-    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows', file), 'utf8'));
+    const workflow = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'));
     assert.deepEqual(workflow.on, expectedTriggers, file);
     for (const event of ['push', 'pull_request']) {
       const patterns = workflow.on[event]['paths-ignore'];
       // Exercise the configured simple glob against bounded path sets, not
-      // GitHub's diff generation, truncation, or hosted event scheduler.
+      // Depot's hosted event scheduler or diff selection.
       for (const [name, paths, ignored] of cases) {
         assert.equal(paths.every(file => patterns.some(pattern => path.posix.matchesGlob(file, pattern))), ignored, `${file} ${event}: ${name}`);
       }
@@ -204,9 +204,9 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('CI runs six Ubuntu jobs and retains every suite', () => {
-  const ci = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8'));
-  const guide = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
+test('Depot CI runs six Linux jobs and retains every suite', () => {
+  const ci = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/ci.yml'), 'utf8'));
+  const guide = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
   assert.equal(coreJobs + Object.keys(guide.jobs).length, 6, 'normal CI must run exactly six jobs');
@@ -327,10 +327,10 @@ test('the standalone wrapper runs its payload only after a successful build', (t
 
 // Keep guide build, browser and retained review evidence under regression coverage.
 test('guide CI retains its validation and review artifacts', () => {
-  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/work-guide.yml'), 'utf8'));
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
   assert.deepEqual(workflow.jobs, { guide:
      { name: 'Work guide build and browser checks',
-       'runs-on': 'ubuntu-latest',
+       'runs-on': 'depot-ubuntu-latest',
        'timeout-minutes': 10,
        steps:
         [ { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' },
