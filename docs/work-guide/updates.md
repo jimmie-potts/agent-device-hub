@@ -1,3 +1,23 @@
+## September 23, 2026: Hub #166 instruction and MCP description alignment
+
+Hub [#166](https://github.com/jimmie-potts/agent-device-hub/issues/166) updates
+root and controller agent instructions, corrects the standalone host section of
+`docs/architecture.md` and the README overview, and gives each hub MCP tool its own description. No
+represented guide fact changes. The guide already records #5 and #30 as
+completed and #13 as the delivered MCP host. Tool schemas, command routing,
+ownership and device behavior are unchanged, and the architecture receipts pin
+`docs/architecture.md` at `5724f51`, so no viewer or diagram input changes.
+Snapshot dates, generated HTML and viewers are unchanged; #166 opens and closes
+within this delivery and needs no guide row. Guide generation, nine maintenance
+tests, the desktop/mobile/print browser check and generated-output consistency
+pass. The public edition
+still serves Hub source `dd00c78`, landing-page hash
+`0fafa2b15ca5ee830f90e8855d96c865e796fbda5fa6d85c35be1713e395b385`, while the
+current source HTML hash is
+`df6cf685dc3e743afe07e791a8f5521ca1f3a6dc1eba46e6fd7937559789a354`.
+Publication of that earlier guide change remains pending with its owner and is
+outside this source delivery.
+
 ## September 23, 2026: Nanoleaf general controls closeout
 
 Hub PR #162 merged as `50a1c637d9607a59b282730b4f78c0a7fd502fc7`, identical to
@@ -2533,23 +2553,3 @@ hash `4d8f172a5025252c7b06551dfa862d1abe697fc532a54f75151d231217ed799e`.
 The named installation owner follows the packaged update instructions and Pixoo
 #34 for the remaining installed acceptance. This source task changes no personal
 hook, live database, service or physical device.
-
-## 2026-09-22 - Hub #166 instruction and MCP description alignment
-
-Hub [#166](https://github.com/jimmie-potts/agent-device-hub/issues/166) updates
-root and controller agent instructions, corrects the standalone host section of
-`docs/architecture.md`, and gives each hub MCP tool its own description. No
-represented guide fact changes. The guide already records #5 and #30 as
-completed and #13 as the delivered MCP host. Tool schemas, command routing,
-ownership and device behavior are unchanged, and the architecture receipts pin
-`docs/architecture.md` at `5724f51`, so no viewer or diagram input changes.
-Snapshot dates, generated HTML and viewers are unchanged; #166 opens and closes
-within this delivery and needs no guide row. Guide generation, nine maintenance
-tests, the desktop/mobile/print browser check and generated-output consistency
-pass. The public edition
-still serves Hub source `dd00c78`, landing-page hash
-`0fafa2b15ca5ee830f90e8855d96c865e796fbda5fa6d85c35be1713e395b385`, while the
-current source HTML hash is
-`df6cf685dc3e743afe07e791a8f5521ca1f3a6dc1eba46e6fd7937559789a354`.
-Publication of that earlier guide change remains pending with its owner and is
-outside this source delivery.

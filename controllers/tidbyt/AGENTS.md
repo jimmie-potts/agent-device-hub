@@ -4,8 +4,8 @@ These instructions apply to planning, edits and review in controllers/tidbyt.
 Read this directory's [README.md](README.md) for current status and device
 decisions. For planning or delivery, read the exact issue. Read
 [architecture](../../docs/architecture.md) and linked contracts before changing
-integration or ownership. The delivery, privacy, unslop and physical
-authorization rules in the root [AGENTS.md](../../AGENTS.md) remain in force.
+integration or ownership. All rules in the root [AGENTS.md](../../AGENTS.md)
+remain in force, including delivery, privacy, unslop and physical authorization.
 
 This directory contains documents only. Bootstrap completion grants no future
 implementation, installation, account access or physical-testing authority.

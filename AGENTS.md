@@ -17,8 +17,10 @@ docs/development.md and coordinate with the owner of concurrent shared work.
 
 Planning and review are read-only unless the user explicitly authorizes named
 document or tracker changes. Those writes do not authorize implementing the
-planned features. Fix failures that the requested change causes. Report an
-unrelated visual, lint, test or flaky failure with its evidence instead of
+planned features.
+
+During authorized work, fix failures that the requested change causes. Report
+an unrelated visual, lint, test or flaky failure with its evidence instead of
 fixing it, and ask for a separate task when a repair would expand the
 authorized scope.
 
@@ -67,9 +69,10 @@ npm run test:agent-state:package, plus the shared build/type, controller,
 lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
 Source tests do not qualify a production storage adapter or installed provider.
 For apps/hub or apps/dashboard changes, read that app's README and its
-validation section in docs/development.md. Run the listed commands and the
-shared build/type/contract/workflow checks from the worktree root. All must
-exit zero.
+validation sections in docs/development.md (for the hub: Standalone hub,
+Standalone hub MCP and Shared monitoring setup checks; for the dashboard:
+Dashboard checks). Run the listed commands and the shared
+build/type/contract/workflow checks from the worktree root. All must exit zero.
 Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.

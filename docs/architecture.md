@@ -1,8 +1,9 @@
 # Shared architecture
 
 Status: Accepted direction. Controller contracts, reusable MCP, and the shared
-agent-state package with source emitters are implemented. Production collector
-hosting, device-feed adoption and standalone hosting remain in the backlog.
+agent-state package with source emitters are implemented, and the
+[standalone host](#standalone-host) is delivered. Production collector hosting
+and device-feed adoption remain in the backlog.
 The fresh Nanoleaf Linux runtime has merged source in
 [Nanoleaf PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57), revision
 `2558df5a2fc543247b0c75898ef0260ba3ea264b`. Installed acceptance remains open
