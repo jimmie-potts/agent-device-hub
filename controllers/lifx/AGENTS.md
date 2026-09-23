@@ -1,10 +1,11 @@
 # Working on LIFX
 
 These instructions apply to planning, edits and review in controllers/lifx.
-Read the root [AGENTS.md](../../AGENTS.md), this directory's [README.md](README.md)
-and the exact issue before work. Read [architecture](../../docs/architecture.md)
-and linked contracts before changing integration or ownership. Root delivery,
-privacy, unslop and physical authorization rules remain in force.
+Read this directory's [README.md](README.md) for current status and device
+decisions. For planning or delivery, read the exact issue. Read
+[architecture](../../docs/architecture.md) and linked contracts before changing
+integration or ownership. All rules in the root [AGENTS.md](../../AGENTS.md)
+remain in force, including delivery, privacy, unslop and physical authorization.
 
 This directory contains documents only. Bootstrap completion grants no future
 implementation, installation, LAN discovery or physical-testing authority.

@@ -7,8 +7,9 @@ This repository contains versioned controller contracts with TypeScript and Pyth
 conformance checks, an embeddable authenticated MCP module, a shared agent-state
 package with bounded provider emitters, accepted architecture and development
 workflow tooling, and a [Linux standalone host](apps/hub/README.md) with bounded
-controller routing and supervised state-owner migration. Installation, dashboards
-and new device adapters remain separate work.
+controller routing and supervised state-owner migration. The
+[integration dashboard](#bunny-frontend) is delivered. Installation and new device
+adapters remain separate work.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
