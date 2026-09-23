@@ -20,9 +20,17 @@ performs no installation, input dispatch or hardware operation. Normal CI applie
 because the PR includes files outside the guide. Guide UI uses the SDLC approval
 exception; public publication remains separate.
 
-Validation: Node 24.21.0 setup, workflow validation and 15 workflow tests passed.
-All nine diagrams passed 9/9 deterministic checks. Final guide/browser and
-independent-review results are recorded on PR #143 at its frozen revision.
+Validation: Node 24.21.0 setup and workflow validation passed with 11 current
+specifications, 13 archives and 15 workflow tests. Guide generation, nine
+maintenance tests and desktop/mobile/print browser checks passed. The print
+fixture now searches for N30 so the revised mouse diagram remains visible;
+the earlier Wispr filter correctly hid it and caused the old fixture to time out.
+No assertion was removed. All nine diagrams passed 9/9 deterministic checks.
+The mouse viewer passed its standalone browser check. The preset viewer retains
+vertical overflow (heights 1372/1500/1500/1526 at the four desktop sizes), without
+horizontal overflow; it is not a visual-check pass. Screenshots were inspected.
+Guide HTML SHA-256: `e5e33746fb4b55824b08eb79db1e67902625f576d17deb8293dce077efee799e`.
+Independent-review and hosted-CI results remain revision-specific PR evidence.
 
 ## September 22, 2026: Pixoo general controls closeout
 
