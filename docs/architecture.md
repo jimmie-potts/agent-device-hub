@@ -360,7 +360,7 @@ gate. Windows vendor adapters remain on the PC during later hub-host migration.
 and the qualification/delivery backlog in
 [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63) and its linked tickets.
 The input integration and desk-preset service remain planned. The hub repository
-owns their source; physical input handling stays Windows-local beside Wispr and
+owns their source; physical input handling stays Windows-local beside
 Codex. Their implementation issues select packages, runtime and installation paths.
 
 A control profile maps physical controls and gestures to actions with explicit
@@ -368,22 +368,19 @@ application scope. A button binding is one assignment. Selecting a profile alone
 sends no device commands. A desk preset defines explicit supported actions on
 configured participating lights and displays through the existing command owners.
 
-Version 1 defaults Big B to the qualified Wispr dictation binding, currently
-Ctrl+Win. It holds that binding for dictation and releases it to insert text.
-Big A defaults to Enter on a separate deliberate press; B release and insertion
-never trigger Enter automatically. Both A/B bindings must be user-editable and
-saved in version 1 under #65, with recoverable defaults. The later #70 editor
-extends that configuration to broader controls and saved profiles.
+Keyboard A/B and the attached Dual Super Buttons remain keyboard-owned. The
+owner prefers B=Wispr Ctrl+Win and A=Enter, configured directly on the keyboard.
+B.U.N.N.Y. has no A/B mapping, editing, storage, dispatch, restoration or preset
+binding role, in version 1 or the later #70 profile editor.
 The first mouse mapping requests next
 task needing attention, command menu, previous task and next task within Codex,
 preserving ordinary behavior elsewhere. This local path does not wait for shared
-monitoring, general controls, Music or model calls. Wispr keeps its own speech
-processing and availability requirements. Preserve vendor mappings and the
+monitoring, general controls, Music or model calls. Preserve vendor mappings and the
 existing CHOMPI bridge; its MIDI bindings do not establish 8BitDo/profile support.
 
 An explicitly selected qualified binding later requests
-Work → Free → Quiet → Work through the hub's preset service. Neither A nor B is
-reserved for presets, and enabling that service does not replace their defaults.
+Work → Free → Quiet → Work through the hub's preset service. Keyboard A/B and the attached
+Super Buttons are excluded from preset bindings.
 This shared path follows the Codex-first milestone and general-control definition.
 It invokes existing authenticated app/controller services and their queues,
 preserving one writer per physical device and private controller databases.
