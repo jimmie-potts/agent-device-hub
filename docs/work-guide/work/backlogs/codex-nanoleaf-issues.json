@@ -736,25 +736,53 @@
   },
   {
     "number": 45,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Enroll a second Nanoleaf device on the Linux runtime",
     "body": "## Desired outcome\n\nProvide a Linux command that adds NL22 Panels to the existing Lines installation without losing current state, and that starts the new device in Free so nothing lights up until the operator chooses.\n\nThis is a personal project with one operator and one Linux installation. The issue is sized for that. The Linux runtime has no backup, upgrade, or rollback mechanism, and this issue does not add one. If enrollment goes wrong, the recovery path is to re-run it or remove the device entry.\n\n## Scope\n\nAdd an explicit enrollment command for the source delivered by [#41](https://github.com/jimmie-potts/codex-nanoleaf/issues/41) and [#43](https://github.com/jimmie-potts/codex-nanoleaf/issues/43), following [ADR 0007](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0007-linux-runtime-ownership.md) and the [Linux installation guide](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/linux-install.md). All automated verification uses isolated Linux state fixtures. Publishing or delivering this source does not enroll the user's devices.\n\nOut of scope here: the retired Windows installation and its installer, backup and rollback tooling, WSL forwarding, firmware updates, hook migrations, remote ingress, and new services.\n\n## Acceptance criteria\n\n- [ ] AC1: An explicit enrollment command obtains or accepts a private NL22 credential, verifies the reported model and layout, and registers a stable device identity in the #41 registry without running fresh setup, clearing tasks, replacing trusted hooks, or altering the existing Lines identity.\n- [ ] AC2: Store device addresses, credentials, raw layout and state, and machine permissions only under the private Linux state directory. Credentials do not reach browser responses, repository fixtures, ordinary logs, or issue evidence.\n- [ ] AC3: A newly enrolled Panels device starts in Free and sends no task effects until explicitly activated. Enrollment captures usable geometry without assigning real panel IDs from the photo. Activation does not replay historical waves or completion effects.\n- [ ] AC4: Enrollment failure, repeated enrollment, and identity or address conflicts leave existing devices and shared tasks intact. Never silently redirect an existing stable identity. The protected controller API stays Lines-only per #43, so enrollment neither grants nor changes machine credentials. Cached geometry and persisted preferences remain usable when a device is unavailable.\n- [ ] AC5: Enrollment tells the operator which user systemd units to restart, or restarts only this installation's own units when asked. It preserves listener configuration, trusted hooks, selected modes, reservations, and pulse and comet epochs across that restart.\n- [ ] AC6: Update the bridge, development, Linux installation, and controller API guides with enrollment, activation, and removal commands. Distinguish source fixtures from actual installation and physical evidence.\n\n## Verification approach\n\nUse temporary Linux state directories containing Lines-only state and then two configured fake devices. Exercise successful, failed, and repeated enrollment, duplicate IDs, unchanged machine credentials, and device removal, with fake controller responses. Do not contact personal devices. Run the Python suite, browser checks for API compatibility, and OpenSpec/workflow checks.\n\n## Dependencies\n\n- No open blockers. It builds on [#41](https://github.com/jimmie-potts/codex-nanoleaf/issues/41) and [#43](https://github.com/jimmie-potts/codex-nanoleaf/issues/43) (which absorbed #42), both delivered. Until the wall map gains a device selector in [#44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44), the Panels are activated and controlled with the CLI `--device` target.\n- Next: [#46](https://github.com/jimmie-potts/codex-nanoleaf/issues/46).\n\n## Delivery target\n\nSource-only enrollment tooling with isolated Linux verification. The actual personal pairing, mode activation, and visible-light tests belong to [#46](https://github.com/jimmie-potts/codex-nanoleaf/issues/46) and require a later explicit installation task.\n\n## Planning and delivery\n\nSource delivery follows AGENTS.md and docs/sdlc.md: an isolated issue branch, issue-linked OpenSpec planning, focused red/green checks, independent Standards and Specification reviews against the same committed comparison, required CI, guarded merge, and main-CI readback.\n\nThe issue-linked planning root is `openspec/changes/gh-45-nl22-enrollment/`. Check active and archived changes for this exact issue before creating or reusing it.\n\n## Revision note\n\nScope reduced on 2026-09-22 for a single-operator Linux installation, matching the same-day trim of #41 through #44. The original body was a Windows story: install-modes.ps1 backup and upgrade, rollback to a legacy Lines projection, interrupted-migration recovery, and WSL forwarding. I removed all of that and retitled the issue. What remains is a Linux enrollment command, private credential storage, a Free-by-default start, and conflict handling. The edit history holds the prior text.\n\nUpdate 2026-09-23: #42 was folded into #43, which keeps the protected API on Lines only. Target-permission language is removed from AC4, AC6 and verification.\n\nUpdate 2026-09-23: reordered ahead of #44. Enrollment needs only #41 and #43, so #44 no longer blocks it; the map device selector now follows #46.\n\nUpdate 2026-09-23 (delivery start): the planning root is renamed to `gh-45-nl22-enrollment` because the upgrade scope was removed. No existing change used either name.\n\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45",
-    "updatedAt": "2026-09-23T08:25:01Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T08:58:01Z",
+    "closedAt": "2026-09-23T08:58:00Z",
     "labels": [
       {
         "name": "enhancement"
-      },
-      {
-        "name": "status:in-progress"
       }
     ],
     "milestone": null,
-    "comments": [],
-    "commentCount": 2,
-    "commentsRefreshed": false
+    "comments": [
+      {
+        "body": "Premise note, 2026-09-22: the Windows Nanoleaf installation was retired on 2026-09-11, and [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) closed today with the Linux runtime in Ubuntu WSL (`~/.local/share/codex-nanoleaf`, [docs/linux-install.md](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/linux-install.md)) as the only active installation. The wall map is reachable from Windows at `http://127.0.0.1:8765/`. This issue still refers to the Windows bridge, its installation, tray or `install-modes.ps1`; re-read those parts against the Linux runtime before planning or starting it. No scope change is made by this note.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45#issuecomment-5771753091",
+        "createdAt": "2026-09-22T05:42:05Z",
+        "updatedAt": "2026-09-22T05:42:05Z"
+      },
+      {
+        "body": "Delivery claim, 2026-09-23.\n\n- Coordinator: Claude Code (desktop session), requested by the repository owner.\n- Worktree: `nanoleaf-gh-45`, a sibling of the canonical checkout.\n- Branch: `codex/gh-45-nl22-enrollment`\n- Base: `680acb5c22baafad60f849afd72bcfdabc6bbabf` (origin/main)\n- Scope: source-only enrollment command per this issue's AC1 to AC6, with OpenSpec change `openspec/changes/gh-45-nl22-enrollment/`. No installation, pairing or light changes.\n- Merge checkpoint: held by this coordinator when the PR is ready; I will check other in-progress and review issues first.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45#issuecomment-5791547355",
+        "createdAt": "2026-09-23T08:25:01Z",
+        "updatedAt": "2026-09-23T08:25:01Z"
+      },
+      {
+        "body": "PR https://github.com/jimmie-potts/codex-nanoleaf/pull/79 is open for review. Head `0cfc683`, base `680acb5`. Independent Standards and Specification reviews and Depot CI are in progress.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45#issuecomment-5791726238",
+        "createdAt": "2026-09-23T08:39:35Z",
+        "updatedAt": "2026-09-23T08:39:35Z"
+      },
+      {
+        "body": "Merge checkpoint taken by this coordinator for PR #79 at reviewed head `1d406ff` (base `680acb5`, main unchanged). No other issue is in progress or in review. Both independent reviews are clean at this head and all five Depot jobs passed.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45#issuecomment-5791920504",
+        "createdAt": "2026-09-23T08:54:35Z",
+        "updatedAt": "2026-09-23T08:54:35Z"
+      },
+      {
+        "body": "Delivered in PR #79, merged as `643a04e`. The push CI on `main` passed all five Depot jobs. The merge checkpoint is released.\n\n- **Source:** `device-enroll` and `device-remove` are in `bridge/enrollment.py`. The spec is `openspec/specs/device-enrollment/spec.md`, the OpenSpec change is archived as `2026-09-23-gh-45-nl22-enrollment`, and the operator commands are in `docs/linux-install.md#add-nl22-light-panels`.\n- **AC5:** enrollment reports that no user service needs a restart. Hooks and worker launches read the registry each time they run, and the map, controller and MCP stay Lines-only. The optional restart branch was not built.\n- **Installation and physical checks:** not run. No personal device was contacted, and pairing on the NL22 is unverified. #46 owns the installed enrollment and visible-light trial.\n- **Windows validation:** not in scope. The commands refuse Windows and Windows-mounted state.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45#issuecomment-5791963216",
+        "createdAt": "2026-09-23T08:57:59Z",
+        "updatedAt": "2026-09-23T08:57:59Z"
+      }
+    ],
+    "commentCount": 5,
+    "commentsRefreshed": true
   },
   {
     "number": 46,
@@ -1160,7 +1188,7 @@
     "title": "Stale shared approval evidence keeps two Nanoleaf Lines red",
     "body": "## Observed and expected behavior\n\nOn the existing Linux/WSL installation, the user observed two Nanoleaf Lines remaining red. Red is the documented indicator for a task blocked on input or approval ([bridge behavior](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/bridge/README.md#questions-blocks-and-read-status)). The selected shared-session feed continues to arrive, yet two assigned task records remain `blocked` with uncertain freshness and old approval attention. This can leave a red indicator in place without current evidence that an approval is still pending.\n\nExpected: a genuinely pending approval remains red. Once reliable evidence says that approval was resolved, the corresponding Line leaves red. If the source cannot establish the current state, the product should expose that uncertainty and provide an evidence-based recovery path; it must not silently treat an old approval as confirmed current or clear a real pending approval merely because time passed.\n\n## Reproduction and evidence (2026-09-23 UTC)\n\nRead-only inspection of `~/.local/share/codex-nanoleaf/status.sqlite` using SQLite `mode=ro`, `PRAGMA query_only=ON`, and a read transaction found:\n\n- Shared input selected; collector `running`; feed received about 0.5 seconds before inspection; snapshot revision 708, loss count 0.\n- Five `blocked` session records, two with assigned Lines. The assigned records were in slots **4 and 13** and both appeared in `shared_stale`.\n- In the corresponding feed records, both were Codex Desktop sessions with `freshness=uncertain`, `activity=unknown`, `read=unknown`, and an `approval` attention marker. Both carried unavailable evidence for ordering, attention, turn, and activity (ambiguous or missing). Their observation ages were roughly 2.8 hours. The local `waits` table had zero rows; shared-session attention is the relevant input here.\n- A focused read-only assertion for assigned, blocked, stale records returned `[(4,), (13,)]` twice, three seconds apart. The feed revision was 703 during that repeat check and later advanced to 708, while the two assigned records remained blocked and stale.\n\nReproduction command for the local projection (no light request or state write):\n\n```bash\npython3 -c 'import sqlite3; d=sqlite3.connect(\"file:/home/jimmie/.local/share/codex-nanoleaf/status.sqlite?mode=ro\",uri=True); d.execute(\"PRAGMA query_only=ON\"); d.execute(\"BEGIN\"); x=d.execute(\"SELECT slot FROM slots JOIN sessions ON slots.session=sessions.id JOIN shared_stale ON slots.session=shared_stale.session WHERE sessions.status=\\\"blocked\\\" ORDER BY slot\").fetchall(); print(x); assert x==[(4,),(13,)]'\n# Observed: [(4,), (13,)]\n```\n\nThe exact slot numbers and assertion reflect this installation; a regression fixture should assert the behavior, not those numbers. No session IDs, task titles, tokens, credentials, or raw feed payload are included here. The user's visual report establishes that two Lines appeared red; database inspection establishes their projected statuses, not a separate physical controller readback.\n\nThe current source maps approval attention to `blocked` ([`semantic_status`](https://github.com/jimmie-potts/codex-nanoleaf/blob/cbb948516eb161d551d817c7ee2870b2b74dc9cb/bridge/shared_input.py#L333-L340)) and retains the old turn/status when a session is stale ([`_project`](https://github.com/jimmie-potts/codex-nanoleaf/blob/cbb948516eb161d551d817c7ee2870b2b74dc9cb/bridge/shared_input.py#L355-L366)). The installed runtime uses the same relevant rule. This explains the persistent local red projection. It does **not** prove whether the original approvals are still open or identify which upstream observation became ambiguous.\n\n## Scope\n\nTrace the approval lifecycle across the shared state owner/collector and Nanoleaf projection. Determine why these Codex Desktop records retain ambiguous approval attention, and repair the responsible boundary so resolved approvals stop occupying red Lines while genuine approvals remain visible. Preserve the shared owner as the status authority, the single light writer, task allocations and preferences, and the established stale-data safeguards. If the defect is upstream, link and coordinate an owner-repository issue rather than reinterpreting provider events in the Nanoleaf consumer.\n\nThis issue is **source-only**. It does not authorize changing the installed runtime, resetting task state, acknowledging notices, or operating the physical lights.\n\n## Acceptance criteria\n\n- [x] A focused regression scenario reproduces uncertain/stale approval evidence retaining a red assignment after the actual approval has resolved, and distinguishes it from a genuinely pending approval.\n- [x] The responsible source or projection is corrected so fresh resolution evidence clears the red status; an unresolved approval stays red. Reconnection, missing events, and uncertainty do not silently claim a resolution.\n- [x] Consumer health or diagnostics make a retained uncertain status distinguishable from a confirmed current block, without exposing private session metadata or credentials.\n- [x] Existing allocation, pulse/alert priority, shared-source selection, and single-writer behavior remain intact.\n- [x] The fix is verified with isolated state and fake transport; any later installation and visible-light acceptance are recorded separately.\n\n## Verification approach\n\nUse a minimal shared snapshot/event sequence with an approval, ambiguous or missing follow-up evidence, and a reliable resolution event. Check the shared owner's semantic state, the Nanoleaf projected status and freshness, and the fake-rendered Line color at each step. Run the repository's Python checks after Python changes. If the map/API changes, run browser checks too. Do not use live credentials or reset the installed database as a test fixture.\n\n## Dependencies and related work\n\n- [Nanoleaf #29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) delivered the shared consumer; [#30](https://github.com/jimmie-potts/codex-nanoleaf/issues/30) installed and qualified the basic shared-monitoring path.\n- Shared state ownership and provider interpretation belong to [agent-device-hub](https://github.com/jimmie-potts/agent-device-hub). The confirmed upstream recovery gap is tracked in [Hub #185](https://github.com/jimmie-potts/agent-device-hub/issues/185) and delivered in Hub PR #187.\n- Delivery target: **source-only**. Source delivery: [Nanoleaf PR #73](https://github.com/jimmie-potts/codex-nanoleaf/pull/73), merged as `680acb5c22baafad60f849afd72bcfdabc6bbabf`. Installation remains separate.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72",
-    "updatedAt": "2026-09-23T08:22:11Z",
+    "updatedAt": "2026-09-23T18:05:01Z",
     "closedAt": "2026-09-23T08:22:10Z",
     "labels": [
       {
@@ -1192,9 +1220,21 @@
         "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72#issuecomment-5791510373",
         "createdAt": "2026-09-23T08:22:09Z",
         "updatedAt": "2026-09-23T08:22:09Z"
+      },
+      {
+        "body": "The linked shared work guide source is now synchronized through Hub PR #190, merged as `ea5cd958c221123cfb0a451d84d065359a9cd958`. The guide records the stale-red projection behavior and keeps source delivery separate from installation and physical-light acceptance. The installed bridge and the two physical Lines have not been changed or verified in this delivery.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72#issuecomment-5791658631",
+        "createdAt": "2026-09-23T08:34:08Z",
+        "updatedAt": "2026-09-23T08:34:08Z"
+      },
+      {
+        "body": "Installed the delivered fix in the existing Linux-owned Nanoleaf installation on 2026-09-23. The bridge is from merged Nanoleaf revision `680acb5c22baafad60f849afd72bcfdabc6bbabf`; the shared monitor is Hub 0.2.1 / agent-state 2.0.1 from merged Hub revision `eeaa76439ba449adcd447750c0996817d12d6e7c` (private package SHA-256 `01e832e4d4f6e848fc2a9fb550da1f51740210d80fa854000b459d55cb4d8c3d`). A private state and previous-program backup was retained before the cutover.\n\nAfter restart, the monitor, controller, wall, and MCP services are active with zero restarts; one Lines worker owns light writes. The bridge reports Work mode, no pending mode change, and no local error. The shared consumer is configured and current with 120 sessions. Read-only before/after checks found 120 sessions, 15 slots, 120 task-info records, 20 projects, and zero comets on both sides; config, layout, and saved scene files are byte-identical. The map API returned HTTP 200. Assigned slots 4 and 13 remain `blocked` with `statusEvidence: uncertain`, as specified until matched evidence or an explicit guarded recovery.\n\nThis is installed service and local API evidence. No human-visible light observation, Windows installer check, or approval recovery was performed.\n",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72#issuecomment-5800218886",
+        "createdAt": "2026-09-23T18:05:01Z",
+        "updatedAt": "2026-09-23T18:05:01Z"
       }
     ],
-    "commentCount": 4,
+    "commentCount": 6,
     "commentsRefreshed": true
   },
   {
@@ -1227,6 +1267,72 @@
     "body": "## Desired outcome\n\nShared tasks in the Nanoleaf map have meaningful, source-backed labels and project associations where those facts are available. Tasks without qualified metadata remain clearly unassigned and individually distinguishable.\n\n## Evidence\n\nIn an aggregate, read-only installed snapshot on 2026-09-23, all 119 shared sessions lacked a label and `projectId`; the 72 visible tasks therefore used fallback names and had no project association. The current map fallback uses `Task ` plus the first eight characters of a `shared-*` key, leaving only one distinguishing hash character and producing repeated-looking titles. The installed observation does not prove which upstream metadata is available or qualified.\n\n## Scope\n\nTrace label and project provenance across the shared owner, qualified Codex Desktop source, consumer, and local map metadata reader. Choose and document a privacy-safe attribution path before implementation. Keep shared state authoritative for lifecycle and full session identity. Local enrichment, if used, must match a qualified exact identity; it must not guess from a truncated ID, workspace substring, or another client's session. Preserve the rule that local titles and paths are not uploaded to the shared feed merely for this UI.\n\nFix the fallback display in this repository even when no metadata source qualifies. Coordinate an owner-repository issue if the required fields must be produced upstream. Project assignment remains an explicit user choice where no reliable source association exists.\n\n## Acceptance criteria\n\n- [ ] Document which source owns each displayed label and project ID, what evidence qualifies it, and how missing or conflicting values appear. Keep unsupported metadata absent rather than inventing it.\n- [ ] Qualified tasks show their correct label and project; two sources with the same raw session ID cannot cross-associate. A task with no qualified project remains unassigned.\n- [ ] Fallback task names are distinct enough to tell simultaneous tasks apart and do not reveal credentials or private paths. Repeated `Task shared-5` style labels are removed.\n- [ ] Source changes, restarts and legacy/shared switching preserve saved manual project overrides and reservations. No browser response contains device or shared-feed credentials; the map never writes Codex metadata.\n- [ ] If qualified project attribution is unavailable, record the exact owner and follow-up dependency. The project-list issue must still show an honest empty/current state.\n\n## Verification and delivery\n\nUse synthetic sessions with matching and conflicting identities, missing labels, no project, manual override and source switching. Run `python3 scripts/check.py` and `npm run test:browser`; run applicable OpenSpec/workflow checks for changed contracts. Source-only delivery through reviewed PRs. Installation and live-client qualification are separate.\n\n## Related work\n\nThe shared consumer was delivered in [#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29). The project-list and task-list issues consume the resulting display fields but can hide inactive data before attribution is improved.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/75",
     "updatedAt": "2026-09-23T08:24:56Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 76,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Show current projects first and hide inactive saved projects",
+    "body": "## Desired outcome\n\nThe map's Projects column shows projects that matter to the current display, ordered by current activity. Old saved projects no longer fill the default view, while their preferences remain available.\n\n## Evidence\n\nThe map server reads every saved `projects` row in name order, and the page renders every returned row. An aggregate, read-only inspection on 2026-09-23 found 20 saved project rows, none referenced by a current task or Line reservation. The selected shared snapshot supplied no project IDs. These rows may still contain saved colors or legacy setup; absence of current activity is a display decision, not proof that their preferences should be deleted.\n\n## Scope\n\nDefine current project relevance from the selected device's task associations, reservations, pending edits, and current selection. In the normal Projects column, show relevant projects first. Put saved projects with none of those references behind a labelled, user-invoked `Show saved projects` control. Keep project color and reservation editing available when a saved project is opened. A source with no qualified project associations should show an honest empty/current state and the count of saved projects, not a long zero-activity list.\n\nRank visible projects by current working, blocked and question task count, then unread task count, then name for stable ties. Do not use historical unread volume as a substitute for current activity. The Shared pool remains distinct. Do not delete stored projects, colors, roots or reservations as part of filtering.\n\n## Acceptance criteria\n\n- [ ] With 20 saved projects and no current associations or reservations, the default column shows no inactive project rows, explains that no current project is known, and offers access to all 20 saved projects.\n- [ ] With several current projects, the busiest appear first under the defined count order; stable ties do not jump on unchanged polls. A project with a reserved Line or pending edit remains visible with zero active tasks.\n- [ ] A task or reservation entering or leaving a project updates visibility and order without losing an open color picker, keyboard focus, selection or unsaved interaction. Saved preferences survive hide/show, restart and source switching.\n- [ ] Project counts and Line badges agree with the selected device. The behavior works in Classic and Project layouts and does not borrow another project's reserved Line.\n- [ ] No automatic project deletion, Codex metadata write, device command or credential exposure is introduced.\n\n## Verification and delivery\n\nUse synthetic browser and Python state for zero, one and many relevant projects; saved-only rows; reservations; pending edits; task transitions; source switching; and narrow viewports. Run `python3 scripts/check.py`, `npm run test:browser`, and applicable OpenSpec/workflow checks. Obtain explicit human approval of the current UI candidate before merge. Source-only delivery; installing the map or checking physical lights is separate.\n\n## Related work\n\n[#75](https://github.com/jimmie-potts/codex-nanoleaf/issues/75) addresses missing shared project attribution. This issue must behave correctly when attribution remains unavailable. Coordinate device-specific presentation with [#44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44), which plans a selector rather than a simultaneous two-device view.\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/76",
+    "updatedAt": "2026-09-23T08:25:57Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 77,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Limit and prioritize tasks in the wall map inspector",
+    "body": "## Desired outcome\n\nThe right-hand inspector highlights tasks needing attention without rendering an unbounded wall of rows. The user can still inspect every tracked task, and the count remains accurate.\n\n## Evidence\n\nScreenshots on 2026-09-23 showed 71 and then 72 tasks, with repeated-looking fallback titles and many unread rows. The map currently renders every task returned by `/api/state` and renders tasks without a Line a second time under `Waiting for a Line`. The full count reflects projected task statuses; [#74](https://github.com/jimmie-potts/codex-nanoleaf/issues/74) investigates whether all retained unread indicators are warranted.\n\n## Scope\n\nShow at most eight task rows by default, with a labelled way to reveal and filter the full list. Prioritize the selected task and actionable blocked, question and working statuses, then unread tasks; keep ordering stable within a group on unchanged polls. Show total and per-status counts, and distinguish the number shown from the number tracked. Summarize waiting tasks once; do not duplicate full waiting rows in both sections. Keep Line and task selection, details and manual project override usable.\n\nThe presentation must not silently remove a task from the API or change its allocation, unread state or completion notice. Distinct fallback names and project attribution are covered by [#75](https://github.com/jimmie-potts/codex-nanoleaf/issues/75); this issue must also remain usable when metadata is absent.\n\n## Acceptance criteria\n\n- [ ] At 72 tracked tasks, the initial inspector renders no more than eight task rows while showing the true total and status counts. Every task remains reachable through the full-list control and filters.\n- [ ] Blocked, question and working tasks receive priority. A selected task remains visible or clearly locatable after refresh; status changes reorder without losing keyboard focus or scrolling unexpectedly.\n- [ ] Waiting tasks have one full-row location and a clear count. Placement changes update that location without duplicate rows or lost selection.\n- [ ] The compact view works with zero tasks, more tasks than Lines, unknown project metadata, long labels, narrow viewports and reduced motion.\n- [ ] Opening or filtering the list makes no write request, does not mark a Codex task read, and never sends a physical Locate command.\n\n## Verification and delivery\n\nUse deterministic browser fixtures for 0, 8 and 72 tasks, mixed statuses, waiting tasks, selection, keyboard access and one-second polling. Run `npm run test:browser` and `python3 scripts/check.py` if Python/API changes. Run applicable OpenSpec/workflow checks. Obtain explicit human approval of the current UI candidate before merge. Source-only delivery; installation and physical-light checks are separate.\n\n## Related work\n\nKeep the full count truthful while #74 investigates retained unread state. Coordinate right-column changes with the device selector planned in [#44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44).\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/77",
+    "updatedAt": "2026-09-23T08:25:58Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 78,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Reduce default wall map controls and repeated status text",
+    "body": "## Desired outcome\n\nThe wall map's default screen gives space and attention to the wall, current mode, live status, alerts and the selected item. Secondary controls and repeated explanatory text are available without crowding that view.\n\n## Scope\n\nReview the current header, wall toolbar, legend and both side columns as one information hierarchy. Group secondary map controls, including number display, orientation and assembly playback, under clearly labelled options. Reduce repeated counts and hints across the readout, panels and footer. Keep mode controls, disconnected state, blocked/question alerts, pending edits and context actions visible where the user needs them. Preserve the editor's existing capabilities, device targeting and reduced-motion behavior.\n\nThis is a layout and interaction issue for the existing wall map. It does not create a new Hub dashboard or an inspection-only Lively view. Coordinate with [#44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44), whose current plan switches between devices; do not design for an abandoned side-by-side view.\n\n## Acceptance criteria\n\n- [ ] At supported desktop and narrow widths, the wall remains the dominant element, with no horizontal overflow or hidden current alerts. Mode, connection failure and pending edits remain clear without opening an options menu.\n- [ ] Secondary controls are discoverable, keyboard accessible and retain their current settings and behavior. Selecting or opening options sends no device command.\n- [ ] Each count or explanation has a clear primary location; removed repetitions do not erase status meaning or leave an unlabeled control.\n- [ ] Task and project list changes from #76 and #77 fit the layout. The selected item and any necessary edit control remain usable with long labels and many tasks.\n- [ ] Work, Quiet, Free, reduced motion, empty state, disconnected state and pending edits remain visually distinguishable.\n\n## Verification and delivery\n\nUse synthetic browser scenarios at 390, 800 and 1440 px, with dense and empty data, keyboard focus, screen-reader labels and reduced motion. Run `npm run test:browser`; run `python3 scripts/check.py` if Python changes and applicable OpenSpec/workflow checks for changed behavior. Record explicit human approval of the current UI candidate before merge. Source-only delivery; no installation or physical-light action is included.\n\n## Related work\n\nCoordinate with [#44](https://github.com/jimmie-potts/codex-nanoleaf/issues/44), [#76](https://github.com/jimmie-potts/codex-nanoleaf/issues/76) and [#77](https://github.com/jimmie-potts/codex-nanoleaf/issues/77). The list work can proceed independently; this issue reconciles the resulting screen.\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/78",
+    "updatedAt": "2026-09-23T08:26:05Z",
     "closedAt": null,
     "labels": [
       {
