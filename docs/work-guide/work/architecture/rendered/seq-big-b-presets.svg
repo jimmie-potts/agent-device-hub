@@ -1,5 +1,5 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 870" role="img" lang="en" aria-labelledby="seq-big-b-presets-archify-diagram-title seq-big-b-presets-archify-diagram-description">
-        <title id="seq-big-b-presets-archify-diagram-title">Desk presets, partial results and manual handoff</title>
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 918" role="img" lang="en" aria-labelledby="seq-big-b-presets-archify-diagram-title seq-big-b-presets-archify-diagram-description">
+        <title id="seq-big-b-presets-archify-diagram-title">Desk presets, partial results and manual handoff (planned)</title>
         <desc id="seq-big-b-presets-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -24,140 +24,140 @@
         <rect width="100%" height="100%" fill="url(#seq-big-b-presets-grid)" />
 
         <!-- Time Segments -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-0" x="48" y="178" width="974" height="362" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-0" x="48" y="194" width="974" height="378" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-1" x="48" y="544" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-1" x="48" y="576" width="974" height="158" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-2" x="48" y="690" width="974" height="98" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-big-b-presets-2" x="48" y="738" width="974" height="98" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 144.5 142 L 144.5 805" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 345.25 142 L 345.25 805" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 546 142 L 546 805" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 746.75 142 L 746.75 805" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 947.5 142 L 947.5 805" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 144.5 142 L 144.5 853" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 345.25 142 L 345.25 853" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 546 142 L 546 853" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 746.75 142 L 746.75 853" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 947.5 142 L 947.5 853" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
 
         <!-- Messages -->
         <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh configured preset press" data-edge-key="0">
-          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,210;338.25,210" d="M 151.5 210 L 338.25 210" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,226;338.25,226" d="M 151.5 226 L 338.25 226" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="163.475" y="190" width="162.8" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="200" class="t-backend" font-size="9" text-anchor="middle">fresh configured preset press</text>
+          <rect x="163.475" y="206" width="162.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="216" class="t-backend" font-size="9" text-anchor="middle">fresh configured preset press</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="hub" data-edge-label="request next preset (Work → Free → Quiet → Work) with known revision" data-edge-key="1">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="hub" data-composition-points="352.25,254;539,254" d="M 352.25 254 L 539 254" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="hub" data-composition-points="352.25,270;539,270" d="M 352.25 270 L 539 270" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="262.825" y="234" width="365.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="244" class="t-backend" font-size="9" text-anchor="middle">request next preset (Work → Free → Quiet → Work) with known revision</text>
+          <rect x="262.825" y="250" width="365.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="260" class="t-backend" font-size="9" text-anchor="middle">request next preset (Work → Free → Quiet → Work) with known revision</text>
         </g>
         </g>
 
         <g data-edge-from="hub" data-edge-to="nanoleaf" data-edge-label="supported native command + requestId/revision/generation" data-edge-key="2">
-          <path data-composition-edge-from="hub" data-composition-edge-to="nanoleaf" data-composition-points="553,298;739.75,298" d="M 553 298 L 739.75 298" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
+          <path data-composition-edge-from="hub" data-composition-edge-to="nanoleaf" data-composition-points="553,314;739.75,314" d="M 553 314 L 739.75 314" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="494.775" y="278" width="303.2" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="288" class="t-security" font-size="9" text-anchor="middle">supported native command + requestId/revision/generation</text>
+          <rect x="494.775" y="294" width="303.2" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="304" class="t-security" font-size="9" text-anchor="middle">supported native command + requestId/revision/generation</text>
         </g>
         </g>
 
         <g data-edge-from="hub" data-edge-to="pixoo" data-edge-label="supported native command + request_id" data-edge-key="3">
-          <path data-composition-edge-from="hub" data-composition-edge-to="pixoo" data-composition-points="553,342;940.5,342" d="M 553 342 L 940.5 342" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
+          <path data-composition-edge-from="hub" data-composition-edge-to="pixoo" data-composition-points="553,358;940.5,358" d="M 553 358 L 940.5 358" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="644.55" y="322" width="204.4" height="16" rx="3" class="c-mask"/>
-          <text x="746.75" y="332" class="t-security" font-size="9" text-anchor="middle">supported native command + request_id</text>
+          <rect x="644.55" y="338" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="746.75" y="348" class="t-security" font-size="9" text-anchor="middle">supported native command + request_id</text>
         </g>
         </g>
 
         <g data-edge-from="nanoleaf" data-edge-to="hub" data-edge-label="queued / sent" data-edge-key="4">
-          <path data-composition-edge-from="nanoleaf" data-composition-edge-to="hub" data-composition-points="739.75,386;553,386" d="M 739.75 386 L 553 386" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+          <path data-composition-edge-from="nanoleaf" data-composition-edge-to="hub" data-composition-points="739.75,402;553,402" d="M 739.75 402 L 553 402" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
         <g data-detail="context">
-          <rect x="606.575" y="366" width="79.60000000000001" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="376" class="t-muted" font-size="9" text-anchor="middle">queued / sent</text>
+          <rect x="606.575" y="382" width="79.60000000000001" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="392" class="t-muted" font-size="9" text-anchor="middle">queued / sent</text>
         </g>
         </g>
 
         <g data-edge-from="pixoo" data-edge-to="hub" data-edge-label="failed: offline (independent queue)" data-edge-key="5">
-          <path data-composition-edge-from="pixoo" data-composition-edge-to="hub" data-composition-points="940.5,430;553,430" d="M 940.5 430 L 553 430" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+          <path data-composition-edge-from="pixoo" data-composition-edge-to="hub" data-composition-points="940.5,446;553,446" d="M 940.5 446 L 553 446" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
         <g data-detail="context">
-          <rect x="649.75" y="410" width="194" height="16" rx="3" class="c-mask"/>
-          <text x="746.75" y="420" class="t-muted" font-size="9" text-anchor="middle">failed: offline (independent queue)</text>
+          <rect x="649.75" y="426" width="194" height="16" rx="3" class="c-mask"/>
+          <text x="746.75" y="436" class="t-muted" font-size="9" text-anchor="middle">failed: offline (independent queue)</text>
         </g>
         </g>
 
         <g data-edge-from="hub" data-edge-to="dispatcher" data-edge-label="selected preset + per-device results (partial)" data-edge-key="6">
-          <path data-composition-edge-from="hub" data-composition-edge-to="dispatcher" data-composition-points="539,474;352.25,474" d="M 539 474 L 352.25 474" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+          <path data-composition-edge-from="hub" data-composition-edge-to="dispatcher" data-composition-points="539,490;352.25,490" d="M 539 490 L 352.25 490" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
         <g data-detail="context">
-          <rect x="320.025" y="454" width="251.20000000000002" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="464" class="t-muted" font-size="9" text-anchor="middle">selected preset + per-device results (partial)</text>
+          <rect x="320.025" y="470" width="251.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="480" class="t-muted" font-size="9" text-anchor="middle">selected preset + per-device results (partial)</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="user" data-edge-label="visible feedback: requested, sent, failed, uncertain" data-edge-key="7">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="338.25,518;151.5,518" d="M 338.25 518 L 151.5 518" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="338.25,534;151.5,534" d="M 338.25 534 L 151.5 534" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
         <g data-detail="context">
-          <rect x="103.67499999999998" y="498" width="282.40000000000003" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="508" class="t-muted" font-size="9" text-anchor="middle">visible feedback: requested, sent, failed, uncertain</text>
+          <rect x="103.67499999999998" y="514" width="282.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="524" class="t-muted" font-size="9" text-anchor="middle">visible feedback: requested, sent, failed, uncertain</text>
         </g>
-        <text data-detail="fine" x="163.5" y="536" class="t-dim" font-size="7">transport outcomes are not optical proof</text>
+        <text data-detail="fine" x="163.5" y="552" class="t-dim" font-size="7">transport outcomes are not optical proof</text>
         </g>
 
         <g data-edge-from="user" data-edge-to="nanoleaf" data-edge-label="manual scene change in the vendor app" data-edge-key="8">
-          <path data-composition-edge-from="user" data-composition-edge-to="nanoleaf" data-composition-points="151.5,576;739.75,576" d="M 151.5 576 L 739.75 576" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
+          <path data-composition-edge-from="user" data-composition-edge-to="nanoleaf" data-composition-points="151.5,608;739.75,608" d="M 151.5 608 L 739.75 608" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="343.425" y="556" width="204.4" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="566" class="t-messagebus" font-size="9" text-anchor="middle">manual scene change in the vendor app</text>
+          <rect x="343.425" y="588" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="598" class="t-messagebus" font-size="9" text-anchor="middle">manual scene change in the vendor app</text>
         </g>
         </g>
 
         <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="next fresh configured preset press" data-edge-key="9">
-          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,620;338.25,620" d="M 151.5 620 L 338.25 620" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="151.5,652;338.25,652" d="M 151.5 652 L 338.25 652" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="150.475" y="600" width="188.8" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="610" class="t-backend" font-size="9" text-anchor="middle">next fresh configured preset press</text>
+          <rect x="150.475" y="632" width="188.8" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="642" class="t-backend" font-size="9" text-anchor="middle">next fresh configured preset press</text>
         </g>
         </g>
 
         <g data-edge-from="hub" data-edge-to="nanoleaf" data-edge-label="supported ownership handoff, then preset action" data-edge-key="10">
-          <path data-composition-edge-from="hub" data-composition-edge-to="nanoleaf" data-composition-points="553,664;739.75,664" d="M 553 664 L 739.75 664" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
+          <path data-composition-edge-from="hub" data-composition-edge-to="nanoleaf" data-composition-points="553,696;739.75,696" d="M 553 696 L 739.75 696" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="518.175" y="644" width="256.4" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="654" class="t-security" font-size="9" text-anchor="middle">supported ownership handoff, then preset action</text>
+          <rect x="518.175" y="676" width="256.4" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="686" class="t-security" font-size="9" text-anchor="middle">supported ownership handoff, then preset action</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="hub" data-edge-label="startup · reconnect · profile selection → no presses replayed, no device commands" data-edge-key="11">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="hub" data-composition-points="352.25,722;539,722" d="M 352.25 722 L 539 722" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="hub" data-composition-points="352.25,770;539,770" d="M 352.25 770 L 539 770" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="229.025" y="702" width="433.2" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="712" class="t-messagebus" font-size="9" text-anchor="middle">startup · reconnect · profile selection → no presses replayed, no device commands</text>
+          <rect x="229.025" y="750" width="433.2" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="760" class="t-messagebus" font-size="9" text-anchor="middle">startup · reconnect · profile selection → no presses replayed, no device commands</text>
         </g>
         </g>
 
         <g data-edge-from="hub" data-edge-to="dispatcher" data-edge-label="hub unavailable → reported; local mouse controls keep working" data-edge-key="12">
-          <path data-composition-edge-from="hub" data-composition-edge-to="dispatcher" data-composition-points="539,766;352.25,766" d="M 539 766 L 352.25 766" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+          <path data-composition-edge-from="hub" data-composition-edge-to="dispatcher" data-composition-points="539,814;352.25,814" d="M 539 814 L 352.25 814" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
         <g data-detail="context">
-          <rect x="281.025" y="746" width="329.2" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="756" class="t-muted" font-size="9" text-anchor="middle">hub unavailable → reported; local mouse controls keep working</text>
+          <rect x="281.025" y="794" width="329.2" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="804" class="t-muted" font-size="9" text-anchor="middle">hub unavailable → reported; local mouse controls keep working</text>
         </g>
         </g>
 
         <!-- Segment Labels -->
         <g data-graph-role="segment-label" data-segment-id="seq-big-b-presets-0">
-          <rect x="56" y="156" width="154.4" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="169" class="t-dim" font-size="9" font-weight="600">Fresh press, one transition</text>
+          <rect x="56" y="172" width="175.20000000000002" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="185" class="t-dim" font-size="9" font-weight="600">1 · Fresh press, one transition</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-big-b-presets-1">
-          <rect x="56" y="522" width="274" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="535" class="t-dim" font-size="9" font-weight="600">Manual change stays until the next explicit preset</text>
+          <rect x="56" y="554" width="294.8" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="567" class="t-dim" font-size="9" font-weight="600">2 · Manual change stays until the next explicit preset</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-big-b-presets-2">
-          <rect x="56" y="668" width="60.800000000000004" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="681" class="t-dim" font-size="9" font-weight="600">No replay</text>
+          <rect x="56" y="716" width="279.2" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="729" class="t-dim" font-size="9" font-weight="600">Alternative · startup, reconnect or hub unavailable</text>
         </g>
 
         <!-- Participants -->
@@ -173,19 +173,19 @@
           <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">preset binding · vendor app</text>
         </g>
 
-        <g id="seq-big-b-presets-node-dispatcher" data-node-id="seq-big-b-presets-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, binding + feedback, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="binding + feedback" data-node-context="Sequence participant">
-          <title>Windows dispatcher · binding + feedback · Sequence participant</title>
+        <g id="seq-big-b-presets-node-dispatcher" data-node-id="seq-big-b-presets-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, planned · feedback, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="planned · feedback" data-node-context="Sequence participant">
+          <title>Windows dispatcher · planned · feedback · Sequence participant</title>
           <rect x="262.75" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="262.75" y="72" width="165" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(268.75 78) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="345.25" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows dispatcher</text>
-          <text data-detail="context" x="345.25" y="111" class="t-muted" font-size="7" text-anchor="middle">binding + feedback</text>
+          <text data-detail="context" x="345.25" y="111" class="t-muted" font-size="7" text-anchor="middle">planned · feedback</text>
         </g>
 
-        <g id="seq-big-b-presets-node-hub" data-node-id="seq-big-b-presets-hub" data-node-label="Hub preset service" tabindex="0" role="button" aria-label="Focus Hub preset service, authoritative selection, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="authoritative selection" data-node-context="Sequence participant">
-          <title>Hub preset service · authoritative selection · Sequence participant</title>
+        <g id="seq-big-b-presets-node-hub" data-node-id="seq-big-b-presets-hub" data-node-label="Hub preset service" tabindex="0" role="button" aria-label="Focus Hub preset service, planned · owns selection, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="planned · owns selection" data-node-context="Sequence participant">
+          <title>Hub preset service · planned · owns selection · Sequence participant</title>
           <rect x="463.5" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="463.5" y="72" width="165" height="54" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(469.5 78) scale(0.6875)">
@@ -193,7 +193,7 @@
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="546" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hub preset service</text>
-          <text data-detail="context" x="546" y="111" class="t-muted" font-size="7" text-anchor="middle">authoritative selection</text>
+          <text data-detail="context" x="546" y="111" class="t-muted" font-size="7" text-anchor="middle">planned · owns selection</text>
         </g>
 
         <g id="seq-big-b-presets-node-nanoleaf" data-node-id="seq-big-b-presets-nanoleaf" data-node-label="Nanoleaf owner" tabindex="0" role="button" aria-label="Focus Nanoleaf owner, Work/Quiet/Free, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Work/Quiet/Free" data-node-context="Sequence participant">
@@ -220,22 +220,22 @@
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="796" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="816" data-legend-width="78">
-            <path d="M 40 813 L 74 813" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
-            <text x="83" y="816" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="844" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="864" data-legend-width="78">
+            <path d="M 40 861 L 74 861" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-big-b-presets-arrowhead-emphasis)"/>
+            <text x="83" y="864" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="816" data-legend-width="73">
-            <path d="M 140 813 L 174 813" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
-            <text x="183" y="816" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="864" data-legend-width="73">
+            <path d="M 140 861 L 174 861" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-big-b-presets-arrowhead)"/>
+            <text x="183" y="864" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="816" data-legend-width="83">
-            <path d="M 235 813 L 269 813" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
-            <text x="278" y="816" class="t-muted" font-size="10" font-weight="500">security</text>
+          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="864" data-legend-width="83">
+            <path d="M 235 861 L 269 861" class="a-security" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-security)"/>
+            <text x="278" y="864" class="t-muted" font-size="10" font-weight="500">security</text>
           </g>
-          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="816" data-legend-width="98">
-            <path d="M 340 813 L 374 813" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
-            <text x="383" y="816" class="t-muted" font-size="10" font-weight="500">async trace</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="864" data-legend-width="98">
+            <path d="M 340 861 L 374 861" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-big-b-presets-arrowhead-dashed)"/>
+            <text x="383" y="864" class="t-muted" font-size="10" font-weight="500">async trace</text>
           </g>
         </g>
       </svg>

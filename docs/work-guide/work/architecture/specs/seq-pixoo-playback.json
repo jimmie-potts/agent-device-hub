@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   1016
+   1110
   ],
   "views": [
    {
@@ -29,7 +29,7 @@
      "adapter",
      "device"
     ],
-    "note": "Serialized writes owned by the backend."
+    "note": "The Player orders work; the adapter alone writes."
    }
   ]
  },
@@ -44,7 +44,7 @@
    "id": "service",
    "type": "backend",
    "label": "ControlService",
-   "sublabel": "HTTP/MCP ledger"
+   "sublabel": "request ledger"
   },
   {
    "id": "library",
@@ -56,13 +56,13 @@
    "id": "player",
    "type": "backend",
    "label": "Player",
-   "sublabel": "backend playback"
+   "sublabel": "session queue"
   },
   {
    "id": "adapter",
    "type": "messagebus",
-   "label": "Adapter queue",
-   "sublabel": "serialized writer"
+   "label": "Device adapter",
+   "sublabel": "sole display writer"
   },
   {
    "id": "device",
@@ -73,38 +73,43 @@
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Read catalog and status",
-   "to": 276
+   "from": 194,
+   "label": "1 · Read catalog and status",
+   "to": 308
   },
   {
-   "from": 280,
-   "label": "Select media",
-   "to": 554
+   "from": 312,
+   "label": "2 · Select and admit",
+   "to": 558
   },
   {
-   "from": 558,
-   "label": "Backend playback continues",
-   "to": 744
+   "from": 562,
+   "label": "3 · Backend playback",
+   "to": 764
   },
   {
-   "from": 748,
-   "label": "Recovery and screen rules",
-   "to": 934
+   "from": 768,
+   "label": "Alternative · lost response or stale playlist",
+   "to": 882
+  },
+  {
+   "from": 886,
+   "label": "Alternative · screen, Monitor and restart",
+   "to": 1028
   }
  ],
  "messages": [
   {
    "from": "client",
    "to": "service",
-   "y": 210,
+   "y": 226,
    "label": "get_status · list_media · list_playlists",
    "variant": "emphasis"
   },
   {
    "from": "service",
    "to": "client",
-   "y": 254,
+   "y": 270,
    "label": "status {nextRequestId} · catalog page (names are untrusted data)",
    "variant": "return",
    "note": "reads never probe the display or refresh evidence timestamps"
@@ -112,14 +117,14 @@
   {
    "from": "client",
    "to": "service",
-   "y": 312,
+   "y": 344,
    "label": "show_media {rendition_id, request_id} or play_playlist {playlist_id, revision, request_id}",
    "variant": "emphasis"
   },
   {
    "from": "service",
    "to": "library",
-   "y": 356,
+   "y": 388,
    "label": "resolve stored rendition · check playlist revision",
    "variant": "default",
    "note": "matching identity joins; different payload conflicts"
@@ -127,56 +132,49 @@
   {
    "from": "library",
    "to": "service",
-   "y": 400,
-   "label": "rendition + bounded policy (or revision-conflict)",
+   "y": 432,
+   "label": "rendition + bounded policy",
    "variant": "return"
   },
   {
    "from": "service",
    "to": "player",
-   "y": 444,
+   "y": 476,
    "label": "showMedia / start(playlistId, revision)",
    "variant": "emphasis"
   },
   {
-   "from": "player",
-   "to": "service",
-   "y": 488,
-   "label": "context admitted (session, rendition)",
-   "variant": "return"
-  },
-  {
    "from": "service",
    "to": "client",
-   "y": 532,
+   "y": 520,
    "label": "receipt: admitted; upload may still be loading",
    "variant": "return"
   },
   {
    "from": "player",
    "to": "adapter",
-   "y": 590,
+   "y": 594,
    "label": "upload rendition frames (generation g)",
    "variant": "emphasis"
   },
   {
    "from": "adapter",
    "to": "device",
-   "y": 634,
+   "y": 638,
    "label": "serialized upload · control",
    "variant": "emphasis"
   },
   {
    "from": "device",
    "to": "adapter",
-   "y": 678,
+   "y": 682,
    "label": "transport ack (not visible proof)",
    "variant": "return"
   },
   {
    "from": "player",
    "to": "adapter",
-   "y": 722,
+   "y": 726,
    "label": "dwell elapsed → next item (retire older work)",
    "variant": "dashed",
    "note": "client disconnect does not cancel admitted playback"
@@ -184,28 +182,35 @@
   {
    "from": "client",
    "to": "service",
-   "y": 780,
-   "label": "lost response → get_status, reconcile (no new identity)",
+   "y": 800,
+   "label": "lost response → get_status and reconcile (same identity)",
    "variant": "dashed"
   },
   {
-   "from": "client",
+   "from": "library",
    "to": "service",
-   "y": 824,
-   "label": "set_screen off → playback pauses",
-   "variant": "security"
+   "y": 844,
+   "label": "stale playlist revision → revision-conflict; current playback kept",
+   "variant": "return"
   },
   {
    "from": "client",
    "to": "service",
-   "y": 868,
-   "label": "set_screen on → nothing resumes",
+   "y": 918,
+   "label": "set_screen off → pause; set_screen on → nothing resumes",
+   "variant": "security"
+  },
+  {
+   "from": "service",
+   "to": "player",
+   "y": 962,
+   "label": "Monitor selected → media pauses; the dashboard uses the same Player",
    "variant": "security"
   },
   {
    "from": "player",
    "to": "library",
-   "y": 912,
+   "y": 1006,
    "label": "restart → restore paused context, no device write",
    "variant": "dashed"
   }
@@ -213,10 +218,11 @@
  "cards": [
   {
    "dot": "cyan",
-   "title": "One owner",
+   "title": "One writer",
    "items": [
-    "Browser, MCP and native controller v1 share one ledger and writer",
-    "Playback tools never import or edit media or pick raw device targets"
+    "Browser, MCP and native controller v1 share one ledger",
+    "The Player orders sessions; only the device adapter writes",
+    "Monitor and Media share that Player, so there is never a second writer"
    ]
   },
   {
@@ -224,8 +230,7 @@
    "title": "Receipts and evidence",
    "items": [
     "A receipt acknowledges admission; upload can still be loading",
-    "Reconcile a lost response with status, not a new write identity",
-    "Native snapshots retain upload outcomes across cancellation"
+    "Reconcile a lost response with status, not a new identity"
    ]
   },
   {
@@ -234,7 +239,7 @@
    "items": [
     "Screen off pauses; screen on does not resume",
     "Paused context and referenced renditions survive restart",
-    "Original media and referenced renditions stay intact"
+    "Leaving Monitor keeps media paused until Resume"
    ]
   }
  ]

@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   972
+   1228
   ]
  },
  "participants": [
@@ -15,25 +15,25 @@
    "id": "operator",
    "type": "external",
    "label": "Operator",
-   "sublabel": "explicit authorization"
+   "sublabel": "authorizes each run"
   },
   {
    "id": "tooling",
    "type": "security",
    "label": "Migration tooling",
-   "sublabel": "supervised Node children"
+   "sublabel": "supervised calls"
   },
   {
    "id": "pixoo",
    "type": "backend",
-   "label": "Pixoo embedded owner",
-   "sublabel": "session-source facade"
+   "label": "Embedded owner",
+   "sublabel": "Pixoo backend"
   },
   {
    "id": "hub",
    "type": "backend",
-   "label": "Standalone hub owner",
-   "sublabel": "same core, new host"
+   "label": "Standalone hub",
+   "sublabel": "new owner · fenced"
   },
   {
    "id": "producers",
@@ -45,136 +45,168 @@
    "id": "consumers",
    "type": "frontend",
    "label": "Consumers",
-   "sublabel": "Pixoo and Nanoleaf"
+   "sublabel": "Pixoo · Nanoleaf"
   }
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Quiesce",
-   "to": 320
+   "from": 194,
+   "label": "1 · Revoke and quiesce",
+   "to": 396
   },
   {
-   "from": 324,
-   "label": "Export, import, validate",
-   "to": 554
+   "from": 400,
+   "label": "2 · Import behind a fence",
+   "to": 514
   },
   {
-   "from": 558,
-   "label": "Switch and resync",
-   "to": 788
+   "from": 518,
+   "label": "3 · Stage routes",
+   "to": 632
   },
   {
-   "from": 792,
-   "label": "Rollback (only after quiescing the new owner)",
-   "to": 890
+   "from": 636,
+   "label": "4 · Activate",
+   "to": 794
+  },
+  {
+   "from": 798,
+   "label": "Alternative · a step fails: stop, nothing continues",
+   "to": 956
+  },
+  {
+   "from": 960,
+   "label": "Alternative · operator rollback after accepted writes",
+   "to": 1146
   }
  ],
  "messages": [
   {
    "from": "operator",
    "to": "tooling",
-   "y": 210,
+   "y": 226,
    "label": "authorize migration (named owner)",
    "variant": "emphasis"
   },
   {
    "from": "tooling",
    "to": "producers",
-   "y": 254,
+   "y": 270,
    "label": "remove old setup; verify access revoked",
    "variant": "security"
   },
   {
    "from": "tooling",
    "to": "pixoo",
-   "y": 298,
-   "label": "quiesce old owner; preserve state",
+   "y": 314,
+   "label": "quiesce and stop: drain, export identities + revisions",
    "variant": "security"
-  },
-  {
-   "from": "tooling",
-   "to": "pixoo",
-   "y": 356,
-   "label": "versioned export: source/session/notice identity + revisions",
-   "variant": "emphasis"
   },
   {
    "from": "pixoo",
    "to": "tooling",
-   "y": 400,
-   "label": "private export; verified graceful exit",
+   "y": 358,
+   "label": "validated export; graceful exit verified",
    "variant": "return"
   },
   {
    "from": "tooling",
    "to": "hub",
-   "y": 444,
-   "label": "single-use import into fenced empty store",
-   "variant": "emphasis"
+   "y": 432,
+   "label": "start staged: single-use import into an empty store",
+   "variant": "emphasis",
+   "note": "fence persisted first; reads allowed, ingestion and acknowledgment rejected"
   },
   {
    "from": "hub",
    "to": "tooling",
-   "y": 488,
-   "label": "validated: identities, revisions, notices unchanged",
+   "y": 476,
+   "label": "imported: identities, revisions, notices unchanged",
    "variant": "return"
   },
   {
    "from": "tooling",
-   "to": "pixoo",
-   "y": 532,
-   "label": "keep old reducer inactive; facade → remote owner",
-   "variant": "security",
-   "note": "remote mode never starts a second local reducer"
-  },
-  {
-   "from": "tooling",
    "to": "producers",
-   "y": 590,
-   "label": "fresh setup receipt; stage disabled route",
+   "y": 550,
+   "label": "point setup at the new owner; emission disabled",
    "variant": "emphasis"
   },
   {
    "from": "tooling",
    "to": "consumers",
-   "y": 634,
-   "label": "Pixoo route; Nanoleaf preflight / select",
+   "y": 594,
+   "label": "Pixoo restarts as remote facade · Nanoleaf preflight and select",
+   "variant": "emphasis",
+   "note": "remote mode never starts a second local reducer"
+  },
+  {
+   "from": "tooling",
+   "to": "hub",
+   "y": 668,
+   "label": "activate: recheck routes, credentials, consumer snapshots",
    "variant": "emphasis"
   },
   {
    "from": "consumers",
    "to": "hub",
-   "y": 678,
-   "label": "authoritative snapshot / resync",
+   "y": 712,
+   "label": "read authoritative snapshot (no replayed effects)",
    "variant": "default"
   },
   {
    "from": "hub",
-   "to": "consumers",
-   "y": 722,
-   "label": "snapshot (no replayed effects)",
+   "to": "tooling",
+   "y": 756,
+   "label": "producers enabled; fence cleared; admission open",
    "variant": "return"
   },
   {
-   "from": "producers",
-   "to": "hub",
-   "y": 766,
-   "label": "enable after readiness; open admission",
-   "variant": "default"
+   "from": "hub",
+   "to": "tooling",
+   "y": 830,
+   "label": "activation fails → attempt consumed; admission stays fenced",
+   "variant": "return"
   },
   {
    "from": "tooling",
-   "to": "hub",
-   "y": 824,
-   "label": "revoke setup; quiesce new owner",
+   "to": "operator",
+   "y": 874,
+   "label": "report and stop; the old owner is not resumed automatically",
+   "variant": "return"
+  },
+  {
+   "from": "operator",
+   "to": "tooling",
+   "y": 918,
+   "label": "recover explicitly: export staged state → another empty store",
+   "variant": "dashed"
+  },
+  {
+   "from": "operator",
+   "to": "tooling",
+   "y": 992,
+   "label": "request rollback (explicit, never automatic)",
+   "variant": "dashed"
+  },
+  {
+   "from": "tooling",
+   "to": "producers",
+   "y": 1036,
+   "label": "revoke current setup while its owner can confirm",
    "variant": "dashed"
   },
   {
    "from": "tooling",
    "to": "hub",
-   "y": 868,
-   "label": "latest export → fresh store; recheck routes",
+   "y": 1080,
+   "label": "stop new owner; export its latest state",
+   "variant": "dashed"
+  },
+  {
+   "from": "tooling",
+   "to": "hub",
+   "y": 1124,
+   "label": "import into another fresh host store; recheck consumers before writes reopen",
    "variant": "dashed"
   }
  ],
@@ -192,16 +224,16 @@
    "title": "What moves",
    "items": [
     "Identities, session/notice state, revisions and producer configuration",
-    "Pixoo’s facade switches renderer, feed, label and acknowledgment operations to the selected owner"
+    "Pixoo’s facade reads the feed and sends labels and acknowledgments to the selected owner"
    ]
   },
   {
    "dot": "amber",
-   "title": "Owned elsewhere",
+   "title": "Recovery is explicit",
    "items": [
-    "Hub #8 source adds reversible setup and Nanoleaf cutover",
-    "Controller databases stay private; Windows/WSL never share a mounted SQLite file",
-    "Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate"
+    "A failed step leaves admission fenced and waits for the operator",
+    "Rollback targets a fresh store; embedded ownership is never restored into Pixoo’s old store",
+    "Controller databases stay private throughout"
    ]
   }
  ]

@@ -2,12 +2,12 @@
  "schema_version": 1,
  "diagram_type": "sequence",
  "meta": {
-  "title": "Desk presets, partial results and manual handoff",
+  "title": "Desk presets, partial results and manual handoff (planned)",
   "quality_profile": "showcase",
   "column_fit": "spread",
   "viewBox": [
    1070,
-   870
+   918
   ]
  },
  "participants": [
@@ -21,13 +21,13 @@
    "id": "dispatcher",
    "type": "backend",
    "label": "Windows dispatcher",
-   "sublabel": "binding + feedback"
+   "sublabel": "planned · feedback"
   },
   {
    "id": "hub",
    "type": "security",
    "label": "Hub preset service",
-   "sublabel": "authoritative selection"
+   "sublabel": "planned · owns selection"
   },
   {
    "id": "nanoleaf",
@@ -44,75 +44,75 @@
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Fresh press, one transition",
-   "to": 540
+   "from": 194,
+   "label": "1 · Fresh press, one transition",
+   "to": 572
   },
   {
-   "from": 544,
-   "label": "Manual change stays until the next explicit preset",
-   "to": 686
+   "from": 576,
+   "label": "2 · Manual change stays until the next explicit preset",
+   "to": 734
   },
   {
-   "from": 690,
-   "label": "No replay",
-   "to": 788
+   "from": 738,
+   "label": "Alternative · startup, reconnect or hub unavailable",
+   "to": 836
   }
  ],
  "messages": [
   {
    "from": "user",
    "to": "dispatcher",
-   "y": 210,
+   "y": 226,
    "label": "fresh configured preset press",
    "variant": "emphasis"
   },
   {
    "from": "dispatcher",
    "to": "hub",
-   "y": 254,
+   "y": 270,
    "label": "request next preset (Work → Free → Quiet → Work) with known revision",
    "variant": "emphasis"
   },
   {
    "from": "hub",
    "to": "nanoleaf",
-   "y": 298,
+   "y": 314,
    "label": "supported native command + requestId/revision/generation",
    "variant": "security"
   },
   {
    "from": "hub",
    "to": "pixoo",
-   "y": 342,
+   "y": 358,
    "label": "supported native command + request_id",
    "variant": "security"
   },
   {
    "from": "nanoleaf",
    "to": "hub",
-   "y": 386,
+   "y": 402,
    "label": "queued / sent",
    "variant": "return"
   },
   {
    "from": "pixoo",
    "to": "hub",
-   "y": 430,
+   "y": 446,
    "label": "failed: offline (independent queue)",
    "variant": "return"
   },
   {
    "from": "hub",
    "to": "dispatcher",
-   "y": 474,
+   "y": 490,
    "label": "selected preset + per-device results (partial)",
    "variant": "return"
   },
   {
    "from": "dispatcher",
    "to": "user",
-   "y": 518,
+   "y": 534,
    "label": "visible feedback: requested, sent, failed, uncertain",
    "variant": "return",
    "note": "transport outcomes are not optical proof"
@@ -120,35 +120,35 @@
   {
    "from": "user",
    "to": "nanoleaf",
-   "y": 576,
+   "y": 608,
    "label": "manual scene change in the vendor app",
    "variant": "dashed"
   },
   {
    "from": "user",
    "to": "dispatcher",
-   "y": 620,
+   "y": 652,
    "label": "next fresh configured preset press",
    "variant": "emphasis"
   },
   {
    "from": "hub",
    "to": "nanoleaf",
-   "y": 664,
+   "y": 696,
    "label": "supported ownership handoff, then preset action",
    "variant": "security"
   },
   {
    "from": "dispatcher",
    "to": "hub",
-   "y": 722,
+   "y": 770,
    "label": "startup · reconnect · profile selection → no presses replayed, no device commands",
    "variant": "dashed"
   },
   {
    "from": "hub",
    "to": "dispatcher",
-   "y": 766,
+   "y": 814,
    "label": "hub unavailable → reported; local mouse controls keep working",
    "variant": "return"
   }

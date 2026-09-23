@@ -2,12 +2,12 @@
  "schema_version": 1,
  "diagram_type": "sequence",
  "meta": {
-  "title": "Independent Codex mouse controls",
+  "title": "Independent Codex mouse controls (planned mapper)",
   "quality_profile": "showcase",
   "column_fit": "spread",
   "viewBox": [
    1070,
-   650
+   698
   ]
  },
  "participants": [
@@ -21,13 +21,13 @@
    "id": "dispatcher",
    "type": "backend",
    "label": "Windows dispatcher",
-   "sublabel": "local, no hub"
+   "sublabel": "planned · no hub"
   },
   {
    "id": "profile",
    "type": "database",
    "label": "Control profile",
-   "sublabel": "bindings + app scope"
+   "sublabel": "planned · bindings + scope"
   },
   {
    "id": "app",
@@ -38,78 +38,78 @@
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Profile selection",
-   "to": 276
+   "from": 194,
+   "label": "1 · Select a profile",
+   "to": 308
   },
   {
-   "from": 280,
-   "label": "One Codex action",
-   "to": 422
+   "from": 312,
+   "label": "2 · One Codex action",
+   "to": 514
   },
   {
-   "from": 426,
-   "label": "Boundaries",
-   "to": 568
+   "from": 518,
+   "label": "Alternative · outside Codex or not a fresh press",
+   "to": 616
   }
  ],
  "messages": [
   {
    "from": "user",
    "to": "dispatcher",
-   "y": 210,
+   "y": 226,
    "label": "select control profile",
    "variant": "emphasis"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 254,
+   "y": 270,
    "label": "load mappings; no input or device commands",
    "variant": "default"
   },
   {
    "from": "user",
    "to": "dispatcher",
-   "y": 312,
+   "y": 344,
    "label": "fresh mapped navigation press",
    "variant": "emphasis"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 356,
+   "y": 388,
    "label": "resolve control, app scope and action",
    "variant": "default"
   },
   {
    "from": "dispatcher",
    "to": "app",
-   "y": 400,
+   "y": 432,
    "label": "next attention task · command menu · previous task · next task",
    "variant": "emphasis",
    "note": "exactly one action per deliberate press"
   },
   {
    "from": "dispatcher",
+   "to": "user",
+   "y": 476,
+   "label": "report dispatch separately from app success",
+   "variant": "return"
+  },
+  {
+   "from": "dispatcher",
    "to": "app",
-   "y": 458,
+   "y": 550,
    "label": "outside Codex → ordinary mouse behavior",
    "variant": "dashed"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 502,
+   "y": 594,
    "label": "held / repeated / stale input → no duplicate or replay",
    "variant": "dashed"
-  },
-  {
-   "from": "dispatcher",
-   "to": "user",
-   "y": 546,
-   "label": "report dispatch separately from app success",
-   "variant": "return"
   }
  ],
  "cards": [
@@ -131,11 +131,11 @@
   },
   {
    "dot": "amber",
-   "title": "Brief trial passed",
+   "title": "What exists today",
    "items": [
-    "N30 actions, outside-app behavior and stopping passed (H64)",
+    "Only a brief AutoHotkey trial (H64); no profile store yet",
     "Other devices share these keys inside Codex; no per-device filtering",
-    "H65/H66 still own implementation and installation"
+    "H65/H66 own the mapper and its installation"
    ]
   }
  ]

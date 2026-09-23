@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Installed Nanoleaf Linux runtime",
+  "title": "Nanoleaf Linux runtime (installed)",
   "quality_profile": "showcase",
   "views": [
    {
@@ -14,9 +14,11 @@
      "hooksCli",
      "wallMap",
      "desktopJson",
-     "linuxState"
+     "linuxState",
+     "hub",
+     "linesWorker"
     ],
-    "note": "Linux processes share Linux state while mounted Desktop metadata remains read-only."
+    "note": "One selected input source feeds Linux state; mounted Desktop metadata is only read."
    },
    {
     "id": "mcp-command",
@@ -26,10 +28,22 @@
      "mcpHost",
      "controller",
      "linuxState",
-     "worker",
-     "lights"
+     "linesWorker",
+     "lines"
     ],
-    "note": "MCP uses direct numeric-loopback HTTP; the on-demand worker keeps the device write."
+    "note": "MCP uses numeric-loopback HTTP; the device worker keeps the write."
+   },
+   {
+    "id": "writers",
+    "label": "Writers",
+    "focus": [
+     "panelsWorker",
+     "linesWorker",
+     "panels",
+     "lines",
+     "linuxState"
+    ],
+    "note": "One worker instance and lock per physical device."
    }
   ]
  },
@@ -40,10 +54,10 @@
    40
   ],
   "cols": 5,
-  "cellW": 165,
+  "cellW": 150,
   "cellH": 64,
-  "gapX": 35,
-  "gapY": 48
+  "gapX": 90,
+  "gapY": 70
  },
  "components": [
   {
@@ -54,7 +68,7 @@
    "row": 0,
    "col": 0,
    "size": [
-    165,
+    150,
     64
    ]
   },
@@ -62,11 +76,11 @@
    "id": "desktop",
    "type": "external",
    "label": "Codex Desktop",
-   "sublabel": "Windows · tasks execute in WSL",
+   "sublabel": "Windows app · tasks in WSL",
    "row": 0,
    "col": 2,
    "size": [
-    165,
+    150,
     64
    ]
   },
@@ -78,109 +92,145 @@
    "row": 0,
    "col": 3,
    "size": [
-    165,
+    150,
     64
    ]
   },
   {
    "id": "wallMap",
    "type": "frontend",
-   "label": "Python wall map",
-   "sublabel": "127.0.0.1:8765",
-   "row": 1,
-   "col": 0,
-   "size": [
-    165,
-    64
-   ],
-   "tag": "installed"
-  },
-  {
-   "id": "desktopJson",
-   "type": "database",
-   "label": "Mounted Desktop JSON",
-   "sublabel": "project · title · unread · read-only",
+   "label": "Wall map service",
+   "sublabel": "user service · :8765",
    "row": 1,
    "col": 1,
    "size": [
-    165,
+    150,
     64
    ]
   },
   {
+   "id": "desktopJson",
+   "type": "database",
+   "label": "Desktop metadata",
+   "sublabel": "Windows JSON · mounted",
+   "row": 0,
+   "col": 1,
+   "size": [
+    150,
+    64
+   ],
+   "tag": "read-only"
+  },
+  {
    "id": "hooksCli",
    "type": "backend",
-   "label": "Linux hooks and CLI",
-   "sublabel": "Python · fail-open hooks",
+   "label": "Hooks and CLI",
+   "sublabel": "short-lived · legacy input",
    "row": 1,
    "col": 2,
    "size": [
-    165,
+    150,
     64
-   ],
-   "tag": "installed"
+   ]
   },
   {
    "id": "mcpHost",
    "type": "security",
-   "label": "Node MCP host",
-   "sublabel": "127.0.0.1:41230",
+   "label": "MCP host",
+   "sublabel": "user service · :41230",
    "row": 1,
    "col": 3,
    "size": [
-    165,
+    150,
     64
-   ],
-   "tag": "installed"
+   ]
   },
   {
    "id": "linuxState",
    "type": "database",
-   "label": "Linux SQLite",
-   "sublabel": "~/.local/share/codex-nanoleaf",
+   "label": "Nanoleaf SQLite",
+   "sublabel": "Linux data directory",
    "row": 2,
    "col": 2,
    "size": [
-    165,
+    150,
     64
    ],
-   "tag": "fresh state"
+   "tag": "private · ext4"
   },
   {
    "id": "controller",
    "type": "security",
-   "label": "Python controller",
-   "sublabel": "127.0.0.1:41231 · bearer",
+   "label": "Controller",
+   "sublabel": "user service · :41231",
    "row": 2,
    "col": 3,
    "size": [
-    165,
+    150,
+    64
+   ],
+   "tag": "bearer"
+  },
+  {
+   "id": "panelsWorker",
+   "type": "backend",
+   "label": "NL22 worker",
+   "sublabel": "own lock · on demand",
+   "row": 3,
+   "col": 2,
+   "size": [
+    150,
+    64
+   ],
+   "tag": "source · hardware check open"
+  },
+  {
+   "id": "linesWorker",
+   "type": "backend",
+   "label": "Lines worker",
+   "sublabel": "instance wall · on demand",
+   "row": 3,
+   "col": 3,
+   "size": [
+    150,
+    64
+   ],
+   "tag": "reads shared feed"
+  },
+  {
+   "id": "hub",
+   "type": "backend",
+   "label": "Shared monitor (hub)",
+   "sublabel": "separate WSL service · A2",
+   "row": 3,
+   "col": 4,
+   "size": [
+    150,
     64
    ],
    "tag": "installed"
   },
   {
-   "id": "worker",
-   "type": "backend",
-   "label": "On-demand worker",
-   "sublabel": "Python · sole light writer",
-   "row": 3,
+   "id": "panels",
+   "type": "external",
+   "label": "NL22 Light Panels",
+   "sublabel": "LAN device",
+   "row": 4,
    "col": 2,
    "size": [
-    165,
+    150,
     64
-   ],
-   "tag": "existing behavior"
+   ]
   },
   {
-   "id": "lights",
+   "id": "lines",
    "type": "external",
    "label": "Nanoleaf Lines",
-   "sublabel": "configured LAN device",
-   "row": 3,
-   "col": 4,
+   "sublabel": "LAN device",
+   "row": 4,
+   "col": 3,
    "size": [
-    165,
+    150,
     64
    ]
   }
@@ -188,49 +238,19 @@
  "boundaries": [
   {
    "kind": "region",
-   "label": "Ubuntu WSL · separate Linux processes and Linux-owned state",
+   "label": "Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)",
    "wraps": [
     "wallMap",
     "hooksCli",
     "mcpHost",
     "linuxState",
     "controller",
-    "worker"
+    "panelsWorker",
+    "linesWorker"
    ]
   }
  ],
  "connections": [
-  {
-   "id": "desktop-hooks",
-   "from": "desktop",
-   "to": "hooksCli",
-   "label": "WSL task lifecycle",
-   "variant": "emphasis",
-   "fromSide": "bottom",
-   "toSide": "top",
-   "labelDy": 24
-  },
-  {
-   "id": "desktop-json",
-   "from": "desktop",
-   "to": "desktopJson",
-   "label": "configured files",
-   "fromSide": "left",
-   "toSide": "top"
-  },
-  {
-   "id": "json-map",
-   "from": "desktopJson",
-   "to": "wallMap",
-   "label": "metadata read",
-   "variant": "security",
-   "fromSide": "left",
-   "toSide": "right",
-   "labelAt": [
-    223,
-    230
-   ]
-  },
   {
    "id": "browser-map",
    "from": "browser",
@@ -238,128 +258,180 @@
    "label": "HTTP :8765",
    "variant": "emphasis",
    "fromSide": "bottom",
+   "toSide": "left",
+   "labelDy": 24
+  },
+  {
+   "id": "desktop-json",
+   "from": "desktop",
+   "to": "desktopJson",
+   "label": "own state files",
+   "fromSide": "left",
+   "toSide": "right",
+   "labelDy": 26
+  },
+  {
+   "id": "json-map",
+   "from": "desktopJson",
+   "to": "wallMap",
+   "label": "metadata read",
+   "variant": "dashed",
+   "fromSide": "bottom",
    "toSide": "top",
+   "labelDx": 44,
+   "labelDy": 24
+  },
+  {
+   "id": "desktop-hooks",
+   "from": "desktop",
+   "to": "hooksCli",
+   "label": "task hooks",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": -30,
    "labelDy": 24
   },
   {
    "id": "cli-hooks",
    "from": "cliClient",
    "to": "hooksCli",
-   "label": "lifecycle · commands",
+   "label": "hooks · CLI",
    "variant": "emphasis",
    "fromSide": "left",
-   "toSide": "top",
-   "labelDy": 28
+   "toSide": "right",
+   "labelDy": -18
   },
   {
    "id": "cli-mcp",
    "from": "cliClient",
    "to": "mcpHost",
-   "label": "MCP :41230",
+   "label": "MCP",
    "variant": "emphasis",
    "fromSide": "bottom",
    "toSide": "top",
+   "labelDx": 24,
    "labelDy": 24
   },
   {
    "id": "hooks-state",
    "from": "hooksCli",
    "to": "linuxState",
-   "label": "task state",
+   "label": "task events",
    "fromSide": "bottom",
    "toSide": "top",
+   "labelDx": 40,
    "labelDy": 24
   },
   {
    "id": "map-state",
    "from": "wallMap",
    "to": "linuxState",
-   "label": "task preferences",
+   "label": "preferences",
    "fromSide": "bottom",
    "toSide": "left",
-   "labelDy": 30
+   "labelDy": 24
   },
   {
    "id": "mcp-controller",
    "from": "mcpHost",
    "to": "controller",
-   "label": "HTTP 127.0.0.1:41231",
+   "label": "loopback HTTP",
    "variant": "security",
    "fromSide": "bottom",
    "toSide": "top",
+   "labelDx": 40,
    "labelDy": 24
   },
   {
    "id": "controller-state",
    "from": "controller",
    "to": "linuxState",
-   "label": "command receipts",
+   "label": "journal",
    "fromSide": "left",
    "toSide": "right",
-   "labelAt": [
-    623,
-    342
-   ]
+   "labelDy": -14
   },
   {
    "id": "controller-worker",
    "from": "controller",
-   "to": "worker",
+   "to": "linesWorker",
    "label": "start on demand",
    "variant": "emphasis",
    "fromSide": "bottom",
-   "toSide": "right",
+   "toSide": "top",
+   "labelDx": 50,
    "labelDy": 24
   },
   {
-   "id": "state-worker",
+   "id": "state-panels",
    "from": "linuxState",
-   "to": "worker",
-   "label": "shared state · lock",
+   "to": "panelsWorker",
+   "label": "state · per-device lock",
    "fromSide": "bottom",
    "toSide": "top",
+   "labelDx": 60,
    "labelDy": 24
   },
   {
-   "id": "worker-lights",
-   "from": "worker",
-   "to": "lights",
-   "label": "one writer",
+   "id": "hub-feed",
+   "from": "hub",
+   "to": "linesWorker",
+   "label": "shared input",
+   "variant": "dashed",
+   "fromSide": "left",
+   "toSide": "right",
+   "labelDy": 26
+  },
+  {
+   "id": "panels-write",
+   "from": "panelsWorker",
+   "to": "panels",
+   "label": "sole writer",
    "variant": "emphasis",
-   "fromSide": "right",
-   "toSide": "left",
-   "labelAt": [
-    722,
-    454
-   ]
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 40,
+   "labelDy": 24
+  },
+  {
+   "id": "lines-write",
+   "from": "linesWorker",
+   "to": "lines",
+   "label": "sole writer",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 40,
+   "labelDy": 24
   }
  ],
  "cards": [
   {
    "dot": "violet",
-   "title": "Linux process boundary",
+   "title": "Processes and state",
    "items": [
-    "Hooks, CLI, wall map and controller coordinate through Linux SQLite",
-    "Node MCP calls the controller directly over numeric-loopback HTTP",
-    "The worker remains the sole light writer; setup and the map may read device geometry"
+    "Three user services: wall map, controller and MCP host",
+    "Workers start on demand, one instance and lock per device",
+    "Hooks, CLI, map and controller share the private Linux SQLite"
    ]
   },
   {
    "dot": "cyan",
-   "title": "Windows remains a client",
+   "title": "Input and clients",
    "items": [
-    "Codex Desktop tasks execute in WSL",
-    "The Windows browser opens the wall map",
-    "Configured project, title and unread JSON is mounted read-only"
+    "One input source per installation: legacy hooks or shared input",
+    "The installed runtime selected shared input from the hub (Nanoleaf #30)",
+    "Windows Desktop and browser stay clients; mounted JSON is only read"
    ]
   },
   {
    "dot": "amber",
    "title": "Evidence boundary",
    "items": [
-    "Fresh install; no data migration or rollback tooling",
-    "No combined daemon, new hook API, shared monitoring or source move",
-    "PR #57 delivered the source; installed acceptance #55 closed on September 22, 2026"
+    "Fresh install, no data migration (Nanoleaf #55)",
+    "NL22 support is source; the joint hardware check is Nanoleaf #46",
+    "No runtime SQLite is shared through /mnt/c"
    ]
   }
  ]

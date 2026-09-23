@@ -1,4 +1,4 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 1148" role="img" lang="en" aria-labelledby="seq-nanoleaf-command-archify-diagram-title seq-nanoleaf-command-archify-diagram-description">
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 1242" role="img" lang="en" aria-labelledby="seq-nanoleaf-command-archify-diagram-title seq-nanoleaf-command-archify-diagram-description">
         <title id="seq-nanoleaf-command-archify-diagram-title">Nanoleaf command admission, replay and cancellation</title>
         <desc id="seq-nanoleaf-command-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
@@ -24,195 +24,201 @@
         <rect width="100%" height="100%" fill="url(#seq-nanoleaf-command-grid)" />
 
         <!-- Time Segments -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-0" x="48" y="178" width="974" height="186" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-0" x="48" y="194" width="974" height="202" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-1" x="48" y="368" width="974" height="362" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-1" x="48" y="400" width="974" height="202" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-2" x="48" y="734" width="974" height="186" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-2" x="48" y="606" width="974" height="202" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-3" x="48" y="924" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-3" x="48" y="812" width="974" height="202" rx="10" class="c-lane" stroke-width="1"/>
+
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-nanoleaf-command-4" x="48" y="1018" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 144.5 142 L 144.5 1083" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 345.25 142 L 345.25 1083" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 546 142 L 546 1083" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 746.75 142 L 746.75 1083" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 947.5 142 L 947.5 1083" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 144.5 142 L 144.5 1177" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 345.25 142 L 345.25 1177" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 546 142 L 546 1177" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 746.75 142 L 746.75 1177" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 947.5 142 L 947.5 1177" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
 
         <!-- Messages -->
         <g data-edge-from="codex" data-edge-to="host" data-edge-label="nanoleaf_status" data-edge-key="0">
-          <path data-composition-edge-from="codex" data-composition-edge-to="host" data-composition-points="151.5,210;338.25,210" d="M 151.5 210 L 338.25 210" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="codex" data-composition-edge-to="host" data-composition-points="151.5,226;338.25,226" d="M 151.5 226 L 338.25 226" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="199.875" y="190" width="90" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="200" class="t-backend" font-size="9" text-anchor="middle">nanoleaf_status</text>
+          <rect x="199.875" y="206" width="90" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="216" class="t-backend" font-size="9" text-anchor="middle">nanoleaf_status</text>
         </g>
         </g>
 
         <g data-edge-from="host" data-edge-to="api" data-edge-label="GET snapshot (bearer, exact Host)" data-edge-key="1">
-          <path data-composition-edge-from="host" data-composition-edge-to="api" data-composition-points="352.25,254;539,254" d="M 352.25 254 L 539 254" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
+          <path data-composition-edge-from="host" data-composition-edge-to="api" data-composition-points="352.25,270;539,270" d="M 352.25 270 L 539 270" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="353.825" y="234" width="183.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="244" class="t-security" font-size="9" text-anchor="middle">GET snapshot (bearer, exact Host)</text>
+          <rect x="353.825" y="250" width="183.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="260" class="t-security" font-size="9" text-anchor="middle">GET snapshot (bearer, exact Host)</text>
         </g>
         </g>
 
         <g data-edge-from="api" data-edge-to="host" data-edge-label="snapshot: nextRequestId · configurationRevision · generation" data-edge-key="2">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,298;352.25,298" d="M 539 298 L 352.25 298" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,314;352.25,314" d="M 539 314 L 352.25 314" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="283.625" y="278" width="324" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="288" class="t-muted" font-size="9" text-anchor="middle">snapshot: nextRequestId · configurationRevision · generation</text>
+          <rect x="283.625" y="294" width="324" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="304" class="t-muted" font-size="9" text-anchor="middle">snapshot: nextRequestId · configurationRevision · generation</text>
         </g>
         </g>
 
         <g data-edge-from="host" data-edge-to="codex" data-edge-label="status (desired · pending · unknown observation)" data-edge-key="3">
-          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,342;151.5,342" d="M 338.25 342 L 151.5 342" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,358;151.5,358" d="M 338.25 358 L 151.5 358" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="114.07499999999999" y="322" width="261.6" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="332" class="t-muted" font-size="9" text-anchor="middle">status (desired · pending · unknown observation)</text>
+          <rect x="114.07499999999999" y="338" width="261.6" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="348" class="t-muted" font-size="9" text-anchor="middle">status (desired · pending · unknown observation)</text>
         </g>
         </g>
 
         <g data-edge-from="codex" data-edge-to="host" data-edge-label="nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}" data-edge-key="4">
-          <path data-composition-edge-from="codex" data-composition-edge-to="host" data-composition-points="151.5,400;338.25,400" d="M 151.5 400 L 338.25 400" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="codex" data-composition-edge-to="host" data-composition-points="151.5,432;338.25,432" d="M 151.5 432 L 338.25 432" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="15.275000000000006" y="380" width="459.2" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="390" class="t-backend" font-size="9" text-anchor="middle">nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}</text>
+          <rect x="15.275000000000006" y="412" width="459.2" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="422" class="t-backend" font-size="9" text-anchor="middle">nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}</text>
         </g>
         </g>
 
         <g data-edge-from="host" data-edge-to="api" data-edge-label="POST /controller/v1/commands" data-edge-key="5">
-          <path data-composition-edge-from="host" data-composition-edge-to="api" data-composition-points="352.25,444;539,444" d="M 352.25 444 L 539 444" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
+          <path data-composition-edge-from="host" data-composition-edge-to="api" data-composition-points="352.25,476;539,476" d="M 352.25 476 L 539 476" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
         <g data-detail="context">
-          <rect x="366.825" y="424" width="157.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="434" class="t-security" font-size="9" text-anchor="middle">POST /controller/v1/commands</text>
+          <rect x="366.825" y="456" width="157.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="466" class="t-security" font-size="9" text-anchor="middle">POST /controller/v1/commands</text>
         </g>
-        <text data-detail="fine" x="364.25" y="462" class="t-dim" font-size="7">authentication and scope are checked before replay lookup</text>
+        <text data-detail="fine" x="364.25" y="494" class="t-dim" font-size="7">authentication and scope are checked before replay lookup</text>
         </g>
 
-        <g data-edge-from="api" data-edge-to="worker" data-edge-label="queue mode work (identity reserved atomically; revision and generation validated)" data-edge-key="6">
-          <path data-composition-edge-from="api" data-composition-edge-to="worker" data-composition-points="553,488;739.75,488" d="M 553 488 L 739.75 488" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+        <g data-edge-from="api" data-edge-to="host" data-edge-label="202 receipt: queued" data-edge-key="6">
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,520;352.25,520" d="M 539 520 L 352.25 520" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="429.775" y="468" width="433.2" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="478" class="t-backend" font-size="9" text-anchor="middle">queue mode work (identity reserved atomically; revision and generation validated)</text>
-        </g>
-        </g>
-
-        <g data-edge-from="api" data-edge-to="host" data-edge-label="202 receipt: queued" data-edge-key="7">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,532;352.25,532" d="M 539 532 L 352.25 532" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
-        <g data-detail="context">
-          <rect x="390.225" y="512" width="110.8" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="522" class="t-muted" font-size="9" text-anchor="middle">202 receipt: queued</text>
+          <rect x="390.225" y="500" width="110.8" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="510" class="t-muted" font-size="9" text-anchor="middle">202 receipt: queued</text>
         </g>
         </g>
 
-        <g data-edge-from="host" data-edge-to="codex" data-edge-label="receipt (queued is not visible light)" data-edge-key="8">
-          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,576;151.5,576" d="M 338.25 576 L 151.5 576" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+        <g data-edge-from="host" data-edge-to="codex" data-edge-label="receipt (queued is not visible light)" data-edge-key="7">
+          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,564;151.5,564" d="M 338.25 564 L 151.5 564" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="142.675" y="556" width="204.4" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="566" class="t-muted" font-size="9" text-anchor="middle">receipt (queued is not visible light)</text>
+          <rect x="142.675" y="544" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="554" class="t-muted" font-size="9" text-anchor="middle">receipt (queued is not visible light)</text>
+        </g>
+        </g>
+
+        <g data-edge-from="api" data-edge-to="worker" data-edge-label="queued mode work (identity reserved; revision and generation validated)" data-edge-key="8">
+          <path data-composition-edge-from="api" data-composition-edge-to="worker" data-composition-points="553,638;739.75,638" d="M 553 638 L 739.75 638" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+        <g data-detail="context">
+          <rect x="455.775" y="618" width="381.2" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="628" class="t-backend" font-size="9" text-anchor="middle">queued mode work (identity reserved; revision and generation validated)</text>
         </g>
         </g>
 
         <g data-edge-from="worker" data-edge-to="device" data-edge-label="transmit after a second generation check" data-edge-key="9">
-          <path data-composition-edge-from="worker" data-composition-edge-to="device" data-composition-points="753.75,620;940.5,620" d="M 753.75 620 L 940.5 620" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="worker" data-composition-edge-to="device" data-composition-points="753.75,682;940.5,682" d="M 753.75 682 L 940.5 682" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="737.125" y="600" width="220" height="16" rx="3" class="c-mask"/>
-          <text x="847.125" y="610" class="t-backend" font-size="9" text-anchor="middle">transmit after a second generation check</text>
+          <rect x="737.125" y="662" width="220" height="16" rx="3" class="c-mask"/>
+          <text x="847.125" y="672" class="t-backend" font-size="9" text-anchor="middle">transmit after a second generation check</text>
         </g>
         </g>
 
         <g data-edge-from="device" data-edge-to="worker" data-edge-label="transport acknowledgment" data-edge-key="10">
-          <path data-composition-edge-from="device" data-composition-edge-to="worker" data-composition-points="940.5,664;753.75,664" d="M 940.5 664 L 753.75 664" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="device" data-composition-edge-to="worker" data-composition-points="940.5,726;753.75,726" d="M 940.5 726 L 753.75 726" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="778.725" y="644" width="136.8" height="16" rx="3" class="c-mask"/>
-          <text x="847.125" y="654" class="t-muted" font-size="9" text-anchor="middle">transport acknowledgment</text>
+          <rect x="778.725" y="706" width="136.8" height="16" rx="3" class="c-mask"/>
+          <text x="847.125" y="716" class="t-muted" font-size="9" text-anchor="middle">transport acknowledgment</text>
         </g>
         </g>
 
         <g data-edge-from="worker" data-edge-to="api" data-edge-label="sent (transport evidence only)" data-edge-key="11">
-          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,708;553,708" d="M 739.75 708 L 553 708" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
+          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,770;553,770" d="M 739.75 770 L 553 770" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="562.375" y="688" width="168" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="698" class="t-messagebus" font-size="9" text-anchor="middle">sent (transport evidence only)</text>
+          <rect x="562.375" y="750" width="168" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="760" class="t-messagebus" font-size="9" text-anchor="middle">sent (transport evidence only)</text>
         </g>
         </g>
 
         <g data-edge-from="api" data-edge-to="host" data-edge-label="exact duplicate → original receipt, no new write" data-edge-key="12">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,766;352.25,766" d="M 539 766 L 352.25 766" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,844;352.25,844" d="M 539 844 L 352.25 844" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="314.825" y="746" width="261.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="756" class="t-muted" font-size="9" text-anchor="middle">exact duplicate → original receipt, no new write</text>
+          <rect x="314.825" y="824" width="261.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="834" class="t-muted" font-size="9" text-anchor="middle">exact duplicate → original receipt, no new write</text>
         </g>
         </g>
 
         <g data-edge-from="api" data-edge-to="host" data-edge-label="changed payload → 409 request-conflict" data-edge-key="13">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,810;352.25,810" d="M 539 810 L 352.25 810" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,888;352.25,888" d="M 539 888 L 352.25 888" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="340.825" y="790" width="209.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="800" class="t-muted" font-size="9" text-anchor="middle">changed payload → 409 request-conflict</text>
+          <rect x="340.825" y="868" width="209.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="878" class="t-muted" font-size="9" text-anchor="middle">changed payload → 409 request-conflict</text>
         </g>
         </g>
 
         <g data-edge-from="api" data-edge-to="host" data-edge-label="expired identity → 410 request-expired" data-edge-key="14">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,854;352.25,854" d="M 539 854 L 352.25 854" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,932;352.25,932" d="M 539 932 L 352.25 932" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="340.825" y="834" width="209.6" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="844" class="t-muted" font-size="9" text-anchor="middle">expired identity → 410 request-expired</text>
+          <rect x="340.825" y="912" width="209.6" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="922" class="t-muted" font-size="9" text-anchor="middle">expired identity → 410 request-expired</text>
         </g>
         </g>
 
-        <g data-edge-from="api" data-edge-to="host" data-edge-label="stale revision/generation → 409 before any effect" data-edge-key="15">
-          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,898;352.25,898" d="M 539 898 L 352.25 898" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+        <g data-edge-from="api" data-edge-to="host" data-edge-label="stale revision or generation → 409 before any effect" data-edge-key="15">
+          <path data-composition-edge-from="api" data-composition-edge-to="host" data-composition-points="539,976;352.25,976" d="M 539 976 L 352.25 976" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="312.225" y="878" width="266.8" height="16" rx="3" class="c-mask"/>
-          <text x="445.625" y="888" class="t-muted" font-size="9" text-anchor="middle">stale revision/generation → 409 before any effect</text>
+          <rect x="304.42499999999995" y="956" width="282.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="445.625" y="966" class="t-muted" font-size="9" text-anchor="middle">stale revision or generation → 409 before any effect</text>
         </g>
         </g>
 
         <g data-edge-from="worker" data-edge-to="api" data-edge-label="superseded generation → cancelled, prior effects retained" data-edge-key="16">
-          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,956;553,956" d="M 739.75 956 L 553 956" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
+          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,1050;553,1050" d="M 739.75 1050 L 553 1050" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="492.17499999999995" y="936" width="308.40000000000003" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="946" class="t-messagebus" font-size="9" text-anchor="middle">superseded generation → cancelled, prior effects retained</text>
+          <rect x="492.17499999999995" y="1030" width="308.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="1040" class="t-messagebus" font-size="9" text-anchor="middle">superseded generation → cancelled, prior effects retained</text>
         </g>
         </g>
 
-        <g data-edge-from="worker" data-edge-to="api" data-edge-label="partial or uncertain → priorEffects possible; request held" data-edge-key="17">
-          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,1000;553,1000" d="M 739.75 1000 L 553 1000" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
+        <g data-edge-from="worker" data-edge-to="api" data-edge-label="partial or uncertain → possible effects; mode held" data-edge-key="17">
+          <path data-composition-edge-from="worker" data-composition-edge-to="api" data-composition-points="739.75,1094;553,1094" d="M 739.75 1094 L 553 1094" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="489.575" y="980" width="313.6" height="16" rx="3" class="c-mask"/>
-          <text x="646.375" y="990" class="t-messagebus" font-size="9" text-anchor="middle">partial or uncertain → priorEffects possible; request held</text>
+          <rect x="510.375" y="1074" width="272" height="16" rx="3" class="c-mask"/>
+          <text x="646.375" y="1084" class="t-messagebus" font-size="9" text-anchor="middle">partial or uncertain → possible effects; mode held</text>
         </g>
         </g>
 
         <g data-edge-from="host" data-edge-to="codex" data-edge-label="delivery timeout after dispatch → original requestId + possible effects" data-edge-key="18">
-          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,1044;151.5,1044" d="M 338.25 1044 L 151.5 1044" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+          <path data-composition-edge-from="host" data-composition-edge-to="codex" data-composition-points="338.25,1138;151.5,1138" d="M 338.25 1138 L 151.5 1138" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
         <g data-detail="context">
-          <rect x="54.275000000000006" y="1024" width="381.2" height="16" rx="3" class="c-mask"/>
-          <text x="244.875" y="1034" class="t-muted" font-size="9" text-anchor="middle">delivery timeout after dispatch → original requestId + possible effects</text>
+          <rect x="54.275000000000006" y="1118" width="381.2" height="16" rx="3" class="c-mask"/>
+          <text x="244.875" y="1128" class="t-muted" font-size="9" text-anchor="middle">delivery timeout after dispatch → original requestId + possible effects</text>
         </g>
-        <text data-detail="fine" x="163.5" y="1062" class="t-dim" font-size="7">no replacement identity and no automatic retry</text>
+        <text data-detail="fine" x="163.5" y="1156" class="t-dim" font-size="7">no replacement identity and no automatic retry</text>
         </g>
 
         <!-- Segment Labels -->
         <g data-graph-role="segment-label" data-segment-id="seq-nanoleaf-command-0">
-          <rect x="56" y="156" width="66" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="169" class="t-dim" font-size="9" font-weight="600">Read first</text>
+          <rect x="56" y="172" width="92" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="185" class="t-dim" font-size="9" font-weight="600">1 · Read status</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-nanoleaf-command-1">
-          <rect x="56" y="346" width="102.4" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="359" class="t-dim" font-size="9" font-weight="600">Admit one command</text>
+          <rect x="56" y="378" width="123.2" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="391" class="t-dim" font-size="9" font-weight="600">2 · Admit one command</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-nanoleaf-command-2">
-          <rect x="56" y="712" width="144" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="725" class="t-dim" font-size="9" font-weight="600">Alternatives at admission</text>
+          <rect x="56" y="584" width="128.4" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="597" class="t-dim" font-size="9" font-weight="600">3 · Queue and transmit</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-nanoleaf-command-3">
-          <rect x="56" y="902" width="159.6" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="915" class="t-dim" font-size="9" font-weight="600">Alternatives after admission</text>
+          <rect x="56" y="790" width="253.20000000000002" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="803" class="t-dim" font-size="9" font-weight="600">Alternative · rejected at admission, no effect</text>
+        </g>
+        <g data-graph-role="segment-label" data-segment-id="seq-nanoleaf-command-4">
+          <rect x="56" y="996" width="164.8" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="1009" class="t-dim" font-size="9" font-weight="600">Alternative · after admission</text>
         </g>
 
         <!-- Participants -->
@@ -228,39 +234,39 @@
           <text data-detail="context" x="144.5" y="111" class="t-muted" font-size="7" text-anchor="middle">MCP client</text>
         </g>
 
-        <g id="seq-nanoleaf-command-node-host" data-node-id="seq-nanoleaf-command-host" data-node-label="Nanoleaf MCP host" tabindex="0" role="button" aria-label="Focus Nanoleaf MCP host, Node · no second ledger, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="Node · no second ledger" data-node-context="Sequence participant">
-          <title>Nanoleaf MCP host · Node · no second ledger · Sequence participant</title>
+        <g id="seq-nanoleaf-command-node-host" data-node-id="seq-nanoleaf-command-host" data-node-label="MCP host" tabindex="0" role="button" aria-label="Focus MCP host, Node · no second ledger, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="Node · no second ledger" data-node-context="Sequence participant">
+          <title>MCP host · Node · no second ledger · Sequence participant</title>
           <rect x="262.75" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="262.75" y="72" width="165" height="54" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(268.75 78) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="345.25" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf MCP host</text>
+          <text data-node-label="" data-detail-anchor="" x="345.25" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MCP host</text>
           <text data-detail="context" x="345.25" y="111" class="t-muted" font-size="7" text-anchor="middle">Node · no second ledger</text>
         </g>
 
-        <g id="seq-nanoleaf-command-node-api" data-node-id="seq-nanoleaf-command-api" data-node-label="Windows controller API" tabindex="0" role="button" aria-label="Focus Windows controller API, /controller/v1, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="/controller/v1" data-node-context="Sequence participant">
-          <title>Windows controller API · /controller/v1 · Sequence participant</title>
+        <g id="seq-nanoleaf-command-node-api" data-node-id="seq-nanoleaf-command-api" data-node-label="Controller" tabindex="0" role="button" aria-label="Focus Controller, Linux · /controller/v1, Sequence participant" aria-pressed="false" data-node-kind="security" data-node-sublabel="Linux · /controller/v1" data-node-context="Sequence participant">
+          <title>Controller · Linux · /controller/v1 · Sequence participant</title>
           <rect x="463.5" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="463.5" y="72" width="165" height="54" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(469.5 78) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="546" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows controller API</text>
-          <text data-detail="context" x="546" y="111" class="t-muted" font-size="7" text-anchor="middle">/controller/v1</text>
+          <text data-node-label="" data-detail-anchor="" x="546" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Controller</text>
+          <text data-detail="context" x="546" y="111" class="t-muted" font-size="7" text-anchor="middle">Linux · /controller/v1</text>
         </g>
 
-        <g id="seq-nanoleaf-command-node-worker" data-node-id="seq-nanoleaf-command-worker" data-node-label="Windows worker" tabindex="0" role="button" aria-label="Focus Windows worker, owns light writes, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="owns light writes" data-node-context="Sequence participant">
-          <title>Windows worker · owns light writes · Sequence participant</title>
+        <g id="seq-nanoleaf-command-node-worker" data-node-id="seq-nanoleaf-command-worker" data-node-label="Lines worker" tabindex="0" role="button" aria-label="Focus Lines worker, sole Lines writer, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="sole Lines writer" data-node-context="Sequence participant">
+          <title>Lines worker · sole Lines writer · Sequence participant</title>
           <rect x="664.25" y="72" width="165" height="54" rx="6" class="c-mask"/>
           <rect x="664.25" y="72" width="165" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(670.25 78) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="746.75" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows worker</text>
-          <text data-detail="context" x="746.75" y="111" class="t-muted" font-size="7" text-anchor="middle">owns light writes</text>
+          <text data-node-label="" data-detail-anchor="" x="746.75" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Lines worker</text>
+          <text data-detail="context" x="746.75" y="111" class="t-muted" font-size="7" text-anchor="middle">sole Lines writer</text>
         </g>
 
         <g id="seq-nanoleaf-command-node-device" data-node-id="seq-nanoleaf-command-device" data-node-label="Nanoleaf Lines" tabindex="0" role="button" aria-label="Focus Nanoleaf Lines, LAN device, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="LAN device" data-node-context="Sequence participant">
@@ -277,22 +283,22 @@
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="1074" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="1094" data-legend-width="78">
-            <path d="M 40 1091 L 74 1091" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
-            <text x="83" y="1094" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="1168" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="1188" data-legend-width="78">
+            <path d="M 40 1185 L 74 1185" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-nanoleaf-command-arrowhead-emphasis)"/>
+            <text x="83" y="1188" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="1094" data-legend-width="73">
-            <path d="M 140 1091 L 174 1091" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
-            <text x="183" y="1094" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="1188" data-legend-width="73">
+            <path d="M 140 1185 L 174 1185" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-nanoleaf-command-arrowhead)"/>
+            <text x="183" y="1188" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="1094" data-legend-width="83">
-            <path d="M 235 1091 L 269 1091" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
-            <text x="278" y="1094" class="t-muted" font-size="10" font-weight="500">security</text>
+          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="1188" data-legend-width="83">
+            <path d="M 235 1185 L 269 1185" class="a-security" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-security)"/>
+            <text x="278" y="1188" class="t-muted" font-size="10" font-weight="500">security</text>
           </g>
-          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="1094" data-legend-width="98">
-            <path d="M 340 1091 L 374 1091" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
-            <text x="383" y="1094" class="t-muted" font-size="10" font-weight="500">async trace</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="340" data-legend-baseline="1188" data-legend-width="98">
+            <path d="M 340 1185 L 374 1185" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-nanoleaf-command-arrowhead-dashed)"/>
+            <text x="383" y="1188" class="t-muted" font-size="10" font-weight="500">async trace</text>
           </g>
         </g>
       </svg>
