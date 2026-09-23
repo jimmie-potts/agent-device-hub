@@ -47,7 +47,7 @@ The view SHALL dim and mark with `?` every session whose freshness is uncertain.
 - **THEN** the pushed frame shows the last rows dimmed and marked, and no removal is submitted
 
 ### Requirement: Rate-bounded publishing through the controller queue
-The status publisher SHALL submit every write through the Tidbyt controller queue. It SHALL push only when the rendered frame differs from the last sent frame or 10 minutes have passed since that push. Writes MUST be at least 15 s apart, and requests in between MUST coalesce so only the latest state is written. When nothing qualifies and the feed is healthy, it SHALL remove the installation unless the installation is known to be absent, first reading the installation list when presence is unknown. A failed or uncertain write MUST NOT be replayed; a later write is a new request for the current state. The wait after consecutive unsent writes MUST double, up to the refresh period.
+The status publisher SHALL submit every write through the Tidbyt controller queue. It SHALL push only when the rendered frame differs from the last sent frame or 10 minutes have passed since that push. Writes MUST be at least 15 s apart, and requests in between MUST coalesce so only the latest state is written. When nothing qualifies and the feed is healthy, it SHALL remove the installation unless the installation is known to be absent, first reading the installation list when presence is unknown. A failed or uncertain write MUST NOT be replayed; a later write is a new request for the current state. The wait after consecutive writes not confirmed sent MUST double, up to the refresh period.
 
 #### Scenario: Coalescing changes
 - **WHEN** the feed changes three times within 15 s of a push
@@ -62,7 +62,7 @@ The status publisher SHALL submit every write through the Tidbyt controller queu
 - **THEN** one removal is submitted, and no further removal happens while the feed stays idle
 
 #### Scenario: Removal of an absent installation
-- **WHEN** presence is unknown and the installation list shows the installation absent, including after a failed removal
+- **WHEN** presence is unknown, including after a failed removal that followed a successful push, and the installation list shows the installation absent
 - **THEN** no removal is sent and presence becomes absent
 
 #### Scenario: Persistent write failure

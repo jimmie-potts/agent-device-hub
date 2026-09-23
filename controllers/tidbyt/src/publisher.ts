@@ -9,6 +9,10 @@ import { statusFrame, statusView, type StatusView } from './status.js';
  * calculated state; `subscribe()` yields revision pointers or resync notices.
  */
 export type StatusFeed = {
+  /**
+   * Must settle within a bounded time. A read that outlives the publisher's timeout
+   * blocks further reads until it settles, so an adapter must enforce its own deadline.
+   */
   snapshot(): Snapshot | Promise<Snapshot>;
   subscribe?(): AsyncIterable<unknown> & { close?(): void };
 };
@@ -69,7 +73,7 @@ export class TidbytStatusPublisher {
   #sent?: { rgb: Uint8Array; atMs: number };
   #lastWriteAtMs?: number;
   #lastWrite?: Receipt;
-  /** Consecutive writes that were not sent; each doubles the wait before the next. */
+  /** Consecutive writes not confirmed sent; each after the first doubles the wait before the next. */
   #failures = 0;
   /** A feed read that outlived its timeout. No new read starts until it settles. */
   #pendingRead?: Promise<unknown>;
@@ -212,7 +216,8 @@ export class TidbytStatusPublisher {
     const wait = this.#lastWriteAtMs === undefined ? 0 : this.#lastWriteAtMs + this.#backoffMs() - now;
     if (wait > 0) return wait;
     this.#lastWriteAtMs = now;
-    if (command.kind === 'tidbyt.remove' && this.#installation === 'unknown') {
+    const holds = this.#controller.snapshot().display.holds;
+    if (command.kind === 'tidbyt.remove' && this.#installation === 'unknown' && !holds.authentication && holds.rateLimitRemainingMs === 0) {
       // Read the installation list first, so an installation that is already gone is not deleted again.
       const listing = await this.#controller.refresh();
       if (listing?.ok && !listing.present) {
@@ -227,7 +232,7 @@ export class TidbytStatusPublisher {
     return receipt?.outcome === 'sent' ? Math.min(this.#pollMs, refreshDue) : this.#backoffMs();
   }
 
-  /** The minimum interval, doubled for each consecutive unsent write after the first, up to the refresh period. */
+  /** The minimum interval, doubled for each consecutive write not confirmed sent after the first, up to the refresh period. */
   #backoffMs(): number {
     const doublings = Math.min(Math.max(0, this.#failures - 1), 16);
     return Math.min(this.#minIntervalMs * 2 ** doublings, Math.max(this.#minIntervalMs, this.#refreshMs));
@@ -258,6 +263,9 @@ export class TidbytStatusPublisher {
       }
     } else if (receipt.outcome === 'uncertain') {
       this.#sent = undefined;
+      this.#installation = 'unknown';
+    } else if (command.kind === 'tidbyt.remove') {
+      // The installation may already be gone; the next attempt reads the list before deleting again.
       this.#installation = 'unknown';
     }
   }

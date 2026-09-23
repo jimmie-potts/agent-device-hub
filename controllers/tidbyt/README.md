@@ -136,7 +136,8 @@ hold the details.
   unavailable feed never removes it.
 - **Failures.** A failed write is not replayed. A later write is a fresh request
   for the current state. The wait after an unsent write starts at 15 s and
-  doubles with each further consecutive failure, up to 10 minutes. An uncertain
+  doubles with each further consecutive write not confirmed sent, up to 10
+  minutes. A failed removal makes presence unknown again. An uncertain
   write makes installation presence unknown. A feed read that outlives its
   timeout blocks new reads until it settles.
 

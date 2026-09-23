@@ -297,3 +297,57 @@ test('a hung feed read is not started again until it settles', async t => {
   assert.equal(calls, 2);
   assert.equal(s.publisher.state().view.feed, 'available');
 });
+
+test('a failed removal after a sent push reads the listing before deleting again', async t => {
+  const connection = fakeConnection({
+    remove: () => ({ outcome: 'failed', failure: 'unknown-device', priorEffects: 'none' }),
+    read: () => ({ ok: true, present: false }),
+  });
+  const s = await setup(t, { connection });
+  await s.ingest(hook('UserPromptSubmit', 'one', 't1'));
+  s.publisher.start();
+  await s.settle();
+  assert.equal(s.publisher.state().installation, 'present');
+  await s.advance(20 * SECOND);
+  await s.ingest(hook('Stop', 'one', 't1'));
+  const [session] = s.owner.snapshot().sessions;
+  await s.advance(20 * SECOND);
+  await s.owner.acknowledge(session.identity, session.notices[0].id, 'pixoo');
+  await s.advance(20 * SECOND);
+  assert.equal(connection.state.removals, 1, 'a present installation is deleted without a listing');
+  assert.equal(connection.state.reads, 0);
+  await s.advance(MINUTE);
+  assert.equal(connection.state.reads, 1);
+  assert.equal(connection.state.removals, 1);
+  assert.equal(s.publisher.state().installation, 'absent');
+  await s.advance(60 * MINUTE);
+  assert.equal(connection.state.removals, 1);
+});
+
+test('no installation listing is read while the controller holds writes', async t => {
+  const connection = fakeConnection({ remove: () => ({ outcome: 'failed', failure: 'unauthenticated', priorEffects: 'none' }) });
+  const s = await setup(t, { connection });
+  s.publisher.start();
+  await s.settle();
+  assert.equal(connection.state.reads, 1);
+  assert.equal(connection.state.removals, 1);
+  assert.equal(s.controller.snapshot().display.holds.authentication, true);
+  await s.advance(60 * MINUTE);
+  assert.equal(connection.state.reads, 1, 'no listing under the authentication hold');
+  assert.equal(connection.state.removals, 1, 'the hold fails removals locally');
+});
+
+test('an idle root with an active child session keeps the installation', async t => {
+  const s = await setup(t);
+  await s.ingest(hook('UserPromptSubmit', 'root', 't1'));
+  await s.ingest(normalizeHook({ session_id: 'root', agent_id: 'child1' }, { ...source('root'), hook: 'SubagentStart' }, ++ownerClock.now));
+  await s.ingest(hook('Stop', 'root', 't1'));
+  const root = s.owner.snapshot().sessions.find(session => session.identity.sessionId === 'root');
+  assert.equal(root.activity, 'idle');
+  assert.equal(root.children.active, 1);
+  await s.owner.acknowledge(root.identity, root.notices[0].id, 'pixoo');
+  s.publisher.start();
+  await s.advance(5 * MINUTE);
+  assert.deepEqual(s.publisher.state().view.rows.map(row => row.state), ['RUN'], 'one row: the root, not the child');
+  assert.equal(s.connection.state.removals, 0);
+});
