@@ -6,8 +6,8 @@ work. This document records decisions and qualification boundaries; it does not
 establish installed mappings or device support.
 
 The [future-work guide #35](https://github.com/jimmie-potts/agent-device-hub/issues/35)
-tracks the linked backlog. The [roadmap](roadmap.md#desktop-controls-and-desk-presets)
-lists required and conditional prerequisites. Preserve the Codex-first priority in
+tracks the linked backlog; each issue's blocked-by links give its required and
+conditional prerequisites. Preserve the Codex-first priority in
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) while allowing the
 independent Wispr and mouse path to ship earlier.
 
@@ -133,8 +133,8 @@ separately authorized installation and app/input acceptance in
 
 Shared presets [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
 wait for the [Codex-first milestone #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
-and #31's general-control definition, as well as the source dependencies in the
-roadmap. The shared preset service and #65 then feed Big B and visible results
+and #31's general-control definition, as well as the source dependencies linked
+from #67. The shared preset service and #65 then feed Big B and visible results
 in [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
 [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) owns installed
 switching, manual handoff and restoration acceptance, including the shared

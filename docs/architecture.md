@@ -249,8 +249,8 @@ definition: controls stay in each component's existing view and submit one
 guarded controller v1 command each; power and brightness are mode-independent;
 content controls are disabled while a device presents agent status, with an
 explicit switch to Media or Free; nothing restores automatically; availability
-is declared capability times existing control scope. The bounded issues are in
-the [roadmap](roadmap.md#general-device-controls).
+is declared capability times existing control scope. The ADR links the bounded
+issues.
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.

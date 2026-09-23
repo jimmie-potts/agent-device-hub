@@ -113,36 +113,11 @@ SDK call is not visible-light evidence. Status/manual-control work must settle
 brightness, session selection, update limits, quiet/disabled behavior, takeover
 and restoration; never overwrite newer manual changes with an old snapshot.
 
-## Delivery owners
+## Issues
 
-GitHub owns scope, acceptance, readiness and dependencies. These are future
-placeholders, not implementation-ready specifications.
-
-| Issue | Outcome | Required source prerequisites |
-| --- | --- | --- |
-| [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51) | Qualify iCUE, RAM and H150i lighting. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
-| [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52) | Qualify Strimer control and L-Connect handoff. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
-| [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53) | Build the PC controller and qualified Corsair adapter. | [#51](https://github.com/jimmie-potts/agent-device-hub/issues/51), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
-| [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54) | Add the optional qualified Strimer adapter. | [#52](https://github.com/jimmie-potts/agent-device-hub/issues/52), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
-| [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55) | Map shared agent status to qualified lighting targets. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [Pixoo #31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) |
-| [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) | Add later shared UI/MCP controls. | [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#7](https://github.com/jimmie-potts/agent-device-hub/issues/7), [#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) |
-| [#57](https://github.com/jimmie-potts/agent-device-hub/issues/57) | Install and verify Corsair status and restoration. | [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
-| [#58](https://github.com/jimmie-potts/agent-device-hub/issues/58) | Install and verify Strimer handoff and restoration. | [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
-| [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) | Qualify supported Varmilo VA108M-RGB lighting interfaces. | [#50](https://github.com/jimmie-potts/agent-device-hub/issues/50) |
-| [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61) | Add the optional qualified Varmilo lighting adapter. | [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60), [#53](https://github.com/jimmie-potts/agent-device-hub/issues/53), [#4](https://github.com/jimmie-potts/agent-device-hub/issues/4) |
-| [#62](https://github.com/jimmie-potts/agent-device-hub/issues/62) | Install and verify keyboard status, typing and restoration. | [#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), [#55](https://github.com/jimmie-potts/agent-device-hub/issues/55), [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
-
-Strimer participation adds [#54](https://github.com/jimmie-potts/agent-device-hub/issues/54) as a conditional prerequisite
-for its status/control targets; it does not gate the Corsair status or acceptance
-milestones. Keyboard participation separately requires
-[#61](https://github.com/jimmie-potts/agent-device-hub/issues/61), without gating Corsair or Strimer.
-Closing [#60](https://github.com/jimmie-potts/agent-device-hub/issues/60) with an unsupported result does not make
-its adapter or acceptance ready; both remain deferred. General controls
-additionally need the frontend work selected by
-[hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31); refine those
-dependencies before marking [#56](https://github.com/jimmie-potts/agent-device-hub/issues/56) ready. They do not block source status
-integration. Preserve the current Codex-first priorities and separate existing
-Pixoo/Nanoleaf source or runtime migrations.
+GitHub issues own the delivery sequence, prerequisites and acceptance; see the
+[open PC lighting issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+lighting+OR+Strimer+OR+Varmilo+in%3Atitle). They start as placeholders
+to refine before implementation.
 
 ## Development and evidence
 

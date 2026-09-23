@@ -6,8 +6,8 @@ Read the README sections relevant to the task for current implementation state
 and setup. For planning or delivery, read docs/sdlc.md and the exact GitHub
 issue. Before changing ownership, provider contracts, APIs, state, integration
 or hosting, read docs/architecture.md and the linked device contracts.
-docs/roadmap.md links the delivery sequence; GitHub issues own acceptance
-criteria, dependencies and status.
+GitHub issues own the delivery sequence, acceptance criteria, dependencies and
+status; do not copy issue lists or dependency chains into repository docs.
 
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
