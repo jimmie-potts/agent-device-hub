@@ -407,7 +407,6 @@
             "attention.input",
             "attention.approval",
             "attention.resolved",
-            "attention.recovered",
             "notice.acknowledged",
             "read.observed",
             "evidence.unavailable",

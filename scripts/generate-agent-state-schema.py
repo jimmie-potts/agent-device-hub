@@ -42,7 +42,7 @@ def schemas():
         'journal': obj({'revision': ref('integer'), 'atMs': ref('integer'), 'sessionKey': ref('hash'),
                         'kind': enum('session.started', 'turn.started', 'activity.observed', 'turn.ended',
                                      'turn.interrupted', 'runtime.ended', 'question.continuing', 'attention.input',
-                                     'attention.approval', 'attention.resolved', 'attention.recovered', 'notice.acknowledged',
+                                     'attention.approval', 'attention.resolved', 'notice.acknowledged',
                                      'read.observed', 'evidence.unavailable', 'label'),
                         'outcome': enum('applied', 'ambiguous')})})
     visible = {

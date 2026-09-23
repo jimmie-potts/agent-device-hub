@@ -43,6 +43,12 @@ loads whichever atomic revision actually committed. Errors contain fixed codes.
 hosts must implement durable storage and cross-process exclusivity. Keep that
 database private to its host. Never share a live database between Windows and WSL.
 
+Explicit approval recovery returns a guarded result and records an
+`attention.resolved` journal entry with `outcome: ambiguous`. That existing
+version 1.0 journal form keeps rollback readers compatible; it records monitor
+recovery, not evidence that Codex resolved the permission. A journal entry alone
+does not identify the actor or prove a provider outcome.
+
 ## State and uncertainty
 
 The full provider, client, host, source and session tuple identifies a session.
@@ -189,7 +195,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.1 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -204,6 +210,7 @@ an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
 Version 1.0 has no predecessor migration; unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
+Package 2.0.1 adds explicit approval recovery without changing those schemas.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. An older package can read the same shape but restores its older

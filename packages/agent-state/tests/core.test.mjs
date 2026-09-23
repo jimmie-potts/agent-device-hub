@@ -25,7 +25,7 @@ test('explicit recovery retires only an uncertain uncorrelated approval',async()
   assert.equal(after.sessions[0].freshness,'uncertain');
   assert.equal(after.sessions[0].activity,before.sessions[0].activity);
   assert.equal(after.sessions[0].lastEvidenceAtMs,before.sessions[0].lastEvidenceAtMs);
-  assert.equal(owner.journal().at(-1).kind,'attention.recovered');
+  assert.deepEqual([owner.journal().at(-1).kind,owner.journal().at(-1).outcome],['attention.resolved','ambiguous']);
   assert.equal((await owner.recoverApproval(identity,'turn-1',before.revision)).ok,false);
   await owner.shutdown();
   const restored=await createAgentState(options(storage,()=>clock));

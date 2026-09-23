@@ -178,7 +178,9 @@ export async function createAgentState(options:Options) {
         const next=structuredClone(previous);
         next.attention.splice(next.attention.findIndex(item=>item.kind==='approval'&&item.id.status==='unknown'&&
           item.turn.status==='known'&&item.turn.id===turnId),1);
-        return commit(next,'attention.recovered');
+        // Version 1.0 journals already allow ambiguous attention resolution.
+        // Keep the durable schema readable by the previous package on rollback.
+        return commit(next,'attention.resolved','ambiguous');
       });
     },
     snapshot():Snapshot{
