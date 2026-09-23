@@ -162,6 +162,56 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     for(const id of ['pc-lighting','desktop-controls']) {await page.locator(`#${id} > summary`).scrollIntoViewIfNeeded();await screenshot(`${id}-mobile`);}
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-mobile.png')}); for(const id of ['arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-mobile.png`)});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No page overflow with the diagrams on mobile'); assert(await page.locator('#seq-owner-migration .diagram-canvas > svg').evaluate(e=>e.getBoundingClientRect().width>=740),'Narrow stages keep a readable diagram width'); assert(await page.locator('#seq-owner-migration .diagram-stage').evaluate(e=>e.scrollWidth>e.clientWidth),'Narrow stages scroll sideways');
+    // Task briefs at phone width: a badge from each repository opens one dialog with copyable agent prompts.
+    {const dialog=page.locator('#brief'), prompt=dialog.locator('#brief-prompt'), status=dialog.locator('.brief-status');
+     const isOpen=()=>dialog.evaluate(d=>d.open&&d.matches(':modal')), focusedOn=badge=>badge.evaluate(e=>e===document.activeElement);
+     const actions=async()=>{const out={}; for(const name of ['explain','plan','implement','review']){await dialog.locator(`[data-action="${name}"]`).click(); assert.equal(await dialog.locator(`[data-action="${name}"]`).getAttribute('aria-pressed'),'true'); assert.equal(await dialog.locator('[data-action][aria-pressed="true"]').count(),1); out[name]=await prompt.inputValue();} return out;};
+     assert.equal(await isOpen(),false,'The brief starts closed');
+     for(const [repoKey,dismiss] of [['H','Escape'],['N','Close'],['P','backdrop']]) {
+       const badge=page.locator(`.guide a.issue.repo-${repoKey}[data-issue]`).first(), key=await badge.getAttribute('data-issue'), issue=issueMap[key];
+       await badge.scrollIntoViewIfNeeded(); await badge.click();
+       assert(await isOpen(),`${key} badge opens the brief`); assert.equal(await page.locator('dialog[open]').count(),1,'One brief dialog');
+       assert.equal(await dialog.locator('.brief-repo').textContent(),new URL(issue.url).pathname.split('/').slice(1,3).join('/'));
+       assert.equal(await dialog.locator('.brief-number').textContent(),`#${issue.number}`); assert.equal(await dialog.locator('#brief-title').textContent(),issue.title);
+       const link=dialog.locator('.brief-link'); assert.equal(await link.getAttribute('href'),issue.url); assert.equal(await link.getAttribute('target'),'_blank'); assert.equal(await link.getAttribute('rel'),'noopener noreferrer');
+       assert.equal(await badge.getAttribute('href'),issue.url,'The badge keeps its GitHub link'); assert.equal(await dialog.evaluate(d=>d.contains(document.activeElement)),true,'Focus moves into the brief');
+       const p=await actions();
+       for(const text of Object.values(p)) assert(text.includes(issue.url),'Every prompt names the full issue URL');
+       assert(p.explain.includes(`"${issue.title}"`)&&/Read-only: don't change files, branches or GitHub\./.test(p.explain),'Explain is read-only');
+       assert(p.plan.startsWith('Use the plan-work skill for ')&&p.plan.includes('Planning only')&&p.plan.includes("don't change the tracker"),'Plan names plan-work and planning-only scope');
+       assert(p.implement.startsWith('Use the deliver-work skill to deliver '),'Implement names deliver-work');
+       assert(p.review.startsWith('Review the open pull request for ')&&p.review.includes('Read-only: report findings without changing files or GitHub.'),'Review is read-only');
+       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No page overflow with the brief open');
+       assert(await dialog.evaluate(d=>{const r=d.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight&&d.scrollWidth<=d.clientWidth;}),'The brief fits the phone viewport');
+       if(repoKey==='H') await dialog.screenshot({path:path.join(root,'work/guide-brief-mobile.png')});
+       if(dismiss==='Escape') await page.keyboard.press('Escape'); else if(dismiss==='Close') await dialog.locator('.brief-close').click(); else await page.mouse.click(4,4);
+       assert.equal(await isOpen(),false,`${dismiss} closes the brief`); assert(await focusedOn(badge),`${dismiss} returns focus to the badge`);
+     }
+     // Titles are text: a markup title from the data renders literally in the heading and prompt.
+     const key=await page.locator('.guide a.issue.repo-H[data-issue]').first().getAttribute('data-issue'), hostile='<img src=x onerror="window.briefInjected=1">A & "B"';
+     await page.evaluate(([key,title])=>{const data=document.querySelector('#issue-briefs'), briefs=JSON.parse(data.textContent); window.savedBriefs=data.textContent; briefs[key][1]=title; data.textContent=JSON.stringify(briefs);},[key,hostile]);
+     assert.equal(await page.evaluate(key=>window.openBrief(key),key),true,'openBrief opens a known issue');
+     assert.equal(await dialog.locator('#brief-title').textContent(),hostile); assert.equal(await dialog.locator('img').count(),0); await dialog.locator('[data-action="explain"]').click(); assert((await prompt.inputValue()).includes(`("${hostile}")`));
+     await page.waitForTimeout(50); assert.equal(await page.evaluate(()=>window.briefInjected),undefined,'Title markup never executes');
+     await page.evaluate(()=>{document.querySelector('#issue-briefs').textContent=window.savedBriefs;}); await page.keyboard.press('Escape');
+     assert.equal(await page.evaluate(()=>window.openBrief('H999999')),false,'Unknown keys do not open a brief'); assert.equal(await isOpen(),false);
+     // Copy writes to the clipboard; a denied or missing Clipboard API selects the prompt for manual copying.
+     const badge=page.locator('.guide a.issue.repo-H[data-issue]').first(); await badge.click(); await dialog.locator('[data-action="implement"]').click(); const expected=await prompt.inputValue();
+     // The real file:// clipboard: granted permission copies; the default headless denial falls back.
+     await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+     await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
+     assert.equal(await status.textContent(),'Copied.'); assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),expected,'Copy writes the prompt to the clipboard');
+     await page.context().clearPermissions();
+     const selectedAll=()=>prompt.evaluate(t=>document.activeElement===t&&t.selectionStart===0&&t.selectionEnd===t.value.length&&t.value.length>0);
+     for(const clipboard of ['denied','missing']) {
+       await dialog.locator('[data-action="review"]').click(); assert.equal(await status.textContent(),'','Changing the action clears the copy status');
+       if(clipboard==='missing') await page.evaluate(()=>{Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});});
+       await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
+       assert(await selectedAll(),`A ${clipboard} clipboard selects the prompt`); assert(/copy it manually/.test(await status.textContent()));
+     }
+     await page.screenshot({path:path.join(root,'work/guide-brief-fallback-mobile.png')});
+     await dialog.locator('.brief-close').click(); assert(await focusedOn(badge)); await page.evaluate(()=>{delete navigator.clipboard;});
+     assert.equal(await page.locator('#search').evaluate(e=>e.placeholder.length>0),true); assert(/task brief/i.test(await page.locator('.search-meta').textContent()),'Search hint explains that issue links open a brief');}
     // Exercise a real PDF from filtered, mixed expansion state, plus repeated print events.
     await page.locator('#collapse-all').click();await page.locator('#local-acceptance > summary').click();await page.locator('#search').fill('N30');
     await page.locator('#architecture > summary').click(); assert.equal(await page.locator('#architecture').getAttribute('open'),null,'Architecture collapsed before the print test');
@@ -183,7 +233,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.evaluate(()=>{window.print=()=>{window.printButtonCalled=true;};});await page.locator('#print').click();assert(await page.evaluate(()=>window.printButtonCalled));
     assert.deepEqual(errors,[]);assert.deepEqual(requests,[],'The guide makes no external requests');
     assert(companionRequests.every(u=>u.startsWith('https://fonts.googleapis.com/')),'Companion viewer requests are limited to its font stylesheet');
-    const receipt={checkedAt:new Date().toISOString(),snapshot:snapshot.refreshedAt,architectureReviewedAt:sources.reviewedAt,historyFetchedAt:history.fetchedAt,htmlSha256:sha(file),htmlBytes:fs.statSync(file).size,guides:count,primaryOpenIssues:openKeys.length,linkedIssues:new Set(links.map(l=>l.key)).size,diagrams:diagramIds.length,companionViewers:receipts.diagrams.map(d=>({id:d.id,sha256:d.artifact.sha256,bytes:d.artifact.bytes})),roadmapNodes:meta.history.roadmapNodes,mergedPRs:prs,viewports:widths,issueStatusAndEvidence:'passed',parallelCandidates:'passed',coverage:'passed',linksAndAnchors:'passed',search:'passed',navigation:'passed',expandCollapse:'passed',architecture:'passed',diagramZoomFitAndInlineViewer:'passed',timelineTooltipsAndFilters:'passed',printExpansionAndRestoration:'passed',externalRequests:requests.length,companionViewerRequests:[...new Set(companionRequests)],companionViewerRenderedWithRequestsBlocked:true,errors,runtime:{node:process.version,playwright:playwrightPath,chromium:executablePath,browserVersion:browser.version()}};
+    const receipt={checkedAt:new Date().toISOString(),snapshot:snapshot.refreshedAt,architectureReviewedAt:sources.reviewedAt,historyFetchedAt:history.fetchedAt,htmlSha256:sha(file),htmlBytes:fs.statSync(file).size,guides:count,primaryOpenIssues:openKeys.length,linkedIssues:new Set(links.map(l=>l.key)).size,diagrams:diagramIds.length,companionViewers:receipts.diagrams.map(d=>({id:d.id,sha256:d.artifact.sha256,bytes:d.artifact.bytes})),roadmapNodes:meta.history.roadmapNodes,mergedPRs:prs,viewports:widths,issueStatusAndEvidence:'passed',parallelCandidates:'passed',coverage:'passed',linksAndAnchors:'passed',search:'passed',navigation:'passed',expandCollapse:'passed',architecture:'passed',diagramZoomFitAndInlineViewer:'passed',timelineTooltipsAndFilters:'passed',taskBriefs:'passed',printExpansionAndRestoration:'passed',externalRequests:requests.length,companionViewerRequests:[...new Set(companionRequests)],companionViewerRenderedWithRequestsBlocked:true,errors,runtime:{node:process.version,playwright:playwrightPath,chromium:executablePath,browserVersion:browser.version()}};
     fs.writeFileSync(path.join(root,'work/guide-verification.json'),JSON.stringify(receipt,null,2)+'\n');console.log(JSON.stringify(receipt,null,2));
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

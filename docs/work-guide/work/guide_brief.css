@@ -1,0 +1,20 @@
+/* Task brief: the dialog an issue link opens, with copyable agent prompts. */
+.brief{width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--edge);border-top:2px solid var(--accent);background:var(--panel);color:var(--text);overflow:auto}
+.brief::backdrop{background:rgba(2,4,9,.76)}
+.brief-body{padding:22px}
+.brief-head .eyebrow{margin:0;display:flex;flex-wrap:wrap;gap:0 8px}
+.brief-number{color:var(--text)}
+.brief h2{font-size:19px;line-height:1.4;font-weight:500;margin:8px 0 10px;overflow-wrap:anywhere}
+.brief-link{font-size:12px}
+.brief-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:20px 0 10px}
+.brief-actions button[aria-pressed="true"]{border-color:var(--accent);background:rgba(34,211,238,.16)}
+.brief-hint{color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 14px}
+.brief-label{display:block;font:10px/1.5 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.brief textarea{display:block;width:100%;min-height:132px;resize:vertical;padding:10px 12px;border:1px solid var(--edge);border-radius:2px;background:var(--bg);color:var(--text);font:12px/1.6 var(--mono)}
+.brief textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.brief-foot{display:flex;justify-content:space-between;gap:10px;margin-top:14px}
+.brief-copy{border-color:var(--accent)}
+.brief-status{margin:0;font-size:12px;line-height:1.5;color:var(--muted)}
+.brief-status:not(:empty){margin-top:10px}
+@media(max-width:600px){.brief-body{padding:18px 16px}.brief-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.brief h2{font-size:17px}}
+@media print{.brief{display:none!important}}
