@@ -107,6 +107,16 @@ not implicitly invoke those skills.
    rules, or record the guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
+7. After main CI passes, remove the worktree this delivery created with
+   `git worktree remove <path>` and delete its `.local/scratch/<task>` folder.
+   First confirm the worktree is clean and unused, and that evidence the issue
+   needs is in the PR, the issue or the main checkout's `.local/evidence/`.
+   Because this repository squash-merges, judge delivery by the PR's merged
+   state, not commit ancestry. Never force removal. A tool-managed worktree,
+   such as a Claude Code session worktree, follows that tool's removal. For
+   failed or abandoned work, ask the user whether to keep or remove it and keep
+   it until they decide. Leave other sessions' worktrees, branches and scratch
+   alone.
 
 ### Depot CI evidence
 

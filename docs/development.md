@@ -68,7 +68,12 @@ SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 
 ## Workflow commands
 
-Use Node 24 and npm from the assigned worktree root:
+Use Node 24 and npm from the assigned worktree root. If `node --version` does
+not report v24, prefix each command with `fnm exec --using=.nvmrc --`, for
+example `fnm exec --using=.nvmrc -- npm ci`. fnm reads `.nvmrc` from the current
+directory and needs no shell setup, so the prefix also works in noninteractive
+agent shells. Reuse one shared Node 24 installation instead of installing Node
+for each task.
 
 ```bash
 npm ci
