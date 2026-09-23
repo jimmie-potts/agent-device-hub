@@ -9,6 +9,13 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 DEST = ROOT / 'work' / 'backlogs'
 REPOS = ['agent-device-hub', 'codex-nanoleaf', 'divoom-app-upgrade']
+# Closed story states referenced by the guide are retained so regeneration can
+# move them from active work into the closed evidence section.
+GUIDE_STATUS_REFERENCES = {
+    'agent-device-hub': [10, 86, 196, 200],
+    'codex-nanoleaf': [31],
+    'divoom-app-upgrade': [38, 47, 68],
+}
 
 
 def api(endpoint):
@@ -70,6 +77,10 @@ def refresh_repo(repo):
         assert (issue['state'] == 'OPEN') == any(i['number'] == number for i in issues)
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
+    for number in GUIDE_STATUS_REFERENCES[repo]:
+        issue = normalize(api(f'{base}/issues/{number}'), [])
+        issues = [i for i in issues if i['number'] != number] + [issue]
+        direct.append({'number': number, 'state': issue['state'], 'purpose': 'Guide story status'})
     if repo == 'agent-device-hub':
         for number in (3, 4, 6, 7, 8, 9, 13, 49, 54, 80, 100, 103, 107, 137):
             baseline = normalize(api(f'{base}/issues/{number}'))

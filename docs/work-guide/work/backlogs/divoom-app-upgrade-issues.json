@@ -562,13 +562,13 @@
   },
   {
     "number": 38,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "not_planned",
     "title": "Adopt shared OpenSpec validation tooling",
     "body": "## Outcome\nReplace the copied OpenSpec wrapper/validator implementation with a pinned shared package.\n\n## Scope\nConsume [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) while retaining Pixoo's scripts/command names as needed, specifications, workflow matrices and device boundaries.\n\n## Acceptance criteria\n- [ ] Pin the released artifact and preserve npm run openspec, check:workflow and test:workflow behavior from the caller's assigned worktree.\n- [ ] Remove duplicated implementation only after equivalent empty/valid/invalid/archive/configuration-isolation fixtures pass.\n- [ ] Preserve Node 24, all existing application/browser jobs and independent review/main-CI requirements.\n- [ ] Document upgrades and rollback without personal skill installation or changes to application behavior.\n\n## Dependencies\n- [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10)\n\n## Verification\nnpm ci, npm run check:workflow and npm run test:workflow on Ubuntu/Windows, plus npm run check for tooling changes.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nNo product specification delta applies to planning/bootstrap/development tooling. If implementation later changes a product contract, prepare its own issue-linked change first.\n\n## Priority and access decision\nDeferred behind local Codex control for Pixoo and Nanoleaf. Keep the existing per-repository OpenSpec checks in use. Tooling consolidation is not a prerequisite for controller contracts, local MCP source delivery, or local acceptance.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/38",
-    "updatedAt": "2026-09-07T04:00:54Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T22:51:01Z",
+    "closedAt": "2026-09-23T22:51:01Z",
     "labels": [
       {
         "name": "enhancement"
@@ -585,8 +585,8 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
-    "commentsRefreshed": false
+    "commentCount": 1,
+    "commentsRefreshed": true
   },
   {
     "number": 43,
@@ -684,13 +684,13 @@
   },
   {
     "number": 47,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "not_planned",
     "title": "Consolidate workflow and application setup without dropping checks",
     "body": "## Outcome and status\n\nOptional backlog work. Reduce repeated checkout, Node setup, and dependency installation while retaining every validation command on its existing operating system.\n\nDepends on #46 being delivered. After that, inspect representative current runs and select this item only if setup savings justify changing the job layout. Creation does not select or start implementation.\n\n## Scope and acceptance criteria\n\n- [ ] Move `check:workflow` and `test:workflow` into the application matrix job on each OS, reusing that job's checkout, Node setup, and `npm ci`.\n- [ ] Remove the separate workflow matrix and retain the browser job. Five expanded jobs become three; both Ubuntu and Windows still execute every former workflow and application check.\n- [ ] Preserve application/browser check names where possible, ordinary failure propagation, browser coverage, action pins, permissions, caches, runtime setup, and existing build behavior.\n- [ ] Preserve #46's PR/main triggers, PR-specific cancellation, and ten-minute bounds.\n- [ ] Before editing, map every old check name to its surviving job and inspect protections, rulesets, delivery scripts, and documentation that consume job names. Define the transition validation before deleting jobs.\n- [ ] Any required-check setting change has separate authorization and verified access. If the transition cannot preserve required gates, leave this ticket pending and retain #46's completed improvements. The candidate cannot waive its own approval gates.\n- [ ] Every former validation command succeeds on its existing OS in the surviving jobs. A command skipped after an earlier failure is not successful validation.\n- [ ] Canonical local checks, both independent review axes, every applicable current-head PR job, guarded squash merge, and every merged-revision main job pass before closure.\n\n## Validation and delivery\n\nRun `npm run check` and the existing browser gate with documented prerequisites. Inspect the effective three-job expansion and command placement. Retain the mapping and actual per-OS command evidence in the PR; update directly affected job-name consumers in the same scoped change. Do not introduce an aggregate test framework or reduce coverage.\n\nFor later selected delivery, use the canonical `$deliver-work` entry point for this exact issue, the current repository SDLC, and an isolated branch from refreshed main. Obtain independent Standards and Specification reviews against the same committed comparison. Preserve other issue owners and reacquire affected evidence when main or the candidate changes.\n\nSource-only tooling; record why no product spec delta applies. Hosted validation remains required. If Actions cannot execute, local checks and review can prepare a PR, but cannot establish merge eligibility or ticket completion. No account changes or runner migration are included.\n\n## References\n\n[Prerequisite #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46) · [Workflow](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/.github/workflows/ci.yml) · [SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md)\n\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/47",
-    "updatedAt": "2026-09-07T17:16:03Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T22:48:05Z",
+    "closedAt": "2026-09-23T22:48:05Z",
     "labels": [
       {
         "name": "maintenance"
@@ -704,8 +704,8 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
-    "commentsRefreshed": false
+    "commentCount": 1,
+    "commentsRefreshed": true
   },
   {
     "number": 52,
@@ -803,19 +803,38 @@
   },
   {
     "number": 68,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Align guide-maintenance rules with the current hub procedure",
+    "body": "## Problem\n\nThis repository's work-guide rules still require every authorized delivery to coordinate a linked hub PR that records the delivery in `docs/work-guide/updates.md` or records a no-impact reason, and they treat guide synchronization as pending until that PR merges. The hub changed this in [agent-device-hub#169](https://github.com/jimmie-potts/agent-device-hub/pull/169) (`ad5aef8`, current hub `main` `a76b22d`). It retired the `updates.md` ledger and made the guide an intentional, dated publication. A device repository needs a linked hub PR only when its authorized scope includes a guide update. Coordinators and reviewers here get conflicting instructions on every delivery.\n\nOutdated text at `main` `c81bc31`:\n\n- `AGENTS.md:90-100` (\"Work guide maintenance\"): the linked hub PR, `updates.md` or no-impact record, and \"pending guide synchronization remains unfinished delivery work\".\n- `docs/sdlc.md:58-61` (hub guide checkpoints at planning, review and completion) and `docs/sdlc.md:128-140` (\"Cross-project guide completion gate\").\n- `README.md:97` (\"a linked hub PR under the SDLC completion gate\").\n- `.github/pull_request_template.md:29-30` (the unconditional hub-sync checklist).\n\n## Outcome\n\nThis repository's guide-maintenance rules match the hub's current procedure.\n\n## Acceptance criteria\n\n1. `AGENTS.md`, `docs/sdlc.md`, README and the PR template no longer require an `updates.md` entry, a no-impact record or a hub PR for every delivery. They point to the hub procedure and state that a linked hub PR is required only when a task's authorized scope intentionally updates or publishes the guide.\n2. The existing boundaries are kept: read-only and tracker-only limits, no device or hosting authority, separate source-completion/guide-revision/public-publication/live-verification claims, and \"a source merge does not update the public site\".\n3. The repository's configured workflow and documentation checks pass.\n\n## Reference\n\ncodex-nanoleaf made the same change in [codex-nanoleaf#70](https://github.com/jimmie-potts/codex-nanoleaf/issues/70) / [PR #71](https://github.com/jimmie-potts/codex-nanoleaf/pull/71) (merged `77f188d`). Its `AGENTS.md`, `docs/sdlc.md` \"Cross-project work guide\" section, README and conditional PR-template section can serve as the model. Adapt them to this repository's own conventions.\n\n## Planning\n\nDocumentation maintenance with no behavior delta, so no OpenSpec change is needed.\n\n## Delivery scope\n\nLimit this cleanup to `AGENTS.md`, `docs/sdlc.md`, `README.md` and `.github/pull_request_template.md`. No hub changes, generated guide updates, public publication, application changes, new automation, installation or device testing. Use the existing workflow checks and review the instructions for contradictions. Existing review and configured CI gates still apply.\n\n## Completion evidence\n\nDelivered in [PR #69](https://github.com/jimmie-potts/divoom-app-upgrade/pull/69), merged as `b7d4762bd11bbc8d15f1d04a7ef6f273f1d28050`. Both independent reviews returned no findings. Local workflow validation passed: 18 current specifications, 19 archived changes and 10 workflow tests. All five configured jobs passed on [the reviewed PR](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/35930521880) and [the merged main revision](https://github.com/jimmie-potts/divoom-app-upgrade/actions/runs/35930834762). The four merged documents match the reviewed candidate.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/68",
+    "updatedAt": "2026-09-23T22:58:11Z",
+    "closedAt": "2026-09-23T22:58:10Z",
+    "labels": [
+      {
+        "name": "documentation"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": true
+  },
+  {
+    "number": 72,
     "state": "OPEN",
     "stateReason": null,
-    "title": "Align guide-maintenance rules with the current hub procedure",
-    "body": "## Problem\n\nThis repository's work-guide rules still require every authorized delivery to coordinate a linked hub PR that records the delivery in `docs/work-guide/updates.md` or records a no-impact reason, and they treat guide synchronization as pending until that PR merges. The hub changed this in [agent-device-hub#169](https://github.com/jimmie-potts/agent-device-hub/pull/169) (`ad5aef8`, current hub `main` `a76b22d`). It retired the `updates.md` ledger and made the guide an intentional, dated publication. A device repository needs a linked hub PR only when its authorized scope includes a guide update. Coordinators and reviewers here get conflicting instructions on every delivery.\n\nOutdated text at `main` `c81bc31`:\n\n- `AGENTS.md:90-100` (\"Work guide maintenance\"): the linked hub PR, `updates.md` or no-impact record, and \"pending guide synchronization remains unfinished delivery work\".\n- `docs/sdlc.md:58-61` (hub guide checkpoints at planning, review and completion) and `docs/sdlc.md:128-140` (\"Cross-project guide completion gate\").\n- `README.md:97` (\"a linked hub PR under the SDLC completion gate\").\n- `.github/pull_request_template.md:29-30` (the unconditional hub-sync checklist).\n\n## Outcome\n\nThis repository's guide-maintenance rules match the hub's current procedure.\n\n## Acceptance criteria\n\n1. `AGENTS.md`, `docs/sdlc.md`, README and the PR template no longer require an `updates.md` entry, a no-impact record or a hub PR for every delivery. They point to the hub procedure and state that a linked hub PR is required only when a task's authorized scope intentionally updates or publishes the guide.\n2. The existing boundaries are kept: read-only and tracker-only limits, no device or hosting authority, separate source-completion/guide-revision/public-publication/live-verification claims, and \"a source merge does not update the public site\".\n3. The repository's configured workflow and documentation checks pass.\n\n## Reference\n\ncodex-nanoleaf made the same change in [codex-nanoleaf#70](https://github.com/jimmie-potts/codex-nanoleaf/issues/70) / [PR #71](https://github.com/jimmie-potts/codex-nanoleaf/pull/71) (merged `77f188d`). Its `AGENTS.md`, `docs/sdlc.md` \"Cross-project work guide\" section, README and conditional PR-template section can serve as the model. Adapt them to this repository's own conventions.\n\n## Planning\n\nDocumentation maintenance with no behavior delta, so no OpenSpec change is needed.\n",
-    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/68",
-    "updatedAt": "2026-09-23T05:30:16Z",
+    "title": "Use shared npm and Playwright caches and fnm for Node 24 in setup guidance",
+    "body": "## Outcome\n\nSetup guidance keeps npm and Playwright caches in their shared default locations instead of `/tmp`, and says how to select Node 24 without installing another copy.\n\nOn 2026-09-23 the WSL host's `/tmp`, a 7.6 GB RAM-backed tmpfs shared by all agent sessions, filled completely. Part of the cause was guidance that sends caches or per-task installs into `/tmp`. The Codex local-development sandbox profile now allows writes to `~/.npm` and `~/.cache/ms-playwright`, so the read-only-cache workaround is no longer needed.\n\n## Scope\n\n- `docs/development.md`: replace \"Use `npm ci --cache /tmp/pixoo-npm-cache` if the WSL npm cache is read-only\" and the `PLAYWRIGHT_BROWSERS_PATH` sandbox advice with guidance to use npm's default cache (`~/.npm`) and Playwright's default browser cache (`~/.cache/ms-playwright`), and to report a read-only cache instead of redirecting it.\n- Same file: when `node --version` is not v24, prefix commands with `fnm exec --using=.nvmrc --` from the worktree root and reuse one shared Node 24 installation, as agent-device-hub documents.\n\nOut of scope: other documentation, CI and tests.\n\n## Acceptance criteria\n\n- `docs/development.md` no longer recommends a `/tmp` npm cache or a sandbox browser path, and it contains the fnm note.\n- `npm run check:workflow` and `npm run test:workflow` exit zero, and every configured CI job succeeds on the PR head and the merged main revision.\n\n## Dependencies\n\nNone. Related: jimmie-potts/divoom-app-upgrade#70 (cleanup after delivery).\n\n## Verification\n\nLocal workflow checks, GitHub Actions CI, and independent Standards and Specification reviews.\n\n## Delivery target\n\nMerged to `main`.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/72",
+    "updatedAt": "2026-09-23T23:50:56Z",
     "closedAt": null,
     "labels": [
       {
         "name": "documentation"
       },
       {
-        "name": "status:ready"
+        "name": "status:review"
       }
     ],
     "milestone": null,

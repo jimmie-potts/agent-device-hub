@@ -14,13 +14,14 @@
 #33 [CLOSED] Add monitor controls and shared Monitor/Media display ownership
 #34 [CLOSED] Set up and verify basic Codex Desktop monitoring on Pixoo
 #37 [CLOSED] Expose the Pixoo controller through the shared device API
-#38 [OPEN] Adopt shared OpenSpec validation tooling
+#38 [CLOSED] Adopt shared OpenSpec validation tooling
 #43 [OPEN] Verify authenticated phone and other-computer browser access
 #44 [OPEN] Verify ChatGPT web MCP control and physical Pixoo acceptance
 #46 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
-#47 [OPEN] Consolidate workflow and application setup without dropping checks
+#47 [CLOSED] Consolidate workflow and application setup without dropping checks
 #52 [OPEN] Fix rapid extra GIF flashes before the next still image
 #55 [OPEN] Qualify variable GIF frame timing on Pixoo64
 #61 [OPEN] Harden and qualify embedded shared-monitor performance
 #67 [OPEN] Expose user-entered playlist names through the Pixoo integration extension
-#68 [OPEN] Align guide-maintenance rules with the current hub procedure
+#68 [CLOSED] Align guide-maintenance rules with the current hub procedure
+#72 [OPEN] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance

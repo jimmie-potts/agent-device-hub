@@ -58,8 +58,8 @@ PATHS = {
     ),
     'development-workflow': (
         'Keep delivery evidence readable and validation affordable.',
-        'Start mobile task briefs #196, current public GitHub status #197 and Neon/Prism design #85. The first combined public release #87 follows those features and presentation #86. Direct app coordination remains deferred.',
-        ['H196', 'H197', 'H85'],
+        'Task briefs #196 and the selected Neon/Prism presentation are delivered. Implement dated public status #197 for the first combined release #87; clipboard-check repair #210 is underway and blocks cleanup follow-up #207. Direct app coordination remains deferred.',
+        ['H197', 'H210'],
     ),
 }
 
@@ -68,8 +68,8 @@ PATHS = {
 PARALLEL = [
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',
      'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
-    ('H196', 'Mobile task briefs', 'development-workflow',
-     'Prepare copyable task context for the existing Codex and Claude apps using the current guide styles.'),
     ('H197', 'Current public GitHub status', 'development-workflow',
      'Add a dated public status projection with explicit freshness; coordinate shared guide files with the task-brief owner.'),
+    ('H210', 'Work guide clipboard fallback', 'development-workflow',
+     'Make denied and missing clipboard cases deterministic while retaining the granted-copy check.'),
 ]

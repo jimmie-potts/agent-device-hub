@@ -13,7 +13,7 @@
 #26 [CLOSED] Keep map number tags clear of neighbouring Lines in rotated compact layouts
 #29 [CLOSED] Consume shared agent sessions while preserving Nanoleaf behavior
 #30 [CLOSED] Get shared Codex monitoring working on the existing Linux Nanoleaf installation
-#31 [OPEN] Adopt shared OpenSpec validation tooling
+#31 [CLOSED] Adopt shared OpenSpec validation tooling
 #34 [CLOSED] Verify local Codex control of the Nanoleaf lights
 #37 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
 #41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
@@ -37,3 +37,4 @@
 #77 [OPEN] Limit and prioritize tasks in the wall map inspector
 #78 [OPEN] Reduce default wall map controls and repeated status text
 #81 [OPEN] Queue the completion comet when a subagent delays a parent's unread
+#84 [OPEN] Use the shared npm cache instead of a /tmp cache in setup guidance
