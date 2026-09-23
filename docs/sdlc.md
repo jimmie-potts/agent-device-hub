@@ -11,7 +11,8 @@ Planning/review stays read-only unless the user explicitly authorizes document o
 tracker writes. Those writes authorize their named artifacts, not future runtime
 implementation. A normal implementation or maintenance request includes issue
 updates, isolated work, validation, PR publication, independent review, eligible
-merge and main-CI readback. Narrower user scope prevails.
+merge, main-CI readback and [cleanup after delivery](#cleanup-after-delivery).
+Narrower user scope prevails.
 
 Reuse existing issues. Record dependencies as full cross-repository links and
 GitHub native blocked-by relationships where supported. Distinguish required
@@ -107,16 +108,43 @@ not implicitly invoke those skills.
    rules, or record the guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
-7. After main CI passes, remove the worktree this delivery created with
-   `git worktree remove <path>` and delete its `.local/scratch/<task>` folder.
-   First confirm the worktree is clean and unused, and that evidence the issue
-   needs is in the PR, the issue or the main checkout's `.local/evidence/`.
-   Because this repository squash-merges, judge delivery by the PR's merged
-   state, not commit ancestry. Never force removal. A tool-managed worktree,
-   such as a Claude Code session worktree, follows that tool's removal. For
-   failed or abandoned work, ask the user whether to keep or remove it and keep
-   it until they decide. Leave other sessions' worktrees, branches and scratch
-   alone.
+7. Clean up this delivery's own worktree and scratch as described in
+   [Cleanup after delivery](#cleanup-after-delivery).
+
+### Cleanup after delivery
+
+Start once step 6 has verified the merged revision, through its Depot evidence
+or the guide-only exception evidence, and read back the issue state. Cleanup
+does not wait for installation or physical acceptance unless that work still
+uses the worktree. Clean up only what this delivery created:
+
+1. Confirm the PR is merged and the worktree's `HEAD` is the PR's merged head
+   commit. This repository squash-merges, so judge delivery by the PR's merged
+   state, never by commit ancestry. Commits after the merged head are
+   unfinished work.
+2. Run `git status --short --ignored` in the worktree. `git worktree remove`
+   deletes ignored files, including the worktree's own `.local/`, test output
+   and `node_modules/`. Move anything the issue still needs into the PR, the
+   issue or the canonical local checkout's
+   `.local/evidence/gh-<issue-number>-<slug>/`.
+3. From the canonical local checkout, run `git worktree remove <path>` and
+   confirm with `git worktree list` that the path is gone. Delete the canonical
+   checkout's `.local/scratch/gh-<issue-number>-<slug>/`. Do not delete the
+   delivery branch yourself.
+4. Remove a tool-managed worktree, such as a Claude Code session worktree under
+   `.claude/worktrees/`, through that tool's own exit flow instead of
+   `git worktree remove`, and still delete the scratch folder. Once steps 1 and
+   2 pass on a clean worktree, accepting the tool's option to discard the
+   squash-merged commits is allowed.
+
+Keep the worktree and scratch, and report the path and reason, when the
+worktree is dirty or locked, a process or session still uses it, its `HEAD`
+differs from the merged head, evidence is not yet preserved, or
+`git worktree remove` refuses. Never force removal, and never reset, clean or
+discard files to make a worktree removable. If main CI fails, or the work
+failed or was abandoned, ask the user whether to keep or remove it and keep it
+until they decide; discarding uncommitted work needs their explicit approval.
+Leave other sessions' worktrees, branches and scratch alone.
 
 ### Depot CI evidence
 
