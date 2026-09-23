@@ -97,13 +97,20 @@ def map_section(data, system):
     return f'''<section class="atlas-map" id="map" aria-labelledby="map-title">
 <div class="map-head"><div><p class="eyebrow">SYSTEM MAP · SOURCE PINNED {escape(cfg["reviewed_at"])}</p><h2 id="map-title">What runs where.</h2></div>
 <div class="map-aside"><p class="map-pins"><span>Pinned source</span>{escape(pins)} · <a href="{escape(viewer)}">Interactive viewer ↗</a></p>{stage_tools("Map zoom")}</div></div>
-<p class="map-key"><span class="key key-observe">observation path</span><span class="key key-feed">state feed</span><span class="key key-command">explicit command</span><span class="key-hint">Select a box, or Tab to it and press Enter, for its responsibility and owning links. Escape clears the selection.</span></p>
+<p class="map-key"><span class="key key-observe">observation path</span><span class="key key-feed">state feed</span><span class="key key-command">explicit command</span><span class="key key-other">internal call · commit · import</span><span class="key-hint">Select a box, or Tab to it and press Enter, for its responsibility and owning links. Escape clears the selection.</span></p>
 <div class="map-stage-wrap"><div class="map-stage"><div class="atlas-canvas" data-diagram="{system["id"]}">{diagram_svg(system)}</div></div></div>
-<aside class="map-detail" id="map-detail" aria-live="polite" tabindex="-1"><p class="detail-hint">{escape(system["summary"])}</p><p class="detail-hint">Nothing selected. Choose a component on the map or in the list below.</p></aside>
+<aside class="map-detail" id="map-detail" aria-live="polite" tabindex="-1"><p class="detail-hint">{escape(system["summary"])}</p>{reading_block(system)}<p class="detail-hint">Nothing selected. Choose a component on the map or in the list below.</p></aside>
 <details class="map-index" id="map-index"><summary>All {len(index)} components as a list</summary><ul>{"".join(index)}</ul></details>
 <div class="map-details" hidden>{"".join(details)}</div>
 <p class="map-note">Tags describe source at the pinned revision; installed and physical acceptance are recorded only by the owning issues. {escape(cfg["reference_baseline"])}</p>
 </section>'''
+
+
+def reading_block(diagram):
+    """The shared definition's reading and boundary bullets, as the guide renders them."""
+    items = lambda key: "".join(f"<li>{escape(re.sub(r'\\[\\[[A-Z]+[0-9]+\\]\\]', lambda m: m.group(0)[2:-2], text))}</li>" for text in diagram[key])
+    return (f'<div class="reading"><div><h4>How to read it</h4><ul>{items("reading")}</ul></div>'
+            f'<div><h4>Boundaries and evidence</h4><ul>{items("boundaries")}</ul></div></div>')
 
 
 def stage_tools(label):
@@ -131,6 +138,7 @@ def walkthrough_section(data, walk):
 <p class="map-key"><span class="key-hint">Open a phase for its messages, explanation and links; the matching arrows stay highlighted on the diagram. Phase labels on the diagram open the same phase.</span></p>
 <div class="map-stage-wrap"><div class="map-stage"><div class="atlas-canvas" data-diagram="{walk["id"]}">{diagram_svg(walk)}</div></div></div>
 <ol class="walk-steps" id="walk-steps">{"".join(phases)}</ol>
+<div class="walk-reading">{reading_block(walk)}</div>
 </section>'''
 
 

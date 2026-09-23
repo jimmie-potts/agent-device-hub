@@ -374,7 +374,6 @@
    "from": "mcpModule",
    "to": "hubRoutes",
    "label": "imports",
-   "variant": "dashed",
    "fromSide": "right",
    "toSide": "left",
    "labelDy": 55
