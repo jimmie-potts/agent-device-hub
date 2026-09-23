@@ -94,8 +94,11 @@ isolates configuration and suppresses telemetry/completion migration. Initialize
 using init --tools none --profile core --no-animation. Do not generate local
 skill integrations or run a global OpenSpec installation.
 
-For a WSL sandbox with a read-only npm cache, use a writable temporary cache.
-Keep dependency caches, browser binaries and all runtime state outside source.
+Use npm's default cache and Playwright's default browser cache (on Linux and
+WSL, `~/.npm` and `~/.cache/ms-playwright`), not directories under `/tmp`, which
+can be a small RAM-backed filesystem shared by every session. If a sandbox makes
+either cache read-only, report that instead of redirecting it. Keep dependency
+caches, browser binaries and all runtime state outside source.
 
 Depot CI owns the active workflows under `.depot/workflows/`. It runs on pull
 requests and pushes to main, and reports each job as a GitHub check. Superseded
