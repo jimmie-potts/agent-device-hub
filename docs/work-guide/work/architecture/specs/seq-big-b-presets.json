@@ -149,7 +149,7 @@
    "from": "hub",
    "to": "dispatcher",
    "y": 766,
-   "label": "hub unavailable → reported; Wispr and mouse keep working",
+   "label": "hub unavailable → reported; local mouse controls keep working",
    "variant": "return"
   }
  ],

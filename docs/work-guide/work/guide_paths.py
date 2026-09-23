@@ -27,7 +27,7 @@ PATHS = {
         ['H50'],
     ),
     'desktop-controls': (
-        'Use local Wispr and Codex shortcuts, then add optional shared desk presets.',
+        'Use local Codex mouse shortcuts, then add optional shared desk presets.',
         'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets keep their blocked and deferred labels until the owner selects them, now that the general-control definition is closed.',
         ['H64'],
     ),

@@ -1,3 +1,29 @@
+## September 22, 2026: Keyboard-owned A/B scope revision
+
+The owner removed keyboard A/B and attached Dual Super Buttons from B.U.N.N.Y.
+integration. They are programmed directly on the keyboard. This supersedes the
+earlier version 1 A/B editor requirement and excludes these controls from the
+later editor and preset bindings. The successful personal Wispr/Enter trial and
+confirmed restoration remain in the qualification report as historical evidence.
+
+Updated the README, desktop-control direction, qualification report,
+architecture and roadmap. Guarded issue body edits reconciled #31, #35 and
+#63–#71, including the N30-specific #64–#66 titles; states, labels, assignees,
+milestones and dependencies were preserved. The guide's desktop path, roadmap
+label, two sequence viewers and their pinned source now use the revised scope.
+Backlog and paginated history refreshes retain concurrent main work.
+
+N30 native receiver identity, selective Codex translation and recovery remain
+unqualified. #64 stays open and #65 blocked. No keyboard integration gate
+remains. This candidate adds no product behavior or OpenSpec capability and
+performs no installation, input dispatch or hardware operation. Normal CI applies
+because the PR includes files outside the guide. Guide UI uses the SDLC approval
+exception; public publication remains separate.
+
+Validation: Node 24.21.0 setup, workflow validation and 15 workflow tests passed.
+All nine diagrams passed 9/9 deterministic checks. Final guide/browser and
+independent-review results are recorded on PR #143 at its frozen revision.
+
 ## September 22, 2026: Pixoo general controls closeout
 
 Hub PR #160 merged by guarded squash as `d91bee7a60953e67fdfeff06d93e275746182ba8`,

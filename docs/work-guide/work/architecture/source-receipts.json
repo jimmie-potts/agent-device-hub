@@ -246,11 +246,11 @@
     },
     {
       "repo": "agent-device-hub",
-      "revision": "cbbb6aaa9142f66e020315b201ef5afe597baf66",
+      "revision": "bce87a60c6df9c3c4dfb743dd516ab971669df55",
       "path": "docs/desktop-controls.md",
-      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/cbbb6aaa9142f66e020315b201ef5afe597baf66/docs/desktop-controls.md",
-      "sha256": "6d9a38efe92aa35ab3dd3fb88fd41c918f438f81c280ea83c62493a4d3b07c88",
-      "reviewedAt": "2026-09-22T03:49:40.297168+00:00"
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/bce87a60c6df9c3c4dfb743dd516ab971669df55/docs/desktop-controls.md",
+      "sha256": "155da2476c67101612243f9ba374ca3a52a246c008c0c9478d13d448989aa969",
+      "reviewedAt": "2026-09-23T01:25:55.558546+00:00"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
@@ -265,6 +265,16 @@
       "source": "agent-device-hub/docs/desktop-controls.md",
       "revision": "cbbb6aaa9142f66e020315b201ef5afe597baf66",
       "reason": "Owner revised defaults to A=Enter and B=Wispr, required editable A/B bindings in version 1, and removed the reserved preset button. Other source pins retain their baseline review."
+    },
+    {
+      "reviewedAt": "2026-09-23T01:25:55.558546+00:00",
+      "diagrams": [
+        "seq-desktop-input",
+        "seq-big-b-presets"
+      ],
+      "source": "agent-device-hub/docs/desktop-controls.md",
+      "revision": "bce87a60c6df9c3c4dfb743dd516ab971669df55",
+      "reason": "Owner removed keyboard A/B and attached Super Buttons from B.U.N.N.Y. mapping, dispatch, profiles and preset bindings. N30/Codex route qualification remains incomplete. Other source pins retain their previous evidence."
     }
   ]
 }

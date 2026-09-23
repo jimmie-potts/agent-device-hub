@@ -2,12 +2,12 @@
  "schema_version": 1,
  "diagram_type": "sequence",
  "meta": {
-  "title": "Independent Wispr and Codex input controls",
+  "title": "Independent Codex mouse controls",
   "quality_profile": "showcase",
   "column_fit": "spread",
   "viewBox": [
    1070,
-   1030
+   650
   ]
  },
  "participants": [
@@ -15,7 +15,7 @@
    "id": "user",
    "type": "external",
    "label": "User",
-   "sublabel": "A/B · mapped mouse"
+   "sublabel": "qualified N30 input"
   },
   {
    "id": "dispatcher",
@@ -30,12 +30,6 @@
    "sublabel": "bindings + app scope"
   },
   {
-   "id": "wispr",
-   "type": "external",
-   "label": "Wispr Flow",
-   "sublabel": "own requirements"
-  },
-  {
    "id": "app",
    "type": "frontend",
    "label": "Focused app",
@@ -46,27 +40,17 @@
   {
    "from": 178,
    "label": "Profile selection",
-   "to": 320
+   "to": 276
   },
   {
-   "from": 324,
-   "label": "Default B: dictation",
-   "to": 554
+   "from": 280,
+   "label": "One Codex action",
+   "to": 422
   },
   {
-   "from": 558,
-   "label": "Default A: separate Enter",
-   "to": 656
-  },
-  {
-   "from": 660,
-   "label": "Mouse: one Codex action",
-   "to": 802
-  },
-  {
-   "from": 806,
+   "from": 426,
    "label": "Boundaries",
-   "to": 948
+   "to": 568
   }
  ],
  "messages": [
@@ -81,83 +65,27 @@
    "from": "dispatcher",
    "to": "profile",
    "y": 254,
-   "label": "load mappings",
+   "label": "load mappings; no input or device commands",
    "variant": "default"
   },
   {
-   "from": "profile",
-   "to": "dispatcher",
-   "y": 298,
-   "label": "bindings (zero device commands)",
-   "variant": "return"
-  },
-  {
    "from": "user",
    "to": "dispatcher",
-   "y": 356,
-   "label": "Big B press (hold)",
-   "variant": "emphasis"
-  },
-  {
-   "from": "dispatcher",
-   "to": "wispr",
-   "y": 400,
-   "label": "invoke qualified dictation binding",
-   "variant": "emphasis"
-  },
-  {
-   "from": "user",
-   "to": "dispatcher",
-   "y": 444,
-   "label": "Big B release",
-   "variant": "emphasis"
-  },
-  {
-   "from": "dispatcher",
-   "to": "wispr",
-   "y": 488,
-   "label": "release binding",
-   "variant": "emphasis"
-  },
-  {
-   "from": "wispr",
-   "to": "app",
-   "y": 532,
-   "label": "insert text; no automatic Enter",
-   "variant": "return"
-  },
-  {
-   "from": "user",
-   "to": "dispatcher",
-   "y": 590,
-   "label": "fresh Big A press",
-   "variant": "emphasis"
-  },
-  {
-   "from": "dispatcher",
-   "to": "app",
-   "y": 634,
-   "label": "send configured Enter action",
-   "variant": "emphasis"
-  },
-  {
-   "from": "user",
-   "to": "dispatcher",
-   "y": 692,
-   "label": "fresh mapped mouse press",
+   "y": 312,
+   "label": "fresh qualified mouse press",
    "variant": "emphasis"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 736,
-   "label": "resolve app scope + action",
+   "y": 356,
+   "label": "resolve control, app scope and action",
    "variant": "default"
   },
   {
    "from": "dispatcher",
    "to": "app",
-   "y": 780,
+   "y": 400,
    "label": "next attention task · command menu · previous task · next task",
    "variant": "emphasis",
    "note": "exactly one action per deliberate press"
@@ -165,22 +93,22 @@
   {
    "from": "dispatcher",
    "to": "app",
-   "y": 838,
-   "label": "outside Codex → ordinary mouse behavior passes through",
+   "y": 458,
+   "label": "outside Codex → ordinary mouse behavior",
    "variant": "dashed"
   },
   {
    "from": "dispatcher",
    "to": "profile",
-   "y": 882,
-   "label": "held / repeated / stale input → no duplicate, no replay",
+   "y": 502,
+   "label": "held / repeated / stale input → no duplicate or replay",
    "variant": "dashed"
   },
   {
    "from": "dispatcher",
    "to": "user",
-   "y": 926,
-   "label": "A/B editable in version 1; preset actions need a configured binding and service",
+   "y": 546,
+   "label": "report dispatch separately from app success",
    "variant": "return"
   }
  ],
@@ -189,25 +117,25 @@
    "dot": "cyan",
    "title": "Independent path",
    "items": [
-    "Ships without the hub, shared monitoring, general controls or Music",
-    "Wispr keeps its own service requirements"
+    "Mouse dispatch needs no hub, shared monitoring, general controls or Music",
+    "Keyboard A/B and attached Super Buttons stay outside B.U.N.N.Y."
    ]
   },
   {
    "dot": "violet",
-   "title": "Vocabulary",
+   "title": "Ownership",
    "items": [
-    "Control profile: controls, gestures and app scope mapped to actions",
-    "Button binding: one assignment",
-    "Desk preset: configured actions on participating devices (not used here)"
+    "The keyboard owns its A/B assignments, including personal Wispr and Enter mappings",
+    "B.U.N.N.Y. does not edit, store, dispatch or use them for presets"
    ]
   },
   {
    "dot": "amber",
-   "title": "Unverified",
+   "title": "Qualification pending",
    "items": [
-    "Owner packaging identifies keyboard 85HA and N30 mouse 85CA; hold and app tests remain pending (H64)",
-    "A/B editing ships in H65 version 1; H70 extends supported controls and saved profiles"
+    "N30 85CA has four distinct observed browser outputs (H64)",
+    "Native identity, selective routing and recovery still need evidence",
+    "H70 profiles cover qualified controls, excluding keyboard A/B and Super Buttons"
    ]
   }
  ]

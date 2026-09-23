@@ -41,7 +41,7 @@ TRACKS = [
     ]),
     ('Desktop controls (shortcut path)', [
         dict(id='n-desk-doc', x=0, label='Input qualification', issues=['H64'], guide='desktop-controls'),
-        dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
+        dict(id='n-desk-local', x=1, label='Codex mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
         dict(id='n-desk-later', x=4, label='Profiles · Music preset', issues=['H70', 'H71'], guide='desktop-controls'),
