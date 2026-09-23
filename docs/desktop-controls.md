@@ -134,7 +134,8 @@ separately authorized installation and app/input acceptance in
 Shared presets [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
 wait for the [Codex-first milestone #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
 and #31's general-control definition, as well as the source dependencies linked
-from #67. The shared preset service and #65 then feed Big B and visible results
+from #67. Manual preset dispatch does not require the future automation engine.
+The shared preset service and #65 then feed Big B and visible results
 in [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
 [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) owns installed
 switching, manual handoff and restoration acceptance, including the shared

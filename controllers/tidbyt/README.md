@@ -29,8 +29,9 @@ as distinct values. Shared payloads use neutral IDs or user-chosen labels.
 ## Issues
 
 GitHub issues own the delivery sequence, prerequisites and acceptance; see the
-[open Tidbyt issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+Tidbyt+OR+Tronbyt+in%3Atitle). Controller contracts belong to
-shared #4; this directory must not invent a competing common API.
+[open Tidbyt issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+Tidbyt+OR+Tronbyt+in%3Atitle).
+Controller contracts belong to shared #4; this directory must not invent a
+competing common API.
 
 ## Development and evidence
 
@@ -39,6 +40,7 @@ Follow [scoped instructions](AGENTS.md) and the root
 are the future implementation direction. The implementing issue adds actual
 build/type/test commands and CI; there are no controller commands yet.
 
-Source tests use fake feeds and transports. Real pushes happen only where an
-issue allows them: one test push in #16, then installation in #21. Credentials and device/account configuration
-stay outside Git. A successful push does not prove a visible result.
+Source tests use fake feeds and transports. Real pushes need the user's
+explicit go-ahead and happen only where an issue allows them: one test push in
+#16, then installation in #21. Credentials and device/account configuration stay
+outside Git. A successful push does not prove a visible result.

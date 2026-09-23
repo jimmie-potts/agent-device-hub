@@ -86,7 +86,7 @@ and no hidden mode changes. Keeping restoration explicit trades convenience for
 no stored baselines and no timers; desk presets in #67 add explicit
 multi-device actions within these rules.
 
-The [roadmap](../roadmap.md#general-device-controls) links the bounded issues:
+The bounded issues are
 hub #151, #152, #153, #154 and #155, Nanoleaf #64 and Pixoo #67. Each defines
 source tests, human UI approval where UI changes, and separately authorized
 physical acceptance. This decision creates no implementation, installation,

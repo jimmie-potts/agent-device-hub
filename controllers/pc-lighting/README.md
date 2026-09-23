@@ -2,7 +2,8 @@
 
 Status: Documentation only. No package, Windows adapter, service or lighting
 control is implemented or installed here. [Documentation ticket](https://github.com/jimmie-potts/agent-device-hub/issues/50) owns
-this bootstrap; the issues below are skeletons to refine before implementation.
+this bootstrap; the follow-up issues are skeletons to refine before
+implementation.
 
 ## Accepted scope
 
@@ -116,8 +117,7 @@ and restoration; never overwrite newer manual changes with an old snapshot.
 ## Issues
 
 GitHub issues own the delivery sequence, prerequisites and acceptance; see the
-[open PC lighting issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+lighting+OR+Strimer+OR+Varmilo+in%3Atitle). They start as placeholders
-to refine before implementation.
+[open PC lighting issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+lighting+OR+Strimer+OR+Varmilo+in%3Atitle+-Nanoleaf).
 
 ## Development and evidence
 

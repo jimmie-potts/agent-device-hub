@@ -13,9 +13,9 @@ implementation, installation, LAN discovery or physical-testing authority.
 Use direct LAN control with fake packets during source development. Home
 Assistant and cloud accounts are not dependencies. Resolve the supplied "A16"
 name before physical acceptance; do not assume an A19 model or unsupported
-capabilities. Send bulb traffic only to user-supplied IPs and only where an
-issue allows it: read-only queries in #17, then installation in #22. Never scan
-the LAN.
+capabilities. Send bulb traffic only with the user's explicit go-ahead, only to
+user-supplied IPs and only where an issue allows it: read-only queries in #17,
+then installation in #22. Never scan the LAN.
 
 Consume the shared controller and agent-state contracts. Each configured bulb
 has one designated writer and serialized queue. Preserve observation freshness,

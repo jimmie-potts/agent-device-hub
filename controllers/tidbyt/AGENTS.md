@@ -16,8 +16,8 @@ contracts; do not copy a provider reducer or create another common API. Every
 write uses the same designated controller queue.
 
 Build and test cloud behavior with fakes, and record unsupported or unknown
-behavior. Contact the real account only where an issue allows it: one test push
-in #16, then installation in #21.
+behavior. Contact the real account only with the user's explicit go-ahead and
+where an issue allows it: one test push in #16, then installation in #21.
 Tronbyt connection work requires its own issue. Firmware flashing, server
 installation and physical transition require separate explicit authorization,
 confirmed device generation and an identified target. Never infer that changing

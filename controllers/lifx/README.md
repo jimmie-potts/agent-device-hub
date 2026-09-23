@@ -30,8 +30,9 @@ provider reducer or infer readership from turn completion.
 ## Issues
 
 GitHub issues own the delivery sequence, prerequisites and acceptance; see the
-[open LIFX issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+LIFX+in%3Atitle). Shared #4 owns common controller
-contracts; #11 owns broader deferred Home Assistant/MQTT research.
+[open LIFX issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+LIFX+in%3Atitle).
+Shared #4 owns common controller contracts; #11 owns broader deferred Home
+Assistant/MQTT research.
 
 ## Development and evidence
 
@@ -41,6 +42,7 @@ are the future implementation direction. The implementing issue adds actual
 build/type/test commands and CI; there are no controller commands yet.
 
 Use fake packets, feeds and neutral identities for source work. Real bulb
-traffic happens only where an issue allows it: read-only queries to user-supplied
-IPs in #17, then installation in #22. Never scan the LAN or change router or
-firewall settings. Keep bulb IPs and runtime data outside Git.
+traffic needs the user's explicit go-ahead and happens only where an issue
+allows it: read-only queries to user-supplied IPs in #17, then installation in
+#22. Never scan the LAN or change router or firewall settings. Keep bulb IPs
+and runtime data outside Git.
