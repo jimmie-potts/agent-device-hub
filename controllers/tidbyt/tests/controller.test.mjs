@@ -343,7 +343,7 @@ test('a rate limit fails that write and delays queued writes until the hold expi
   assert.equal(checkSnapshot(controller).display.holds.rateLimitRemainingMs, 0);
 });
 
-test('close aborts the in-flight write as uncertain, cancels queued writes and refuses new ones', async () => {
+test('close aborts the in-flight write as uncertain, cancels queued writes and refuses new ones', { timeout: 2000 }, async () => {
   const connection = fakeConnection({ push: (_n, signal) => new Promise(resolve => signal.addEventListener('abort', () => resolve({ outcome: 'uncertain' }))) });
   const { controller } = setup({ connection });
   const inFlight = controller.submit(display(controller, 1));
@@ -400,4 +400,41 @@ test('invalid controller options are rejected', () => {
   for (const extra of [{ controllerId: 'bad id' }, { deviceId: '' }, { maxPending: 0 }, { maxPending: 33 }, { epoch: 'x'.repeat(129) }, { label: 'x'.repeat(81) }]) {
     assert.throws(() => new TidbytController({ controllerId: 'tidbyt-main', deviceId: 'tidbyt', sourceId: 'tidbyt-cloud', connection, ...extra }));
   }
+});
+
+test('a stale in-flight result from the replaced connection does not re-apply holds or health', async () => {
+  for (const stale of [
+    { outcome: 'failed', failure: 'unauthenticated', priorEffects: 'none' },
+    { outcome: 'failed', failure: 'capacity', priorEffects: 'none', retryAfterMs: 60000 },
+  ]) {
+    const hold = gate();
+    const old = fakeConnection({ push: () => hold.promise });
+    const { controller } = setup({ connection: old });
+    const inFlight = controller.submit(display(controller, 1));
+    await flush();
+    const replacement = fakeConnection();
+    controller.reconfigure(replacement);
+    hold.open(stale);
+    const receipt = await settle(inFlight);
+    assert.deepEqual(receipt.failure, { code: stale.failure }, 'the stale write keeps its own receipt');
+    const s = checkSnapshot(controller);
+    assert.deepEqual(s.display.holds, { authentication: false, rateLimitRemainingMs: 0 }, stale.failure);
+    assert.equal(s.controller.serviceHealth, 'unknown');
+    assert.equal((await settle(controller.submit(display(controller, 2)))).outcome, 'sent', stale.failure);
+    assert.equal(replacement.state.pushes.length, 1);
+  }
+});
+
+test('a successful read does not report ready while the authentication hold blocks writes', async () => {
+  const connection = fakeConnection({ push: () => ({ outcome: 'failed', failure: 'forbidden', priorEffects: 'none' }) });
+  const { controller } = setup({ connection });
+  await controller.submit(display(controller)).done;
+  await controller.refresh();
+  const s = checkSnapshot(controller);
+  assert.equal(s.display.holds.authentication, true);
+  assert.equal(s.controller.serviceHealth, 'unavailable');
+  assert.equal(s.display.installation.status, 'known');
+  const held = await settle(controller.submit(display(controller)));
+  assert.deepEqual(held.failure, { code: 'forbidden' }, 'a forbidden hold keeps its own code');
+  assert.equal(connection.state.pushes.length, 1);
 });

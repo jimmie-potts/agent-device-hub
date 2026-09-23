@@ -98,6 +98,13 @@ function missingIdentity(body: string | undefined): boolean {
 }
 
 async function rejection(response: Response): Promise<PushFailure | 'capacity' | 'uncertain'> {
+  const failure = await classify(response);
+  // Release the connection; only the 500 identity check reads the body.
+  await response.body?.cancel().catch(() => undefined);
+  return failure;
+}
+
+async function classify(response: Response): Promise<PushFailure | 'capacity' | 'uncertain'> {
   const status = response.status;
   if (status === 401) return 'unauthenticated';
   if (status === 403) return 'forbidden';

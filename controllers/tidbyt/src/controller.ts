@@ -119,7 +119,8 @@ export class TidbytController {
   #inFlight?: { entry: Entry; abort: AbortController };
   #draining = false;
   #closed = false;
-  #authenticationHold = false;
+  /** The failure that set the hold; later writes fail with the same code. */
+  #authenticationHold?: 'unauthenticated' | 'forbidden';
   #rateLimitUntil?: number;
   #holdAbort = new AbortController();
   #health: Snapshot['serviceHealth'] = 'unknown';
@@ -253,18 +254,21 @@ export class TidbytController {
     entry.resolve(receipt);
   }
 
-  #apply(entry: Entry, result: PushOutcome): void {
+  /** `current` is false for a result from a connection that `reconfigure` has replaced. */
+  #apply(entry: Entry, result: PushOutcome, current: boolean): void {
     if (result.outcome === 'sent') {
-      this.#health = 'ready';
+      if (current) this.#health = 'ready';
       this.#lastSuccessfulSend = { status: 'known', requestId: clone(entry.request.requestId), clock: this.#clock(), operationIds: [PUSH] };
       return this.#finish(entry, 'sent', 'confirmed-transmission');
     }
     if (result.outcome === 'uncertain') {
-      this.#health = 'degraded';
+      if (current) this.#health = 'degraded';
       return this.#finish(entry, 'uncertain', 'possible', 'uncertain-result');
     }
+    // A replaced connection's holds and health must not block its replacement.
+    if (!current) return this.#finish(entry, 'failed', 'none', result.failure);
     if (result.failure === 'unauthenticated' || result.failure === 'forbidden') {
-      this.#authenticationHold = true;
+      this.#authenticationHold = result.failure;
       this.#health = 'unavailable';
     } else if (result.failure === 'capacity') {
       this.#rateLimitUntil = this.#now() + result.retryAfterMs;
@@ -275,8 +279,8 @@ export class TidbytController {
     this.#finish(entry, 'failed', 'none', result.failure);
   }
 
-  #complete(entry: Entry, result: PushOutcome): void {
-    this.#apply(entry, result);
+  #complete(entry: Entry, result: PushOutcome, connection: DisplayConnection): void {
+    this.#apply(entry, result, connection === this.#connection);
     if (this.#closed) this.#health = 'unavailable';
   }
 
@@ -296,18 +300,19 @@ export class TidbytController {
         const decision = evaluate({ operation: 'dequeue', expectedGeneration: entry.generation,
           currentGeneration: this.#generation, priorEffects: 'none' }) as { decision: string };
         if (decision.decision !== 'send-permitted') { this.#finish(entry, 'cancelled', 'none', 'stale-generation'); continue; }
-        if (this.#authenticationHold) { this.#finish(entry, 'failed', 'none', 'unauthenticated'); continue; }
+        if (this.#authenticationHold) { this.#finish(entry, 'failed', 'none', this.#authenticationHold); continue; }
         const abort = new AbortController();
+        const connection = this.#connection;
         this.#inFlight = { entry, abort };
         let result: PushOutcome;
         try {
-          result = await this.#connection.push(entry.webp, abort.signal);
+          result = await connection.push(entry.webp, abort.signal);
         } catch {
           result = { outcome: 'uncertain' };
         } finally {
           this.#inFlight = undefined;
         }
-        this.#complete(entry, result);
+        this.#complete(entry, result, connection);
       }
     } finally {
       this.#draining = false;
@@ -337,7 +342,7 @@ export class TidbytController {
     if (this.#configurationRevision >= Number.MAX_SAFE_INTEGER) throw new Error('revision-exhausted');
     this.#configurationRevision += 1;
     this.#connection = connection;
-    this.#authenticationHold = false;
+    this.#authenticationHold = undefined;
     this.#releaseHold();
     this.#health = 'unknown';
     this.#installation = undefined;
@@ -357,9 +362,10 @@ export class TidbytController {
     if (connection !== this.#connection || this.#closed) return;
     if (result.ok) {
       this.#installation = { present: result.present, sampledAtMs: this.#now() };
-      this.#health = 'ready';
+      // Writes stay refused under an authentication hold, so the service is not ready.
+      this.#health = this.#authenticationHold ? 'unavailable' : 'ready';
     } else {
-      if (result.failure === 'unauthenticated' || result.failure === 'forbidden') this.#authenticationHold = true;
+      if (result.failure === 'unauthenticated' || result.failure === 'forbidden') this.#authenticationHold = result.failure;
       this.#health = 'unavailable';
     }
     this.#changed();
@@ -417,7 +423,7 @@ export class TidbytController {
         connection: clone(this.#connection.capabilities),
         pending: this.#active.map(entry => ({ requestId: clone(entry.request.requestId), generation: clone(entry.generation) })),
         holds: {
-          authentication: this.#authenticationHold,
+          authentication: this.#authenticationHold !== undefined,
           rateLimitRemainingMs: this.#rateLimitUntil === undefined ? 0 : Math.max(0, this.#rateLimitUntil - now),
         },
         installation: installation ? {

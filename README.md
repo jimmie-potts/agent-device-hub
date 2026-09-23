@@ -11,9 +11,10 @@ controller routing and supervised state-owner migration, and a
 [React dashboard](apps/dashboard/README.md). Installation and new device
 adapters have separate owners and acceptance gates.
 
-New Tidbyt and LIFX controllers will live in this monorepo. Their current
-[Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
-directories contain documentation and scoped agent instructions only. The first
+New Tidbyt and LIFX controllers live in this monorepo. The
+[Tidbyt](controllers/tidbyt/README.md) directory holds a fake-tested in-process
+cloud controller package; the [LIFX](controllers/lifx/README.md) directory
+contains documentation and scoped agent instructions only. The first
 feature priority for these devices is automatic agent status. Tidbyt starts with
 the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).

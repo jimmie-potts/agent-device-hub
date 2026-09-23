@@ -12,9 +12,8 @@ status; do not copy issue lists or dependency chains into repository docs.
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
 launched from the repository root. controllers/tidbyt holds the fake-tested cloud
-controller package; controllers/lifx contains documents only. For Tidbyt changes,
-run npm run test:tidbyt and npm run test:tidbyt:python plus the shared build/type,
-contract and workflow checks from the worktree root. Before shared package, root manifest, lockfile or CI changes, read
+controller package; controllers/lifx contains documents only. Before shared
+package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
 Use the owning package and application guides for implementation details and
@@ -74,6 +73,9 @@ npm run test:agent-state, npm run test:agent-state:python and
 npm run test:agent-state:package, plus the shared build/type, controller,
 lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
 Source tests do not qualify a production storage adapter or installed provider.
+For controllers/tidbyt changes, read its README and run npm run test:tidbyt and
+npm run test:tidbyt:python plus the shared build/type, contract and workflow
+checks from the worktree root. All must exit zero.
 For apps/hub or apps/dashboard changes, read that app's README and its
 validation sections in docs/development.md (for the hub: Standalone hub,
 Standalone hub MCP and Shared monitoring setup checks; for the dashboard:

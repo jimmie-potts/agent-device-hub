@@ -160,9 +160,9 @@ without claiming installed producer qualification. Provider normalizers and boun
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
 The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
-migrations have separate deferred issues. The controllers/tidbyt,
-controllers/lifx and controllers/pc-lighting directories currently contain
-documents. Use Node 24 and npm workspaces for executable packages.
+migrations have separate deferred issues. controllers/tidbyt holds the
+in-process cloud controller package; controllers/lifx and controllers/pc-lighting
+currently contain documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
