@@ -32,9 +32,10 @@ and [development](docs/development.md) for setup. GitHub issues own the delivery
 sequence, scope, acceptance, dependencies and status. A completed bootstrap is
 not a working device integration.
 
-[Desktop controls](docs/desktop-controls.md) records the accepted 8BitDo/Wispr
-defaults, Codex mouse actions, control profiles and later desk presets. These
-controls remain future work. Local shortcuts can ship independently of the hub;
+[Desktop controls](docs/desktop-controls.md) records Codex mouse actions, control
+profiles and later desk presets. These integrations remain future work. Keyboard
+A/B and the attached Super Buttons are configured directly on the keyboard and
+are outside B.U.N.N.Y. Local shortcuts can ship independently of the hub;
 shared presets follow the Codex-first milestone and general-control definition.
 
 ## System design documents

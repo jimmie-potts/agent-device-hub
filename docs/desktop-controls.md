@@ -1,6 +1,8 @@
 # Desktop controls, control profiles and desk presets
 
-Status: Accepted direction from [Hub #63](https://github.com/jimmie-potts/agent-device-hub/issues/63).
+Status: Accepted direction from [Hub #63](https://github.com/jimmie-potts/agent-device-hub/issues/63),
+revised by the owner during [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64)
+on September 22–23, 2026 UTC.
 The 8BitDo input integration, profile editor and desk-preset service remain future
 work. This document records decisions and qualification boundaries; it does not
 establish installed mappings or device support.
@@ -9,20 +11,36 @@ The [future-work guide #35](https://github.com/jimmie-potts/agent-device-hub/iss
 tracks the linked backlog; each issue's blocked-by links give its required and
 conditional prerequisites. Preserve the Codex-first priority in
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) while allowing the
-independent Wispr and mouse path to ship earlier.
+independent Codex mouse path to ship earlier.
 
-## Accepted defaults
+## Accepted defaults and keyboard ownership
 
-| Control | Requested behavior | Boundary |
-| --- | --- | --- |
-| Big A on the Dual Super Buttons | Hold to dictate through Wispr Flow; release to insert text | Message submission remains a separate user action. Genuine press/hold/release support must qualify. |
-| Big B on the Dual Super Buttons | Each fresh press cycles Work → Free → Quiet → Work | Available after the shared preset service and binding qualify. Music joins later through its own integrations. |
-| First Codex mouse mapping | Next task needing attention, command menu, previous task, next task | Apply within Codex. Preserve ordinary behavior outside Codex and on unassigned controls. Physical button identities and exact shortcuts await qualification. |
+Keyboard A/B and the attached Dual Super Buttons are programmed directly on the
+keyboard. B.U.N.N.Y. does not discover, store, edit, dispatch or restore their
+assignments, and cannot use them as preset bindings. This owner decision
+supersedes the earlier version 1 A/B editor requirement and excludes these
+controls from the later #70 editor.
 
-Wispr and basic mouse dispatch work independently of the hub, shared monitoring,
-general controls, Music and model calls. Wispr retains responsibility for speech
-processing and its own availability requirements. Big B remains unavailable until
-its service exists; presses must not accumulate for later execution.
+The owner's preferred personal setup is **B = Wispr Ctrl+Win hold/release** and
+**A = Enter on a separate press**. The authorized keyboard trial succeeded,
+including dictation without automatic Enter and a separate A press. Both
+temporary assignments were then cleared. These preferences describe personal
+keyboard setup, not B.U.N.N.Y. defaults or current installed mappings.
+
+The first supported mouse mapping requests next task needing attention, command
+menu, previous task and next task within Codex. Preserve ordinary behavior
+outside Codex and on unassigned controls. The owner qualified a temporary
+AutoHotkey route using the N30's existing PageUp/PageDown/Back/Forward outputs.
+These same keys from other keyboards and mice also map while Codex is active.
+The owner accepted this shared-key scope; receiver-specific isolation is not
+required for this personal route.
+
+Mouse dispatch works independently of the hub, shared monitoring, general
+controls, Music and model calls. Later preset cycling uses an explicitly
+selected qualified control other than keyboard A/B or the attached Super
+Buttons. The initial cycle is Work → Free → Quiet → Work; Music follows its
+own qualification. A preset action remains unavailable until its service exists,
+and presses must not accumulate for later execution.
 
 A manual change in a device's own app remains until the next explicit preset
 request. That request applies the next preset to configured, participating,
@@ -35,7 +53,7 @@ does not apply a preset or replay old presses.
 | Term | Meaning |
 | --- | --- |
 | Control profile | A saved mapping of physical controls and gestures to actions, including application scope. Selecting it alone sends no device commands. |
-| Button binding | One assignment within a control profile, such as a qualified Big A hold/release gesture bound to Wispr dictation. |
+| Button binding | One assignment within a control profile, such as a qualified N30 direction bound to a Codex action. |
 | Desk preset | An explicit collection of supported actions on configured participating lights and displays. A binding may request it when the service is available. |
 
 The initial preset meanings are accepted intent. Exact per-device operations,
@@ -70,10 +88,10 @@ hub runs in Linux/WSL or later on another host. Source packages, runtime,
 installation paths, startup behavior and profile storage belong to the owning
 implementation issues; this document selects none of them.
 
-The local path resolves a qualified physical control and gesture, checks its
-profile and application scope, then dispatches to the owning app. Wispr receives
-its qualified dictation binding. Codex receives its qualified navigation or
-command-menu action. The existing CHOMPI bridge and vendor mappings retain their
+The local path resolves a qualified input signal and gesture, checks its
+profile and application scope, then dispatches its qualified navigation or
+command-menu action to Codex. Keyboard A/B and the attached Super Buttons never
+enter this dispatcher. The existing CHOMPI bridge and vendor mappings retain their
 ownership. Reuse the bridge's approach only where suitable; its three MIDI
 bindings are not an implemented 8BitDo or saved-profile system.
 
@@ -91,42 +109,45 @@ or make a partial preset look complete. A reconnect reads current state without
 replaying input or ambiguous writes. Exact concurrent-request and restart rules
 belong in #67's issue-linked specification.
 
-## Supported documentation and remaining qualification
+## Qualification result and limits
 
-The official references below were checked on September 22, 2026. They describe
-published capabilities, not this user's installed hardware or settings.
+The official product references were checked on September 22, 2026. The owner's
+packaging identifies keyboard N Edition 85HA and N30 mouse 85CA. The
+[qualification report](desktop-input-qualification.md) separates the sourced
+matrix, browser observations, receiver inventory and completed Windows trial.
+The operator-associated N30 receiver is `062A:4101`; the reported Codex package
+is `26.917.6896.0`.
 
-| Source | Published fact | Still unverified here |
+On September 23 the owner reported that all brief trial checks passed: the four
+Codex actions, normal browser navigation outside Codex and restoration after
+stopping. The selected route is application-scoped AutoHotkey 2.0.28 using the
+running Codex executable. No receiver-specific suppression, persistent
+installation, reconnect/sleep recovery or CHOMPI coexistence result is claimed.
+The aggregate owner report did not retain per-action traces or task content.
+
+| Source | Published fact | Qualification boundary |
 | --- | --- | --- |
-| [8BitDo Retro Mechanical Keyboard](https://www.8bitdo.com/retro-mechanical-keyboard/) | Describes programmable keyboard A/B keys, Dual Super Buttons and wired, 2.4 GHz and Bluetooth connections. | Exact keyboard/edition, attached controls, connection mode and hold/release event behavior. Big A/B in this plan refer to the Super Buttons, not an assumed keyboard mapping. |
-| [8BitDo Retro R8 mouse](https://www.8bitdo.com/retro-r8-mouse-n/) | Describes four programmable side buttons and configuration through Ultimate Software V2. | The user's mouse model and edition. Retro R8 is a candidate only; resemblance does not identify it. |
-| [8BitDo Ultimate Software V2](https://app.8bitdo.com/Ultimate-Software-V2/) | Documents key mapping and device-specific support. | Installed version, exposed controls, mapping storage and whether vendor mapping alone supplies the required gesture and app scope. Macro support does not prove genuine push-to-talk. |
-| [Wispr shortcut support](https://docs.wisprflow.ai/articles/2612050838-supported-unsupported-keyboard-hotkey-shortcuts) | Documents customizable push-to-talk shortcuts on Windows and reserved/conflicting combinations. | The installed binding, modifier requirements, collisions, release recovery and insertion behavior in the intended app. |
-| [Codex command reference](https://learn.chatgpt.com/docs/reference/commands#keyboard-shortcuts) | Lists command-menu, previous/next chat or tab, and next-chat-needing-attention actions, with platform-specific shortcuts. | Availability and exact bindings in the installed Windows version, foreground detection and behavior outside Codex. |
+| [8BitDo N30 manual](https://download.8bitdo.com/Manual/Other/N30-Mouse/N30_Mouse_Manual.pdf?20220513=) | D-pad directions are Page Up, Back, Page Down and Forward; clicks and touch scrolling remain separate. | Existing outputs feed the tested shared-key route. Vendor custom profiles and R8 capabilities are not assumed. |
+| [Codex command reference](https://learn.chatgpt.com/docs/reference/commands#keyboard-shortcuts) | Command menu, previous/next chat or tab and next-chat-needing-attention shortcuts. | Owner passed the brief trial in the reported version; other versions, views and custom shortcuts remain separate. |
 
-[#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) owns the bounded
-investigation. Its per-control/per-connection matrix must distinguish supported,
-unsupported and unknown results. It must settle:
+The local mapper owns application scope and configuration. A clear stop/disable
+path restores original behavior. Its reusable implementation must disclose the
+shared-key effect inside Codex and preserve ordinary input elsewhere. Later
+installation owns proportionate lifecycle checks; the research trial does not
+establish a persistent service or startup behavior. The existing CHOMPI bridge
+and vendor mappings retain their owners.
 
-- Hardware and USB/receiver identity, connection mode, installed versions and
-  which controls are actually remappable, including keyboard A/B and mouse controls.
-- The supported vendor route or smallest Windows adapter, with one mapping owner,
-  reversible setup and coexistence with vendor software and CHOMPI.
-- True press, hold and release behavior for Wispr, including modifier conflicts,
-  cancellation and failed-release recovery. A one-shot macro is insufficient.
-- The four Codex actions and app scope, including held-button repeats, focus
-  changes, app exit, reconnect and sleep/resume without duplicate or delayed actions.
-
-Use existing supported interfaces. Firmware replacement and custom USB protocol
-research are outside the accepted approach. Negative qualification may complete
-an investigation but cannot make unsupported downstream behavior ready.
+Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y. Their earlier
+successful manual mapping trial is historical evidence, not a further gate.
+Firmware replacement, new drivers and custom USB protocol research are outside
+the selected approach.
 
 ## Delivery sequence
 
 Documentation [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63)
 and qualification [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64)
 can proceed independently. Successful qualification plus these decisions feed
-the local Wispr/Codex implementation
+the local Codex mouse implementation
 [#65](https://github.com/jimmie-potts/agent-device-hub/issues/65), followed by
 separately authorized installation and app/input acceptance in
 [#66](https://github.com/jimmie-potts/agent-device-hub/issues/66).
@@ -135,17 +156,18 @@ Shared presets [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
 wait for the [Codex-first milestone #32](https://github.com/jimmie-potts/agent-device-hub/issues/32)
 and #31's general-control definition, as well as the source dependencies linked
 from #67. Manual preset dispatch does not require the future automation engine.
-The shared preset service and #65 then feed Big B and visible results
+The shared preset service and #65 then feed a user-selected preset binding and visible results
 in [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
 [#69](https://github.com/jimmie-potts/agent-device-hub/issues/69) owns installed
 switching, manual handoff and restoration acceptance, including the shared
 producer setup for full agent-status observations.
 
-Saved profiles and customization
+Broader saved profiles and customization
 [#70](https://github.com/jimmie-potts/agent-device-hub/issues/70) follow #65.
-Cover every remappable control exposed by the qualified hardware, with saved
-profiles, supported app/hub actions, custom keyboard shortcuts and recoverable
-defaults. Unsupported controls stay explicit. Arbitrary scripts, shell execution,
+Cover qualified remappable controls with saved profiles, supported app/hub
+actions, custom keyboard shortcuts and recoverable defaults. Keyboard A/B and
+the attached Super Buttons remain excluded. Unsupported controls stay explicit.
+Arbitrary scripts, shell execution,
 raw device commands and multi-step macros are outside the first customization
 release. Profile lifecycle, held-control changes, atomic saves, migration and
 editor placement require refinement there. Optional preset or Music actions do
@@ -171,8 +193,8 @@ Varmilo lighting support supplies no keyboard-input integration.
 | --- | --- | --- |
 | Documentation/source | Accepted decisions, published references, reviewed source and fake-input/controller tests | Installed mappings, app outcomes and physical behavior |
 | Installation | Named owner, exact versions/configuration, backups and reversible enable/disable setup | A correct button event or successful device action |
-| Hardware/input | Observed press/hold/release events from the identified control and connection | Wispr insertion, Codex navigation or a device result |
-| Application | Observed dictation/insertion without added send, or the intended Codex action and focus behavior | Hub/controller transport or visible-device accuracy |
+| Hardware/input | Observed press/hold/release events from the identified control and connection | Codex navigation or a device result |
+| Application | The intended Codex action and focus behavior | Hub/controller transport or visible-device accuracy |
 | Transport | Owning-service receipts, queue outcomes and confirmed transmission where available | Visible lighting/display changes or restoration |
 | Visible device/restoration | Observed results and restored baseline for each named participating target | Untested devices, app versions or connection modes |
 
@@ -182,7 +204,7 @@ issue-linked specifications, proportionate executable tests and the repository's
 independent review, CI and guarded delivery gates. Future product UI candidates
 also require human approval under [the SDLC](sdlc.md#ui-approval-scope).
 
-Installation, startup registration, personal configuration, microphone use,
+Installation, startup registration, personal mouse configuration,
 agent sessions, input injection and device operations each remain subject to
 their separately scoped authorization and named owner. Physical work needs the
 explicit target identities/IPs and permitted sequence/display replacement.

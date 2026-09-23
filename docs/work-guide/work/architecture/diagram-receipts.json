@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-22T00:46:09.132808+00:00",
+  "renderedAt": "2026-09-23T05:12:21.806943+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -145,12 +145,12 @@
       "type": "sequence",
       "status": "future",
       "specification": {
-        "sha256": "bf2879a898fa28575a2e068bded6281b6e3bb921c1f6b6549889f5b4c6dee529",
-        "bytes": 3881
+        "sha256": "554d233219d7dc0c2c4f05eddf198662883caec9793169da382f4bc947b5c5b7",
+        "bytes": 2916
       },
       "artifact": {
-        "sha256": "5257de065dd84453d334f0c84c1be0c22d869ed895215ddfceca8c8d6daf671b",
-        "bytes": 714085
+        "sha256": "56db4b31813732566ca35a9520370ce9935cc1cd4bf7a211dc2689548d9beb75",
+        "bytes": 708938
       },
       "validation": {
         "checksPassed": 9,
@@ -161,19 +161,19 @@
         "warnings": 0
       },
       "viewer": "seq-desktop-input.html",
-      "svgSha256": "98a80bb11e5562780197a186a1bd6ba11eea93ff5a1e107982b78cfc30742488"
+      "svgSha256": "6f6f6e70edf5d8c33160209797ae3c1d4b2ea0de73fe5e3caea4e18594a3edd7"
     },
     {
       "id": "seq-big-b-presets",
       "type": "sequence",
       "status": "future",
       "specification": {
-        "sha256": "b40faa22e0bf150c6191c74a25c7cf7a69e2957c060508ebee02b183770000f9",
-        "bytes": 3838
+        "sha256": "c8973adf078713532124d85f690e766990c42adf2dd361ae1bf07f938f220168",
+        "bytes": 3875
       },
       "artifact": {
-        "sha256": "7d1fb03887e497a5453bdb51a7a0ecae69870e1379693939cfd649d88258458b",
-        "bytes": 713036
+        "sha256": "6f5d6229d74416bbb21f96559aa2cb4c9de2426a51838a3d09dfe984af41a25c",
+        "bytes": 713127
       },
       "validation": {
         "checksPassed": 9,
@@ -184,7 +184,7 @@
         "warnings": 0
       },
       "viewer": "seq-big-b-presets.html",
-      "svgSha256": "a11b61eeb86817a05a3771bdcedb70580135585676d91781069b7c53cbe31cf0"
+      "svgSha256": "fe460f5950a40e9e03616639616704b571fb84ecae6fdeb688d39674806d5705"
     },
     {
       "id": "seq-owner-migration",
