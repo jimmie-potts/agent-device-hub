@@ -94,20 +94,47 @@ not implicitly invoke those skills.
 3. Obtain independent read-only Standards and Specification reviews of the same
    fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-4. Read all GitHub reviews/threads and current-head Depot CI checks and job pages.
-   Require every applicable configured Depot job to succeed, including matrix
-   jobs; missing, pending, skipped, cancelled or failed jobs prevent merge except
-   for the verified guide-only filtering described below. Disabled GitHub Actions
-   workflows and their historical billing-blocked runs do not qualify or replace
-   Depot evidence. Apply the UI approval scope below.
+4. Read all GitHub reviews/threads and verify the [Depot evidence](#depot-ci-evidence)
+   for the current PR head. Require every applicable configured job to succeed,
+   including matrix jobs; missing, pending, skipped, cancelled or failed jobs
+   prevent merge except for the verified guide-only filtering described below.
+   Apply the UI approval scope below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
    Never use --admin, a background merge service or account/privacy changes.
-6. Read back the main merge revision and all applicable Depot CI jobs, or record the
-   guide-only exception evidence below. Close only the delivered
+6. Read back the main merge revision and verify its Depot evidence using the same
+   rules, or record the guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
+
+### Depot CI evidence
+
+For routine merges and merged-main verification, successful GitHub check-run
+records from Depot are sufficient; opening every successful job page is not
+required. Enumerate expected jobs from the candidate's `.depot/workflows/`
+configuration, including matrix expansions and applicable branch/ruleset
+requirements. An overall green PR indicator or an empty protection list does
+not establish that the expected jobs ran.
+
+Read all pages of check runs and relevant annotations. Verify each required
+result is `completed` with conclusion `success`, has the exact candidate or
+merged-main SHA, belongs to this repository and the expected PR or main event,
+and comes from the expected Depot GitHub App (`depot-code-access`). Retain job
+names, check IDs, revision and details URLs in delivery evidence. Resolve
+superseded attempts and contradictory results before accepting a successful
+rerun. Historical GitHub Actions runs and checks from another app or revision
+do not qualify.
+
+Inspect relevant Depot job details, logs or artifacts when a job fails, results
+conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
+coverage uncertain, or acceptance requires evidence beyond a success status.
+Use the [diagnostic access procedure](development.md#depot-diagnostic-access).
+If required diagnostic evidence is unavailable, report that gap and keep the
+merge or completion gate pending. A dashboard sign-in requirement alone does
+not block routine delivery whose check-run evidence is complete. Preserve the
+separate guide-only exception, independent reviews, head guard and post-merge
+verification.
 
 ### UI approval scope
 

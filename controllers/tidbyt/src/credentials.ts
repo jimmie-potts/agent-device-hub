@@ -20,6 +20,11 @@ export function loadTidbytCredentials(file: string): TidbytCredentials {
     if (error instanceof TidbytConfigurationError) throw error;
     throw new TidbytConfigurationError('credentials-unreadable');
   }
+  return parseTidbytCredentials(text);
+}
+
+/** Parse already-private bytes without performing another file read. */
+export function parseTidbytCredentials(text: string): TidbytCredentials {
   const values: Partial<Record<'deviceId' | 'apiKey' | 'installationId', string>> = {};
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();

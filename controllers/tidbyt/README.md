@@ -3,8 +3,8 @@
 Status: the source for a fake-tested cloud controller is here as the private
 workspace package `@jimmie-potts/tidbyt-controller` 0.1.0. It is an in-process
 TypeScript library. It has no network listener or service and isn't installed
-anywhere. Since #19 it includes a fake-tested agent status publisher. Nothing
-connects it to a running hub feed yet; #21 owns that installation.
+anywhere. Since #19 it includes a fake-tested agent status publisher. The opt-in Linux runner connects it to an existing hub feed; installation and
+visible-device acceptance remain separate from these source tests.
 
 This controller displays automatic agent status through Tidbyt's official
 cloud. It consumes the feed of the selected shared agent-state owner. A later
@@ -166,3 +166,30 @@ push in #16, then installation in #21. Hardware acceptance also needs explicit
 permission to replace what the display shows. Credentials and device/account
 configuration stay outside Git. A successful push does not prove a visible
 result.
+
+## Run against an installed hub
+
+The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. All pushes and removals still use the existing controller queue.
+
+Build a pinned reviewed revision in a separate release directory outside your working checkout. Use that revision's `package-lock.json` with `npm ci`, then `npm run build` on Node 24. Keep the release after stopping so its revision and installed bytes remain inspectable. Installing a release does not require restarting the hub or changing provider hooks.
+
+Create a mode-600 JSON file outside Git and outside the release tree, owned by the Linux installation user:
+
+```json
+{
+  "hubUrl": "http://127.0.0.1:8788",
+  "ownerId": "your-configured-hub-owner",
+  "tokenFile": "/absolute/private/hub-read-token",
+  "credentialsFile": "/absolute/private/tidbyt.env"
+}
+```
+
+`tokenFile` contains an existing dedicated read-only hub bearer, as 43 base64url characters. The hub's stored digest is not a bearer token. `credentialsFile` uses the Tidbyt fields described above. Both files must also be owner-owned regular files with no group/world permissions. Symlink files, files over 16 KiB and files inside Git checkouts are rejected. File values and session data are never printed. Do not put secrets into the shell command or environment.
+
+Confirm the configured cloud device is the intended physical target and that no other host or process owns its display writes. The runner holds an exclusive lease under `~/.local/state/agent-device-hub/tidbyt/`, keyed by the cloud device rather than installation ID. A second runner for that device under the same Linux user fails before network access. The lease is a separate lock database; it never opens the hub or controller database. Do not delete or replace an active lease file. A crash releases the OS lock automatically; no stale-file deletion is needed.
+
+Run the command once as the installation owner. `tidbyt-status-started` reports process startup, not cloud acceptance or a visible frame. Ctrl+C or SIGTERM stops publishing, cancels queued work, settles the active evaluation and releases the lease. **Stopping leaves the current status installation in rotation.** Starting again evaluates the current feed; when that feed is healthy and idle, the publisher removes the installation through its queue. A stale feed never means idle. To restore the prior setup, stop the runner; the hub, provider hooks and other Tidbyt apps are unchanged. Explicit installation removal is a separate queue operation with its own uncertain/failure outcome.
+
+For the separately authorized display check, record the installed revision, Node/client versions, selected owner and sole-writer confirmation privately. Start one real agent session and hold each state long enough for the 30-second poll and 15-second write gate. Observe `RUN`, `ASK` and `DONE`, whether other apps continue rotating, and the `?`/`FEED ?` state during a controlled feed interruption. Interrupt only this consumer's feed for the stale test; do not stop the shared state owner or change other consumers. Record shutdown behavior. Existing sessions retain their normal priority, so an old attention row can precede the test session. Do not acknowledge unrelated notices merely to make the test visible.
+
+The user's visual confirmation closes the installation issue. Source tests, a running process and cloud transport receipts do not establish display correctness or real-client attention coverage. Missing provider signals remain an acceptance gap.
