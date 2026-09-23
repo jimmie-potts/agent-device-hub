@@ -36,6 +36,9 @@ TRACKS = [
         dict(id='n-status-fix', x=0, label='Current status delivered', issues=[], guide='shared-codex'),
         dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
     ]),
+    ('Nanoleaf shared map follow-ups', [
+        dict(id='n-shared-map-quality', x=1, label='Unread and task attribution', issues=['N74', 'N75'], guide='shared-codex'),
+    ]),
     ('Reliable event history', [
         dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
     ]),
@@ -99,7 +102,7 @@ TRACKS = [
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
     ('System design documents', [
-        dict(id='n-system-design', x=0, label='Diagram readability (atlas delivered)', issues=['H173'], guide='development-workflow'),
+        dict(id='n-system-design', x=0, label='Atlas source for public publication', issues=['H186'], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
         dict(id='n-guide-workflow', x=0, label='Pixoo guide maintenance rules', issues=['P68'], guide='development-workflow'),

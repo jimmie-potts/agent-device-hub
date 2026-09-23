@@ -353,14 +353,14 @@
     "title": "Add automatic agent status to Tidbyt",
     "body": "## Outcome\n\nShow shared agent status on the Tidbyt.\n\n## Decide with the user before starting\n\n- The 64×32 layout for working, needs attention and done, and which session shows when several are active.\n- How often to push. The cloud push API has rate limits; #16 records what it saw.\n- Rotation: whether status runs as a background installation in rotation or takes over the display, and whether it is removed when no session is active.\n\n## Scope\n\n- Consume the selected shared state owner's feed (the #3 core). Do not build a second reducer. Missing evidence does not mean done, read or connected. Show neutral IDs or user-chosen labels, never copied titles or agent content.\n- Render frames through #16's renderer and send them through its queue.\n- Fake feed and fake transport tests cover multiple sessions, a stale feed and a failed push.\n\n## Acceptance criteria\n\n- [ ] The decisions above are recorded in `controllers/tidbyt/README.md`.\n- [ ] Status rendering implemented and tested with fakes; repository checks pass.\n\n## Prerequisites\n\n- https://github.com/jimmie-potts/agent-device-hub/issues/16\n- https://github.com/jimmie-potts/agent-device-hub/issues/3 (closed)\n- https://github.com/jimmie-potts/divoom-app-upgrade/issues/31 (closed)\n\nScope trimmed for a personal project on 2026-09-23. Follow AGENTS.md and docs/sdlc.md. The real display is verified in #21.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/19",
-    "updatedAt": "2026-09-23T07:12:23Z",
+    "updatedAt": "2026-09-23T08:17:15Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:backlog"
+        "name": "status:in-progress"
       }
     ],
     "milestone": null,
@@ -2249,28 +2249,38 @@
   },
   {
     "number": 173,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Make the remaining work-guide architecture diagrams readable and consistent",
     "body": "## Outcome\n\nApply the accepted atlas map/walkthrough pattern to the remaining work-guide diagrams so readers can see what runs where, who owns state and who writes to devices. Keep the work focused on readability and factual corrections using the existing HTML and Archify tooling.\n\nRequired input: https://github.com/jimmie-potts/agent-device-hub/issues/172 supplies the accepted visual pattern, shared diagram definitions and reviewed source revision. The Hub delivery coordinator owns this follow-up and its integration into the guide.\n\n## Scope and acceptance\n\n- [ ] **Update the remaining views.** Cover `arch-local-paths`, `arch-nanoleaf-linux`, `seq-nanoleaf-command`, `seq-pixoo-playback`, `seq-owner-migration`, `seq-desktop-input` and `seq-big-b-presets`. Reuse the first delivery's system map and lifecycle walkthrough. Evidence: a brief disposition for each view and source-linked generated artifacts.\n- [ ] **Correct the model.** Reconcile Windows/Linux descriptions, distinguish processes/libraries/stores/devices, and fix misleading symbols or relationship directions. Keep current, historical and proposed behavior visibly separate. Preserve one active agent-state owner and one designated writer per physical device. Evidence: compare each changed claim with the owning implementation and dated acceptance evidence.\n- [ ] **Make flows readable.** Keep the main successful path short; expose recovery and alternatives separately without losing their ordering or failure semantics. Migration recovery must not read as an automatic continuation or unsafe fallback. Future desktop-input and preset scenarios remain available behind clearly marked links. Evidence: source-backed walkthroughs and desktop/narrow/print inspection.\n- [ ] **Preserve usable diagrams and navigation.** Labels, arrowheads and connection destinations remain readable in changed inline diagrams and companion viewers. Keep search, anchors, keyboard access, themes and existing viewer controls working. Evidence: before/after views and the existing guide browser journeys. Coordinate existing routing defects with [#73](https://github.com/jimmie-potts/agent-device-hub/issues/73); checking this subset does not close its broader roadmap/connector scope.\n- [ ] **Catch stale generated diagrams.** Add the small missing comparison between current diagram definitions and saved specifications/receipts/output. Evidence: a focused regression check that changes a definition without regeneration and fails, then passes after coherent regeneration. Do not add a general documentation framework or scheduled refresh.\n- [ ] **Deliver one coherent dated guide revision.** Refresh affected source receipts and saved inputs, regenerate the guide/viewers, and preserve reproducibility and provenance. Evidence: successful maintenance/browser checks and a repeat build with no generated-output drift.\n\n## Implementation and verification\n\nExpected changes are under `docs/work-guide/`: `work/architecture_diagrams.py`, the guide generator/styles as needed, `work/architecture/` definitions and receipts, focused existing checks, and generated outputs. Use [the guide procedure](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/work-guide/README.md); GitHub remains authoritative for issue status and dependencies.\n\nPlanned checks, not executed for issue publication:\n\n```sh\npython3 docs/work-guide/work/build_guide.py\npython3 docs/work-guide/work/test_maintenance.py\nnode docs/work-guide/work/check_guide.cjs\n```\n\nRender changed diagrams through the installed Archify procedure before building. Inspect every changed diagram at desktop and narrow widths and in print. The regression case must establish that definition drift is detected, rather than merely repeating the implementation's hash calculation.\n\nFollow [the SDLC](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/sdlc.md): isolated source work, independent Standards/Specification reviews, applicable CI and guarded merge. Guide UI is exempt from human approval. Apply the guide-only CI exception only if the complete change qualifies and its required evidence is recorded.\n\n## Dependencies and assessment\n\n**Blocked by https://github.com/jimmie-potts/agent-device-hub/issues/172.** The unblock evidence is its accepted pattern and reviewed source revision. This is an input dependency, not merely a preferred order. Refresh that evidence before starting the dependent redesign.\n\n[PR #143](https://github.com/jimmie-potts/agent-device-hub/pull/143) shares guide inputs; reconcile its current state and preserve its owner's work. [#73](https://github.com/jimmie-potts/agent-device-hub/issues/73) retains connector repairs. [#85](https://github.com/jimmie-potts/agent-device-hub/issues/85), [#86](https://github.com/jimmie-potts/agent-device-hub/issues/86) and [#87](https://github.com/jimmie-potts/agent-device-hub/issues/87) retain Prism styling/publication and are not prerequisites. Preserve [#168](https://github.com/jimmie-potts/agent-device-hub/issues/168)'s intentional-update policy and dated historical atlas.\n\nPlanning baseline, 2026-09-23: Hub `a76b22db3497bcc1c92f6445add1356f8eb1820e` and the documentation audit. **Complexity medium:** several views and generated artifacts. **Uncertainty low:** defects and source owners are identified; the visual input is an explicit prerequisite. **Impact low:** reversible documentation changes. **Readiness blocked** on the first delivery; no further product decision is required. Reassess on changed producer inputs, ownership, scope or an unresolved source contradiction. Session reasoning setting: unknown.\n\nCurrent authorization is issue publication and dependency linking only. Future source delivery changes documentation and its checks, with no product behavior delta or new OpenSpec capability. Exclude new infrastructure, production hardening, product/runtime changes, installation, live device/database access and public-site publication. A source merge does not update the public guide.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/173",
-    "updatedAt": "2026-09-23T07:16:41Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T07:48:43Z",
+    "closedAt": "2026-09-23T07:48:43Z",
     "labels": [
       {
         "name": "documentation"
       },
       {
         "name": "enhancement"
-      },
-      {
-        "name": "status:in-progress"
       }
     ],
     "milestone": null,
-    "comments": [],
-    "commentCount": 1,
-    "commentsRefreshed": false
+    "comments": [
+      {
+        "body": "Removed the stale `blocked` label: every recorded blocker (#172) is closed. Other labels, including status, `deferred` and `hardware`, are unchanged; selection, refinement and any installation or device permission still apply.",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/173#issuecomment-5790667770",
+        "createdAt": "2026-09-23T07:15:07Z",
+        "updatedAt": "2026-09-23T07:15:07Z"
+      },
+      {
+        "body": "Delivered through PR #184, squash-merged as `0c4cdefa17d21b35ef09b82c625a38a9e2f466aa`. The merged tree `75ed79bf` is identical to reviewed head `7ad5bbf2`.\n\n- **Views:** all seven redrawn from pinned sources (Hub `d8527cd3`, Nanoleaf `cbb94851`, Pixoo `c81bc31c`); the PR description has the per-view dispositions. The system map and walkthrough, and the BUNNY atlas, are byte-unchanged.\n- **Stale-diagram check:** the build fails on a definition that no longer matches its saved specification or render receipt. `test_changed_diagram_definition_needs_regeneration` failed before the check existed, and passes through Archify re-rendering.\n- **Reviews:** independent Standards and Specification reviews approved round R1 with no findings. The Codex security review reported no findings.\n- **CI:** guide-only exception. All 36 paths are under `docs/work-guide/`, with 0 runs, checks or statuses on both the PR head and the merge commit. Receipt: https://github.com/jimmie-potts/agent-device-hub/pull/184#issuecomment-5791079329\n- **Local checks at the head:** Archify 9/9 for all nine diagrams; build; 10 maintenance tests; browser check (guide SHA-256 `1b6f647c965b3a11781e2594708959f7db3c3fc746a457e04b6dbd60542df881`); repeat build with no drift; desktop, 390 px and print inspection.\n\nNot done, and not requested: public guide publication. #73 keeps its broader connector scope. Follow-up: A2's reading line \"the hub itself is source only\" predates the installed shared hub service from Nanoleaf #30. It is shared with the atlas, so correcting it needs its own change with atlas UI approval.\n",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/173#issuecomment-5791099209",
+        "createdAt": "2026-09-23T07:48:41Z",
+        "updatedAt": "2026-09-23T07:48:41Z"
+      }
+    ],
+    "commentCount": 2,
+    "commentsRefreshed": true
   },
   {
     "number": 175,
@@ -2391,6 +2401,72 @@
       },
       {
         "name": "blocked"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 185,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Add explicit recovery for uncertain approval attention",
+    "body": "## Outcome\nGive a user a protected, explicit way to retire one uncorrelated, uncertain approval indicator in shared agent state. This unblocks [Nanoleaf #72](https://github.com/jimmie-potts/codex-nanoleaf/issues/72) without claiming that Codex granted or denied the underlying permission.\n\n## Evidence and boundary\nThe qualified Codex producer maps `PermissionRequest` to `attention.approval` with an unknown attention ID and currently emits no correlated `attention.resolved` event. The reducer intentionally cannot clear unknown attention by guessing. The two Nanoleaf #72 records have old approval attention and uncertain freshness while the shared feed remains connected. Official Codex hook documentation lists `turn_id` and `tool_name` for `PermissionRequest` but no `tool_use_id`; `PostToolUse` has a tool-call ID. A general automatic match is therefore unproven. See [Codex hooks](https://learn.chatgpt.com/docs/hooks#permissionrequest).\n\nHub #138 resets activity and explicitly retains unresolved attention; this issue is a separate, narrow attention recovery operation.\n\n## Scope and acceptance criteria\n- [x] Add a protected, revision-guarded operation that targets exactly one session and one currently uncertain approval attention item. Require an explicit user action; no timeout or automatic clearing. Reject stale revision, absent/ambiguous target, and unauthorized requests without modifying state.\n- [x] Retire only that shared monitor attention marker. Preserve other attention, activity, notices, labels, preferences, other sessions, and diagnostic evidence. The action does not approve/deny a Codex permission, invoke Codex, acknowledge a notice, or write a device.\n- [x] Return an auditable result that a consumer can distinguish from ordinary stale snapshots. Preserve replay and restart behavior. Fresh later approval evidence can create a new indicator.\n- [x] Document the limited meaning and privacy boundary. Keep unknown provider correlation explicit; do not infer resolution from `Stop`, elapsed time, or a same-name tool call.\n- [x] Regression tests cover exact targeting, authorization, revision/replay, persistence, concurrent/other attention, no agent/device action, and consumer recovery from an uncertain snapshot.\n\n## Verification and delivery\nSource-only, including a linked Nanoleaf consumer update under #72. Use isolated state and fake transports. Follow Hub and Nanoleaf review, CI, guarded merge, and guide synchronization gates. Installation and physical acceptance require separate authorization.\n",
+    "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185",
+    "updatedAt": "2026-09-23T08:22:08Z",
+    "closedAt": "2026-09-23T08:22:06Z",
+    "labels": [
+      {
+        "name": "bug"
+      }
+    ],
+    "milestone": null,
+    "comments": [
+      {
+        "body": "Coordinating source-only delivery for this issue with Nanoleaf #72. Worktree: `/tmp/agent-device-hub-gh185`; branch: `codex/gh-185-approval-recovery`; base: `133cd145cec0b623afcbf8d193242037f4e37e06`. The operation will retire only an explicitly selected uncertain approval marker; it will not decide a Codex permission, control a device, or change the installed host. Nanoleaf #72 owns the consumer display and diagnostics. One coordinator owns both PRs and the linked guide synchronization.\n",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791050569",
+        "createdAt": "2026-09-23T07:44:36Z",
+        "updatedAt": "2026-09-23T07:44:36Z"
+      },
+      {
+        "body": "Source candidate: [Hub PR #187](https://github.com/jimmie-potts/agent-device-hub/pull/187). Independent review found a durable-journal rollback defect; the fix is underway before final-head review and CI. [Nanoleaf PR #73](https://github.com/jimmie-potts/codex-nanoleaf/pull/73) consumes the owner recovery. Installation and physical-light acceptance remain separate.",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791283594",
+        "createdAt": "2026-09-23T08:04:45Z",
+        "updatedAt": "2026-09-23T08:04:45Z"
+      },
+      {
+        "body": "Hub PR #187 merged as `eeaa76439ba449adcd447750c0996817d12d6e7c` on 2026-09-23. All six current merged-main Depot jobs passed, including both Python matrices, MCP, dashboard/contracts, workflow and work-guide checks. The linked Nanoleaf source candidate and shared-guide source synchronization are still in progress; installation, package release and physical-light acceptance remain separate.",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791426668",
+        "createdAt": "2026-09-23T08:15:58Z",
+        "updatedAt": "2026-09-23T08:15:58Z"
+      },
+      {
+        "body": "Source acceptance complete. Hub PR #187 merged as `eeaa76439ba449adcd447750c0996817d12d6e7c`; all six PR jobs and all six merged-main jobs passed. Final independent Standards and Specification reviews found no remaining issues. The owner command is guarded by identity, turn, revision and uncertain evidence; its durable receipt is distinct and remains compatible with version 1.0 storage. Nanoleaf PR #73 merged as `680acb5c22baafad60f849afd72bcfdabc6bbabf` and all five merged-main jobs passed. The linked guide source revision is being delivered separately. Package release, installation and physical-light verification were not performed.",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185#issuecomment-5791509619",
+        "createdAt": "2026-09-23T08:22:05Z",
+        "updatedAt": "2026-09-23T08:22:05Z"
+      }
+    ],
+    "commentCount": 4,
+    "commentsRefreshed": true
+  },
+  {
+    "number": 186,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Prepare the complete BUNNY atlas for public guide publication",
+    "body": "## Outcome\n\nPrepare the complete BUNNY system design atlas for publication beside the public cross-project work guide at `https://jimmie-potts.github.io/agent-device-guide/atlas/`. The private `agent-device-hub` repository remains the source of truth. This issue owns the reviewed source/export and guide-link revision; public copying and Pages verification belong to the linked issue in `jimmie-potts/agent-device-guide`.\n\n## Scope\n\n- Publish the complete dated atlas reading experience: overview and system map, agent walkthrough, 26 component pages, combined reading/print view, state/action diagram, and the API/database reference with its required offline assets. Keep its September 19 document baseline and September 23 map pins explicit; publication alone does not rebaseline design or imply live implementation.\n- Define a deterministic public export from the reviewed Hub revision. Include only site-serving generated pages/assets and required downloadable reference documents. Exclude authoring sources, scripts, tests, receipts, fixtures, caches, private installation state and unrelated files. Record an exact allowlist/manifest and SHA-256 hashes. Validate the exported tree from a clean `git archive` so ignored SchemaSpy assets cannot be hidden by a populated checkout.\n- Repair public relative links in the owning export/generation path, including atlas links to the guide's nine root-level architecture viewers. Provide a guide-to-atlas link and atlas-to-guide navigation without editing generated HTML in the public repository.\n- Update the Hub public-edition procedure and public file allowlist for the atlas. Refresh and validate one coherent dated work-guide candidate under the existing guide procedure, preserving current issue/status authority and generated-output consistency.\n- Audit intended public files and rendered text for credentials, private runtime data, personal filesystem paths, unintended internal files and broken links. Private GitHub source links may remain as attributed links, but unauthenticated readers must not need them to navigate the atlas.\n\n## Acceptance and evidence\n\n- [ ] Exact source revision, export manifest, file count and hashes recorded; clean-archive export contains every required atlas page and local asset, including bundled database-reference assets.\n- [ ] Atlas and guide build/static/browser checks pass from the fixed candidate; desktop/mobile navigation, component/reference links, diagrams, theme, search and print behavior work under the proposed `/atlas/` path. No unexpected external asset request or browser error.\n- [ ] Current guide snapshot is refreshed and validated as required for intentional publication, with a working link to `/atlas/`; atlas navigation returns to the guide and reaches all nine architecture viewers at their public paths.\n- [ ] Public-content audit has a reviewable inventory and no secrets, private runtime data, personal paths or unrelated source files. Generated reference reports are confirmed to derive from empty schema fixtures, not installed databases.\n- [ ] The current atlas UI candidate receives explicit human approval under `docs/sdlc.md` before merge; changes after approval renew that approval. Independent Standards and Specification reviews inspect the same committed base/head; applicable CI and guarded merge/main-CI readback pass.\n- [ ] Delivery receipt names the exact merged Hub revision and hashes handed to the public publication issue. Source merge alone does not claim the site is live.\n\nThis is documentation publication tooling and navigation, with no product API, controller, installation or physical-device change. No product OpenSpec delta is expected; record that decision in the PR. Related completed source: Hub #172 and PR #177. Existing Prism guide work in Hub #85–#87 is independent and must not be folded into this issue.\n\nDownstream public publication: https://github.com/jimmie-potts/agent-device-guide/issues/9 (blocked by this source issue).\n",
+    "url": "https://github.com/jimmie-potts/agent-device-hub/issues/186",
+    "updatedAt": "2026-09-23T08:01:53Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "documentation"
+      },
+      {
+        "name": "status:in-progress"
       }
     ],
     "milestone": null,

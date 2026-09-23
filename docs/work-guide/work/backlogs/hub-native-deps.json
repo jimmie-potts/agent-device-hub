@@ -1049,24 +1049,6 @@
             }
           },
           {
-            "number": 173,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 172,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 175,
             "blockedBy": {
               "totalCount": 2,
@@ -1127,6 +1109,16 @@
                   }
                 }
               ]
+            }
+          },
+          {
+            "number": 186,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
             }
           }
         ]

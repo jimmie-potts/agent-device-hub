@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-23T07:25:41.021768+00:00",
-  "refreshedAt": "2026-09-23T07:26:02.105995+00:00",
+  "startedAt": "2026-09-23T08:25:29.311575+00:00",
+  "refreshedAt": "2026-09-23T08:25:50.595241+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -160,10 +160,26 @@
           "commentBodiesStored": true
         },
         {
+          "number": 173,
+          "state": "CLOSED",
+          "commentPages": [
+            2
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 179,
           "state": "CLOSED",
           "commentPages": [
             1
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 185,
+          "state": "CLOSED",
+          "commentPages": [
+            4
           ],
           "commentBodiesStored": true
         },
@@ -240,10 +256,10 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 16,
+      "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        16
+        18
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -378,6 +394,14 @@
             3
           ],
           "commentBodiesStored": true
+        },
+        {
+          "number": 72,
+          "state": "CLOSED",
+          "commentPages": [
+            4
+          ],
+          "commentBodiesStored": true
         }
       ]
     },
@@ -476,7 +500,7 @@
       ]
     }
   },
-  "openIssues": 90,
+  "openIssues": 92,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15, Nanoleaf #30/#41/#42/#54/#55/#64 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }
