@@ -217,7 +217,7 @@ test('Depot CI runs six Linux jobs and retains every suite', () => {
   });
   const suites = {
     workflow: ['npm ci', 'npm run check:workflow', 'npm run test:workflow'],
-    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built'],
+    contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:tidbyt:built', 'npm run test:tidbyt:python'],
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
   };
@@ -277,6 +277,7 @@ const builtPayloads = {
   'test:lifecycle:package': 'node scripts/package-lifecycle.mjs --test',
   'test:agent-state': 'node --test packages/agent-state/tests/*.test.mjs',
   'test:agent-state:package': 'node scripts/package-agent-state.mjs --test',
+  'test:tidbyt': 'node --test controllers/tidbyt/tests/*.test.mjs',
 };
 
 test('built variants retain every original test payload and standalone build', () => {

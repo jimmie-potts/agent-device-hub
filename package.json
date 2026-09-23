@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json && npm run build:dashboard",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && npm run typecheck:dashboard",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && npm run build:dashboard",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -39,6 +39,9 @@
     "package:agent-state": "npm run build && node scripts/package-agent-state.mjs",
     "test:agent-state:package": "npm run build && npm run test:agent-state:package:built",
     "test:agent-state:package:built": "node scripts/package-agent-state.mjs --test",
+    "test:tidbyt": "npm run build && npm run test:tidbyt:built",
+    "test:tidbyt:built": "node --test controllers/tidbyt/tests/*.test.mjs",
+    "test:tidbyt:python": "python3 -m unittest discover -s controllers/tidbyt/tests -p \"test_*.py\" -v",
     "test:hub": "npm run build && npm run test:hub:built",
     "test:hub:built": "node --test apps/hub/tests/*.test.mjs tests/hub_measurement.test.mjs tests/compatibility_process.test.mjs",
     "package:hub": "npm run build && node scripts/package-hub.mjs",
@@ -72,7 +75,8 @@
     "packages/mcp",
     "packages/lifecycle-contracts",
     "packages/agent-state",
-    "apps/hub"
+    "apps/hub",
+    "controllers/tidbyt"
   ],
   "dependencies": {
     "react": "19.3.0",
