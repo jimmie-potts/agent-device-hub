@@ -15,6 +15,10 @@ launched from the repository root. These directories currently contain documents
 only. Before shared package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
+Use the owning package and application guides for implementation details and
+GitHub issues for current delivery status. Keep source delivery, installation and
+physical acceptance separate.
+
 Planning and review are read-only unless the user explicitly authorizes named
 document or tracker changes. Those writes do not authorize implementing the
 planned features.
@@ -125,13 +129,11 @@ Use `plan-work` and `deliver-work` only when explicitly invoked. Their shared
 documentation checkpoints consume the procedure below; ordinary repository
 planning and delivery also follow it within the user's authority.
 
-For every authorized delivery or planning change, read
-[the guide maintenance procedure](docs/work-guide/README.md). Update the affected
-inputs, regenerate the HTML and record the result in `docs/work-guide/updates.md`
-before completion. Record a specific no-impact reason when no represented fact
-changes. For cross-repository work, identify the coordinator and linked hub
-companion PR; pending synchronization remains explicit in the completion report.
-Read-only tasks do not authorize writes.
-Keep source completion, guide synchronization, public publication and live
-verification distinct. Tracker-only planning reports the latter stages pending;
-public publication requires the user's applicable finish line.
+Read [the guide maintenance procedure](docs/work-guide/README.md) when a task
+intentionally changes or publishes the cross-project guide. Refresh its saved
+inputs, regenerate the HTML and run the required checks for that guide revision.
+Ordinary planning and delivery do not refresh the guide or create a companion PR
+solely to record status; no no-impact ledger entry is required. Read-only tasks
+do not authorize writes. Keep source completion, guide revision, public
+publication and live verification distinct. Public publication requires the
+user's applicable finish line.

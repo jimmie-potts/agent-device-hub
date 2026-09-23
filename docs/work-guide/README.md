@@ -26,7 +26,7 @@ group. Missing dependencies fail the build instead of implying readiness.
 `work/guide_status.py` derives their status and scheduling gates from the saved
 snapshot. `work/guide_reading.css` styles these controls.
 
-## Planning and delivery checkpoints
+## Intentional guide revisions
 
 The shared checkpoint contract was introduced by
 [agent-skills #33](https://github.com/jimmie-potts/agent-skills/issues/33) at
@@ -34,27 +34,25 @@ The shared checkpoint contract was introduced by
 Discover the installed canonical skills when explicitly invoked. `plan-work`
 reads the discovered `deliver-work` package's `references/documentation.md`
 without invoking delivery. Report a missing required resource; do not install or
-copy it silently. Ordinary repository maintenance follows this procedure without
-implicitly invoking either skill.
+copy it silently. This repository procedure applies when a task intentionally
+updates or publishes the guide, without implicitly invoking either skill.
 
-At discovery, name the work source, guide coordinator, affected repositories,
-canonical inputs, requested finish line, and authorized effects. Use the existing
-task/PR evidence. A source-only or tracker-only request keeps its narrower limit;
-these instructions do not supply permission to publish the site.
+For a guide update, name the work source, coordinator, affected repositories,
+canonical inputs, requested finish line and authorized effects. Use existing
+task/PR evidence. Ordinary source, tracker and acceptance work has no guide
+refresh obligation; these instructions do not supply permission to publish.
 
 | Checkpoint | Required result |
 | --- | --- |
-| After authorized planning publication | Read back saved scope/dependencies, refresh affected inputs, reconcile primary coverage and roadmap order, and retain proposed architecture as planned. Tracker-only work reports guide/publication pending; read-only planning writes nothing. |
-| Before implementation and candidate review | Assess guide/architecture impact. Prepare affected inputs and regenerated output in the source candidate or linked Hub companion PR. |
-| After verified merge and acceptance updates | Reconcile actual history and saved issue state. Keep source, installation, real-client and physical acceptance distinct. Use a follow-up for facts unavailable before merge. |
-| Authorized public publication | Publish validated output from the exact merged Hub revision through the process below, then verify what unauthenticated readers receive. |
+| Intentional source-guide update | Read current issue and acceptance evidence, refresh affected saved inputs, reconcile primary coverage and history, regenerate output, and validate the dated candidate. |
+| Cross-repository guide update | One coordinator owns a Hub guide PR linked to the relevant device-source work. State the source revision and evidence represented by that snapshot. |
+| Authorized public publication | Refresh and validate a coherent Hub guide candidate. Merge changed output through the normal gates, or reuse the reviewed revision when output is unchanged. Publish that exact revision and verify what unauthenticated readers receive. |
 
-One delivery coordinator owns links among device-source PRs, the Hub companion,
-and the public publication PR. Report source/tracker completion, guide-source
-synchronization, public artifact publication, and live verification separately.
-For each applicable stage give its revision/evidence or pending owner and next
-action. Required pending stages prevent full completion at the requested finish
-line, even when the source work has merged.
+For an intentional guide update, one coordinator owns links among relevant
+device-source PRs, the Hub guide PR and any public publication PR. Report the
+guide revision, public artifact publication and live verification separately.
+A normal delivery can finish without a newer guide edition; do not present a
+dated snapshot as current.
 
 Keep external prerequisites, including agent-skills work, as verified reference
 links. They do not join the three source repositories' primary issue totals.
@@ -97,27 +95,21 @@ PR. After a guide change merges and all applicable main CI jobs pass, or the
 
 Copying from the private hub to the public repository is an explicit publication
 step. There is no automatic cross-repository sync or new access token. A hub
-merge alone does not update the website; report pending publication when the
-public copy has not caught up. Keep the hub guide-maintenance entry with the
-source PR, including a specific no-impact reason for hosting-only changes.
+merge alone does not update the website. For an authorized publication task,
+report pending publication until the public copy is verified.
 An unchanged source output can still have a stale public copy. If all required
 public revision, content and deployment evidence already matches, record that
 no-change result instead of creating an empty publication PR.
 
-## Maintain it with each delivery
+## Refresh and validate a guide revision
 
-At the start of every authorized planning, implementation, bug fix,
-documentation or acceptance task, inspect the affected guide and diagrams.
-Before completion, record a dated entry in `updates.md` with the repository,
-issue or PR, result, affected sections and validation. If the work changes no
-represented fact, record the reason and preserve the existing snapshot dates.
-Read-only questions and reviews do not independently authorize document writes.
-
-For changed facts, update the owning inputs and regenerate the HTML in the same
-hub PR. For device-repository work, the delivery coordinator owns a linked hub
-companion PR. Include its URL and status in the device PR and completion report.
-A pending companion PR means guide synchronization remains pending. Do not claim
-the guide was updated merely because the device source merged.
+An intentional guide update refreshes the relevant issue, history and diagram
+inputs as one dated snapshot and regenerates the HTML in a Hub PR. The PR records
+its source revisions, affected sections, validation and any deliberate gap
+between source and public editions. Git history and PRs retain revision history;
+the former per-delivery `updates.md` ledger is retired. Read-only questions and
+reviews do not independently authorize document writes. Device-repository work
+needs a linked Hub PR only when its authorized scope includes a guide update.
 
 1. Read current issue states and acceptance evidence. Refresh the backlog using
    the helper below when status or scope changes, then reconcile primary coverage
@@ -136,10 +128,9 @@ the guide was updated merely because the device source merged.
 4. Run the commands below. Guide-only CI filtering does not waive these local
    checks or the review evidence required by the [SDLC exception](../sdlc.md#guide-only-ci-exception). Inspect desktop/mobile and print renders for diagram
    changes. Commit inputs, generator, resulting HTML and viewers together.
-5. After merge/issue closure, reconcile newly confirmed history and status in a
-   linked follow-up PR if those facts were unavailable before merge. This does
-   not require recursively recording guide-only synchronization PRs as product
-   milestones. Record their maintenance in `updates.md` instead.
+5. If the authorized guide revision must include merge or acceptance facts that
+   were unavailable before merge, reconcile them in a linked follow-up PR.
+   Do not recursively record guide-only PRs as product milestones.
 
 Guide UI changes, including presentation, interactions and architecture viewers,
 do not require human approval under the [SDLC UI approval scope](../sdlc.md#ui-approval-scope).
