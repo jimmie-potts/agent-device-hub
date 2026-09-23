@@ -11,9 +11,10 @@ controller routing and supervised state-owner migration, and a
 [React dashboard](apps/dashboard/README.md). Installation and new device
 adapters have separate owners and acceptance gates.
 
-New Tidbyt and LIFX controllers will live in this monorepo. Their current
-[Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
-directories contain documentation and scoped agent instructions only. The first
+New Tidbyt and LIFX controllers live in this monorepo. The
+[Tidbyt](controllers/tidbyt/README.md) directory holds a fake-tested in-process
+cloud controller package; the [LIFX](controllers/lifx/README.md) directory
+contains documentation and scoped agent instructions only. The first
 feature priority for these devices is automatic agent status. Tidbyt starts with
 the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
@@ -32,9 +33,10 @@ and [development](docs/development.md) for setup. GitHub issues own the delivery
 sequence, scope, acceptance, dependencies and status. A completed bootstrap is
 not a working device integration.
 
-[Desktop controls](docs/desktop-controls.md) records the accepted 8BitDo/Wispr
-defaults, Codex mouse actions, control profiles and later desk presets. These
-controls remain future work. Local shortcuts can ship independently of the hub;
+[Desktop controls](docs/desktop-controls.md) records Codex mouse actions, control
+profiles and later desk presets. These integrations remain future work. Keyboard
+A/B and the attached Super Buttons are configured directly on the keyboard and
+are outside B.U.N.N.Y. Local shortcuts can ship independently of the hub;
 shared presets follow the Codex-first milestone and general-control definition.
 
 ## System design documents

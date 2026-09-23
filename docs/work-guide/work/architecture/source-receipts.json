@@ -1,30 +1,30 @@
 {
- "reviewedAt": "2026-09-23T14:00:00+00:00",
+ "reviewedAt": "2026-09-23T07:00:00+00:00",
  "sourceRevisions": {
-  "agent-device-hub": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+  "agent-device-hub": "5db67a0944f017d655331ab410c639570c876108",
   "codex-nanoleaf": "5375a3088522507c7f207c6e9c824454db1e1d5f",
   "divoom-app-upgrade": "28f4875b7a0f0e57ca6f25d9971e125e927a5503"
  },
  "files": [
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "docs/architecture.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/docs/architecture.md",
-   "sha256": "ebb88de52e817c237bb02ae6c8ae4b0d82a3404e98f54cec09d8a13f77693b33"
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/architecture.md",
+   "sha256": "8593bb8c43a9a3a5fe27865dce09bc7e1c3759b79f923e81f0668ef5e0039666"
   },
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "docs/controller-contract.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/docs/controller-contract.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/controller-contract.md",
    "sha256": "f43b99b568bb849023beecb30a08d423b5bc57e8553255c9f0b610defb9a5b19"
   },
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "packages/mcp/README.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/packages/mcp/README.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/packages/mcp/README.md",
    "sha256": "fe5f59ea69708b18435a60a279d5a10fbde9239a76efd48046fc6fbc84946b6a"
   },
   {
@@ -148,9 +148,9 @@
   },
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "packages/agent-state/README.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/packages/agent-state/README.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/packages/agent-state/README.md",
    "sha256": "2d4edfaac244df5856864a5b7318b2d0ee962e53cb0d0f28d06acb7eca401f7f"
   },
   {
@@ -225,61 +225,125 @@
   },
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "apps/hub/README.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/hub/README.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/hub/README.md",
    "sha256": "53956c7e20e0d769740842e7c9e7cc8b91e961bca7aedeecc08126ff92afce7e"
   },
   {
    "repo": "agent-device-hub",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
    "path": "apps/hub/SETUP.md",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/hub/SETUP.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/hub/SETUP.md",
    "sha256": "5ece3d2dd00ea7c79dcce7196481a52ffcc5d4642c2f6bedab4d97b7da48a018"
   },
   {
    "repo": "agent-device-hub",
    "path": "apps/dashboard/README.md",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/dashboard/README.md",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/dashboard/README.md",
    "sha256": "3c103783dda916e364fa163ea948f8dbcb73f1e6a285c3850539e8be1227f80d"
   },
   {
    "repo": "agent-device-hub",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "path": "docs/desktop-controls.md",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/desktop-controls.md",
+   "sha256": "81de6dc391deef333959d3eda733c0dfd111b7c08326b6953c09136df9b23eb8",
+   "reviewedAt": "2026-09-23T05:11:28.382724+00:00"
+  },
+  {
+   "repo": "agent-device-hub",
    "path": "apps/hub/src/server.ts",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/hub/src/server.ts",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/hub/src/server.ts",
    "sha256": "54fe4f5afe9a295099dc594b1236e6442816f60f732aa66616828648589cf4c9"
   },
   {
    "repo": "agent-device-hub",
    "path": "apps/hub/src/storage.ts",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/hub/src/storage.ts",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/hub/src/storage.ts",
    "sha256": "2220df600e1a2af6d0c81f346e33465b1b8b34ec50918c87c462adccf5775acd"
   },
   {
    "repo": "agent-device-hub",
    "path": "apps/hub/src/mcp.ts",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/apps/hub/src/mcp.ts",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/apps/hub/src/mcp.ts",
    "sha256": "9855bb12746aa54dcf0eb3137a13d41f4080d47e568948dc7e4c573fe0a38960"
   },
   {
    "repo": "agent-device-hub",
    "path": "docs/agent-lifecycle-contract.md",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/docs/agent-lifecycle-contract.md",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/agent-lifecycle-contract.md",
    "sha256": "320644fac715e4dd5112f09b398844b8277da48efa99856130a1f4621b6241cf"
   },
   {
    "repo": "agent-device-hub",
    "path": "docs/provider-qualification.md",
-   "revision": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/a76b22db3497bcc1c92f6445add1356f8eb1820e/docs/provider-qualification.md",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/provider-qualification.md",
    "sha256": "04ab278391b9750acad67a431344c2e3d6dc4706763c045fed96b54a6dc80723"
+  },
+  {
+   "repo": "agent-device-hub",
+   "path": "controllers/tidbyt/README.md",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/controllers/tidbyt/README.md",
+   "sha256": "adb5187e446a2dad1e9299421a505148faf4bb6f4832a3b6186b2933f41fc3e2"
+  },
+  {
+   "repo": "agent-device-hub",
+   "path": "docs/iphone-apple-music-qualification.md",
+   "revision": "5db67a0944f017d655331ab410c639570c876108",
+   "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5db67a0944f017d655331ab410c639570c876108/docs/iphone-apple-music-qualification.md",
+   "sha256": "b1e7854449b6578ef0cbee008114e15ab65b5cc432315f29c14c487e6d8010fa"
   }
  ],
  "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
- "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display. Pixoo pins now use PR #64 merge 28f4875b7a0f0e57ca6f25d9971e125e927a5503, whose tree equals reviewed candidate dcadf88f6b29f1944c8df811af7e4592197dd2ee. All Pixoo source hashes and existing cached copies match immutable Git bytes. Explicit Monitor activation now uses the single Player writer; restart and screen-on remain passive. No installation or physical acceptance is claimed. Hub pins refreshed on 2026-09-23 to main a76b22db3497bcc1c92f6445add1356f8eb1820e for the system map and observation walkthrough shared with the BUNNY atlas (Hub #172); apps/hub/src/server.ts, apps/hub/src/storage.ts, apps/hub/src/mcp.ts, docs/agent-lifecycle-contract.md and docs/provider-qualification.md were added as pinned sources. Hashes come from immutable Git objects; existing cached hub copies were refreshed to those bytes. Nanoleaf and Pixoo pins are unchanged. No installation or physical acceptance is claimed."
+ "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display. Pixoo pins now use PR #64 merge 28f4875b7a0f0e57ca6f25d9971e125e927a5503, whose tree equals reviewed candidate dcadf88f6b29f1944c8df811af7e4592197dd2ee. All Pixoo source hashes and existing cached copies match immutable Git bytes. Explicit Monitor activation now uses the single Player writer; restart and screen-on remain passive. No installation or physical acceptance is claimed. Hub pins refreshed on 2026-09-23 to main 5db67a0944f017d655331ab410c639570c876108 for the system map and observation walkthrough shared with the BUNNY atlas (Hub #172); apps/hub/src/server.ts, apps/hub/src/storage.ts, apps/hub/src/mcp.ts, docs/agent-lifecycle-contract.md, docs/provider-qualification.md, controllers/tidbyt/README.md and docs/iphone-apple-music-qualification.md were added as pinned sources. Hashes come from immutable Git objects; existing cached hub copies were refreshed to those bytes. Nanoleaf and Pixoo pins are unchanged. No installation or physical acceptance is claimed.",
+ "amendments": [
+  {
+   "reviewedAt": "2026-09-22T03:49:40.297168+00:00",
+   "diagrams": [
+    "seq-desktop-input",
+    "seq-big-b-presets"
+   ],
+   "source": "agent-device-hub/docs/desktop-controls.md",
+   "revision": "cbbb6aaa9142f66e020315b201ef5afe597baf66",
+   "reason": "Owner revised defaults to A=Enter and B=Wispr, required editable A/B bindings in version 1, and removed the reserved preset button. Other source pins retain their baseline review."
+  },
+  {
+   "reviewedAt": "2026-09-23T01:25:55.558546+00:00",
+   "diagrams": [
+    "seq-desktop-input",
+    "seq-big-b-presets"
+   ],
+   "source": "agent-device-hub/docs/desktop-controls.md",
+   "revision": "bce87a60c6df9c3c4dfb743dd516ab971669df55",
+   "reason": "Owner removed keyboard A/B and attached Super Buttons from B.U.N.N.Y. mapping, dispatch, profiles and preset bindings. N30/Codex route qualification remains incomplete. Other source pins retain their previous evidence."
+  },
+  {
+   "reviewedAt": "2026-09-23T01:46:11.778843+00:00",
+   "diagrams": [
+    "seq-desktop-input",
+    "seq-big-b-presets"
+   ],
+   "source": "agent-device-hub/docs/desktop-controls.md",
+   "revision": "03fcd71ebc115ac380dc666ac27736d3f311c346",
+   "reason": "Owner differential inventory associates N30 receiver with 062A:4101 and confirms restored operation. Installed Codex package 26.917.6896.0 recorded; native D-pad attribution and mapping remain unqualified."
+  },
+  {
+   "reviewedAt": "2026-09-23T05:11:28.382724+00:00",
+   "diagrams": [
+    "seq-desktop-input",
+    "seq-big-b-presets"
+   ],
+   "source": "agent-device-hub/docs/desktop-controls.md",
+   "revision": "fa5ba1577f9bc9bffa63f10a32f8827a876df630",
+   "reason": "Owner accepted app-scoped shared navigation keys and passed the brief Windows action, outside-app and stop/restoration trial. Receiver isolation and long-term lifecycle remain unqualified; reusable source and installation remain separate. Preset content is unchanged; its shared source pin now includes this accepted boundary."
+  }
+ ]
 }

@@ -70,7 +70,7 @@ Both checks must exit zero. The product specification inventory is
 controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
 standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
-unified-dashboard and standalone-monitor-qualification.
+unified-dashboard, standalone-monitor-qualification and tidbyt-cloud-controller.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -97,7 +97,7 @@ Tag pushes are outside the main-only push trigger. Static tests verify workflow
 configuration; only hosted event evidence verifies actual scheduling.
 
 Product CI jobs run `npm run build` and `npm run typecheck` once, then use
-`:built` variants of the controller, lifecycle, agent-state and MCP
+`:built` variants of the controller, lifecycle, agent-state, Tidbyt and MCP
 TypeScript/package test commands. These variants require output freshly built
 in that same job. The
 existing standalone commands still build first and stop if compilation fails.
@@ -110,7 +110,7 @@ Normal Depot CI has six Linux jobs:
 | Check | Runtime and coverage |
 | --- | --- |
 | Workflow checks | Node 24 workflow validation and isolated Linux hook qualification |
-| Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, performance checks and isolated package consumers |
+| Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, the Tidbyt controller and its Pillow golden-image check, performance checks and isolated package consumers |
 | Contracts and state, Python 3.14 | The same suites on the second supported Python version |
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
@@ -297,6 +297,28 @@ Linux state and temporary files. Parent timeout kills the namespace and the
 host terminates and verifies its own namespace init through a Linux PID handle;
 Linux then terminates every namespace member. No personal
 configuration, Windows metadata, client sessions or physical endpoints are used.
+
+## Tidbyt controller checks
+
+Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
+controller. Use Node 24 and Python 3.12 or 3.14. Run `npm run build`,
+`npm run typecheck` and `npm run test:tidbyt`. After installing
+`requirements-contracts.txt`, which pins Pillow, run `npm run test:tidbyt:python`.
+Keep running the shared controller-contract and workflow checks alongside them.
+The combined contracts/state CI jobs run `npm run test:tidbyt:built` and
+`npm run test:tidbyt:python` on both Python versions.
+
+The TypeScript suite covers the renderer, including golden WebP bytes, invalid
+frames and its import boundary. It also covers the cloud connection against a
+fake `fetch`, with authentication, 429, timeout, transport and redaction cases,
+and the private credential file. For the controller queue it covers target
+validation, bounded admission, duplicate/conflict/join handling, FIFO overlap,
+cancellation, uncertain results with no replay, unsupported v1 commands,
+authentication and rate-limit holds, close, read-only refresh and stale evidence.
+Every receipt and snapshot is checked with the controller v1 `validate()`. The
+Python check decodes the committed golden images with Pillow, independently of
+the encoder. No check reads credentials or contacts the Tidbyt cloud or a
+device. Visible results need the separately authorized installation in #21.
 
 ## Agent state core checks
 

@@ -48,8 +48,9 @@ application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
-queues. These new controllers belong in this repository. Their documentation
-exists; their implementations remain in the backlog. The shared core interprets
+queues. These new controllers belong in this repository. The Tidbyt cloud
+controller exists as a fake-tested in-process package; its status integration and
+installation remain separate. LIFX is documentation only. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the
@@ -159,9 +160,9 @@ without claiming installed producer qualification. Provider normalizers and boun
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
 The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
-migrations have separate deferred issues. The controllers/tidbyt,
-controllers/lifx and controllers/pc-lighting directories currently contain
-documents. Use Node 24 and npm workspaces for executable packages.
+migrations have separate deferred issues. controllers/tidbyt holds the
+in-process cloud controller package; controllers/lifx and controllers/pc-lighting
+currently contain documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
@@ -352,7 +353,7 @@ gate. Windows vendor adapters remain on the PC during later hub-host migration.
 and the qualification/delivery backlog in
 [#63](https://github.com/jimmie-potts/agent-device-hub/issues/63) and its linked tickets.
 The input integration and desk-preset service remain planned. The hub repository
-owns their source; physical input handling stays Windows-local beside Wispr and
+owns their source; physical input handling stays Windows-local beside
 Codex. Their implementation issues select packages, runtime and installation paths.
 
 A control profile maps physical controls and gestures to actions with explicit
@@ -360,15 +361,23 @@ application scope. A button binding is one assignment. Selecting a profile alone
 sends no device commands. A desk preset defines explicit supported actions on
 configured participating lights and displays through the existing command owners.
 
-Big A holds the qualified Wispr dictation binding and releases it to insert text;
-submission remains a separate user action. The first mouse mapping requests next
+Keyboard A/B and the attached Dual Super Buttons remain keyboard-owned. The
+owner prefers B=Wispr Ctrl+Win and A=Enter, configured directly on the keyboard.
+B.U.N.N.Y. has no A/B mapping, editing, storage, dispatch, restoration or preset
+binding role, in version 1 or the later #70 profile editor.
+The first mouse mapping requests next
 task needing attention, command menu, previous task and next task within Codex,
-preserving ordinary behavior elsewhere. This local path does not wait for shared
-monitoring, general controls, Music or model calls. Wispr keeps its own speech
-processing and availability requirements. Preserve vendor mappings and the
+preserving ordinary behavior elsewhere. The owner selected an app-scoped
+shared-key route: PageUp/PageDown and Back/Forward from other devices also map
+while Codex is active. Receiver-specific filtering is not part of that route.
+The temporary AutoHotkey trial qualified this boundary; reusable implementation
+and persistent installation remain separate. This local path does not wait for
+shared monitoring, general controls, Music or model calls. Preserve vendor mappings and the
 existing CHOMPI bridge; its MIDI bindings do not establish 8BitDo/profile support.
 
-Big B later requests Work → Free → Quiet → Work through the hub's preset service.
+An explicitly selected qualified binding later requests
+Work → Free → Quiet → Work through the hub's preset service. Keyboard A/B and the attached
+Super Buttons are excluded from preset bindings.
 This shared path follows the Codex-first milestone and general-control definition.
 It invokes existing authenticated app/controller services and their queues,
 preserving one writer per physical device and private controller databases.

@@ -199,24 +199,6 @@
             }
           },
           {
-            "number": 42,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 41,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 43,
             "blockedBy": {
               "totalCount": 1,
@@ -226,7 +208,7 @@
               "nodes": [
                 {
                   "number": 42,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
@@ -311,6 +293,16 @@
                   }
                 }
               ]
+            }
+          },
+          {
+            "number": 70,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
             }
           }
         ]

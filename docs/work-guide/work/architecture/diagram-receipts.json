@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-23T05:49:26.519362+00:00",
+  "renderedAt": "2026-09-23T06:44:49.491732+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -30,12 +30,12 @@
       "type": "architecture",
       "status": "implemented",
       "specification": {
-        "sha256": "8208a471aa6667171432bbbc82223f67e5f165652b5dd93eccc81a3d32a3bdbe",
-        "bytes": 9352
+        "sha256": "92d8b44fd4c8991f2a0e25b1827604173ea73802ac1430d7d82864f68a3e2a2e",
+        "bytes": 9374
       },
       "artifact": {
-        "sha256": "5866f3d3bed8b8e4fa429666d4776c3e7961c2ddc9ff320e95ab62dd5fb3e42f",
-        "bytes": 734807
+        "sha256": "6158477a5cb86b64e8618aaa59e57d1d1a0be2b9bc5265aba2a6113d2baa66f8",
+        "bytes": 734873
       },
       "validation": {
         "checksPassed": 9,
@@ -46,7 +46,7 @@
         "warnings": 0
       },
       "viewer": "arch-shared-system.html",
-      "svgSha256": "0acb23f5835ce55b5985bb420a93a742db025d4dbe2e1e4f2971a98c1258aa57"
+      "svgSha256": "3183006e909f7f13e2391f280918720df38d9ca8ce2807dfce8f19ce87baa278"
     },
     {
       "id": "arch-nanoleaf-linux",
@@ -145,12 +145,12 @@
       "type": "sequence",
       "status": "future",
       "specification": {
-        "sha256": "bf2879a898fa28575a2e068bded6281b6e3bb921c1f6b6549889f5b4c6dee529",
-        "bytes": 3881
+        "sha256": "554d233219d7dc0c2c4f05eddf198662883caec9793169da382f4bc947b5c5b7",
+        "bytes": 2916
       },
       "artifact": {
-        "sha256": "5257de065dd84453d334f0c84c1be0c22d869ed895215ddfceca8c8d6daf671b",
-        "bytes": 714085
+        "sha256": "56db4b31813732566ca35a9520370ce9935cc1cd4bf7a211dc2689548d9beb75",
+        "bytes": 708938
       },
       "validation": {
         "checksPassed": 9,
@@ -161,19 +161,19 @@
         "warnings": 0
       },
       "viewer": "seq-desktop-input.html",
-      "svgSha256": "98a80bb11e5562780197a186a1bd6ba11eea93ff5a1e107982b78cfc30742488"
+      "svgSha256": "6f6f6e70edf5d8c33160209797ae3c1d4b2ea0de73fe5e3caea4e18594a3edd7"
     },
     {
       "id": "seq-big-b-presets",
       "type": "sequence",
       "status": "future",
       "specification": {
-        "sha256": "b40faa22e0bf150c6191c74a25c7cf7a69e2957c060508ebee02b183770000f9",
-        "bytes": 3838
+        "sha256": "c8973adf078713532124d85f690e766990c42adf2dd361ae1bf07f938f220168",
+        "bytes": 3875
       },
       "artifact": {
-        "sha256": "7d1fb03887e497a5453bdb51a7a0ecae69870e1379693939cfd649d88258458b",
-        "bytes": 713036
+        "sha256": "6f5d6229d74416bbb21f96559aa2cb4c9de2426a51838a3d09dfe984af41a25c",
+        "bytes": 713127
       },
       "validation": {
         "checksPassed": 9,
@@ -184,7 +184,7 @@
         "warnings": 0
       },
       "viewer": "seq-big-b-presets.html",
-      "svgSha256": "a11b61eeb86817a05a3771bdcedb70580135585676d91781069b7c53cbe31cf0"
+      "svgSha256": "fe460f5950a40e9e03616639616704b571fb84ecae6fdeb688d39674806d5705"
     },
     {
       "id": "seq-owner-migration",

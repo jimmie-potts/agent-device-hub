@@ -79,6 +79,8 @@ jobs:
       - run: npm run test:agent-state:built
       - run: npm run test:agent-state:python
       - run: npm run test:agent-state:package:built
+      - run: npm run test:tidbyt:built
+      - run: npm run test:tidbyt:python
   mcp:
     name: MCP on ${{ matrix.os }}
     strategy:

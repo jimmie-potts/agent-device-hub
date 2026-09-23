@@ -120,7 +120,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const evidenceExpansion=()=>page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.map(e=>e.open));
     const beforeEvidence=await evidenceExpansion();
     const beforeSearch=await expansion();
-    for(const [query,id] of [['Pixoo #37','shared-codex'],['Dominator Platinum','pc-lighting'],['Wispr','desktop-controls']]) {
+    for(const [query,id] of [['Pixoo #37','shared-codex'],['Dominator Platinum','pc-lighting'],['N30','desktop-controls']]) {
       await page.locator('#search').fill(query); assert.equal(await page.locator('.guide:not([hidden])').count(),1);
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');
@@ -132,7 +132,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#search').fill('no-such-topic-987'); assert(await page.locator('#empty-state').isVisible());
     await page.locator('#clear-search').click(); assert.equal(await page.locator('.guide:not([hidden])').count(),count);
     assert.equal(await page.locator('#result-count').textContent(),summary);
-    await page.locator('#search').fill('Wispr'); await page.evaluate(()=>{location.hash='pc-lighting';});
+    await page.locator('#search').fill('N30'); await page.evaluate(()=>{location.hash='pc-lighting';});
     await page.waitForFunction(()=>document.querySelector('#search').value==='');
     assert.equal(await page.locator('#pc-lighting').getAttribute('open'),'');
     await page.locator('#expand-all').click(); assert.equal(await page.locator('.guide[open]').count(),count); assert.equal(await page.locator('.reference[open]').count(),2);
@@ -149,7 +149,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-mobile.png')}); for(const id of ['arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-mobile.png`)});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No page overflow with the diagrams on mobile');
     // Exercise a real PDF from filtered, mixed expansion state, plus repeated print events.
-    await page.locator('#collapse-all').click();await page.locator('#local-acceptance > summary').click();await page.locator('#search').fill('Wispr');
+    await page.locator('#collapse-all').click();await page.locator('#local-acceptance > summary').click();await page.locator('#search').fill('N30');
     await page.locator('#architecture > summary').click(); assert.equal(await page.locator('#architecture').getAttribute('open'),null,'Architecture collapsed before the print test');
     const uiState=()=>page.evaluate(()=>({guides:[...document.querySelectorAll('.guide,.reference')].map(e=>({open:e.open,hidden:e.hidden})),figures:[...document.querySelectorAll('.diagram')].map(e=>e.hidden),evidence:[...document.querySelectorAll('.delivery-evidence,.guide-evidence')].map(e=>e.open),zoom:[...document.querySelectorAll('.diagram-canvas > svg')].map(e=>e.style.width),nav:[...document.querySelectorAll('nav a')].map(e=>e.hidden),search:document.querySelector('#search').value,result:document.querySelector('#result-count').textContent,empty:document.querySelector('#empty-state').hidden,clear:document.querySelector('#clear-search').hidden}));
     const beforePrint=await uiState();
