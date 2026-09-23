@@ -103,6 +103,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     assert(await page.locator('.atlas-map .map-stage').evaluate(e=>e.scrollWidth>e.clientWidth),'Narrow widths scroll the map instead of shrinking it');
     assert(await page.locator('.atlas-canvas[data-diagram^="arch-"] > svg').evaluate(e=>e.getBoundingClientRect().width>=860),'Map keeps a readable width on mobile');
     await page.locator('#map-index > summary').click(); await page.locator('.node-button[data-node="nanoWorker"]').click(); assert.equal(await page.locator('#map-detail').getAttribute('data-node'),'nanoWorker');
+    assert.equal((await page.locator('.map-reading').innerText()).match(/\[\[/g),null,'Map reading text has no unresolved [[issue]] markers'); assert.equal((await page.locator('.walk-reading').innerText()).match(/\[\[/g),null,'Walkthrough reading text has no unresolved [[issue]] markers');
     await page.screenshot({path:path.join(out,'overview-mobile.png'),fullPage:true});
     await visit('full-system-design.html');
     await page.setViewportSize({width:1440,height:1000}); await fit();
@@ -114,7 +115,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     await page.pdf({path:path.join(out,'full-system-design.pdf'),format:'A4',printBackground:true});
     assert.equal(await page.locator('.atlas-canvas').count(),2,'Complete reading view embeds both shared diagrams'); assert.equal(await page.locator('#baseline-notes').getAttribute('open'),'');
     await visit('index.html');
-    assert.equal(await page.locator('.node-detail:visible').count(),Object.keys(data.map.nodes).length,'Print shows every map detail'); assert.equal(await page.locator('.phase-body:visible').count(),data.map.phases.length,'Print shows every walkthrough phase'); assert(!await page.locator('#map-detail').isVisible());
+    assert.equal(await page.locator('.node-detail:visible').count(),Object.keys(data.map.nodes).length,'Print shows every map detail'); assert.equal(await page.locator('.phase-body:visible').count(),data.map.phases.length,'Print shows every walkthrough phase'); assert(!await page.locator('#map-detail').isVisible()); assert(await page.locator('.map-reading:visible').isVisible(),'Print shows the map reading block'); assert(await page.locator('.walk-reading:visible').isVisible(),'Print shows the walkthrough reading block');
     await page.pdf({path:path.join(out,'overview.pdf'),format:'A4',printBackground:true});
     await page.emulateMedia({media:null});
     assert.deepEqual(errors,[]); assert.deepEqual(external,[]);
