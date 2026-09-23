@@ -1,3 +1,31 @@
+## September 23, 2026: Nanoleaf general controls closeout
+
+Hub PR #162 merged as `50a1c637d9607a59b282730b4f78c0a7fd502fc7`, identical to
+reviewed head `87b0d52`, onto `main` 79b30c4. Independent Standards and
+Specification reviews approved every comparison, including both refreshes onto
+`main` and the Depot base change; the accessibility review's keyboard-focus
+finding was fixed and verified in a real browser; all six Depot checks passed on
+the PR head and on merged `main`; the owner recorded AC7 UI approval on the PR.
+Hub #153 is closed as completed with its seven acceptance criteria checked and
+its closing record posted. Nothing is installed or operated; the installed wall
+acceptance is #155.
+
+This follow-up refreshes the three backlogs and the paginated history at the
+snapshot time recorded in `work/backlogs/snapshot.json`, retains #153 as a
+completed reference with a direct read, removes it from open coverage and the
+timeline node, and rewrites the controls guide's Nanoleaf row and the
+controls-music next step so both view slices read as delivered and the two
+hardware acceptances follow. There are 91 primary open issues, 12 guides, nine
+viewers, 52 roadmap nodes and 128 merged PRs in this snapshot. Architecture
+diagrams, ownership, transports and physical writers are unchanged.
+
+Generation, nine maintenance tests, browser/print checks and generated-output
+consistency pass; HTML SHA-256 `82f0eb560d202589b1567e060cc1cdc6ee9faae41599ecf674d4a9c01b915082`.
+This follow-up changes only `docs/work-guide/**`; the Depot workflow path
+filters intentionally omit hosted checks and require the SDLC exception
+receipt, recorded on the PR. No product behavior or OpenSpec delta. Public
+guide publication and live verification remain separate and were not requested.
+
 ## September 22, 2026: Depot CI cutover candidate
 
 The Depot copies of the Checks and Work guide workflows entered Hub `main` in
