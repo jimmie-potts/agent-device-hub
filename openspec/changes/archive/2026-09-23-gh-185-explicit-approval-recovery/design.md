@@ -4,7 +4,7 @@ Codex `PermissionRequest` can identify a turn but does not supply the tool reque
 
 ## Decision
 
-The shared owner supplies `recoverApproval(identity, turnId, expectedRevision)`. It serializes with ingest and other commands, checks the current revision, known current turn, uncertain freshness and exactly one matching unknown-ID approval. It commits only that item's removal and an `attention.resolved` journal entry with `outcome: ambiguous`, a representation accepted by the existing durable version 1.0 schema. The command result identifies the explicit recovery; the journal alone does not prove provider resolution. The HTTP monitor command and MCP control tool use existing authentication and replay behavior. Neither path contacts Codex or a device.
+The shared owner supplies `recoverApproval(identity, turnId, expectedRevision)`. It serializes with ingest and other commands, checks the current revision, known current turn, uncertain freshness and exactly one matching unknown-ID approval. It commits only that item's removal and an `attention.resolved` journal entry with `outcome: ambiguous`, a representation accepted by the existing durable version 1.0 schema. A distinct `recoveryJournalKey(identity, turnId)` hash separates explicit recovery from ordinary ambiguous provider events after restart. The journal cannot identify the actor or prove provider resolution. The HTTP monitor command and MCP control tool use existing authentication and replay behavior. Neither path contacts Codex or a device.
 
 ## Failure and recovery
 

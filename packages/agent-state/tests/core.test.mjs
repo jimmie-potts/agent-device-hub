@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createAgentState, MemoryStorage, validateSnapshot} from '../dist/index.js';
+import {createHash} from 'node:crypto';
+import {createAgentState, MemoryStorage, recoveryJournalKey, validateSnapshot} from '../dist/index.js';
 import {normalizeHook} from '../dist/providers.js';
 
 const identity={provider:'codex',client:'cli',hostId:'host-1',sourceId:'source-1',sessionId:'session-1'};
@@ -26,10 +27,13 @@ test('explicit recovery retires only an uncertain uncorrelated approval',async()
   assert.equal(after.sessions[0].activity,before.sessions[0].activity);
   assert.equal(after.sessions[0].lastEvidenceAtMs,before.sessions[0].lastEvidenceAtMs);
   assert.deepEqual([owner.journal().at(-1).kind,owner.journal().at(-1).outcome],['attention.resolved','ambiguous']);
+  assert.equal(owner.journal().at(-1).sessionKey,recoveryJournalKey(identity,'turn-1'));
+  assert.notEqual(owner.journal().at(-1).sessionKey,createHash('sha256').update(JSON.stringify(identity)).digest('hex'));
   assert.equal((await owner.recoverApproval(identity,'turn-1',before.revision)).ok,false);
   await owner.shutdown();
   const restored=await createAgentState(options(storage,()=>clock));
   assert.equal(restored.snapshot().sessions[0].attention.length,0);
+  assert.equal(restored.journal().at(-1).sessionKey,recoveryJournalKey(identity,'turn-1'));
   await restored.shutdown();
 });
 

@@ -44,10 +44,12 @@ hosts must implement durable storage and cross-process exclusivity. Keep that
 database private to its host. Never share a live database between Windows and WSL.
 
 Explicit approval recovery returns a guarded result and records an
-`attention.resolved` journal entry with `outcome: ambiguous`. That existing
-version 1.0 journal form keeps rollback readers compatible; it records monitor
-recovery, not evidence that Codex resolved the permission. A journal entry alone
-does not identify the actor or prove a provider outcome.
+`attention.resolved` journal entry with `outcome: ambiguous` and a distinct
+`recoveryJournalKey(identity, turnId)` session hash. Ordinary provider entries
+use the identity hash, so the recovery key identifies this action after restart
+when its identity and turn are known. The existing version 1.0 journal form
+keeps rollback readers compatible. The entry records monitor recovery, not
+evidence that Codex resolved the permission; it does not identify the actor.
 
 ## State and uncertainty
 
