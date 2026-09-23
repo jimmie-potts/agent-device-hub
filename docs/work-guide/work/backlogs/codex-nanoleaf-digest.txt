@@ -31,8 +31,9 @@
 #64 [CLOSED] Expose native power, brightness and saved-scene controls through the protected controller API
 #70 [CLOSED] Align guide-maintenance rules with the current hub procedure
 #72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
-#74 [OPEN] Investigate and resolve retained shared unread indicators
+#74 [CLOSED] Investigate and resolve retained shared unread indicators
 #75 [OPEN] Provide source-backed labels and project associations for shared tasks
 #76 [OPEN] Show current projects first and hide inactive saved projects
 #77 [OPEN] Limit and prioritize tasks in the wall map inspector
 #78 [OPEN] Reduce default wall map controls and repeated status text
+#81 [OPEN] Queue the completion comet when a subagent delays a parent's unread

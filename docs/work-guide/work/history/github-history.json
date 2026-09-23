@@ -1,15 +1,40 @@
 {
-  "fetchedAt": "2026-09-23T19:02:40.331889+00:00",
+  "fetchedAt": "2026-09-23T21:15:47.190731+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T18:58:38Z",
+      "pushedAt": "2026-09-23T20:31:56Z",
       "defaultBranch": "main",
-      "headSha": "ea5cd958c221123cfb0a451d84d065359a9cd958",
-      "mainCommitCount": 91,
+      "headSha": "600d9055dacaa242cc188cf5cbca19c04f08f484",
+      "mainCommitCount": 96,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "600d9055dacaa242cc188cf5cbca19c04f08f484",
+          "date": "2026-09-23T20:31:56Z",
+          "message": "Implement configured LIFX LAN controller (#192)"
+        },
+        {
+          "sha": "98bf1c2f6c9b652df619c80489efd83e546cec76",
+          "date": "2026-09-23T20:26:50Z",
+          "message": "Use verified Depot checks for routine delivery gates (#194)"
+        },
+        {
+          "sha": "f1723ee023d8db8e284090b456c64cd346bf5106",
+          "date": "2026-09-23T20:12:37Z",
+          "message": "Run Tidbyt agent status from the installed hub feed (#193)"
+        },
+        {
+          "sha": "ff9d8c6b695aa668f1a54afaace57692da39eec5",
+          "date": "2026-09-23T19:17:56Z",
+          "message": "Show shared agent status on the Tidbyt (#189)"
+        },
+        {
+          "sha": "1aeafb699843075b0928824cfe787ad1ac2f0c14",
+          "date": "2026-09-23T19:09:10Z",
+          "message": "Prepare BUNNY atlas public export and current guide (#188)"
+        },
         {
           "sha": "ea5cd958c221123cfb0a451d84d065359a9cd958",
           "date": "2026-09-23T08:33:11Z",
@@ -1164,30 +1189,55 @@
           "mergedAt": "2026-09-23T08:13:01Z"
         },
         {
-          "number": 190,
-          "title": "Sync work guide after approval recovery delivery",
-          "createdAt": "2026-09-23T08:29:39Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/190",
-          "base": "main",
-          "mergedAt": "2026-09-23T08:33:11Z"
-        }
-      ],
-      "openPRs": [
-        {
           "number": 188,
           "title": "Prepare complete BUNNY atlas for public guide publication",
           "createdAt": "2026-09-23T08:20:33Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/188",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-23T19:09:10Z"
         },
         {
           "number": 189,
           "title": "Show shared agent status on the Tidbyt",
           "createdAt": "2026-09-23T08:27:12Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/189",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-23T19:17:57Z"
+        },
+        {
+          "number": 190,
+          "title": "Sync work guide after approval recovery delivery",
+          "createdAt": "2026-09-23T08:29:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/190",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:33:11Z"
+        },
+        {
+          "number": 192,
+          "title": "Implement configured LIFX LAN controller",
+          "createdAt": "2026-09-23T20:05:26Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/192",
+          "base": "main",
+          "mergedAt": "2026-09-23T20:31:56Z"
+        },
+        {
+          "number": 193,
+          "title": "Run Tidbyt agent status from the installed hub feed",
+          "createdAt": "2026-09-23T20:05:46Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/193",
+          "base": "main",
+          "mergedAt": "2026-09-23T20:12:38Z"
+        },
+        {
+          "number": 194,
+          "title": "Use verified Depot checks for routine delivery gates",
+          "createdAt": "2026-09-23T20:23:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/194",
+          "base": "main",
+          "mergedAt": "2026-09-23T20:26:51Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -1294,6 +1344,30 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/16"
         },
         {
+          "number": 17,
+          "title": "Qualify direct LIFX LAN control",
+          "closedAt": "2026-09-23T19:43:40Z",
+          "createdAt": "2026-09-07T05:54:15Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/17"
+        },
+        {
+          "number": 18,
+          "title": "Implement the LIFX LAN controller",
+          "closedAt": "2026-09-23T20:35:23Z",
+          "createdAt": "2026-09-07T05:54:16Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/18"
+        },
+        {
+          "number": 19,
+          "title": "Add automatic agent status to Tidbyt",
+          "closedAt": "2026-09-23T19:21:00Z",
+          "createdAt": "2026-09-07T05:54:17Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/19"
+        },
+        {
           "number": 30,
           "title": "Qualify latency and failure isolation for shared Codex monitoring",
           "closedAt": "2026-09-22T02:35:49Z",
@@ -1340,6 +1414,14 @@
           "createdAt": "2026-09-07T21:58:27Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/49"
+        },
+        {
+          "number": 50,
+          "title": "Document PC and desk lighting and initialize the implementation backlog",
+          "closedAt": "2026-09-23T20:08:14Z",
+          "createdAt": "2026-09-07T23:49:54Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/50"
         },
         {
           "number": 54,
@@ -1508,12 +1590,20 @@
           "createdAt": "2026-09-23T07:44:19Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/185"
+        },
+        {
+          "number": 186,
+          "title": "Prepare the complete BUNNY atlas for public guide publication",
+          "closedAt": "2026-09-23T19:12:06Z",
+          "createdAt": "2026-09-23T07:59:03Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/186"
         }
       ],
-      "openIssueCount": 58,
+      "openIssueCount": 65,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-23T07:59:03Z"
+        "2026-09-23T21:04:58Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1524,17 +1614,22 @@
         "2026-09-20": 2,
         "2026-09-21": 1,
         "2026-09-22": 10,
-        "2026-09-23": 12
+        "2026-09-23": 24
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T08:54:43Z",
+      "pushedAt": "2026-09-23T20:46:37Z",
       "defaultBranch": "main",
-      "headSha": "643a04ec444a55b89d3f31296873a963e76d107c",
-      "mainCommitCount": 35,
+      "headSha": "a3010d2352f0f7db0d6a53e261de29fd269d18f1",
+      "mainCommitCount": 36,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "a3010d2352f0f7db0d6a53e261de29fd269d18f1",
+          "date": "2026-09-23T20:46:37Z",
+          "message": "Count shared subagent sessions as part of their parent task (#80)"
+        },
         {
           "sha": "643a04ec444a55b89d3f31296873a963e76d107c",
           "date": "2026-09-23T08:54:43Z",
@@ -1951,6 +2046,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/79",
           "base": "main",
           "mergedAt": "2026-09-23T08:54:43Z"
+        },
+        {
+          "number": 80,
+          "title": "Count shared subagent sessions as part of their parent task",
+          "createdAt": "2026-09-23T19:49:13Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/80",
+          "base": "main",
+          "mergedAt": "2026-09-23T20:46:38Z"
         }
       ],
       "openPRs": [],
@@ -2186,12 +2289,20 @@
           "createdAt": "2026-09-23T07:37:40Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/72"
+        },
+        {
+          "number": 74,
+          "title": "Investigate and resolve retained shared unread indicators",
+          "closedAt": "2026-09-23T20:49:39Z",
+          "createdAt": "2026-09-23T08:24:55Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74"
         }
       ],
       "openIssueCount": 20,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-23T08:26:05Z"
+        "2026-09-23T20:38:17Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -2199,7 +2310,7 @@
         "2026-09-07": 26,
         "2026-09-09": 4,
         "2026-09-22": 1,
-        "2026-09-23": 8
+        "2026-09-23": 9
       }
     },
     "divoom-app-upgrade": {
@@ -2551,7 +2662,7 @@
         },
         {
           "number": 63,
-          "title": "Render shared agent monitoring as paged 64×64 dashboards",
+          "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
           "createdAt": "2026-09-20T23:45:42Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
           "base": "main",
@@ -2722,7 +2833,7 @@
         },
         {
           "number": 32,
-          "title": "Render the 64×64 agent monitoring dashboard and preview",
+          "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
           "closedAt": "2026-09-21T00:04:22Z",
           "createdAt": "2026-09-07T00:55:32Z",
           "stateReason": "completed",

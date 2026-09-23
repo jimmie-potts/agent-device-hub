@@ -37,7 +37,7 @@ TRACKS = [
         dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
     ]),
     ('Nanoleaf shared map follow-ups', [
-        dict(id='n-shared-map-quality', x=1, label='Unread and task attribution', issues=['N74', 'N75'], guide='shared-codex'),
+        dict(id='n-shared-map-quality', x=1, label='Labels · read evidence · capacity', issues=['N75', 'H191', 'H195', 'N81'], guide='shared-codex'),
     ]),
     ('Reliable event history', [
         dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
@@ -74,14 +74,14 @@ TRACKS = [
         dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
-        dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H17'], guide='tidbyt-lifx'),
-        dict(id='n-tl-ctrl', x=1, label='Controllers (Tidbyt delivered)', issues=['H18'], guide='tidbyt-lifx'),
-        dict(id='n-tl-status', x=2, label='Automatic status', issues=['H19', 'H20'], guide='tidbyt-lifx'),
+        dict(id='n-tl-qual', x=0, label='Connection qualification done', issues=[], guide='tidbyt-lifx'),
+        dict(id='n-tl-ctrl', x=1, label='Controller sources delivered', issues=[], guide='tidbyt-lifx'),
+        dict(id='n-tl-status', x=2, label='LIFX automatic status', issues=['H20'], guide='tidbyt-lifx'),
         dict(id='n-tl-accept', x=3, label='Installed acceptance', issues=['H21', 'H22'], guide='tidbyt-lifx'),
         dict(id='n-tl-later', x=4, label='Tronbyt · other options', issues=['H23', 'H24', 'H11'], guide='tidbyt-lifx'),
     ]),
     ('PC + desk lighting', [
-        dict(id='n-pc-doc', x=0, label='Documentation (PR #59)', issues=['H50'], guide='pc-lighting'),
+        dict(id='n-pc-doc', x=0, label='Documentation issue closed', issues=[], guide='pc-lighting'),
         dict(id='n-pc-qual', x=1, label='Qualification', issues=['H51', 'H52', 'H60'], guide='pc-lighting'),
         dict(id='n-pc-ctrl', x=2, label='Corsair controller · status', issues=['H53', 'H55'], guide='pc-lighting'),
         dict(id='n-pc-accept', x=3, label='Acceptance · shared UI', issues=['H57', 'H56'], guide='pc-lighting'),
@@ -107,7 +107,7 @@ TRACKS = [
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
     ('System design documents', [
-        dict(id='n-system-design', x=0, label='Atlas source for public publication', issues=['H186'], guide='development-workflow'),
+        dict(id='n-system-design', x=0, label='Atlas published', issues=[], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
         dict(id='n-guide-workflow', x=0, label='Pixoo guide maintenance rules', issues=['P68'], guide='development-workflow'),
@@ -117,9 +117,37 @@ TRACKS = [
         dict(id='n-guide-artwork', x=1, label='Guide artwork + motion', issues=['H86'], guide='development-workflow'),
         dict(id='n-guide-publish', x=2, label='Local + public verification', issues=['H87'], guide='development-workflow'),
     ]),
+    ('Guide mobile tasks and status', [
+        dict(id='n-guide-mobile', x=0, label='Task briefs + public status', issues=['H196', 'H197'], guide='development-workflow'),
+    ]),
+    ('Guide automatic refresh', [
+        dict(id='n-guide-refresh', x=3, label='Reviewed automatic refresh', issues=['H200'], guide='development-workflow'),
+    ]),
+    ('Guide mission map', [
+        dict(id='n-guide-map', x=2, label='Interactive neon mission map', issues=['H201'], guide='development-workflow'),
+    ]),
+    ('Atlas signal playback', [
+        dict(id='n-atlas-playback', x=2, label='Controlled signal playback', issues=['H202'], guide='development-workflow'),
+    ]),
+    ('Optional history replay', [
+        dict(id='n-guide-replay', x=4, label='Recorded delivery history', issues=['H198'], guide='development-workflow'),
+    ]),
+    ('Later app coordination', [
+        dict(id='n-app-qualify', x=0, label='Qualify native-app paths', issues=['H199'], guide='development-workflow'),
+        dict(id='n-app-boundary', x=1, label='Owner sign-in + boundary', issues=['H203'], guide='development-workflow'),
+        dict(id='n-app-inbox', x=2, label='Private task inbox', issues=['H204'], guide='development-workflow'),
+        dict(id='n-app-handoff', x=3, label='Qualified app handoff', issues=['H205'], guide='development-workflow'),
+    ]),
 ]
 # Cross-track prerequisites (from → to). Same-track order is drawn automatically.
 CROSS = [
+    ('n-guide-design', 'n-guide-map', 'H85'), ('n-guide-design', 'n-atlas-playback', 'H85'),
+    ('n-guide-mobile', 'n-guide-publish', 'H196 · H197'),
+    ('n-guide-mobile', 'n-guide-map', 'H196 only'),
+    ('n-guide-mobile', 'n-guide-refresh', 'H197 only'),
+    ('n-guide-publish', 'n-guide-refresh', 'H87'),
+    ('n-app-qualify', 'n-app-handoff', 'H199'),
+    ('n-app-boundary', 'n-app-handoff', 'H203'),
     ('n-codex', 'n-desk-presets', 'H32 · H31 · H5'), ('n-codex', 'n-tl-status', 'H3 · P31'), ('n-codex', 'n-pc-ctrl', 'H3 · P31'),
     ('n-codex', 'n-tl-accept', 'H8'), ('n-codex', 'n-pc-accept', 'H8'), ('n-codex', 'n-desk-verify', 'H8'),
     ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-codex', 'n-host', 'H5'),

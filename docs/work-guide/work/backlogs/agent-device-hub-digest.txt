@@ -11,9 +11,9 @@
 #13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
 #15 [CLOSED] Qualify Tidbyt cloud and Tronbyt connections
 #16 [CLOSED] Implement the Tidbyt cloud controller
-#17 [OPEN] Qualify direct LIFX LAN control
-#18 [OPEN] Implement the LIFX LAN controller
-#19 [OPEN] Add automatic agent status to Tidbyt
+#17 [CLOSED] Qualify direct LIFX LAN control
+#18 [CLOSED] Implement the LIFX LAN controller
+#19 [CLOSED] Add automatic agent status to Tidbyt
 #20 [OPEN] Add automatic agent status to LIFX
 #21 [OPEN] Install and verify Tidbyt agent status
 #22 [OPEN] Install and verify LIFX agent status
@@ -39,7 +39,7 @@
 #47 [OPEN] Add phone access with tap-to-talk after local delivery
 #48 [OPEN] Explore ambient and wearable voice access after phone tap-to-talk
 #49 [CLOSED] Explore personal-service connectors beyond device control
-#50 [OPEN] Document PC and desk lighting and initialize the implementation backlog
+#50 [CLOSED] Document PC and desk lighting and initialize the implementation backlog
 #51 [OPEN] Qualify Corsair RAM and H150i lighting through iCUE
 #52 [OPEN] Qualify Lian Li Strimer control while preserving L-Connect 3
 #53 [OPEN] Implement the PC lighting controller with a qualified Corsair adapter
@@ -63,9 +63,9 @@
 #73 [OPEN] Fix diagram connectors hidden behind boxes in the work guide
 #80 [CLOSED] Publish the cross-project work guide on GitHub Pages
 #83 [CLOSED] Adopt plan-work and deliver-work checkpoints for guide updates and public publication
-#85 [OPEN] Approve the Prism design for the work guide and architecture viewers
-#86 [OPEN] Apply Prism artwork and subtle motion to the generated work guide
-#87 [OPEN] Publish and verify the Prism guide at existing public and local destinations
+#85 [OPEN] Design the phone-first Neon/Prism guide workspace and atlas
+#86 [OPEN] Apply the selected Neon/Prism presentation to the guide and atlas
+#87 [OPEN] Publish and verify the first mobile guide workspace and atlas
 #91 [CLOSED] Reduce CI minutes while preserving all test coverage
 #100 [CLOSED] Skip automatic CI for guide-only changes
 #103 [CLOSED] Document the composable BUNNY system design
@@ -89,4 +89,16 @@
 #181 [OPEN] Approve and document the B.U.N.N.Y. application UI style guide
 #182 [OPEN] Apply the B.U.N.N.Y. style and display name to the dashboard
 #185 [CLOSED] Add explicit recovery for uncertain approval attention
-#186 [OPEN] Prepare the complete BUNNY atlas for public guide publication
+#186 [CLOSED] Prepare the complete BUNNY atlas for public guide publication
+#191 [OPEN] Provide qualified Codex Desktop read evidence to the shared owner
+#195 [OPEN] Support sustained shared-session admission without losing retained state
+#196 [OPEN] Prepare Codex and Claude task briefs from the mobile work guide
+#197 [OPEN] Show current public GitHub status beside the dated guide and atlas
+#198 [OPEN] Replay recorded delivery history without inventing system state
+#199 [OPEN] Qualify phone-to-native-app handoff options for Codex and Claude
+#200 [OPEN] Refresh the public status feed automatically under a reviewed publishing policy
+#201 [OPEN] Navigate development through an interactive neon mission map
+#202 [OPEN] Follow a signal through the atlas with controlled playback
+#203 [OPEN] Define the owner workspace, sign-in, and outbound connector boundary
+#204 [OPEN] Add the authenticated owner task inbox and handoff records
+#205 [OPEN] Deliver the first qualified native-app handoff from the phone workspace
