@@ -431,7 +431,6 @@ with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
 [#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
 and physical acceptance retain their own owners.
 
-
 ## Linux host handoff implementation
 
 The [host API and migration guide](../apps/hub/README.md) define the delivered

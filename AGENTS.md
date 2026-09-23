@@ -17,9 +17,11 @@ docs/development.md and coordinate with the owner of concurrent shared work.
 
 Use the owning package and application guides for implementation details and
 GitHub issues for current delivery status. Keep source delivery, installation and
-physical acceptance separate. Planning/review is read-only unless the user
-explicitly authorizes document or tracker changes. Planning writes do not
-authorize implementing the planned features.
+physical acceptance separate.
+
+Planning and review are read-only unless the user explicitly authorizes named
+document or tracker changes. Those writes do not authorize implementing the
+planned features.
 
 During authorized work, fix failures that the requested change causes. Report
 an unrelated visual, lint, test or flaky failure with its evidence instead of
