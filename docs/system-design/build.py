@@ -6,10 +6,15 @@ import argparse
 import html
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 ID = re.compile(r"[A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*\Z")
+sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
+import architecture_diagrams as AD  # noqa: E402  the shared diagram definitions and their Archify renderings
+
+REPO_LABEL = {"agent-device-hub": "Hub", "codex-nanoleaf": "Nanoleaf", "divoom-app-upgrade": "Pixoo"}
 
 
 def escape(value):
@@ -33,7 +38,119 @@ def load():
     for item in data["components"]:
         if any(dep not in keys or dep == item["id"] for dep in item["depends_on"]):
             raise ValueError(f"Invalid dependency: {item['id']}")
+    shared_diagrams(data)
     return data
+
+
+def shared_diagrams(data):
+    """Resolve the two shared definitions and check the atlas-owned links against them."""
+    cfg = data["map"]
+    by_id = {d["id"]: d for d in AD.DIAGRAMS}
+    system, walk = by_id[cfg["diagrams"]["system"]], by_id[cfg["diagrams"]["walkthrough"]]
+    node_ids = {c["id"] for c in system["spec"]["components"]}
+    if set(system["details"]) != node_ids or set(cfg["nodes"]) != node_ids:
+        raise ValueError("Map details and design.json nodes must match the shared map components")
+    if not len(walk["phases"]) == len(walk["spec"]["segments"]) == len(cfg["phases"]):
+        raise ValueError("Walkthrough phases must match the shared segments")
+    keys = {item["id"] for item in data["components"]}
+    for entry in [*cfg["nodes"].values(), *cfg["phases"]]:
+        if any(doc not in keys for doc in entry.get("docs", [])):
+            raise ValueError("Unknown component document in the map links")
+    return system, walk
+
+
+def diagram_svg(diagram):
+    text = (AD.RENDERED / f'{diagram["id"]}.svg').read_text(encoding="utf-8")
+    if "@@DESC@@" not in text:
+        raise ValueError(f"Rendered diagram lacks its description slot: {diagram['id']}")
+    return text.replace("@@DESC@@", escape(diagram["summary"]))
+
+
+def link_rows(data, sources, docs, refs):
+    items = {item["id"]: item for item in data["components"]}
+    rows = []
+    if sources:
+        rows.append('<p class="detail-links"><span>Code and contracts</span>' + "".join(
+            f'<a href="{escape(AD.src(repo, path))}" target="_blank" rel="noopener noreferrer">{escape(REPO_LABEL[repo])} {escape(path)}</a>' for repo, path in sources) + "</p>")
+    if docs:
+        rows.append('<p class="detail-links"><span>Design documents · 19 Sep 2026 snapshot</span>' + "".join(
+            f'<a href="components/{doc}.html">{escape(items[doc]["name"])}</a>' for doc in docs) + "</p>")
+    if refs:
+        rows.append('<p class="detail-links"><span>Reference · 20 Sep 2026 baseline</span>' + "".join(
+            f'<a href="{escape(url)}">{escape(label)}</a>' for label, url in refs) + "</p>")
+    return "".join(rows)
+
+
+def map_section(data, system):
+    cfg, spec = data["map"], system["spec"]
+    boundary_of = {node: b["label"] for b in spec["boundaries"] for node in b["wraps"]}
+    pins = " · ".join(f"{REPO_LABEL[repo]} {rev[:8]}" for repo, rev in AD.SOURCES["sourceRevisions"].items())
+    index, details = [], []
+    for c in spec["components"]:
+        node, detail, links, tag = c["id"], system["details"][c["id"]], cfg["nodes"][c["id"]], c.get("tag", "")
+        index.append(f'<li><button type="button" class="node-button" data-node="{node}" aria-pressed="false"><span class="node-name">{escape(c["label"])}</span>'
+                     f'<span class="node-sub">{escape(c["sublabel"])}</span>' + (f'<span class="node-tag">{escape(tag)}</span>' if tag else "") + "</button></li>")
+        meta = " · ".join(x for x in [c["sublabel"], tag, boundary_of.get(node, "")] if x)
+        details.append(f'<div class="node-detail" id="detail-{node}" data-node="{node}"><h3>{escape(c["label"])}</h3><p class="detail-meta">{escape(meta)}</p>'
+                       f'<p>{escape(detail["role"])}</p>{link_rows(data, detail["sources"], links.get("docs", []), links.get("reference", []))}</div>')
+    viewer = cfg["viewers"] + system["id"] + ".html"
+    return f'''<section class="atlas-map" id="map" aria-labelledby="map-title">
+<div class="map-head"><div><p class="eyebrow">SYSTEM MAP · SOURCE PINNED {escape(cfg["reviewed_at"])}</p><h2 id="map-title">What runs where.</h2></div>
+<div class="map-aside"><p class="map-pins"><span>Pinned source</span>{escape(pins)} · <a href="{escape(viewer)}">Interactive viewer ↗</a></p>{stage_tools("Map zoom")}</div></div>
+<p class="map-key"><span class="key key-observe">observation path</span><span class="key key-feed">state feed</span><span class="key key-command">explicit command</span><span class="key key-other">internal call · commit · import</span><span class="key-hint">Select a box, or Tab to it and press Enter, for its responsibility and owning links. Escape clears the selection.</span></p>
+<div class="map-stage-wrap"><div class="map-stage"><div class="atlas-canvas" data-diagram="{system["id"]}">{diagram_svg(system)}</div></div></div>
+<aside class="map-detail" id="map-detail" aria-live="polite" tabindex="-1"><p class="detail-hint">{escape(system["summary"])}</p><p class="detail-hint">Nothing selected. Choose a component on the map or in the list below.</p></aside>
+<div class="map-reading">{reading_block(system)}</div>
+<details class="map-index" id="map-index"><summary>All {len(index)} components as a list</summary><ul>{"".join(index)}</ul></details>
+<div class="map-details" hidden>{"".join(details)}</div>
+<p class="map-note">Tags describe source at the pinned revision; installed and physical acceptance are recorded only by the owning issues. {escape(cfg["reference_baseline"])}</p>
+</section>'''
+
+
+def reading_block(diagram):
+    """The shared definition's reading and boundary bullets, as the guide renders them."""
+    items = lambda key: "".join(f"<li>{escape(re.sub(r'\[\[[A-Z]+[0-9]+\]\]', lambda m: m.group(0)[2:-2], text))}</li>" for text in diagram[key])
+    return (f'<div class="reading"><div><h4>How to read it</h4><ul>{items("reading")}</ul></div>'
+            f'<div><h4>Boundaries and evidence</h4><ul>{items("boundaries")}</ul></div></div>')
+
+
+def stage_tools(label):
+    return (f'<div class="stage-tools" role="group" aria-label="{escape(label)}"><button type="button" class="zoom-out" aria-label="Zoom out">−</button>'
+            '<button type="button" class="zoom-fit">Fit</button><button type="button" class="zoom-in" aria-label="Zoom in">+</button><span class="zoom-level" aria-live="polite">100%</span></div>')
+
+
+def walkthrough_section(data, walk):
+    cfg, spec = data["map"], walk["spec"]
+    names = {p["id"]: p["label"] for p in spec["participants"]}
+    phases = []
+    for n, (segment, phase, links) in enumerate(zip(spec["segments"], walk["phases"], cfg["phases"])):
+        steps = [(i, m) for i, m in enumerate(spec["messages"]) if segment["from"] <= m["y"] < segment["to"]]
+        if not steps:
+            raise ValueError(f"Walkthrough segment without messages: {segment['label']}")
+        items = "".join(f'<li data-step="{i}"><strong>{escape(names[m["from"]])} → {escape(names[m["to"]])}</strong> {escape(m["label"])}'
+                        + (f' <em>{escape(m["note"])}</em>' if m.get("note") else "") + "</li>" for i, m in steps)
+        phases.append(f'<li class="walk-phase" data-phase="{n}" data-steps="{",".join(str(i) for i, _ in steps)}"><button type="button" class="phase-button" aria-expanded="false" aria-controls="phase-{n}">'
+                      f'<span class="phase-label">{escape(segment["label"])}</span><span class="phase-count">{len(steps)} messages</span></button>'
+                      f'<div class="phase-body" id="phase-{n}" hidden><p>{escape(phase["text"])}</p><ol class="phase-messages">{items}</ol>{link_rows(data, phase["sources"], links.get("docs", []), [])}</div></li>')
+    viewer = cfg["viewers"] + walk["id"] + ".html"
+    return f'''<section class="atlas-walk" id="walkthrough" aria-labelledby="walkthrough-title">
+<div class="map-head"><div><p class="eyebrow">WALKTHROUGH · ONE OBSERVATION, NO DEVICE EXPERIMENT</p><h2 id="walkthrough-title">{escape(spec["meta"]["title"])}.</h2><p class="map-lead">{escape(walk["summary"])}</p></div>
+<div class="map-aside"><p class="map-pins"><a href="{escape(viewer)}">Interactive viewer ↗</a></p>{stage_tools("Walkthrough zoom")}</div></div>
+<p class="map-key"><span class="key-hint">Open a phase for its messages, explanation and links; the matching arrows stay highlighted on the diagram. Phase labels on the diagram open the same phase.</span></p>
+<div class="map-stage-wrap"><div class="map-stage"><div class="atlas-canvas" data-diagram="{walk["id"]}">{diagram_svg(walk)}</div></div></div>
+<ol class="walk-steps" id="walk-steps">{"".join(phases)}</ol>
+<div class="walk-reading">{reading_block(walk)}</div>
+</section>'''
+
+
+def archify_css():
+    classes = json.loads((AD.RENDERED / "archify-classes.json").read_text(encoding="utf-8"))
+    scope = lambda selector: ", ".join(f".atlas-canvas {part.strip()}" for part in selector.split(","))
+    rules = "".join(f"{scope(selector)}{{{body}}}" for selector, body in classes["rules"].items())
+    dark = dict(classes["dark"], **{"--bg": "#101a28", "--mask": "#101a28", "--grid": "#1b2a3d", "--text": "#eef3fa", "--text-muted": "#a6b4c8", "--text-dim": "#8394ab", "--text-faint": "#8a99ad"})
+    light = dict(classes["light"], **{"--bg": "#fffefb", "--mask": "#fffefb"})
+    variables = lambda values: ";".join(f"{k}:{v}" for k, v in values.items())
+    return rules + f".atlas-canvas{{{variables(dark)}}}:root[data-theme=light] .atlas-canvas{{{variables(light)}}}@media print{{.atlas-canvas{{{variables(light)}}}}}"
 
 
 def link(item, mode):
@@ -78,10 +195,11 @@ def fragment(item, full=False):
 
 
 def frame(data, title, content, mode="overview", current=""):
-    css = (ROOT / "assets/style.css").read_text(encoding="utf-8")
+    css = (ROOT / "assets/style.css").read_text(encoding="utf-8") + archify_css()
     script = (ROOT / "assets/app.js").read_text(encoding="utf-8")
     prefix = "../" if mode == "component" else ""
     nav = navigation(data, mode, current)
+    notice = "" if mode == "overview" else f'<aside class="notice" aria-label="Snapshot date"><strong>Design snapshot: {escape(data["reviewed_at"])}.</strong> Implementation labels, issue states and open decisions describe the pinned baseline at that date. Follow the linked owning issues and application guides for current status.</aside>'
     return f'''<!doctype html>
 <html lang="en" data-theme="dark">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -97,7 +215,7 @@ def frame(data, title, content, mode="overview", current=""):
 <nav aria-label="Document navigation">{nav}</nav>
 <div class="sidebar-foot">Historical design snapshot<br><strong>{escape(data['reviewed_at'])}</strong><br>Follow owning issues for current status.</div></aside>
 <div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button">Light mode</button><button id="print" type="button">Print</button></div></div>
-<main id="main" tabindex="-1"><aside class="notice" aria-label="Snapshot date"><strong>Design snapshot: {escape(data['reviewed_at'])}.</strong> Implementation labels, issue states and open decisions describe the pinned baseline at that date. Follow the linked owning issues and application guides for current status.</aside>{content}</main>
+<main id="main" tabindex="-1">{notice}{content}</main>
 <footer><span>BUNNY · dated design snapshot, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
 <script>{script}</script></body></html>\n'''
 
@@ -119,7 +237,11 @@ def component_body(item, data, full=False):
 
 def build(check=False):
     data = load()
+    system, walk = shared_diagrams(data)
     intro = (ROOT / "source/system.html").read_text(encoding="utf-8")
+    if intro.count("<!--SYSTEM-MAP-->") != 1 or intro.count("<!--WALKTHROUGH-->") != 1:
+        raise ValueError("system.html must contain one system-map marker and one walkthrough marker")
+    intro = intro.replace("<!--SYSTEM-MAP-->", map_section(data, system)).replace("<!--WALKTHROUGH-->", walkthrough_section(data, walk))
     cards = []
     for item in data["components"]:
         cards.append(f'''<a class="component-card" href="components/{item['id']}.html" data-search="{escape(item['id']+' '+item['name']+' '+item['summary']+' '+item['group'])}">
@@ -128,6 +250,7 @@ def build(check=False):
     outputs = {ROOT / "index.html": frame(data, "Overview", intro + catalog)}
     full_intro = re.sub(r'href="components/([A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*)\.html(#[^"]*)?"',
                         lambda m: 'href="' + (m[2] or "#" + m[1]) + '"', intro)
+    full_intro = full_intro.replace('<details class="prose baseline"', '<details class="prose baseline" open')
     outputs[ROOT / "full-system-design.html"] = frame(data, "Complete reading view", full_intro +
         '<section id="catalog"><h2>Component documents</h2><p class="reading-note">Complete reading view. Component documents follow in inventory order; use the sidebar to jump between them.</p></section>' +
         "".join(component_body(item, data, True) for item in data["components"]), "full")

@@ -41,10 +41,11 @@ shared presets follow the Codex-first milestone and general-control definition.
 
 ## System design documents
 
-Open the [BUNNY system design atlas](docs/system-design/index.html) locally for
-the September 19, 2026 design snapshot, 26 component documents and a combined
-reading/print view. Its implementation labels describe that date, not current
-status. GitHub shows HTML source. Revise the snapshot only for an intentional
+Open the [BUNNY system design atlas](docs/system-design/index.html) locally. It
+starts with a system map and an agent observation walkthrough pinned to source
+on September 23, 2026, followed by the September 19, 2026 snapshot of 26
+component documents and a combined reading/print view. Implementation labels
+describe their pinned dates, not current status. GitHub shows HTML source. Revise the snapshot only for an intentional
 design-document change, following the
 [documentation checks](docs/development.md#system-design-documents).
 

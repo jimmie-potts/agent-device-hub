@@ -17,6 +17,16 @@ python3 docs/system-design/check.py
 node docs/system-design/check.cjs
 ```
 
+The overview's system map and agent observation walkthrough are not authored
+under `source/`. They come from the shared definitions `D2` and `D3` in
+`docs/work-guide/work/architecture_diagrams.py`, their Archify renderings under
+`docs/work-guide/work/architecture/rendered/`, and the atlas-owned link inventory
+in `design.json` (`map`). To change either diagram, edit the definition, render
+with the installed archify skill (`ARCHIFY_DIR=... python3
+docs/work-guide/work/architecture_diagrams.py`), rebuild the guide and the atlas,
+and run both check sets. `check.py` fails when a saved specification or rendered
+SVG no longer matches its definition or receipt.
+
 The generator and static check use Python's standard library. Browser checks use
 installed Playwright/Chromium, with the same `GUIDE_PLAYWRIGHT_MODULE` and
 `GUIDE_CHROMIUM_PATH` overrides as the work guide. `BUNNY_DESIGN_RECEIPTS` selects

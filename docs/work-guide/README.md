@@ -125,6 +125,9 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
    SHA-256 receipts and definitions in `work/architecture_diagrams.py`. Render
    using the centrally installed archify skill; do not install or vendor it.
    Retain implemented/planned labels and each diagram's failure boundaries.
+   The BUNNY atlas under `docs/system-design/` embeds the system map and the
+   observation walkthrough from these same definitions; rebuild and check it
+   after re-rendering either of them.
 4. Run the commands below. Guide-only CI filtering does not waive these local
    checks or the review evidence required by the [SDLC exception](../sdlc.md#guide-only-ci-exception). Inspect desktop/mobile and print renders for diagram
    changes. Commit inputs, generator, resulting HTML and viewers together.

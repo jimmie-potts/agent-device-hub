@@ -1046,5 +1046,176 @@
         }
       ]
     }
-  ]
+  ],
+  "map": {
+    "reviewed_at": "2026-09-23",
+    "note": "The system map and walkthrough are built from the shared diagram definitions in docs/work-guide/work/architecture_diagrams.py and their Archify renderings. Component documents keep the 19 September 2026 snapshot; reference pages keep the 20 September 2026 baseline.",
+    "diagrams": {
+      "system": "arch-shared-system",
+      "walkthrough": "seq-lifecycle-observation"
+    },
+    "viewers": "../work-guide/outputs/architecture/",
+    "reference_baseline": "Reference pages are pinned to the 20 September 2026 baseline (Pixoo 9f1c0ec7, Nanoleaf 2558df5a). They are older than the map pins and do not describe a hub schema.",
+    "nodes": {
+      "providers": {
+        "docs": [
+          "HOST-agent"
+        ]
+      },
+      "hooks": {
+        "docs": [
+          "HOST-agent",
+          "EVT-lifecycle"
+        ]
+      },
+      "dashboard": {
+        "docs": [
+          "UI-dashboard"
+        ]
+      },
+      "mcpClients": {
+        "docs": [
+          "API-mcp"
+        ]
+      },
+      "future": {
+        "docs": [
+          "HOST-music",
+          "CORE-playback",
+          "WRK-automation"
+        ]
+      },
+      "mcpModule": {
+        "docs": [
+          "API-mcp",
+          "NET-access"
+        ]
+      },
+      "hubRoutes": {
+        "docs": [
+          "API-bunny",
+          "NET-access"
+        ]
+      },
+      "core": {
+        "docs": [
+          "CORE-agent",
+          "CH-feeds"
+        ]
+      },
+      "hubStore": {
+        "docs": [
+          "DB-hub",
+          "VOL-state"
+        ],
+        "reference": [
+          [
+            "Database reference (no hub schema yet)",
+            "reference/index.html#databases"
+          ]
+        ]
+      },
+      "nanoWorker": {
+        "docs": [
+          "DEV-nanoleaf"
+        ]
+      },
+      "nanoCtl": {
+        "docs": [
+          "DEV-nanoleaf",
+          "EVT-controller"
+        ],
+        "reference": [
+          [
+            "Nanoleaf controller API",
+            "reference/api/nanoleaf-controller.html"
+          ]
+        ]
+      },
+      "nanoStore": {
+        "docs": [
+          "DEV-nanoleaf"
+        ],
+        "reference": [
+          [
+            "Nanoleaf schema, 18 tables",
+            "reference/database/nanoleaf/index.html"
+          ]
+        ]
+      },
+      "lights": {
+        "docs": [
+          "DEV-nanoleaf"
+        ]
+      },
+      "pixooSvc": {
+        "docs": [
+          "DEV-pixoo",
+          "EVT-controller"
+        ],
+        "reference": [
+          [
+            "Pixoo HTTP API",
+            "reference/api/pixoo.html"
+          ]
+        ]
+      },
+      "pixooStore": {
+        "docs": [
+          "DEV-pixoo"
+        ],
+        "reference": [
+          [
+            "Pixoo library schema, 9 tables",
+            "reference/database/pixoo-library/index.html"
+          ],
+          [
+            "Pixoo owner lock",
+            "reference/database/pixoo-owner/index.html"
+          ]
+        ]
+      },
+      "newCtl": {
+        "docs": [
+          "DEV-tidbyt",
+          "DEV-lifx",
+          "DEV-pc"
+        ]
+      },
+      "pixooDev": {
+        "docs": [
+          "DEV-pixoo"
+        ]
+      }
+    },
+    "phases": [
+      {
+        "docs": [
+          "HOST-agent",
+          "EVT-lifecycle"
+        ]
+      },
+      {
+        "docs": [
+          "CORE-agent",
+          "CH-feeds",
+          "DB-hub"
+        ]
+      },
+      {
+        "docs": [
+          "DEV-pixoo",
+          "DEV-nanoleaf",
+          "EVT-controller"
+        ]
+      },
+      {
+        "docs": [
+          "CORE-agent",
+          "VOL-state",
+          "OPS-runbook"
+        ]
+      }
+    ]
+  }
 }

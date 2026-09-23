@@ -36,6 +36,7 @@
   ".c-cloud": "fill: var(--cloud-fill);      stroke: var(--cloud-stroke);",
   ".t-frontend": "fill: var(--frontend-stroke);",
   ".t-database": "fill: var(--database-stroke);",
+  ".t-external": "fill: var(--external-stroke);",
   "svg .s-cloud": "color: var(--cloud-stroke);",
   ".t-dim": "fill: var(--text-dim);",
   ".c-lane": "fill: var(--lane-fill); stroke: var(--lane-stroke); stroke-dasharray: 6,6;"

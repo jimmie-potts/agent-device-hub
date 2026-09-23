@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-23T05:12:21.806943+00:00",
+  "renderedAt": "2026-09-23T06:50:41.443438+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -28,14 +28,14 @@
     {
       "id": "arch-shared-system",
       "type": "architecture",
-      "status": "planned",
+      "status": "implemented",
       "specification": {
-        "sha256": "259f1ed4e1d40e940889189d0673dc80a991c5ab1b024ec489c0484bc348407d",
-        "bytes": 6795
+        "sha256": "45c2eb62120db97c709b26fbf4e5eeb9b9ba5d8916ee547e20a9de5cc5eeec6b",
+        "bytes": 9350
       },
       "artifact": {
-        "sha256": "d6936a828245d6f92144f7bb3db9945e3ba6fb3822f04e288ee1f751ec06ffbe",
-        "bytes": 723789
+        "sha256": "4eacd7df14b668f179d8825d9d1f3c8b0caefdbb3a3c86c0639655b215b31f59",
+        "bytes": 734862
       },
       "validation": {
         "checksPassed": 9,
@@ -46,7 +46,7 @@
         "warnings": 0
       },
       "viewer": "arch-shared-system.html",
-      "svgSha256": "daf21a9e3066bc19a1067eeb074c708ba2f067a3234967627297d7623d0b644c"
+      "svgSha256": "67ca7b76cf343113ca98daa43ca3f49518ada730ea86d955bd4db4151b893a3a"
     },
     {
       "id": "arch-nanoleaf-linux",
@@ -74,14 +74,14 @@
     {
       "id": "seq-lifecycle-observation",
       "type": "sequence",
-      "status": "planned",
+      "status": "implemented",
       "specification": {
-        "sha256": "247fde78849ba33b23534e151fdb6c2477056626ecd76e14eb22ad8fd31776aa",
-        "bytes": 3578
+        "sha256": "30fc15c3be64380aae56006e65108743b3f0d4713863b59b2755bd3266e739cf",
+        "bytes": 4146
       },
       "artifact": {
-        "sha256": "a5137c8202f6d38ad078163b6d698bac2a48a6ef8985f200a8102d88f0cd6278",
-        "bytes": 712006
+        "sha256": "29b567e06f830205ba2a6a9bad92d21a7bc98bb7ea87a40bd399e24de57fe71c",
+        "bytes": 714370
       },
       "validation": {
         "checksPassed": 9,
@@ -92,7 +92,7 @@
         "warnings": 0
       },
       "viewer": "seq-lifecycle-observation.html",
-      "svgSha256": "73597049631e8ba60d9442bcfff45d0eff8588691840256d930bbe88f01ebe8d"
+      "svgSha256": "6f17fb30f77790a94456d4969a837c34ba1d885c06020ad42fe3b96c285e84ea"
     },
     {
       "id": "seq-nanoleaf-command",
