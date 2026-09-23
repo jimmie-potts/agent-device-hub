@@ -352,7 +352,7 @@ D5 = seq(
 D6 = seq(
     'desktop-input', 'Independent Codex mouse controls',
     participants=[
-        {'id': 'user', 'type': 'external', 'label': 'User', 'sublabel': 'qualified N30 input'},
+        {'id': 'user', 'type': 'external', 'label': 'User', 'sublabel': 'shared navigation keys'},
         {'id': 'dispatcher', 'type': 'backend', 'label': 'Windows dispatcher', 'sublabel': 'local, no hub'},
         {'id': 'profile', 'type': 'database', 'label': 'Control profile', 'sublabel': 'bindings + app scope'},
         {'id': 'app', 'type': 'frontend', 'label': 'Focused app', 'sublabel': 'Codex or other'},
@@ -362,7 +362,7 @@ D6 = seq(
         ('msg', 'user', 'dispatcher', 'select control profile', 'emphasis'),
         ('msg', 'dispatcher', 'profile', 'load mappings; no input or device commands', 'default'),
         ('seg', 'One Codex action'),
-        ('msg', 'user', 'dispatcher', 'fresh qualified mouse press', 'emphasis'),
+        ('msg', 'user', 'dispatcher', 'fresh mapped navigation press', 'emphasis'),
         ('msg', 'dispatcher', 'profile', 'resolve control, app scope and action', 'default'),
         ('msg', 'dispatcher', 'app', 'next attention task · command menu · previous task · next task', 'emphasis', 'exactly one action per deliberate press'),
         ('seg', 'Boundaries'),
@@ -373,7 +373,7 @@ D6 = seq(
     cards=[
         {'dot': 'cyan', 'title': 'Independent path', 'items': ['Mouse dispatch needs no hub, shared monitoring, general controls or Music', 'Keyboard A/B and attached Super Buttons stay outside B.U.N.N.Y.']},
         {'dot': 'violet', 'title': 'Ownership', 'items': ['The keyboard owns its A/B assignments, including personal Wispr and Enter mappings', 'B.U.N.N.Y. does not edit, store, dispatch or use them for presets']},
-        {'dot': 'amber', 'title': 'Qualification pending', 'items': ['N30 85CA has four distinct observed browser outputs (H64)', 'Native D-pad attribution, routing and recovery unqualified', 'H70 profiles cover qualified controls, excluding keyboard A/B and Super Buttons']},
+        {'dot': 'amber', 'title': 'Brief trial passed', 'items': ['N30 actions, outside-app behavior and stopping passed (H64)', 'Other devices share these keys inside Codex; no per-device filtering', 'H65/H66 still own implementation and installation']},
     ],
     width=1100,
 )
@@ -586,12 +586,12 @@ DIAGRAMS = [
          sources=[(P, 'docs/local-mcp.md'), (P, 'docs/playback.md'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md'), (P, 'packages/playback/src/player.ts'), (H, 'packages/mcp/README.md')],
          issues=['P12', 'P37']),
     dict(id='seq-desktop-input', spec=D6, kind='sequence', status='future',
-         status_label='Future work; qualification unverified', short='Codex mouse input',
-         summary='Selecting a control profile loads mappings and sends no input or device commands. A fresh qualified mouse press resolves application scope and one of four Codex actions. Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y.',
-         reading=['Ordinary mouse behavior passes through outside Codex. Held, repeated or stale input does not dispatch twice or replay later.',
+         status_label='Brief app trial passed; reusable mapper planned', short='Codex mouse input',
+         summary='Selecting a control profile loads mappings and sends no input or device commands. A fresh mapped navigation press resolves application scope and one of four Codex actions. Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y.',
+         reading=['The owner passed a temporary AutoHotkey trial. The reusable mapper below remains planned: ordinary input passes through outside Codex; held, repeated or stale input must not dispatch twice or replay later.',
                   'Presets require a separately selected qualified binding and service. Keyboard A/B and attached Super Buttons are excluded.'],
          boundaries=['This path does not wait for the hub, shared monitoring, general controls or Music.',
-                     'Owner packaging identifies N30 mouse 85CA. Four browser outputs were observed; the receiver is associated with 062A:4101 and the installed Codex package is 26.917.6896.0. Native D-pad attribution, selective translation and recovery remain unqualified under [[H64]].',
+                     'N30 85CA, receiver 062A:4101 and Codex 26.917.6896.0 passed the brief owner trial under [[H64]]. PageUp/PageDown and Back/Forward from other devices also map inside Codex. Receiver isolation and long-term recovery are unqualified.',
                      'The later editor ([[H70]]) excludes keyboard A/B, attached Super Buttons, arbitrary scripts, shell execution, raw device commands and multi-step macros.'],
          sources=[(H, 'docs/desktop-controls.md')],
          issues=['H63', 'H64', 'H65', 'H66', 'H70']),

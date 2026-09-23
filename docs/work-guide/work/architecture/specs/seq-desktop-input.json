@@ -15,7 +15,7 @@
    "id": "user",
    "type": "external",
    "label": "User",
-   "sublabel": "qualified N30 input"
+   "sublabel": "shared navigation keys"
   },
   {
    "id": "dispatcher",
@@ -72,7 +72,7 @@
    "from": "user",
    "to": "dispatcher",
    "y": 312,
-   "label": "fresh qualified mouse press",
+   "label": "fresh mapped navigation press",
    "variant": "emphasis"
   },
   {
@@ -131,11 +131,11 @@
   },
   {
    "dot": "amber",
-   "title": "Qualification pending",
+   "title": "Brief trial passed",
    "items": [
-    "N30 85CA has four distinct observed browser outputs (H64)",
-    "Native D-pad attribution, routing and recovery unqualified",
-    "H70 profiles cover qualified controls, excluding keyboard A/B and Super Buttons"
+    "N30 actions, outside-app behavior and stopping passed (H64)",
+    "Other devices share these keys inside Codex; no per-device filtering",
+    "H65/H66 still own implementation and installation"
    ]
   }
  ]

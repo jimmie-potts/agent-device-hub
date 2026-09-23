@@ -56,11 +56,11 @@
         </g>
         </g>
 
-        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh qualified mouse press" data-edge-key="2">
+        <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh mapped navigation press" data-edge-key="2">
           <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="164,312;409.3333333333333,312" d="M 164 312 L 409.3333333333333 312" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="210.46666666666664" y="292" width="152.4" height="16" rx="3" class="c-mask"/>
-          <text x="286.66666666666663" y="302" class="t-backend" font-size="9" text-anchor="middle">fresh qualified mouse press</text>
+          <rect x="205.26666666666662" y="292" width="162.8" height="16" rx="3" class="c-mask"/>
+          <text x="286.66666666666663" y="302" class="t-backend" font-size="9" text-anchor="middle">fresh mapped navigation press</text>
         </g>
         </g>
 
@@ -120,8 +120,8 @@
         </g>
 
         <!-- Participants -->
-        <g id="seq-desktop-input-node-user" data-node-id="seq-desktop-input-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, qualified N30 input, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="qualified N30 input" data-node-context="Sequence participant">
-          <title>User · qualified N30 input · Sequence participant</title>
+        <g id="seq-desktop-input-node-user" data-node-id="seq-desktop-input-user" data-node-label="User" tabindex="0" role="button" aria-label="Focus User, shared navigation keys, Sequence participant" aria-pressed="false" data-node-kind="external" data-node-sublabel="shared navigation keys" data-node-context="Sequence participant">
+          <title>User · shared navigation keys · Sequence participant</title>
           <rect x="62" y="72" width="190" height="54" rx="6" class="c-mask"/>
           <rect x="62" y="72" width="190" height="54" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(68 78) scale(0.6875)">
@@ -129,7 +129,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="157" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">User</text>
-          <text data-detail="context" x="157" y="111" class="t-muted" font-size="7" text-anchor="middle">qualified N30 input</text>
+          <text data-detail="context" x="157" y="111" class="t-muted" font-size="7" text-anchor="middle">shared navigation keys</text>
         </g>
 
         <g id="seq-desktop-input-node-dispatcher" data-node-id="seq-desktop-input-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, local, no hub, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="local, no hub" data-node-context="Sequence participant">

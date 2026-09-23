@@ -13,13 +13,13 @@ PATHS = {
     ),
     'nanoleaf-devices': (
         'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'The device-state and geometry foundation is delivered. Next, integrate independent device projections through the existing Linux worker; rendering and two-device installation follow.',
-        ['N42'],
+        'The device-state and worker source issues are closed. Panel effects, the wall map and separately authorized installation follow.',
+        ['N43'],
     ),
     'tidbyt-lifx': (
         'Add automatic task status to Tidbyt and LIFX through their own controllers.',
-        'Qualify each connection separately. The two investigations can run in parallel; each controller waits for its own findings.',
-        ['H15', 'H17'],
+        'Tidbyt connection qualification is closed; its controller follows those findings. LIFX connection qualification remains independent.',
+        ['H16', 'H17'],
     ),
     'pc-lighting': (
         'Add Corsair task lighting, with optional Strimer and keyboard support.',
@@ -28,7 +28,7 @@ PATHS = {
     ),
     'desktop-controls': (
         'Use local Codex mouse shortcuts, then add optional shared desk presets.',
-        'Finish the current input qualification review and its missing observations. Local mappings wait for that evidence; shared presets keep their blocked and deferred labels until the owner selects them, now that the general-control definition is closed.',
+        'Finish source review of the successful brief input trial, then refine the reusable local mapper. Shared presets retain their own prerequisites; keyboard A/B stays outside B.U.N.N.Y.',
         ['H64'],
     ),
     'nanoleaf-presentation': (

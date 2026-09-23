@@ -120,7 +120,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const evidenceExpansion=()=>page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.map(e=>e.open));
     const beforeEvidence=await evidenceExpansion();
     const beforeSearch=await expansion();
-    for(const [query,id] of [['Pixoo #37','shared-codex'],['Dominator Platinum','pc-lighting'],['Wispr','desktop-controls']]) {
+    for(const [query,id] of [['Pixoo #37','shared-codex'],['Dominator Platinum','pc-lighting'],['N30','desktop-controls']]) {
       await page.locator('#search').fill(query); assert.equal(await page.locator('.guide:not([hidden])').count(),1);
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');
@@ -132,7 +132,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#search').fill('no-such-topic-987'); assert(await page.locator('#empty-state').isVisible());
     await page.locator('#clear-search').click(); assert.equal(await page.locator('.guide:not([hidden])').count(),count);
     assert.equal(await page.locator('#result-count').textContent(),summary);
-    await page.locator('#search').fill('Wispr'); await page.evaluate(()=>{location.hash='pc-lighting';});
+    await page.locator('#search').fill('N30'); await page.evaluate(()=>{location.hash='pc-lighting';});
     await page.waitForFunction(()=>document.querySelector('#search').value==='');
     assert.equal(await page.locator('#pc-lighting').getAttribute('open'),'');
     await page.locator('#expand-all').click(); assert.equal(await page.locator('.guide[open]').count(),count); assert.equal(await page.locator('.reference[open]').count(),2);
