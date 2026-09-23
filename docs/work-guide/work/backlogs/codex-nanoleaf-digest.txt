@@ -9,7 +9,7 @@
 #18 [OPEN] Configure project and status colors consistently
 #19 [OPEN] Choose and preview completion celebrations
 #20 [OPEN] Customize animation for each status
-#21 [OPEN] Check feasibility of mirroring externally controlled Nanoleaf scenes
+#21 [CLOSED] Check feasibility of mirroring externally controlled Nanoleaf scenes
 #26 [CLOSED] Keep map number tags clear of neighbouring Lines in rotated compact layouts
 #29 [CLOSED] Consume shared agent sessions while preserving Nanoleaf behavior
 #30 [CLOSED] Get shared Codex monitoring working on the existing Linux Nanoleaf installation
@@ -18,7 +18,7 @@
 #37 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
 #41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
 #42 [CLOSED] Run independent Lines and Light Panels projections in the Nanoleaf runtime
-#43 [OPEN] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
+#43 [CLOSED] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
 #44 [OPEN] Manage Lines and Light Panels together in the wall map
 #45 [OPEN] Enroll a second Nanoleaf device on the Linux runtime
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
@@ -29,4 +29,4 @@
 #54 [CLOSED] Support a fresh Linux installation of the Nanoleaf services
 #55 [CLOSED] Install and verify the Linux Nanoleaf runtime in WSL
 #64 [CLOSED] Expose native power, brightness and saved-scene controls through the protected controller API
-#70 [OPEN] Align guide-maintenance rules with the current hub procedure
+#70 [CLOSED] Align guide-maintenance rules with the current hub procedure
