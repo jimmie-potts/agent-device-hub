@@ -2327,25 +2327,29 @@
   },
   {
     "number": 179,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Open BUNNY through a local owner launcher without manual browser tokens",
     "body": "## Outcome\nOpen the local BUNNY dashboard through a one-click launcher without asking the user to obtain or type a Hub browser bearer token. Preserve scoped Hub authentication for browser API requests and existing machine credentials.\n\n## Scope\n- Add an installation-owner launcher that obtains a short-lived, single-use browser handoff from the running Hub through a private local channel and opens its loopback URL.\n- Exchange the handoff for a memory-only, bounded browser credential; clear the handoff from browser history before the exchange and support explicit disconnect/revocation.\n- Keep direct unauthenticated HTTP access to monitor, controller, and MCP routes denied. Do not expose native controller credentials or broaden device writes.\n- Document installation-owner use, startup/reload behavior, expiry, recovery, and the distinction from the monitor-producer setup token.\n- Test replay, expiry, privilege scope, cross-origin requests, browser handoff, and no-write inspection using disposable hosts. Record source delivery separately from personal installation.\n\n## Delivery\nSource and documentation through the repository SDLC. The current request does not authorize changing the running installation or operating devices. Browser UI changes require approval of the current candidate before merge.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179",
-    "updatedAt": "2026-09-23T07:00:36Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T07:20:50Z",
+    "closedAt": "2026-09-23T07:20:50Z",
     "labels": [
       {
         "name": "enhancement"
-      },
-      {
-        "name": "status:review"
       }
     ],
     "milestone": null,
-    "comments": [],
-    "commentCount": 0,
-    "commentsRefreshed": false
+    "comments": [
+      {
+        "body": "Source delivery complete via PR #180, squash merge `1338c03e925050e65d4ef4c7a2fd601d3feccce1`.\n\n- The one-click owner launcher, bounded browser session, revocation, reload recovery, and manual-token compatibility are merged.\n- Independent Standards and Specification reviews found no remaining issues on the reviewed head. The user approved the unchanged BUNNY UI candidate.\n- All six applicable Depot-backed GitHub checks succeeded on the merged `main` revision, with zero annotations. The user approved using these check records for PR #180 because detailed Depot pages redirect to sign-in in this environment.\n- Browser and Hub tests used disposable state and fake controllers. No personal Hub installation, shortcut, or physical device was changed or qualified.\n",
+        "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179#issuecomment-5790737627",
+        "createdAt": "2026-09-23T07:20:48Z",
+        "updatedAt": "2026-09-23T07:20:48Z"
+      }
+    ],
+    "commentCount": 1,
+    "commentsRefreshed": true
   },
   {
     "number": 181,

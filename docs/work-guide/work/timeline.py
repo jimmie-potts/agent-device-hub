@@ -27,7 +27,7 @@ SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later'
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123', 'H179', 'H181', 'H182'], guide='shared-codex', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123', 'H181', 'H182'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H35', 'P67', 'H152', 'H154', 'H155'], guide='controls-music', main=True),
         dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H175', 'H178', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),

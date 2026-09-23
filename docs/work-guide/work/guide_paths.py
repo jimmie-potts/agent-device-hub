@@ -8,7 +8,7 @@ PATHS = {
     ),
     'shared-codex': (
         'One shared task state, consistent device status, and a common integration UI.',
-        'The Codex-first milestone is closed. The owner launcher #179 has merged source awaiting closeout, and the style guide #181 is ready; the dashboard styling #182 follows #181. Other items are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
+        'The Codex-first milestone is closed. The owner launcher #179 is delivered. The style guide #181 is ready; the dashboard styling #182 follows #181. Other items are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
         ['H181', 'H138'],
     ),
     'nanoleaf-devices': (
@@ -33,7 +33,7 @@ PATHS = {
     ),
     'nanoleaf-presentation': (
         'Make the wall display reflect live state and support configurable presentation.',
-        'Reconcile the rendering-contract blocker before the live renderer. External-scene research is complete: externally controlled scenes display as external or unknown. Lively and ambient presentation keep their own qualification sequence.',
+        'Deliver the rendering contract #15, then the live renderer #17. External-scene research is complete: externally controlled scenes display as external or unknown. Lively and ambient presentation keep their own qualification sequence.',
         ['N15'],
     ),
     'pixoo-media': (

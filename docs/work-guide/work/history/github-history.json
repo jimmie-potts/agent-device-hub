@@ -1,10 +1,10 @@
 {
-  "fetchedAt": "2026-09-23T07:19:18.949298+00:00",
+  "fetchedAt": "2026-09-23T07:26:02.132030+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T07:17:50Z",
+      "pushedAt": "2026-09-23T07:20:32Z",
       "defaultBranch": "main",
       "headSha": "1338c03e925050e65d4ef4c7a2fd601d3feccce1",
       "mainCommitCount": 87,
@@ -1120,7 +1120,15 @@
           "mergedAt": "2026-09-23T07:17:50Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 183,
+          "title": "Refresh the work guide to current issue state",
+          "createdAt": "2026-09-23T07:20:33Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/183",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
@@ -1417,9 +1425,17 @@
           "createdAt": "2026-09-23T05:14:52Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/172"
+        },
+        {
+          "number": 179,
+          "title": "Open BUNNY through a local owner launcher without manual browser tokens",
+          "closedAt": "2026-09-23T07:20:50Z",
+          "createdAt": "2026-09-23T06:38:35Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179"
         }
       ],
-      "openIssueCount": 59,
+      "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-23T07:06:34Z"

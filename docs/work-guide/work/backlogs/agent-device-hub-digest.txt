@@ -85,6 +85,6 @@
 #173 [OPEN] Make the remaining work-guide architecture diagrams readable and consistent
 #175 [OPEN] Add the qualified HT-A9 AirPlay source to hub playback
 #178 [OPEN] Qualify Apple Music catalog search and chosen-item playback requests
-#179 [OPEN] Open BUNNY through a local owner launcher without manual browser tokens
+#179 [CLOSED] Open BUNNY through a local owner launcher without manual browser tokens
 #181 [OPEN] Approve and document the B.U.N.N.Y. application UI style guide
 #182 [OPEN] Apply the B.U.N.N.Y. style and display name to the dashboard
