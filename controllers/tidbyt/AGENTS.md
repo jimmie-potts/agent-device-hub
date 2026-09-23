@@ -7,8 +7,9 @@ decisions. For planning or delivery, read the exact issue. Read
 integration or ownership. All rules in the root [AGENTS.md](../../AGENTS.md)
 remain in force, including delivery, privacy, unslop and physical authorization.
 
-This directory contains documents only. Bootstrap completion grants no future
-implementation, installation, account access or physical-testing authority.
+This directory holds the in-process cloud controller package from #16; the
+README describes its boundaries. Bootstrap or source delivery grants no status
+integration, installation, account access or physical-testing authority.
 
 Use the official Tidbyt cloud first. Keep 64×32 rendering independent of backend
 authentication, capabilities and transport. Consume shared state and controller
