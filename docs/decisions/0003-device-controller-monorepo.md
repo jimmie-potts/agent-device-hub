@@ -50,8 +50,8 @@ External consumers still need versioned artifacts until their source migration.
 
 Qualification, controller implementation, automatic status and installation/
 physical acceptance are separate issues for each new device. Tronbyt source
-support and physical transition are separate deferred issues too. The
-[roadmap](../roadmap.md) links them; GitHub owns their readiness and acceptance.
+support and physical transition are separate deferred issues too. GitHub
+issues link them and own their readiness and acceptance.
 No controller API, product schema, runtime package or service is implemented by
 this decision. Each behavior change needs its own OpenSpec artifacts and
 executable validation under the [SDLC](../sdlc.md).

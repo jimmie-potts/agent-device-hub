@@ -27,10 +27,10 @@ The directory contains a guide only. Qualification, adapters, automatic status
 and physical acceptance remain future issues with separate gates for each target.
 Strimer and Varmilo do not block Corsair delivery; Varmilo does not block Strimer.
 
-Read [architecture](docs/architecture.md) for ownership and migration decisions,
-[the roadmap](docs/roadmap.md) for the linked delivery sequence, and
-[development](docs/development.md) for setup. GitHub issues own scope, acceptance,
-dependencies and status. A completed bootstrap is not a working device integration.
+Read [architecture](docs/architecture.md) for ownership and migration decisions
+and [development](docs/development.md) for setup. GitHub issues own the delivery
+sequence, scope, acceptance, dependencies and status. A completed bootstrap is
+not a working device integration.
 
 [Desktop controls](docs/desktop-controls.md) records the accepted 8BitDo/Wispr
 defaults, Codex mouse actions, control profiles and later desk presets. These
@@ -138,8 +138,8 @@ for activity, components and connections. It uses the existing protected hub and
 controller services, with source-only synthetic browser checks. PR #127 records
 human UI approval and source-delivery evidence. Installation and physical
 acceptance remain separate. [ADR 0005](docs/decisions/0005-general-device-controls.md)
-defines the general device controls that extend these views; their bounded
-issues are in the [roadmap](docs/roadmap.md#general-device-controls).
+defines the general device controls that extend these views and links their
+bounded issues.
 [#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) adds Pixoo
 screen power, brightness, saved-playlist and playback controls to the same
 component view; physical acceptance on the display is
