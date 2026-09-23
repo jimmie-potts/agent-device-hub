@@ -560,3 +560,15 @@ prepares pinned consumer sources, then measures only inside a disposable isolate
 Linux namespace. Setup/build time is excluded from runtime timings. No installed
 hook, agent client, physical device or live state is used. The report retains
 failures and is not a substitute for installed or physical acceptance.
+
+## LIFX controller checks
+
+Use Node 24 and run `npm ci`, `npm run build`, `npm run typecheck` and
+`npm run test:lifx` from the worktree root. Run shared controller-contract
+TypeScript/Python and package checks plus `check:workflow` and `test:workflow`.
+The existing contracts/state CI jobs run `test:lifx:built` after their fresh build
+on both Python versions. Fake transports and fake sockets cover packet encoding,
+reply correlation, deadlines, bounded retry, replay, cancellation, overlapping
+commands, unsupported capabilities and partial multi-bulb results. Tests validate
+common receipts/snapshots against controller v1 and never open a native socket.
+Installation and physical acceptance remain separate from these source checks.

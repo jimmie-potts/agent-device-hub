@@ -12,7 +12,7 @@ status; do not copy issue lists or dependency chains into repository docs.
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
 launched from the repository root. controllers/tidbyt holds the fake-tested cloud
-controller package; controllers/lifx contains documents only. Before shared
+controller package; controllers/lifx holds the fake-tested LAN controller package. Before shared
 package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 

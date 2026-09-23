@@ -1,48 +1,93 @@
 # LIFX controller
 
-Status: Documentation only. No package, LAN transport, effects or service is
-implemented or installed here.
+`@jimmie-potts/lifx-controller` is an in-process TypeScript controller with direct
+UDP transport and fake-tested per-bulb queues. It is not installed or connected
+to the hub dashboard. Source validation sends no bulb traffic.
 
-This controller will map automatic agent status to supported LIFX lighting
-through direct LAN control. It will consume the feed of the selected shared
-agent-state owner. Home Assistant and cloud HTTP are alternatives already considered;
-neither is a dependency of this controller. See the
-[architecture](../../docs/architecture.md) and
-[ADR 0003](../../docs/decisions/0003-device-controller-monorepo.md).
+## Ownership and configuration
 
-## Capability and ownership boundary
+Construct `LifxController` with `controllerId`, `sourceId` and 1–32 `bulbs`.
+Each bulb has a neutral `deviceId`, private numeric unicast IPv4 `address`, and
+qualified `vendor`, `product`, `firmwareMajor` and `firmwareMinor` evidence.
+Addresses and device IDs must be unique within the owner. Construction opens no
+socket; no discovery or polling occurs. Addresses ending in `.0` or `.255` are
+conservatively rejected without subnet information. Hostnames are not accepted.
 
-Do not assume the user's "A16" bulbs are A19 models, or advertise
-color, temperature or effects without product/capability evidence. Qualification
-will choose the LAN library or protocol implementation and record its support.
+Only vendor 1/product 27/firmware 2.90 is currently qualified: LIFX A19, color,
+power, brightness and 1500–9000 K. This mapping comes from
+[qualification](https://github.com/jimmie-potts/agent-device-hub/issues/17#issuecomment-5801713572)
+and the [official product catalog](https://github.com/LIFX/products/blob/8adbe485db11621639f693f3a1510603f029c902/products.json).
+Unknown models or firmware remain unsupported; effects are always off.
+Do not infer a model from the user's informal bulb name.
 
-Each configured bulb has one designated writer and queue. Expose supported
-capabilities through the common controller contract; callers cannot choose raw
-network addresses or packets. Keep service health, desired state, acknowledgment,
-reported state and observation freshness separate. Missing packets do not prove
-success, and acknowledgment does not prove visible lighting.
+The installing host must designate this owner as the only writer for these
+bulbs. The package serializes operations within its instance; it does not acquire
+a cross-process lease. Its in-process caller is trusted. Any future network
+surface must authenticate and authorize before calling it, including replay and
+reads. Configuration is an operator boundary, never a caller command argument.
+Home Assistant and cloud accounts are not dependencies.
 
-The status issue will settle bulb/group mapping, effects, brightness limits,
-quiet/disabled behavior, multi-session policy and manual-control/restoration
-rules. Consume shared agent state once interpreted by the core. Do not copy a
-provider reducer or infer readership from turn completion.
+## Commands and reads
 
-## Issues
+`snapshot(deviceId)` returns `{profile, controller, lighting}`. `controller` is a
+valid shared v1 snapshot with request ID, configuration revision and generation.
+Use those values in `submit(request)`; never invent a new request ID after a lost
+response. Common `power.set` and `brightness.set` commands use the unchanged
+[controller v1 contract](../../docs/controller-contract.md).
 
-GitHub issues own the delivery sequence, prerequisites and acceptance; see the
-[open LIFX issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+LIFX+in%3Atitle).
-Shared #4 owns common controller contracts; #11 owns broader deferred Home
-Assistant/MQTT research.
+Color and temperature use the same envelope plus
+`profile: {profileId: "lifx-light", profileVersion: "1.0.0"}` and one command:
 
-## Development and evidence
+- `{kind: "lifx.color.set", hue: 0..360, saturation: 0..100}`
+- `{kind: "lifx.temperature.set", kelvin: 1500..9000}`
 
-Follow [scoped instructions](AGENTS.md) and the root
-[development guide](../../docs/development.md). Node 24/TypeScript/npm workspaces
-are the future implementation direction. The implementing issue adds actual
-build/type/test commands and CI; there are no controller commands yet.
+All values are integers. The [strict profile schema](schemas/lifx-light-1.0.0.schema.json)
+rejects other fields and versions. This is a device profile, not an extension to
+common v1 commands. Color/temperature work appears in `lighting.pending`, while
+common work appears in `controller.state.pending`. Both share one queue and
+request/revision/generation namespace. No scene, effect, media or mode operation
+is supported.
 
-Use fake packets, feeds and neutral identities for source work. Real bulb
-traffic needs the user's explicit go-ahead and happens only where an issue
-allows it: read-only queries to user-supplied IPs in #17, then installation in
-#22. Never scan the LAN or change router or firewall settings. Keep bulb IPs
-and runtime data outside Git.
+Submission returns admission `decision`, `reserved`, and, once admitted, a
+`receipt` and `done` promise for the terminal shared v1 receipt. Identical pending
+requests join; retained identical requests replay without traffic. Changed bodies
+conflict. The last 256 terminal receipts are retained. Retired identities expire.
+`submitMany(requests)` accepts up to 32 envelopes and returns a result per bulb;
+one bulb's failure does not undo another's success.
+
+`refresh(deviceId)` queues a LightGet and returns `{ok, failure?}`. `snapshot()`
+only reads memory. Reported power/brightness and wire-unit HSBK values carry their
+monotonic read clock and age. Failures retain the last observation. An ACK changes
+transport evidence, not observation time or visible success. `lighting.visible`
+and external-control ownership remain unknown.
+
+Brightness/color/temperature perform a serialized LightGet then an absolute,
+zero-duration LightSetColor, preserving other observed HSBK fields. Power uses
+DeviceSetPower. Neither color nor temperature implicitly turns a bulb on.
+The runtime uses configured unicast UDP 56700 and validates response correlation.
+The protocol module supports version/firmware reads for future owning code,
+but construction does not query identity automatically.
+
+## Bounds and shutdown
+
+`timeoutMs` defaults to 500 (range 10–5000); `retries` defaults to 1 (range 0–3).
+Each attempt has its own socket and correlation identity. At most retries + 1
+attempts occur per protocol operation; read-modify-write has two operations.
+Retries send the same absolute payload and remain inside the queue turn. A write
+without acknowledgment is `uncertain` with possible effects. A failed read before
+a write reports no write effects. Replaying either result never restarts work.
+
+`maxPending` defaults to 8 (range 1–32), counting active and queued reads/writes
+per bulb. `cancel(deviceId)` retires its generation and aborts active transport;
+queued old-generation writes and further retries are cancelled. `close()` stops
+admission, aborts active transport and settles queued work. A new instance gets
+new epochs and no persisted replay/observation state. Snapshot event/stream limits
+are v1 envelope bounds only; this package exposes no feed or listener.
+
+## Source checks
+
+Use Node 24, `npm ci`, `npm run build`, `npm run typecheck` and `npm run test:lifx`
+from the repository root, plus the shared checks in
+[development](../../docs/development.md#lifx-controller-checks).
+Tests inject fake transports and sockets; they use synthetic documentation IPs.
+Real installation, bulb traffic and visible acceptance need separate authority.
