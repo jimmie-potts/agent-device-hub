@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 59,
+        "totalCount": 58,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -1041,24 +1041,6 @@
             }
           },
           {
-            "number": 151,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 31,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 152,
             "blockedBy": {
               "totalCount": 1,
@@ -1093,7 +1075,7 @@
                 },
                 {
                   "number": 64,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
@@ -1111,7 +1093,7 @@
               "nodes": [
                 {
                   "number": 151,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1129,7 +1111,7 @@
               "nodes": [
                 {
                   "number": 64,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }

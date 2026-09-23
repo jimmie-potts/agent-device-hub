@@ -336,6 +336,15 @@ and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
 synthetic state and fake controllers. The dashboard CI job runs these checks;
 shared hub, contract/state, MCP and workflow jobs remain required. No check
 installs a personal service, opens live state or contacts hardware.
+
+Hub #151 extends the matrix with general-control scenarios: one guarded command
+per control in Media, Monitor gating with the explicit Media switch and a pending
+mode, concurrent edits with typed conflicts and locked uncertain actions, and
+read-only or undeclared capabilities with named reasons. The hub dashboard test
+checks that general commands are schema-validated and scoped before any
+controller request. The fake Pixoo declares the capabilities of Pixoo `main`
+`c81bc31`, with controller v1 modes unsupported; the dashboard README records
+the mapping. Human UI approval of the candidate is recorded in its PR.
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`

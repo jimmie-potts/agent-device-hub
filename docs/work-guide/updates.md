@@ -1,3 +1,105 @@
+## September 22, 2026: Pixoo general controls closeout
+
+Hub PR #160 merged by guarded squash as `d91bee7a60953e67fdfeff06d93e275746182ba8`,
+identical to reviewed head `01332e1`. Three rounds of independent Standards and
+Specification review approved the candidate, the last with P3 dispositions only;
+all six PR jobs passed at `01332e1` and all six merged-main jobs passed
+([Checks 35783532183](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35783532183),
+[Work guide 35783532214](https://github.com/jimmie-potts/agent-device-hub/actions/runs/35783532214)).
+The owner approved the UI candidate at `259efd8`, and Hub #151 closed as
+completed on 2026-09-22 with its seven acceptance criteria checked and the
+review label removed. Nothing is installed or operated; #154 owns the display.
+
+This follow-up refreshes the three backlogs, native dependencies and the
+paginated history at 2026-09-22T21:01Z, records #151 as a completed reference
+in the controls guide (removed from open coverage, the roadmap node and the
+parallel units), rewrites the controls next step and the overview's next
+decision, and adds #151 to the direct-read targets. The Nanoleaf view #153 is
+in progress and stays a primary open issue. There are 92 primary open issues,
+12 guides, nine viewers, 52 roadmap nodes and 125 merged PRs in this snapshot.
+Architecture diagrams, ownership, transports and physical writers are
+unchanged: the browser remains a client of the hub route.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+HTML SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
+This follow-up changes only `docs/work-guide/**`; the unchanged workflow path
+filters intentionally omit hosted checks and require the SDLC exception receipt,
+recorded on the PR. No product behavior or OpenSpec delta. Public guide
+publication and live verification remain separate and were not requested.
+
+## September 22, 2026: Pixoo general controls candidate
+
+Hub PR #160 carries the source candidate for Hub #151: screen power,
+brightness, saved-playlist selection and the six playback actions in the
+existing Pixoo component view, one guarded controller v1 command each through
+the existing hub route. Content controls are disabled in Monitor with an explicit
+Media switch through the Pixoo integration mode operation, because Pixoo `main`
+c81bc31 declares controller v1 modes unsupported; the fake Pixoo now declares the
+real capabilities. OpenSpec change `gh-151-pixoo-general-controls` records the
+`unified-dashboard` delta and is archived on the branch. Two rounds of
+independent Standards and Specification review approved head `259efd8` with P3
+dispositions, all six hosted jobs passed there, and the owner approved the UI
+candidate. Nothing is installed or operated; #154 owns the display acceptance.
+
+This entry reconciles the candidate with the concurrent Nanoleaf #64 closeout
+(Hub PR #161) and refreshes the three backlogs and the paginated history at
+2026-09-22T20:51Z. Hub #151 is in review, so it leaves the parallel candidate
+cards while it stays a primary open issue; the controls guide's Pixoo row and
+next step name the candidate, and the Nanoleaf rows keep the #64 completion
+recorded by #161. There are 93 primary open issues, 12 guides, nine viewers, 52
+roadmap nodes and 124 merged PRs in this snapshot. Ownership, transports,
+physical writers and pinned architecture viewers are unchanged: the browser
+remains a client of the hub route.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+HTML SHA-256 `6f91a6d6e0ab107d35ba0c8d1964393fb77fbc9243d0abce695d23fdbc597c74`.
+This candidate is a mixed change, so every configured CI job applies, and the
+guide merge changes no product UI, so the recorded approval stands. A linked
+follow-up will record merge, issue closure and acceptance facts unavailable
+before merge. Public guide publication and live verification remain separate
+and were not requested.
+
+## September 22, 2026: Nanoleaf native controls delivered
+
+Nanoleaf #64 closed as completed after
+[codex-nanoleaf PR #66](https://github.com/jimmie-potts/codex-nanoleaf/pull/66)
+merged as `80628498136203a8f5fcb06ab5fa306e961e2def` (reviewed head `468b797`,
+identical tree) and its nine merged-main checks passed. The protected controller
+now declares power, brightness and discovered saved scenes as supported
+controller v1 capabilities, executes them as one journaled write each through the
+single worker, treats power and brightness as overrides until the next explicit
+mode command, accepts scenes only in Free, and lists scene names only in the
+`nanoleaf.integration/1.0` snapshot. Source tests with fake devices only; the
+installed wall is hub #155.
+
+This companion extends the hub's exact-shape `validateIntegrationSnapshot` to
+accept the optional `scenes` list, re-pins `nanoleaf-source.json` and
+`compatibility-nanoleaf-source.json` to `8062849` with fresh file hashes, updates
+the check script's receipt literal, and records the rerun of the bounded
+cross-device compatibility suite (12 scenarios passed) against Hub `36090dd8fa4ec2f7f2fd36145c4b857a940d4474`,
+Pixoo `28f4875` and Nanoleaf `8062849` in `docs/cross-device-compatibility.md`.
+The receipt is kept with the companion PR. Nanoleaf #64 joins the reference-only
+direct reads of the backlog refresh, and the snapshot's comment-scope note now
+lists every reference-only Nanoleaf issue. The validator accepts scene names
+exactly as the source emits them within the label bound. Review corrected the
+compatibility record's runtime row, the overview's next-decision card and the
+N64 narrative's Free-brightness rule before merge.
+
+Refreshed all three backlogs, native dependencies and the paginated history at
+2026-09-22T16:06Z: 93 primary open issues, 12 guides, nine viewers, 52 roadmap nodes,
+123 merged PRs. N64 moves from open coverage, the general-controls timeline node
+and the parallel units to a completed reference in the controls guide; the
+Nanoleaf controls row now runs #153 to #155, and the controls next step no longer
+waits on a native prerequisite. Architecture diagrams, ownership, transports and
+physical writers are unchanged: the Nanoleaf worker remains the sole light
+writer and the controller route and extension version are the same, so no viewer
+is re-rendered.
+
+Generation, nine maintenance tests and the browser/print checks pass; HTML
+SHA-256 `f8c9626fb49eed3d7f975f4bda46e91f4bc51b1e87bf8fde5e0b69d603d8a015`. This is a mixed change with files outside
+`docs/work-guide/`, so all configured CI jobs apply. Public guide publication
+and live verification remain separate and were not requested.
+
 ## September 22, 2026: General-control definition closeout
 
 Hub PR #156 merged as `0ba711d8f01eb35574ca449c89e537b69fbb5b18`, identical

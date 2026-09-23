@@ -10,7 +10,10 @@ installed-client performance or physical output.
 including an 800 ms delayed Pixoo read with a separately timed Nanoleaf read.
 This checks device isolation in a disposable fixture, not a production latency
 budget. Keyboard activation and axe scans cover the component and connection
-views as well as the main suite's desktop/mobile activity views.
+views as well as the main suite's desktop/mobile activity views. The Hub #151
+scenarios record guarded general commands, Monitor gating with the explicit
+switch, conflict and uncertain handling, and read-only or undeclared reasons
+against the fake Pixoo's pinned capabilities; none is a physical result.
 
 Reproduce with `npm run build` and `npm run test:dashboard:browser` on Node 24.
 The command emits its receipt and desktop/mobile screenshots outside Git under
