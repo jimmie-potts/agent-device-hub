@@ -201,7 +201,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.equal(await page.evaluate(()=>window.openBrief('H999999')),false,'Unknown keys do not open a brief'); assert.equal(await isOpen(),false);
      // Copy writes to the clipboard; a denied or missing Clipboard API selects the prompt for manual copying.
      const badge=page.locator('.guide a.issue.repo-H[data-issue]').first(); await badge.click(); await dialog.locator('[data-action="implement"]').click(); const expected=await prompt.inputValue();
-     // The real file:// clipboard: granted permission copies; the default headless denial falls back.
+     // The real file:// clipboard copies when permission is granted. Default clipboard permission varies across Chromium
+     // versions (153 grants writes), so the denied and missing cases are simulated in the page.
      await page.context().grantPermissions(['clipboard-read','clipboard-write']);
      await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
      assert.equal(await status.textContent(),'Copied.'); assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),expected,'Copy writes the prompt to the clipboard');
@@ -209,6 +210,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      const selectedAll=()=>prompt.evaluate(t=>document.activeElement===t&&t.selectionStart===0&&t.selectionEnd===t.value.length&&t.value.length>0);
      for(const clipboard of ['denied','missing']) {
        await dialog.locator('[data-action="review"]').click(); assert.equal(await status.textContent(),'','Changing the action clears the copy status');
+       if(clipboard==='denied') await page.evaluate(()=>{Object.defineProperty(navigator.clipboard,'writeText',{configurable:true,value:()=>Promise.reject(new DOMException('Write permission denied.','NotAllowedError'))});});
        if(clipboard==='missing') await page.evaluate(()=>{Object.defineProperty(navigator,'clipboard',{configurable:true,value:undefined});});
        await dialog.locator('.brief-copy').click(); await page.waitForFunction(()=>document.querySelector('.brief-status').textContent!=='');
        assert(await selectedAll(),`A ${clipboard} clipboard selects the prompt`); assert(/copy it manually/.test(await status.textContent()));
