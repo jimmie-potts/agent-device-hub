@@ -17,6 +17,14 @@ other closures remain Closed. Active work retains a blocked qualifier when a
 blocked label or open prerequisite applies. Repository colors still identify
 Hub, Nanoleaf and Pixoo. Counts include only open issues.
 
+Selecting an issue link opens its task brief: the repository, number, title, a
+GitHub link and copyable Explain, Plan, Implement and Review prompts for an
+existing Codex or Claude session. Plan starts `plan-work` and Implement starts
+`deliver-work`. The prompts reference the live issue URL and embed no snapshot
+context. A modified click, or a browser without scripts, opens GitHub instead.
+Other guide views open the same dialog with `openBrief(key)`.
+`work/guide_brief.css` styles it.
+
 Each guide starts with its outcome and next step. Closed stories and detailed
 evidence are expandable; search, Expand all and printing reveal them. The
 parallel-work cards list selected independent units. A blocked or deferred label,
