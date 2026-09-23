@@ -19,7 +19,7 @@
 #41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
 #42 [CLOSED] Run independent Lines and Light Panels projections in the Nanoleaf runtime
 #43 [CLOSED] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
-#44 [OPEN] Manage Lines and Light Panels together in the wall map
+#44 [OPEN] Switch the wall map between Lines and Light Panels
 #45 [OPEN] Enroll a second Nanoleaf device on the Linux runtime
 #46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
@@ -30,3 +30,6 @@
 #55 [CLOSED] Install and verify the Linux Nanoleaf runtime in WSL
 #64 [CLOSED] Expose native power, brightness and saved-scene controls through the protected controller API
 #70 [CLOSED] Align guide-maintenance rules with the current hub procedure
+#72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
+#74 [OPEN] Investigate and resolve retained shared unread indicators
+#75 [OPEN] Provide source-backed labels and project associations for shared tasks
