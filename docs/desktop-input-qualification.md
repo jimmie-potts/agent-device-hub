@@ -1,7 +1,7 @@
 # N30 mouse qualification and completed keyboard trial
 
 Work source: [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64).
-Evidence collected September 22, 2026 UTC.
+Evidence collected September 22–23, 2026 UTC.
 
 The source investigation identifies supported interfaces and a bounded trial
 plan for the [accepted desktop controls](desktop-controls.md).
@@ -11,15 +11,16 @@ matches the N30, not the earlier R8 candidate. An authorized browser check now
 associates its four D-pad directions with distinct events. A separate authorized
 trial records Big A as Enter and Big B as a held Ctrl+Win chord with both keys
 released. The owner also passed the brief Wispr/Notepad trial and cleared both
-temporary assignments. Receiver identities and the N30 mapping route remain unknown.
+temporary assignments. Follow-up Windows inventory associates the N30 receiver
+with `VID_062A&PID_4101` and reports Codex package `26.917.6896.0`. The native
+D-pad mapping route remains unqualified.
 This report does not complete #64 or make
 [Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) ready.
 
 The owner selected 2.4 GHz receivers and subsequently reported that both devices
 are connected and working. The large A/B accessory is plugged into the keyboard.
-These are owner reports of basic operation and attachment; no receiver inventory
-independently verifies the active transport. The photos identify packaging and
-do not establish firmware. Private photos stay outside Git.
+The receiver comparison below adds operator-observed Windows inventory for the
+N30. The photos identify packaging and do not establish firmware. Private photos stay outside Git.
 
 The owner now keeps keyboard A/B and the attached Super Buttons outside
 B.U.N.N.Y. Their preferred personal assignments remain B=Wispr Ctrl+Win and
@@ -37,11 +38,11 @@ are independent. A supported result under `D` never implies an `L` pass.
 | Item | Evidence on the collection date | Remaining qualification |
 | --- | --- | --- |
 | Keyboard and Dual Super Buttons | O: packaging identifies Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons; owner reports working keyboard and connected accessory. L via O: mapped A Enter pair and B Ctrl+Win hold/release | Outside B.U.N.N.Y.; no further keyboard qualification required |
-| Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver identity, firmware, raw Windows events and controlled hold behavior |
-| USB/HID identities | No inventory result | Record VID/PID, interface/usage and connection under operator supervision; omit serials and instance paths from shared evidence |
+| Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver VID/PID associated below; firmware, interface identity, native D-pad events and controlled hold behavior remain unverified |
+| N30 receiver identity | L via O: `VID_062A&PID_4101` disappeared from present mouse-class inventory when the operator removed the N30 receiver; normal operation returned after reconnect | Interface/usage and native D-pad event attribution remain unverified; omit serials and instance paths from shared evidence |
 | Ultimate Software V2 | D: keyboard support is documented; N30 custom mapping support is not established | Keyboard configuration is outside scope; do not apply R8 capabilities to N30 |
 | Wispr | O: current push-to-talk setting is Ctrl+Win. S: local directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Historical personal trial passed below; directory names do not identify the active installation; no further Wispr acceptance gate |
-| Codex | D: current Windows defaults below | Installed version, customized bindings, package identity and foreground behavior |
+| Codex | O: current-user package `OpenAI.Codex`, version `26.917.6896.0`; D: Windows defaults below | Running-process identity, customized bindings and foreground behavior; installed package metadata is not an app-action result |
 | CHOMPI bridge | S: local C# source inspected; no Git commit exists in that checkout | Installed binary revision and coexistence; no bridge was launched or changed |
 | Live input/application results | L via O: focused N30/Super Buttons events, successful brief Wispr/Notepad trial and mapping restoration | Receiver-attributed events, Codex routing, persistence and recovery |
 
@@ -52,7 +53,25 @@ package directory denied access. These are inventory gaps, not evidence that
 hardware or software is absent. The later N30 and Super Buttons checks used
 focused browser listeners. The owner performed separately authorized temporary
 A/B fast mappings. No system-wide listener, adapter injection or service change
-ran. Application and restoration results are recorded separately below.
+ran. The owner later supplied the selected Windows inventory values below.
+Application and restoration results are recorded separately.
+
+## Operator receiver and package inventory
+
+On September 23, 2026 UTC, the owner ran a read-only PowerShell inventory of
+present mouse-class devices, returning only VID/PID pairs. The owner then removed
+the identified N30 receiver and repeated the command. Only `VID_062A&PID_4101`
+disappeared. After reconnecting it, the owner confirmed mouse movement and clicks
+worked again. This associates that pair with the operator-selected N30 receiver;
+it does not establish its HID interfaces or attribute D-pad events to a native
+Raw Input device. Other peripheral IDs stay outside this report.
+
+The owner's `Get-AppxPackage '*Codex*' | Select-Object Name, Version` output
+reported `OpenAI.Codex` version `26.917.6896.0`. That is installed package
+metadata, not verification of the running process, customized shortcuts or
+foreground dispatch. These inventory commands changed no mappings and observed
+no keystrokes. Receiver reconnection/restoration is complete; no trial remains
+active.
 
 ## Authorized N30 browser observations
 
@@ -293,8 +312,9 @@ transitions, relative timing and pass/fail outcomes. Do not retain arbitrary
 keystrokes, window titles, clipboard contents, audio or dictated text.
 
 1. Match the N30 to the photographed 85CA packaging. Read its receiver
-   VID/PID/interfaces, firmware if available, and running Codex version without
-   changing firmware or pairing. Omit serials and instance paths from shared
+   interfaces/usage, firmware if available, and running Codex identity without
+   changing firmware or pairing. VID/PID and installed package metadata are
+   recorded above; those completed inventory steps need no repeat. Omit serials and instance paths from shared
    evidence. Keyboard A/B inventory is excluded.
 2. Read the active Codex shortcuts and mouse configuration. Identify one mapping
    owner and a reliable rollback path before any change. Do not use factory reset.
@@ -322,14 +342,14 @@ presets, calls the hub/controllers or operates lights/displays.
 ## Acceptance mapping and handoff
 
 Assessment refreshed against the owner's keyboard-owned A/B decision and Hub
-main `bae0b27fff80498281cf45104ca57137340a121f`: medium complexity from Windows
+main `717728bd90dce4bbeab3c45310a00fb5f5a91af5`: medium complexity from Windows
 input/focus interfaces; high uncertainty from unqualified N30 translation;
 medium impact because trials can affect ordinary input and require restoration.
 Documentation work is ready; native mouse qualification remains pending.
 
 | Criterion | Evidence prepared | Remaining completion condition |
 | --- | --- | --- |
-| AC1 | Sourced control/connection matrix and four distinct N30 browser outputs; keyboard trial retained as history | Native receiver inventory, installed versions and applicable mouse hold/recovery observations |
+| AC1 | Sourced control/connection matrix, four N30 browser outputs, receiver VID/PID association and installed Codex package version; keyboard trial retained as history | Native interface/event attribution, firmware/running app context and applicable mouse hold/recovery observations |
 | AC2 | Compared mouse routes, proposed Windows-local ownership and reversible trial sequence | A supported N30 translation route with selective suppression and ordinary-input preservation |
 | AC3 | D/S/O/L evidence classes and dated trials; successful A/B trial/restoration separated from mouse results | Add remaining authorized mouse receipts as trials run |
 | AC4 | Explicit unknowns and dependent gates | Final positive or evidenced negative qualification; missing evidence alone is neither support nor rejection |

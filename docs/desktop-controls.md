@@ -113,17 +113,19 @@ published capabilities. The owner's packaging photos identify the N Edition
 keyboard 85HA and N30 mouse 85CA. The [qualification report](desktop-input-qualification.md)
 records those observations, owner-reported basic operation, the N30's four
 distinct browser outputs and the remaining input and application trials.
-Connected receiver identities and installed settings remain unverified.
+The operator-associated N30 receiver is `062A:4101`; the installed Codex package
+is `26.917.6896.0`. Native D-pad attribution and active settings remain unverified.
 
 | Source | Published fact | Remaining mouse qualification |
 | --- | --- | --- |
-| [8BitDo N30 manual](https://download.8bitdo.com/Manual/Other/N30-Mouse/N30_Mouse_Manual.pdf?20220513=) | D-pad directions are Page Up, Back, Page Down and Forward; ordinary clicks and touch scrolling remain separate. | Native Windows events, receiver identity, selective translation and recovery. N30 vendor custom mapping is not established; R8 capabilities do not apply. |
+| [8BitDo N30 manual](https://download.8bitdo.com/Manual/Other/N30-Mouse/N30_Mouse_Manual.pdf?20220513=) | D-pad directions are Page Up, Back, Page Down and Forward; ordinary clicks and touch scrolling remain separate. | Native D-pad events, selective translation and recovery. N30 vendor custom mapping is not established; R8 capabilities do not apply. |
 | [Codex command reference](https://learn.chatgpt.com/docs/reference/commands#keyboard-shortcuts) | Lists command menu, previous/next chat or tab and next-chat-needing-attention actions. | Exact installed bindings, foreground detection and behavior outside Codex. |
 
 [#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) owns the bounded
 mouse investigation. Its per-control/per-connection matrix separates supported,
-unsupported and unknown results. It must settle native receiver identity,
-installed versions, a supported mapping route, one configuration owner and
+unsupported and unknown results. Receiver VID/PID and installed package version
+are recorded; it must settle native event attribution, active shortcuts, a
+supported mapping route, one configuration owner and
 reversible setup. Codex focus, controlled holds/repeats, release recovery,
 reconnect, sleep/resume and coexistence need separately authorized evidence.
 The completed keyboard trial remains in the report as history; further A/B
