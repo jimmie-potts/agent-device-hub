@@ -9,6 +9,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
+import architecture_diagrams as AD  # noqa: E402
 
 
 class Document(HTMLParser):
@@ -58,6 +60,20 @@ if __name__ == "__main__":
                 target_doc = parsed[target] if target in parsed else Document(target)
                 assert unquote(url.fragment) in target_doc.ids, f"Broken anchor: {path.name}: {href}"
             links += 1
+    # The overview embeds the two shared diagrams. Their saved specifications and rendered
+    # SVGs must still match the editable definitions, and every map node needs a detail block.
+    receipts = {d["id"]: d for d in json.loads((AD.ARCH / "diagram-receipts.json").read_text())["diagrams"]}
+    overview = (ROOT / "index.html").read_text(encoding="utf-8")
+    for key in ("system", "walkthrough"):
+        diagram = next(d for d in AD.DIAGRAMS if d["id"] == data["map"]["diagrams"][key])
+        saved = json.loads((AD.SPECS / f'{diagram["id"]}.json').read_text(encoding="utf-8"))
+        assert saved == diagram["spec"], f"Saved specification drifted from the shared definition: {diagram['id']}"
+        rendered = AD.RENDERED / f'{diagram["id"]}.svg'
+        assert hashlib.sha256(rendered.read_bytes()).hexdigest() == receipts[diagram["id"]]["svgSha256"], f"Rendered SVG differs from its receipt: {diagram['id']}"
+        assert overview.count(f'data-diagram="{diagram["id"]}"') == 1, f"Overview embeds {diagram['id']} once"
+    components = [c["id"] for c in next(d for d in AD.DIAGRAMS if d["id"] == data["map"]["diagrams"]["system"])["spec"]["components"]]
+    assert all(f'id="detail-{node}"' in overview for node in components), "Every map node has a detail block"
+    assert overview.count('class="walk-phase"') == len(data["map"]["phases"]), "Every walkthrough phase is rendered"
     full = parsed[(ROOT / "full-system-design.html").resolve()]
     assert all(item["id"] in full.ids for item in data["components"])
     for item in data["components"]:

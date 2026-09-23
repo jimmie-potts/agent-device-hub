@@ -2,169 +2,203 @@
  "schema_version": 1,
  "diagram_type": "sequence",
  "meta": {
-  "title": "Lifecycle observation to device presentation",
+  "title": "One agent observation, from hook to device",
   "quality_profile": "showcase",
   "column_fit": "spread",
   "viewBox": [
    1070,
-   642
+   784
   ],
   "views": [
    {
-    "id": "ingest",
-    "label": "Ingest",
+    "id": "observe",
+    "label": "Observe and commit",
     "focus": [
-     "provider",
-     "emitter",
-     "core"
+     "hook",
+     "hub",
+     "core",
+     "store"
     ],
-    "note": "Small, filtered, bounded."
+    "note": "Small, filtered, bounded; committed once."
    },
    {
     "id": "present",
-    "label": "Present",
+    "label": "Project and write",
     "focus": [
      "core",
+     "hub",
      "controller",
      "device"
     ],
-    "note": "Projection, policy, generation check, write."
+    "note": "Publication, projection, generation check, write."
    }
   ]
  },
  "participants": [
   {
-   "id": "provider",
-   "type": "external",
-   "label": "Agent provider",
-   "sublabel": "hook in Codex/Claude"
+   "id": "hook",
+   "type": "security",
+   "label": "Provider hook",
+   "sublabel": "Codex / Claude · fail-open"
   },
   {
-   "id": "emitter",
+   "id": "hub",
    "type": "security",
-   "label": "Bounded emitter",
-   "sublabel": "privacy filter"
+   "label": "Hub HTTP routes",
+   "sublabel": "/api/monitor/v1"
   },
   {
    "id": "core",
    "type": "backend",
    "label": "Agent-state core",
-   "sublabel": "one owner · versioned feed"
+   "sublabel": "reducer · one owner"
   },
   {
-   "id": "user",
-   "type": "external",
-   "label": "User",
-   "sublabel": "dashboard / device UI"
+   "id": "store",
+   "type": "database",
+   "label": "Private SQLite",
+   "sublabel": "state.sqlite"
   },
   {
    "id": "controller",
    "type": "backend",
-   "label": "Device controller",
-   "sublabel": "projection · policy · queue"
+   "label": "Controller consumer",
+   "sublabel": "Pixoo or Nanoleaf"
   },
   {
    "id": "device",
    "type": "external",
    "label": "Device",
-   "sublabel": "Pixoo / Nanoleaf / …"
+   "sublabel": "one designated writer"
   }
  ],
  "segments": [
   {
-   "from": 154,
-   "label": "Observation and explicit presentation",
-   "to": 564
+   "from": 170,
+   "label": "1 · Observe",
+   "to": 308
+  },
+  {
+   "from": 308,
+   "label": "2 · Commit and publish state",
+   "to": 518
+  },
+  {
+   "from": 518,
+   "label": "3 · Project and write",
+   "to": 620
+  },
+  {
+   "from": 620,
+   "label": "Alternative · interruption and reconnect",
+   "to": 706
   }
  ],
  "messages": [
   {
-   "from": "provider",
-   "to": "emitter",
-   "y": 186,
-   "label": "lifecycle event (turn end, attention, notice)",
+   "from": "hook",
+   "to": "hub",
+   "y": 202,
+   "label": "POST /events: allowlisted metadata, ingest bearer",
+   "variant": "emphasis",
+   "note": "prompts, transcripts, tool content and titles never leave the host"
+  },
+  {
+   "from": "hub",
+   "to": "core",
+   "y": 238,
+   "label": "ingest(envelope)",
    "variant": "emphasis"
   },
   {
-   "from": "emitter",
-   "to": "core",
-   "y": 222,
-   "label": "submit allowlisted metadata + neutral IDs",
-   "variant": "emphasis",
-   "note": "prompts, transcripts, tool content and titles are excluded"
+   "from": "hub",
+   "to": "hook",
+   "y": 274,
+   "label": "applied · duplicate · stale — within the hook bound",
+   "variant": "return",
+   "note": "the hook also returns when the hub is down"
   },
   {
-   "from": "emitter",
-   "to": "provider",
-   "y": 258,
-   "label": "return within bound (even if core is down)",
+   "from": "core",
+   "to": "store",
+   "y": 340,
+   "label": "commit revision N (compare-and-swap)",
+   "variant": "emphasis"
+  },
+  {
+   "from": "store",
+   "to": "core",
+   "y": 376,
+   "label": "durable",
    "variant": "return"
   },
   {
    "from": "core",
    "to": "controller",
-   "y": 294,
-   "label": "revision N notification; consumer reads current snapshot",
-   "variant": "emphasis"
+   "y": 412,
+   "label": "publish revision N: SSE /changes (Nanoleaf polls /sessions)",
+   "variant": "dashed",
+   "note": "a revision pointer, never a replayable command log"
   },
   {
-   "from": "user",
+   "from": "controller",
+   "to": "hub",
+   "y": 448,
+   "label": "GET /sessions (read scope)",
+   "variant": "default"
+  },
+  {
+   "from": "hub",
    "to": "controller",
-   "y": 330,
-   "label": "explicit native mode/view command; guard revision + generation",
-   "variant": "security"
+   "y": 484,
+   "label": "snapshot N: sessions, freshness, notices",
+   "variant": "return"
   },
   {
    "from": "controller",
    "to": "device",
-   "y": 366,
-   "label": "selected view → sole queue; check generation g at write",
+   "y": 550,
+   "label": "native policy → view → sole queue (generation check)",
    "variant": "emphasis",
-   "note": "Pixoo Monitor pauses media; Media never receives monitor pictures"
+   "note": "Monitor/Media or Work/Quiet/Free stays with the controller"
   },
   {
    "from": "device",
    "to": "controller",
-   "y": 402,
-   "label": "sent (transport only, not optical proof)",
+   "y": 586,
+   "label": "sent — transport evidence, not optical proof",
    "variant": "return"
   },
   {
    "from": "controller",
-   "to": "core",
-   "y": 438,
-   "label": "read with expired cursor",
+   "to": "hub",
+   "y": 652,
+   "label": "reconnect /changes with Last-Event-ID",
    "variant": "dashed"
   },
   {
-   "from": "core",
+   "from": "hub",
    "to": "controller",
-   "y": 474,
-   "label": "resync: authoritative snapshot, no replayed effects",
+   "y": 688,
+   "label": "resync: cursor expired → read snapshot, no replayed effects",
    "variant": "return"
-  },
-  {
-   "from": "user",
-   "to": "core",
-   "y": 510,
-   "label": "acknowledge notice",
-   "variant": "security"
-  },
-  {
-   "from": "core",
-   "to": "controller",
-   "y": 546,
-   "label": "revision N+1: notice acknowledged for the selected consumer",
-   "variant": "emphasis"
   }
  ],
  "cards": [
   {
-   "dot": "violet",
-   "title": "Evidence and hosting",
+   "dot": "cyan",
+   "title": "Two different arrows",
    "items": [
-    "Activity, attention, notices and read evidence stay separate; five minutes without evidence means uncertain.",
-    "Pixoo #31 hosts state; #32 renders exact RGB; #33 connects explicit Monitor/Media. Installed acceptance remains #34."
+    "Dashed: the core publishes state; consumers read snapshots.",
+    "Solid green at the end: the controller writes its device through its own queue."
+   ]
+  },
+  {
+   "dot": "amber",
+   "title": "Evidence limits",
+   "items": [
+    "Turn end proves neither success nor readership.",
+    "Five minutes without evidence means uncertain, not failed."
    ]
   }
  ]

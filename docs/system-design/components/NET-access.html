@@ -14,7 +14,27 @@
 @media(max-width:760px){.mobile-bar{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--edge);font:11px var(--mono)}.mobile-bar a{color:var(--text);text-decoration:none}.mobile-bar button{font:12px var(--font)}.sidebar{display:none;position:static;width:auto;max-height:none}.sidebar.open{display:block}.page{margin:0;padding:0 20px}.topbar{min-height:64px}.topbar>span{max-width:145px;line-height:1.7}.topbar>div{gap:6px}.topbar button{padding:6px 9px}.hero{padding-top:38px}h1{font-size:46px}.lead{font-size:16px}.catalog{grid-template-columns:1fr}.metrics{grid-template-columns:1fr}.metric{display:flex;align-items:center;gap:22px;border-right:0;border-bottom:1px solid var(--edge);padding:14px 19px}.metric:last-child{border-bottom:0}.metric strong{font-size:27px;min-width:68px}.metric span{margin:0}.doc-header{padding-top:32px}.doc-header h1,.doc-header h2{font-size:36px}.table-wrap{overflow-x:auto}table{min-width:560px}.evidence{padding:18px}.evidence a{overflow-wrap:anywhere}footer{flex-direction:column;gap:6px}.section-heading h2{font-size:30px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.component-card{transition:none}.component-card:hover{transform:none}}
 @media print{@page{size:A4;margin:15mm}:root{--bg:#fff;--panel:#fff;--text:#162936;--muted:#3e505c;--edge:#bdc9ce;--accent:#17563f;--warm:#715021;--link:#174f80;--violet:#714489;--code:#f0f3f4;color-scheme:light}body{font:10pt/1.5 Arial,sans-serif}.sidebar,.mobile-bar,.topbar,.hero-actions,.skip,#empty{display:none!important}.page{margin:0;padding:0;max-width:none}main{max-width:none}.hero,.doc-header{padding-top:0}h1{font-size:30pt}.doc-header h1,.doc-header h2{font-size:25pt}.lead{font-size:11pt}.document+.document{break-before:page;border-top:0}.prose p,.prose li{font-size:10pt}.prose h2,.prose h3{font-size:15pt;break-after:avoid}table{min-width:0;font-size:9pt}.table-wrap{overflow:visible}thead{display:table-header-group}tr,.evidence,.notice,.component-card{break-inside:avoid}.catalog{grid-template-columns:1fr 1fr}.component-card{min-height:0}.component-card h3{font-size:14pt}.badge{font-size:8pt}.metrics{margin:16px 0}.metric strong{font-size:23pt}.flow-list{display:block}.flow-list>li{break-inside:avoid;margin-bottom:12px!important}a{text-decoration:none}footer{margin-top:25px}.catalog [hidden]{display:flex!important}}
-</style></head>
+/* System map and walkthrough (overview and complete reading view) */
+.hero.compact{padding:18px 0 10px}.hero.compact .eyebrow{margin-bottom:8px}.hero.compact h1{font-size:clamp(28px,2.8vw,40px);margin:0 0 8px;max-width:none}.hero.compact h1 span{display:inline}.hero.compact .lead{font-size:15px;line-height:1.6;margin:0 0 10px;max-width:none}.hero-links{display:inline-flex;gap:8px 18px;flex-wrap:wrap;font:13px var(--font);margin-left:6px}.hero-links a{text-decoration:none;border-bottom:1px solid var(--edge)}.hero-links a:hover{border-color:var(--accent)}
+.atlas-map,.atlas-walk{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--edge)}.map-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;flex-wrap:wrap}.map-head .eyebrow{margin-bottom:4px}.map-head h2{font-size:24px;margin:0 0 4px}.map-lead{font-size:14px;color:var(--muted);max-width:820px;margin:0;line-height:1.65}.map-pins{font:11px/1.9 var(--mono);color:var(--muted);margin:0;text-align:right}.map-aside{display:flex;flex-direction:column;align-items:flex-end;gap:2px}.map-pins span{color:var(--text);margin-right:8px}
+.map-key{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font:11px var(--mono);color:var(--muted);margin:8px 0 6px}.key::before{content:"";display:inline-block;width:22px;height:0;border-top:2px solid;margin-right:6px;vertical-align:middle}.key-observe::before{border-color:#34d399}.key-feed::before{border-top-style:dashed;border-color:#a78bfa}.key-command::before{border-color:#fb7185}.key-hint{font:12px/1.6 var(--font);margin-left:auto}
+.map-stage-wrap{position:relative}.stage-tools{display:flex;gap:6px;align-items:center;justify-content:flex-end;margin:0}.stage-tools button{min-width:36px;padding:4px 10px;font-size:13px;line-height:1.4}.zoom-level{font:11px var(--mono);color:var(--muted);min-width:42px;text-align:right}.map-stage{border:1px solid var(--edge);background:var(--panel);border-radius:10px;padding:4px;overflow:auto;min-width:0;max-height:80vh;scrollbar-width:thin}.atlas-canvas{min-width:100%}.atlas-canvas>svg{display:block;width:100%;height:auto;font-family:var(--font)}
+.map-detail{margin:12px 0 0;border:1px solid var(--edge);background:var(--panel);border-radius:10px;padding:16px 18px;font-size:13px}.map-detail:focus{outline:3px solid var(--accent)}.map-detail h3,.node-detail h3{font-size:17px;margin:0 0 4px}.detail-meta{font:10px/1.7 var(--mono);color:var(--accent);margin:0 0 10px}.map-detail p,.node-detail p,.detail-hint{color:var(--muted);font-size:13px;line-height:1.7;margin:0 0 10px}.detail-links{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px}.detail-links span{flex-basis:100%;font:10px/1.6 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text)}.detail-links a{overflow-wrap:anywhere}.detail-actions{margin:12px 0 0}
+.map-index{margin:12px 0 0;font-size:13px}.map-index summary{cursor:pointer;color:var(--muted);font:12px var(--mono)}.map-index ul{list-style:none;padding:0;margin:10px 0 0;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}.node-button{width:100%;text-align:left;display:flex;flex-direction:column;gap:2px;padding:9px 11px;border-radius:7px;background:var(--panel)}.node-button[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 3px 0 var(--accent)}.node-name{font-weight:650;font-size:13px}.node-sub{font-size:11px;color:var(--muted)}.node-tag{font:9px/1.6 var(--mono);color:var(--warm);letter-spacing:.04em}.map-note{font-size:12px;color:var(--muted);margin:12px 0 0;line-height:1.7}
+.atlas-canvas [data-node-id]{cursor:pointer;transition:opacity .15s}.atlas-canvas [data-node-id]:focus-visible{outline:3px solid var(--accent);outline-offset:3px}.atlas-canvas.has-selection [data-node-id].is-dimmed{opacity:.38}.atlas-canvas [data-node-id].is-selected rect:last-of-type{stroke-width:3;filter:drop-shadow(0 0 7px var(--accent))}
+.atlas-canvas.has-selection [data-edge-key].is-dimmed{opacity:.22}.atlas-canvas [data-edge-key].is-active path{stroke-width:2.8}.atlas-canvas [data-segment-id]{cursor:pointer}.atlas-canvas [data-segment-id]:focus-visible{outline:3px solid var(--accent)}
+.walk-steps{list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:start}.walk-phase{border:1px solid var(--edge);border-radius:8px;background:var(--panel)}.phase-button{width:100%;display:flex;justify-content:space-between;gap:10px;align-items:center;text-align:left;border:0;padding:12px 14px;font-size:13px;font-weight:650;border-radius:8px}.phase-button::after{content:"+";font:16px var(--mono);color:var(--accent)}.walk-phase.is-open .phase-button::after{content:"−"}.walk-phase.is-open{border-color:var(--accent)}.phase-count{font:10px var(--mono);color:var(--muted);font-weight:400;white-space:nowrap;margin-left:auto;margin-right:10px}.phase-body{padding:0 14px 12px;font-size:13px}.phase-body p{color:var(--muted);line-height:1.7;margin:0 0 10px}.phase-messages{padding-left:18px;margin:0 0 10px;font-size:12px;color:var(--muted)}.phase-messages li{margin:0 0 6px}.phase-messages strong{color:var(--text);font-weight:600}.phase-messages em{display:block;font-style:normal;color:var(--warm);font-size:11px}
+.baseline{margin:30px 0 0}.baseline>summary{cursor:pointer;font-size:14px;color:var(--text);padding:14px 16px;border:1px solid var(--edge);border-radius:8px;background:var(--panel)}.baseline[open]>summary{border-color:var(--accent)}
+@media(max-width:1100px){.walk-steps{grid-template-columns:repeat(2,minmax(0,1fr))}.map-pins{text-align:left}.key-hint{margin-left:0;flex-basis:100%}}
+@media(max-width:760px){.atlas-canvas>svg{min-width:860px}.map-stage{padding:4px;max-height:none}.map-head h2{font-size:22px}.hero.compact h1{font-size:30px}.map-index ul,.walk-steps{grid-template-columns:1fr}.stage-tools{display:none}}
+@media print{.map-detail,.map-index,.key-hint,.detail-actions,.map-pins a,.hero-links{display:none!important}.map-details[hidden],.phase-body[hidden]{display:block!important}.map-details{columns:2;column-gap:18px;margin-top:14px}.node-detail{break-inside:avoid;margin:0 0 12px}.stage-tools{display:none!important}.map-stage{overflow:visible;max-height:none;border-color:#bdc9ce;background:#fff}.atlas-canvas>svg{min-width:0;max-height:170mm}.walk-phase{break-inside:avoid;margin:0 0 8px}.walk-steps{display:block}.atlas-canvas>svg{width:100%!important}.baseline>summary{border:0;padding:0;font-weight:650}}
+.atlas-canvas .c-grid{stroke: var(--grid); fill: none;}.atlas-canvas .c-mask{fill: var(--mask); stroke: none;}.atlas-canvas .c-frontend{fill: var(--frontend-fill);   stroke: var(--frontend-stroke);}.atlas-canvas .c-backend{fill: var(--backend-fill);    stroke: var(--backend-stroke);}.atlas-canvas .c-database{fill: var(--database-fill);   stroke: var(--database-stroke);}.atlas-canvas .c-security{fill: var(--security-fill);   stroke: var(--security-stroke);}.atlas-canvas .c-messagebus{fill: var(--messagebus-fill); stroke: var(--messagebus-stroke);}.atlas-canvas .c-external{fill: var(--external-fill);   stroke: var(--external-stroke);}.atlas-canvas .t-primary{fill: var(--text);}.atlas-canvas .t-muted{fill: var(--text-muted);}.atlas-canvas .t-backend{fill: var(--backend-stroke);}.atlas-canvas .t-cloud{fill: var(--cloud-stroke);}.atlas-canvas .t-security{fill: var(--security-stroke);}.atlas-canvas .t-messagebus{fill: var(--messagebus-stroke);}.atlas-canvas svg .semantic-sigil{fill: none;
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.76;
+      pointer-events: none;}.atlas-canvas svg .semantic-sigil > *{vector-effect: non-scaling-stroke;}.atlas-canvas svg .semantic-sigil .sigil-fill{fill: currentColor; stroke: none;}.atlas-canvas svg .s-frontend{color: var(--frontend-stroke);}.atlas-canvas svg .s-backend{color: var(--backend-stroke);}.atlas-canvas svg .s-database{color: var(--database-stroke);}.atlas-canvas svg .s-security{color: var(--security-stroke);}.atlas-canvas svg .s-messagebus{color: var(--messagebus-stroke);}.atlas-canvas svg .s-external{color: var(--external-stroke);}.atlas-canvas .a-default{stroke: var(--arrow); fill: none;}.atlas-canvas .a-emphasis{stroke: var(--arrow-emphasis); fill: none;}.atlas-canvas .a-security{stroke: var(--security-stroke); fill: none; stroke-dasharray: 5,5;}.atlas-canvas .a-dashed{stroke: var(--database-stroke); fill: none; stroke-dasharray: 4,4;}.atlas-canvas .m-default{fill: var(--arrow);}.atlas-canvas .m-emphasis{fill: var(--arrow-emphasis);}.atlas-canvas .m-security{fill: var(--security-stroke);}.atlas-canvas .m-dashed{fill: var(--database-stroke);}.atlas-canvas .c-security-group{fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4;}.atlas-canvas .c-region{fill: rgba(251, 191, 36, 0.05); stroke: var(--cloud-stroke); stroke-dasharray: 8,4;}.atlas-canvas .c-cloud{fill: var(--cloud-fill);      stroke: var(--cloud-stroke);}.atlas-canvas .t-frontend{fill: var(--frontend-stroke);}.atlas-canvas .t-database{fill: var(--database-stroke);}.atlas-canvas .t-external{fill: var(--external-stroke);}.atlas-canvas svg .s-cloud{color: var(--cloud-stroke);}.atlas-canvas .t-dim{fill: var(--text-dim);}.atlas-canvas .c-lane{fill: var(--lane-fill); stroke: var(--lane-stroke); stroke-dasharray: 6,6;}.atlas-canvas{--bg:#101a28;--grid:#1b2a3d;--text:#eef3fa;--text-muted:#a6b4c8;--text-dim:#8394ab;--text-faint:#8a99ad;--panel:rgba(15, 23, 42, 0.5);--panel-border:#1e293b;--lane-fill:rgba(15, 23, 42, 0.22);--lane-stroke:#334155;--arrow:#64748b;--arrow-emphasis:#34d399;--mask:#101a28;--frontend-fill:rgba(8, 51, 68, 0.4);--frontend-stroke:#22d3ee;--backend-fill:rgba(6, 78, 59, 0.4);--backend-stroke:#34d399;--database-fill:rgba(76, 29, 149, 0.4);--database-stroke:#a78bfa;--cloud-fill:rgba(120, 53, 15, 0.3);--cloud-stroke:#fbbf24;--security-fill:rgba(136, 19, 55, 0.4);--security-stroke:#fb7185;--messagebus-fill:rgba(251, 146, 60, 0.3);--messagebus-stroke:#fb923c;--external-fill:rgba(30, 41, 59, 0.5);--external-stroke:#94a3b8;--toolbar-bg:rgba(15, 23, 42, 0.8);--toolbar-border:#334155;--toolbar-text:#e2e8f0;--toolbar-hover:rgba(15, 23, 42, 0.95);--toolbar-menu-bg:#0f172a}:root[data-theme=light] .atlas-canvas{--bg:#fffefb;--grid:#e2e8f0;--text:#0f172a;--text-muted:#64748b;--text-dim:#94a3b8;--text-faint:#64748b;--panel:#ffffff;--panel-border:#e2e8f0;--lane-fill:rgba(248, 250, 252, 0.65);--lane-stroke:#cbd5e1;--arrow:#94a3b8;--arrow-emphasis:#059669;--mask:#fffefb;--frontend-fill:rgba(34, 211, 238, 0.15);--frontend-stroke:#0891b2;--backend-fill:rgba(52, 211, 153, 0.18);--backend-stroke:#059669;--database-fill:rgba(167, 139, 250, 0.2);--database-stroke:#7c3aed;--cloud-fill:rgba(251, 191, 36, 0.18);--cloud-stroke:#d97706;--security-fill:rgba(251, 113, 133, 0.15);--security-stroke:#e11d48;--messagebus-fill:rgba(251, 146, 60, 0.15);--messagebus-stroke:#ea580c;--external-fill:rgba(148, 163, 184, 0.18);--external-stroke:#64748b;--toolbar-bg:rgba(255, 255, 255, 0.92);--toolbar-border:#cbd5e1;--toolbar-text:#334155;--toolbar-hover:#ffffff;--toolbar-menu-bg:#ffffff}@media print{.atlas-canvas{--bg:#fffefb;--grid:#e2e8f0;--text:#0f172a;--text-muted:#64748b;--text-dim:#94a3b8;--text-faint:#64748b;--panel:#ffffff;--panel-border:#e2e8f0;--lane-fill:rgba(248, 250, 252, 0.65);--lane-stroke:#cbd5e1;--arrow:#94a3b8;--arrow-emphasis:#059669;--mask:#fffefb;--frontend-fill:rgba(34, 211, 238, 0.15);--frontend-stroke:#0891b2;--backend-fill:rgba(52, 211, 153, 0.18);--backend-stroke:#059669;--database-fill:rgba(167, 139, 250, 0.2);--database-stroke:#7c3aed;--cloud-fill:rgba(251, 191, 36, 0.18);--cloud-stroke:#d97706;--security-fill:rgba(251, 113, 133, 0.15);--security-stroke:#e11d48;--messagebus-fill:rgba(251, 146, 60, 0.15);--messagebus-stroke:#ea580c;--external-fill:rgba(148, 163, 184, 0.18);--external-stroke:#64748b;--toolbar-bg:rgba(255, 255, 255, 0.92);--toolbar-border:#cbd5e1;--toolbar-text:#334155;--toolbar-hover:#ffffff;--toolbar-menu-bg:#ffffff}}</style></head>
 <body><a class="skip" href="#main">Skip to document</a>
 <header class="mobile-bar"><a href="../index.html">BUNNY / SYSTEM DESIGN</a><button id="menu-toggle" aria-expanded="false" aria-controls="sidebar">Documents</button></header>
 <aside class="sidebar" id="sidebar"><a class="wordmark" href="../index.html"><span class="mark" aria-hidden="true">B/</span><span>BUNNY<small>SYSTEM DESIGN ATLAS</small></span></a>
@@ -100,5 +120,84 @@
     const empty = document.querySelector('#empty');
     if (empty) empty.hidden = count !== 0;
   });
+})();
+(() => {
+  // Deep links into collapsed sections and the map's hidden detail blocks.
+  function reveal() {
+    const id = decodeURIComponent(location.hash.slice(1));
+    const target = id && document.getElementById(id);
+    if (!target) return;
+    for (let details = target.closest('details'); details; details = details.parentElement && details.parentElement.closest('details')) details.open = true;
+  }
+  window.addEventListener('hashchange', reveal);
+  reveal();
+
+  // Zoom: the stage scrolls; Fit returns the diagram to the stage width.
+  document.querySelectorAll('.atlas-map, .atlas-walk').forEach(wrap => {
+    const svg = wrap.querySelector('.atlas-canvas > svg'), level = wrap.querySelector('.zoom-level');
+    if (!svg || !level) return;
+    let zoom = 1;
+    const apply = () => { svg.style.width = zoom === 1 ? '' : `${Math.round(zoom * 100)}%`; level.textContent = `${Math.round(zoom * 100)}%`; };
+    wrap.querySelector('.zoom-in').addEventListener('click', () => { zoom = Math.min(3, zoom + 0.25); apply(); });
+    wrap.querySelector('.zoom-out').addEventListener('click', () => { zoom = Math.max(0.5, zoom - 0.25); apply(); });
+    wrap.querySelector('.zoom-fit').addEventListener('click', () => { zoom = 1; apply(); });
+  });
+
+  // System map: selecting a box or its list entry shows the responsibility and links.
+  const panel = document.querySelector('#map-detail');
+  const mapCanvas = document.querySelector('.atlas-canvas[data-diagram^="arch-"]');
+  if (panel && mapCanvas) {
+    const prefix = mapCanvas.dataset.diagram + '-';
+    const nodes = [...mapCanvas.querySelectorAll('[data-node-id]')];
+    const buttons = [...document.querySelectorAll('.node-button')];
+    const idle = panel.innerHTML;
+    const idOf = node => node.dataset.nodeId.slice(prefix.length);
+    function select(id, focusPanel) {
+      const detail = id && document.getElementById('detail-' + id);
+      if (id && !detail) return;
+      nodes.forEach(node => { const on = idOf(node) === id; node.setAttribute('aria-pressed', String(on)); node.classList.toggle('is-selected', on); node.classList.toggle('is-dimmed', Boolean(id) && !on); });
+      buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.node === id)));
+      mapCanvas.classList.toggle('has-selection', Boolean(id));
+      panel.innerHTML = detail ? detail.innerHTML + '<p class="detail-actions"><button type="button" class="detail-clear">Clear selection</button></p>' : idle;
+      panel.dataset.node = id || '';
+      if (id) panel.scrollIntoView({block: 'nearest'});
+      if (focusPanel) panel.focus({preventScroll: true});
+    }
+    nodes.forEach(node => {
+      node.addEventListener('click', () => select(idOf(node), false));
+      node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(idOf(node), true); } });
+    });
+    buttons.forEach(button => button.addEventListener('click', () => select(button.dataset.node, true)));
+    panel.addEventListener('click', event => { if (event.target.closest('.detail-clear')) select(null, false); });
+    document.querySelector('#map').addEventListener('keydown', event => { if (event.key === 'Escape') select(null, false); });
+    const deepLink = () => { const deep = /^#detail-([A-Za-z0-9_-]+)$/.exec(location.hash); if (deep) { select(deep[1], false); document.querySelector('#map').scrollIntoView(); } };
+    window.addEventListener('hashchange', deepLink);
+    deepLink();
+  }
+
+  // Walkthrough: one open phase at a time; its arrows stay highlighted on the diagram.
+  const steps = document.querySelector('#walk-steps');
+  const walkCanvas = document.querySelector('.atlas-canvas[data-diagram^="seq-"]');
+  if (steps && walkCanvas) {
+    const phases = [...steps.querySelectorAll('.walk-phase')];
+    const edges = [...walkCanvas.querySelectorAll('[data-edge-key]')];
+    // Participants carry no atlas action; keep them out of the tab order.
+    walkCanvas.querySelectorAll('[data-node-id]').forEach(node => { node.removeAttribute('tabindex'); node.removeAttribute('role'); node.removeAttribute('aria-pressed'); });
+    function open(index) {
+      const keys = index === null ? null : new Set(phases[index].dataset.steps.split(',').map(Number));
+      phases.forEach((phase, i) => { const on = i === index; phase.classList.toggle('is-open', on); phase.querySelector('.phase-button').setAttribute('aria-expanded', String(on)); phase.querySelector('.phase-body').hidden = !on; });
+      edges.forEach(edge => { const on = Boolean(keys) && keys.has(Number(edge.dataset.edgeKey)); edge.classList.toggle('is-active', on); edge.classList.toggle('is-dimmed', Boolean(keys) && !on); });
+      walkCanvas.classList.toggle('has-selection', keys !== null);
+    }
+    phases.forEach((phase, i) => phase.querySelector('.phase-button').addEventListener('click', () => open(phase.classList.contains('is-open') ? null : i)));
+    walkCanvas.querySelectorAll('[data-segment-id]').forEach(label => {
+      const index = Number(label.dataset.segmentId.split('-').pop());
+      if (!phases[index]) return;
+      label.setAttribute('tabindex', '0'); label.setAttribute('role', 'button'); label.setAttribute('aria-label', 'Open phase: ' + label.textContent.trim());
+      label.addEventListener('click', () => { open(index); phases[index].querySelector('.phase-button').focus(); });
+      label.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(index); phases[index].querySelector('.phase-button').focus(); } });
+    });
+    steps.addEventListener('keydown', event => { if (event.key === 'Escape') open(null); });
+  }
 })();
 </script></body></html>

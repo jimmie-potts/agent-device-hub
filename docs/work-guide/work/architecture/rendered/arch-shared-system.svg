@@ -1,5 +1,5 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1100 518" role="img" lang="en" aria-labelledby="arch-shared-system-archify-diagram-title arch-shared-system-archify-diagram-description">
-        <title id="arch-shared-system-archify-diagram-title">Shared source and optional Linux host</title>
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1100 616" role="img" lang="en" aria-labelledby="arch-shared-system-archify-diagram-title arch-shared-system-archify-diagram-description">
+        <title id="arch-shared-system-archify-diagram-title">BUNNY system map: what runs where</title>
         <desc id="arch-shared-system-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -24,29 +24,33 @@
         <rect width="100%" height="100%" fill="url(#arch-shared-system-grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Shared core; select one state owner" x="220" y="10" width="630" height="112" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Linux hub process (apps/hub) · source; installation separate" x="220" y="152" width="840" height="112" rx="12" class="c-region" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="arch-shared-system-1" data-composition-frame-label="Existing repositories: own writer, private state" x="10" y="184" width="420" height="112" rx="8" class="c-security-group" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="arch-shared-system-1" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)" x="10" y="294" width="420" height="254" rx="8" class="c-security-group" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-2" data-composition-frame-label="New controllers in agent-device-hub (planned)" x="430" y="184" width="630" height="112" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="arch-shared-system-2" data-composition-frame-label="Pixoo backend process (divoom-app-upgrade)" x="640" y="294" width="420" height="112" rx="8" class="c-security-group" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="providers" data-edge-to="emitters" data-edge-label="observations" data-edge-key="0" data-edge-id="arch-shared-system-obs" data-composition-points="190,71;250,71" d="M 190 71 L 250 71" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
-        <path data-edge-from="emitters" data-edge-to="core" data-edge-label="bounded submit" data-edge-key="1" data-edge-id="arch-shared-system-submit" data-composition-points="400,71;460,71" d="M 400 71 L 460 71" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
-        <path data-edge-from="core" data-edge-to="feed" data-edge-label="revisions" data-edge-key="2" data-edge-id="arch-shared-system-publish" data-composition-points="610,71;670,71" d="M 610 71 L 670 71" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
-        <path data-edge-from="feed" data-edge-to="pixoo" data-edge-key="3" data-edge-id="arch-shared-system-proj-pixoo" data-composition-points="717,102;717,158;115,158;115,214" d="M 717 102 L 717 150 Q 717 158 709 158 L 123 158 Q 115 158 115 166 L 115 214" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
-        <path data-edge-from="feed" data-edge-to="nanoleaf" data-edge-key="4" data-edge-id="arch-shared-system-proj-nano" data-composition-points="731,102;731,158;325,158;325,214" d="M 731 102 L 731 150 Q 731 158 723 158 L 333 158 Q 325 158 325 166 L 325 214" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
-        <path data-edge-from="feed" data-edge-to="tidbyt" data-edge-key="5" data-edge-id="arch-shared-system-proj-tidbyt" data-composition-points="745,102;745,158;535,158;535,214" d="M 745 102 L 745 150 Q 745 158 737 158 L 543 158 Q 535 158 535 166 L 535 214" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
-        <path data-edge-from="feed" data-edge-to="lifx" data-edge-label="projection to each controller" data-edge-key="6" data-edge-id="arch-shared-system-proj-lifx" data-composition-points="759,102;759,214" d="M 759 102 L 759 214" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
-        <path data-edge-from="feed" data-edge-to="pclight" data-edge-key="7" data-edge-id="arch-shared-system-proj-pc" data-composition-points="773,102;773,158;955,158;955,214" d="M 773 102 L 773 150 Q 773 158 781 158 L 947 158 Q 955 158 955 166 L 955 214" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
-        <path data-edge-from="clients" data-edge-to="routing" data-edge-label="commands" data-edge-key="8" data-edge-id="arch-shared-system-req" data-composition-points="190,419;250,419" d="M 190 419 L 250 419" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
-        <path data-edge-from="routing" data-edge-to="pixoo" data-edge-label="native command" data-edge-key="9" data-edge-id="arch-shared-system-cmd-pixoo" data-composition-points="318,388;318,332;115,332;115,276" d="M 318 388 L 318 340 Q 318 332 310 332 L 123 332 Q 115 332 115 324 L 115 276" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
-        <path data-edge-from="routing" data-edge-to="nanoleaf" data-edge-label="native command" data-edge-key="10" data-edge-id="arch-shared-system-cmd-nano" data-composition-points="332,388;332,276" d="M 332 388 L 332 276" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
-        <path data-edge-from="contracts" data-edge-to="routing" data-edge-label="validates" data-edge-key="11" data-edge-id="arch-shared-system-contract-routing" data-composition-points="460,419;400,419" d="M 460 419 L 400 419" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
+        <path data-edge-from="providers" data-edge-to="hooks" data-edge-label="lifecycle events" data-edge-key="0" data-edge-id="arch-shared-system-observe" data-composition-points="190,71;250,71" d="M 190 71 L 250 71" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
+        <path data-edge-from="hooks" data-edge-to="hubRoutes" data-edge-label="POST events" data-edge-key="1" data-edge-id="arch-shared-system-ingest" data-composition-points="325,102;325,142;521,142;521,182" d="M 325 102 L 325 134 Q 325 142 333 142 L 513 142 Q 521 142 521 150 L 521 182" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
+        <path data-edge-from="dashboard" data-edge-to="hubRoutes" data-edge-label="read · control" data-edge-key="2" data-edge-id="arch-shared-system-ui" data-composition-points="535,102;535,182" d="M 535 102 L 535 182" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
+        <path data-edge-from="mcpClients" data-edge-to="hubRoutes" data-edge-label="MCP tools" data-edge-key="3" data-edge-id="arch-shared-system-mcp" data-composition-points="745,102;745,142;549,142;549,182" d="M 745 102 L 745 134 Q 745 142 737 142 L 557 142 Q 549 142 549 150 L 549 182" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
+        <path data-edge-from="hubRoutes" data-edge-to="core" data-edge-label="ingest · snapshot" data-edge-key="4" data-edge-id="arch-shared-system-reduce" data-composition-points="610,213;670,213" d="M 610 213 L 670 213" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
+        <path data-edge-from="core" data-edge-to="hubStore" data-edge-label="commit revision" data-edge-key="5" data-edge-id="arch-shared-system-commit" data-composition-points="820,213;880,213" d="M 820 213 L 880 213" class="a-default" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead)"/>
+        <path data-edge-from="mcpModule" data-edge-to="hubRoutes" data-edge-label="imports" data-edge-key="6" data-edge-id="arch-shared-system-imports" data-composition-points="400,213;460,213" d="M 400 213 L 460 213" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
+        <path data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="state feed" data-edge-key="7" data-edge-id="arch-shared-system-feed-nano" data-composition-points="528,244;528,284;325,284;325,324" d="M 528 244 L 528 276 Q 528 284 520 284 L 333 284 Q 325 284 325 292 L 325 324" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
+        <path data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="controller v1 command" data-edge-key="8" data-edge-id="arch-shared-system-cmd-nano" data-composition-points="514,244;514,268;424,268;424,355;400,355" d="M 514 244 L 514 260 Q 514 268 506 268 L 432 268 Q 424 268 424 276 L 424 347 Q 424 355 416 355 L 400 355" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
+        <path data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="state feed" data-edge-key="9" data-edge-id="arch-shared-system-feed-pixoo" data-composition-points="556,244;556,284;745,284;745,324" d="M 556 244 L 556 276 Q 556 284 564 284 L 737 284 Q 745 284 745 292 L 745 324" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-dashed)"/>
+        <path data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="controller v1 command" data-edge-key="10" data-edge-id="arch-shared-system-cmd-pixoo" data-composition-points="542,244;542,268;646,268;646,355;670,355" d="M 542 244 L 542 260 Q 542 268 550 268 L 638 268 Q 646 268 646 276 L 646 347 Q 646 355 654 355 L 670 355" class="a-security" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead-security)"/>
+        <path data-edge-from="nanoCtl" data-edge-to="nanoWorker" data-edge-label="queued work" data-edge-key="11" data-edge-id="arch-shared-system-nano-queue" data-composition-points="250,355;190,355" d="M 250 355 L 190 355" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
+        <path data-edge-from="nanoCtl" data-edge-to="nanoStore" data-edge-label="state · lock" data-edge-key="12" data-edge-id="arch-shared-system-nano-state" data-composition-points="325,386;325,466" d="M 325 386 L 325 466" class="a-default" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead)"/>
+        <path data-edge-from="nanoWorker" data-edge-to="lights" data-edge-label="transmit" data-edge-key="13" data-edge-id="arch-shared-system-nano-lights" data-composition-points="115,386;115,466" d="M 115 386 L 115 466" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
+        <path data-edge-from="pixooSvc" data-edge-to="pixooStore" data-edge-label="private" data-edge-key="14" data-edge-id="arch-shared-system-pixoo-state" data-composition-points="820,355;880,355" d="M 820 355 L 880 355" class="a-default" stroke-width="1.5" marker-end="url(#arch-shared-system-arrowhead)"/>
+        <path data-edge-from="pixooSvc" data-edge-to="pixooDev" data-edge-label="serialized upload" data-edge-key="15" data-edge-id="arch-shared-system-pixoo-dev" data-composition-points="745,386;745,466" d="M 745 386 L 745 466" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-shared-system-arrowhead-emphasis)"/>
 
         <!-- Components -->
-        <g id="arch-shared-system-node-providers" data-node-id="arch-shared-system-providers" data-node-label="Agent providers" tabindex="0" role="button" aria-label="Focus Agent providers, Codex · Claude Code, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex · Claude Code" data-node-context="Architecture component">
-          <title>Agent providers · Codex · Claude Code · Architecture component</title>
+        <g id="arch-shared-system-node-providers" data-node-id="arch-shared-system-providers" data-node-label="Agent providers" tabindex="0" role="button" aria-label="Focus Agent providers, Codex CLI · Desktop · Claude Code, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex CLI · Desktop · Claude Code" data-node-context="Architecture component">
+          <title>Agent providers · Codex CLI · Desktop · Claude Code · Architecture component</title>
           <rect x="40" y="40" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="40" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(46 46) scale(0.6875)">
@@ -54,233 +58,317 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="115" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent providers</text>
-        <text data-detail="context" x="115" y="85" class="t-muted" font-size="9" text-anchor="middle">Codex · Claude Code</text>
+        <text data-detail="context" x="115" y="85" class="t-muted" font-size="7.1" text-anchor="middle">Codex CLI · Desktop · Claude Code</text>
         </g>
 
-        <g id="arch-shared-system-node-emitters" data-node-id="arch-shared-system-emitters" data-node-label="Bounded emitters" tabindex="0" role="button" aria-label="Focus Bounded emitters, allowlisted · fail-open, Shared core; select one state owner" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlisted · fail-open" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
-          <title>Bounded emitters · allowlisted · fail-open · Shared core; select one state owner · source delivered</title>
+        <g id="arch-shared-system-node-hooks" data-node-id="arch-shared-system-hooks" data-node-label="Provider hooks" tabindex="0" role="button" aria-label="Focus Provider hooks, allowlisted metadata · fail-open, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="allowlisted metadata · fail-open" data-node-tag="source · setup SDK" data-node-context="Architecture component">
+          <title>Provider hooks · allowlisted metadata · fail-open · Architecture component · source · setup SDK</title>
           <rect x="250" y="40" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="250" y="40" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 46) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Bounded emitters</text>
-        <text data-detail="context" x="325" y="85" class="t-muted" font-size="9" text-anchor="middle">allowlisted · fail-open</text>
-        <text data-detail="fine" x="325" y="94" class="t-security" font-size="7" text-anchor="middle">source delivered</text>
+          <text data-node-label="" data-detail-anchor="" x="325" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Provider hooks</text>
+        <text data-detail="context" x="325" y="85" class="t-muted" font-size="7.3" text-anchor="middle">allowlisted metadata · fail-open</text>
+        <text data-detail="fine" x="325" y="94" class="t-security" font-size="7" text-anchor="middle">source · setup SDK</text>
         </g>
 
-        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, one authoritative owner, Shared core; select one state owner" aria-pressed="false" data-node-kind="backend" data-node-sublabel="one authoritative owner" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
-          <title>Agent-state core · one authoritative owner · Shared core; select one state owner · source delivered</title>
+        <g id="arch-shared-system-node-dashboard" data-node-id="arch-shared-system-dashboard" data-node-label="BUNNY dashboard" tabindex="0" role="button" aria-label="Focus BUNNY dashboard, React · served by the hub at /, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="React · served by the hub at /" data-node-tag="source delivered" data-node-context="Architecture component">
+          <title>BUNNY dashboard · React · served by the hub at / · Architecture component · source delivered</title>
           <rect x="460" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="40" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(466 46) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent-state core</text>
-        <text data-detail="context" x="535" y="85" class="t-muted" font-size="9" text-anchor="middle">one authoritative owner</text>
-        <text data-detail="fine" x="535" y="94" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
-        </g>
-
-        <g id="arch-shared-system-node-feed" data-node-id="arch-shared-system-feed" data-node-label="Versioned feed" tabindex="0" role="button" aria-label="Focus Versioned feed, snapshots · resync, Shared core; select one state owner" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="snapshots · resync" data-node-tag="source delivered" data-node-context="Shared core; select one state owner">
-          <title>Versioned feed · snapshots · resync · Shared core; select one state owner · source delivered</title>
-          <rect x="670" y="40" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="40" width="150" height="62" rx="6" class="c-messagebus" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(676 46) scale(0.6875)">
-            <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
-            <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
-            <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
-            <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Versioned feed</text>
-        <text data-detail="context" x="745" y="85" class="t-muted" font-size="9" text-anchor="middle">snapshots · resync</text>
-        <text data-detail="fine" x="745" y="94" class="t-messagebus" font-size="7" text-anchor="middle">source delivered</text>
-        </g>
-
-        <g id="arch-shared-system-node-pixoo" data-node-id="arch-shared-system-pixoo" data-node-label="Pixoo controller" tabindex="0" role="button" aria-label="Focus Pixoo controller, media · 64×64 · Monitor/Media, Existing repositories: own writer, private state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="media · 64×64 · Monitor/Media" data-node-context="Existing repositories: own writer, private state">
-          <title>Pixoo controller · media · 64×64 · Monitor/Media · Existing repositories: own writer, private state</title>
-          <rect x="40" y="214" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="40" y="214" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 220) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="115" y="243" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo controller</text>
-        <text data-detail="context" x="115" y="259" class="t-muted" font-size="8.1" text-anchor="middle">media · 64×64 · Monitor/Media</text>
-        </g>
-
-        <g id="arch-shared-system-node-nanoleaf" data-node-id="arch-shared-system-nanoleaf" data-node-label="Nanoleaf controller" tabindex="0" role="button" aria-label="Focus Nanoleaf controller, Python · Work/Quiet/Free, Existing repositories: own writer, private state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · Work/Quiet/Free" data-node-tag="source delivered" data-node-context="Existing repositories: own writer, private state">
-          <title>Nanoleaf controller · Python · Work/Quiet/Free · Existing repositories: own writer, private state · source delivered</title>
-          <rect x="250" y="214" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="214" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(256 220) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="243" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf controller</text>
-        <text data-detail="context" x="325" y="259" class="t-muted" font-size="9" text-anchor="middle">Python · Work/Quiet/Free</text>
-        <text data-detail="fine" x="325" y="268" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
-        </g>
-
-        <g id="arch-shared-system-node-tidbyt" data-node-id="arch-shared-system-tidbyt" data-node-label="Tidbyt controller" tabindex="0" role="button" aria-label="Focus Tidbyt controller, cloud · 64×32 renderer, New controllers in agent-device-hub (planned)" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="cloud · 64×32 renderer" data-node-tag="planned" data-node-context="New controllers in agent-device-hub (planned)">
-          <title>Tidbyt controller · cloud · 64×32 renderer · New controllers in agent-device-hub (planned) · planned</title>
-          <rect x="460" y="214" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="214" width="150" height="62" rx="6" class="c-cloud" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(466 220) scale(0.6875)">
-            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="243" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Tidbyt controller</text>
-        <text data-detail="context" x="535" y="259" class="t-muted" font-size="9" text-anchor="middle">cloud · 64×32 renderer</text>
-        <text data-detail="fine" x="535" y="268" class="t-cloud" font-size="7" text-anchor="middle">planned</text>
-        </g>
-
-        <g id="arch-shared-system-node-lifx" data-node-id="arch-shared-system-lifx" data-node-label="LIFX controller" tabindex="0" role="button" aria-label="Focus LIFX controller, direct LAN, New controllers in agent-device-hub (planned)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="direct LAN" data-node-tag="planned" data-node-context="New controllers in agent-device-hub (planned)">
-          <title>LIFX controller · direct LAN · New controllers in agent-device-hub (planned) · planned</title>
-          <rect x="670" y="214" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="670" y="214" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 220) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="745" y="243" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">LIFX controller</text>
-        <text data-detail="context" x="745" y="259" class="t-muted" font-size="9" text-anchor="middle">direct LAN</text>
-        <text data-detail="fine" x="745" y="268" class="t-backend" font-size="7" text-anchor="middle">planned</text>
-        </g>
-
-        <g id="arch-shared-system-node-pclight" data-node-id="arch-shared-system-pclight" data-node-label="PC lighting" tabindex="0" role="button" aria-label="Focus PC lighting, Corsair first, New controllers in agent-device-hub (planned)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Corsair first" data-node-tag="planned · Strimer/Varmilo optional" data-node-context="New controllers in agent-device-hub (planned)">
-          <title>PC lighting · Corsair first · New controllers in agent-device-hub (planned) · planned · Strimer/Varmilo optional</title>
-          <rect x="880" y="214" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="880" y="214" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(886 220) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="955" y="243" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">PC lighting</text>
-        <text data-detail="context" x="955" y="259" class="t-muted" font-size="9" text-anchor="middle">Corsair first</text>
-        <text data-detail="fine" x="955" y="268" class="t-backend" font-size="6.9" text-anchor="middle">planned · Strimer/Varmilo optional</text>
-        </g>
-
-        <g id="arch-shared-system-node-clients" data-node-id="arch-shared-system-clients" data-node-label="BUNNY clients" tabindex="0" role="button" aria-label="Focus BUNNY clients, dashboard · MCP, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="dashboard · MCP" data-node-tag="source delivered" data-node-context="Architecture component">
-          <title>BUNNY clients · dashboard · MCP · Architecture component · source delivered</title>
-          <rect x="40" y="388" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="40" y="388" width="150" height="62" rx="6" class="c-frontend" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 394) scale(0.6875)">
+          <rect x="460" y="40" width="150" height="62" rx="6" class="c-frontend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(466 46) scale(0.6875)">
             <rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="115" y="417" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">BUNNY clients</text>
-        <text data-detail="context" x="115" y="433" class="t-muted" font-size="9" text-anchor="middle">dashboard · MCP</text>
-        <text data-detail="fine" x="115" y="442" class="t-frontend" font-size="7" text-anchor="middle">source delivered</text>
+          <text data-node-label="" data-detail-anchor="" x="535" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">BUNNY dashboard</text>
+        <text data-detail="context" x="535" y="85" class="t-muted" font-size="7.8" text-anchor="middle">React · served by the hub at /</text>
+        <text data-detail="fine" x="535" y="94" class="t-frontend" font-size="7" text-anchor="middle">source delivered</text>
         </g>
 
-        <g id="arch-shared-system-node-routing" data-node-id="arch-shared-system-routing" data-node-label="Registered routing" tabindex="0" role="button" aria-label="Focus Registered routing, authenticated · per-device queues, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="authenticated · per-device queues" data-node-tag="Linux host" data-node-context="Architecture component">
-          <title>Registered routing · authenticated · per-device queues · Architecture component · Linux host</title>
-          <rect x="250" y="388" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="250" y="388" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 394) scale(0.6875)">
+        <g id="arch-shared-system-node-mcpClients" data-node-id="arch-shared-system-mcpClients" data-node-label="MCP clients" tabindex="0" role="button" aria-label="Focus MCP clients, Codex · Claude Code, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex · Claude Code" data-node-context="Architecture component">
+          <title>MCP clients · Codex · Claude Code · Architecture component</title>
+          <rect x="670" y="40" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="670" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(676 46) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="745" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MCP clients</text>
+        <text data-detail="context" x="745" y="85" class="t-muted" font-size="9" text-anchor="middle">Codex · Claude Code</text>
+        </g>
+
+        <g id="arch-shared-system-node-future" data-node-id="arch-shared-system-future" data-node-label="Music + automation" tabindex="0" role="button" aria-label="Focus Music + automation, Windows connector · rules, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="Windows connector · rules" data-node-tag="future · own owner" data-node-context="Architecture component">
+          <title>Music + automation · Windows connector · rules · Architecture component · future · own owner</title>
+          <rect x="880" y="40" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="880" y="40" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(886 46) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="955" y="69" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Music + automation</text>
+        <text data-detail="context" x="955" y="85" class="t-muted" font-size="9" text-anchor="middle">Windows connector · rules</text>
+        <text data-detail="fine" x="955" y="94" class="t-external" font-size="7" text-anchor="middle">future · own owner</text>
+        </g>
+
+        <g id="arch-shared-system-node-mcpModule" data-node-id="arch-shared-system-mcpModule" data-node-label="device-mcp module" tabindex="0" role="button" aria-label="Focus device-mcp module, library · no listener, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="backend" data-node-sublabel="library · no listener" data-node-tag="source 1.0.0" data-node-context="Linux hub process (apps/hub) · source; installation separate">
+          <title>device-mcp module · library · no listener · Linux hub process (apps/hub) · source; installation separate · source 1.0.0</title>
+          <rect x="250" y="182" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="250" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(256 188) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="325" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">device-mcp module</text>
+        <text data-detail="context" x="325" y="227" class="t-muted" font-size="9" text-anchor="middle">library · no listener</text>
+        <text data-detail="fine" x="325" y="236" class="t-backend" font-size="7" text-anchor="middle">source 1.0.0</text>
+        </g>
+
+        <g id="arch-shared-system-node-hubRoutes" data-node-id="arch-shared-system-hubRoutes" data-node-label="Hub HTTP routes" tabindex="0" role="button" aria-label="Focus Hub HTTP routes, monitor · controllers · mcp, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="security" data-node-sublabel="monitor · controllers · mcp" data-node-tag="loopback · bearer" data-node-context="Linux hub process (apps/hub) · source; installation separate">
+          <title>Hub HTTP routes · monitor · controllers · mcp · Linux hub process (apps/hub) · source; installation separate · loopback · bearer</title>
+          <rect x="460" y="182" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="460" y="182" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(466 188) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="325" y="417" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Registered routing</text>
-        <text data-detail="context" x="325" y="433" class="t-muted" font-size="7.1" text-anchor="middle">authenticated · per-device queues</text>
-        <text data-detail="fine" x="325" y="442" class="t-security" font-size="7" text-anchor="middle">Linux host</text>
+          <text data-node-label="" data-detail-anchor="" x="535" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hub HTTP routes</text>
+        <text data-detail="context" x="535" y="227" class="t-muted" font-size="8.7" text-anchor="middle">monitor · controllers · mcp</text>
+        <text data-detail="fine" x="535" y="236" class="t-security" font-size="7" text-anchor="middle">loopback · bearer</text>
         </g>
 
-        <g id="arch-shared-system-node-contracts" data-node-id="arch-shared-system-contracts" data-node-label="Contracts + device-mcp" tabindex="0" role="button" aria-label="Focus Contracts + device-mcp, controller v1 · MCP 1.0.0, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="controller v1 · MCP 1.0.0" data-node-tag="implemented" data-node-context="Architecture component">
-          <title>Contracts + device-mcp · controller v1 · MCP 1.0.0 · Architecture component · implemented</title>
-          <rect x="460" y="388" width="150" height="62" rx="6" class="c-mask"/>
-          <rect x="460" y="388" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(466 394) scale(0.6875)">
+        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, reducer · one active owner, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="backend" data-node-sublabel="reducer · one active owner" data-node-tag="source delivered" data-node-context="Linux hub process (apps/hub) · source; installation separate">
+          <title>Agent-state core · reducer · one active owner · Linux hub process (apps/hub) · source; installation separate · source delivered</title>
+          <rect x="670" y="182" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="670" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 188) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="745" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent-state core</text>
+        <text data-detail="context" x="745" y="227" class="t-muted" font-size="9" text-anchor="middle">reducer · one active owner</text>
+        <text data-detail="fine" x="745" y="236" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
+        </g>
+
+        <g id="arch-shared-system-node-hubStore" data-node-id="arch-shared-system-hubStore" data-node-label="Hub private SQLite" tabindex="0" role="button" aria-label="Focus Hub private SQLite, owner + state files · 0700, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="database" data-node-sublabel="owner + state files · 0700" data-node-tag="never a controller store" data-node-context="Linux hub process (apps/hub) · source; installation separate">
+          <title>Hub private SQLite · owner + state files · 0700 · Linux hub process (apps/hub) · source; installation separate · never a controller store</title>
+          <rect x="880" y="182" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="880" y="182" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 188) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="535" y="417" class="t-primary" font-size="10.7" font-weight="600" text-anchor="middle">Contracts + device-mcp</text>
-        <text data-detail="context" x="535" y="433" class="t-muted" font-size="9" text-anchor="middle">controller v1 · MCP 1.0.0</text>
-        <text data-detail="fine" x="535" y="442" class="t-database" font-size="7" text-anchor="middle">implemented</text>
+          <text data-node-label="" data-detail-anchor="" x="955" y="211" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hub private SQLite</text>
+        <text data-detail="context" x="955" y="227" class="t-muted" font-size="9" text-anchor="middle">owner + state files · 0700</text>
+        <text data-detail="fine" x="955" y="236" class="t-database" font-size="7" text-anchor="middle">never a controller store</text>
+        </g>
+
+        <g id="arch-shared-system-node-nanoWorker" data-node-id="arch-shared-system-nanoWorker" data-node-label="Nanoleaf light worker" tabindex="0" role="button" aria-label="Focus Nanoleaf light worker, sole light writer, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="sole light writer" data-node-tag="designated writer" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
+          <title>Nanoleaf light worker · sole light writer · Nanoleaf Linux runtime (codex-nanoleaf, WSL) · designated writer</title>
+          <rect x="40" y="324" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="40" y="324" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 330) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="115" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf light worker</text>
+        <text data-detail="context" x="115" y="369" class="t-muted" font-size="9" text-anchor="middle">sole light writer</text>
+        <text data-detail="fine" x="115" y="378" class="t-backend" font-size="7" text-anchor="middle">designated writer</text>
+        </g>
+
+        <g id="arch-shared-system-node-nanoCtl" data-node-id="arch-shared-system-nanoCtl" data-node-label="Nanoleaf controller" tabindex="0" role="button" aria-label="Focus Nanoleaf controller, /controller/v1 · shared input, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="security" data-node-sublabel="/controller/v1 · shared input" data-node-tag="Linux · installed" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
+          <title>Nanoleaf controller · /controller/v1 · shared input · Nanoleaf Linux runtime (codex-nanoleaf, WSL) · Linux · installed</title>
+          <rect x="250" y="324" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="250" y="324" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(256 330) scale(0.6875)">
+            <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
+            <path d="m5.8 8 1.5 1.5 3-3"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="325" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf controller</text>
+        <text data-detail="context" x="325" y="369" class="t-muted" font-size="8.1" text-anchor="middle">/controller/v1 · shared input</text>
+        <text data-detail="fine" x="325" y="378" class="t-security" font-size="7" text-anchor="middle">Linux · installed</text>
+        </g>
+
+        <g id="arch-shared-system-node-pixooSvc" data-node-id="arch-shared-system-pixooSvc" data-node-label="Pixoo backend" tabindex="0" role="button" aria-label="Focus Pixoo backend, ControlService · one queue, Pixoo backend process (divoom-app-upgrade)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="ControlService · one queue" data-node-tag="designated writer" data-node-context="Pixoo backend process (divoom-app-upgrade)">
+          <title>Pixoo backend · ControlService · one queue · Pixoo backend process (divoom-app-upgrade) · designated writer</title>
+          <rect x="670" y="324" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="670" y="324" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 330) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="745" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo backend</text>
+        <text data-detail="context" x="745" y="369" class="t-muted" font-size="9" text-anchor="middle">ControlService · one queue</text>
+        <text data-detail="fine" x="745" y="378" class="t-backend" font-size="7" text-anchor="middle">designated writer</text>
+        </g>
+
+        <g id="arch-shared-system-node-pixooStore" data-node-id="arch-shared-system-pixooStore" data-node-label="Pixoo private SQLite" tabindex="0" role="button" aria-label="Focus Pixoo private SQLite, library · owner lock, Pixoo backend process (divoom-app-upgrade)" aria-pressed="false" data-node-kind="database" data-node-sublabel="library · owner lock" data-node-context="Pixoo backend process (divoom-app-upgrade)">
+          <title>Pixoo private SQLite · library · owner lock · Pixoo backend process (divoom-app-upgrade)</title>
+          <rect x="880" y="324" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="880" y="324" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 330) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="955" y="353" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo private SQLite</text>
+        <text data-detail="context" x="955" y="369" class="t-muted" font-size="9" text-anchor="middle">library · owner lock</text>
+        </g>
+
+        <g id="arch-shared-system-node-lights" data-node-id="arch-shared-system-lights" data-node-label="Nanoleaf Lines" tabindex="0" role="button" aria-label="Focus Nanoleaf Lines, configured LAN device, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="configured LAN device" data-node-context="Architecture component">
+          <title>Nanoleaf Lines · configured LAN device · Architecture component</title>
+          <rect x="40" y="466" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="40" y="466" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(46 472) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="115" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf Lines</text>
+        <text data-detail="context" x="115" y="511" class="t-muted" font-size="9" text-anchor="middle">configured LAN device</text>
+        </g>
+
+        <g id="arch-shared-system-node-nanoStore" data-node-id="arch-shared-system-nanoStore" data-node-label="Nanoleaf SQLite" tabindex="0" role="button" aria-label="Focus Nanoleaf SQLite, Linux-owned · private, Nanoleaf Linux runtime (codex-nanoleaf, WSL)" aria-pressed="false" data-node-kind="database" data-node-sublabel="Linux-owned · private" data-node-context="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
+          <title>Nanoleaf SQLite · Linux-owned · private · Nanoleaf Linux runtime (codex-nanoleaf, WSL)</title>
+          <rect x="250" y="466" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="250" y="466" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(256 472) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="325" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Nanoleaf SQLite</text>
+        <text data-detail="context" x="325" y="511" class="t-muted" font-size="9" text-anchor="middle">Linux-owned · private</text>
+        </g>
+
+        <g id="arch-shared-system-node-newCtl" data-node-id="arch-shared-system-newCtl" data-node-label="New controllers" tabindex="0" role="button" aria-label="Focus New controllers, Tidbyt · LIFX · PC lighting, Architecture component" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="Tidbyt · LIFX · PC lighting" data-node-tag="planned" data-node-context="Architecture component">
+          <title>New controllers · Tidbyt · LIFX · PC lighting · Architecture component · planned</title>
+          <rect x="460" y="466" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="460" y="466" width="150" height="62" rx="6" class="c-cloud" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="cloud" class="semantic-sigil s-cloud" transform="translate(466 472) scale(0.6875)">
+            <path d="M4.3 12.5h7.3a2.4 2.4 0 0 0 .2-4.8 4 4 0 0 0-7.5-1.3A3.1 3.1 0 0 0 4.3 12.5Z"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="535" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">New controllers</text>
+        <text data-detail="context" x="535" y="511" class="t-muted" font-size="8.7" text-anchor="middle">Tidbyt · LIFX · PC lighting</text>
+        <text data-detail="fine" x="535" y="520" class="t-cloud" font-size="7" text-anchor="middle">planned</text>
+        </g>
+
+        <g id="arch-shared-system-node-pixooDev" data-node-id="arch-shared-system-pixooDev" data-node-label="Pixoo 64×64" tabindex="0" role="button" aria-label="Focus Pixoo 64×64, simulator unless selected, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="simulator unless selected" data-node-context="Architecture component">
+          <title>Pixoo 64×64 · simulator unless selected · Architecture component</title>
+          <rect x="670" y="466" width="150" height="62" rx="6" class="c-mask"/>
+          <rect x="670" y="466" width="150" height="62" rx="6" class="c-external" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(676 472) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="745" y="495" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Pixoo 64×64</text>
+        <text data-detail="context" x="745" y="511" class="t-muted" font-size="9" text-anchor="middle">simulator unless selected</text>
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="providers" data-edge-to="emitters" data-edge-label="observations" data-edge-key="0" data-edge-id="arch-shared-system-obs">
-          <rect x="186.2" y="111" width="67.6" height="14" rx="3" class="c-mask"/>
-          <text x="220" y="121" class="t-backend" font-size="8" text-anchor="middle">observations</text>
+        <g data-detail="context" data-edge-from="providers" data-edge-to="hooks" data-edge-label="lifecycle events" data-edge-key="0" data-edge-id="arch-shared-system-observe">
+          <rect x="176.6" y="106" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="220" y="116" class="t-backend" font-size="8" text-anchor="middle">lifecycle events</text>
         </g>
-        <g data-detail="context" data-edge-from="emitters" data-edge-to="core" data-edge-label="bounded submit" data-edge-key="1" data-edge-id="arch-shared-system-submit">
-          <rect x="391.4" y="111" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="430" y="121" class="t-backend" font-size="8" text-anchor="middle">bounded submit</text>
+        <g data-detail="context" data-edge-from="hooks" data-edge-to="hubRoutes" data-edge-label="POST events" data-edge-key="1" data-edge-id="arch-shared-system-ingest">
+          <rect x="351.6" y="146" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="383" y="156" class="t-backend" font-size="8" text-anchor="middle">POST events</text>
         </g>
-        <g data-detail="context" data-edge-from="core" data-edge-to="feed" data-edge-label="revisions" data-edge-key="2" data-edge-id="arch-shared-system-publish">
-          <rect x="613.4" y="77" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="640" y="87" class="t-backend" font-size="8" text-anchor="middle">revisions</text>
+        <g data-detail="context" data-edge-from="dashboard" data-edge-to="hubRoutes" data-edge-label="read · control" data-edge-key="2" data-edge-id="arch-shared-system-ui">
+          <rect x="540.4" y="106" width="77.2" height="14" rx="3" class="c-mask"/>
+          <text x="579" y="116" class="t-security" font-size="8" text-anchor="middle">read · control</text>
         </g>
-
-
-
-        <g data-detail="context" data-edge-from="feed" data-edge-to="lifx" data-edge-label="projection to each controller" data-edge-key="6" data-edge-id="arch-shared-system-proj-lifx">
-          <rect x="684.4" y="180" width="149.2" height="14" rx="3" class="c-mask"/>
-          <text x="759" y="190" class="t-messagebus" font-size="8" text-anchor="middle">projection to each controller</text>
+        <g data-detail="context" data-edge-from="mcpClients" data-edge-to="hubRoutes" data-edge-label="MCP tools" data-edge-key="3" data-edge-id="arch-shared-system-mcp">
+          <rect x="660.4" y="146" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="687" y="156" class="t-security" font-size="8" text-anchor="middle">MCP tools</text>
         </g>
-
-        <g data-detail="context" data-edge-from="clients" data-edge-to="routing" data-edge-label="commands" data-edge-key="8" data-edge-id="arch-shared-system-req">
-          <rect x="195.8" y="425" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="220" y="435" class="t-backend" font-size="8" text-anchor="middle">commands</text>
+        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="core" data-edge-label="ingest · snapshot" data-edge-key="4" data-edge-id="arch-shared-system-reduce">
+          <rect x="594.2" y="248" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="640" y="258" class="t-backend" font-size="8" text-anchor="middle">ingest · snapshot</text>
         </g>
-        <g data-detail="context" data-edge-from="routing" data-edge-to="pixoo" data-edge-label="native command" data-edge-key="9" data-edge-id="arch-shared-system-cmd-pixoo">
-          <rect x="177.9" y="294" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="216.5" y="304" class="t-security" font-size="8" text-anchor="middle">native command</text>
+        <g data-detail="context" data-edge-from="core" data-edge-to="hubStore" data-edge-label="commit revision" data-edge-key="5" data-edge-id="arch-shared-system-commit">
+          <rect x="809" y="248" width="82" height="14" rx="3" class="c-mask"/>
+          <text x="850" y="258" class="t-muted" font-size="8" text-anchor="middle">commit revision</text>
         </g>
-        <g data-detail="context" data-edge-from="routing" data-edge-to="nanoleaf" data-edge-label="native command" data-edge-key="10" data-edge-id="arch-shared-system-cmd-nano">
-          <rect x="345.4" y="350" width="77.2" height="14" rx="3" class="c-mask"/>
-          <text x="384" y="360" class="t-security" font-size="8" text-anchor="middle">native command</text>
+        <g data-detail="context" data-edge-from="mcpModule" data-edge-to="hubRoutes" data-edge-label="imports" data-edge-key="6" data-edge-id="arch-shared-system-imports">
+          <rect x="408.2" y="248" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="430" y="258" class="t-messagebus" font-size="8" text-anchor="middle">imports</text>
         </g>
-        <g data-detail="context" data-edge-from="contracts" data-edge-to="routing" data-edge-label="validates" data-edge-key="11" data-edge-id="arch-shared-system-contract-routing">
-          <rect x="403.4" y="425" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
-          <text x="430" y="435" class="t-messagebus" font-size="8" text-anchor="middle">validates</text>
+        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="state feed" data-edge-key="7" data-edge-id="arch-shared-system-feed-nano">
+          <rect x="337.5" y="276" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="366.5" y="286" class="t-messagebus" font-size="8" text-anchor="middle">state feed</text>
+        </g>
+        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="nanoCtl" data-edge-label="controller v1 command" data-edge-key="8" data-edge-id="arch-shared-system-cmd-nano">
+          <rect x="383.6" y="248" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="439" y="258" class="t-security" font-size="8" text-anchor="middle">controller v1 command</text>
+        </g>
+        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="state feed" data-edge-key="9" data-edge-id="arch-shared-system-feed-pixoo">
+          <rect x="681.5" y="276" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="710.5" y="286" class="t-messagebus" font-size="8" text-anchor="middle">state feed</text>
+        </g>
+        <g data-detail="context" data-edge-from="hubRoutes" data-edge-to="pixooSvc" data-edge-label="controller v1 command" data-edge-key="10" data-edge-id="arch-shared-system-cmd-pixoo">
+          <rect x="578.6" y="248" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="634" y="258" class="t-security" font-size="8" text-anchor="middle">controller v1 command</text>
+        </g>
+        <g data-detail="context" data-edge-from="nanoCtl" data-edge-to="nanoWorker" data-edge-label="queued work" data-edge-key="11" data-edge-id="arch-shared-system-nano-queue">
+          <rect x="188.6" y="364" width="62.8" height="14" rx="3" class="c-mask"/>
+          <text x="220" y="374" class="t-backend" font-size="8" text-anchor="middle">queued work</text>
+        </g>
+        <g data-detail="context" data-edge-from="nanoCtl" data-edge-to="nanoStore" data-edge-label="state · lock" data-edge-key="12" data-edge-id="arch-shared-system-nano-state">
+          <rect x="331.2" y="390" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="365" y="400" class="t-muted" font-size="8" text-anchor="middle">state · lock</text>
+        </g>
+        <g data-detail="context" data-edge-from="nanoWorker" data-edge-to="lights" data-edge-label="transmit" data-edge-key="13" data-edge-id="arch-shared-system-nano-lights">
+          <rect x="124.8" y="390" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="149" y="400" class="t-backend" font-size="8" text-anchor="middle">transmit</text>
+        </g>
+        <g data-detail="context" data-edge-from="pixooSvc" data-edge-to="pixooStore" data-edge-label="private" data-edge-key="14" data-edge-id="arch-shared-system-pixoo-state">
+          <rect x="828.2" y="364" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="850" y="374" class="t-muted" font-size="8" text-anchor="middle">private</text>
+        </g>
+        <g data-detail="context" data-edge-from="pixooSvc" data-edge-to="pixooDev" data-edge-label="serialized upload" data-edge-key="15" data-edge-id="arch-shared-system-pixoo-dev">
+          <rect x="755.2" y="390" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="801" y="400" class="t-backend" font-size="8" text-anchor="middle">serialized upload</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Shared core; select one state owner">
-          <rect data-graph-role="structural-frame-label-mask" x="224" y="20" width="199" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="228" y="33" class="t-cloud" font-size="9" font-weight="600">Shared core; select one state owner</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Linux hub process (apps/hub) · source; installation separate">
+          <rect data-graph-role="structural-frame-label-mask" x="224" y="162" width="334" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="228" y="175" class="t-cloud" font-size="9" font-weight="600">Linux hub process (apps/hub) · source; installation separate</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-1" data-composition-frame-kind="security-group" data-composition-frame-label="Existing repositories: own writer, private state">
-          <rect data-graph-role="structural-frame-label-mask" x="14" y="194" width="269.2" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="18" y="207" class="t-security" font-size="9" font-weight="600">Existing repositories: own writer, private state</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-1" data-composition-frame-kind="security-group" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
+          <rect data-graph-role="structural-frame-label-mask" x="14" y="304" width="247.6" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="18" y="317" class="t-security" font-size="9" font-weight="600">Nanoleaf Linux runtime (codex-nanoleaf, WSL)</text>
         </g>
 
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-2" data-composition-frame-kind="region" data-composition-frame-label="New controllers in agent-device-hub (planned)">
-          <rect data-graph-role="structural-frame-label-mask" x="434" y="194" width="253" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="438" y="207" class="t-cloud" font-size="9" font-weight="600">New controllers in agent-device-hub (planned)</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-2" data-composition-frame-kind="security-group" data-composition-frame-label="Pixoo backend process (divoom-app-upgrade)">
+          <rect data-graph-role="structural-frame-label-mask" x="644" y="304" width="236.79999999999998" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="648" y="317" class="t-security" font-size="9" font-weight="600">Pixoo backend process (divoom-app-upgrade)</text>
         </g>
 
         <!-- Legend -->
         <g data-legend="" data-legend-bridge="">
-          <text x="40" y="482" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="Frontend" data-legend-x="40" data-legend-baseline="502" data-legend-width="83">
-            <rect x="40" y="493" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
-            <text x="62" y="502" class="t-muted" font-size="10" font-weight="500">Frontend</text>
+          <text x="40" y="580" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="Frontend" data-legend-x="40" data-legend-baseline="600" data-legend-width="83">
+            <rect x="40" y="591" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="600" class="t-muted" font-size="10" font-weight="500">Frontend</text>
           </g>
-          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Backend" data-legend-x="145" data-legend-baseline="502" data-legend-width="78">
-            <rect x="145" y="493" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
-            <text x="167" y="502" class="t-muted" font-size="10" font-weight="500">Backend</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="Backend" data-legend-x="145" data-legend-baseline="600" data-legend-width="78">
+            <rect x="145" y="591" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="167" y="600" class="t-muted" font-size="10" font-weight="500">Backend</text>
           </g>
-          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="Database" data-legend-x="245" data-legend-baseline="502" data-legend-width="83">
-            <rect x="245" y="493" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
-            <text x="267" y="502" class="t-muted" font-size="10" font-weight="500">Database</text>
+          <g data-legend-semantic-kind="database" data-legend-kind="database" data-legend-label="Database" data-legend-x="245" data-legend-baseline="600" data-legend-width="83">
+            <rect x="245" y="591" width="16" height="10" rx="2.5" class="c-database" stroke-width="1"/>
+            <text x="267" y="600" class="t-muted" font-size="10" font-weight="500">Database</text>
           </g>
-          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="Cloud" data-legend-x="350" data-legend-baseline="502" data-legend-width="68">
-            <rect x="350" y="493" width="16" height="10" rx="2.5" class="c-cloud" stroke-width="1"/>
-            <text x="372" y="502" class="t-muted" font-size="10" font-weight="500">Cloud</text>
+          <g data-legend-semantic-kind="cloud" data-legend-kind="cloud" data-legend-label="Cloud" data-legend-x="350" data-legend-baseline="600" data-legend-width="68">
+            <rect x="350" y="591" width="16" height="10" rx="2.5" class="c-cloud" stroke-width="1"/>
+            <text x="372" y="600" class="t-muted" font-size="10" font-weight="500">Cloud</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Security" data-legend-x="440" data-legend-baseline="502" data-legend-width="83">
-            <rect x="440" y="493" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
-            <text x="462" y="502" class="t-muted" font-size="10" font-weight="500">Security</text>
+          <g data-legend-semantic-kind="security" data-legend-kind="security" data-legend-label="Security" data-legend-x="440" data-legend-baseline="600" data-legend-width="83">
+            <rect x="440" y="591" width="16" height="10" rx="2.5" class="c-security" stroke-width="1"/>
+            <text x="462" y="600" class="t-muted" font-size="10" font-weight="500">Security</text>
           </g>
-          <g data-legend-semantic-kind="messagebus" data-legend-kind="messagebus" data-legend-label="Message bus" data-legend-x="545" data-legend-baseline="502" data-legend-width="98">
-            <rect x="545" y="493" width="16" height="10" rx="2.5" class="c-messagebus" stroke-width="1"/>
-            <text x="567" y="502" class="t-muted" font-size="10" font-weight="500">Message bus</text>
-          </g>
-          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="665" data-legend-baseline="502" data-legend-width="83">
-            <rect x="665" y="493" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
-            <text x="687" y="502" class="t-muted" font-size="10" font-weight="500">External</text>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="545" data-legend-baseline="600" data-legend-width="83">
+            <rect x="545" y="591" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="567" y="600" class="t-muted" font-size="10" font-weight="500">External</text>
           </g>
         </g>
       </svg>

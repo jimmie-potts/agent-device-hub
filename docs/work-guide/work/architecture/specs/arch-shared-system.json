@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Shared source and optional Linux host",
+  "title": "BUNNY system map: what runs where",
   "quality_profile": "showcase",
   "views": [
    {
@@ -10,28 +10,41 @@
     "label": "Observation path",
     "focus": [
      "providers",
-     "emitters",
+     "hooks",
+     "hubRoutes",
      "core",
-     "feed",
-     "pixoo",
-     "nanoleaf",
-     "tidbyt",
-     "lifx",
-     "pclight"
+     "hubStore",
+     "nanoCtl",
+     "pixooSvc"
     ],
-    "note": "One shared interpretation, many device projections."
+    "note": "One shared interpretation; controllers project state."
    },
    {
     "id": "command",
     "label": "Command path",
     "focus": [
-     "clients",
-     "routing",
-     "contracts",
-     "pixoo",
-     "nanoleaf"
+     "dashboard",
+     "mcpClients",
+     "mcpModule",
+     "hubRoutes",
+     "nanoCtl",
+     "pixooSvc"
     ],
-    "note": "Explicit requests are routed to existing command owners."
+    "note": "Explicit requests reach the existing command owners."
+   },
+   {
+    "id": "writers",
+    "label": "Writers and stores",
+    "focus": [
+     "nanoWorker",
+     "nanoStore",
+     "lights",
+     "pixooSvc",
+     "pixooStore",
+     "pixooDev",
+     "hubStore"
+    ],
+    "note": "One writer and one private store per owner."
    }
   ]
  },
@@ -45,14 +58,14 @@
   "cellW": 150,
   "cellH": 62,
   "gapX": 60,
-  "gapY": 112
+  "gapY": 80
  },
  "components": [
   {
    "id": "providers",
    "type": "external",
    "label": "Agent providers",
-   "sublabel": "Codex · Claude Code",
+   "sublabel": "Codex CLI · Desktop · Claude Code",
    "row": 0,
    "col": 0,
    "size": [
@@ -61,307 +74,427 @@
    ]
   },
   {
-   "id": "emitters",
+   "id": "hooks",
    "type": "security",
-   "label": "Bounded emitters",
-   "sublabel": "allowlisted · fail-open",
+   "label": "Provider hooks",
+   "sublabel": "allowlisted metadata · fail-open",
    "row": 0,
    "col": 1,
    "size": [
     150,
     62
    ],
+   "tag": "source · setup SDK"
+  },
+  {
+   "id": "dashboard",
+   "type": "frontend",
+   "label": "BUNNY dashboard",
+   "sublabel": "React · served by the hub at /",
+   "row": 0,
+   "col": 2,
+   "size": [
+    150,
+    62
+   ],
    "tag": "source delivered"
+  },
+  {
+   "id": "mcpClients",
+   "type": "external",
+   "label": "MCP clients",
+   "sublabel": "Codex · Claude Code",
+   "row": 0,
+   "col": 3,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "future",
+   "type": "external",
+   "label": "Music + automation",
+   "sublabel": "Windows connector · rules",
+   "row": 0,
+   "col": 4,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "future · own owner"
+  },
+  {
+   "id": "mcpModule",
+   "type": "backend",
+   "label": "device-mcp module",
+   "sublabel": "library · no listener",
+   "row": 1,
+   "col": 1,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "source 1.0.0"
+  },
+  {
+   "id": "hubRoutes",
+   "type": "security",
+   "label": "Hub HTTP routes",
+   "sublabel": "monitor · controllers · mcp",
+   "row": 1,
+   "col": 2,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "loopback · bearer"
   },
   {
    "id": "core",
    "type": "backend",
    "label": "Agent-state core",
-   "sublabel": "one authoritative owner",
-   "row": 0,
-   "col": 2,
-   "size": [
-    150,
-    62
-   ],
-   "tag": "source delivered"
-  },
-  {
-   "id": "feed",
-   "type": "messagebus",
-   "label": "Versioned feed",
-   "sublabel": "snapshots · resync",
-   "row": 0,
-   "col": 3,
-   "size": [
-    150,
-    62
-   ],
-   "tag": "source delivered"
-  },
-  {
-   "id": "pixoo",
-   "type": "backend",
-   "label": "Pixoo controller",
-   "sublabel": "media · 64×64 · Monitor/Media",
-   "row": 1,
-   "col": 0,
-   "size": [
-    150,
-    62
-   ]
-  },
-  {
-   "id": "nanoleaf",
-   "type": "backend",
-   "label": "Nanoleaf controller",
-   "sublabel": "Python · Work/Quiet/Free",
-   "row": 1,
-   "col": 1,
-   "size": [
-    150,
-    62
-   ],
-   "tag": "source delivered"
-  },
-  {
-   "id": "tidbyt",
-   "type": "cloud",
-   "label": "Tidbyt controller",
-   "sublabel": "cloud · 64×32 renderer",
-   "row": 1,
-   "col": 2,
-   "size": [
-    150,
-    62
-   ],
-   "tag": "planned"
-  },
-  {
-   "id": "lifx",
-   "type": "backend",
-   "label": "LIFX controller",
-   "sublabel": "direct LAN",
+   "sublabel": "reducer · one active owner",
    "row": 1,
    "col": 3,
    "size": [
     150,
     62
    ],
-   "tag": "planned"
+   "tag": "source delivered"
   },
   {
-   "id": "pclight",
-   "type": "backend",
-   "label": "PC lighting",
-   "sublabel": "Corsair first",
+   "id": "hubStore",
+   "type": "database",
+   "label": "Hub private SQLite",
+   "sublabel": "owner + state files · 0700",
    "row": 1,
    "col": 4,
    "size": [
     150,
     62
    ],
-   "tag": "planned · Strimer/Varmilo optional"
+   "tag": "never a controller store"
   },
   {
-   "id": "clients",
-   "type": "frontend",
-   "label": "BUNNY clients",
-   "sublabel": "dashboard · MCP",
+   "id": "nanoWorker",
+   "type": "backend",
+   "label": "Nanoleaf light worker",
+   "sublabel": "sole light writer",
    "row": 2,
    "col": 0,
    "size": [
     150,
     62
    ],
-   "tag": "source delivered"
+   "tag": "designated writer"
   },
   {
-   "id": "routing",
+   "id": "nanoCtl",
    "type": "security",
-   "label": "Registered routing",
-   "sublabel": "authenticated · per-device queues",
+   "label": "Nanoleaf controller",
+   "sublabel": "/controller/v1 · shared input",
    "row": 2,
    "col": 1,
    "size": [
     150,
     62
    ],
-   "tag": "Linux host"
+   "tag": "Linux · installed"
   },
   {
-   "id": "contracts",
-   "type": "database",
-   "label": "Contracts + device-mcp",
-   "sublabel": "controller v1 · MCP 1.0.0",
+   "id": "pixooSvc",
+   "type": "backend",
+   "label": "Pixoo backend",
+   "sublabel": "ControlService · one queue",
    "row": 2,
+   "col": 3,
+   "size": [
+    150,
+    62
+   ],
+   "tag": "designated writer"
+  },
+  {
+   "id": "pixooStore",
+   "type": "database",
+   "label": "Pixoo private SQLite",
+   "sublabel": "library · owner lock",
+   "row": 2,
+   "col": 4,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "lights",
+   "type": "external",
+   "label": "Nanoleaf Lines",
+   "sublabel": "configured LAN device",
+   "row": 3,
+   "col": 0,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "nanoStore",
+   "type": "database",
+   "label": "Nanoleaf SQLite",
+   "sublabel": "Linux-owned · private",
+   "row": 3,
+   "col": 1,
+   "size": [
+    150,
+    62
+   ]
+  },
+  {
+   "id": "newCtl",
+   "type": "cloud",
+   "label": "New controllers",
+   "sublabel": "Tidbyt · LIFX · PC lighting",
+   "row": 3,
    "col": 2,
    "size": [
     150,
     62
    ],
-   "tag": "implemented"
+   "tag": "planned"
+  },
+  {
+   "id": "pixooDev",
+   "type": "external",
+   "label": "Pixoo 64×64",
+   "sublabel": "simulator unless selected",
+   "row": 3,
+   "col": 3,
+   "size": [
+    150,
+    62
+   ]
   }
  ],
  "boundaries": [
   {
    "kind": "region",
-   "label": "Shared core; select one state owner",
+   "label": "Linux hub process (apps/hub) · source; installation separate",
    "wraps": [
-    "emitters",
+    "mcpModule",
+    "hubRoutes",
     "core",
-    "feed"
+    "hubStore"
    ]
   },
   {
    "kind": "security-group",
-   "label": "Existing repositories: own writer, private state",
+   "label": "Nanoleaf Linux runtime (codex-nanoleaf, WSL)",
    "wraps": [
-    "pixoo",
-    "nanoleaf"
+    "nanoWorker",
+    "nanoCtl",
+    "nanoStore"
    ]
   },
   {
-   "kind": "region",
-   "label": "New controllers in agent-device-hub (planned)",
+   "kind": "security-group",
+   "label": "Pixoo backend process (divoom-app-upgrade)",
    "wraps": [
-    "tidbyt",
-    "lifx",
-    "pclight"
+    "pixooSvc",
+    "pixooStore"
    ]
   }
  ],
  "connections": [
   {
-   "id": "obs",
+   "id": "observe",
    "from": "providers",
-   "to": "emitters",
-   "label": "observations",
+   "to": "hooks",
+   "label": "lifecycle events",
    "variant": "emphasis",
    "fromSide": "right",
    "toSide": "left",
-   "labelDy": 60
+   "labelDy": 55
   },
   {
-   "id": "submit",
-   "from": "emitters",
+   "id": "ingest",
+   "from": "hooks",
+   "to": "hubRoutes",
+   "label": "POST events",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": -40,
+   "labelDy": 24
+  },
+  {
+   "id": "ui",
+   "from": "dashboard",
+   "to": "hubRoutes",
+   "label": "read · control",
+   "variant": "security",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 44,
+   "labelDy": 24
+  },
+  {
+   "id": "mcp",
+   "from": "mcpClients",
+   "to": "hubRoutes",
+   "label": "MCP tools",
+   "variant": "security",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 40,
+   "labelDy": 24
+  },
+  {
+   "id": "reduce",
+   "from": "hubRoutes",
    "to": "core",
-   "label": "bounded submit",
+   "label": "ingest · snapshot",
    "variant": "emphasis",
    "fromSide": "right",
    "toSide": "left",
-   "labelDy": 60
+   "labelDy": 55
   },
   {
-   "id": "publish",
+   "id": "commit",
    "from": "core",
-   "to": "feed",
-   "label": "revisions",
-   "variant": "emphasis",
+   "to": "hubStore",
+   "label": "commit revision",
    "fromSide": "right",
    "toSide": "left",
-   "labelDy": 26
+   "labelDy": 55
   },
   {
-   "id": "proj-pixoo",
-   "from": "feed",
-   "to": "pixoo",
+   "id": "imports",
+   "from": "mcpModule",
+   "to": "hubRoutes",
+   "label": "imports",
    "variant": "dashed",
-   "fromSide": "bottom",
-   "toSide": "top"
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 55
   },
   {
-   "id": "proj-nano",
-   "from": "feed",
-   "to": "nanoleaf",
-   "variant": "dashed",
-   "fromSide": "bottom",
-   "toSide": "top"
-  },
-  {
-   "id": "proj-tidbyt",
-   "from": "feed",
-   "to": "tidbyt",
-   "variant": "dashed",
-   "fromSide": "bottom",
-   "toSide": "top"
-  },
-  {
-   "id": "proj-lifx",
-   "from": "feed",
-   "to": "lifx",
-   "label": "projection to each controller",
+   "id": "feed-nano",
+   "from": "hubRoutes",
+   "to": "nanoCtl",
+   "label": "state feed",
    "variant": "dashed",
    "fromSide": "bottom",
    "toSide": "top",
-   "labelDy": 98
-  },
-  {
-   "id": "proj-pc",
-   "from": "feed",
-   "to": "pclight",
-   "variant": "dashed",
-   "fromSide": "bottom",
-   "toSide": "top"
-  },
-  {
-   "id": "req",
-   "from": "clients",
-   "to": "routing",
-   "label": "commands",
-   "variant": "emphasis",
-   "fromSide": "right",
-   "toSide": "left",
-   "labelDy": 26
-  },
-  {
-   "id": "cmd-pixoo",
-   "from": "routing",
-   "to": "pixoo",
-   "label": "native command",
-   "variant": "security",
-   "fromSide": "top",
-   "toSide": "bottom",
-   "labelDy": -18
+   "labelSegment": 1,
+   "labelDx": -60,
+   "labelDy": 12
   },
   {
    "id": "cmd-nano",
-   "from": "routing",
-   "to": "nanoleaf",
-   "label": "native command",
+   "from": "hubRoutes",
+   "to": "nanoCtl",
+   "label": "controller v1 command",
    "variant": "security",
-   "fromSide": "top",
-   "toSide": "bottom",
-   "labelDx": 52,
-   "labelDy": -18
+   "fromSide": "bottom",
+   "toSide": "right",
+   "labelSegment": 1,
+   "labelDx": -30,
+   "labelDy": 0
   },
   {
-   "id": "contract-routing",
-   "from": "contracts",
-   "to": "routing",
-   "label": "validates",
+   "id": "feed-pixoo",
+   "from": "hubRoutes",
+   "to": "pixooSvc",
+   "label": "state feed",
    "variant": "dashed",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelSegment": 1,
+   "labelDx": 60,
+   "labelDy": 12
+  },
+  {
+   "id": "cmd-pixoo",
+   "from": "hubRoutes",
+   "to": "pixooSvc",
+   "label": "controller v1 command",
+   "variant": "security",
+   "fromSide": "bottom",
+   "toSide": "left",
+   "labelSegment": 1,
+   "labelDx": 40,
+   "labelDy": 0
+  },
+  {
+   "id": "nano-queue",
+   "from": "nanoCtl",
+   "to": "nanoWorker",
+   "label": "queued work",
+   "variant": "emphasis",
    "fromSide": "left",
    "toSide": "right",
-   "labelDy": 26
+   "labelDy": 29
+  },
+  {
+   "id": "nano-state",
+   "from": "nanoCtl",
+   "to": "nanoStore",
+   "label": "state · lock",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 40,
+   "labelDy": 24
+  },
+  {
+   "id": "nano-lights",
+   "from": "nanoWorker",
+   "to": "lights",
+   "label": "transmit",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 34,
+   "labelDy": 24
+  },
+  {
+   "id": "pixoo-state",
+   "from": "pixooSvc",
+   "to": "pixooStore",
+   "label": "private",
+   "fromSide": "right",
+   "toSide": "left",
+   "labelDy": 29
+  },
+  {
+   "id": "pixoo-dev",
+   "from": "pixooSvc",
+   "to": "pixooDev",
+   "label": "serialized upload",
+   "variant": "emphasis",
+   "fromSide": "bottom",
+   "toSide": "top",
+   "labelDx": 56,
+   "labelDy": 24
   }
  ],
  "cards": [
   {
    "dot": "cyan",
-   "title": "Source API; installation pending",
+   "title": "Observation path",
    "items": [
-    "Provider hooks report allowlisted lifecycle metadata and fail open",
-    "The core interprets observations once; controllers only project state",
-    "Pixoo embeds the core; optional Linux standalone source is delivered"
+    "Provider hooks send allowlisted lifecycle metadata and return within their bound",
+    "The core interprets observations once and commits each revision to its private store",
+    "Consumers receive revision notifications and read the current snapshot"
    ]
   },
   {
    "dot": "rose",
    "title": "Command path",
    "items": [
-    "Dashboard and MCP send requests; desk presets remain planned",
-    "Registered routing sends each command to its existing owner",
+    "Dashboard and MCP clients authenticate at the hub routes",
+    "The hub sends controller v1 commands to each existing owner",
     "Per-device queues: an offline device cannot stall another"
    ]
   },
@@ -369,9 +502,9 @@
    "dot": "emerald",
    "title": "Ownership",
    "items": [
-    "Each physical device has one designated writer and private state",
-    "Nanoleaf selects one input; new controllers remain planned",
-    "Stale task colors stay steady; new turns clear Nanoleaf notices"
+    "One active agent-state owner; Pixoo can embed the same core",
+    "Each physical device keeps one designated writer and private state",
+    "Music, rules and new controllers are labelled separately"
    ]
   }
  ]
