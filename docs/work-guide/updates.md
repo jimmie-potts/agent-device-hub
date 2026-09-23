@@ -1,3 +1,19 @@
+## September 22, 2026: Depot CI cutover candidate
+
+The Depot copies of the Checks and Work guide workflows entered Hub `main` in
+commit `17e003f`. Hub PR #164 updates workflow tests and delivery documentation
+to use those copies as the CI gate. The original GitHub Actions workflows are
+disabled in repository settings. The change does not affect device work, issue
+states, guide sections, diagrams or public guide content. Guide inputs and
+generated HTML retain their existing snapshot dates.
+
+Node 24 `npm ci`, `npm run check:workflow` and `npm run test:workflow` pass.
+The workflow check reports 11 valid specifications and 13 valid archived changes;
+all 15 workflow tests pass. Guide generation, maintenance and browser checks are
+successful. The browser check covers desktop, mobile and print; generated HTML
+is unchanged at SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
+Publication and live verification are separate.
+
 ## September 22, 2026: Keyboard-owned A/B scope revision
 
 The owner removed keyboard A/B and attached Dual Super Buttons from B.U.N.N.Y.
@@ -37,7 +53,7 @@ No assertion was removed. All nine diagrams passed 9/9 deterministic checks.
 The mouse viewer passed its standalone browser check. The preset viewer retains
 vertical overflow (heights 1372/1500/1500/1526 at the four desktop sizes), without
 horizontal overflow; it is not a visual-check pass. Screenshots were inspected.
-Guide HTML SHA-256: `544b84087ee0a26e172373241c2de86f53bc8e9fb017084494e2495773bfb75d`.
+Guide HTML SHA-256: `cd9e5eb427536332286b6c3798f7ad3f4f3cd4c0224957f9b68563c6a4215ef4`.
 Independent review found and removed one stale A/B-editor claim in the architecture introduction; the generator and output now state the keyboard-owned boundary. No behavior assertion was removed. Independent-review and hosted-CI results remain revision-specific PR evidence.
 
 ## September 22, 2026: Pixoo general controls closeout
