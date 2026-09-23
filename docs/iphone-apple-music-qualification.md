@@ -1,10 +1,10 @@
 # iPhone Apple Music through the Sony HT-A9
 
-Qualification for [Hub #158](https://github.com/jimmie-potts/agent-device-hub/issues/158), observed September 23, 2026. This records a live AirPlay stream from the owner's iPhone to the owner's Sony HT-A9. It selects a source for later implementation; it does not deliver the hub integration from [#36](https://github.com/jimmie-potts/agent-device-hub/issues/36).
+Qualification for [Hub #158](https://github.com/jimmie-potts/agent-device-hub/issues/158), observed September 23, 2026. This records live AirPlay streams from the owner's iPhone to the owner's Sony HT-A9 and Sonos Move. It selects a source for later implementation; it does not deliver the hub integration from [#36](https://github.com/jimmie-potts/agent-device-hub/issues/36).
 
-## Live check
+## Sony HT-A9 check
 
-The owner supplied the exact model and LAN target, started Apple Music over AirPlay, made a timed track change, authorized transport calls, and confirmed their effects on the phone. The target address and track metadata are omitted. No software was installed, no settings were changed, and no other speaker was contacted.
+The owner supplied the exact model and LAN target, played Apple Music over AirPlay, made a timed track change, authorized transport calls, and confirmed their effects on the phone. The target address and track metadata are omitted. No software was installed or settings changed.
 
 | Check | Observation |
 | --- | --- |
@@ -21,9 +21,24 @@ The first timing attempt was inconclusive: a content change appeared three secon
 
 These observations qualify this HT-A9 and its current AirPlay path. They do not establish behavior for other Sony models, other inputs, network outages, or an installed hub adapter. A Sony method's advertised availability alone would not have proved iPhone control; the phone confirmations above supply that evidence. Sony's [HT-A9 AirPlay help guide](https://helpguide.sony.net/ht/a9/v1/en/contents/TP1000029246.html) describes the phone-to-speaker path, while the local API readbacks establish this model's metadata and control behavior.
 
+## Sonos Move check
+
+The Sony response lacked position and duration, so the owner supplied an explicit Sonos Move target and switched the iPhone's AirPlay output to it. The read-only inspection used the Move's local UPnP AVTransport API directly; no SoCo installation or discovery was needed. The owner separately authorized transport calls and confirmed their phone effects. The Move reported model number S17. Its address, track metadata, and artwork URL are omitted.
+
+| Check | Observation |
+| --- | --- |
+| AirPlay metadata | `GetPositionInfo` returned title, creator/artist, album, a track duration, and a relative position that advanced during playback. `GetTransportInfo` reported `PLAYING`. The track URI used the `x-sonos-vli` scheme; the owner confirmed the iPhone was playing to the Move. |
+| Artwork | The metadata included an `albumArtURI` hosted by the Move. A bounded request to that URL returned JPEG bytes with `image/jpeg`. The local URL must stay out of shared payloads. |
+| Track change | In a 400 ms polling loop, the changed title/artist/album and new duration/position appeared at 01:55:31.546 Eastern after the owner aimed to tap Next at 01:55:30. The approximate observed delay was 1.5 seconds; the tap was not instrumented to the millisecond. UPnP event callbacks were not tested across WSL's NAT. |
+| Pause | `GetCurrentTransportActions` listed Pause, Next, and Previous. A `Pause` call returned HTTP 200, `GetTransportInfo` changed to `PAUSED_PLAYBACK` within 0.5 seconds, and the owner confirmed the iPhone paused. The owner resumed playback from the phone. |
+| Next | A `Next` call returned HTTP 200, metadata changed within 0.5 seconds, and the owner confirmed the iPhone advanced. |
+| Previous | A `Previous` call returned HTTP 200. The same track's position reset from about 27 seconds to about one second within two seconds, and the owner confirmed the iPhone restarted the current song. This does not prove a second Previous would select the prior song. |
+
+This check qualifies the Move's current AirPlay path. It does not establish other Sonos models, grouped-speaker behavior, event callback delivery to WSL, network recovery, or an installed hub adapter. [SoCo's documented track fields](https://docs.python-soco.com/en/stable/api/soco.core.html) describe the local API surface; the observations above came from direct requests to this Move.
+
 ## Recommendation and playback contract
 
-Use the HT-A9 Audio Control API as the second playback source after #36 defines the hub service. The Sony check supplied title, artist, album, artwork, push changes, pause, next, and previous. Do not run a Sonos or fallback spike for this decision: the issue makes those conditional on missing Sony fields or control, and those capabilities were observed on the primary target. The source will lack position and duration unless a later live check finds them.
+Use the HT-A9 Audio Control API as the second hub playback source after #36 defines the service. It is the owner's preferred speaker, and the live check supplied title, artist, album, artwork, outbound WebSocket changes, and phone-confirmed pause, next, and previous. Position and duration were absent, which triggered the Sonos check. The Move supplied those progress fields and the same basic controls, but it is the owner's fallback output; building only its adapter would leave the preferred Sony route without a live source. A Sony-only adapter will not observe playback when the phone switches to the Move. Qualifying a future Sonos adapter remains possible; it is not part of [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175). Neither result required the Linux AirPlay receiver or Last.fm fallback spikes.
 
 Extend the #36 snapshot model to retain a separate snapshot per source, each with a stable source id, observed-at time, age, availability, playback state, track identity, metadata, supported controls, and optional bounded artwork. The new id should be based on a user-configured neutral receiver id, such as `iphone-airplay-sony:<receiver-id>`; never use the receiver address or a track title as identity. Keep the Windows source id assigned by #36. Mark each source stale or unavailable independently, without turning a missing observation into `PAUSED`.
 
@@ -31,7 +46,7 @@ Use an explicit selected-source setting for the single active presentation and c
 
 The receiver adapter should poll for an initial snapshot and recovery, then use the WebSocket notification as a change signal and fetch a fresh `getPlayingContentInfo` snapshot. Coalesce duplicate notifications. Its artwork fetch should accept only the configured receiver's local endpoint, bound the response, verify the bytes, and pass artwork through #36's bounded artwork policy rather than exposing the local URL. Treat absent position, duration, or artwork as absent data. Keep the adapter beside the active hub owner; the WSL trial proves unicast and an outbound WebSocket on this network, but not reliable discovery or callback routing across NAT.
 
-[Home Assistant's Sony Songpal integration](https://www.home-assistant.io/integrations/songpal) provides local push and general media actions, so it could reuse the same device API. For this single source, direct integration is the smaller runtime and ownership path: it avoids adding Home Assistant, its entity bridge, and a second source of freshness/command state solely for playback. Reconsider Home Assistant under [#11](https://github.com/jimmie-potts/agent-device-hub/issues/11) if broader device integrations justify that runtime. No Home Assistant installation or comparative live trial was performed.
+[Home Assistant's Sony Songpal integration](https://www.home-assistant.io/integrations/songpal) provides local push and general media actions, and its [Sonos integration](https://www.home-assistant.io/integrations/sonos) supports local media control. For the selected Sony source, direct integration is the smaller runtime and ownership path: it avoids adding Home Assistant, its entity bridge, and a second source of freshness/command state solely for playback. Reconsider Home Assistant under [#11](https://github.com/jimmie-potts/agent-device-hub/issues/11) if broader device integrations justify that runtime. No Home Assistant installation or comparative live trial was performed.
 
 ## Next delivery boundary
 
