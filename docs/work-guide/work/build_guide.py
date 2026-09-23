@@ -223,6 +223,11 @@ TIMELINE = TL.build(HISTORY, SNAPSHOT['refreshedAt'], ISSUES, {g['id']: g['short
 # source review has its own timestamp separate from the backlog snapshot.
 receipt_by_id = {r['id']: r for r in DIAGRAM_RECEIPTS['diagrams']}
 assert [d['id'] for d in AD.DIAGRAMS] == [r['id'] for r in DIAGRAM_RECEIPTS['diagrams']], 'Rendered diagrams do not match definitions'
+for diagram in AD.DIAGRAMS:
+    # A definition edited without rerunning architecture_diagrams.py leaves every saved file stale.
+    spec_path, receipt = AD.SPECS / f"{diagram['id']}.json", receipt_by_id[diagram['id']]
+    assert spec_path.read_text(encoding='utf-8') == AD.spec_text(diagram), f"Stale specification for {diagram['id']}: rerun architecture_diagrams.py"
+    assert AD.sha256(spec_path) == receipt['specification']['sha256'], f"Specification for {diagram['id']} differs from its render receipt"
 for receipt in DIAGRAM_RECEIPTS['diagrams']:
     validation = receipt['validation']
     assert validation['checksPassed'] == validation['checkCount'] == 9 and validation['errors'] == 0 and validation['warnings'] == 0, receipt['id']
@@ -232,7 +237,7 @@ METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], staticSnapshot=True, openIs
                 guideCount=len(GUIDES), projectCount=len(REPOS), repositoryCounts=COUNTS,
                 primaryCoverage=coverage, completedBaselines=['H5', 'N29', 'P12', 'P26', 'P29', 'P37', 'H2', 'H4', 'H7'],
                 history=TIMELINE['meta'],
-                architecture=dict(reviewedAt=AD.SOURCES['reviewedAt'], renderedAt=DIAGRAM_RECEIPTS['renderedAt'], sourceRevisions=AD.SOURCES['sourceRevisions'],
+                architecture=dict(reviewedAt=AD.SOURCES['reviewedAt'], renderedAt=DIAGRAM_RECEIPTS['renderedAt'], sourceRevisions=AD.SOURCES['sourceRevisions'], viewRevisions=AD.VIEW, viewsReviewedAt=AD.SOURCES['viewsReviewedAt'],
                                   diagramCount=len(AD.DIAGRAMS), diagrams=[dict(id=d['id'], kind=d['kind'], status=d['status'], viewer=f"architecture/{d['id']}.html",
                                                                                  viewerSha256=receipt_by_id[d['id']]['artifact']['sha256']) for d in AD.DIAGRAMS],
                                   countedInIssueTotals=False))
@@ -314,31 +319,50 @@ parallel_section += '<p class="parallel-boundary">Keep dependent stages in order
 
 # --- Architecture reference section -----------------------------------------
 STATUS_NAMES = {'implemented': 'Implemented source', 'planned': 'Planned composition', 'future': 'Future work'}
-figures, diagram_index = [], []
+figures, future_figures, diagram_index = [], [], []
 for number, diagram in enumerate(AD.DIAGRAMS, 1):
     svg = (AD.RENDERED / f"{diagram['id']}.svg").read_text(encoding='utf-8').replace('@@DESC@@', html.escape(diagram['summary']))
     code = f'{"A" if diagram["kind"] == "architecture" else "S"}{number}'
     reading = ''.join(f'<li>{render(item)}</li>' for item in diagram['reading'])
     boundaries = ''.join(f'<li>{render(item)}</li>' for item in diagram['boundaries'])
-    sources = ''.join(f'<a href="{html.escape(AD.src(repo, path), quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(REPOS[{"agent-device-hub": "H", "codex-nanoleaf": "N", "divoom-app-upgrade": "P"}[repo]][1])} {html.escape(path)}<span aria-hidden="true" class="external">↗</span></a>' for repo, path in diagram['sources'])
+    sources = ''.join(f'<a href="{html.escape(AD.src(repo, path, AD.pins(diagram)), quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(REPOS[{"agent-device-hub": "H", "codex-nanoleaf": "N", "divoom-app-upgrade": "P"}[repo]][1])} {html.escape(path)}<span aria-hidden="true" class="external">↗</span></a>' for repo, path in diagram['sources'])
     issues = render(' '.join(f'[[{key}]]' for key in diagram['issues']))
+    cited = {repo for repo, _ in diagram['sources']}
+    pinned = ' · '.join(f'{REPOS[{"agent-device-hub": "H", "codex-nanoleaf": "N", "divoom-app-upgrade": "P"}[repo]][1]} {revision[:8]}' for repo, revision in AD.pins(diagram).items() if repo in cited)
     viewer = f"architecture/{diagram['id']}.html"
-    diagram_index.append(f'<a href="#{diagram["id"]}">{code} · {html.escape(diagram["short"])}</a>')
-    figures.append(f'''<figure class="diagram" id="{diagram['id']}" data-kind="{diagram['kind']}" data-status="{diagram['status']}" data-code="{code}">
+    future = diagram['status'] == 'future'
+    marker = ' <span class="index-future">future</span>' if future else ''
+    diagram_index.append(f'<a href="#{diagram["id"]}">{code} · {html.escape(diagram["short"])}{marker}</a>')
+    # Sequence walkthroughs: one entry per diagram segment, in order, as in the BUNNY atlas.
+    walk = ''
+    if diagram['kind'] == 'sequence':
+        segments = diagram['spec']['segments']
+        assert len(diagram['phases']) == len(segments), f"Walkthrough phases must match the segments of {diagram['id']}"
+        steps = []
+        for segment, phase in zip(segments, diagram['phases']):
+            alternative = not segment['label'][:1].isdigit()
+            phase_sources = ' '.join(f'<a href="{html.escape(AD.src(repo, path, AD.pins(diagram)), quote=True)}" target="_blank" rel="noopener noreferrer">{html.escape(path)}<span aria-hidden="true" class="external">↗</span></a>' for repo, path in phase['sources'])
+            steps.append(f'<li class="walk-step{" walk-alt" if alternative else ""}"><h5>{html.escape(segment["label"])}</h5><p>{render(phase["text"])}</p><p class="walk-sources"><span>Sources:</span> {phase_sources}</p></li>')
+        walk = f'<div class="diagram-walk"><h4>Walk through it</h4><ol>{"".join(steps)}</ol></div>'
+    (future_figures if future else figures).append(f'''<figure class="diagram" id="{diagram['id']}" data-kind="{diagram['kind']}" data-status="{diagram['status']}" data-code="{code}">
       <figcaption><div class="diagram-head"><span class="diagram-number" aria-hidden="true">{code}</span><div class="diagram-heading"><span class="status status-{diagram['status']}">{html.escape(diagram['status_label'])}</span><h3>{html.escape(diagram['spec']['meta']['title'])}</h3></div></div>
       <p class="diagram-summary">{html.escape(diagram['summary'])}</p></figcaption>
       <div class="diagram-tools" role="group" aria-label="Controls for diagram {code}"><button type="button" class="zoom-out" aria-label="Zoom out">−</button><button type="button" class="zoom-fit">Fit</button><button type="button" class="zoom-in" aria-label="Zoom in">+</button><span class="zoom-level" aria-live="polite">100%</span><button type="button" class="viewer-toggle" aria-expanded="false" data-src="{viewer}" data-title="Interactive Archify viewer for {html.escape(diagram['spec']['meta']['title'], quote=True)}">Explore inline</button><a class="viewer-link" href="{viewer}" target="_blank" rel="noopener noreferrer">Open interactive viewer <span aria-hidden="true" class="external">↗</span></a></div>
       <div class="diagram-stage" tabindex="0" aria-label="Scrollable diagram {code}: {html.escape(diagram['spec']['meta']['title'], quote=True)}"><div class="diagram-canvas">{svg}</div></div>
       <div class="viewer-frame" hidden></div>
-      <div class="diagram-text"><div><h4>How to read it</h4><ul>{reading}</ul></div><div><h4>Boundaries and evidence</h4><ul>{boundaries}</ul></div>
-      <p class="diagram-sources"><span>Pinned sources:</span> {sources}</p><p class="diagram-issues"><span>Related issues (reference only, not counted):</span> {issues}</p></div></figure>''')
+      <div class="diagram-text"><div><h4>How to read it</h4><ul>{reading}</ul></div><div><h4>Boundaries and evidence</h4><ul>{boundaries}</ul></div>{walk}
+      <p class="diagram-sources"><span>Pinned sources ({html.escape(pinned)}):</span> {sources}</p><p class="diagram-issues"><span>Related issues (reference only, not counted):</span> {issues}</p></div></figure>''')
 
+assert [d['status'] == 'future' for d in AD.DIAGRAMS] == sorted(d['status'] == 'future' for d in AD.DIAGRAMS), 'List future diagrams last'
 architecture_section = f'''<details class="reference" id="architecture" data-diagrams="{len(AD.DIAGRAMS)}" open>
       <summary><span class="guide-number">A</span><span class="guide-heading"><span class="eyebrow">Reference · not a work guide</span><h2>Architecture and sequence diagrams</h2></span><span class="guide-count">{len(AD.DIAGRAMS)} diagrams</span><span class="chevron" aria-hidden="true">−</span></summary>
-      <div class="guide-body"><p class="intro">Three system diagrams and six sequence diagrams show the implemented local paths, the Nanoleaf Linux runtime and how the shared system composes them. The system map (A2) and the agent observation walkthrough (S4) were revised on 23 September 2026 against hub main 5db67a09; the BUNNY design atlas embeds these same definitions. Nanoleaf installed acceptance is recorded in {render('[[N55]]')}. The desktop-input and preset diagrams follow the pinned keyboard-owned boundary: B.U.N.N.Y. handles qualified mouse controls, while keyboard A/B and attached Super Buttons stay outside its configuration, dispatcher and preset bindings. Other viewers retain their dated proposal labels and source pins. Baseline sources were reviewed at <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time> against the pinned revisions listed on each diagram. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline; this guide itself loads nothing remote.</p>
+      <div class="guide-body"><p class="intro">Three system diagrams and six sequence diagrams show what runs where, who owns state and who writes to each device. Start with the system map (A2) and the agent observation walkthrough (S4); the BUNNY design atlas embeds these same two definitions, which keep their hub main 5db67a09 pins. The other seven views were revised on 23 September 2026 under {render("[[H173]]")} against Hub d8527cd3, Nanoleaf cbb94851 and Pixoo c81bc31c, following the same pattern: dashed boxes are processes, devices sit outside them, and each sequence keeps a short numbered main path with alternatives in separate lanes and a walkthrough below. Current, historical and planned behavior are labelled separately: the Nanoleaf views show the installed Linux runtime ({render("[[N55]]")}) and name the retired Windows route as historical, and the two future scenarios sit behind a marked, collapsed group. Each figure lists the revisions its sources are pinned to. The baseline review time is <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time>. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals, and their status badges come from the dated backlog snapshot. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline; this guide itself loads nothing remote.</p>
       <div class="status-legend" aria-label="Status key"><span class="status status-implemented">Implemented source</span><span class="status status-planned">Planned composition</span><span class="status status-future">Future work</span><span class="status-note">Implemented means reviewed source at the pinned revision. It is not installed-client, transport or physical evidence.</span></div>
       <nav class="diagram-index" aria-label="Diagrams">{''.join(diagram_index)}</nav>
       {''.join(figures)}
+      <details class="future-scenarios" id="future-scenarios"><summary><span class="status status-future">Future work</span> Future scenarios, not implemented <span class="future-count">{len(future_figures)} diagrams</span></summary>
+      <p class="future-note">These sequences describe planned behavior from the owning design documents. Nothing in them is implemented or installed; open them to review the intended ordering and boundaries.</p>
+      {''.join(future_figures)}</details>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
 # --- Timeline: where we've been, where we're going --------------------------
@@ -395,11 +419,13 @@ main{min-width:0;padding:0 52px 38px}.topbar{height:73px;border-bottom:1px solid
 .diagram-stage{overflow:auto;max-height:700px;border:1px solid var(--edge);background:#060a14;cursor:grab;scrollbar-width:thin}.diagram-stage.dragging{cursor:grabbing;user-select:none}.diagram-stage:focus-visible{outline-offset:-2px}.diagram-canvas{min-width:100%}.diagram-canvas>svg{display:block;width:100%;height:auto;font-family:var(--font)}
 .viewer-frame iframe{width:100%;height:640px;border:1px solid var(--edge);background:#000;margin-top:8px}
 .diagram-text{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:16px 24px}.diagram-text h4{font:10px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 7px}.diagram-text ul{margin:0;padding-left:18px;font-size:12px;line-height:1.75;color:#b5c4e1}.diagram-text li{margin:0 0 6px}
+.diagram-walk{grid-column:1/-1}.diagram-walk ol{list-style:none;margin:0;padding:0;display:grid;gap:8px;counter-reset:walk}.walk-step{border:1px solid var(--edge);border-left:3px solid var(--accent);padding:9px 12px;background:#0a1020}.walk-step.walk-alt{border-left-style:dashed;border-left-color:var(--amber,#f5b544)}.walk-step h5{margin:0 0 3px;font:600 12px/1.4 var(--font);color:var(--text)}.walk-step p{margin:0;font-size:12px;line-height:1.7;color:#b5c4e1}.walk-step .walk-sources{font:10px/1.9 var(--mono);color:var(--muted)}.walk-sources a{margin-right:10px;text-decoration:none;border-bottom:1px solid #22d3ee45}
+.future-scenarios{margin:8px 0 26px;border:1px dashed var(--edge);padding:0 16px}.future-scenarios>summary{cursor:pointer;padding:14px 0;font:600 14px/1.4 var(--font);color:var(--text);display:flex;gap:10px;align-items:center;flex-wrap:wrap}.future-count{font:10px var(--mono);color:var(--muted)}.future-note{font-size:12px;color:var(--muted);margin:0 0 14px}.index-future{font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--edge);padding:0 4px;margin-left:4px}
 .diagram-sources,.diagram-issues{grid-column:1/-1;font:11px/2.1 var(--mono);color:var(--muted);margin:0}.diagram-sources a{margin-right:12px;text-decoration:none;border-bottom:1px solid #22d3ee45}.diagram-sources span,.diagram-issues span{color:var(--text);margin-right:8px}
-@media(max-width:900px){.diagram-text{grid-template-columns:1fr}.diagram-stage{max-height:480px}.stats-row{max-width:none}.viewer-frame iframe{height:480px}.repo-chip{flex:1}}
+@media(max-width:900px){.diagram-canvas>svg{min-width:760px}.diagram-text{grid-template-columns:1fr}.diagram-stage{max-height:480px}.stats-row{max-width:none}.viewer-frame iframe{height:480px}.repo-chip{flex:1}}
 @media(max-width:600px){.stats-row .stat span{white-space:normal;font-size:8px}.diagram-head{gap:10px}.diagram-number{font-size:16px;min-width:28px}.diagram h3{font-size:15px}.diagram-tools button{padding:6px 9px}.viewer-link{margin-left:0;flex-basis:100%}.timeline-tip{max-width:240px}.chart-wrap{padding:6px}}
 @media print{.reference,.reference[hidden]{display:block!important;background:white;border:1px solid #bdc6cd;margin:0 0 19px;overflow:visible}.reference summary{display:flex;padding:15px 16px;break-after:avoid;cursor:default}.reference .guide-number{color:#7b2c8a}.chips,.timeline-tip,.diagram-tools,.viewer-frame,.chart-legend .legend-pr{display:none!important}
-.diagram{break-inside:avoid;border-color:#cbd2d8}.diagram-stage{max-height:none;overflow:visible;border:1px solid #cbd2d8;background:white;cursor:default}.diagram-canvas>svg{width:100%!important;max-height:165mm}.diagram h3,.diagram-text ul,.diagram-sources span,.diagram-issues span{color:#17212e}.diagram-number{color:#7b2c8a}.diagram-summary,.diagram-text ul,.diagram-sources,.diagram-issues,.timeline-note,.chart-legend,.status,.status-legend{color:#384756}.diagram-text h4{color:#1b6872}.diagram-sources a{color:#145565;border:0}
+.diagram{break-inside:avoid;border-color:#cbd2d8}.diagram-stage{max-height:none;overflow:visible;border:1px solid #cbd2d8;background:white;cursor:default}.diagram-canvas>svg{width:100%!important;min-width:0!important;max-height:165mm}.diagram h3,.diagram-text ul,.diagram-sources span,.diagram-issues span{color:#17212e}.diagram-number{color:#7b2c8a}.diagram-summary,.diagram-text ul,.diagram-sources,.diagram-issues,.timeline-note,.chart-legend,.status,.status-legend{color:#384756}.diagram-text h4{color:#1b6872}.diagram-sources a,.walk-sources a{color:#145565;border:0}.walk-step{background:white;border-color:#cbd2d8;break-inside:avoid}.walk-step h5{color:#17212e}.walk-step p{color:#384756}.future-scenarios{border-color:#cbd2d8}.future-scenarios>summary{color:#17212e}
 .chart-wrap{overflow:visible;border-color:#cbd2d8;background:white;break-inside:avoid}.chart-wrap svg{min-width:0}.stats-row{background:transparent;border-color:#abb5bc}.stats-row .stat strong{color:#17212e}.stats-row .stat span{color:#384756}
 .history .tick{stroke:#d5dde3}.history .tick.major{stroke:#9aa8b3}.history .tick-label,.history .row-meta,.history .repo-start text{fill:#384756}.history .row-line{stroke:#c3ccd3}.history .pr circle{stroke:white}.history .pr.milestone circle{fill:white}.history .milestone-label{fill:#17212e}.history .snapshot-line{stroke:#7b2c8a}.history .snapshot-label{fill:#7b2c8a}.history .row-label{fill:#17212e}
 .roadmap .slot.even{fill:#f1f5f7}.roadmap .slot-label,.roadmap .track-label,.roadmap .node-meta{fill:#384756}.roadmap .track-label.main{fill:#1b6872}.roadmap .edge{stroke:#8a9ba8}.roadmap .edge.cross{stroke:#a06bb0}.roadmap marker path{fill:#8a9ba8}.roadmap .node rect{fill:white;stroke:#8a9ba8}.roadmap .node.main rect,.roadmap .node.ready rect{stroke:#1b6872}.roadmap .node.ready rect{fill:#e6f4f7}.roadmap .node-label{fill:#17212e}.timeline .dim{opacity:1}}
@@ -429,7 +455,8 @@ JS = '''
  // without joining the issue accounting.
  const guides = [...document.querySelectorAll('.guide')];
  const refs = [...document.querySelectorAll('.reference')];
- const evidence = [...document.querySelectorAll('.delivery-evidence,.guide-evidence')];
+ const evidence = [...document.querySelectorAll('.delivery-evidence,.guide-evidence,.future-scenarios')];
+ const future = document.querySelector('.future-scenarios');
  const sections = [...guides, ...refs];
  const figures = [...document.querySelectorAll('.diagram')];
  const architecture = document.querySelector('#architecture');
@@ -455,10 +482,12 @@ JS = '''
      evidence.forEach(s => s.open = true);
      guides.forEach(g => { const show = haystacks.get(g).includes(query); g.hidden = !show; navById.get(g.id).hidden = !show; if (show) { count++; issues += Number(g.dataset.count); g.open = true; } });
      figures.forEach(f => { const show = haystacks.get(f).includes(query); f.hidden = !show; if (show) diagrams++; });
+     future.hidden = !figures.some(f => !f.hidden && future.contains(f));
      architecture.hidden = diagrams === 0; navById.get('architecture').hidden = diagrams === 0; if (diagrams) architecture.open = true;
      timeline.hidden = true; navById.get('timeline').hidden = true;
    } else {
      if (saved) { restore(saved); saved = null; }
+     future.hidden = false;
      count = guides.length; issues = guides.reduce((n, g) => n + Number(g.dataset.count), 0); diagrams = figures.length;
    }
    result.textContent = `${plural(count, 'guide')} · ${plural(issues, 'issue')} in these guides · ${plural(diagrams, 'diagram')}`;
@@ -475,8 +504,9 @@ JS = '''
    const target = figure ? figure.closest('.reference') : sections.find(s => s.id === id);
    if (!target) return;
    if (target.hidden || (figure && figure.hidden)) { search.value = ''; filter(); }
-   const wasClosed = !target.open;
+   const wasClosed = !target.open || (figure && future.contains(figure) && !future.open);
    target.open = true;
+   if (figure && future.contains(figure)) future.open = true;
    setCurrent(target.id);
    if (figure || wasClosed) requestAnimationFrame(() => document.getElementById(id).scrollIntoView({block: 'start'}));
  }
@@ -491,7 +521,7 @@ JS = '''
    sections.forEach(s => observer.observe(s));
  }
  let beforePrint = null;
- window.addEventListener('beforeprint', () => { if (!beforePrint) beforePrint = snapshot(); [...sections, ...evidence].forEach(s => {s.open = true; s.hidden = false;}); figures.forEach(f => f.hidden = false); });
+ window.addEventListener('beforeprint', () => { if (!beforePrint) beforePrint = snapshot(); [...sections, ...evidence].forEach(s => {s.open = true; s.hidden = false;}); figures.forEach(f => f.hidden = false); future.hidden = false; });
  window.addEventListener('afterprint', () => { if (beforePrint) restore(beforePrint); beforePrint = null; });
  document.querySelector('#print').addEventListener('click', () => window.print());
  // Diagram zoom, fit, drag-to-pan and the optional inline Archify viewer.

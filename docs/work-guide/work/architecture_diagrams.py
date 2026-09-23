@@ -26,11 +26,18 @@ RECEIPTS = ARCH / 'source-receipts.json'
 ARCHIFY = Path(os.environ.get('ARCHIFY_DIR', Path.home() / '.agents' / 'skills' / 'archify'))
 
 SOURCES = json.loads(RECEIPTS.read_text())
-SOURCE_URL = {(f['repo'], f['path']): f['url'] for f in SOURCES['files']}
+SOURCE_URL = {(f['repo'], f['path'], f['revision']): f['url'] for f in SOURCES['files']}
+# The system map and observation walkthrough (shared with the BUNNY atlas) keep
+# sourceRevisions; the other views were revised later against viewRevisions.
+BASELINE, VIEW = SOURCES['sourceRevisions'], SOURCES['viewRevisions']
 
 
-def src(repo, path):
-    return SOURCE_URL[(repo, path)]
+def src(repo, path, revisions=BASELINE):
+    return SOURCE_URL[(repo, path, revisions[repo])]
+
+
+def pins(diagram):
+    return diagram.get('revisions', BASELINE)
 
 
 # ---------------------------------------------------------------------------
@@ -93,9 +100,9 @@ N = 'codex-nanoleaf'
 P = 'divoom-app-upgrade'
 
 # ---------------------------------------------------------------------------
-# 1. Implemented local command paths
+# 1. Local MCP command paths (current source; Nanoleaf on its Linux runtime)
 # ---------------------------------------------------------------------------
-SIZE1 = [170, 62]
+SIZE1 = [150, 62]
 
 
 def c1(id, type, label, sublabel, row, col, tag=None):
@@ -106,51 +113,49 @@ def c1(id, type, label, sublabel, row, col, tag=None):
 
 
 D1 = arch(
-    'Implemented local command paths',
+    'Local MCP command paths',
     components=[
         c1('browser', 'frontend', 'Browser / native client', '/api · /controller/v1', 0, 2),
-        c1('codex', 'external', 'Local Codex', 'MCP client · Windows or WSL', 1, 0),
+        c1('codex', 'external', 'Local Codex', 'MCP client', 1, 0),
         c1('pixooMcp', 'security', 'Pixoo /mcp route', 'bearer · Host/Origin checks', 1, 1, 'optional'),
-        c1('pixooSvc', 'backend', 'ControlService', 'catalog · player · request ledger', 1, 2),
-        c1('pixooQueue', 'messagebus', 'Adapter queue', 'serialized · one writer', 1, 3),
-        c1('mcpPkg', 'backend', 'device-mcp 1.0.0', 'library: tools + transport', 2, 1, 'no listener · no writer'),
-        c1('pixooDev', 'external', 'Pixoo 64×64', 'simulator default · explicit device', 2, 3),
-        c1('nanoHost', 'security', 'Nanoleaf MCP host', 'Node · loopback /mcp', 3, 0, 'optional'),
-        c1('nanoRoute', 'backend', 'Route', 'windows-http or wsl-helper', 3, 1),
-        c1('nanoApi', 'security', 'Windows controller API', '/controller/v1 · bearer', 3, 2),
-        c1('nanoWorker', 'backend', 'Windows light worker', 'existing owner of writes', 3, 3),
-        c1('nanoState', 'database', 'Private SQLite', 'Windows only · never mounted', 4, 2),
-        c1('lights', 'external', 'Nanoleaf Lines', 'configured LAN device', 5, 3),
+        c1('pixooSvc', 'backend', 'ControlService', 'ledger · catalog · Player', 1, 2),
+        c1('pixooAdapter', 'messagebus', 'Device adapter', 'serialized queue', 1, 3, 'sole display writer'),
+        c1('pixooDev', 'external', 'Pixoo 64×64', 'simulator unless selected', 1, 4),
+        c1('mcpPkg', 'backend', 'device-mcp 1.0.0', 'library code in each host', 2, 1, 'no listener · no writer'),
+        c1('nanoHost', 'security', 'Nanoleaf MCP host', 'Node · 127.0.0.1:41230', 3, 1, 'optional'),
+        c1('nanoCtl', 'security', 'Nanoleaf controller', '/controller/v1 · :41231', 3, 2, 'bearer'),
+        c1('nanoWorkers', 'backend', 'Device workers', 'one instance per device', 3, 3, 'one writer each'),
+        c1('nanoDevs', 'external', 'Lines · NL22 panels', 'registered LAN devices', 3, 4),
+        c1('nanoStore', 'database', 'Nanoleaf SQLite', 'Linux-owned · private', 4, 2),
     ],
     connections=[
         {'id': 'codex-pixoo', 'from': 'codex', 'to': 'pixooMcp', 'label': 'app tools', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
         {'id': 'pixoo-mcp-svc', 'from': 'pixooMcp', 'to': 'pixooSvc', 'label': 'request_id', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
         {'id': 'browser-svc', 'from': 'browser', 'to': 'pixooSvc', 'label': 'HTTP · SSE', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 44, 'labelDy': 24},
-        {'id': 'svc-queue', 'from': 'pixooSvc', 'to': 'pixooQueue', 'label': 'player · display', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
-        {'id': 'queue-dev', 'from': 'pixooQueue', 'to': 'pixooDev', 'label': 'upload · control', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 56, 'labelDy': 24},
-        {'id': 'pkg-pixoo', 'from': 'mcpPkg', 'to': 'pixooMcp', 'label': 'imports', 'variant': 'dashed', 'fromSide': 'top', 'toSide': 'bottom', 'labelDx': 34},
-        {'id': 'pkg-nano', 'from': 'mcpPkg', 'to': 'nanoRoute', 'label': 'imports', 'variant': 'dashed', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 34, 'labelDy': 24},
-        {'id': 'codex-nano', 'from': 'codex', 'to': 'nanoHost', 'label': 'status · mode_set', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 60, 'labelDy': 24},
-        {'id': 'nano-route', 'from': 'nanoHost', 'to': 'nanoRoute', 'label': 'controller v1', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': -18},
-        {'id': 'route-api', 'from': 'nanoRoute', 'to': 'nanoApi', 'label': 'loopback HTTP', 'variant': 'security', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
-        {'id': 'api-worker', 'from': 'nanoApi', 'to': 'nanoWorker', 'label': 'queued work', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
-        {'id': 'api-state', 'from': 'nanoApi', 'to': 'nanoState', 'label': 'receipts', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 36, 'labelDy': 24},
-        {'id': 'worker-lights', 'from': 'nanoWorker', 'to': 'lights', 'label': 'transmit', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 36, 'labelDy': 24},
+        {'id': 'svc-adapter', 'from': 'pixooSvc', 'to': 'pixooAdapter', 'label': 'Player writes', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
+        {'id': 'adapter-dev', 'from': 'pixooAdapter', 'to': 'pixooDev', 'label': 'upload', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
+        {'id': 'pixoo-imports', 'from': 'pixooMcp', 'to': 'mcpPkg', 'label': 'imports', 'variant': 'dashed', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 34, 'labelDy': 24},
+        {'id': 'nano-imports', 'from': 'nanoHost', 'to': 'mcpPkg', 'label': 'imports', 'variant': 'dashed', 'fromSide': 'top', 'toSide': 'bottom', 'labelDx': 34, 'labelDy': -14},
+        {'id': 'codex-nano', 'from': 'codex', 'to': 'nanoHost', 'label': 'status · mode_set', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'left', 'labelDx': 60, 'labelDy': 24},
+        {'id': 'host-ctl', 'from': 'nanoHost', 'to': 'nanoCtl', 'label': 'loopback HTTP', 'variant': 'security', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
+        {'id': 'ctl-workers', 'from': 'nanoCtl', 'to': 'nanoWorkers', 'label': 'queued work', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
+        {'id': 'ctl-store', 'from': 'nanoCtl', 'to': 'nanoStore', 'label': 'journal · receipts', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 50, 'labelDy': 24},
+        {'id': 'workers-devs', 'from': 'nanoWorkers', 'to': 'nanoDevs', 'label': 'transmit', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelDy': 26},
     ],
     boundaries=[
-        {'kind': 'region', 'label': 'Pixoo backend process (divoom-app-upgrade)', 'wraps': ['pixooMcp', 'pixooSvc', 'pixooQueue']},
-        {'kind': 'security-group', 'label': 'Windows host (codex-nanoleaf) keeps writes and private state', 'wraps': ['nanoApi', 'nanoWorker', 'nanoState']},
+        {'kind': 'region', 'label': 'Pixoo backend process (divoom-app-upgrade)', 'wraps': ['pixooMcp', 'pixooSvc', 'pixooAdapter']},
+        {'kind': 'security-group', 'label': 'Nanoleaf Linux runtime (codex-nanoleaf, WSL)', 'wraps': ['nanoHost', 'nanoCtl', 'nanoWorkers', 'nanoStore']},
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'Pixoo path (implemented)', 'items': ['Strict application extensions carry the native string request_id', 'Native controller v1, browser and MCP share one request ledger', 'One serialized adapter queue; simulator unless device mode is selected']},
-        {'dot': 'violet', 'title': 'Nanoleaf path (implemented)', 'items': ['Controller-v1 envelope: requestId, expectedConfigurationRevision, expectedGeneration', 'Windows uses direct loopback HTTP; WSL uses the configured Windows Python helper', 'Neither route opens the Windows SQLite database']},
-        {'dot': 'slate', 'title': 'Shared library', 'items': ['device-mcp registers tools and validates transport', 'It opens no listener and starts no device writer', 'Host ownership stays with each application']},
+        {'dot': 'cyan', 'title': 'Pixoo route', 'items': ['MCP tools carry the issued string request_id', 'Browser, MCP and native controller v1 share one ledger', 'Only the device adapter writes; simulator unless a device is selected']},
+        {'dot': 'violet', 'title': 'Nanoleaf route', 'items': ['MCP host calls the controller directly over numeric loopback', 'Envelope: requestId, expectedConfigurationRevision, expectedGeneration', 'Each registered device has its own worker and lock']},
+        {'dot': 'slate', 'title': 'Shared library', 'items': ['Both hosts import device-mcp to register tools and check transport', 'It opens no listener and starts no device writer']},
     ],
-    layout={'mode': 'grid', 'origin': [40, 40], 'cols': 4, 'cellW': 170, 'cellH': 62, 'gapX': 90, 'gapY': 58},
+    layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 150, 'cellH': 62, 'gapX': 90, 'gapY': 72},
     views=[
-        {'id': 'pixoo-route', 'label': 'Pixoo route', 'focus': ['codex', 'pixooMcp', 'pixooSvc', 'pixooQueue', 'pixooDev', 'browser'], 'note': 'Codex, browser and optional native clients share the same services and one queue.'},
-        {'id': 'nanoleaf-route', 'label': 'Nanoleaf route', 'focus': ['codex', 'nanoHost', 'nanoRoute', 'nanoApi', 'nanoWorker', 'nanoState', 'lights'], 'note': 'The MCP host forwards controller-v1 requests; the Windows worker keeps the writes.'},
-        {'id': 'shared-library', 'label': 'Shared library', 'focus': ['mcpPkg', 'pixooMcp', 'nanoRoute', 'nanoHost'], 'note': 'Reusable code, separately owned hosts.'},
+        {'id': 'pixoo-route', 'label': 'Pixoo route', 'focus': ['codex', 'pixooMcp', 'pixooSvc', 'pixooAdapter', 'pixooDev', 'browser'], 'note': 'Codex, browser and native clients share one service and one writer.'},
+        {'id': 'nanoleaf-route', 'label': 'Nanoleaf route', 'focus': ['codex', 'nanoHost', 'nanoCtl', 'nanoWorkers', 'nanoStore', 'nanoDevs'], 'note': 'The MCP host forwards controller v1 requests; each device worker keeps its own writes.'},
+        {'id': 'shared-library', 'label': 'Shared library', 'focus': ['mcpPkg', 'pixooMcp', 'nanoHost'], 'note': 'Reusable code, separately owned hosts.'},
     ],
 )
 
@@ -297,147 +302,149 @@ D3 = seq(
 )
 
 # ---------------------------------------------------------------------------
-# 4. Nanoleaf command admission, replay and cancellation (implemented)
+# 4. Nanoleaf command admission, replay and cancellation (current source)
 # ---------------------------------------------------------------------------
 D4 = seq(
     'nanoleaf-command', 'Nanoleaf command admission, replay and cancellation',
     participants=[
         {'id': 'codex', 'type': 'external', 'label': 'Local Codex', 'sublabel': 'MCP client'},
-        {'id': 'host', 'type': 'security', 'label': 'Nanoleaf MCP host', 'sublabel': 'Node · no second ledger'},
-        {'id': 'api', 'type': 'security', 'label': 'Windows controller API', 'sublabel': '/controller/v1'},
-        {'id': 'worker', 'type': 'backend', 'label': 'Windows worker', 'sublabel': 'owns light writes'},
+        {'id': 'host', 'type': 'security', 'label': 'MCP host', 'sublabel': 'Node · no second ledger'},
+        {'id': 'api', 'type': 'security', 'label': 'Controller', 'sublabel': 'Linux · /controller/v1'},
+        {'id': 'worker', 'type': 'backend', 'label': 'Lines worker', 'sublabel': 'sole Lines writer'},
         {'id': 'device', 'type': 'external', 'label': 'Nanoleaf Lines', 'sublabel': 'LAN device'},
     ],
     steps=[
-        ('seg', 'Read first'),
+        ('seg', '1 · Read status'),
         ('msg', 'codex', 'host', 'nanoleaf_status', 'emphasis'),
         ('msg', 'host', 'api', 'GET snapshot (bearer, exact Host)', 'security'),
         ('msg', 'api', 'host', 'snapshot: nextRequestId · configurationRevision · generation', 'return'),
         ('msg', 'host', 'codex', 'status (desired · pending · unknown observation)', 'return'),
-        ('seg', 'Admit one command'),
+        ('seg', '2 · Admit one command'),
         ('msg', 'codex', 'host', 'nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}', 'emphasis'),
         ('msg', 'host', 'api', 'POST /controller/v1/commands', 'security', 'authentication and scope are checked before replay lookup'),
-        ('msg', 'api', 'worker', 'queue mode work (identity reserved atomically; revision and generation validated)', 'emphasis'),
         ('msg', 'api', 'host', '202 receipt: queued', 'return'),
         ('msg', 'host', 'codex', 'receipt (queued is not visible light)', 'return'),
+        ('seg', '3 · Queue and transmit'),
+        ('msg', 'api', 'worker', 'queued mode work (identity reserved; revision and generation validated)', 'emphasis'),
         ('msg', 'worker', 'device', 'transmit after a second generation check', 'emphasis'),
         ('msg', 'device', 'worker', 'transport acknowledgment', 'return'),
         ('msg', 'worker', 'api', 'sent (transport evidence only)', 'dashed'),
-        ('seg', 'Alternatives at admission'),
+        ('seg', 'Alternative · rejected at admission, no effect'),
         ('msg', 'api', 'host', 'exact duplicate → original receipt, no new write', 'return'),
         ('msg', 'api', 'host', 'changed payload → 409 request-conflict', 'return'),
         ('msg', 'api', 'host', 'expired identity → 410 request-expired', 'return'),
-        ('msg', 'api', 'host', 'stale revision/generation → 409 before any effect', 'return'),
-        ('seg', 'Alternatives after admission'),
+        ('msg', 'api', 'host', 'stale revision or generation → 409 before any effect', 'return'),
+        ('seg', 'Alternative · after admission'),
         ('msg', 'worker', 'api', 'superseded generation → cancelled, prior effects retained', 'dashed'),
-        ('msg', 'worker', 'api', 'partial or uncertain → priorEffects possible; request held', 'dashed'),
+        ('msg', 'worker', 'api', 'partial or uncertain → possible effects; mode held', 'dashed'),
         ('msg', 'host', 'codex', 'delivery timeout after dispatch → original requestId + possible effects', 'return', 'no replacement identity and no automatic retry'),
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'Two tools only', 'items': ['nanoleaf_status and nanoleaf_mode_set; modes Work, Quiet, Free', 'No power, arbitrary brightness, scenes or zones in this binding']},
-        {'dot': 'violet', 'title': 'Identity discipline', 'items': ['Status issues nextRequestId; clients never mint identities', 'Duplicates join, conflicts reject, expired identities reject', 'Superseded work cancels; a second generation check runs right before side effects']},
-        {'dot': 'amber', 'title': 'Evidence limits', 'items': ['sent is transport evidence, not optical proof', 'MCP disconnection alone does not stop admitted controller work', 'Failed or uncertain machine modes are held until a fresh explicit request']},
+        {'dot': 'cyan', 'title': 'Two MCP tools', 'items': ['nanoleaf_status and nanoleaf_mode_set; modes Work, Quiet, Free', 'Native controller clients can also set power, brightness and saved scenes; MCP does not expose them']},
+        {'dot': 'violet', 'title': 'Identity discipline', 'items': ['Status issues nextRequestId; clients never mint identities', 'Duplicates join, conflicts reject, expired identities reject', 'A second generation check runs right before the write']},
+        {'dot': 'amber', 'title': 'Evidence limits', 'items': ['sent is transport evidence, not optical proof', 'Stopping the MCP host does not stop admitted work', 'Failed or uncertain modes are held until a fresh explicit request']},
     ],
     views=[
         {'id': 'happy', 'label': 'Admit and send', 'focus': ['codex', 'host', 'api', 'worker', 'device'], 'note': 'One identity, one queued write.'},
-        {'id': 'alt', 'label': 'Rejections', 'focus': ['host', 'api', 'worker'], 'note': 'Replay, conflict, expiry and cancellation.'},
+        {'id': 'alt', 'label': 'Alternatives', 'focus': ['host', 'api', 'worker'], 'note': 'Replay, conflict, expiry and cancellation.'},
     ],
-    width=1180,
+    width=1180, segment_gap=30,
 )
 
 # ---------------------------------------------------------------------------
-# 5. Pixoo media selection and playback ownership (implemented)
+# 5. Pixoo media selection and playback ownership (current source)
 # ---------------------------------------------------------------------------
 D5 = seq(
     'pixoo-playback', 'Pixoo media selection and playback ownership',
     participants=[
         {'id': 'client', 'type': 'external', 'label': 'Client', 'sublabel': 'Codex MCP or browser'},
-        {'id': 'service', 'type': 'backend', 'label': 'ControlService', 'sublabel': 'HTTP/MCP ledger'},
+        {'id': 'service', 'type': 'backend', 'label': 'ControlService', 'sublabel': 'request ledger'},
         {'id': 'library', 'type': 'database', 'label': 'Library', 'sublabel': 'renditions · playlists'},
-        {'id': 'player', 'type': 'backend', 'label': 'Player', 'sublabel': 'backend playback'},
-        {'id': 'adapter', 'type': 'messagebus', 'label': 'Adapter queue', 'sublabel': 'serialized writer'},
+        {'id': 'player', 'type': 'backend', 'label': 'Player', 'sublabel': 'session queue'},
+        {'id': 'adapter', 'type': 'messagebus', 'label': 'Device adapter', 'sublabel': 'sole display writer'},
         {'id': 'device', 'type': 'external', 'label': 'Pixoo', 'sublabel': 'simulator or device'},
     ],
     steps=[
-        ('seg', 'Read catalog and status'),
+        ('seg', '1 · Read catalog and status'),
         ('msg', 'client', 'service', 'get_status · list_media · list_playlists', 'emphasis'),
         ('msg', 'service', 'client', 'status {nextRequestId} · catalog page (names are untrusted data)', 'return', 'reads never probe the display or refresh evidence timestamps'),
-        ('seg', 'Select media'),
+        ('seg', '2 · Select and admit'),
         ('msg', 'client', 'service', 'show_media {rendition_id, request_id} or play_playlist {playlist_id, revision, request_id}', 'emphasis'),
         ('msg', 'service', 'library', 'resolve stored rendition · check playlist revision', 'default', 'matching identity joins; different payload conflicts'),
-        ('msg', 'library', 'service', 'rendition + bounded policy (or revision-conflict)', 'return'),
+        ('msg', 'library', 'service', 'rendition + bounded policy', 'return'),
         ('msg', 'service', 'player', 'showMedia / start(playlistId, revision)', 'emphasis'),
-        ('msg', 'player', 'service', 'context admitted (session, rendition)', 'return'),
         ('msg', 'service', 'client', 'receipt: admitted; upload may still be loading', 'return'),
-        ('seg', 'Backend playback continues'),
+        ('seg', '3 · Backend playback'),
         ('msg', 'player', 'adapter', 'upload rendition frames (generation g)', 'emphasis'),
         ('msg', 'adapter', 'device', 'serialized upload · control', 'emphasis'),
         ('msg', 'device', 'adapter', 'transport ack (not visible proof)', 'return'),
         ('msg', 'player', 'adapter', 'dwell elapsed → next item (retire older work)', 'dashed', 'client disconnect does not cancel admitted playback'),
-        ('seg', 'Recovery and screen rules'),
-        ('msg', 'client', 'service', 'lost response → get_status, reconcile (no new identity)', 'dashed'),
-        ('msg', 'client', 'service', 'set_screen off → playback pauses', 'security'),
-        ('msg', 'client', 'service', 'set_screen on → nothing resumes', 'security'),
+        ('seg', 'Alternative · lost response or stale playlist'),
+        ('msg', 'client', 'service', 'lost response → get_status and reconcile (same identity)', 'dashed'),
+        ('msg', 'library', 'service', 'stale playlist revision → revision-conflict; current playback kept', 'return'),
+        ('seg', 'Alternative · screen, Monitor and restart'),
+        ('msg', 'client', 'service', 'set_screen off → pause; set_screen on → nothing resumes', 'security'),
+        ('msg', 'service', 'player', 'Monitor selected → media pauses; the dashboard uses the same Player', 'security'),
         ('msg', 'player', 'library', 'restart → restore paused context, no device write', 'dashed'),
     ],
     cards=[
-        {'dot': 'cyan', 'title': 'One owner', 'items': ['Browser, MCP and native controller v1 share one ledger and writer', 'Playback tools never import or edit media or pick raw device targets']},
-        {'dot': 'violet', 'title': 'Receipts and evidence', 'items': ['A receipt acknowledges admission; upload can still be loading', 'Reconcile a lost response with status, not a new write identity', 'Native snapshots retain upload outcomes across cancellation']},
-        {'dot': 'amber', 'title': 'Preserved behavior', 'items': ['Screen off pauses; screen on does not resume', 'Paused context and referenced renditions survive restart', 'Original media and referenced renditions stay intact']},
+        {'dot': 'cyan', 'title': 'One writer', 'items': ['Browser, MCP and native controller v1 share one ledger', 'The Player orders sessions; only the device adapter writes', 'Monitor and Media share that Player, so there is never a second writer']},
+        {'dot': 'violet', 'title': 'Receipts and evidence', 'items': ['A receipt acknowledges admission; upload can still be loading', 'Reconcile a lost response with status, not a new identity']},
+        {'dot': 'amber', 'title': 'Preserved behavior', 'items': ['Screen off pauses; screen on does not resume', 'Paused context and referenced renditions survive restart', 'Leaving Monitor keeps media paused until Resume']},
     ],
     views=[
         {'id': 'select', 'label': 'Select', 'focus': ['client', 'service', 'library', 'player'], 'note': 'Identity, revision and rendition checks before admission.'},
-        {'id': 'play', 'label': 'Play', 'focus': ['player', 'adapter', 'device'], 'note': 'Serialized writes owned by the backend.'},
+        {'id': 'play', 'label': 'Play', 'focus': ['player', 'adapter', 'device'], 'note': 'The Player orders work; the adapter alone writes.'},
     ],
-    width=1240,
+    width=1240, segment_gap=30,
 )
 
 # ---------------------------------------------------------------------------
 # 6. Independent Codex mouse controls (future, H63–H66, H70)
 # ---------------------------------------------------------------------------
 D6 = seq(
-    'desktop-input', 'Independent Codex mouse controls',
+    'desktop-input', 'Independent Codex mouse controls (planned mapper)',
     participants=[
         {'id': 'user', 'type': 'external', 'label': 'User', 'sublabel': 'shared navigation keys'},
-        {'id': 'dispatcher', 'type': 'backend', 'label': 'Windows dispatcher', 'sublabel': 'local, no hub'},
-        {'id': 'profile', 'type': 'database', 'label': 'Control profile', 'sublabel': 'bindings + app scope'},
+        {'id': 'dispatcher', 'type': 'backend', 'label': 'Windows dispatcher', 'sublabel': 'planned · no hub'},
+        {'id': 'profile', 'type': 'database', 'label': 'Control profile', 'sublabel': 'planned · bindings + scope'},
         {'id': 'app', 'type': 'frontend', 'label': 'Focused app', 'sublabel': 'Codex or other'},
     ],
     steps=[
-        ('seg', 'Profile selection'),
+        ('seg', '1 · Select a profile'),
         ('msg', 'user', 'dispatcher', 'select control profile', 'emphasis'),
         ('msg', 'dispatcher', 'profile', 'load mappings; no input or device commands', 'default'),
-        ('seg', 'One Codex action'),
+        ('seg', '2 · One Codex action'),
         ('msg', 'user', 'dispatcher', 'fresh mapped navigation press', 'emphasis'),
         ('msg', 'dispatcher', 'profile', 'resolve control, app scope and action', 'default'),
         ('msg', 'dispatcher', 'app', 'next attention task · command menu · previous task · next task', 'emphasis', 'exactly one action per deliberate press'),
-        ('seg', 'Boundaries'),
+        ('msg', 'dispatcher', 'user', 'report dispatch separately from app success', 'return'),
+        ('seg', 'Alternative · outside Codex or not a fresh press'),
         ('msg', 'dispatcher', 'app', 'outside Codex → ordinary mouse behavior', 'dashed'),
         ('msg', 'dispatcher', 'profile', 'held / repeated / stale input → no duplicate or replay', 'dashed'),
-        ('msg', 'dispatcher', 'user', 'report dispatch separately from app success', 'return'),
     ],
     cards=[
         {'dot': 'cyan', 'title': 'Independent path', 'items': ['Mouse dispatch needs no hub, shared monitoring, general controls or Music', 'Keyboard A/B and attached Super Buttons stay outside B.U.N.N.Y.']},
         {'dot': 'violet', 'title': 'Ownership', 'items': ['The keyboard owns its A/B assignments, including personal Wispr and Enter mappings', 'B.U.N.N.Y. does not edit, store, dispatch or use them for presets']},
-        {'dot': 'amber', 'title': 'Brief trial passed', 'items': ['N30 actions, outside-app behavior and stopping passed (H64)', 'Other devices share these keys inside Codex; no per-device filtering', 'H65/H66 still own implementation and installation']},
+        {'dot': 'amber', 'title': 'What exists today', 'items': ['Only a brief AutoHotkey trial (H64); no profile store yet', 'Other devices share these keys inside Codex; no per-device filtering', 'H65/H66 own the mapper and its installation']},
     ],
-    width=1100,
+    width=1100, segment_gap=30,
 )
 
 # ---------------------------------------------------------------------------
 # 7. Configured presets, partial results and manual handoff (future, H67–H69, H71)
 # ---------------------------------------------------------------------------
 D7 = seq(
-    'big-b-presets', 'Desk presets, partial results and manual handoff',
+    'big-b-presets', 'Desk presets, partial results and manual handoff (planned)',
     participants=[
         {'id': 'user', 'type': 'external', 'label': 'User', 'sublabel': 'preset binding · vendor app'},
-        {'id': 'dispatcher', 'type': 'backend', 'label': 'Windows dispatcher', 'sublabel': 'binding + feedback'},
-        {'id': 'hub', 'type': 'security', 'label': 'Hub preset service', 'sublabel': 'authoritative selection'},
+        {'id': 'dispatcher', 'type': 'backend', 'label': 'Windows dispatcher', 'sublabel': 'planned · feedback'},
+        {'id': 'hub', 'type': 'security', 'label': 'Hub preset service', 'sublabel': 'planned · owns selection'},
         {'id': 'nanoleaf', 'type': 'backend', 'label': 'Nanoleaf owner', 'sublabel': 'Work/Quiet/Free'},
         {'id': 'pixoo', 'type': 'backend', 'label': 'Pixoo owner', 'sublabel': 'Monitor/Media'},
     ],
     steps=[
-        ('seg', 'Fresh press, one transition'),
+        ('seg', '1 · Fresh press, one transition'),
         ('msg', 'user', 'dispatcher', 'fresh configured preset press', 'emphasis'),
         ('msg', 'dispatcher', 'hub', 'request next preset (Work → Free → Quiet → Work) with known revision', 'emphasis'),
         ('msg', 'hub', 'nanoleaf', 'supported native command + requestId/revision/generation', 'security'),
@@ -446,11 +453,11 @@ D7 = seq(
         ('msg', 'pixoo', 'hub', 'failed: offline (independent queue)', 'return'),
         ('msg', 'hub', 'dispatcher', 'selected preset + per-device results (partial)', 'return'),
         ('msg', 'dispatcher', 'user', 'visible feedback: requested, sent, failed, uncertain', 'return', 'transport outcomes are not optical proof'),
-        ('seg', 'Manual change stays until the next explicit preset'),
+        ('seg', '2 · Manual change stays until the next explicit preset'),
         ('msg', 'user', 'nanoleaf', 'manual scene change in the vendor app', 'dashed'),
         ('msg', 'user', 'dispatcher', 'next fresh configured preset press', 'emphasis'),
         ('msg', 'hub', 'nanoleaf', 'supported ownership handoff, then preset action', 'security'),
-        ('seg', 'No replay'),
+        ('seg', 'Alternative · startup, reconnect or hub unavailable'),
         ('msg', 'dispatcher', 'hub', 'startup · reconnect · profile selection → no presses replayed, no device commands', 'dashed'),
         ('msg', 'hub', 'dispatcher', 'hub unavailable → reported; local mouse controls keep working', 'return'),
     ],
@@ -459,55 +466,60 @@ D7 = seq(
         {'dot': 'violet', 'title': 'Independent results', 'items': ['One offline device cannot stall others', 'A partial operation is never shown as complete', 'Native modes and restoration limits are preserved']},
         {'dot': 'amber', 'title': 'Prerequisites', 'items': ['H67 needs H63, H32, H31, H5, Nanoleaf #49 and Pixoo #33', 'H68 needs H65 and H67; H69 also needs H8', 'Manual dispatch does not need automation engine H45; Music H71 follows H40, H68 and H36']},
     ],
-    width=1180,
+    width=1180, segment_gap=30,
 )
 
 # ---------------------------------------------------------------------------
-# 8. Supervised source migration (H5); installed cutover remains H8
+# 8. Supervised owner migration (H5, H8 source); no installed run recorded
 # ---------------------------------------------------------------------------
 D8 = seq(
     'owner-migration', 'Embedded core to standalone owner',
     participants=[
-        {'id': 'operator', 'type': 'external', 'label': 'Operator', 'sublabel': 'explicit authorization'},
-        {'id': 'tooling', 'type': 'security', 'label': 'Migration tooling', 'sublabel': 'supervised Node children'},
-        {'id': 'pixoo', 'type': 'backend', 'label': 'Pixoo embedded owner', 'sublabel': 'session-source facade'},
-        {'id': 'hub', 'type': 'backend', 'label': 'Standalone hub owner', 'sublabel': 'same core, new host'},
+        {'id': 'operator', 'type': 'external', 'label': 'Operator', 'sublabel': 'authorizes each run'},
+        {'id': 'tooling', 'type': 'security', 'label': 'Migration tooling', 'sublabel': 'supervised calls'},
+        {'id': 'pixoo', 'type': 'backend', 'label': 'Embedded owner', 'sublabel': 'Pixoo backend'},
+        {'id': 'hub', 'type': 'backend', 'label': 'Standalone hub', 'sublabel': 'new owner · fenced'},
         {'id': 'producers', 'type': 'external', 'label': 'Producers', 'sublabel': 'provider hooks'},
-        {'id': 'consumers', 'type': 'frontend', 'label': 'Consumers', 'sublabel': 'Pixoo and Nanoleaf'},
+        {'id': 'consumers', 'type': 'frontend', 'label': 'Consumers', 'sublabel': 'Pixoo · Nanoleaf'},
     ],
     steps=[
-        ('seg', 'Quiesce'),
+        ('seg', '1 · Revoke and quiesce'),
         ('msg', 'operator', 'tooling', 'authorize migration (named owner)', 'emphasis'),
         ('msg', 'tooling', 'producers', 'remove old setup; verify access revoked', 'security'),
-        ('msg', 'tooling', 'pixoo', 'quiesce old owner; preserve state', 'security'),
-        ('seg', 'Export, import, validate'),
-        ('msg', 'tooling', 'pixoo', 'versioned export: source/session/notice identity + revisions', 'emphasis'),
-        ('msg', 'pixoo', 'tooling', 'private export; verified graceful exit', 'return'),
-        ('msg', 'tooling', 'hub', 'single-use import into fenced empty store', 'emphasis'),
-        ('msg', 'hub', 'tooling', 'validated: identities, revisions, notices unchanged', 'return'),
-        ('msg', 'tooling', 'pixoo', 'keep old reducer inactive; facade → remote owner', 'security', 'remote mode never starts a second local reducer'),
-        ('seg', 'Switch and resync'),
-        ('msg', 'tooling', 'producers', 'fresh setup receipt; stage disabled route', 'emphasis'),
-        ('msg', 'tooling', 'consumers', 'Pixoo route; Nanoleaf preflight / select', 'emphasis'),
-        ('msg', 'consumers', 'hub', 'authoritative snapshot / resync', 'default'),
-        ('msg', 'hub', 'consumers', 'snapshot (no replayed effects)', 'return'),
-        ('msg', 'producers', 'hub', 'enable after readiness; open admission', 'default'),
-        ('seg', 'Rollback (only after quiescing the new owner)'),
-        ('msg', 'tooling', 'hub', 'revoke setup; quiesce new owner', 'dashed'),
-        ('msg', 'tooling', 'hub', 'latest export → fresh store; recheck routes', 'dashed'),
+        ('msg', 'tooling', 'pixoo', 'quiesce and stop: drain, export identities + revisions', 'security'),
+        ('msg', 'pixoo', 'tooling', 'validated export; graceful exit verified', 'return'),
+        ('seg', '2 · Import behind a fence'),
+        ('msg', 'tooling', 'hub', 'start staged: single-use import into an empty store', 'emphasis', 'fence persisted first; reads allowed, ingestion and acknowledgment rejected'),
+        ('msg', 'hub', 'tooling', 'imported: identities, revisions, notices unchanged', 'return'),
+        ('seg', '3 · Stage routes'),
+        ('msg', 'tooling', 'producers', 'point setup at the new owner; emission disabled', 'emphasis'),
+        ('msg', 'tooling', 'consumers', 'Pixoo restarts as remote facade · Nanoleaf preflight and select', 'emphasis', 'remote mode never starts a second local reducer'),
+        ('seg', '4 · Activate'),
+        ('msg', 'tooling', 'hub', 'activate: recheck routes, credentials, consumer snapshots', 'emphasis'),
+        ('msg', 'consumers', 'hub', 'read authoritative snapshot (no replayed effects)', 'default'),
+        ('msg', 'hub', 'tooling', 'producers enabled; fence cleared; admission open', 'return'),
+        ('seg', 'Alternative · a step fails: stop, nothing continues'),
+        ('msg', 'hub', 'tooling', 'activation fails → attempt consumed; admission stays fenced', 'return'),
+        ('msg', 'tooling', 'operator', 'report and stop; the old owner is not resumed automatically', 'return'),
+        ('msg', 'operator', 'tooling', 'recover explicitly: export staged state → another empty store', 'dashed'),
+        ('seg', 'Alternative · operator rollback after accepted writes'),
+        ('msg', 'operator', 'tooling', 'request rollback (explicit, never automatic)', 'dashed'),
+        ('msg', 'tooling', 'producers', 'revoke current setup while its owner can confirm', 'dashed'),
+        ('msg', 'tooling', 'hub', 'stop new owner; export its latest state', 'dashed'),
+        ('msg', 'tooling', 'hub', 'import into another fresh host store; recheck consumers before writes reopen', 'dashed'),
     ],
     cards=[
         {'dot': 'cyan', 'title': 'One owner at a time', 'items': ['Embedded and standalone owners never run against one state', 'A stale feed stays visibly stale until recovery or rollback']},
-        {'dot': 'violet', 'title': 'What moves', 'items': ['Identities, session/notice state, revisions and producer configuration', 'Pixoo’s facade switches renderer, feed, label and acknowledgment operations to the selected owner']},
-        {'dot': 'amber', 'title': 'Owned elsewhere', 'items': ['Hub #8 source adds reversible setup and Nanoleaf cutover', 'Controller databases stay private; Windows/WSL never share a mounted SQLite file', 'Legacy Nanoleaf ingestion remains until a verified cutover; repository moves and hosting are separate']},
+        {'dot': 'violet', 'title': 'What moves', 'items': ['Identities, session/notice state, revisions and producer configuration', 'Pixoo’s facade reads the feed and sends labels and acknowledgments to the selected owner']},
+        {'dot': 'amber', 'title': 'Recovery is explicit', 'items': ['A failed step leaves admission fenced and waits for the operator', 'Rollback targets a fresh store; embedded ownership is never restored into Pixoo’s old store', 'Controller databases stay private throughout']},
     ],
-    width=1240,
+    width=1240, segment_gap=30,
 )
 
 # ---------------------------------------------------------------------------
-# 9. Proposed fresh Nanoleaf Linux runtime
+# 9. Installed Nanoleaf Linux runtime
 # ---------------------------------------------------------------------------
-SIZE9 = [165, 64]
+SIZE9 = [150, 64]
 
 
 def c9(id, type, label, sublabel, row, col, tag=None):
@@ -518,47 +530,53 @@ def c9(id, type, label, sublabel, row, col, tag=None):
 
 
 D9 = arch(
-    'Proposed fresh Nanoleaf Linux runtime',
+    'Nanoleaf Linux runtime (installed)',
     components=[
         c9('browser', 'frontend', 'Windows browser', 'wall map client', 0, 0),
-        c9('desktop', 'external', 'Codex Desktop', 'Windows · tasks execute in WSL', 0, 2),
+        c9('desktop', 'external', 'Codex Desktop', 'Windows app · tasks in WSL', 0, 2),
         c9('cliClient', 'external', 'Codex CLI', 'Ubuntu WSL', 0, 3),
-        c9('wallMap', 'frontend', 'Python wall map', '127.0.0.1:8765', 1, 0, 'proposed'),
-        c9('desktopJson', 'database', 'Mounted Desktop JSON', 'project · title · unread · read-only', 1, 1),
-        c9('hooksCli', 'backend', 'Linux hooks and CLI', 'Python · fail-open hooks', 1, 2, 'proposed'),
-        c9('mcpHost', 'security', 'Node MCP host', '127.0.0.1:41230', 1, 3, 'proposed'),
-        c9('linuxState', 'database', 'Linux SQLite', '~/.local/share/codex-nanoleaf', 2, 2, 'fresh state'),
-        c9('controller', 'security', 'Python controller', '127.0.0.1:41231 · bearer', 2, 3, 'proposed'),
-        c9('worker', 'backend', 'On-demand worker', 'Python · sole light writer', 3, 2, 'existing behavior'),
-        c9('lights', 'external', 'Nanoleaf Lines', 'configured LAN device', 3, 4),
+        c9('wallMap', 'frontend', 'Wall map service', 'user service · :8765', 1, 1),
+        c9('desktopJson', 'database', 'Desktop metadata', 'Windows JSON · mounted', 0, 1, 'read-only'),
+        c9('hooksCli', 'backend', 'Hooks and CLI', 'short-lived · legacy input', 1, 2),
+        c9('mcpHost', 'security', 'MCP host', 'user service · :41230', 1, 3),
+        c9('linuxState', 'database', 'Nanoleaf SQLite', 'Linux data directory', 2, 2, 'private · ext4'),
+        c9('controller', 'security', 'Controller', 'user service · :41231', 2, 3, 'bearer'),
+        c9('panelsWorker', 'backend', 'NL22 worker', 'own lock · on demand', 3, 2, 'source · hardware check open'),
+        c9('linesWorker', 'backend', 'Lines worker', 'instance wall · on demand', 3, 3, 'reads shared feed'),
+        c9('hub', 'backend', 'Shared monitor (hub)', 'separate WSL service · A2', 3, 4, 'installed'),
+        c9('panels', 'external', 'NL22 Light Panels', 'LAN device', 4, 2),
+        c9('lines', 'external', 'Nanoleaf Lines', 'LAN device', 4, 3),
     ],
     connections=[
-        {'id': 'desktop-hooks', 'from': 'desktop', 'to': 'hooksCli', 'label': 'WSL task lifecycle', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'desktop-json', 'from': 'desktop', 'to': 'desktopJson', 'label': 'configured files', 'fromSide': 'left', 'toSide': 'top'},
-        {'id': 'json-map', 'from': 'desktopJson', 'to': 'wallMap', 'label': 'metadata read', 'variant': 'security', 'fromSide': 'left', 'toSide': 'right', 'labelAt': [223, 230]},
-        {'id': 'browser-map', 'from': 'browser', 'to': 'wallMap', 'label': 'HTTP :8765', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'cli-hooks', 'from': 'cliClient', 'to': 'hooksCli', 'label': 'lifecycle · commands', 'variant': 'emphasis', 'fromSide': 'left', 'toSide': 'top', 'labelDy': 28},
-        {'id': 'cli-mcp', 'from': 'cliClient', 'to': 'mcpHost', 'label': 'MCP :41230', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'hooks-state', 'from': 'hooksCli', 'to': 'linuxState', 'label': 'task state', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'map-state', 'from': 'wallMap', 'to': 'linuxState', 'label': 'task preferences', 'fromSide': 'bottom', 'toSide': 'left', 'labelDy': 30},
-        {'id': 'mcp-controller', 'from': 'mcpHost', 'to': 'controller', 'label': 'HTTP 127.0.0.1:41231', 'variant': 'security', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'controller-state', 'from': 'controller', 'to': 'linuxState', 'label': 'command receipts', 'fromSide': 'left', 'toSide': 'right', 'labelAt': [623, 342]},
-        {'id': 'controller-worker', 'from': 'controller', 'to': 'worker', 'label': 'start on demand', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'right', 'labelDy': 24},
-        {'id': 'state-worker', 'from': 'linuxState', 'to': 'worker', 'label': 'shared state · lock', 'fromSide': 'bottom', 'toSide': 'top', 'labelDy': 24},
-        {'id': 'worker-lights', 'from': 'worker', 'to': 'lights', 'label': 'one writer', 'variant': 'emphasis', 'fromSide': 'right', 'toSide': 'left', 'labelAt': [722, 454]},
+        {'id': 'browser-map', 'from': 'browser', 'to': 'wallMap', 'label': 'HTTP :8765', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'left', 'labelDy': 24},
+        {'id': 'desktop-json', 'from': 'desktop', 'to': 'desktopJson', 'label': 'own state files', 'fromSide': 'left', 'toSide': 'right', 'labelDy': 26},
+        {'id': 'json-map', 'from': 'desktopJson', 'to': 'wallMap', 'label': 'metadata read', 'variant': 'dashed', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 44, 'labelDy': 24},
+        {'id': 'desktop-hooks', 'from': 'desktop', 'to': 'hooksCli', 'label': 'task hooks', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': -30, 'labelDy': 24},
+        {'id': 'cli-hooks', 'from': 'cliClient', 'to': 'hooksCli', 'label': 'hooks · CLI', 'variant': 'emphasis', 'fromSide': 'left', 'toSide': 'right', 'labelDy': -18},
+        {'id': 'cli-mcp', 'from': 'cliClient', 'to': 'mcpHost', 'label': 'MCP', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 24, 'labelDy': 24},
+        {'id': 'hooks-state', 'from': 'hooksCli', 'to': 'linuxState', 'label': 'task events', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 40, 'labelDy': 24},
+        {'id': 'map-state', 'from': 'wallMap', 'to': 'linuxState', 'label': 'preferences', 'fromSide': 'bottom', 'toSide': 'left', 'labelDy': 24},
+        {'id': 'mcp-controller', 'from': 'mcpHost', 'to': 'controller', 'label': 'loopback HTTP', 'variant': 'security', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 40, 'labelDy': 24},
+        {'id': 'controller-state', 'from': 'controller', 'to': 'linuxState', 'label': 'journal', 'fromSide': 'left', 'toSide': 'right', 'labelDy': -14},
+        {'id': 'controller-worker', 'from': 'controller', 'to': 'linesWorker', 'label': 'start on demand', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 50, 'labelDy': 24},
+        {'id': 'state-panels', 'from': 'linuxState', 'to': 'panelsWorker', 'label': 'state · per-device lock', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 60, 'labelDy': 24},
+        {'id': 'hub-feed', 'from': 'hub', 'to': 'linesWorker', 'label': 'shared input', 'variant': 'dashed', 'fromSide': 'left', 'toSide': 'right', 'labelDy': 26},
+        {'id': 'panels-write', 'from': 'panelsWorker', 'to': 'panels', 'label': 'sole writer', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 40, 'labelDy': 24},
+        {'id': 'lines-write', 'from': 'linesWorker', 'to': 'lines', 'label': 'sole writer', 'variant': 'emphasis', 'fromSide': 'bottom', 'toSide': 'top', 'labelDx': 40, 'labelDy': 24},
     ],
     boundaries=[
-        {'kind': 'region', 'label': 'Ubuntu WSL · separate Linux processes and Linux-owned state', 'wraps': ['wallMap', 'hooksCli', 'mcpHost', 'linuxState', 'controller', 'worker']},
+        {'kind': 'region', 'label': 'Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)', 'wraps': ['wallMap', 'hooksCli', 'mcpHost', 'linuxState', 'controller', 'panelsWorker', 'linesWorker']},
     ],
     cards=[
-        {'dot': 'violet', 'title': 'Proposed process boundary', 'items': ['Hooks, CLI, wall map and controller coordinate through Linux SQLite', 'Node MCP calls the controller directly over numeric-loopback HTTP', 'The worker remains the sole light writer; setup and the map may read device geometry']},
-        {'dot': 'cyan', 'title': 'Windows remains a client', 'items': ['Codex Desktop tasks execute in WSL', 'The Windows browser opens the wall map', 'Configured project, title and unread JSON is mounted read-only']},
-        {'dot': 'amber', 'title': 'Evidence boundary', 'items': ['Fresh install; no data migration or rollback tooling', 'No combined daemon, new hook API, shared monitoring or source move', 'PR #57 is a source candidate; installed acceptance #55 remains open']},
+        {'dot': 'violet', 'title': 'Processes and state', 'items': ['Three user services: wall map, controller and MCP host', 'Workers start on demand, one instance and lock per device', 'Hooks, CLI, map and controller share the private Linux SQLite']},
+        {'dot': 'cyan', 'title': 'Input and clients', 'items': ['One input source per installation: legacy hooks or shared input', 'The installed runtime selected shared input from the hub (Nanoleaf #30)', 'Windows Desktop and browser stay clients; mounted JSON is only read']},
+        {'dot': 'amber', 'title': 'Evidence boundary', 'items': ['Fresh install, no data migration (Nanoleaf #55)', 'NL22 support is source; the joint hardware check is Nanoleaf #46', 'No runtime SQLite is shared through /mnt/c']},
     ],
-    layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 165, 'cellH': 64, 'gapX': 35, 'gapY': 48},
+    layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 150, 'cellH': 64, 'gapX': 90, 'gapY': 70},
     views=[
-        {'id': 'task-state', 'label': 'Task and state path', 'focus': ['desktop', 'cliClient', 'hooksCli', 'wallMap', 'desktopJson', 'linuxState'], 'note': 'Linux processes share Linux state while mounted Desktop metadata remains read-only.'},
-        {'id': 'mcp-command', 'label': 'MCP command path', 'focus': ['cliClient', 'mcpHost', 'controller', 'linuxState', 'worker', 'lights'], 'note': 'MCP uses direct numeric-loopback HTTP; the on-demand worker keeps the device write.'},
+        {'id': 'task-state', 'label': 'Task and state path', 'focus': ['desktop', 'cliClient', 'hooksCli', 'wallMap', 'desktopJson', 'linuxState', 'hub', 'linesWorker'], 'note': 'One selected input source feeds Linux state; mounted Desktop metadata is only read.'},
+        {'id': 'mcp-command', 'label': 'MCP command path', 'focus': ['cliClient', 'mcpHost', 'controller', 'linuxState', 'linesWorker', 'lines'], 'note': 'MCP uses numeric-loopback HTTP; the device worker keeps the write.'},
+        {'id': 'writers', 'label': 'Writers', 'focus': ['panelsWorker', 'linesWorker', 'panels', 'lines', 'linuxState'], 'note': 'One worker instance and lock per physical device.'},
     ],
 )
 
@@ -566,17 +584,17 @@ D9 = arch(
 # Guide metadata: status, explanation, boundaries, sources, related issues
 # ---------------------------------------------------------------------------
 DIAGRAMS = [
-    dict(id='arch-local-paths', spec=D1, kind='architecture', status='implemented',
-         status_label='Implemented source', short='Local command paths',
-         summary='Two implemented local routes share the reusable MCP library but keep different owning services. Codex reaches Pixoo through its optional application endpoint and reaches Nanoleaf through an optional Node host that forwards to the Windows controller API.',
-         reading=['Follow the cyan emphasis arrows: Codex → Pixoo /mcp → ControlService → one serialized queue → simulator or explicitly selected device. Browser and optional native controller routes enter the same ControlService.',
-                  'The lower route is Codex → Nanoleaf MCP host → route (direct loopback on Windows, the configured Windows Python helper on WSL) → Windows controller API → existing light worker → configured lights.',
-                  'The dashed “imports” arrows show the shared device-mcp package as library code. It opens no listener and starts no device writer.'],
-         boundaries=['Pixoo MCP tools retain their string request_id. The optional /controller/v1 boundary in [[P37]] shares that sequence, player and writer, with scoped bearer authentication and guarded native envelopes.',
-                     'Nanoleaf uses the controller v1 envelope: requestId, expectedConfigurationRevision and expectedGeneration. The two routes are not wire-identical.',
-                     'The WSL helper never opens the Windows SQLite database. Each device keeps one designated writer and private state.'],
-         sources=[(H, 'packages/mcp/README.md'), (P, 'docs/local-mcp.md'), (P, 'apps/server/src/mcp.ts'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md'), (P, 'apps/server/src/controller.ts'), (P, 'apps/server/src/controller-state.ts'), (N, 'docs/local-mcp.md'), (N, 'mcp/src/server.ts'), (N, 'mcp/src/transport.ts'), (N, 'docs/controller-api.md')],
-         issues=['P37', 'N34', 'P12']),
+    dict(id='arch-local-paths', spec=D1, kind='architecture', status='implemented', revisions=VIEW,
+         status_label='Current source; the Nanoleaf route is installed on Linux', short='Local MCP paths',
+         summary='Two device-owned MCP routes share the reusable library but keep separate services and writers. Codex reaches Pixoo through its optional application endpoint, and reaches Nanoleaf through the optional Node host, which calls the Linux controller directly. The hub’s own MCP route is in the system map (A2).',
+         reading=['Follow the green arrows. Pixoo: Codex → /mcp route → ControlService → device adapter → simulator or explicitly selected device. Browser and native controller clients enter the same ControlService.',
+                  'Nanoleaf: Codex → MCP host (127.0.0.1:41230) → controller (127.0.0.1:41231) → the worker for each registered device → Lines or NL22 panels. The controller keeps its journal in the private Linux SQLite store.',
+                  'Each dashed box is one process or runtime. The library sits outside them because each host imports it as code; the dashed “imports” arrows point from each host to the library. Devices sit outside every box.'],
+         boundaries=['Pixoo MCP tools keep their string request_id. The optional /controller/v1 boundary in [[P37]] shares the same ledger, Player and writer, with scoped bearer authentication and guarded native envelopes.',
+                     'Nanoleaf uses the controller v1 envelope: requestId, expectedConfigurationRevision and expectedGeneration. Native controller clients can also set power, brightness and saved scenes ([[N64]]); MCP exposes only status and mode. The two routes are not wire-identical.',
+                     'Historical: before the Linux runtime ([[N54]], [[N55]]), this route forwarded to a Windows controller API, directly on Windows or through a WSL helper. That legacy route stays in source for retained Windows installations. No route opens SQLite.'],
+         sources=[(H, 'packages/mcp/README.md'), (P, 'docs/local-mcp.md'), (P, 'apps/server/src/mcp.ts'), (P, 'apps/server/src/control-service.ts'), (P, 'packages/device/src/http-adapter.ts'), (P, 'docs/hub-controller-api.md'), (N, 'docs/local-mcp.md'), (N, 'mcp/src/server.ts'), (N, 'mcp/src/transport.ts'), (N, 'docs/controller-api.md'), (N, 'docs/decisions/0010-per-device-worker-and-nl22.md')],
+         issues=['P37', 'N34', 'N55', 'N64']),
     dict(id='arch-shared-system', spec=D2, kind='architecture', status='implemented',
          status_label='Source delivered at the pinned revisions; planned and future nodes are tagged', short='System map',
          summary='Where BUNNY runs at the pinned revisions. Provider hooks send lifecycle metadata to the Linux hub process, which composes the agent-state core, a private SQLite store, the authenticated HTTP routes and the embedded MCP module. Each controller keeps its own designated writer and private state. Music, rules and new controllers are labelled future or planned.',
@@ -589,17 +607,17 @@ DIAGRAMS = [
          details=MAP_DETAILS,
          sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/src/server.ts'), (H, 'apps/hub/src/storage.ts'), (H, 'apps/hub/SETUP.md'), (H, 'packages/agent-state/README.md'), (H, 'packages/mcp/README.md'), (H, 'apps/dashboard/README.md'), (H, 'docs/architecture.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py'), (N, 'docs/controller-api.md'), (P, 'docs/hub-integration.md'), (P, 'docs/hub-controller-api.md')],
          issues=['H2', 'H3', 'H5', 'H6', 'H13', 'P31', 'N29', 'N55', 'H36', 'H45', 'H16', 'H17', 'H53']),
-    dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='planned',
-         status_label='Proposed; source review and installed acceptance open', short='Nanoleaf Linux runtime',
-         summary='The accepted fresh-install proposal moves the existing Nanoleaf processes and private SQLite state into Ubuntu WSL. It keeps Windows Desktop and browser clients, direct numeric-loopback MCP transport and the existing on-demand worker as the sole light writer.',
-         reading=['Windows clients stay outside the runtime boundary. Codex Desktop tasks execute in WSL, the browser opens the wall map on port 8765, and configured project, title and unread JSON is read through the mounted filesystem without write access.',
-                  'Linux hooks, CLI, wall map and controller coordinate through Linux SQLite. The Node MCP host on port 41230 calls the Python controller directly at 127.0.0.1:41231.',
-                  'The controller starts the existing worker on demand. That worker retains the state lock and remains the sole light writer. Setup and the wall map may make bounded device reads for connection checks or geometry.'],
-        boundaries=['This is proposed architecture under [[H43]]. Nanoleaf [[N54]] owns source and setup through review candidate PR #57; [[N55]] owns installed services, real-client and physical-light acceptance.',
-                     'The installation starts with fresh Linux state. Existing Nanoleaf state need not move, and no runtime SQLite database is shared through /mnt/c.',
-                     'Data migration, rollback tooling, a combined daemon, a new hook API, shared monitoring and repository migration [[H26]] remain outside this transition.'],
-        sources=[(H, 'docs/architecture.md'), (N, 'docs/decisions/0007-linux-runtime-ownership.md'), (N, 'docs/linux-install.md'), (N, 'bridge/install_linux.py'), (N, 'bridge/README.md'), (N, 'bridge/wall_server.py')],
-         issues=['H43', 'N54', 'N55']),
+    dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='implemented', revisions=VIEW,
+         status_label='Installed in WSL (Nanoleaf #55); NL22 worker is source only', short='Nanoleaf Linux runtime',
+         summary='The installed Nanoleaf runtime in Ubuntu WSL: three user services, workers started on demand with one instance and lock per device, and private Linux SQLite. Windows Desktop and the browser remain clients. Shared input from the separately installed hub feeds the Lines worker.',
+         reading=['The dashed region is the Nanoleaf runtime inside WSL. Windows clients, the mounted Desktop metadata, the shared hub service and the devices sit outside it.',
+                  'The three user services are codex-nanoleaf-wall (:8765), codex-nanoleaf-controller (:41231) and codex-nanoleaf-mcp (:41230), all on numeric loopback. Hooks, CLI, wall map and controller coordinate through SQLite under ~/.local/share/codex-nanoleaf; the controller starts the workers on demand.',
+                  'Each registered device has its own worker instance and exclusive lock, so each physical device keeps one writer. Only the Lines instance (“wall”) reads the shared feed and runs controller work.'],
+         boundaries=['Installed acceptance of the Linux runtime is recorded in [[N55]], and of shared input in [[N30]]; [[H43]] adopted the runtime in hub architecture. The earlier Windows runtime is historical and keeps its own private state.',
+                     'NL22 panels are source with synthetic fixtures (Nanoleaf #43); the joint hardware check is [[N46]]. A transport acknowledgment is not optical proof.',
+                     'The installation started with fresh Linux state, without data migration or rollback tooling. No runtime SQLite database is shared through /mnt/c.'],
+         sources=[(H, 'docs/architecture.md'), (N, 'docs/decisions/0007-linux-runtime-ownership.md'), (N, 'docs/decisions/0010-per-device-worker-and-nl22.md'), (N, 'docs/linux-install.md'), (N, 'docs/shared-input.md'), (N, 'bridge/install_linux.py'), (N, 'bridge/devices.py'), (N, 'bridge/wall_server.py'), (N, 'bridge/controller_server.py')],
+         issues=['H43', 'N54', 'N55', 'N30', 'N46']),
     dict(id='seq-lifecycle-observation', spec=D3, kind='sequence', status='implemented',
          status_label='Delivered source path; installed and physical acceptance recorded by the owners', short='Agent observation walkthrough',
          summary='One provider observation travels from a fail-open hook to the hub, is committed once as a new revision, is published as a revision pointer, and is projected by the owning controller onto its device through that controller\'s own queue. The alternative shows reconnecting after an interruption without replay.',
@@ -612,59 +630,82 @@ DIAGRAMS = [
          phases=WALK_PHASES,
          sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/SETUP.md'), (H, 'apps/hub/src/server.ts'), (H, 'packages/agent-state/README.md'), (H, 'docs/agent-lifecycle-contract.md'), (H, 'docs/architecture.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H2', 'H3', 'H5', 'H8', 'P31', 'P33', 'N29', 'N30', 'N55']),
-    dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented',
-         status_label='Implemented source; installed and physical acceptance open', short='Nanoleaf command admission',
-         summary='Codex reads status, then submits one mode command with the issued request identity and expected revision and generation. The Windows API authenticates before replay lookup, admits the identity atomically, validates revisions, queues the work and rechecks the generation before any side effect.',
-         reading=['Phase one returns nextRequestId, configurationRevision and generation. Phase two submits nanoleaf_mode_set with those values.',
-                  'Admission alternatives: exact duplicates join or replay the original receipt without a second write; a changed payload conflicts; an expired identity rejects; a stale revision or generation rejects before any effect.',
-                  'After admission: superseded work cancels and keeps prior-effect evidence; partial or uncertain results are held. A delivery timeout after dispatch keeps the original requestId and reports possible effects.'],
-         boundaries=['Exposed tools are status and mode only. No power, arbitrary brightness, scenes or zones.',
-                     'A “sent” receipt is transport evidence, not optical proof. Stopping the MCP host does not stop already admitted controller work.',
+    dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented', revisions=VIEW,
+         status_label='Current source; installed and accepted on Linux (Nanoleaf #55)', short='Nanoleaf command admission',
+         summary='Codex reads status, then submits one mode command with the issued request identity and expected revision and generation. The Linux controller authenticates before replay lookup, admits the identity, validates revisions and queues the work; the Lines worker rechecks the generation before any write.',
+         reading=['The main path has three phases: read status, admit one command, then queue and transmit. The receipt returns before the light changes.',
+                  'The first alternative lane rejects at admission with no effect. The second covers admitted work: cancellation, held uncertain results, and a delivery timeout that keeps the original requestId.',
+                  'The Lines worker (“wall” instance) runs protected-controller work. Other registered devices have their own workers but never execute controller commands.'],
+         boundaries=['MCP exposes status and mode only. Power, brightness and saved scenes are native controller commands ([[N64]]) with the same envelope and replay rules.',
+                     'A “sent” receipt is transport evidence, not optical proof. Stopping the MCP host does not stop admitted controller work.',
                      'The host holds no second ledger and never allocates replacement identities or retries automatically.'],
-         sources=[(N, 'docs/local-mcp.md'), (N, 'docs/controller-api.md'), (N, 'mcp/src/transport.ts'), (N, 'bridge/controller_server.py'), (N, 'bridge/controller_state.py'), (H, 'docs/controller-contract.md')],
-         issues=['N34', 'N30']),
-    dict(id='seq-pixoo-playback', spec=D5, kind='sequence', status='implemented',
-         status_label='Implemented source; reliability trial open', short='Pixoo playback ownership',
-         summary='A client reads status and catalog pages, then selects media or a playlist with the issued request identity. The owning service admits the request through the shared ledger, resolves the stored rendition, admits the playback context and hands serialized uploads to the backend player and adapter.',
-         reading=['The receipt acknowledges context admission while the upload may still be loading. Backend playback continues after Codex disconnects. The optional native controller maps saved playlists into the same path; media-only tools remain local.',
-                  'Reads never probe the display or refresh observation timestamps. A lost response is reconciled with current status, not a new write identity.',
-                  'Screen off pauses playback; screen on does not resume it. Restart restores paused context without a device write.'],
+         phases=[dict(text='The MCP host reads the controller snapshot with its bearer credential and an exact Host header. The snapshot issues the next request identity with the current configuration revision and generation; clients never mint identities.', sources=[(N, 'docs/local-mcp.md'), (N, 'docs/controller-api.md')]),
+                 dict(text='nanoleaf_mode_set carries the issued requestId, expectedConfigurationRevision and expectedGeneration. Authentication and scope checks run before replay lookup. Admission reserves the identity and returns 202 queued, which is not visible light.', sources=[(N, 'docs/controller-api.md'), (N, 'mcp/src/tools.ts')]),
+                 dict(text='The Lines worker takes the queued work and checks the generation again immediately before transmitting. It reports sent, which is transport evidence only.', sources=[(N, 'docs/controller-api.md'), (N, 'docs/decisions/0010-per-device-worker-and-nl22.md')]),
+                 dict(text='Rejections happen before any effect: an exact duplicate returns its original receipt, a changed payload under the same identity is 409 request-conflict, an expired identity is 410 request-expired, and a stale revision or generation is 409 revision-conflict or stale-generation.', sources=[(N, 'docs/controller-api.md'), (N, 'mcp/src/tools.ts')]),
+                 dict(text='After admission, a newer explicit mode cancels superseded work and keeps its prior-effect evidence. A failed or uncertain mode is held until a fresh request. If delivery fails after possible dispatch, the host reports the original requestId with possible effects and never retries.', sources=[(N, 'docs/controller-api.md'), (N, 'docs/local-mcp.md')])],
+         sources=[(N, 'docs/local-mcp.md'), (N, 'docs/controller-api.md'), (N, 'mcp/src/transport.ts'), (N, 'mcp/src/tools.ts'), (N, 'bridge/controller_server.py'), (N, 'docs/decisions/0010-per-device-worker-and-nl22.md'), (H, 'docs/controller-contract.md')],
+         issues=['N34', 'N55', 'N64']),
+    dict(id='seq-pixoo-playback', spec=D5, kind='sequence', status='implemented', revisions=VIEW,
+         status_label='Current source; physical playback accepted 8 September 2026 (Pixoo #12)', short='Pixoo playback ownership',
+         summary='A client reads status and catalog pages, then selects media or a playlist with the issued request identity. ControlService admits the request through the shared ledger and resolves the stored rendition. The Player orders the session, and the device adapter alone writes to the display.',
+         reading=['Main path: read, select and admit, then backend playback. The receipt acknowledges admission while the upload may still be loading, and playback continues after the client disconnects.',
+                  'The alternative lanes are separate: a lost response is reconciled through status with the same identity, and a stale playlist revision is rejected while current playback continues.',
+                  'Screen off pauses and screen on does not resume. Selecting Monitor pauses media on the same Player; returning to Media keeps it paused until Resume. Restart restores paused context without a device write.'],
          boundaries=['Catalog names are untrusted display data. Tools never import or edit media or select raw device targets.',
-                     'Original media and referenced renditions are preserved; stale playlist revisions preserve current playback.',
-                     'Physical playback, restart and soak evidence remain with [[P12]].'],
-         sources=[(P, 'docs/local-mcp.md'), (P, 'docs/playback.md'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md'), (P, 'packages/playback/src/player.ts'), (H, 'packages/mcp/README.md')],
-         issues=['P12', 'P37']),
-    dict(id='seq-desktop-input', spec=D6, kind='sequence', status='future',
+                     'Physical playback, recovery and soak were accepted with recorded limits under [[P12]], and installed Monitor/Media behavior under [[P34]]. Variable frame timing and other firmware versions are outside those receipts.',
+                     'Original media and referenced renditions are preserved.'],
+         phases=[dict(text='get_status returns the next request identity; catalog and playlist pages are untrusted names. Reads never probe the display or refresh observation timestamps.', sources=[(P, 'docs/local-mcp.md'), (P, 'apps/server/src/control-service.ts')]),
+                 dict(text='show_media or play_playlist carries the issued request_id. The service resolves a stored rendition or checks the playlist revision; a matching identity joins, and a different payload conflicts. The receipt acknowledges admitted playback context while the upload may still be loading.', sources=[(P, 'docs/local-mcp.md'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md')]),
+                 dict(text='The Player orders session work and hands every upload to the device adapter, the only component that writes to the display. Dwell timers advance the playlist in the backend; a disconnecting client does not cancel it.', sources=[(P, 'packages/playback/src/player.ts'), (P, 'packages/device/src/http-adapter.ts')]),
+                 dict(text='After a lost response, read status and reconcile with the same identity instead of issuing a new write. A stale playlist revision returns revision-conflict and keeps current playback.', sources=[(P, 'docs/local-mcp.md'), (P, 'docs/hub-controller-api.md')]),
+                 dict(text='Screen off pauses playback and screen on resumes nothing. Monitor uses the same Player, so selecting it pauses media without a second writer. Restart restores paused context and writes nothing to the device.', sources=[(P, 'packages/playback/src/player.ts'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md')])],
+         sources=[(P, 'docs/local-mcp.md'), (P, 'docs/playback.md'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'apps/server/src/control-service.ts'), (P, 'packages/playback/src/player.ts'), (P, 'packages/device/src/http-adapter.ts'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'docs/hardware-validation.md')],
+         issues=['P12', 'P33', 'P34', 'P37']),
+    dict(id='seq-owner-migration', spec=D8, kind='sequence', status='implemented', revisions=VIEW,
+         status_label='Source delivered (Hub #5, #8); no installed migration run recorded', short='Owner migration',
+         summary='An operator-authorized migration revokes the old setup, quiesces and exports the embedded owner, imports that state behind a fence into an empty standalone store, stages producer and consumer routes, and activates only after rechecks. A failure stops with admission fenced; rollback is a separate explicit operation.',
+         reading=['Read the four numbered phases in order. Each is a supervised call that the operator authorized, and writes stay fenced until phase 4 rechecks routes, credentials and consumer snapshots.',
+                  'The first alternative lane is a failure, not a continuation: the attempt is consumed, admission stays fenced and the old owner is not resumed. Recovery exports the staged state into another empty store.',
+                  'Rollback is a second explicit operation after accepted writes: revoke setup, stop the new owner, export its latest state and import it into a fresh host store. Pixoo stays a remote facade; embedded ownership is never restored into its old store.'],
+         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements embedded storage, quiesce/export/import and the remote facade. [[H5]] delivered supervised release, fenced import and rollback after writes; [[H8]] added Linux/WSL setup and Nanoleaf cutover.',
+                     'The installed shared monitor runs as a standalone hub service ([[N30]], 22 September 2026), and Pixoo is its remote facade ([[P34]]). This diagram describes the source procedure; no installed run of it is recorded.',
+                     'Controller databases stay private; Windows and WSL never coordinate through a mounted SQLite file. Repository moves ([[H25]], [[H26]]) and container hosting ([[H42]]) are separate changes.'],
+         phases=[dict(text='The operator authorizes one named migration. Tooling removes the old producer setup and verifies revocation while the embedded owner still runs, then quiesces it: admitted work drains, a versioned export is validated and written privately, and a graceful exit is verified.', sources=[(H, 'apps/hub/SETUP.md'), (H, 'apps/hub/src/migration.ts')]),
+                 dict(text='The standalone hub starts staged against an empty store with a matching owner ID. The fence is persisted before the single-use import. Sessions stay readable; ingestion, labels and acknowledgments are rejected.', sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/src/migration.ts')]),
+                 dict(text='Producer setup is pointed at the new owner with emission disabled. Pixoo restarts as a remote facade that starts no local reducer, and Nanoleaf runs its shared-input preflight and selection while writes stay fenced.', sources=[(H, 'apps/hub/SETUP.md'), (H, 'apps/hub/src/migration-routes.ts'), (P, 'apps/server/src/monitor-source.ts')]),
+                 dict(text='Activation rechecks unchanged route files, credentials and each consumer’s live snapshot against the authoritative one. It re-enables producers, then clears the fence and opens admission. Consumers read snapshots; nothing is replayed.', sources=[(H, 'apps/hub/src/migration-routes.ts'), (H, 'apps/hub/SETUP.md')]),
+                 dict(text='A failed activation consumes that attempt and leaves admission fenced. Nothing proceeds automatically and the old owner is not resumed. Recovery is explicit: restart the destination staged, export its state and migrate into another empty store.', sources=[(H, 'apps/hub/SETUP.md'), (H, 'docs/architecture.md')]),
+                 dict(text='Rollback after accepted writes is a separate operator request: revoke the current setup while its owner can confirm, stop the new owner and export its latest state, import into a fresh host store, and repeat consumer checks before writes reopen.', sources=[(H, 'apps/hub/SETUP.md'), (H, 'docs/architecture.md')])],
+         sources=[(H, 'apps/hub/SETUP.md'), (H, 'apps/hub/README.md'), (H, 'apps/hub/src/migration.ts'), (H, 'apps/hub/src/migration-routes.ts'), (H, 'docs/architecture.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-source.ts'), (N, 'docs/shared-input.md')],
+         issues=['H5', 'H8', 'P31', 'P34', 'N29', 'N30']),
+    dict(id='seq-desktop-input', spec=D6, kind='sequence', status='future', revisions=VIEW,
          status_label='Brief app trial passed; reusable mapper planned', short='Codex mouse input',
-         summary='Selecting a control profile loads mappings and sends no input or device commands. A fresh mapped navigation press resolves application scope and one of four Codex actions. Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y.',
-         reading=['The owner passed a temporary AutoHotkey trial. The reusable mapper below remains planned: ordinary input passes through outside Codex; held, repeated or stale input must not dispatch twice or replay later.',
+         summary='Planned reusable mapper. Selecting a control profile loads mappings and sends no input or device commands. A fresh mapped navigation press resolves application scope and one of four Codex actions. Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y.',
+         reading=['Only a temporary AutoHotkey trial exists today. The profile store and dispatcher shown here are planned: ordinary input passes through outside Codex, and held, repeated or stale input must not dispatch twice or replay later.',
                   'Presets require a separately selected qualified binding and service. Keyboard A/B and attached Super Buttons are excluded.'],
          boundaries=['This path does not wait for the hub, shared monitoring, general controls or Music.',
                      'N30 85CA, receiver 062A:4101 and Codex 26.917.6896.0 passed the brief owner trial under [[H64]]. PageUp/PageDown and Back/Forward from other devices also map inside Codex. Receiver isolation and long-term recovery are unqualified.',
                      'The later editor ([[H70]]) excludes keyboard A/B, attached Super Buttons, arbitrary scripts, shell execution, raw device commands and multi-step macros.'],
+         phases=[dict(text='A profile selection only loads bindings and application scope. It sends no input and no device command.', sources=[(H, 'docs/desktop-controls.md')]),
+                 dict(text='Each fresh mapped press inside Codex resolves to exactly one of four actions: next task needing attention, command menu, previous task or next task. Dispatch is reported separately from whether the app acted.', sources=[(H, 'docs/desktop-controls.md')]),
+                 dict(text='Outside Codex the keys keep their ordinary behavior. Held, repeated or stale input never produces a duplicate or a later replay.', sources=[(H, 'docs/desktop-controls.md')])],
          sources=[(H, 'docs/desktop-controls.md')],
          issues=['H63', 'H64', 'H65', 'H66', 'H70']),
-    dict(id='seq-big-b-presets', spec=D7, kind='sequence', status='future',
+    dict(id='seq-big-b-presets', spec=D7, kind='sequence', status='future', revisions=VIEW,
          status_label='Future work behind the Codex-first milestone', short='Configured desk presets',
-         summary='A fresh configured preset press asks the hub for the next preset. The hub owns selection and revision, sends supported native commands to each controller owner, collects independent per-device results and returns them for visible feedback. The initial cycle is Work → Free → Quiet → Work.',
+         summary='Planned preset flow. A fresh configured preset press asks the hub for the next preset. The hub owns selection and revision, sends supported native commands to each controller owner, collects independent per-device results and returns them for visible feedback. The initial cycle is Work → Free → Quiet → Work.',
          reading=['One device failing or offline is reported as a partial result; it never stalls the others or looks complete.',
                   'A manual change in a vendor app remains until the next explicit preset request, which then uses supported ownership handoff.',
                   'Startup, reconnect and profile selection replay no presses and issue no device commands. If the hub is unavailable, that is reported and local mouse controls keep working. Keyboard A/B and attached Super Buttons are excluded from preset bindings.'],
          boundaries=['[[H67]] requires [[H63]], [[H32]], [[H31]], [[H5]], [[N49]] and [[P33]]. [[H68]] requires [[H65]] and [[H67]]; [[H69]] also requires [[H8]].',
                      'Manual preset dispatch does not require automation engine [[H45]]. Music [[H71]] consumes [[H40]] policy and requires [[H68]] and [[H36]]; [[H38]]/[[H39]] apply to selected branches and [[H41]] is conditional on measured audio.',
                      'Native Nanoleaf and Pixoo modes and their restoration limits are preserved; a preset is not a shared device-mode value.'],
+         phases=[dict(text='A fresh configured press asks the hub-owned preset service for the next preset in the cycle. The hub sends supported native commands through each existing controller owner and returns per-device results; a partial result is never shown as complete.', sources=[(H, 'docs/desktop-controls.md'), (H, 'docs/controller-contract.md')]),
+                 dict(text='A manual change in a vendor app stays in place until the next explicit preset request, which then uses a supported ownership handoff.', sources=[(H, 'docs/desktop-controls.md')]),
+                 dict(text='Startup, reconnect and profile selection replay no presses and send no device commands. An unavailable hub is reported while local mouse controls keep working.', sources=[(H, 'docs/desktop-controls.md')])],
          sources=[(H, 'docs/desktop-controls.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
          issues=['H67', 'H68', 'H69', 'H71']),
-    dict(id='seq-owner-migration', spec=D8, kind='sequence', status='implemented',
-         status_label='Source setup and migration delivered; installation pending', short='Owner migration',
-         summary='An explicitly authorized migration quiesces the selected route and old owner, exports and imports versioned state with its identities and revisions, validates the import, keeps the old reducer inactive, switches producer and consumer endpoints and resyncs from authoritative snapshots.',
-         reading=['Pixoo’s session-source facade switches renderer, feed, label and acknowledgment operations to the selected owner. Remote mode never starts a second local reducer.',
-                  'Rollback requires quiescing and stopping the new owner, transferring its latest export if it accepted writes, then importing into a fresh host store and validating routes before activation. Pixoo remains a remote facade with its media and preferences. Consumers reload the authoritative snapshot.'],
-         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Delivered [[H5]] source verifies supervised release, fenced import, durable route recovery and rollback after writes. [[H8]] source merged in PR #129 for Linux/WSL setup and Nanoleaf cutover; installation and real-client qualification remain pending.',
-                     'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
-                     'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
-         sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'apps/hub/SETUP.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
-         issues=['H5', 'H8', 'P31', 'N29']),
 ]
 assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)
 
@@ -674,6 +715,11 @@ assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)
 # ---------------------------------------------------------------------------
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def spec_text(diagram):
+    """The saved specification for a definition; build_guide.py compares against it."""
+    return json.dumps(diagram['spec'], indent=1, ensure_ascii=False) + '\n'
 
 
 def run(args):
@@ -725,7 +771,7 @@ def render():
     css_rules, dark_vars, light_vars = {}, {}, {}
     for diagram in DIAGRAMS:
         spec_path = SPECS / f"{diagram['id']}.json"
-        spec_path.write_text(json.dumps(diagram['spec'], indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        spec_path.write_text(spec_text(diagram), encoding='utf-8')
         out = RENDERED / f"{diagram['id']}.html"
         code, stdout, stderr = run(['node', str(ARCHIFY / 'bin' / 'archify.mjs'), 'deliver', diagram['kind'], str(spec_path), str(out), '--quality', 'showcase', '--json'])
         if code != 0:

@@ -1,6 +1,7 @@
 """Offline regression check for independent history and architecture updates."""
 from pathlib import Path
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -182,6 +183,34 @@ class GuideMaintenance(unittest.TestCase):
                 self.assertEqual(set(comment), {'url', 'createdAt', 'updatedAt'})
                 self.assertTrue(comment['url'].startswith(
                     f'https://github.com/jimmie-potts/codex-nanoleaf/issues/{number}#issuecomment-'))
+
+    def test_changed_diagram_definition_needs_regeneration(self):
+        source = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory(prefix='guide-diagram-drift-') as directory:
+            candidate = Path(directory) / 'guide'
+            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
+                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            definitions = candidate / 'work/architecture_diagrams.py'
+            # Edit one definition and leave every saved specification, receipt and render alone.
+            anchor = '\nassert len({d[\'id\'] for d in DIAGRAMS})'
+            text = definitions.read_text()
+            self.assertEqual(text.count(anchor), 1)
+            definitions.write_text(text.replace(anchor, (
+                "\nnext(d for d in DIAGRAMS if d['id'] == 'seq-nanoleaf-command')['spec']['meta']['title'] += ' (edited)'"
+                + anchor)))
+            build = [sys.executable, str(candidate / 'work/build_guide.py')]
+            result = subprocess.run(build, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Stale specification for seq-nanoleaf-command', result.stderr)
+            archify = Path(os.environ.get('ARCHIFY_DIR', Path.home() / '.agents/skills/archify'))
+            if not (archify / 'bin/archify.mjs').exists():
+                self.skipTest('Archify is not installed; regeneration half not run')
+            render = subprocess.run([sys.executable, str(definitions)], capture_output=True, text=True)
+            self.assertEqual(render.returncode, 0, render.stdout + render.stderr)
+            result = subprocess.run(build, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            viewer = (candidate / 'outputs/architecture/seq-nanoleaf-command.html').read_text()
+            self.assertIn('(edited)', viewer)
 
     def test_later_history_preserves_reviewed_architecture(self):
         source = Path(__file__).resolve().parent.parent

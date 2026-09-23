@@ -1,5 +1,5 @@
-<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 650" role="img" lang="en" aria-labelledby="seq-desktop-input-archify-diagram-title seq-desktop-input-archify-diagram-description">
-        <title id="seq-desktop-input-archify-diagram-title">Independent Codex mouse controls</title>
+<svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1070 698" role="img" lang="en" aria-labelledby="seq-desktop-input-archify-diagram-title seq-desktop-input-archify-diagram-description">
+        <title id="seq-desktop-input-archify-diagram-title">Independent Codex mouse controls (planned mapper)</title>
         <desc id="seq-desktop-input-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -24,99 +24,99 @@
         <rect width="100%" height="100%" fill="url(#seq-desktop-input-grid)" />
 
         <!-- Time Segments -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-0" x="48" y="178" width="974" height="98" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-0" x="48" y="194" width="974" height="114" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-1" x="48" y="280" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-1" x="48" y="312" width="974" height="202" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-2" x="48" y="426" width="974" height="142" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="seq-desktop-input-2" x="48" y="518" width="974" height="98" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 157 142 L 157 585" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 416.3333333333333 142 L 416.3333333333333 585" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 675.6666666666666 142 L 675.6666666666666 585" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 935 142 L 935 585" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 157 142 L 157 633" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 416.3333333333333 142 L 416.3333333333333 633" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 675.6666666666666 142 L 675.6666666666666 633" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 935 142 L 935 633" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
 
         <!-- Messages -->
         <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="select control profile" data-edge-key="0">
-          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="164,210;409.3333333333333,210" d="M 164 210 L 409.3333333333333 210" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="164,226;409.3333333333333,226" d="M 164 226 L 409.3333333333333 226" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="223.46666666666664" y="190" width="126.4" height="16" rx="3" class="c-mask"/>
-          <text x="286.66666666666663" y="200" class="t-backend" font-size="9" text-anchor="middle">select control profile</text>
+          <rect x="223.46666666666664" y="206" width="126.4" height="16" rx="3" class="c-mask"/>
+          <text x="286.66666666666663" y="216" class="t-backend" font-size="9" text-anchor="middle">select control profile</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="load mappings; no input or device commands" data-edge-key="1">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,254;668.6666666666666,254" d="M 423.3333333333333 254 L 668.6666666666666 254" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,270;668.6666666666666,270" d="M 423.3333333333333 270 L 668.6666666666666 270" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
         <g data-detail="context">
-          <rect x="430.8" y="234" width="230.4" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="244" class="t-backend" font-size="9" text-anchor="middle">load mappings; no input or device commands</text>
+          <rect x="430.8" y="250" width="230.4" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="260" class="t-backend" font-size="9" text-anchor="middle">load mappings; no input or device commands</text>
         </g>
         </g>
 
         <g data-edge-from="user" data-edge-to="dispatcher" data-edge-label="fresh mapped navigation press" data-edge-key="2">
-          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="164,312;409.3333333333333,312" d="M 164 312 L 409.3333333333333 312" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="user" data-composition-edge-to="dispatcher" data-composition-points="164,344;409.3333333333333,344" d="M 164 344 L 409.3333333333333 344" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="205.26666666666662" y="292" width="162.8" height="16" rx="3" class="c-mask"/>
-          <text x="286.66666666666663" y="302" class="t-backend" font-size="9" text-anchor="middle">fresh mapped navigation press</text>
+          <rect x="205.26666666666662" y="324" width="162.8" height="16" rx="3" class="c-mask"/>
+          <text x="286.66666666666663" y="334" class="t-backend" font-size="9" text-anchor="middle">fresh mapped navigation press</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="resolve control, app scope and action" data-edge-key="3">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,356;668.6666666666666,356" d="M 423.3333333333333 356 L 668.6666666666666 356" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,388;668.6666666666666,388" d="M 423.3333333333333 388 L 668.6666666666666 388" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
         <g data-detail="context">
-          <rect x="443.8" y="336" width="204.4" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="346" class="t-backend" font-size="9" text-anchor="middle">resolve control, app scope and action</text>
+          <rect x="443.8" y="368" width="204.4" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="378" class="t-backend" font-size="9" text-anchor="middle">resolve control, app scope and action</text>
         </g>
         </g>
 
         <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="next attention task · command menu · previous task · next task" data-edge-key="4">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="423.3333333333333,400;928,400" d="M 423.3333333333333 400 L 928 400" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="423.3333333333333,432;928,432" d="M 423.3333333333333 432 L 928 432" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="508.4666666666666" y="380" width="334.40000000000003" height="16" rx="3" class="c-mask"/>
-          <text x="675.6666666666666" y="390" class="t-backend" font-size="9" text-anchor="middle">next attention task · command menu · previous task · next task</text>
+          <rect x="508.4666666666666" y="412" width="334.40000000000003" height="16" rx="3" class="c-mask"/>
+          <text x="675.6666666666666" y="422" class="t-backend" font-size="9" text-anchor="middle">next attention task · command menu · previous task · next task</text>
         </g>
-        <text data-detail="fine" x="435.3333333333333" y="418" class="t-dim" font-size="7">exactly one action per deliberate press</text>
+        <text data-detail="fine" x="435.3333333333333" y="450" class="t-dim" font-size="7">exactly one action per deliberate press</text>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="outside Codex → ordinary mouse behavior" data-edge-key="5">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="423.3333333333333,458;928,458" d="M 423.3333333333333 458 L 928 458" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+        <g data-edge-from="dispatcher" data-edge-to="user" data-edge-label="report dispatch separately from app success" data-edge-key="5">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="409.3333333333333,476;164,476" d="M 409.3333333333333 476 L 164 476" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
         <g data-detail="context">
-          <rect x="568.2666666666667" y="438" width="214.8" height="16" rx="3" class="c-mask"/>
-          <text x="675.6666666666666" y="448" class="t-messagebus" font-size="9" text-anchor="middle">outside Codex → ordinary mouse behavior</text>
-        </g>
-        </g>
-
-        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="held / repeated / stale input → no duplicate or replay" data-edge-key="6">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,502;668.6666666666666,502" d="M 423.3333333333333 502 L 668.6666666666666 502" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
-        <g data-detail="context">
-          <rect x="399.6" y="482" width="292.8" height="16" rx="3" class="c-mask"/>
-          <text x="546" y="492" class="t-messagebus" font-size="9" text-anchor="middle">held / repeated / stale input → no duplicate or replay</text>
+          <rect x="168.86666666666662" y="456" width="235.6" height="16" rx="3" class="c-mask"/>
+          <text x="286.66666666666663" y="466" class="t-muted" font-size="9" text-anchor="middle">report dispatch separately from app success</text>
         </g>
         </g>
 
-        <g data-edge-from="dispatcher" data-edge-to="user" data-edge-label="report dispatch separately from app success" data-edge-key="7">
-          <path data-composition-edge-from="dispatcher" data-composition-edge-to="user" data-composition-points="409.3333333333333,546;164,546" d="M 409.3333333333333 546 L 164 546" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
+        <g data-edge-from="dispatcher" data-edge-to="app" data-edge-label="outside Codex → ordinary mouse behavior" data-edge-key="6">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="app" data-composition-points="423.3333333333333,550;928,550" d="M 423.3333333333333 550 L 928 550" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
         <g data-detail="context">
-          <rect x="168.86666666666662" y="526" width="235.6" height="16" rx="3" class="c-mask"/>
-          <text x="286.66666666666663" y="536" class="t-muted" font-size="9" text-anchor="middle">report dispatch separately from app success</text>
+          <rect x="568.2666666666667" y="530" width="214.8" height="16" rx="3" class="c-mask"/>
+          <text x="675.6666666666666" y="540" class="t-messagebus" font-size="9" text-anchor="middle">outside Codex → ordinary mouse behavior</text>
+        </g>
+        </g>
+
+        <g data-edge-from="dispatcher" data-edge-to="profile" data-edge-label="held / repeated / stale input → no duplicate or replay" data-edge-key="7">
+          <path data-composition-edge-from="dispatcher" data-composition-edge-to="profile" data-composition-points="423.3333333333333,594;668.6666666666666,594" d="M 423.3333333333333 594 L 668.6666666666666 594" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+        <g data-detail="context">
+          <rect x="399.6" y="574" width="292.8" height="16" rx="3" class="c-mask"/>
+          <text x="546" y="584" class="t-messagebus" font-size="9" text-anchor="middle">held / repeated / stale input → no duplicate or replay</text>
         </g>
         </g>
 
         <!-- Segment Labels -->
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-0">
-          <rect x="56" y="156" width="102.4" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="169" class="t-dim" font-size="9" font-weight="600">Profile selection</text>
+          <rect x="56" y="172" width="118" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="185" class="t-dim" font-size="9" font-weight="600">1 · Select a profile</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-1">
-          <rect x="56" y="258" width="97.2" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="271" class="t-dim" font-size="9" font-weight="600">One Codex action</text>
+          <rect x="56" y="290" width="118" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="303" class="t-dim" font-size="9" font-weight="600">2 · One Codex action</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="seq-desktop-input-2">
-          <rect x="56" y="404" width="66" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="417" class="t-dim" font-size="9" font-weight="600">Boundaries</text>
+          <rect x="56" y="496" width="263.6" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="509" class="t-dim" font-size="9" font-weight="600">Alternative · outside Codex or not a fresh press</text>
         </g>
 
         <!-- Participants -->
@@ -132,19 +132,19 @@
           <text data-detail="context" x="157" y="111" class="t-muted" font-size="7" text-anchor="middle">shared navigation keys</text>
         </g>
 
-        <g id="seq-desktop-input-node-dispatcher" data-node-id="seq-desktop-input-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, local, no hub, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="local, no hub" data-node-context="Sequence participant">
-          <title>Windows dispatcher · local, no hub · Sequence participant</title>
+        <g id="seq-desktop-input-node-dispatcher" data-node-id="seq-desktop-input-dispatcher" data-node-label="Windows dispatcher" tabindex="0" role="button" aria-label="Focus Windows dispatcher, planned · no hub, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="planned · no hub" data-node-context="Sequence participant">
+          <title>Windows dispatcher · planned · no hub · Sequence participant</title>
           <rect x="321.3333333333333" y="72" width="190" height="54" rx="6" class="c-mask"/>
           <rect x="321.3333333333333" y="72" width="190" height="54" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(327.3333333333333 78) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="416.3333333333333" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Windows dispatcher</text>
-          <text data-detail="context" x="416.3333333333333" y="111" class="t-muted" font-size="7" text-anchor="middle">local, no hub</text>
+          <text data-detail="context" x="416.3333333333333" y="111" class="t-muted" font-size="7" text-anchor="middle">planned · no hub</text>
         </g>
 
-        <g id="seq-desktop-input-node-profile" data-node-id="seq-desktop-input-profile" data-node-label="Control profile" tabindex="0" role="button" aria-label="Focus Control profile, bindings + app scope, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-sublabel="bindings + app scope" data-node-context="Sequence participant">
-          <title>Control profile · bindings + app scope · Sequence participant</title>
+        <g id="seq-desktop-input-node-profile" data-node-id="seq-desktop-input-profile" data-node-label="Control profile" tabindex="0" role="button" aria-label="Focus Control profile, planned · bindings + scope, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-sublabel="planned · bindings + scope" data-node-context="Sequence participant">
+          <title>Control profile · planned · bindings + scope · Sequence participant</title>
           <rect x="580.6666666666666" y="72" width="190" height="54" rx="6" class="c-mask"/>
           <rect x="580.6666666666666" y="72" width="190" height="54" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(586.6666666666666 78) scale(0.6875)">
@@ -152,7 +152,7 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="675.6666666666666" y="94" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Control profile</text>
-          <text data-detail="context" x="675.6666666666666" y="111" class="t-muted" font-size="7" text-anchor="middle">bindings + app scope</text>
+          <text data-detail="context" x="675.6666666666666" y="111" class="t-muted" font-size="7" text-anchor="middle">planned · bindings + scope</text>
         </g>
 
         <g id="seq-desktop-input-node-app" data-node-id="seq-desktop-input-app" data-node-label="Focused app" tabindex="0" role="button" aria-label="Focus Focused app, Codex or other, Sequence participant" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="Codex or other" data-node-context="Sequence participant">
@@ -171,22 +171,22 @@
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="576" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="596" data-legend-width="78">
-            <path d="M 40 593 L 74 593" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
-            <text x="83" y="596" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="624" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="644" data-legend-width="78">
+            <path d="M 40 641 L 74 641" class="a-emphasis" stroke-width="1.8" marker-end="url(#seq-desktop-input-arrowhead-emphasis)"/>
+            <text x="83" y="644" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="596" data-legend-width="73">
-            <path d="M 140 593 L 174 593" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
-            <text x="183" y="596" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="644" data-legend-width="73">
+            <path d="M 140 641 L 174 641" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#seq-desktop-input-arrowhead)"/>
+            <text x="183" y="644" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="dashed" data-legend-x="235" data-legend-baseline="596" data-legend-width="98">
-            <path d="M 235 593 L 269 593" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
-            <text x="278" y="596" class="t-muted" font-size="10" font-weight="500">async trace</text>
+          <g data-legend-semantic-kind="dashed" data-legend-x="235" data-legend-baseline="644" data-legend-width="98">
+            <path d="M 235 641 L 269 641" class="a-dashed" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead-dashed)"/>
+            <text x="278" y="644" class="t-muted" font-size="10" font-weight="500">async trace</text>
           </g>
-          <g data-legend-semantic-kind="default" data-legend-x="355" data-legend-baseline="596" data-legend-width="118">
-            <path d="M 355 593 L 389 593" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
-            <text x="398" y="596" class="t-muted" font-size="10" font-weight="500">default message</text>
+          <g data-legend-semantic-kind="default" data-legend-x="355" data-legend-baseline="644" data-legend-width="118">
+            <path d="M 355 641 L 389 641" class="a-default" stroke-width="1.4" marker-end="url(#seq-desktop-input-arrowhead)"/>
+            <text x="398" y="644" class="t-muted" font-size="10" font-weight="500">default message</text>
           </g>
         </g>
       </svg>

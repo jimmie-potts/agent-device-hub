@@ -127,7 +127,12 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
    Retain implemented/planned labels and each diagram's failure boundaries.
    The BUNNY atlas under `docs/system-design/` embeds the system map and the
    observation walkthrough from these same definitions; rebuild and check it
-   after re-rendering either of them.
+   after re-rendering either of them. Those two keep `sourceRevisions`; other
+   diagrams may pin newer sources through `viewRevisions` and a `revisions`
+   entry. `build_guide.py` fails when a definition no longer matches its saved
+   specification or render receipt, so re-render after every definition edit.
+   Each sequence diagram needs one walkthrough phase per segment; number the
+   main-path segments and label alternatives separately.
 4. Run the commands below. Guide-only CI filtering does not waive these local
    checks or the review evidence required by the [SDLC exception](../sdlc.md#guide-only-ci-exception). Inspect desktop/mobile and print renders for diagram
    changes. Commit inputs, generator, resulting HTML and viewers together.

@@ -7,7 +7,7 @@
   "column_fit": "spread",
   "viewBox": [
    1070,
-   1148
+   1242
   ],
   "views": [
    {
@@ -24,7 +24,7 @@
    },
    {
     "id": "alt",
-    "label": "Rejections",
+    "label": "Alternatives",
     "focus": [
      "host",
      "api",
@@ -44,20 +44,20 @@
   {
    "id": "host",
    "type": "security",
-   "label": "Nanoleaf MCP host",
+   "label": "MCP host",
    "sublabel": "Node · no second ledger"
   },
   {
    "id": "api",
    "type": "security",
-   "label": "Windows controller API",
-   "sublabel": "/controller/v1"
+   "label": "Controller",
+   "sublabel": "Linux · /controller/v1"
   },
   {
    "id": "worker",
    "type": "backend",
-   "label": "Windows worker",
-   "sublabel": "owns light writes"
+   "label": "Lines worker",
+   "sublabel": "sole Lines writer"
   },
   {
    "id": "device",
@@ -68,158 +68,163 @@
  ],
  "segments": [
   {
-   "from": 178,
-   "label": "Read first",
-   "to": 364
+   "from": 194,
+   "label": "1 · Read status",
+   "to": 396
   },
   {
-   "from": 368,
-   "label": "Admit one command",
-   "to": 730
+   "from": 400,
+   "label": "2 · Admit one command",
+   "to": 602
   },
   {
-   "from": 734,
-   "label": "Alternatives at admission",
-   "to": 920
+   "from": 606,
+   "label": "3 · Queue and transmit",
+   "to": 808
   },
   {
-   "from": 924,
-   "label": "Alternatives after admission",
-   "to": 1066
+   "from": 812,
+   "label": "Alternative · rejected at admission, no effect",
+   "to": 1014
+  },
+  {
+   "from": 1018,
+   "label": "Alternative · after admission",
+   "to": 1160
   }
  ],
  "messages": [
   {
    "from": "codex",
    "to": "host",
-   "y": 210,
+   "y": 226,
    "label": "nanoleaf_status",
    "variant": "emphasis"
   },
   {
    "from": "host",
    "to": "api",
-   "y": 254,
+   "y": 270,
    "label": "GET snapshot (bearer, exact Host)",
    "variant": "security"
   },
   {
    "from": "api",
    "to": "host",
-   "y": 298,
+   "y": 314,
    "label": "snapshot: nextRequestId · configurationRevision · generation",
    "variant": "return"
   },
   {
    "from": "host",
    "to": "codex",
-   "y": 342,
+   "y": 358,
    "label": "status (desired · pending · unknown observation)",
    "variant": "return"
   },
   {
    "from": "codex",
    "to": "host",
-   "y": 400,
+   "y": 432,
    "label": "nanoleaf_mode_set {requestId, expectedConfigurationRevision, expectedGeneration, mode}",
    "variant": "emphasis"
   },
   {
    "from": "host",
    "to": "api",
-   "y": 444,
+   "y": 476,
    "label": "POST /controller/v1/commands",
    "variant": "security",
    "note": "authentication and scope are checked before replay lookup"
   },
   {
    "from": "api",
-   "to": "worker",
-   "y": 488,
-   "label": "queue mode work (identity reserved atomically; revision and generation validated)",
-   "variant": "emphasis"
-  },
-  {
-   "from": "api",
    "to": "host",
-   "y": 532,
+   "y": 520,
    "label": "202 receipt: queued",
    "variant": "return"
   },
   {
    "from": "host",
    "to": "codex",
-   "y": 576,
+   "y": 564,
    "label": "receipt (queued is not visible light)",
    "variant": "return"
   },
   {
+   "from": "api",
+   "to": "worker",
+   "y": 638,
+   "label": "queued mode work (identity reserved; revision and generation validated)",
+   "variant": "emphasis"
+  },
+  {
    "from": "worker",
    "to": "device",
-   "y": 620,
+   "y": 682,
    "label": "transmit after a second generation check",
    "variant": "emphasis"
   },
   {
    "from": "device",
    "to": "worker",
-   "y": 664,
+   "y": 726,
    "label": "transport acknowledgment",
    "variant": "return"
   },
   {
    "from": "worker",
    "to": "api",
-   "y": 708,
+   "y": 770,
    "label": "sent (transport evidence only)",
    "variant": "dashed"
   },
   {
    "from": "api",
    "to": "host",
-   "y": 766,
+   "y": 844,
    "label": "exact duplicate → original receipt, no new write",
    "variant": "return"
   },
   {
    "from": "api",
    "to": "host",
-   "y": 810,
+   "y": 888,
    "label": "changed payload → 409 request-conflict",
    "variant": "return"
   },
   {
    "from": "api",
    "to": "host",
-   "y": 854,
+   "y": 932,
    "label": "expired identity → 410 request-expired",
    "variant": "return"
   },
   {
    "from": "api",
    "to": "host",
-   "y": 898,
-   "label": "stale revision/generation → 409 before any effect",
+   "y": 976,
+   "label": "stale revision or generation → 409 before any effect",
    "variant": "return"
   },
   {
    "from": "worker",
    "to": "api",
-   "y": 956,
+   "y": 1050,
    "label": "superseded generation → cancelled, prior effects retained",
    "variant": "dashed"
   },
   {
    "from": "worker",
    "to": "api",
-   "y": 1000,
-   "label": "partial or uncertain → priorEffects possible; request held",
+   "y": 1094,
+   "label": "partial or uncertain → possible effects; mode held",
    "variant": "dashed"
   },
   {
    "from": "host",
    "to": "codex",
-   "y": 1044,
+   "y": 1138,
    "label": "delivery timeout after dispatch → original requestId + possible effects",
    "variant": "return",
    "note": "no replacement identity and no automatic retry"
@@ -228,10 +233,10 @@
  "cards": [
   {
    "dot": "cyan",
-   "title": "Two tools only",
+   "title": "Two MCP tools",
    "items": [
     "nanoleaf_status and nanoleaf_mode_set; modes Work, Quiet, Free",
-    "No power, arbitrary brightness, scenes or zones in this binding"
+    "Native controller clients can also set power, brightness and saved scenes; MCP does not expose them"
    ]
   },
   {
@@ -240,7 +245,7 @@
    "items": [
     "Status issues nextRequestId; clients never mint identities",
     "Duplicates join, conflicts reject, expired identities reject",
-    "Superseded work cancels; a second generation check runs right before side effects"
+    "A second generation check runs right before the write"
    ]
   },
   {
@@ -248,8 +253,8 @@
    "title": "Evidence limits",
    "items": [
     "sent is transport evidence, not optical proof",
-    "MCP disconnection alone does not stop admitted controller work",
-    "Failed or uncertain machine modes are held until a fresh explicit request"
+    "Stopping the MCP host does not stop admitted work",
+    "Failed or uncertain modes are held until a fresh explicit request"
    ]
   }
  ]

@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-23T06:50:41.443438+00:00",
+  "renderedAt": "2026-09-23T07:30:11.750071+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -7,12 +7,12 @@
       "type": "architecture",
       "status": "implemented",
       "specification": {
-        "sha256": "ec5b73d61e48436e820a435b74c84cb97ce2879f404b558c6ed5a4563b87baaf",
-        "bytes": 7468
+        "sha256": "c2503dd1ac68c2904416c0ac06ba9c41d85048c183edc17d94a823da7b4ca32b",
+        "bytes": 6960
       },
       "artifact": {
-        "sha256": "027b51601a21e01f56a4a193c572ec0d2addde37cae14aecaf6ded95b2c03eaa",
-        "bytes": 725119
+        "sha256": "71a6b3a67661a137b98c8085175f8fb68eeaf084e35969e73644bc238c7c53ac",
+        "bytes": 723528
       },
       "validation": {
         "checksPassed": 9,
@@ -23,7 +23,7 @@
         "warnings": 0
       },
       "viewer": "arch-local-paths.html",
-      "svgSha256": "1a826f34b977b20addab56c86ffee93eaf4de4851c2bd62086451c302e53f1d8"
+      "svgSha256": "97aa59665d75fc9d4abdede97de8faf5ad538ff4c9d16033204e304896fd07fa"
     },
     {
       "id": "arch-shared-system",
@@ -51,14 +51,14 @@
     {
       "id": "arch-nanoleaf-linux",
       "type": "architecture",
-      "status": "planned",
+      "status": "implemented",
       "specification": {
-        "sha256": "8e84712f77c56cfce553b6e7b415a77dc6f05bdd3403c5bc930e85fb1c315e55",
-        "bytes": 6714
+        "sha256": "e74d3f2ea6dc8b1e517a79945c50d8127e1eb7d4fe662c4cb3bb39fad56af9ff",
+        "bytes": 7948
       },
       "artifact": {
-        "sha256": "24f1e34f94b532d178f12822eabfe0dba471d3c909a41f9ab4971691408721cf",
-        "bytes": 722590
+        "sha256": "80f9b367c0355802543948ed97fd62d2f2f45e72fc19224ba69d9e60f824273a",
+        "bytes": 726793
       },
       "validation": {
         "checksPassed": 9,
@@ -69,7 +69,7 @@
         "warnings": 0
       },
       "viewer": "arch-nanoleaf-linux.html",
-      "svgSha256": "f94a59f2a2b4f072312519bd0c8f2e519cc3e3b6a51662605ec90121888462fa"
+      "svgSha256": "324322be461196e7e922ceabb34b2b6962cfaad619d03ffcfa52894e34fa2fa7"
     },
     {
       "id": "seq-lifecycle-observation",
@@ -99,12 +99,12 @@
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "e7634e0b107e0bf2587ce0cc7ed345228684bf3ff64721534ef2dc0e08496c9a",
-        "bytes": 5237
+        "sha256": "58c782d66333b8f0700a5197836c13c05aadcf9d923ab84f66c45defe76b955c",
+        "bytes": 5311
       },
       "artifact": {
-        "sha256": "6b67e15ecd27763089ecb7ea5405d04047996d9a66c78a5314015c12c79f6c35",
-        "bytes": 718079
+        "sha256": "891a649e85837c32a006919d11ff50841e11855c3b61ae2fac935778c02c74e0",
+        "bytes": 718529
       },
       "validation": {
         "checksPassed": 9,
@@ -115,19 +115,19 @@
         "warnings": 0
       },
       "viewer": "seq-nanoleaf-command.html",
-      "svgSha256": "02ef45857e0e641c0921a43849134329378a790890ca4ce7e4e918b24ff54ce7"
+      "svgSha256": "1e91f4e3f16e669dd4ad78f96f640a1373c7d263fc329356ab8055b4455e5f51"
     },
     {
       "id": "seq-pixoo-playback",
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "9aa54ec036a7ea027378f0322ff0d7972650ad454a97087b689f80888b445d39",
-        "bytes": 5032
+        "sha256": "f6fbfc2743bf7261cf5ed2355877936845a9e2615cf38494a7d8964b7b8bcf29",
+        "bytes": 5220
       },
       "artifact": {
-        "sha256": "dfd355173e0ba646d0e16729c81950819c0a9c6cdf1efaf1b5d1afa0cb8ae1d9",
-        "bytes": 718134
+        "sha256": "cafc6a619b325e239c3e88d31fe8c410a87f9e725cb4bfcb23440a1e100ed2b2",
+        "bytes": 718822
       },
       "validation": {
         "checksPassed": 9,
@@ -138,65 +138,19 @@
         "warnings": 0
       },
       "viewer": "seq-pixoo-playback.html",
-      "svgSha256": "3e77fa304c9d0cf8a75e2efdb83c9797e6b4e6422ad1482bb4addfc96e1a7b25"
-    },
-    {
-      "id": "seq-desktop-input",
-      "type": "sequence",
-      "status": "future",
-      "specification": {
-        "sha256": "554d233219d7dc0c2c4f05eddf198662883caec9793169da382f4bc947b5c5b7",
-        "bytes": 2916
-      },
-      "artifact": {
-        "sha256": "56db4b31813732566ca35a9520370ce9935cc1cd4bf7a211dc2689548d9beb75",
-        "bytes": 708938
-      },
-      "validation": {
-        "checksPassed": 9,
-        "checkCount": 9,
-        "compositionProfile": "showcase",
-        "compositionStatus": "pass",
-        "errors": 0,
-        "warnings": 0
-      },
-      "viewer": "seq-desktop-input.html",
-      "svgSha256": "6f6f6e70edf5d8c33160209797ae3c1d4b2ea0de73fe5e3caea4e18594a3edd7"
-    },
-    {
-      "id": "seq-big-b-presets",
-      "type": "sequence",
-      "status": "future",
-      "specification": {
-        "sha256": "c8973adf078713532124d85f690e766990c42adf2dd361ae1bf07f938f220168",
-        "bytes": 3875
-      },
-      "artifact": {
-        "sha256": "6f5d6229d74416bbb21f96559aa2cb4c9de2426a51838a3d09dfe984af41a25c",
-        "bytes": 713127
-      },
-      "validation": {
-        "checksPassed": 9,
-        "checkCount": 9,
-        "compositionProfile": "showcase",
-        "compositionStatus": "pass",
-        "errors": 0,
-        "warnings": 0
-      },
-      "viewer": "seq-big-b-presets.html",
-      "svgSha256": "fe460f5950a40e9e03616639616704b571fb84ecae6fdeb688d39674806d5705"
+      "svgSha256": "5f4a89af412263b46e7a2657d910c7afd679203af7e65520d0dab1772afe7765"
     },
     {
       "id": "seq-owner-migration",
       "type": "sequence",
       "status": "implemented",
       "specification": {
-        "sha256": "d8b6269ac82b2174f63b77eeb3d078029e2deb89f178655f89ddfd9af58b33b1",
-        "bytes": 4319
+        "sha256": "c117692df6e0e4e6d5f123c237f158012ad4c20e2d0c680e1eabb020a4ad99c9",
+        "bytes": 5170
       },
       "artifact": {
-        "sha256": "7895d6e19994083785f6a0b33960040a6a71792e5af70833457274e7798411c0",
-        "bytes": 716836
+        "sha256": "8ed6f4628daac18d908738fac099eca03e75eef9778b519ee364e28b6a9df6e9",
+        "bytes": 720216
       },
       "validation": {
         "checksPassed": 9,
@@ -207,7 +161,53 @@
         "warnings": 0
       },
       "viewer": "seq-owner-migration.html",
-      "svgSha256": "74e082ab0f4909f42dd3e33c84b22485bc57eb08e6f5915a1ca738844034ca8e"
+      "svgSha256": "713235550a4785552ce3dec2639fb5c677447735d42bcb25dc26cb197094649f"
+    },
+    {
+      "id": "seq-desktop-input",
+      "type": "sequence",
+      "status": "future",
+      "specification": {
+        "sha256": "e978a075d087a4453131160903f946c799431fab5608e463ae8b9285bb1f680e",
+        "bytes": 2983
+      },
+      "artifact": {
+        "sha256": "f18e4df27d6cacacb94d16dc9a263b65d1fd3f57d66d14ccf5b738248f333a13",
+        "bytes": 709072
+      },
+      "validation": {
+        "checksPassed": 9,
+        "checkCount": 9,
+        "compositionProfile": "showcase",
+        "compositionStatus": "pass",
+        "errors": 0,
+        "warnings": 0
+      },
+      "viewer": "seq-desktop-input.html",
+      "svgSha256": "f6c500ad62a9c503907e95d638039512ac4b4c96a76ef53e8fc9f0e3cdd23b91"
+    },
+    {
+      "id": "seq-big-b-presets",
+      "type": "sequence",
+      "status": "future",
+      "specification": {
+        "sha256": "93a1fad936790973399ead7c7cd5156f914ff58461f45d85d1d85b4754242b22",
+        "bytes": 3941
+      },
+      "artifact": {
+        "sha256": "57ea3ca41591bfff03c135eeaacf6f380fed15ce591f30a718a32cdd7e421685",
+        "bytes": 713224
+      },
+      "validation": {
+        "checksPassed": 9,
+        "checkCount": 9,
+        "compositionProfile": "showcase",
+        "compositionStatus": "pass",
+        "errors": 0,
+        "warnings": 0
+      },
+      "viewer": "seq-big-b-presets.html",
+      "svgSha256": "cd652e13ce16df1e4991b53bdf327d8604243403b803daa1b4e17463c801aaed"
     }
   ]
 }
