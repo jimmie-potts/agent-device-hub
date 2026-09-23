@@ -243,8 +243,58 @@
       "revision": "5724f51168ff4dec7fde0aa8644bb4e809547af0",
       "url": "https://github.com/jimmie-potts/agent-device-hub/blob/5724f51168ff4dec7fde0aa8644bb4e809547af0/apps/dashboard/README.md",
       "sha256": "682712e99fab71eb99448e802a55895d008ba580b312dc4985986447d05ad0d6"
+    },
+    {
+      "repo": "agent-device-hub",
+      "revision": "fa5ba1577f9bc9bffa63f10a32f8827a876df630",
+      "path": "docs/desktop-controls.md",
+      "url": "https://github.com/jimmie-potts/agent-device-hub/blob/fa5ba1577f9bc9bffa63f10a32f8827a876df630/docs/desktop-controls.md",
+      "sha256": "81de6dc391deef333959d3eda733c0dfd111b7c08326b6953c09136df9b23eb8",
+      "reviewedAt": "2026-09-23T05:11:28.382724+00:00"
     }
   ],
   "planningSource": "Live issue snapshots captured 2026-09-09T23:48:41.091564+00:00 for Hub #43 and Nanoleaf #54/#55; Nanoleaf PR #57 source candidate reviewed at its pinned head after the snapshot; no installation, hardware investigation or product execution",
-  "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display. Pixoo pins now use PR #64 merge 28f4875b7a0f0e57ca6f25d9971e125e927a5503, whose tree equals reviewed candidate dcadf88f6b29f1944c8df811af7e4592197dd2ee. All Pixoo source hashes and existing cached copies match immutable Git bytes. Explicit Monitor activation now uses the single Player writer; restart and screen-on remain passive. No installation or physical acceptance is claimed."
+  "reviewNote": "Nanoleaf pins refreshed after PR #62 merged as 5375a3088522507c7f207c6e9c824454db1e1d5f; its tree equals independently reviewed candidate 8deed074c1d214071f255f445dad95c181f56ed9. All 14 Nanoleaf source copies match pinned bytes. Prior planningSource remains historical. Hub pins retain their prior evidence; historical cached-source gaps are not newly verified. No installation or physical acceptance is claimed. Pixoo pins refreshed to PR #63 merge 9bd99c1b2ec1759cc70eedd5644e585627d3fd25; all Pixoo file hashes verified from immutable Git objects and existing cached copies refreshed. The merged tree equals reviewed head 531600479416e39366c0520f2ba2b884c4eb5632. Renderer source and exact RGB preview do not activate a display. Pixoo pins now use PR #64 merge 28f4875b7a0f0e57ca6f25d9971e125e927a5503, whose tree equals reviewed candidate dcadf88f6b29f1944c8df811af7e4592197dd2ee. All Pixoo source hashes and existing cached copies match immutable Git bytes. Explicit Monitor activation now uses the single Player writer; restart and screen-on remain passive. No installation or physical acceptance is claimed.",
+  "amendments": [
+    {
+      "reviewedAt": "2026-09-22T03:49:40.297168+00:00",
+      "diagrams": [
+        "seq-desktop-input",
+        "seq-big-b-presets"
+      ],
+      "source": "agent-device-hub/docs/desktop-controls.md",
+      "revision": "cbbb6aaa9142f66e020315b201ef5afe597baf66",
+      "reason": "Owner revised defaults to A=Enter and B=Wispr, required editable A/B bindings in version 1, and removed the reserved preset button. Other source pins retain their baseline review."
+    },
+    {
+      "reviewedAt": "2026-09-23T01:25:55.558546+00:00",
+      "diagrams": [
+        "seq-desktop-input",
+        "seq-big-b-presets"
+      ],
+      "source": "agent-device-hub/docs/desktop-controls.md",
+      "revision": "bce87a60c6df9c3c4dfb743dd516ab971669df55",
+      "reason": "Owner removed keyboard A/B and attached Super Buttons from B.U.N.N.Y. mapping, dispatch, profiles and preset bindings. N30/Codex route qualification remains incomplete. Other source pins retain their previous evidence."
+    },
+    {
+      "reviewedAt": "2026-09-23T01:46:11.778843+00:00",
+      "diagrams": [
+        "seq-desktop-input",
+        "seq-big-b-presets"
+      ],
+      "source": "agent-device-hub/docs/desktop-controls.md",
+      "revision": "03fcd71ebc115ac380dc666ac27736d3f311c346",
+      "reason": "Owner differential inventory associates N30 receiver with 062A:4101 and confirms restored operation. Installed Codex package 26.917.6896.0 recorded; native D-pad attribution and mapping remain unqualified."
+    },
+    {
+      "reviewedAt": "2026-09-23T05:11:28.382724+00:00",
+      "diagrams": [
+        "seq-desktop-input",
+        "seq-big-b-presets"
+      ],
+      "source": "agent-device-hub/docs/desktop-controls.md",
+      "revision": "fa5ba1577f9bc9bffa63f10a32f8827a876df630",
+      "reason": "Owner accepted app-scoped shared navigation keys and passed the brief Windows action, outside-app and stop/restoration trial. Receiver isolation and long-term lifecycle remain unqualified; reusable source and installation remain separate. Preset content is unchanged; its shared source pin now includes this accepted boundary."
+    }
+  ]
 }

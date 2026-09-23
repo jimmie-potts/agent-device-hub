@@ -40,15 +40,15 @@ TRACKS = [
         dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
     ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Docs + qualification', issues=['H64'], guide='desktop-controls'),
-        dict(id='n-desk-local', x=1, label='Wispr + mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
+        dict(id='n-desk-doc', x=0, label='Input qualification', issues=['H64'], guide='desktop-controls'),
+        dict(id='n-desk-local', x=1, label='Codex mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
         dict(id='n-desk-later', x=4, label='Profiles · Music preset', issues=['H70', 'H71'], guide='desktop-controls'),
     ]),
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-worker', x=1, label='Worker + panel effects', issues=['N42', 'N43'], guide='nanoleaf-devices'),
+        dict(id='n-nl-worker', x=1, label='Panel effects', issues=['N43'], guide='nanoleaf-devices'),
         dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44', 'N45'], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=3, label='Installed acceptance', issues=['N46'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
@@ -66,7 +66,7 @@ TRACKS = [
         dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
-        dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H15', 'H17'], guide='tidbyt-lifx'),
+        dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H17'], guide='tidbyt-lifx'),
         dict(id='n-tl-ctrl', x=1, label='Controllers', issues=['H16', 'H18'], guide='tidbyt-lifx'),
         dict(id='n-tl-status', x=2, label='Automatic status', issues=['H19', 'H20'], guide='tidbyt-lifx'),
         dict(id='n-tl-accept', x=3, label='Installed acceptance', issues=['H21', 'H22'], guide='tidbyt-lifx'),
@@ -99,10 +99,10 @@ TRACKS = [
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
     ('System design documents', [
-        dict(id='n-system-design', x=0, label='BUNNY atlas delivered', issues=[], guide='development-workflow'),
+        dict(id='n-system-design', x=0, label='Atlas + diagram readability', issues=['H172', 'H173'], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
-        dict(id='n-guide-workflow', x=0, label='Checkpoints delivered', issues=[], guide='development-workflow'),
+        dict(id='n-guide-workflow', x=0, label='Guide maintenance rules', issues=['N70'], guide='development-workflow'),
     ]),
     ('Guide Prism design + rollout', [
         dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),

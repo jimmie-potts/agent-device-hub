@@ -1,15 +1,35 @@
 {
-  "fetchedAt": "2026-09-23T02:01:21.250005+00:00",
+  "fetchedAt": "2026-09-23T05:12:22.714148+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T01:57:06Z",
+      "pushedAt": "2026-09-23T04:22:43Z",
       "defaultBranch": "main",
-      "headSha": "50a1c637d9607a59b282730b4f78c0a7fd502fc7",
-      "mainCommitCount": 78,
+      "headSha": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+      "mainCommitCount": 82,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
+          "date": "2026-09-23T04:22:43Z",
+          "message": "Remove issue lists and dependency chains from docs (#171)"
+        },
+        {
+          "sha": "ad5aef8fd5e09b828cb3595f23af621bfc41408a",
+          "date": "2026-09-23T03:31:20Z",
+          "message": "Reduce documentation status maintenance and date the BUNNY atlas (#169)"
+        },
+        {
+          "sha": "d27fa4813825473e9ae309f0f8eb5de42d96fe64",
+          "date": "2026-09-23T03:21:19Z",
+          "message": "Align agent instructions and hub MCP tool descriptions with delivered code (#167)"
+        },
+        {
+          "sha": "4e8ed8335a80b1f95176c897697a97be49bca727",
+          "date": "2026-09-23T02:11:05Z",
+          "message": "Record the completed Nanoleaf general controls in the guide (#165)"
+        },
         {
           "sha": "50a1c637d9607a59b282730b4f78c0a7fd502fc7",
           "date": "2026-09-23T01:57:06Z",
@@ -1001,6 +1021,38 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/164",
           "base": "main",
           "mergedAt": "2026-09-23T01:45:20Z"
+        },
+        {
+          "number": 165,
+          "title": "Record the completed Nanoleaf general controls in the guide",
+          "createdAt": "2026-09-23T02:02:25Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/165",
+          "base": "main",
+          "mergedAt": "2026-09-23T02:11:06Z"
+        },
+        {
+          "number": 167,
+          "title": "Align agent instructions and hub MCP tool descriptions with delivered code",
+          "createdAt": "2026-09-23T03:02:40Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/167",
+          "base": "main",
+          "mergedAt": "2026-09-23T03:21:19Z"
+        },
+        {
+          "number": 169,
+          "title": "Reduce documentation status maintenance and date the BUNNY atlas",
+          "createdAt": "2026-09-23T03:18:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/169",
+          "base": "main",
+          "mergedAt": "2026-09-23T03:31:20Z"
+        },
+        {
+          "number": 171,
+          "title": "Remove issue lists and dependency chains from docs",
+          "createdAt": "2026-09-23T04:13:16Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/171",
+          "base": "main",
+          "mergedAt": "2026-09-23T04:22:43Z"
         }
       ],
       "openPRs": [
@@ -1100,6 +1152,14 @@
           "createdAt": "2026-09-07T05:47:02Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/14"
+        },
+        {
+          "number": 15,
+          "title": "Qualify Tidbyt cloud and Tronbyt connections",
+          "closedAt": "2026-09-23T04:02:18Z",
+          "createdAt": "2026-09-07T05:54:12Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/15"
         },
         {
           "number": 30,
@@ -1244,12 +1304,36 @@
           "createdAt": "2026-09-22T05:38:23Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/153"
+        },
+        {
+          "number": 166,
+          "title": "Align agent instructions and hub MCP tool descriptions with delivered code",
+          "closedAt": "2026-09-23T03:25:29Z",
+          "createdAt": "2026-09-23T03:00:05Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/166"
+        },
+        {
+          "number": 168,
+          "title": "Reduce documentation status maintenance and freeze the BUNNY design atlas",
+          "closedAt": "2026-09-23T03:34:39Z",
+          "createdAt": "2026-09-23T03:08:04Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/168"
+        },
+        {
+          "number": 170,
+          "title": "Remove issue lists and dependency chains from repository docs",
+          "closedAt": "2026-09-23T04:25:34Z",
+          "createdAt": "2026-09-23T04:11:15Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/170"
         }
       ],
-      "openIssueCount": 57,
+      "openIssueCount": 56,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-22T06:22:18Z"
+        "2026-09-23T04:11:15Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1259,17 +1343,23 @@
         "2026-09-12": 1,
         "2026-09-20": 2,
         "2026-09-21": 1,
-        "2026-09-22": 10
+        "2026-09-22": 10,
+        "2026-09-23": 3
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-22T15:49:43Z",
+      "pushedAt": "2026-09-23T05:03:06Z",
       "defaultBranch": "main",
-      "headSha": "80628498136203a8f5fcb06ab5fa306e961e2def",
-      "mainCommitCount": 30,
+      "headSha": "83056630c046e93039e33f158eca4a439a005e93",
+      "mainCommitCount": 31,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "83056630c046e93039e33f158eca4a439a005e93",
+          "date": "2026-09-23T05:03:06Z",
+          "message": "Move CI to Depot (#69)"
+        },
         {
           "sha": "80628498136203a8f5fcb06ab5fa306e961e2def",
           "date": "2026-09-22T15:49:43Z",
@@ -1621,9 +1711,25 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/66",
           "base": "main",
           "mergedAt": "2026-09-22T15:49:43Z"
+        },
+        {
+          "number": 69,
+          "title": "Move CI to Depot",
+          "createdAt": "2026-09-23T04:56:09Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/69",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:03:06Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 67,
+          "title": "Run Lines and NL22 Light Panels as independent devices in the worker",
+          "createdAt": "2026-09-23T04:38:02Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/67",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 2,
@@ -1754,6 +1860,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/41"
         },
         {
+          "number": 42,
+          "title": "Run independent Lines and Light Panels projections in the Nanoleaf runtime",
+          "closedAt": "2026-09-23T04:07:54Z",
+          "createdAt": "2026-09-07T18:43:19Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/42"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -1800,19 +1914,28 @@
           "createdAt": "2026-09-22T05:37:36Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/64"
+        },
+        {
+          "number": 68,
+          "title": "Move CI to Depot",
+          "closedAt": "2026-09-23T05:05:51Z",
+          "createdAt": "2026-09-23T04:54:38Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/68"
         }
       ],
       "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-22T05:37:36Z"
+        "2026-09-23T04:58:54Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
         "2026-09-06": 7,
         "2026-09-07": 26,
         "2026-09-09": 4,
-        "2026-09-22": 1
+        "2026-09-22": 1,
+        "2026-09-23": 2
       }
     },
     "divoom-app-upgrade": {
