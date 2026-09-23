@@ -1,7 +1,10 @@
 import {open,realpath,lstat} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {resolve} from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {startHub,type HubOptions} from './server.js';
+import {requestBrowserLaunch} from './browser-launch.js';
 import {object,exact} from './common.js';
 
 async function readConfiguration(path:string):Promise<HubOptions> {
@@ -21,8 +24,17 @@ async function readConfiguration(path:string):Promise<HubOptions> {
 }
 
 try {
-  if (process.argv.length !== 4 || !['serve','serve-staged'].includes(process.argv[2])) throw new Error('usage');
-  const hub = await startHub(await readConfiguration(process.argv[3]),process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
+  if (process.argv.length !== 4 || !['serve','serve-staged','open'].includes(process.argv[2])) throw new Error('usage');
+  const configuration=await readConfiguration(process.argv[3]);
+  if(process.argv[2]==='open'){
+    const launch=await requestBrowserLaunch(configuration.directory);
+    const url=launch.url+'/#launch='+launch.code;
+    const command=process.env.WSL_DISTRO_NAME?'cmd.exe':'xdg-open';
+    const args=process.env.WSL_DISTRO_NAME?['/c','start','',url]:[url];
+    await promisify(execFile)(command,args,{timeout:5000,windowsHide:true});
+    process.stdout.write('BUNNY opened in the browser.\n');
+  } else {
+  const hub = await startHub(configuration,process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
   process.stdout.write(JSON.stringify({ready:true,url:hub.url}) + '\n');
   let stopping = false;
   const stop = () => {
@@ -31,6 +43,7 @@ try {
     void hub.close().then(() => {clearTimeout(deadline);process.exitCode = 0;},() => {clearTimeout(deadline);process.stderr.write('hub-shutdown-failed\n');process.exitCode = 1;});
   };
   process.once('SIGTERM',stop);process.once('SIGINT',stop);
+  }
 } catch {
-  process.stderr.write('hub-start-failed\n');process.exitCode = 1;
+  process.stderr.write(process.argv[2]==='open'?'bunny-open-failed\n':'hub-start-failed\n');process.exitCode = 1;
 }

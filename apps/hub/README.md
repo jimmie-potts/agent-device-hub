@@ -77,6 +77,35 @@ The packaged hub serves BUNNY at `/`, with fixed `/dashboard.js` and
 `GET /api/dashboard/v1/context` authenticates with read scope and exposes only
 that principal's registered component aliases, control permission and configured
 monitor consumers. Native controller credentials and endpoint URLs are excluded.
+
+### Open BUNNY without typing a token
+
+Run `node apps/hub/dist/cli.js open /absolute/private/config.json` as the Linux
+user that owns the running Hub. The command reads the same owner-only
+configuration as `serve`, requests a 30-second one-time code through
+`<directory>/bunny-launch.sock`, and opens the Hub loopback URL with that code in
+the fragment. On WSL it calls `cmd.exe` to open the Windows browser; on native
+Linux it calls `xdg-open`. It prints no token or launch code. A missing browser
+opener reports `bunny-open-failed` so the owner can repair the launcher and retry.
+This is the command to put in the installation owner's shortcut. A direct visit
+to `/` still offers the separately provisioned token form for older workflows.
+
+The page removes the fragment from history before exchanging the code. The
+resulting bearer stays in page memory for up to eight hours, with `read` and
+`control` on the host's configured aliases and no `ingest` or `admin`. The
+browser bearer cannot authenticate MCP. Disconnect revokes it; reload discards
+it, so use the launcher again. At the 16-session limit, a new launch revokes
+the oldest browser session. Existing machine and manual browser credentials
+remain configured separately. The private socket is removed on orderly
+shutdown. On restart, the host removes an unresponsive socket only when it is
+still the same owner-owned socket; a live socket blocks startup. Do not clear
+the state-owner database or start a second owner.
+
+This source command does not update the running installation. A named owner
+must install a reviewed Hub package and wire the shortcut to its actual private
+configuration. Browser handoff tests use disposable stores and fake controllers;
+they do not qualify a personal service or device result.
+
 Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
 HTTP editor links without query/fragment. Existing API-only configurations remain
 valid. See [the dashboard guide](../dashboard/README.md) for provisioning,

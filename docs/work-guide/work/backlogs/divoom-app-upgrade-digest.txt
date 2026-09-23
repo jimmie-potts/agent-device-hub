@@ -23,3 +23,4 @@
 #55 [OPEN] Qualify variable GIF frame timing on Pixoo64
 #61 [OPEN] Harden and qualify embedded shared-monitor performance
 #67 [OPEN] Expose user-entered playlist names through the Pixoo integration extension
+#68 [OPEN] Align guide-maintenance rules with the current hub procedure

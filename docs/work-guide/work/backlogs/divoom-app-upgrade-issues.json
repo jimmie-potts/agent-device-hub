@@ -227,7 +227,7 @@
     "title": "Connect ChatGPT to the local MCP server through a private tunnel",
     "body": "## Shared-hub ownership\nKeep remote connectivity deferred. Reuse [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7) through a qualified Pixoo-local endpoint or explicitly selected hub gateway. Document the deployment before implementation. A tunnel is not needed for local hooks, monitoring or the unified local UI.\n\n## Outcome\nConnect ChatGPT web to the local Pixoo application's MCP tools through an authenticated private connection.\n\n## Scope and source\nRefine the existing remote-control backlog issue for the requested ChatGPT integration. Reuse the MCP endpoint from #24 and its shared application services. Prefer OpenAI Secure MCP Tunnel, with a client running beside the local backend and reaching OpenAI through outbound HTTPS. The local app and Pixoo remain private.\n\nThis is follow-on work outside the mixed-playlist MVP. #11 continues to own authenticated browser LAN access; [divoom-app-upgrade#43](https://github.com/jimmie-potts/divoom-app-upgrade/issues/43) owns remote browser acceptance and #12 owns local physical playback/soak. Neither a LAN listener nor completion of physical soak testing is required to develop this outbound MCP path. Public plugin distribution, general remote browser control, and other VPN/hosting options remain outside this implementation slice.\n\nOfficial documentation checked September 6, 2026: [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels), [ChatGPT developer mode](https://developers.openai.com/api/docs/guides/developer-mode), and [MCP](https://learn.chatgpt.com/docs/extend/mcp). Recheck these sources when implementation starts.\n\n## Acceptance criteria\n- [ ] Resolve the connection/authentication design before marking ready. Document target ChatGPT developer-mode availability, Platform tunnel permissions and organization/workspace association, runtime credential handling, and how the tunnel authenticates to the local MCP endpoint. If the supported route is unavailable, record the exact missing prerequisite and proposed alternative for user decision.\n- [ ] Provide the source/configuration templates and runbook needed to connect a developer-mode app to the running backend through the selected private tunnel. Reuse the same MCP tools and backend queue as Codex; the bridge never talks directly to the Pixoo or launches another device-writing backend.\n- [ ] Preserve loopback defaults and require an explicitly configured endpoint and credentials. Expose only the intended MCP path through the tunnel, not the rest of the web server or private media directory. Verify the bridge can authenticate locally without weakening the local MCP access checks.\n- [ ] Define and test authorization at both the remote connection and local app boundary. Keep runtime keys, local credentials, private IPs, and media paths out of Git, URLs, tool results, and routine logs. Treat read-only/write annotations as client guidance, with server authorization enforced independently.\n- [ ] Document start, health/readiness checks, failure diagnosis, credential rotation/revocation, disconnect, and cleanup. A stopped or revoked tunnel rejects new remote work; local app use continues. Reconnect must not blindly replay uncertain writes.\n- [ ] Document that the host/backend/tunnel must remain running for ChatGPT calls. Client disconnection does not own or stop playback. Keep app deployment and persistent host startup aligned with #10 without adding an always-on installation to source delivery.\n- [ ] Provide a simulator-only end-to-end runbook for tool discovery, approved writes, failures, and disconnect/reconnect. Actual ChatGPT account setup and live client/device evidence are completed in [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44), with unavailable access recorded there rather than claimed from mocks.\n- [ ] Prepare the issue-linked OpenSpec proposal, affected capability deltas, tasks, design, and ADR for the transport/auth boundary before implementation. Do not add public ingress or change router/firewall settings as an automatic fallback.\n\nPlanned OpenSpec change: `gh-17-chatgpt-private-mcp`.\n\n## Verification approach\nUse isolated test credentials, a local MCP test server/client, and a fake tunnel transport where practical to verify target restriction, authentication, disconnects, revocation, and duplicate-request behavior. Separate tests of our wrapper/configuration from claims about the external tunnel service. Source tests must pass without external accounts or a device.\n\nRun Node 24 `npm ci` and all repository checks applicable to changed source, HTTP/startup behavior, and OpenSpec artifacts, including `npm run check` and `npm run test:browser` for application changes. Require all configured PR/main CI. Live ChatGPT setup and acceptance belong to [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44).\n\n## Dependencies\n- #24 for the authenticated local MCP endpoint.\n- Verified target account/workspace permissions and a settled transport/auth design before readiness.\n\nAdditional shared prerequisites:\n- [agent-device-hub#7](https://github.com/jimmie-potts/agent-device-hub/issues/7)\n\n## Related work\n#25 adds media/playlist tools and can proceed independently of this connection work. #10 supplies shared deployment guidance when available; this issue owns tunnel-specific lifecycle instructions. [divoom-app-upgrade#44](https://github.com/jimmie-potts/divoom-app-upgrade/issues/44) owns remote client/device verification and depends on this issue. The former #12 prerequisite is replaced by #24 because source delivery of an outbound MCP connection does not require phone/LAN or soak acceptance.\n\n## Delivery target\nSource-only. Account registration, key creation, tunnel installation, personal app configuration, and hardware actions require the later explicitly authorized setup/acceptance work.\n\n## Priority and access decision\nDeferred until the user selects remote access. Local Codex delivery and #26 acceptance proceed independently. No tunnel, remote account, or browser LAN authentication is required for local MCP source work.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/17",
-    "updatedAt": "2026-09-07T04:00:51Z",
+    "updatedAt": "2026-09-23T07:12:50Z",
     "closedAt": null,
     "labels": [
       {
@@ -237,15 +237,12 @@
         "name": "status:backlog"
       },
       {
-        "name": "blocked"
-      },
-      {
         "name": "deferred"
       }
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 1,
     "commentsRefreshed": false
   },
   {
@@ -794,6 +791,28 @@
     "labels": [
       {
         "name": "enhancement"
+      },
+      {
+        "name": "status:ready"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 68,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Align guide-maintenance rules with the current hub procedure",
+    "body": "## Problem\n\nThis repository's work-guide rules still require every authorized delivery to coordinate a linked hub PR that records the delivery in `docs/work-guide/updates.md` or records a no-impact reason, and they treat guide synchronization as pending until that PR merges. The hub changed this in [agent-device-hub#169](https://github.com/jimmie-potts/agent-device-hub/pull/169) (`ad5aef8`, current hub `main` `a76b22d`). It retired the `updates.md` ledger and made the guide an intentional, dated publication. A device repository needs a linked hub PR only when its authorized scope includes a guide update. Coordinators and reviewers here get conflicting instructions on every delivery.\n\nOutdated text at `main` `c81bc31`:\n\n- `AGENTS.md:90-100` (\"Work guide maintenance\"): the linked hub PR, `updates.md` or no-impact record, and \"pending guide synchronization remains unfinished delivery work\".\n- `docs/sdlc.md:58-61` (hub guide checkpoints at planning, review and completion) and `docs/sdlc.md:128-140` (\"Cross-project guide completion gate\").\n- `README.md:97` (\"a linked hub PR under the SDLC completion gate\").\n- `.github/pull_request_template.md:29-30` (the unconditional hub-sync checklist).\n\n## Outcome\n\nThis repository's guide-maintenance rules match the hub's current procedure.\n\n## Acceptance criteria\n\n1. `AGENTS.md`, `docs/sdlc.md`, README and the PR template no longer require an `updates.md` entry, a no-impact record or a hub PR for every delivery. They point to the hub procedure and state that a linked hub PR is required only when a task's authorized scope intentionally updates or publishes the guide.\n2. The existing boundaries are kept: read-only and tracker-only limits, no device or hosting authority, separate source-completion/guide-revision/public-publication/live-verification claims, and \"a source merge does not update the public site\".\n3. The repository's configured workflow and documentation checks pass.\n\n## Reference\n\ncodex-nanoleaf made the same change in [codex-nanoleaf#70](https://github.com/jimmie-potts/codex-nanoleaf/issues/70) / [PR #71](https://github.com/jimmie-potts/codex-nanoleaf/pull/71) (merged `77f188d`). Its `AGENTS.md`, `docs/sdlc.md` \"Cross-project work guide\" section, README and conditional PR-template section can serve as the model. Adapt them to this repository's own conventions.\n\n## Planning\n\nDocumentation maintenance with no behavior delta, so no OpenSpec change is needed.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/68",
+    "updatedAt": "2026-09-23T05:30:16Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "documentation"
       },
       {
         "name": "status:ready"

@@ -1,15 +1,40 @@
 {
-  "fetchedAt": "2026-09-23T05:12:22.714148+00:00",
+  "fetchedAt": "2026-09-23T07:26:02.132030+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T04:22:43Z",
+      "pushedAt": "2026-09-23T07:20:32Z",
       "defaultBranch": "main",
-      "headSha": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
-      "mainCommitCount": 82,
+      "headSha": "1338c03e925050e65d4ef4c7a2fd601d3feccce1",
+      "mainCommitCount": 87,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "1338c03e925050e65d4ef4c7a2fd601d3feccce1",
+          "date": "2026-09-23T07:17:50Z",
+          "message": "Add one-click owner launcher for BUNNY (#180)"
+        },
+        {
+          "sha": "d8527cd31f9843a83e4a04130ce4112f8478947c",
+          "date": "2026-09-23T07:07:27Z",
+          "message": "Start the BUNNY atlas with a system map and agent walkthrough (#177)"
+        },
+        {
+          "sha": "5db67a0944f017d655331ab410c639570c876108",
+          "date": "2026-09-23T06:04:04Z",
+          "message": "Record HT-A9 iPhone Apple Music qualification (#176)"
+        },
+        {
+          "sha": "c1f71be66d278f0b9dc1adb3f6fe7b3280a5ed77",
+          "date": "2026-09-23T05:54:04Z",
+          "message": "Add the fake-tested Tidbyt cloud controller (#174)"
+        },
+        {
+          "sha": "c646f15edc508a9ebebd134809050dbe6f947f7a",
+          "date": "2026-09-23T05:36:17Z",
+          "message": "Qualify the N30 Codex route and keep keyboard A/B outside BUNNY (#143)"
+        },
         {
           "sha": "a76b22db3497bcc1c92f6445add1356f8eb1820e",
           "date": "2026-09-23T04:22:43Z",
@@ -911,6 +936,14 @@
           "mergedAt": "2026-09-22T02:42:18Z"
         },
         {
+          "number": 143,
+          "title": "Qualify the N30 Codex route and keep keyboard A/B outside BUNNY",
+          "createdAt": "2026-09-22T02:38:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:36:18Z"
+        },
+        {
           "number": 144,
           "title": "Fix ordinary Codex current status across successive turns",
           "createdAt": "2026-09-22T02:46:53Z",
@@ -1053,14 +1086,46 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/171",
           "base": "main",
           "mergedAt": "2026-09-23T04:22:43Z"
+        },
+        {
+          "number": 174,
+          "title": "Add the fake-tested Tidbyt cloud controller",
+          "createdAt": "2026-09-23T05:44:00Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/174",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:54:05Z"
+        },
+        {
+          "number": 176,
+          "title": "Record HT-A9 iPhone Apple Music qualification",
+          "createdAt": "2026-09-23T05:49:31Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/176",
+          "base": "main",
+          "mergedAt": "2026-09-23T06:04:04Z"
+        },
+        {
+          "number": 177,
+          "title": "Start the BUNNY atlas with a system map and agent walkthrough",
+          "createdAt": "2026-09-23T05:55:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/177",
+          "base": "main",
+          "mergedAt": "2026-09-23T07:07:27Z"
+        },
+        {
+          "number": 180,
+          "title": "Add one-click owner launcher for BUNNY",
+          "createdAt": "2026-09-23T07:00:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/180",
+          "base": "main",
+          "mergedAt": "2026-09-23T07:17:50Z"
         }
       ],
       "openPRs": [
         {
-          "number": 143,
-          "title": "Record N30 qualification and keep keyboard A/B outside BUNNY",
-          "createdAt": "2026-09-22T02:38:29Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
+          "number": 183,
+          "title": "Refresh the work guide to current issue state",
+          "createdAt": "2026-09-23T07:20:33Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/183",
           "base": "main"
         }
       ],
@@ -1162,6 +1227,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/15"
         },
         {
+          "number": 16,
+          "title": "Implement the Tidbyt cloud controller",
+          "closedAt": "2026-09-23T06:42:33Z",
+          "createdAt": "2026-09-07T05:54:14Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/16"
+        },
+        {
           "number": 30,
           "title": "Qualify latency and failure isolation for shared Codex monitoring",
           "closedAt": "2026-09-22T02:35:49Z",
@@ -1224,6 +1297,14 @@
           "createdAt": "2026-09-08T02:35:08Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/63"
+        },
+        {
+          "number": 64,
+          "title": "Qualify N30 mouse controls for Codex",
+          "closedAt": "2026-09-23T05:40:44Z",
+          "createdAt": "2026-09-08T02:35:10Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/64"
         },
         {
           "number": 80,
@@ -1306,6 +1387,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/153"
         },
         {
+          "number": 158,
+          "title": "Qualify iPhone Apple Music now-playing sources through the apartment speakers",
+          "closedAt": "2026-09-23T06:09:12Z",
+          "createdAt": "2026-09-22T06:22:18Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/158"
+        },
+        {
           "number": 166,
           "title": "Align agent instructions and hub MCP tool descriptions with delivered code",
           "closedAt": "2026-09-23T03:25:29Z",
@@ -1328,12 +1417,28 @@
           "createdAt": "2026-09-23T04:11:15Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/170"
+        },
+        {
+          "number": 172,
+          "title": "Make the BUNNY atlas start with a system map and agent walkthrough",
+          "closedAt": "2026-09-23T07:10:58Z",
+          "createdAt": "2026-09-23T05:14:52Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/172"
+        },
+        {
+          "number": 179,
+          "title": "Open BUNNY through a local owner launcher without manual browser tokens",
+          "closedAt": "2026-09-23T07:20:50Z",
+          "createdAt": "2026-09-23T06:38:35Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179"
         }
       ],
-      "openIssueCount": 56,
+      "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-23T04:11:15Z"
+        "2026-09-23T07:06:34Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1344,17 +1449,27 @@
         "2026-09-20": 2,
         "2026-09-21": 1,
         "2026-09-22": 10,
-        "2026-09-23": 3
+        "2026-09-23": 10
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T05:03:06Z",
+      "pushedAt": "2026-09-23T05:31:19Z",
       "defaultBranch": "main",
-      "headSha": "83056630c046e93039e33f158eca4a439a005e93",
-      "mainCommitCount": 31,
+      "headSha": "cbb948516eb161d551d817c7ee2870b2b74dc9cb",
+      "mainCommitCount": 33,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "cbb948516eb161d551d817c7ee2870b2b74dc9cb",
+          "date": "2026-09-23T05:31:19Z",
+          "message": "Run Lines and NL22 Light Panels as independent devices in the worker (#67)"
+        },
+        {
+          "sha": "77f188d52394d4e9ac3456182bf21c2d32ca9589",
+          "date": "2026-09-23T05:25:38Z",
+          "message": "Align guide-maintenance rules with the hub procedure (#71)"
+        },
         {
           "sha": "83056630c046e93039e33f158eca4a439a005e93",
           "date": "2026-09-23T05:03:06Z",
@@ -1713,23 +1828,31 @@
           "mergedAt": "2026-09-22T15:49:43Z"
         },
         {
+          "number": 67,
+          "title": "Run Lines and NL22 Light Panels as independent devices in the worker",
+          "createdAt": "2026-09-23T04:38:02Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/67",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:31:19Z"
+        },
+        {
           "number": 69,
           "title": "Move CI to Depot",
           "createdAt": "2026-09-23T04:56:09Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/69",
           "base": "main",
           "mergedAt": "2026-09-23T05:03:06Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
-          "number": 67,
-          "title": "Run Lines and NL22 Light Panels as independent devices in the worker",
-          "createdAt": "2026-09-23T04:38:02Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/67",
-          "base": "main"
+          "number": 71,
+          "title": "Align guide-maintenance rules with the hub procedure",
+          "createdAt": "2026-09-23T05:19:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/71",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:25:39Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 2,
@@ -1754,6 +1877,14 @@
           "createdAt": "2026-09-05T22:43:35Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
+        },
+        {
+          "number": 21,
+          "title": "Check feasibility of mirroring externally controlled Nanoleaf scenes",
+          "closedAt": "2026-09-23T05:25:50Z",
+          "createdAt": "2026-09-07T00:24:02Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/21"
         },
         {
           "number": 22,
@@ -1868,6 +1999,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/42"
         },
         {
+          "number": 43,
+          "title": "Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker",
+          "closedAt": "2026-09-23T05:34:04Z",
+          "createdAt": "2026-09-07T18:43:21Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/43"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -1922,9 +2061,17 @@
           "createdAt": "2026-09-23T04:54:38Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/68"
+        },
+        {
+          "number": 70,
+          "title": "Align guide-maintenance rules with the current hub procedure",
+          "closedAt": "2026-09-23T05:28:39Z",
+          "createdAt": "2026-09-23T04:58:54Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/70"
         }
       ],
-      "openIssueCount": 19,
+      "openIssueCount": 16,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-23T04:58:54Z"
@@ -2513,10 +2660,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
         }
       ],
-      "openIssueCount": 15,
+      "openIssueCount": 16,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-22T05:37:38Z"
+        "2026-09-23T05:30:16Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -2525,7 +2672,8 @@
         "2026-09-08": 1,
         "2026-09-09": 1,
         "2026-09-20": 1,
-        "2026-09-22": 1
+        "2026-09-22": 1,
+        "2026-09-23": 1
       }
     }
   }

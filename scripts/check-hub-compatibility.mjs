@@ -138,7 +138,7 @@ try {
   page.setDefaultTimeout(10000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto(hub.url);
-  await page.getByLabel('Hub browser access token').fill(token);
+  await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(token);
   await page.getByRole('button', {name: 'Connect', exact: true}).click();
   const view = () => request(hub.url, '/api/monitor/v1/sessions');
   const pxView = () => request(pixoo.url, '/api/monitor/v1/sessions', pixooHeaders);
@@ -237,7 +237,7 @@ try {
     expectedGeneration: settings.generation, action: {operation: 'mode', mode: 'monitor'}});
   assert.equal((await tool(prefix + '_integration_status')).configuration.mode, 'monitor');
   scenarios.push({name: stage, outcome: 'passed', physicalOutcome: 'simulator only'});
-  await page.getByLabel('Hub browser access token').fill(token);
+  await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(token);
   await page.getByRole('button', {name: 'Connect', exact: true}).click();
   await page.getByRole('button', {name: /^Activity /}).click();
   stage = 'disconnected consumer';

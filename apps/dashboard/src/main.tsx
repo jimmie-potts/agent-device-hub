@@ -203,5 +203,20 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  ['Collector',monitor?.snapshot.collector??'Unknown'],['State owner',monitor?.ownerId??'Unknown'],['Feed',feed?'Connected':'Reconnecting'],['Snapshot age',received?age(now-received):'Unknown'],['Lost observations',monitor?.snapshot.lossCount??'Unknown'],['Connection error',error||'None observed']
  ]}/><h2>Observed sources</h2>{[...new Set(sessions.map(s=>`${s.identity.provider} / ${s.identity.hostId} / ${s.identity.sourceId}`))].map(s=><p key={s}>{s}</p>)}{!sessions.length&&<p>No source evidence yet.</p>}<p className="hint">A connected collector does not prove a fresh session, successful task, read chat or physical device result.</p></section><footer>BUNNY / Source observations and deliberate controls</footer></main></div>;
 }
-function App(){const [api,setApi]=useState<Api>(),[token,setToken]=useState('');return api?<Dashboard api={api} disconnect={()=>{setApi(undefined);setToken('');}}/>:<main className="login"><p className="eyebrow">BUNNY / LOCAL INTEGRATION</p><h1>Your workspace.<br/>One clear view.</h1><p>Connect to inspect agent activity and supported component integration.</p><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">Use a separately provisioned hub credential, never a native controller token. It stays in this page's memory and is cleared on disconnect or reload.</p></main>;}
+function App(){
+ const [api,setApi]=useState<Api>(),[token,setToken]=useState(''),[launching,setLaunching]=useState(false),[launchError,setLaunchError]=useState(false);
+ useEffect(()=>{
+  if(!location.hash)return;
+  const fragment=new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null,'',location.pathname+location.search);
+  const code=fragment.get('launch');
+  if(fragment.size!==1||!code||!/^[A-Za-z0-9_-]{43}$/.test(code)){setLaunchError(true);return;}
+  setLaunching(true);
+  void fetch('/api/dashboard/v1/launch',{method:'POST',cache:'no-store',redirect:'error',headers:{'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify({code})})
+   .then(async response=>{if(!response.ok)throw new Error('launch-failed');const value:unknown=await response.json();if(!value||typeof value!=='object'||!('token' in value)||typeof value.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.token))throw new Error('launch-failed');setApi(new Api(value.token));})
+   .catch(()=>setLaunchError(true)).finally(()=>setLaunching(false));
+ },[]);
+ const disconnect=()=>{if(api)void api.request('/api/dashboard/v1/logout',{}).catch(()=>{});setApi(undefined);setToken('');};
+ return api?<Dashboard api={api} disconnect={disconnect}/>:<main className="login"><p className="eyebrow">BUNNY / LOCAL INTEGRATION</p><h1>Your workspace.<br/>One clear view.</h1><p>{launching?'Connecting to the local Hub…':'Open BUNNY with the Hub launcher.'}</p>{launchError&&<p role="alert">That launch expired or failed. Run the launcher again.</p>}<p className="hint">The launcher opens this page and connects automatically. After a reload, run it again.</p><details><summary>Use a separately provisioned access token</summary><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">Never use a native controller token. Browser access stays in page memory and clears on disconnect or reload.</p></details></main>;
+}
 createRoot(document.getElementById('root')!).render(<App/>);

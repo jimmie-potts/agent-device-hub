@@ -15,13 +15,21 @@ these assets in the reproducible offline-installable host archive. The configure
 hub serves them at its numeric-loopback origin. There is no separate frontend
 server or CORS grant.
 
-Provision a dedicated hub browser credential with `read`, optional `control`, and
-only the intended registered device aliases. Give the user its token through the
-existing private provisioning process. Never use a native controller token.
-The login holds the token in memory only; disconnect/reload clears it. The hub
-continues enforcing scopes, device permissions, Host, Origin and Fetch-Metadata
-before commands or replay. Controller-native tokens remain in private server
-configuration. A read-only credential sees disabled controls with explanations.
+The normal installed opening path uses the Hub owner's `open` command. It passes
+one short-lived code through a
+URL fragment, removes the fragment before exchange, and returns a memory-only
+browser session with read/control on configured aliases. Reload requires another
+launcher invocation. A direct URL still shows the manual-token option. See
+[the Hub launcher procedure](../hub/README.md#open-bunny-without-typing-a-token).
+
+For manual access, provision a dedicated hub browser credential with `read`,
+optional `control`, and only the intended registered device aliases. Give the
+user its token through the existing private provisioning process. Never use a
+native controller token. The login holds the token in memory only;
+disconnect/reload clears it. The hub continues enforcing scopes, device
+permissions, Host, Origin and Fetch-Metadata before commands or replay.
+Controller-native tokens remain in private server configuration. A read-only
+credential sees disabled controls with explanations.
 
 Add an existing configured monitor consumer if notice acknowledgment is needed.
 The UI lists configured consumers; acknowledgment changes only that consumer's
