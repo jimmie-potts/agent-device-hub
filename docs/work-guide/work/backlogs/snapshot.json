@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-23T01:25:37.113184+00:00",
-  "refreshedAt": "2026-09-23T01:25:54.383122+00:00",
+  "startedAt": "2026-09-23T01:46:12.884203+00:00",
+  "refreshedAt": "2026-09-23T01:46:31.132388+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 58,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        60
       ],
-      "openPRs": 3,
+      "openPRs": 2,
       "prPageSizes": [
-        3
+        2
       ],
       "paginationComplete": true,
       "directReads": [

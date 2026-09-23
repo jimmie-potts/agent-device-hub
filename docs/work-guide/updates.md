@@ -13,12 +13,20 @@ milestones and dependencies were preserved. The guide's desktop path, roadmap
 label, two sequence viewers and their pinned source now use the revised scope.
 Backlog and paginated history refreshes retain concurrent main work.
 
-N30 native receiver identity, selective Codex translation and recovery remain
+N30 native D-pad attribution, selective Codex translation and recovery remain
 unqualified. #64 stays open and #65 blocked. No keyboard integration gate
 remains. This candidate adds no product behavior or OpenSpec capability and
 performs no installation, input dispatch or hardware operation. Normal CI applies
 because the PR includes files outside the guide. Guide UI uses the SDLC approval
 exception; public publication remains separate.
+
+A September 23 UTC follow-up used owner-operated read-only Windows inventory.
+Only `VID_062A&PID_4101` disappeared when the N30 receiver was removed. The
+owner reconnected it and confirmed normal mouse operation. The installed Codex
+package is `OpenAI.Codex` version `26.917.6896.0`. This resolves the receiver
+association and package inventory gaps; it does not qualify native D-pad events,
+running-process identity, selective suppression or application outcomes. The
+report, #64 receipt, guide and pinned desktop-control source reflect that limit.
 
 Validation: Node 24.21.0 setup and workflow validation passed with 11 current
 specifications, 13 archives and 15 workflow tests. Guide generation, nine

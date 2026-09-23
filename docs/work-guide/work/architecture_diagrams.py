@@ -373,7 +373,7 @@ D6 = seq(
     cards=[
         {'dot': 'cyan', 'title': 'Independent path', 'items': ['Mouse dispatch needs no hub, shared monitoring, general controls or Music', 'Keyboard A/B and attached Super Buttons stay outside B.U.N.N.Y.']},
         {'dot': 'violet', 'title': 'Ownership', 'items': ['The keyboard owns its A/B assignments, including personal Wispr and Enter mappings', 'B.U.N.N.Y. does not edit, store, dispatch or use them for presets']},
-        {'dot': 'amber', 'title': 'Qualification pending', 'items': ['N30 85CA has four distinct observed browser outputs (H64)', 'Native identity, selective routing and recovery still need evidence', 'H70 profiles cover qualified controls, excluding keyboard A/B and Super Buttons']},
+        {'dot': 'amber', 'title': 'Qualification pending', 'items': ['N30 85CA has four distinct observed browser outputs (H64)', 'Native D-pad attribution, routing and recovery unqualified', 'H70 profiles cover qualified controls, excluding keyboard A/B and Super Buttons']},
     ],
     width=1100,
 )
@@ -591,7 +591,7 @@ DIAGRAMS = [
          reading=['Ordinary mouse behavior passes through outside Codex. Held, repeated or stale input does not dispatch twice or replay later.',
                   'Presets require a separately selected qualified binding and service. Keyboard A/B and attached Super Buttons are excluded.'],
          boundaries=['This path does not wait for the hub, shared monitoring, general controls or Music.',
-                     'Owner packaging identifies N30 mouse 85CA. Four browser outputs were observed; native identity, selective translation and recovery remain unqualified under [[H64]].',
+                     'Owner packaging identifies N30 mouse 85CA. Four browser outputs were observed; the receiver is associated with 062A:4101 and the installed Codex package is 26.917.6896.0. Native D-pad attribution, selective translation and recovery remain unqualified under [[H64]].',
                      'The later editor ([[H70]]) excludes keyboard A/B, attached Super Buttons, arbitrary scripts, shell execution, raw device commands and multi-step macros.'],
          sources=[(H, 'docs/desktop-controls.md')],
          issues=['H63', 'H64', 'H65', 'H66', 'H70']),
