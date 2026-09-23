@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-device-hub.local/lifx-light-1.0.0.schema.json",
+  "title": "LIFX light profile 1.0.0 request",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "const": "1.0"
+    },
+    "controllerId": {
+      "$ref": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json#/$defs/id"
+    },
+    "deviceId": {
+      "$ref": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json#/$defs/id"
+    },
+    "requestId": {
+      "$ref": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json#/$defs/ticket"
+    },
+    "expectedConfigurationRevision": {
+      "$ref": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json#/$defs/counter"
+    },
+    "expectedGeneration": {
+      "$ref": "https://schemas.agent-device-hub.invalid/controller-v1.schema.json#/$defs/ticket"
+    },
+    "profile": {
+      "type": "object",
+      "properties": {
+        "profileId": {
+          "const": "lifx-light"
+        },
+        "profileVersion": {
+          "const": "1.0.0"
+        }
+      },
+      "required": [
+        "profileId",
+        "profileVersion"
+      ],
+      "additionalProperties": false
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "lifx.color.set"
+            },
+            "hue": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 360
+            },
+            "saturation": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "kind",
+            "hue",
+            "saturation"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "lifx.temperature.set"
+            },
+            "kelvin": {
+              "type": "integer",
+              "minimum": 1500,
+              "maximum": 9000
+            }
+          },
+          "required": [
+            "kind",
+            "kelvin"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "apiVersion",
+    "controllerId",
+    "deviceId",
+    "requestId",
+    "expectedConfigurationRevision",
+    "expectedGeneration",
+    "profile",
+    "command"
+  ],
+  "additionalProperties": false
+}

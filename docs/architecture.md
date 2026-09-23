@@ -50,7 +50,8 @@ Tidbyt owns its 64×32 renderer, backend connection and serialized display write
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
 queues. These new controllers belong in this repository. The Tidbyt cloud
 controller exists as a fake-tested in-process package; its status integration and
-installation remain separate. LIFX is documentation only. The shared core interprets
+installation remain separate. LIFX provides a fake-tested in-process LAN controller;
+its status integration and installation remain separate. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the
@@ -161,8 +162,8 @@ emitters live in packages/agent-state/src/providers.ts; the silent source hook i
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
 The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
 migrations have separate deferred issues. controllers/tidbyt holds the
-in-process cloud controller package; controllers/lifx and controllers/pc-lighting
-currently contain documents. Use Node 24 and npm workspaces for executable packages.
+in-process cloud controller package; controllers/lifx holds the in-process LAN controller and controllers/pc-lighting
+currently contains documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
