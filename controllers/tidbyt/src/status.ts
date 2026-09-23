@@ -32,7 +32,8 @@ const RANK: Record<StatusState, number> = { ASK: 0, RUN: 1, DONE: 2 };
 
 function sessionState(session: SessionSnapshot, consumers?: readonly string[]): StatusState | undefined {
   if (session.attention.length) return 'ASK';
-  if (session.activity === 'active') return 'RUN';
+  // A root whose child is active is still working, though the child has no row of its own.
+  if (session.activity === 'active' || session.children.active > 0) return 'RUN';
   const acknowledged = (by: string[]) => consumers ? by.some(id => consumers.includes(id)) : by.length > 0;
   if (session.notices.some(notice => notice.kind === 'turn-ended' && !acknowledged(notice.acknowledgedBy))) return 'DONE';
   return undefined;

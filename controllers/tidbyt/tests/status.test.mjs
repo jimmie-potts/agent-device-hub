@@ -40,6 +40,12 @@ test('multiple sessions show ASK, RUN and DONE in order and omit idle, unknown a
   assert.equal(view.idle, false);
 });
 
+test('a root session whose child is active counts as working', () => {
+  const view = statusView(snapshot([session({ label: 'parent', children: { active: 1, uncertain: 0 } })]));
+  assert.deepEqual(rowSummary(view), ['PARENT RUN']);
+  assert.equal(view.idle, false);
+});
+
 test('newer evidence comes first within a state', () => {
   const view = statusView(snapshot([working({ label: 'old', lastEvidenceAtMs: 10 }), working({ label: 'new', lastEvidenceAtMs: 20 })]));
   assert.deepEqual(rowSummary(view), ['NEW RUN', 'OLD RUN']);
@@ -79,6 +85,8 @@ test('labels prefer the user label, then the project ID, then a neutral hashed I
   assert.equal(labels[1], 'PROJ-1');
   assert.match(labels[2], /^C-[0-9A-F]{4}$/);
   assert.equal(statusView(snapshot([plain])).rows[0].label, labels[2], 'neutral ID is stable');
+  const codex = working({ identity: { ...plain.identity, provider: 'codex', client: 'cli' } });
+  assert.match(statusView(snapshot([codex])).rows[0].label, /^X-[0-9A-F]{4}$/);
   const text = JSON.stringify(view);
   for (const value of Object.values(plain.identity)) assert(!text.toUpperCase().includes(value.toUpperCase()), `identity field ${value} leaked`);
 });

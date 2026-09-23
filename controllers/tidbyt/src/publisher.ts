@@ -69,6 +69,10 @@ export class TidbytStatusPublisher {
   #sent?: { rgb: Uint8Array; atMs: number };
   #lastWriteAtMs?: number;
   #lastWrite?: Receipt;
+  /** Consecutive writes that were not sent; each doubles the wait before the next. */
+  #failures = 0;
+  /** A feed read that outlived its timeout. No new read starts until it settles. */
+  #pendingRead?: Promise<unknown>;
   #installation: InstallationState = 'unknown';
 
   constructor(options: StatusPublisherOptions) {
@@ -163,11 +167,19 @@ export class TidbytStatusPublisher {
   }
 
   async #read(): Promise<Snapshot | undefined> {
+    if (this.#pendingRead) return undefined;
     let timer: unknown;
     try {
       const timeout = new Promise<typeof TIMEOUT>(resolve => { timer = this.#timers.setTimeout(() => resolve(TIMEOUT), this.#feedTimeoutMs); });
-      const value = await Promise.race([Promise.resolve().then(() => this.#feed.snapshot()), timeout]);
-      if (value === TIMEOUT) return undefined;
+      const read = Promise.resolve().then(() => this.#feed.snapshot());
+      const value = await Promise.race([read, timeout]);
+      if (value === TIMEOUT) {
+        const pending: Promise<unknown> = read.catch(() => undefined).finally(() => {
+          if (this.#pendingRead === pending) this.#pendingRead = undefined;
+        });
+        this.#pendingRead = pending;
+        return undefined;
+      }
       const valid = validateSnapshot(value);
       return valid.ok ? valid.value : undefined;
     } catch {
@@ -197,12 +209,28 @@ export class TidbytStatusPublisher {
     }
     const refreshDue = this.#sent && !view.idle ? Math.max(1, this.#sent.atMs + this.#refreshMs - now) : this.#pollMs;
     if (!command) return Math.min(this.#pollMs, refreshDue);
-    const wait = this.#lastWriteAtMs === undefined ? 0 : this.#lastWriteAtMs + this.#minIntervalMs - now;
+    const wait = this.#lastWriteAtMs === undefined ? 0 : this.#lastWriteAtMs + this.#backoffMs() - now;
     if (wait > 0) return wait;
     this.#lastWriteAtMs = now;
+    if (command.kind === 'tidbyt.remove' && this.#installation === 'unknown') {
+      // Read the installation list first, so an installation that is already gone is not deleted again.
+      const listing = await this.#controller.refresh();
+      if (listing?.ok && !listing.present) {
+        this.#installation = 'absent';
+        this.#failures = 0;
+        return this.#pollMs;
+      }
+    }
     const receipt = await this.#submit(command);
     if (receipt) this.#record(command, receipt, rgb, now);
-    return receipt?.outcome === 'sent' ? Math.min(this.#pollMs, refreshDue) : this.#minIntervalMs;
+    else this.#failures += 1;
+    return receipt?.outcome === 'sent' ? Math.min(this.#pollMs, refreshDue) : this.#backoffMs();
+  }
+
+  /** The minimum interval, doubled for each consecutive unsent write after the first, up to the refresh period. */
+  #backoffMs(): number {
+    const doublings = Math.min(Math.max(0, this.#failures - 1), 16);
+    return Math.min(this.#minIntervalMs * 2 ** doublings, Math.max(this.#minIntervalMs, this.#refreshMs));
   }
 
   /** Submit a fresh request built from the controller's current identities. Never resubmits an earlier one. */
@@ -219,6 +247,7 @@ export class TidbytStatusPublisher {
 
   #record(command: DisplayRequest['command'], receipt: Receipt, rgb: Uint8Array | undefined, atMs: number): void {
     this.#lastWrite = receipt;
+    this.#failures = receipt.outcome === 'sent' ? 0 : this.#failures + 1;
     if (receipt.outcome === 'sent') {
       if (command.kind === 'tidbyt.display') {
         this.#sent = { rgb: rgb!, atMs };

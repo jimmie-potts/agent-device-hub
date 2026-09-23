@@ -111,8 +111,8 @@ hold the details.
 
 - **Layout.** Up to four 8-pixel rows, one per root session: a colored marker, a
   label of up to ten characters and a state word. `ASK` (amber) means the
-  session has attention, `RUN` (blue) means it is active, and `DONE` (green)
-  means a turn-ended notice has not been acknowledged. Rows are ordered `ASK`,
+  session has attention, `RUN` (blue) means it or one of its child sessions is
+  active, and `DONE` (green) means a turn-ended notice has not been acknowledged. Rows are ordered `ASK`,
   `RUN`, `DONE`, then newest evidence first. With more than four sessions,
   three rows are drawn and the fourth reads `+N MORE`. Child sessions and
   sessions with nothing outstanding are not shown.
@@ -130,11 +130,15 @@ hold the details.
   rate limit, and a 429 still triggers the controller's hold.
 - **Rotation.** Status is a background installation in the normal rotation.
   Foreground takeover is not qualified. When a readable feed shows nothing to
-  display, the publisher removes the installation once, including a leftover
-  one at start. An unavailable feed never removes it.
+  display, the publisher removes the installation, including a leftover one at
+  start. When presence is unknown it first reads the installation list through
+  the controller and skips the removal if the installation is already gone. An
+  unavailable feed never removes it.
 - **Failures.** A failed write is not replayed. A later write is a fresh request
-  for the current state, no sooner than 15 s later. An uncertain write makes
-  installation presence unknown.
+  for the current state. The wait after an unsent write starts at 15 s and
+  doubles with each further consecutive failure, up to 10 minutes. An uncertain
+  write makes installation presence unknown. A feed read that outlives its
+  timeout blocks new reads until it settles.
 
 Shared activity, attention, acknowledgment, read evidence and freshness stay
 distinct. The publisher never reduces lifecycle events or acknowledges notices.

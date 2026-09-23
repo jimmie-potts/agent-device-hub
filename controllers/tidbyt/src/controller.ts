@@ -3,7 +3,7 @@ import {
   admit, evaluate, validate,
   type AdmissionState, type Clock, type FailureCode, type Receipt, type Request, type Snapshot, type Ticket,
 } from '@jimmie-potts/device-contracts';
-import type { ConnectionCapabilities, DisplayConnection, PushOutcome } from './connection.js';
+import type { ConnectionCapabilities, DisplayConnection, InstallationRead, PushOutcome } from './connection.js';
 import { decodeFrameData, renderFrame, FRAME_HEIGHT, FRAME_WIDTH, type FrameData } from './render.js';
 
 export const DISPLAY_PROFILE = Object.freeze({ profileId: 'tidbyt-display', profileVersion: '1.1.0' });
@@ -355,17 +355,20 @@ export class TidbytController {
     this.cancelPending();
   }
 
-  /** Read-only reconnect: refresh installation evidence and health. No command is resubmitted. */
-  async refresh(): Promise<void> {
-    if (this.#closed) return;
+  /**
+   * Read-only reconnect: refresh installation evidence and health. No command is resubmitted.
+   * Returns this read's result, or undefined when the controller closed or was reconfigured meanwhile.
+   */
+  async refresh(): Promise<InstallationRead | undefined> {
+    if (this.#closed) return undefined;
     const connection = this.#connection;
-    let result;
+    let result: InstallationRead;
     try {
       result = await connection.readInstallation(new AbortController().signal);
     } catch {
       result = { ok: false as const, failure: 'transport-failure' as const };
     }
-    if (connection !== this.#connection || this.#closed) return;
+    if (connection !== this.#connection || this.#closed) return undefined;
     if (result.ok) {
       this.#installation = { present: result.present, sampledAtMs: this.#now() };
       // Writes stay refused under an authentication hold, so the service is not ready.
@@ -375,6 +378,7 @@ export class TidbytController {
       this.#health = 'unavailable';
     }
     this.#changed();
+    return result;
   }
 
   /** Stop the controller: abort the in-flight write (reported uncertain) and cancel queued writes. */

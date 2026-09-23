@@ -12,10 +12,10 @@ The Tidbyt controller from #16 is the only writer for one Tidbyt. It accepts a `
 
 ### Session state and order
 
-Rows show root sessions only; a session with known parent evidence is a child and is left out. Each shown session gets the first matching state:
+Rows show root sessions only; a session with known parent evidence is a child and is left out. Its parent's active child count keeps the parent `RUN`, so a working subagent never lets the installation be removed. Each shown session gets the first matching state:
 
 1. `ASK` (amber): at least one attention entry of any kind.
-2. `RUN` (blue): activity is `active`.
+2. `RUN` (blue): activity is `active`, or the owner counts at least one active child session.
 3. `DONE` (green): at least one turn-ended notice that the configured acknowledging consumers have not acknowledged.
 
 Other sessions (idle, interrupted, ended or unknown with nothing outstanding) are not shown. Read evidence does not retire `DONE`, because read and acknowledged are distinct. By default any consumer's acknowledgment retires a notice. The publisher can instead name the consumers whose acknowledgment counts. The Tidbyt itself never acknowledges.
@@ -42,9 +42,11 @@ The publisher runs one evaluation at a time. A change notification, `resync`, po
 
 A write happens at most once every 15 s, measured from the previous write's submission. An earlier request schedules a timer for the remaining time and then evaluates the latest snapshot, so intermediate frames are dropped.
 
-Writes use the controller's current `nextRequestId`, configuration revision and generation from its snapshot. The publisher awaits the receipt. `sent` records the frame, or records that the installation is absent after a removal. `failed`, `cancelled` or a refused submission leaves the previous record unchanged, so the next evaluation tries again after the minimum interval. `uncertain` makes installation presence unknown and clears the sent frame. The publisher never resubmits an old request; a later write is a fresh request for the current state. The controller's authentication hold still fails writes locally, and its 429 hold still delays them.
+Writes use the controller's current `nextRequestId`, configuration revision and generation from its snapshot. The publisher awaits the receipt. `sent` records the frame, or records that the installation is absent after a removal. `failed`, `cancelled` or a refused submission leaves the previous record unchanged, so a later evaluation tries again. The wait after an unsent write is the minimum interval, doubled for each further consecutive unsent write and capped at the refresh period, so a persistent rejection cannot cause a request every 15 s. `uncertain` makes installation presence unknown and clears the sent frame. The publisher never resubmits an old request; a later write is a fresh request for the current state. The controller's authentication hold still fails writes locally, and its 429 hold still delays them.
 
-At start, installation presence is unknown, so an idle start removes any leftover installation once.
+At start, installation presence is unknown. Before removing an installation of unknown presence, the publisher reads the installation list through the controller's read-only `refresh()`. If the list shows it absent, no removal is sent. Otherwise the removal is sent, so an idle start removes a leftover installation. #16 did not establish what the cloud returns when deleting a missing installation, so a failed removal is not treated as absence.
+
+A feed read that outlives its timeout stays pending; no new read starts until it settles, so a hung remote feed cannot accumulate reads.
 
 ### Controller removal
 

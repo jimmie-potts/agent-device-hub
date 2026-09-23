@@ -10,7 +10,7 @@
 
 ## 3. Publisher
 
-- [x] 3.1 Write failing publisher tests with a fake feed, fake clock and fake connection for coalescing, the 15 s minimum, the 10 minute refresh, idle removal once, stale feed without removal, failed push without replay and uncertain outcomes. Include one test that feeds a real agent-state owner. Then implement the publisher.
+- [x] 3.1 Write failing publisher tests with a fake feed, fake clock and fake connection for coalescing, the 15 s minimum, the 10 minute refresh, idle removal once, a listing check before removal, backoff after repeated failures, a hung feed read, stale feed without removal, failed push without replay and uncertain outcomes. Include one test that feeds a real agent-state owner. Then implement the publisher.
 
 ## 4. Documentation and delivery
 

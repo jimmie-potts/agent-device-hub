@@ -11,14 +11,14 @@ const CAPABILITIES = {
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 
-function fakeConnection({ push = () => ({ outcome: 'sent' }), remove = () => ({ outcome: 'sent' }) } = {}) {
-  const state = { pushes: [], removals: 0 };
+function fakeConnection({ push = () => ({ outcome: 'sent' }), remove = () => ({ outcome: 'sent' }), read = () => ({ ok: true, present: true }) } = {}) {
+  const state = { pushes: [], removals: 0, reads: 0 };
   return {
     state,
     capabilities: CAPABILITIES,
     async push(webp) { state.pushes.push(webp); return push(state.pushes.length); },
     async remove() { state.removals++; return remove(state.removals); },
-    async readInstallation() { return { ok: true, present: true }; },
+    async readInstallation() { state.reads++; return read(state.reads); },
   };
 }
 
@@ -211,7 +211,7 @@ test('an uncertain push makes installation presence unknown, so a later idle sta
   await s.ingest(hook('Stop', 'one', 't1'));
   const [session] = s.owner.snapshot().sessions;
   await s.owner.acknowledge(session.identity, session.notices[0].id, 'pixoo');
-  await s.advance(20 * SECOND);
+  await s.advance(MINUTE);
   assert.equal(connection.state.removals, 2);
 });
 
@@ -223,4 +223,77 @@ test('stop ends scheduling and the subscription', async t => {
   await s.ingest(hook('UserPromptSubmit', 'one', 't1'));
   await s.advance(MINUTE);
   assert.equal(s.connection.state.pushes.length, 0);
+});
+
+test('an idle start whose installation listing shows it absent sends no removal', async t => {
+  const connection = fakeConnection({ read: () => ({ ok: true, present: false }) });
+  const s = await setup(t, { connection });
+  s.publisher.start();
+  await s.settle();
+  assert.equal(connection.state.reads, 1);
+  assert.equal(connection.state.removals, 0);
+  assert.equal(s.publisher.state().installation, 'absent');
+  await s.advance(10 * MINUTE);
+  assert.equal(connection.state.reads, 1, 'no further reads once absent');
+});
+
+test('a failed removal is checked against the listing instead of being resent every 15 s', async t => {
+  const connection = fakeConnection({
+    remove: () => ({ outcome: 'failed', failure: 'unknown-device', priorEffects: 'none' }),
+    read: n => ({ ok: true, present: n === 1 }),
+  });
+  const s = await setup(t, { connection });
+  s.publisher.start();
+  await s.settle();
+  assert.equal(connection.state.removals, 1);
+  assert.equal(s.publisher.state().lastWrite.outcome, 'failed');
+  await s.advance(15 * SECOND);
+  assert.equal(connection.state.reads, 2);
+  assert.equal(connection.state.removals, 1, 'the listing shows the installation gone');
+  assert.equal(s.publisher.state().installation, 'absent');
+});
+
+test('repeated failed writes back off exponentially up to the refresh period', async t => {
+  const connection = fakeConnection({ remove: () => ({ outcome: 'failed', failure: 'invalid-request', priorEffects: 'none' }) });
+  const s = await setup(t, { connection });
+  s.publisher.start();
+  await s.settle();
+  const at = [];
+  let seen = connection.state.removals;
+  for (let second = 1; second <= 60 * 60; second++) {
+    await s.advance(SECOND);
+    if (connection.state.removals !== seen) { seen = connection.state.removals; at.push(second); }
+  }
+  assert.deepEqual(at.slice(0, 5), [15, 45, 105, 225, 465]);
+  assert(at.slice(6).every((second, i) => second - at[i + 5] === 600), 'capped at the 10 minute refresh period');
+  assert(connection.state.removals < 12, `${connection.state.removals} removals in an hour`);
+});
+
+test('a faulted collector or an invalid snapshot is an unavailable feed and never removes the installation', async t => {
+  for (const bad of [owner => ({ ...owner.snapshot(), collector: 'faulted' }), () => ({})]) {
+    const s = await setup(t, { feed: owner => ({ snapshot: () => bad(owner) }) });
+    s.publisher.start();
+    await s.settle();
+    assert.deepEqual(s.publisher.state().view.rows, [{ kind: 'feed' }]);
+    assert.equal(s.connection.state.pushes.length, 1);
+    await s.advance(5 * MINUTE);
+    assert.equal(s.connection.state.removals, 0);
+    s.publisher.stop();
+  }
+});
+
+test('a hung feed read is not started again until it settles', async t => {
+  let calls = 0;
+  let release;
+  const s = await setup(t, { feed: owner => ({ snapshot: () => { calls++; return calls === 1 ? new Promise(resolve => { release = () => resolve(owner.snapshot()); }) : owner.snapshot(); } }) });
+  await s.ingest(hook('UserPromptSubmit', 'one', 't1'));
+  s.publisher.start();
+  await s.advance(3 * MINUTE);
+  assert.equal(calls, 1);
+  assert.equal(s.publisher.state().view.feed, 'unavailable');
+  release();
+  await s.settle();
+  await s.advance(30 * SECOND);
+  assert.equal(calls, 2);
+  assert.equal(s.publisher.state().view.feed, 'available');
 });
