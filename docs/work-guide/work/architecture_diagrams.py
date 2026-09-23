@@ -505,7 +505,7 @@ D8 = seq(
 )
 
 # ---------------------------------------------------------------------------
-# 9. Proposed fresh Nanoleaf Linux runtime
+# 9. Installed Nanoleaf Linux runtime
 # ---------------------------------------------------------------------------
 SIZE9 = [165, 64]
 
@@ -518,17 +518,17 @@ def c9(id, type, label, sublabel, row, col, tag=None):
 
 
 D9 = arch(
-    'Proposed fresh Nanoleaf Linux runtime',
+    'Installed Nanoleaf Linux runtime',
     components=[
         c9('browser', 'frontend', 'Windows browser', 'wall map client', 0, 0),
         c9('desktop', 'external', 'Codex Desktop', 'Windows · tasks execute in WSL', 0, 2),
         c9('cliClient', 'external', 'Codex CLI', 'Ubuntu WSL', 0, 3),
-        c9('wallMap', 'frontend', 'Python wall map', '127.0.0.1:8765', 1, 0, 'proposed'),
+        c9('wallMap', 'frontend', 'Python wall map', '127.0.0.1:8765', 1, 0, 'installed'),
         c9('desktopJson', 'database', 'Mounted Desktop JSON', 'project · title · unread · read-only', 1, 1),
-        c9('hooksCli', 'backend', 'Linux hooks and CLI', 'Python · fail-open hooks', 1, 2, 'proposed'),
-        c9('mcpHost', 'security', 'Node MCP host', '127.0.0.1:41230', 1, 3, 'proposed'),
+        c9('hooksCli', 'backend', 'Linux hooks and CLI', 'Python · fail-open hooks', 1, 2, 'installed'),
+        c9('mcpHost', 'security', 'Node MCP host', '127.0.0.1:41230', 1, 3, 'installed'),
         c9('linuxState', 'database', 'Linux SQLite', '~/.local/share/codex-nanoleaf', 2, 2, 'fresh state'),
-        c9('controller', 'security', 'Python controller', '127.0.0.1:41231 · bearer', 2, 3, 'proposed'),
+        c9('controller', 'security', 'Python controller', '127.0.0.1:41231 · bearer', 2, 3, 'installed'),
         c9('worker', 'backend', 'On-demand worker', 'Python · sole light writer', 3, 2, 'existing behavior'),
         c9('lights', 'external', 'Nanoleaf Lines', 'configured LAN device', 3, 4),
     ],
@@ -551,9 +551,9 @@ D9 = arch(
         {'kind': 'region', 'label': 'Ubuntu WSL · separate Linux processes and Linux-owned state', 'wraps': ['wallMap', 'hooksCli', 'mcpHost', 'linuxState', 'controller', 'worker']},
     ],
     cards=[
-        {'dot': 'violet', 'title': 'Proposed process boundary', 'items': ['Hooks, CLI, wall map and controller coordinate through Linux SQLite', 'Node MCP calls the controller directly over numeric-loopback HTTP', 'The worker remains the sole light writer; setup and the map may read device geometry']},
+        {'dot': 'violet', 'title': 'Linux process boundary', 'items': ['Hooks, CLI, wall map and controller coordinate through Linux SQLite', 'Node MCP calls the controller directly over numeric-loopback HTTP', 'The worker remains the sole light writer; setup and the map may read device geometry']},
         {'dot': 'cyan', 'title': 'Windows remains a client', 'items': ['Codex Desktop tasks execute in WSL', 'The Windows browser opens the wall map', 'Configured project, title and unread JSON is mounted read-only']},
-        {'dot': 'amber', 'title': 'Evidence boundary', 'items': ['Fresh install; no data migration or rollback tooling', 'No combined daemon, new hook API, shared monitoring or source move', 'PR #57 is a source candidate; installed acceptance #55 remains open']},
+        {'dot': 'amber', 'title': 'Evidence boundary', 'items': ['Fresh install; no data migration or rollback tooling', 'No combined daemon, new hook API, shared monitoring or source move', 'PR #57 delivered the source; installed acceptance #55 closed on September 22, 2026']},
     ],
     layout={'mode': 'grid', 'origin': [40, 40], 'cols': 5, 'cellW': 165, 'cellH': 64, 'gapX': 35, 'gapY': 48},
     views=[
@@ -589,13 +589,13 @@ DIAGRAMS = [
          details=MAP_DETAILS,
          sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/src/server.ts'), (H, 'apps/hub/src/storage.ts'), (H, 'apps/hub/SETUP.md'), (H, 'packages/agent-state/README.md'), (H, 'packages/mcp/README.md'), (H, 'apps/dashboard/README.md'), (H, 'docs/architecture.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py'), (N, 'docs/controller-api.md'), (P, 'docs/hub-integration.md'), (P, 'docs/hub-controller-api.md')],
          issues=['H2', 'H3', 'H5', 'H6', 'H13', 'P31', 'N29', 'N55', 'H36', 'H45', 'H16', 'H17', 'H53']),
-    dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='planned',
-         status_label='Proposed; source review and installed acceptance open', short='Nanoleaf Linux runtime',
-         summary='The accepted fresh-install proposal moves the existing Nanoleaf processes and private SQLite state into Ubuntu WSL. It keeps Windows Desktop and browser clients, direct numeric-loopback MCP transport and the existing on-demand worker as the sole light writer.',
+    dict(id='arch-nanoleaf-linux', spec=D9, kind='architecture', status='implemented',
+         status_label='Delivered and installed on Linux/WSL', short='Nanoleaf Linux runtime',
+         summary='The delivered fresh-install runtime moved the existing Nanoleaf processes and private SQLite state into Ubuntu WSL. It kept Windows Desktop and browser clients, direct numeric-loopback MCP transport and the existing on-demand worker as the sole light writer.',
          reading=['Windows clients stay outside the runtime boundary. Codex Desktop tasks execute in WSL, the browser opens the wall map on port 8765, and configured project, title and unread JSON is read through the mounted filesystem without write access.',
                   'Linux hooks, CLI, wall map and controller coordinate through Linux SQLite. The Node MCP host on port 41230 calls the Python controller directly at 127.0.0.1:41231.',
                   'The controller starts the existing worker on demand. That worker retains the state lock and remains the sole light writer. Setup and the wall map may make bounded device reads for connection checks or geometry.'],
-        boundaries=['This is proposed architecture under [[H43]]. Nanoleaf [[N54]] owns source and setup through review candidate PR #57; [[N55]] owns installed services, real-client and physical-light acceptance.',
+        boundaries=['[[H43]] records this architecture. Nanoleaf [[N54]] delivered source and setup through PR #57; [[N55]] closed on September 22, 2026 with the installed Linux services, one light writer and the owner-observed light sequence.',
                      'The installation starts with fresh Linux state. Existing Nanoleaf state need not move, and no runtime SQLite database is shared through /mnt/c.',
                      'Data migration, rollback tooling, a combined daemon, a new hook API, shared monitoring and repository migration [[H26]] remain outside this transition.'],
         sources=[(H, 'docs/architecture.md'), (N, 'docs/decisions/0007-linux-runtime-ownership.md'), (N, 'docs/linux-install.md'), (N, 'bridge/install_linux.py'), (N, 'bridge/README.md'), (N, 'bridge/wall_server.py')],
@@ -613,7 +613,7 @@ DIAGRAMS = [
          sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/SETUP.md'), (H, 'apps/hub/src/server.ts'), (H, 'packages/agent-state/README.md'), (H, 'docs/agent-lifecycle-contract.md'), (H, 'docs/architecture.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
          issues=['H2', 'H3', 'H5', 'H8', 'P31', 'P33', 'N29', 'N30', 'N55']),
     dict(id='seq-nanoleaf-command', spec=D4, kind='sequence', status='implemented',
-         status_label='Implemented source; installed and physical acceptance open', short='Nanoleaf command admission',
+         status_label='Implemented source; installed and physical acceptance recorded', short='Nanoleaf command admission',
          summary='Codex reads status, then submits one mode command with the issued request identity and expected revision and generation. The Windows API authenticates before replay lookup, admits the identity atomically, validates revisions, queues the work and rechecks the generation before any side effect.',
          reading=['Phase one returns nextRequestId, configurationRevision and generation. Phase two submits nanoleaf_mode_set with those values.',
                   'Admission alternatives: exact duplicates join or replay the original receipt without a second write; a changed payload conflicts; an expired identity rejects; a stale revision or generation rejects before any effect.',
@@ -624,7 +624,7 @@ DIAGRAMS = [
          sources=[(N, 'docs/local-mcp.md'), (N, 'docs/controller-api.md'), (N, 'mcp/src/transport.ts'), (N, 'bridge/controller_server.py'), (N, 'bridge/controller_state.py'), (H, 'docs/controller-contract.md')],
          issues=['N34', 'N30']),
     dict(id='seq-pixoo-playback', spec=D5, kind='sequence', status='implemented',
-         status_label='Implemented source; reliability trial open', short='Pixoo playback ownership',
+         status_label='Implemented source; reliability trial complete', short='Pixoo playback ownership',
          summary='A client reads status and catalog pages, then selects media or a playlist with the issued request identity. The owning service admits the request through the shared ledger, resolves the stored rendition, admits the playback context and hands serialized uploads to the backend player and adapter.',
          reading=['The receipt acknowledges context admission while the upload may still be loading. Backend playback continues after Codex disconnects. The optional native controller maps saved playlists into the same path; media-only tools remain local.',
                   'Reads never probe the display or refresh observation timestamps. A lost response is reconciled with current status, not a new write identity.',
@@ -635,36 +635,36 @@ DIAGRAMS = [
          sources=[(P, 'docs/local-mcp.md'), (P, 'docs/playback.md'), (P, 'apps/server/src/mcp-tools.ts'), (P, 'docs/hub-controller-api.md'), (P, 'packages/playback/src/player.ts'), (H, 'packages/mcp/README.md')],
          issues=['P12', 'P37']),
     dict(id='seq-desktop-input', spec=D6, kind='sequence', status='future',
-         status_label='Brief app trial passed; reusable mapper planned', short='Codex mouse input',
+         status_label='N30 qualification complete; reusable mapper planned', short='Codex mouse input',
          summary='Selecting a control profile loads mappings and sends no input or device commands. A fresh mapped navigation press resolves application scope and one of four Codex actions. Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y.',
          reading=['The owner passed a temporary AutoHotkey trial. The reusable mapper below remains planned: ordinary input passes through outside Codex; held, repeated or stale input must not dispatch twice or replay later.',
                   'Presets require a separately selected qualified binding and service. Keyboard A/B and attached Super Buttons are excluded.'],
          boundaries=['This path does not wait for the hub, shared monitoring, general controls or Music.',
-                     'N30 85CA, receiver 062A:4101 and Codex 26.917.6896.0 passed the brief owner trial under [[H64]]. PageUp/PageDown and Back/Forward from other devices also map inside Codex. Receiver isolation and long-term recovery are unqualified.',
+                     'N30 85CA, receiver 062A:4101 and Codex 26.917.6896.0 passed the brief owner trial under completed [[H64]]. PageUp/PageDown and Back/Forward from other devices also map inside Codex. Receiver isolation and long-term recovery are unqualified.',
                      'The later editor ([[H70]]) excludes keyboard A/B, attached Super Buttons, arbitrary scripts, shell execution, raw device commands and multi-step macros.'],
          sources=[(H, 'docs/desktop-controls.md')],
          issues=['H63', 'H64', 'H65', 'H66', 'H70']),
     dict(id='seq-big-b-presets', spec=D7, kind='sequence', status='future',
-         status_label='Future work behind the Codex-first milestone', short='Configured desk presets',
+         status_label='Deferred future work', short='Configured desk presets',
          summary='A fresh configured preset press asks the hub for the next preset. The hub owns selection and revision, sends supported native commands to each controller owner, collects independent per-device results and returns them for visible feedback. The initial cycle is Work → Free → Quiet → Work.',
          reading=['One device failing or offline is reported as a partial result; it never stalls the others or looks complete.',
                   'A manual change in a vendor app remains until the next explicit preset request, which then uses supported ownership handoff.',
                   'Startup, reconnect and profile selection replay no presses and issue no device commands. If the hub is unavailable, that is reported and local mouse controls keep working. Keyboard A/B and attached Super Buttons are excluded from preset bindings.'],
-         boundaries=['[[H67]] requires [[H63]], [[H32]], [[H31]], [[H5]], [[N49]] and [[P33]]. [[H68]] requires [[H65]] and [[H67]]; [[H69]] also requires [[H8]].',
+         boundaries=['[[H67]]’s inputs [[H63]], [[H32]], [[H31]], [[H5]], [[N49]] and [[P33]] are delivered. [[H68]] requires [[H65]] and [[H67]]; [[H69]] also requires [[H68]] and delivered [[H8]].',
                      'Manual preset dispatch does not require automation engine [[H45]]. Music [[H71]] consumes [[H40]] policy and requires [[H68]] and [[H36]]; [[H38]]/[[H39]] apply to selected branches and [[H41]] is conditional on measured audio.',
                      'Native Nanoleaf and Pixoo modes and their restoration limits are preserved; a preset is not a shared device-mode value.'],
          sources=[(H, 'docs/desktop-controls.md'), (H, 'apps/hub/README.md'), (H, 'packages/agent-state/README.md'), (H, 'docs/controller-contract.md')],
          issues=['H67', 'H68', 'H69', 'H71']),
     dict(id='seq-owner-migration', spec=D8, kind='sequence', status='implemented',
-         status_label='Source setup and migration delivered; installation pending', short='Owner migration',
+         status_label='Source setup and migration delivered; installed owner accepted', short='Owner migration',
          summary='An explicitly authorized migration quiesces the selected route and old owner, exports and imports versioned state with its identities and revisions, validates the import, keeps the old reducer inactive, switches producer and consumer endpoints and resyncs from authoritative snapshots.',
          reading=['Pixoo’s session-source facade switches renderer, feed, label and acknowledgment operations to the selected owner. Remote mode never starts a second local reducer.',
                   'Rollback requires quiescing and stopping the new owner, transferring its latest export if it accepted writes, then importing into a fresh host store and validating routes before activation. Pixoo remains a remote facade with its media and preferences. Consumers reload the authoritative snapshot.'],
-         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Delivered [[H5]] source verifies supervised release, fenced import, durable route recovery and rollback after writes. [[H8]] source merged in PR #129 for Linux/WSL setup and Nanoleaf cutover; installation and real-client qualification remain pending.',
+         boundaries=['Released [[H3]] defines export/import format 1.0. [[P31]] implements durable embedded storage, quiesce/export/import and a remote facade tested against disposable hosts. Delivered [[H5]] source verifies supervised release, fenced import, durable route recovery and rollback after writes. [[H8]] source merged in PR #129 for Linux/WSL setup and Nanoleaf cutover. The installed standalone owner was accepted with Pixoo and Nanoleaf consumers under [[P34]] and [[N30]]; Windows-client and Claude qualification were deferred.',
                      'Controller databases stay private. Windows and WSL never coordinate through a mounted SQLite file.',
                      'Legacy Nanoleaf ingestion remains until an authorized verified cutover with one selected ingestion path per session. Repository moves ([[H25]], [[H26]]), container hosting ([[H42]]) and device-writer ownership are separate changes.'],
          sources=[(H, 'docs/architecture.md'), (H, 'apps/hub/README.md'), (H, 'apps/hub/SETUP.md'), (H, 'packages/agent-state/README.md'), (P, 'docs/hub-integration.md'), (P, 'docs/agent-monitoring.md'), (P, 'apps/server/src/monitor-presentation.ts'), (P, 'packages/core/src/integration.ts'), (P, 'docs/decisions/0018-monitor-display-ownership.md'), (N, 'docs/hub-integration.md'), (N, 'docs/shared-input.md'), (N, 'bridge/shared_input.py')],
-         issues=['H5', 'H8', 'P31', 'N29']),
+         issues=['H5', 'H8', 'P31', 'N29', 'P34', 'N30']),
 ]
 assert len({d['id'] for d in DIAGRAMS}) == len(DIAGRAMS)
 

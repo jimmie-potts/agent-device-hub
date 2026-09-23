@@ -10,7 +10,7 @@
 #11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
 #13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
 #15 [CLOSED] Qualify Tidbyt cloud and Tronbyt connections
-#16 [OPEN] Implement the Tidbyt cloud controller
+#16 [CLOSED] Implement the Tidbyt cloud controller
 #17 [OPEN] Qualify direct LIFX LAN control
 #18 [OPEN] Implement the LIFX LAN controller
 #19 [OPEN] Add automatic agent status to Tidbyt
@@ -52,7 +52,7 @@
 #61 [OPEN] Add a qualified Varmilo keyboard adapter to PC lighting
 #62 [OPEN] Install and verify Varmilo keyboard status without affecting typing
 #63 [CLOSED] Document desktop controls, control profiles and desk presets
-#64 [OPEN] Qualify N30 mouse controls for Codex
+#64 [CLOSED] Qualify N30 mouse controls for Codex
 #65 [OPEN] Implement independent Codex controls for the N30 mouse
 #66 [OPEN] Install and verify N30 Codex mouse shortcuts
 #67 [OPEN] Implement Work, Free and Quiet desk preset coordination
@@ -80,6 +80,11 @@
 #153 [CLOSED] Add Nanoleaf general controls to the BUNNY component view
 #154 [OPEN] Install and verify Pixoo general controls on the physical display
 #155 [OPEN] Install and verify Nanoleaf general controls on the installed wall
-#158 [OPEN] Qualify iPhone Apple Music now-playing sources through the apartment speakers
-#172 [OPEN] Make the BUNNY atlas start with a system map and agent walkthrough
+#158 [CLOSED] Qualify iPhone Apple Music now-playing sources through the apartment speakers
+#172 [CLOSED] Make the BUNNY atlas start with a system map and agent walkthrough
 #173 [OPEN] Make the remaining work-guide architecture diagrams readable and consistent
+#175 [OPEN] Add the qualified HT-A9 AirPlay source to hub playback
+#178 [OPEN] Qualify Apple Music catalog search and chosen-item playback requests
+#179 [CLOSED] Open BUNNY through a local owner launcher without manual browser tokens
+#181 [OPEN] Approve and document the B.U.N.N.Y. application UI style guide
+#182 [OPEN] Apply the B.U.N.N.Y. style and display name to the dashboard

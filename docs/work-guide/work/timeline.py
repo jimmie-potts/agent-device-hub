@@ -27,9 +27,9 @@ SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later'
 TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123'], guide='shared-codex', main=True),
+        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123', 'H181', 'H182'], guide='shared-codex', main=True),
         dict(id='n-controls', x=2, label='General controls', issues=['H35', 'P67', 'H152', 'H154', 'H155'], guide='controls-music', main=True),
-        dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H158', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
+        dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H175', 'H178', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
@@ -40,7 +40,7 @@ TRACKS = [
         dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
     ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Input qualification', issues=['H64'], guide='desktop-controls'),
+        dict(id='n-desk-doc', x=0, label='Input qualification delivered', issues=[], guide='desktop-controls'),
         dict(id='n-desk-local', x=1, label='Codex mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
@@ -48,13 +48,13 @@ TRACKS = [
     ]),
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-worker', x=1, label='Panel effects', issues=['N43'], guide='nanoleaf-devices'),
+        dict(id='n-nl-worker', x=1, label='Worker + panel effects delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44', 'N45'], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=3, label='Installed acceptance', issues=['N46'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf rendering + displays', [
-        dict(id='n-np-fix', x=0, label='External scenes', issues=['N21'], guide='nanoleaf-presentation'),
+        dict(id='n-np-fix', x=0, label='External-scene findings delivered', issues=[], guide='nanoleaf-presentation'),
         dict(id='n-np-render', x=1, label='Rendering + live renderer', issues=['N15', 'N17'], guide='nanoleaf-presentation'),
         dict(id='n-np-custom', x=2, label='Palettes + effects', issues=['N18', 'N19', 'N20'], guide='nanoleaf-presentation'),
         dict(id='n-np-lively', x=3, label='Lively prototype', issues=['N10', 'N11', 'N12', 'N13', 'N14'], guide='nanoleaf-presentation'),
@@ -67,7 +67,7 @@ TRACKS = [
     ]),
     ('Tidbyt + LIFX', [
         dict(id='n-tl-qual', x=0, label='Connection qualification', issues=['H17'], guide='tidbyt-lifx'),
-        dict(id='n-tl-ctrl', x=1, label='Controllers', issues=['H16', 'H18'], guide='tidbyt-lifx'),
+        dict(id='n-tl-ctrl', x=1, label='Controllers (Tidbyt delivered)', issues=['H18'], guide='tidbyt-lifx'),
         dict(id='n-tl-status', x=2, label='Automatic status', issues=['H19', 'H20'], guide='tidbyt-lifx'),
         dict(id='n-tl-accept', x=3, label='Installed acceptance', issues=['H21', 'H22'], guide='tidbyt-lifx'),
         dict(id='n-tl-later', x=4, label='Tronbyt · other options', issues=['H23', 'H24', 'H11'], guide='tidbyt-lifx'),
@@ -99,10 +99,10 @@ TRACKS = [
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling', issues=['H10', 'N31', 'P38'], guide='development-workflow'),
     ]),
     ('System design documents', [
-        dict(id='n-system-design', x=0, label='Atlas + diagram readability', issues=['H172', 'H173'], guide='development-workflow'),
+        dict(id='n-system-design', x=0, label='Diagram readability (atlas delivered)', issues=['H173'], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
-        dict(id='n-guide-workflow', x=0, label='Guide maintenance rules', issues=['N70'], guide='development-workflow'),
+        dict(id='n-guide-workflow', x=0, label='Pixoo guide maintenance rules', issues=['P68'], guide='development-workflow'),
     ]),
     ('Guide Prism design + rollout', [
         dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),

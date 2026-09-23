@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 19,
+        "totalCount": 16,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -171,16 +171,6 @@
             }
           },
           {
-            "number": 21,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 31,
             "blockedBy": {
               "totalCount": 1,
@@ -193,24 +183,6 @@
                   "state": "OPEN",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "number": 43,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 42,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
                 }
               ]
@@ -233,7 +205,7 @@
                 },
                 {
                   "number": 43,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
@@ -294,23 +266,13 @@
                 }
               ]
             }
-          },
-          {
-            "number": 70,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
           }
         ]
       }
     },
     "p": {
       "issues": {
-        "totalCount": 15,
+        "totalCount": 16,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -553,6 +515,16 @@
                   }
                 }
               ]
+            }
+          },
+          {
+            "number": 68,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
             }
           }
         ]

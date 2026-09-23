@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "Proposed fresh Nanoleaf Linux runtime",
+  "title": "Installed Nanoleaf Linux runtime",
   "quality_profile": "showcase",
   "views": [
    {
@@ -93,7 +93,7 @@
     165,
     64
    ],
-   "tag": "proposed"
+   "tag": "installed"
   },
   {
    "id": "desktopJson",
@@ -118,7 +118,7 @@
     165,
     64
    ],
-   "tag": "proposed"
+   "tag": "installed"
   },
   {
    "id": "mcpHost",
@@ -131,7 +131,7 @@
     165,
     64
    ],
-   "tag": "proposed"
+   "tag": "installed"
   },
   {
    "id": "linuxState",
@@ -157,7 +157,7 @@
     165,
     64
    ],
-   "tag": "proposed"
+   "tag": "installed"
   },
   {
    "id": "worker",
@@ -337,7 +337,7 @@
  "cards": [
   {
    "dot": "violet",
-   "title": "Proposed process boundary",
+   "title": "Linux process boundary",
    "items": [
     "Hooks, CLI, wall map and controller coordinate through Linux SQLite",
     "Node MCP calls the controller directly over numeric-loopback HTTP",
@@ -359,7 +359,7 @@
    "items": [
     "Fresh install; no data migration or rollback tooling",
     "No combined daemon, new hook API, shared monitoring or source move",
-    "PR #57 is a source candidate; installed acceptance #55 remains open"
+    "PR #57 delivered the source; installed acceptance #55 closed on September 22, 2026"
    ]
   }
  ]

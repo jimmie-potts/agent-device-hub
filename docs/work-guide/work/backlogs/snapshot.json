@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-23T05:15:53.383608+00:00",
-  "refreshedAt": "2026-09-23T05:16:13.480650+00:00",
+  "startedAt": "2026-09-23T07:25:41.021768+00:00",
+  "refreshedAt": "2026-09-23T07:26:02.105995+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -38,6 +38,14 @@
             1
           ],
           "commentBodiesStored": false
+        },
+        {
+          "number": 16,
+          "state": "CLOSED",
+          "commentPages": [
+            2
+          ],
+          "commentBodiesStored": true
         },
         {
           "number": 30,
@@ -88,6 +96,14 @@
           "commentBodiesStored": true
         },
         {
+          "number": 64,
+          "state": "CLOSED",
+          "commentPages": [
+            2
+          ],
+          "commentBodiesStored": false
+        },
+        {
           "number": 83,
           "state": "CLOSED",
           "commentPages": [
@@ -124,6 +140,30 @@
           "state": "CLOSED",
           "commentPages": [
             3
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 158,
+          "state": "CLOSED",
+          "commentPages": [
+            0
+          ],
+          "commentBodiesStored": false
+        },
+        {
+          "number": 172,
+          "state": "CLOSED",
+          "commentPages": [
+            1
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 179,
+          "state": "CLOSED",
+          "commentPages": [
+            1
           ],
           "commentBodiesStored": true
         },
@@ -200,17 +240,25 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 19,
+      "openIssues": 16,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        16
       ],
-      "openPRs": 1,
+      "openPRs": 0,
       "prPageSizes": [
-        1
+        0
       ],
       "paginationComplete": true,
       "directReads": [
+        {
+          "number": 21,
+          "state": "CLOSED",
+          "commentPages": [
+            3
+          ],
+          "commentBodiesStored": true
+        },
         {
           "number": 26,
           "state": "CLOSED",
@@ -268,6 +316,14 @@
           "commentBodiesStored": false
         },
         {
+          "number": 43,
+          "state": "CLOSED",
+          "commentPages": [
+            3
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 49,
           "state": "CLOSED",
           "commentPages": [
@@ -314,14 +370,22 @@
             3
           ],
           "commentBodiesStored": false
+        },
+        {
+          "number": 70,
+          "state": "CLOSED",
+          "commentPages": [
+            3
+          ],
+          "commentBodiesStored": true
         }
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 15,
+      "openIssues": 16,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        15
+        16
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -412,7 +476,7 @@
       ]
     }
   },
-  "openIssues": 92,
+  "openIssues": 90,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15, Nanoleaf #30/#41/#42/#54/#55/#64 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

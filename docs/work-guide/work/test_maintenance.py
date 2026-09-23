@@ -91,7 +91,7 @@ class GuideMaintenance(unittest.TestCase):
         for attrs, text in links.links['N10']:
             self.assertEqual(attrs.get('data-status'), 'open')
             self.assertIn('Open', text)
-        for attrs, text in links.links['H64']:
+        for attrs, text in links.links['H50']:
             self.assertEqual(attrs.get('data-status'), 'review')
             self.assertIn('In review', text)
             self.assertIn('blocked', text)

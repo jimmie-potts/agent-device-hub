@@ -8,18 +8,18 @@ PATHS = {
     ),
     'shared-codex': (
         'One shared task state, consistent device status, and a common integration UI.',
-        'The Codex-first milestone is closed. Remaining items here are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
-        ['H138'],
+        'The Codex-first milestone is closed. The owner launcher #179 is delivered. The style guide #181 is ready; the dashboard styling #182 follows #181. Other items are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
+        ['H181', 'H138'],
     ),
     'nanoleaf-devices': (
         'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'The device-state and worker source issues are closed. Panel effects, the wall map and separately authorized installation follow.',
-        ['N43'],
+        'Device state, the runtime worker and panel effects are delivered in source. The combined wall map #44 comes next, then enrollment #45 and separately authorized installed acceptance #46.',
+        ['N44'],
     ),
     'tidbyt-lifx': (
         'Add automatic task status to Tidbyt and LIFX through their own controllers.',
-        'Tidbyt connection qualification is closed; its controller follows those findings. LIFX connection qualification remains independent.',
-        ['H16', 'H17'],
+        'The Tidbyt cloud controller source is delivered. Automatic status #19 settles layout, push cadence and rotation with the owner, then installed acceptance #21 follows. LIFX connection qualification #17 remains independent.',
+        ['H19', 'H17'],
     ),
     'pc-lighting': (
         'Add Corsair task lighting, with optional Strimer and keyboard support.',
@@ -28,13 +28,13 @@ PATHS = {
     ),
     'desktop-controls': (
         'Use local Codex mouse shortcuts, then add optional shared desk presets.',
-        'Finish source review of the successful brief input trial, then refine the reusable local mapper. Shared presets retain their own prerequisites; keyboard A/B stays outside B.U.N.N.Y.',
-        ['H64'],
+        'N30 qualification is complete. Select and refine the reusable local mapper #65 when this track resumes; shared presets are deferred separately, and keyboard A/B stays outside B.U.N.N.Y.',
+        ['H65'],
     ),
     'nanoleaf-presentation': (
         'Make the wall display reflect live state and support configurable presentation.',
-        'Reconcile the rendering-contract blocker before the live renderer. External-scene research is a separate option; Lively and ambient presentation keep their own qualification sequence.',
-        ['N15', 'N21'],
+        'Deliver the rendering contract #15, then the live renderer #17. External-scene research is complete: externally controlled scenes display as external or unknown. Lively and ambient presentation keep their own qualification sequence.',
+        ['N15'],
     ),
     'pixoo-media': (
         'Improve playlists and media behavior on the accepted local Pixoo baseline.',
@@ -43,7 +43,7 @@ PATHS = {
     ),
     'controls-music': (
         'Extend the shared integration UI into general controls, then music.',
-        'The general-control definition, the Nanoleaf native capabilities and both view slices are delivered. The hardware acceptances #154 and #155 follow with their own installation permissions. Choose Pixoo #67 or Hub #152 as companions. Playback and participation policy precede music UI and device effects.',
+        'The general-control definition, the Nanoleaf native capabilities and both view slices are delivered. The hardware acceptances #154 and #155 follow with their own installation permissions. Choose Pixoo #67 or Hub #152 as companions. The iPhone AirPlay source is qualified; its adapter #175 follows the Windows connector #36. Playback and participation policy precede music UI and device effects.',
         [],
     ),
     'hosting-migrations': (
@@ -66,12 +66,10 @@ PATHS = {
 # These are reviewed independent units, not an automatic list of every issue
 # without a native blocker. Their labels and dependencies can withhold a card.
 PARALLEL = [
-    ('N42', 'Nanoleaf runtime worker', 'nanoleaf-devices',
-     'Integrate independent device projections through the existing Linux worker on the delivered #41 contract. Its blocked label waits for the owner to release it.'),
     ('P61', 'Pixoo embedded-host performance', 'shared-codex',
      'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
-    ('H15', 'Tidbyt connection findings', 'tidbyt-lifx',
-     'Qualify the connection before its controller. Hardware and account trials need their separately scoped authorization.'),
+    ('H19', 'Tidbyt automatic status', 'tidbyt-lifx',
+     'Build status on the delivered #16 controller after settling layout, push cadence and rotation with the owner. Installed acceptance #21 needs its own authorization.'),
     ('H17', 'LIFX connection findings', 'tidbyt-lifx',
      'Qualify the LAN connection independently of Tidbyt. Its controller and physical acceptance follow its own findings.'),
 ]

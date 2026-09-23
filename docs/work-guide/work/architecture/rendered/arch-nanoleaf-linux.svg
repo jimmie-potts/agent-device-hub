@@ -1,5 +1,5 @@
 <svg class="archify" preserveAspectRatio="xMidYMid meet" viewBox="0 0 1045 528" role="img" lang="en" aria-labelledby="arch-nanoleaf-linux-archify-diagram-title arch-nanoleaf-linux-archify-diagram-description">
-        <title id="arch-nanoleaf-linux-archify-diagram-title">Proposed fresh Nanoleaf Linux runtime</title>
+        <title id="arch-nanoleaf-linux-archify-diagram-title">Installed Nanoleaf Linux runtime</title>
         <desc id="arch-nanoleaf-linux-archify-diagram-description">@@DESC@@</desc>
         <!-- Definitions -->
         <defs>
@@ -80,8 +80,8 @@
         <text data-detail="context" x="722.5" y="86" class="t-muted" font-size="9" text-anchor="middle">Ubuntu WSL</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-wallMap" data-node-id="arch-nanoleaf-linux-wallMap" data-node-label="Python wall map" tabindex="0" role="button" aria-label="Focus Python wall map, 127.0.0.1:8765, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="127.0.0.1:8765" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
-          <title>Python wall map · 127.0.0.1:8765 · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+        <g id="arch-nanoleaf-linux-node-wallMap" data-node-id="arch-nanoleaf-linux-wallMap" data-node-label="Python wall map" tabindex="0" role="button" aria-label="Focus Python wall map, 127.0.0.1:8765, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="127.0.0.1:8765" data-node-tag="installed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Python wall map · 127.0.0.1:8765 · Ubuntu WSL · separate Linux processes and Linux-owned state · installed</title>
           <rect x="40" y="152" width="165" height="64" rx="6" class="c-mask"/>
           <rect x="40" y="152" width="165" height="64" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(46 158) scale(0.6875)">
@@ -92,7 +92,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="122.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Python wall map</text>
         <text data-detail="context" x="122.5" y="198" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:8765</text>
-        <text data-detail="fine" x="122.5" y="208" class="t-frontend" font-size="7" text-anchor="middle">proposed</text>
+        <text data-detail="fine" x="122.5" y="208" class="t-frontend" font-size="7" text-anchor="middle">installed</text>
         </g>
 
         <g id="arch-nanoleaf-linux-node-desktopJson" data-node-id="arch-nanoleaf-linux-desktopJson" data-node-label="Mounted Desktop JSON" tabindex="0" role="button" aria-label="Focus Mounted Desktop JSON, project · title · unread · read-only, Architecture component" aria-pressed="false" data-node-kind="database" data-node-sublabel="project · title · unread · read-only" data-node-context="Architecture component">
@@ -107,8 +107,8 @@
         <text data-detail="context" x="322.5" y="198" class="t-muted" font-size="7.2" text-anchor="middle">project · title · unread · read-only</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-hooksCli" data-node-id="arch-nanoleaf-linux-hooksCli" data-node-label="Linux hooks and CLI" tabindex="0" role="button" aria-label="Focus Linux hooks and CLI, Python · fail-open hooks, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · fail-open hooks" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
-          <title>Linux hooks and CLI · Python · fail-open hooks · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+        <g id="arch-nanoleaf-linux-node-hooksCli" data-node-id="arch-nanoleaf-linux-hooksCli" data-node-label="Linux hooks and CLI" tabindex="0" role="button" aria-label="Focus Linux hooks and CLI, Python · fail-open hooks, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · fail-open hooks" data-node-tag="installed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Linux hooks and CLI · Python · fail-open hooks · Ubuntu WSL · separate Linux processes and Linux-owned state · installed</title>
           <rect x="440" y="152" width="165" height="64" rx="6" class="c-mask"/>
           <rect x="440" y="152" width="165" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 158) scale(0.6875)">
@@ -116,11 +116,11 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="522.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Linux hooks and CLI</text>
         <text data-detail="context" x="522.5" y="198" class="t-muted" font-size="9" text-anchor="middle">Python · fail-open hooks</text>
-        <text data-detail="fine" x="522.5" y="208" class="t-backend" font-size="7" text-anchor="middle">proposed</text>
+        <text data-detail="fine" x="522.5" y="208" class="t-backend" font-size="7" text-anchor="middle">installed</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-mcpHost" data-node-id="arch-nanoleaf-linux-mcpHost" data-node-label="Node MCP host" tabindex="0" role="button" aria-label="Focus Node MCP host, 127.0.0.1:41230, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41230" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
-          <title>Node MCP host · 127.0.0.1:41230 · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+        <g id="arch-nanoleaf-linux-node-mcpHost" data-node-id="arch-nanoleaf-linux-mcpHost" data-node-label="Node MCP host" tabindex="0" role="button" aria-label="Focus Node MCP host, 127.0.0.1:41230, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41230" data-node-tag="installed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Node MCP host · 127.0.0.1:41230 · Ubuntu WSL · separate Linux processes and Linux-owned state · installed</title>
           <rect x="640" y="152" width="165" height="64" rx="6" class="c-mask"/>
           <rect x="640" y="152" width="165" height="64" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(646 158) scale(0.6875)">
@@ -129,7 +129,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="722.5" y="182" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Node MCP host</text>
         <text data-detail="context" x="722.5" y="198" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:41230</text>
-        <text data-detail="fine" x="722.5" y="208" class="t-security" font-size="7" text-anchor="middle">proposed</text>
+        <text data-detail="fine" x="722.5" y="208" class="t-security" font-size="7" text-anchor="middle">installed</text>
         </g>
 
         <g id="arch-nanoleaf-linux-node-linuxState" data-node-id="arch-nanoleaf-linux-linuxState" data-node-label="Linux SQLite" tabindex="0" role="button" aria-label="Focus Linux SQLite, ~/.local/share/codex-nanoleaf, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="database" data-node-sublabel="~/.local/share/codex-nanoleaf" data-node-tag="fresh state" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
@@ -145,8 +145,8 @@
         <text data-detail="fine" x="522.5" y="320" class="t-database" font-size="7" text-anchor="middle">fresh state</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-controller" data-node-id="arch-nanoleaf-linux-controller" data-node-label="Python controller" tabindex="0" role="button" aria-label="Focus Python controller, 127.0.0.1:41231 · bearer, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41231 · bearer" data-node-tag="proposed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
-          <title>Python controller · 127.0.0.1:41231 · bearer · Ubuntu WSL · separate Linux processes and Linux-owned state · proposed</title>
+        <g id="arch-nanoleaf-linux-node-controller" data-node-id="arch-nanoleaf-linux-controller" data-node-label="Python controller" tabindex="0" role="button" aria-label="Focus Python controller, 127.0.0.1:41231 · bearer, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="security" data-node-sublabel="127.0.0.1:41231 · bearer" data-node-tag="installed" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
+          <title>Python controller · 127.0.0.1:41231 · bearer · Ubuntu WSL · separate Linux processes and Linux-owned state · installed</title>
           <rect x="640" y="264" width="165" height="64" rx="6" class="c-mask"/>
           <rect x="640" y="264" width="165" height="64" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(646 270) scale(0.6875)">
@@ -155,7 +155,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="722.5" y="294" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Python controller</text>
         <text data-detail="context" x="722.5" y="310" class="t-muted" font-size="9" text-anchor="middle">127.0.0.1:41231 · bearer</text>
-        <text data-detail="fine" x="722.5" y="320" class="t-security" font-size="7" text-anchor="middle">proposed</text>
+        <text data-detail="fine" x="722.5" y="320" class="t-security" font-size="7" text-anchor="middle">installed</text>
         </g>
 
         <g id="arch-nanoleaf-linux-node-worker" data-node-id="arch-nanoleaf-linux-worker" data-node-label="On-demand worker" tabindex="0" role="button" aria-label="Focus On-demand worker, Python · sole light writer, Ubuntu WSL · separate Linux processes and Linux-owned state" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Python · sole light writer" data-node-tag="existing behavior" data-node-context="Ubuntu WSL · separate Linux processes and Linux-owned state">
