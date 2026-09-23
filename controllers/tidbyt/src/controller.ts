@@ -3,15 +3,17 @@ import {
   admit, evaluate, validate,
   type AdmissionState, type Clock, type FailureCode, type Receipt, type Request, type Snapshot, type Ticket,
 } from '@jimmie-potts/device-contracts';
-import type { ConnectionCapabilities, DisplayConnection, PushOutcome } from './connection.js';
+import type { ConnectionCapabilities, DisplayConnection, InstallationRead, PushOutcome } from './connection.js';
 import { decodeFrameData, renderFrame, FRAME_HEIGHT, FRAME_WIDTH, type FrameData } from './render.js';
 
-export const DISPLAY_PROFILE = Object.freeze({ profileId: 'tidbyt-display', profileVersion: '1.0.0' });
+export const DISPLAY_PROFILE = Object.freeze({ profileId: 'tidbyt-display', profileVersion: '1.1.0' });
 export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_RECEIPTS = 256;
 
-/** A controller v1 request envelope carrying the Tidbyt profile's display command. */
-export type DisplayRequest = Omit<Request, 'command'> & { command: { kind: 'tidbyt.display'; frame: FrameData } };
+/** A controller v1 request envelope carrying a Tidbyt profile command: show a frame or remove the installation. */
+export type DisplayRequest = Omit<Request, 'command'> & {
+  command: { kind: 'tidbyt.display'; frame: FrameData } | { kind: 'tidbyt.remove' };
+};
 
 export type Submission =
   | { decision: FailureCode; reserved: false }
@@ -52,12 +54,15 @@ type Entry = {
   request: DisplayRequest;
   receipt: Receipt;
   generation: Ticket;
-  webp: Uint8Array;
+  /** The rendered image for a push; absent for a removal. */
+  webp?: Uint8Array;
   resolve: (receipt: Receipt) => void;
   done: Promise<Receipt>;
 };
 
 const PUSH = 'push';
+const REMOVE = 'remove';
+const operation = (entry: Entry) => entry.webp ? PUSH : REMOVE;
 const sameTicket = (a: Ticket, b: Ticket) => a.epoch === b.epoch && a.sequence === b.sequence;
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -83,8 +88,9 @@ function displayRequest(value: unknown): value is DisplayRequest {
   const command = value.command;
   return value.apiVersion === '1.0' && validate('id', value.controllerId) && validate('id', value.deviceId)
     && validate('ticket', value.requestId) && validate('counter', value.expectedConfigurationRevision)
-    && validate('ticket', value.expectedGeneration) && plain(command) && exactKeys(command, ['kind', 'frame'])
-    && command.kind === 'tidbyt.display';
+    && validate('ticket', value.expectedGeneration) && plain(command)
+    && ((command.kind === 'tidbyt.display' && exactKeys(command, ['kind', 'frame']))
+      || (command.kind === 'tidbyt.remove' && exactKeys(command, ['kind'])));
 }
 
 function bodyBytes(value: unknown): number {
@@ -165,8 +171,8 @@ export class TidbytController {
   submit(value: unknown): Submission {
     if (validate('request', value)) return this.#admitV1(value as Request);
     if (!displayRequest(value)) return { decision: 'invalid-request', reserved: false };
-    const frame = decodeFrameData(value.command.frame);
-    if (!frame.ok) return { decision: 'invalid-request', reserved: false };
+    const frame = value.command.kind === 'tidbyt.display' ? decodeFrameData(value.command.frame) : undefined;
+    if (frame && !frame.ok) return { decision: 'invalid-request', reserved: false };
     const r = value;
     if (r.controllerId !== this.#identity.controllerId || r.deviceId !== this.#identity.deviceId) {
       return { decision: 'unknown-device', reserved: false };
@@ -204,11 +210,11 @@ export class TidbytController {
       this.#retain(r, receipt);
       return { decision: failure, reserved: true, receipt: clone(receipt), done: Promise.resolve(clone(receipt)) };
     }
-    const rendered = renderFrame(frame.frame);
-    if (!rendered.ok) throw new Error('validated frame failed to render');
+    const rendered = frame ? renderFrame(frame.frame) : undefined;
+    if (rendered && !rendered.ok) throw new Error('validated frame failed to render');
     let resolve!: (receipt: Receipt) => void;
     const done = new Promise<Receipt>(settle => { resolve = settle; });
-    this.#active.push({ request: clone(r), receipt, generation: clone(this.#generation), webp: rendered.webp, resolve, done });
+    this.#active.push({ request: clone(r), receipt, generation: clone(this.#generation), webp: rendered?.webp, resolve, done });
     this.#changed();
     void this.#drain();
     return { decision: 'queued', reserved: true, receipt: clone(receipt), done: done.then(clone) };
@@ -244,8 +250,8 @@ export class TidbytController {
   #finish(entry: Entry, outcome: Receipt['outcome'], priorEffects: Receipt['priorEffects'], failure?: FailureCode): void {
     const receipt: Receipt = {
       ...clone(entry.receipt), outcome, priorEffects,
-      completedOperations: outcome === 'sent' ? [PUSH] : [],
-      uncertainOperations: outcome === 'uncertain' ? [PUSH] : [],
+      completedOperations: outcome === 'sent' ? [operation(entry)] : [],
+      uncertainOperations: outcome === 'uncertain' ? [operation(entry)] : [],
     };
     delete receipt.failure;
     if (failure) receipt.failure = { code: failure };
@@ -258,7 +264,7 @@ export class TidbytController {
   #apply(entry: Entry, result: PushOutcome, current: boolean): void {
     if (result.outcome === 'sent') {
       if (current) this.#health = 'ready';
-      this.#lastSuccessfulSend = { status: 'known', requestId: clone(entry.request.requestId), clock: this.#clock(), operationIds: [PUSH] };
+      this.#lastSuccessfulSend = { status: 'known', requestId: clone(entry.request.requestId), clock: this.#clock(), operationIds: [operation(entry)] };
       return this.#finish(entry, 'sent', 'confirmed-transmission');
     }
     if (result.outcome === 'uncertain') {
@@ -306,7 +312,7 @@ export class TidbytController {
         this.#inFlight = { entry, abort };
         let result: PushOutcome;
         try {
-          result = await connection.push(entry.webp, abort.signal);
+          result = await (entry.webp ? connection.push(entry.webp, abort.signal) : connection.remove(abort.signal));
         } catch {
           result = { outcome: 'uncertain' };
         } finally {
@@ -349,17 +355,20 @@ export class TidbytController {
     this.cancelPending();
   }
 
-  /** Read-only reconnect: refresh installation evidence and health. No command is resubmitted. */
-  async refresh(): Promise<void> {
-    if (this.#closed) return;
+  /**
+   * Read-only reconnect: refresh installation evidence and health. No command is resubmitted.
+   * Returns this read's result, or undefined when the controller closed or was reconfigured meanwhile.
+   */
+  async refresh(): Promise<InstallationRead | undefined> {
+    if (this.#closed) return undefined;
     const connection = this.#connection;
-    let result;
+    let result: InstallationRead;
     try {
       result = await connection.readInstallation(new AbortController().signal);
     } catch {
       result = { ok: false as const, failure: 'transport-failure' as const };
     }
-    if (connection !== this.#connection || this.#closed) return;
+    if (connection !== this.#connection || this.#closed) return undefined;
     if (result.ok) {
       this.#installation = { present: result.present, sampledAtMs: this.#now() };
       // Writes stay refused under an authentication hold, so the service is not ready.
@@ -369,6 +378,7 @@ export class TidbytController {
       this.#health = 'unavailable';
     }
     this.#changed();
+    return result;
   }
 
   /** Stop the controller: abort the in-flight write (reported uncertain) and cancel queued writes. */

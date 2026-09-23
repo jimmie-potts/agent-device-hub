@@ -10,6 +10,7 @@
     }
   },
   "dependencies": {
+    "@jimmie-potts/agent-state": "2.0.1",
     "@jimmie-potts/device-contracts": "1.0.0"
   }
 }

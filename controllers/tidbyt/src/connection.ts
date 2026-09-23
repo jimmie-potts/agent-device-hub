@@ -14,6 +14,7 @@ export type ConnectionCapabilities = {
   backgroundPush: { supported: true };
   foregroundPush: { supported: false };
   installationRead: { supported: true };
+  installationRemove: { supported: true };
 };
 
 export type PushFailure = 'unauthenticated' | 'forbidden' | 'unknown-device' | 'invalid-request' | 'transport-failure';
@@ -29,6 +30,8 @@ export interface DisplayConnection {
   readonly capabilities: ConnectionCapabilities;
   push(webp: Uint8Array, signal: AbortSignal): Promise<PushOutcome>;
   readInstallation(signal: AbortSignal): Promise<InstallationRead>;
+  /** Delete the configured installation, classified like a push. */
+  remove(signal: AbortSignal): Promise<PushOutcome>;
 }
 
 export type TidbytCloudConfig = {
@@ -57,6 +60,7 @@ const CAPABILITIES: ConnectionCapabilities = Object.freeze({
   backgroundPush: Object.freeze({ supported: true }),
   foregroundPush: Object.freeze({ supported: false }),
   installationRead: Object.freeze({ supported: true }),
+  installationRemove: Object.freeze({ supported: true }),
 }) as ConnectionCapabilities;
 
 type Response = globalThis.Response;
@@ -145,9 +149,9 @@ export class TidbytCloudConnection implements DisplayConnection {
     this.#now = config.now ?? Date.now;
   }
 
-  #request(path: string, signal: AbortSignal, body?: string): Promise<Response> {
+  #request(path: string, signal: AbortSignal, body?: string, method = body === undefined ? 'GET' : 'POST'): Promise<Response> {
     return this.#fetch(`${API}/devices/${encodeURIComponent(this.#deviceId)}${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
+      method,
       redirect: 'error',
       signal: AbortSignal.any([signal, AbortSignal.timeout(this.#timeoutMs)]),
       headers: { authorization: `Bearer ${this.#apiKey}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
@@ -160,9 +164,18 @@ export class TidbytCloudConnection implements DisplayConnection {
       deviceID: this.#deviceId, image: Buffer.from(webp).toString('base64'),
       installationID: this.#installationId, background: true,
     });
+    return this.#write(() => this.#request('/push', signal, body));
+  }
+
+  remove(signal: AbortSignal): Promise<PushOutcome> {
+    return this.#write(() => this.#request(`/installations/${this.#installationId}`, signal, undefined, 'DELETE'));
+  }
+
+  /** Send one write and classify it once. */
+  async #write(send: () => Promise<Response>): Promise<PushOutcome> {
     let response: Response;
     try {
-      response = await this.#request('/push', signal, body);
+      response = await send();
     } catch (error) {
       const failure = networkFailure(error);
       return failure === 'uncertain' ? { outcome: 'uncertain' } : { outcome: 'failed', failure, priorEffects: 'none' };

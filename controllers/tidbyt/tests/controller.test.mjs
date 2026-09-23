@@ -5,6 +5,7 @@ import { TidbytController, renderFrame, FRAME_BYTES } from '../dist/index.js';
 
 const CAPABILITIES = {
   backend: 'tidbyt-cloud', backgroundPush: { supported: true }, foregroundPush: { supported: false }, installationRead: { supported: true },
+  installationRemove: { supported: true },
 };
 
 function gate() {
@@ -14,8 +15,8 @@ function gate() {
 }
 
 /** Fake connection: scripted outcomes, concurrency tracking and optional gates per push. */
-function fakeConnection({ push = () => ({ outcome: 'sent' }), read = () => ({ ok: true, present: true }) } = {}) {
-  const state = { pushes: [], reads: 0, active: 0, maxActive: 0, signals: [] };
+function fakeConnection({ push = () => ({ outcome: 'sent' }), read = () => ({ ok: true, present: true }), remove = () => ({ outcome: 'sent' }) } = {}) {
+  const state = { pushes: [], reads: 0, removals: 0, writes: [], active: 0, maxActive: 0, signals: [] };
   return {
     state,
     capabilities: CAPABILITIES,
@@ -23,10 +24,12 @@ function fakeConnection({ push = () => ({ outcome: 'sent' }), read = () => ({ ok
       state.active++;
       state.maxActive = Math.max(state.maxActive, state.active);
       state.pushes.push(webp);
+      state.writes.push('push');
       state.signals.push(signal);
       try { return await push(state.pushes.length, signal); } finally { state.active--; }
     },
     async readInstallation() { state.reads++; return read(state.reads); },
+    async remove() { state.removals++; state.writes.push('remove'); return remove(state.removals); },
   };
 }
 
@@ -69,7 +72,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 test('the initial snapshot is schema-valid, declares no v1 capability and fabricates no evidence', () => {
   const { controller } = setup();
   const snapshot = checkSnapshot(controller);
-  assert.deepEqual(snapshot.profile, { profileId: 'tidbyt-display', profileVersion: '1.0.0' });
+  assert.deepEqual(snapshot.profile, { profileId: 'tidbyt-display', profileVersion: '1.1.0' });
   const s = snapshot.controller;
   assert.deepEqual(s.identity, { deviceId: 'tidbyt', controllerId: 'tidbyt-main', sourceId: 'tidbyt-cloud', controllerEpoch: 'epoch-1' });
   for (const name of ['power', 'brightness', 'media', 'zones', 'scenes', 'preview']) assert.deepEqual(s.capabilities[name], { supported: false });
@@ -437,4 +440,58 @@ test('a successful read does not report ready while the authentication hold bloc
   const held = await settle(controller.submit(display(controller)));
   assert.deepEqual(held.failure, { code: 'forbidden' }, 'a forbidden hold keeps its own code');
   assert.equal(connection.state.pushes.length, 1);
+});
+
+function removal(controller, overrides = {}) {
+  const request = display(controller, 0, overrides);
+  return { ...request, command: { kind: 'tidbyt.remove' }, ...overrides };
+}
+
+test('a removal is queued behind a push and reports its own operation', async () => {
+  const push = gate();
+  const connection = fakeConnection({ push: () => push.promise.then(() => ({ outcome: 'sent' })) });
+  const { controller } = setup({ connection });
+  const shown = controller.submit(display(controller, 7));
+  const removed = controller.submit(removal(controller));
+  assert.equal(removed.decision, 'queued');
+  await flush();
+  assert.deepEqual(connection.state.writes, ['push']);
+  push.open();
+  const receipt = await settle(removed);
+  await settle(shown);
+  assert.deepEqual(connection.state.writes, ['push', 'remove']);
+  assert.equal(receipt.outcome, 'sent');
+  assert.deepEqual(receipt.completedOperations, ['remove']);
+  assert.equal(checkSnapshot(controller).controller.state.lastSuccessfulSend.operationIds[0], 'remove');
+});
+
+test('removal failures use the push holds and are never resent', async () => {
+  const uncertain = setup({ connection: fakeConnection({ remove: () => ({ outcome: 'uncertain' }) }) });
+  const first = await settle(uncertain.controller.submit(removal(uncertain.controller)));
+  assert.equal(first.outcome, 'uncertain');
+  assert.equal(first.priorEffects, 'possible');
+  assert.deepEqual(first.uncertainOperations, ['remove']);
+  await flush();
+  assert.equal(uncertain.connection.state.removals, 1);
+
+  const auth = setup({ connection: fakeConnection({ remove: () => ({ outcome: 'failed', failure: 'unauthenticated', priorEffects: 'none' }) }) });
+  assert.equal((await settle(auth.controller.submit(removal(auth.controller)))).failure.code, 'unauthenticated');
+  assert.equal((await settle(auth.controller.submit(display(auth.controller)))).failure.code, 'unauthenticated');
+  assert.equal(auth.connection.state.pushes.length, 0);
+  assert.equal(auth.connection.state.removals, 1);
+
+  const limited = setup({ connection: fakeConnection({ remove: () => ({ outcome: 'failed', failure: 'capacity', priorEffects: 'none', retryAfterMs: 5000 }) }) });
+  assert.equal((await settle(limited.controller.submit(removal(limited.controller)))).failure.code, 'capacity');
+  assert(checkSnapshot(limited.controller).display.holds.rateLimitRemainingMs > 0);
+});
+
+test('a malformed removal or another target is rejected before reservation', async () => {
+  const { controller, connection } = setup();
+  const extra = removal(controller);
+  extra.command.frame = frameData();
+  assert.deepEqual(controller.submit(extra), { decision: 'invalid-request', reserved: false });
+  assert.deepEqual(controller.submit(removal(controller, { deviceId: 'other' })), { decision: 'unknown-device', reserved: false });
+  assert.deepEqual(checkSnapshot(controller).controller.nextRequestId, { epoch: 'epoch-1', sequence: 0 });
+  await flush();
+  assert.equal(connection.state.removals, 0);
 });

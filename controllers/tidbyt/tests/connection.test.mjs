@@ -49,6 +49,7 @@ test('declared capabilities are backend facts, with foreground pushes unsupporte
     backgroundPush: { supported: true },
     foregroundPush: { supported: false },
     installationRead: { supported: true },
+    installationRemove: { supported: true },
   });
 });
 
@@ -176,4 +177,35 @@ test('credentials load only from a private file and never echo its contents', (t
   expectCode('credentials-invalid');
   rmSync(file);
   expectCode('credentials-unreadable');
+});
+
+test('a removal is exactly one DELETE of the configured installation', async () => {
+  const { fetch, calls } = fakeFetch(() => json(200, {}));
+  const result = await connect(fetch).remove(signal());
+  assert.deepEqual(result, { outcome: 'sent' });
+  assert.equal(calls.length, 1);
+  const [call] = calls;
+  assert.equal(call.url, `https://api.tidbyt.com/v0/devices/${DEVICE}/installations/agentstatus`);
+  assert.equal(call.method, 'DELETE');
+  assert.equal(call.redirect, 'error');
+  assert.equal(call.headers.authorization, `Bearer ${KEY}`);
+  assert.equal(call.body, undefined);
+});
+
+test('removal responses are classified like pushes and never retried', async () => {
+  const cases = [
+    [json(401, { message: KEY }), { outcome: 'failed', failure: 'unauthenticated', priorEffects: 'none' }],
+    [json(429, {}, { 'retry-after': '30' }), { outcome: 'failed', failure: 'capacity', priorEffects: 'none', retryAfterMs: 30_000 }],
+    [json(502, {}), { outcome: 'uncertain' }],
+  ];
+  for (const [response, expected] of cases) {
+    const { fetch, calls } = fakeFetch(() => response);
+    const result = await connect(fetch).remove(signal());
+    assert.deepEqual(result, expected, `status ${response.status}`);
+    assert.equal(calls.length, 1);
+    noSecrets(result);
+  }
+  const timedOut = fakeFetch(() => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); });
+  assert.deepEqual(await connect(timedOut.fetch).remove(signal()), { outcome: 'uncertain' });
+  assert.equal(timedOut.calls.length, 1);
 });
