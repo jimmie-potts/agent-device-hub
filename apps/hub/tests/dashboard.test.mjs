@@ -52,10 +52,11 @@ test('general controller commands are validated before forwarding and require co
   const base={apiVersion:'1.0',controllerId:'c',deviceId:'d',requestId:{epoch:'e',sequence:1},expectedConfigurationRevision:0,expectedGeneration:{epoch:'g',sequence:0}};
   const post=(token,command)=>fetch(hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify({...base,command})});
   assert.equal((await post(reader,{kind:'power.set',on:false})).status,403);
-  for(const command of [{kind:'brightness.set',percent:150},{kind:'media.control',action:'restart'},{kind:'media.start'},{kind:'power.set',on:'yes'}]){const response=await post(control,command);assert.equal(response.status,400);assert.equal((await response.json()).error.code,'invalid-request');}
+  for(const command of [{kind:'brightness.set',percent:150},{kind:'media.control',action:'restart'},{kind:'media.start'},{kind:'power.set',on:'yes'},{kind:'scene.activate',sceneId:'Beach Waves'},{kind:'scene.activate'}]){const response=await post(control,command);assert.equal(response.status,400);assert.equal((await response.json()).error.code,'invalid-request');}
   assert.equal(upstream.length,0,'unauthorized or invalid general commands never reach the controller');
   const accepted=await post(control,{kind:'brightness.set',percent:40});assert.equal(accepted.status,200);assert.equal((await accepted.json()).outcome,'queued');
   assert.equal(upstream.length,1);assert.deepEqual(upstream[0].request.command,{kind:'brightness.set',percent:40});assert.equal(upstream[0].authorization,`Bearer ${native}`);
+  const scene=await post(control,{kind:'scene.activate',sceneId:'scene-'+'a'.repeat(64)});assert.equal(scene.status,200);assert.equal(upstream.length,2);assert.deepEqual(upstream[1].request.command,{kind:'scene.activate',sceneId:'scene-'+'a'.repeat(64)});
   const context=await (await fetch(hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${control}`}})).json();assert.equal(context.control,true);assert.equal(JSON.stringify(context).includes(native),false);
  } finally {await hub?.close();await new Promise(resolve=>{fake.close(resolve);fake.closeAllConnections();});await rm(directory,{recursive:true,force:true});}
 });

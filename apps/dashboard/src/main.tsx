@@ -2,11 +2,11 @@ import React, {useEffect,useId,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
-import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,type GeneralReasons,type Context,type Component} from './client';
+import {Api,ApiError,failureMessage,receiptEvidence,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,type GeneralReasons,type Context,type Component} from './client';
 import './style.css';
 
 type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
-type Nano={apiVersion:string;identity:Snapshot['identity'];revision:string;configurationRevision:number;mode:string;settings:{style?:string;coverage?:string};source:string;projects:{id:string;color:string}[];tasks:{id:string;projectId:string|null;overrideProjectId:string|null}[];elements:{id:string;projectId:string|null;signature:number}[];pending:unknown[];wallPending:unknown;outcomes:{requestId:{epoch:string;sequence:number};outcome:string;failure?:{code:string}}[];nextRequestId:{epoch:string;sequence:number};capabilities:Record<string,{supported:boolean}>};
+type Nano={apiVersion:string;identity:Snapshot['identity'];revision:string;configurationRevision:number;mode:string;settings:{style?:string;coverage?:string};source:string;projects:{id:string;color:string}[];tasks:{id:string;projectId:string|null;overrideProjectId:string|null}[];elements:{id:string;projectId:string|null;signature:number}[];pending:unknown[];wallPending:unknown;outcomes:{requestId:{epoch:string;sequence:number};outcome:string;failure?:{code:string}}[];nextRequestId:{epoch:string;sequence:number};scenes?:{id:string;name?:string}[];capabilities:Record<string,{supported:boolean}>};
 type Pixoo={apiVersion:string;identity:{controllerId:string;deviceId:string};configurationRevision:number;generation:number;nextRequestId:string;configuration:{mode:string;filter:{q?:string;provider?:string;projectId?:string;session?:SessionSnapshot['identity']};cadenceMs:number};pendingMode:string|null;sourceConnection:string;participating:boolean;inFlight:number;lastOutcome:null|{status:string;code?:string};capabilities:{modes:string[];filters:string[];minimumCadenceMs:number;maximumCadenceMs:number}};
 type Device={snapshot?:Snapshot;integration?:Nano|Pixoo;error?:string;received?:number;busy?:boolean};
 const age=(ms:number)=>ms<1000?'less than 1s':ms<60000?`${Math.floor(ms/1000)}s`:`${Math.floor(ms/60000)}m`;
@@ -26,11 +26,24 @@ function observedResult(source:unknown,ticket:unknown):string|undefined{
  const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
  if(result&&result.outcome!=='queued')return `Result updated: ${result.outcome}${result.failure?' · '+result.failure.code:''}.${result.priorEffects!==undefined?' '+receiptEvidence(result):''} Physical result is not confirmed.`;
 }
+/** Disabling the focused control while a command runs would drop keyboard focus to the document. Once the command settles, focus returns to that control, or to the first enabled control of the same group when it is locked or gone. */
+function useRestoredFocus(active:boolean){
+ const saved=useRef<{control:HTMLElement;group:HTMLElement|null}|null>(null);
+ useEffect(()=>{
+  if(active||!saved.current)return;
+  const {control,group}=saved.current;saved.current=null;
+  if(document.activeElement!==document.body)return;
+  if(control.isConnected&&!control.matches(':disabled')){control.focus();return;}
+  if(group?.isConnected)group.querySelector<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)')?.focus();
+ },[active]);
+ return ()=>{const control=document.activeElement;if(control instanceof HTMLElement&&control!==document.body)saved.current={control,group:control.closest<HTMLElement>('.edit')};};
+}
 /** One-click commands use the latest observed snapshot at activation and stay busy until the refreshed snapshot arrives, so the next activation carries fresh guards. Only an accepted ticket is watched for its terminal outcome; a rejected ticket may be consumed by another client. An uncertain result locks the group until the user loads current values. */
 function useCommand(api:Api,path:string,refresh:()=>void|Promise<void>,source:unknown){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<{label:string;ticket:unknown}>();
+ const keepFocus=useRestoredFocus(busy);
  useEffect(()=>{const message=submitted&&observedResult(source,submitted.ticket);if(message)setStatus(`${submitted.label}: ${message}`);},[source,submitted]);
- async function run(label:string,request:unknown){if(busy||locked)return;setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
+ async function run(label:string,request:unknown){if(busy||locked)return;keepFocus();setBusy(true);setStatus(`${label}: submitting…`);setSubmitted(undefined);
   try {const result=await api.request<Record<string,unknown>>(path,request);const failure=result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String((result.failure as {code:unknown}).code):'';setStatus(`${label}: ${String(result.outcome??'configuration accepted')}${failure}. Physical result is not confirmed.`);if(!failure)setSubmitted({label,ticket:(request as {requestId?:unknown}).requestId});}
   catch(error){const result=failureMessage(error);setStatus(`${label}: ${result.message}`);setLocked(result.locked);}
   finally{await refresh();setBusy(false);}
@@ -44,6 +57,7 @@ type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,s
 function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,submitLabel,children}:FormProps<T>){
  const heading=useId();
  const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null),[status,setStatus]=useState(''),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false);
+ const keepFocus=useRestoredFocus(busy);
  const values=draft?.values??initial,dirty=draft!==null;
  const conflict=dirty&&!locked&&draft.revision!==revision;
  useEffect(()=>{
@@ -52,7 +66,7 @@ function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refr
   if(message)setStatus(message);
  },[source,draft,locked]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
- async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;setBusy(true);setStatus('Submitting…');
+ async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!dirty||conflict)return;keepFocus();setBusy(true);setStatus('Submitting…');
   try {const result=await api.request<Record<string,unknown>>(path,build(draft!.source,values));const outcome=String(result.outcome??'configuration accepted');setStatus(`${outcome}${result.failure&&typeof result.failure==='object'&&'code' in result.failure?' · '+String(result.failure.code):''}. Physical result is not confirmed.`);setLocked(true);void refresh();}
   catch(error){const result=failureMessage(error);setStatus(result.message);setLocked(result.locked);void refresh();}
   finally{setBusy(false);}
@@ -71,9 +85,12 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  const elapsed=device.received?Math.max(0,now-device.received):0;
  // Pixoo presents agent status in Monitor. Content controls wait for the observed Media mode; nothing switches or restores on its own.
  const pixooMode=pixoo(integr)?{mode:integr.configuration.mode,pending:integr.pendingMode}:undefined;
- const content=pixooMode?(pixooMode.pending?`Pixoo is switching to ${title(pixooMode.pending)}; wait for the observed mode`:pixooMode.mode!=='media'?'Pixoo is in Monitor and presents agent status; playlist and playback controls need Media':undefined):undefined;
+ // Nanoleaf presents agent status in Work and Quiet. Scenes wait for the observed Free mode from the same controller v1 snapshot that guards the scene command.
+ const content=pixooMode?(pixooMode.pending?`Pixoo is switching to ${title(pixooMode.pending)}; wait for the observed mode`:pixooMode.mode!=='media'?'Pixoo is in Monitor and presents agent status; playlist and playback controls need Media':undefined):component.kind==='nanoleaf'&&snapshot?nanoleafContentReason(snapshot):undefined;
  const reasons=generalReasons({snapshot,control:context.control,common:device.error?'Controller observations are stale':snapshot?.state.externalControl.status==='known'&&snapshot.state.externalControl.owner==='external'?'Device is externally controlled':undefined,content});
  const switchCommand=useCommand(api,path+'/integration/commands',refresh,integr);
+ const freeCommand=useCommand(api,path+'/commands',refresh,snapshot);
+ const switchToFree=component.kind==='nanoleaf'&&snapshot&&supportedModes.includes('Free')&&snapshot.state.desired.mode.status==='known'&&snapshot.state.desired.mode.value!=='Free'&&!snapshot.state.pending.some(p=>p.command.kind==='mode.set')?<div className="switch"><div className="actions"><button type="button" disabled={!!disabled||freeCommand.busy||freeCommand.locked} onClick={()=>void freeCommand.run('Switch to Free',makeCommand(snapshot,{kind:'mode.set',mode:'Free'}))}>Switch to Free</button>{freeCommand.locked&&<button type="button" className="secondary" onClick={freeCommand.unlock}>Load current / unlock</button>}</div><p className="hint">One explicit controller v1 mode command through the existing mode control. Returning to Work or Quiet uses the same control.{disabled?` Unavailable: ${disabled}`:''}</p><p role="status">{freeCommand.status}</p></div>:undefined;
  const switchToMedia=pixoo(integr)&&pixooMode&&pixooMode.mode!=='media'&&!pixooMode.pending?<div className="switch"><div className="actions"><button type="button" disabled={!!disabled||switchCommand.busy||switchCommand.locked} onClick={()=>void switchCommand.run('Switch to Media',pixooRequest(integr,component,{operation:'mode',mode:'media'}))}>Switch to Media</button>{switchCommand.locked&&<button type="button" className="secondary" onClick={switchCommand.unlock}>Load current / unlock</button>}</div><p className="hint">One explicit mode command through the existing mode control. Returning to Monitor uses the same control.{disabled?` Unavailable: ${disabled}`:''}</p><p role="status">{switchCommand.status}</p></div>:undefined;
  return <><header className="section-heading"><div><p className="eyebrow">COMPONENT / {component.kind}</p><h2>{component.id}</h2></div><Badge warning={!!device.error}>{device.error?'Stale / unavailable':snapshot?.serviceHealth??'Unknown'}</Badge></header>
  <p className="muted">{component.controllerId} / {component.deviceId}</p>
@@ -95,21 +112,32 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  {pixoo(integr)&&<EditForm title="Monitor view" source={integr} revision={`${integr.configurationRevision}:${integr.generation}`} initial={{q:integr.configuration.filter.q??'',provider:integr.configuration.filter.provider??'',projectId:integr.configuration.filter.projectId??'',session:integr.configuration.filter.session?JSON.stringify(integr.configuration.filter.session):'',cadence:String(integr.configuration.cadenceMs)}} disabled={disabled} api={api} path={path+'/integration/commands'} build={(s,v)=>({apiVersion:s.apiVersion,controllerId:component.controllerId,deviceId:component.deviceId,requestId:s.nextRequestId,expectedConfigurationRevision:s.configurationRevision,expectedGeneration:s.generation,action:{operation:'view',filter:{...(v.q?{q:v.q}:{}),...(v.provider?{provider:v.provider}:{}),...(v.projectId?{projectId:v.projectId}:{}),...(v.session?{session:JSON.parse(v.session)}:{})},cadenceMs:Number(v.cadence)}})} refresh={refresh}>{(v,c)=><><label>Label / ID filter<input maxLength={120} value={v.q} onChange={e=>c('q',e.target.value)}/></label><Select label="Monitor provider" value={v.provider} onChange={x=>c('provider',x)} options={[{value:'',label:'All providers'},...options(['codex','claude'])]}/><label>Project ID<input maxLength={128} pattern="[A-Za-z0-9_.-]*" value={v.projectId} onChange={e=>c('projectId',e.target.value)}/></label><Select label="Monitor session" value={v.session} onChange={x=>c('session',x)} options={[{value:'',label:'All sessions'},...(v.session&&!sessions.some(s=>JSON.stringify(s.identity)===v.session)?[{value:v.session,label:'Previously selected session'}]:[]),...sessions.map(s=>({value:JSON.stringify(s.identity),label:s.label??s.identity.sessionId}))]}/><label>Update interval (ms)<input type="number" min={integr.capabilities.minimumCadenceMs} max={integr.capabilities.maximumCadenceMs} step="1" value={v.cadence} onChange={e=>c('cadence',e.target.value)}/></label><p className="hint">Filters can produce an empty monitor view. Participation: {integr.participating?'yes':'no'}; source: {integr.sourceConnection}.</p></>}</EditForm>}
  {!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
  <p className="eyebrow general">GENERAL CONTROLS</p>
- {snapshot?<GeneralControls component={component} snapshot={snapshot} reasons={reasons} api={api} path={path+'/commands'} refresh={refresh} extra={switchToMedia}/>:<p className="hint">General controls unavailable: no controller snapshot.</p>}
- <p className="hint">Scenes and rendition selection are not part of this view. Exact previews are not available.</p>{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:<p className="hint">Advanced editor unavailable: no validated link configured.</p>}
+ {snapshot?<GeneralControls component={component} snapshot={snapshot} integration={integr} reasons={reasons} api={api} path={path+'/commands'} refresh={refresh} mediaExtra={switchToMedia} sceneExtra={switchToFree}/>:<p className="hint">General controls unavailable: no controller snapshot.</p>}
+ <p className="hint">Rendition selection is not part of this view. Exact previews are not available.</p>{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:<p className="hint">Advanced editor unavailable: no validated link configured.</p>}
  </>;
 }
 const actionLabels:Record<string,string>={pause:'Pause',resume:'Resume',stop:'Stop',next:'Next',previous:'Previous',clear:'Clear','restart-with-changes':'Restart with changes'};
 /** Capability-driven general controls. Each control submits one guarded controller v1 command; a disabled control names its reason. */
-function GeneralControls({component,snapshot,reasons,api,path,refresh,extra}:{component:Component;snapshot:Snapshot;reasons:GeneralReasons;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
+function GeneralControls({component,snapshot,integration,reasons,api,path,refresh,mediaExtra,sceneExtra}:{component:Component;snapshot:Snapshot;integration:Nano|Pixoo|undefined;reasons:GeneralReasons;api:Api;path:string;refresh:()=>void|Promise<void>;mediaExtra?:React.ReactNode;sceneExtra?:React.ReactNode}){
  const revision=`${snapshot.configurationRevision}:${JSON.stringify(snapshot.generation)}`,pixel=component.kind==='pixoo';
  const brightness=snapshot.capabilities.brightness,range=brightness.supported?brightness:{minimum:0,maximum:100},draft=brightnessDraft(snapshot);
- const power=pixel?'Screen power':'Power';
+ const power=pixel?'Screen power':'Power',wall=component.kind==='nanoleaf';
+ const override=snapshot.state.desired.brightness;
  return <>
- <EditForm title={power} source={snapshot} revision={revision} initial={{on:snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'on'}} disabled={reasons.power} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'power.set',on:v.on==='on'})} refresh={refresh}>{(v,c)=><><Select label={power} value={v.on} onChange={x=>c('on',x)} options={[{value:'on',label:'On'},{value:'off',label:'Off'}]}/><p className="hint">{pixel?'Screen off pauses playback; screen on does not resume it. Power works in Monitor and Media and does not change the mode.':'Power does not change the device mode.'}</p></>}</EditForm>
- <EditForm title="Brightness" source={snapshot} revision={revision} initial={{percent:String(draft.value)}} disabled={reasons.brightness} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'brightness.set',percent:Number(v.percent)})} refresh={refresh}>{(v,c)=><><label>Brightness (%)<input type="range" min={range.minimum} max={range.maximum} step={1} value={v.percent} onChange={e=>c('percent',e.target.value)}/></label><p className="hint">Selected {v.percent}% of {range.minimum}–{range.maximum}. {draft.source==='unknown'?'Current brightness is unknown; the slider starts at a placeholder, not an observed value.':`Current ${draft.source} brightness is ${draft.value}%.`} Brightness works in every mode and does not change the mode.</p></>}</EditForm>
- <MediaControls snapshot={snapshot} reason={reasons.media} api={api} path={path} refresh={refresh} extra={extra}/>
+ <EditForm title={power} source={snapshot} revision={revision} initial={{on:snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'on'}} disabled={reasons.power} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'power.set',on:v.on==='on'})} refresh={refresh}>{(v,c)=><><Select label={power} value={v.on} onChange={x=>c('on',x)} options={[{value:'on',label:'On'},{value:'off',label:'Off'}]}/><p className="hint">{pixel?'Screen off pauses playback; screen on does not resume it. Power works in Monitor and Media and does not change the mode.':wall?'Power works in Work, Quiet and Free and does not change the mode. While off, the wall keeps tracking tasks and writes nothing until the next explicit mode command.':'Power does not change the device mode.'}</p></>}</EditForm>
+ <EditForm title="Brightness" source={snapshot} revision={revision} initial={{percent:String(draft.value)}} disabled={reasons.brightness} api={api} path={path} build={(s,v)=>makeCommand(s,{kind:'brightness.set',percent:Number(v.percent)})} refresh={refresh}>{(v,c)=><><label>Brightness (%)<input type="range" min={range.minimum} max={range.maximum} step={1} value={v.percent} onChange={e=>c('percent',e.target.value)}/></label><p className="hint">Selected {v.percent}% of {range.minimum}–{range.maximum}. {wall?(override.status==='known'?`Brightness override active: ${override.value}% until the next explicit mode command, which reapplies that mode’s brightness policy.`:'No brightness override is active; the wall uses its mode’s brightness policy and the slider starts at a placeholder, not an observed value.'):draft.source==='unknown'?'Current brightness is unknown; the slider starts at a placeholder, not an observed value.':`Current ${draft.source} brightness is ${draft.value}%.`} Brightness works in every mode and does not change the mode.</p></>}</EditForm>
+ <MediaControls snapshot={snapshot} reason={reasons.media} api={api} path={path} refresh={refresh} extra={mediaExtra}/>
+ <SceneControls snapshot={snapshot} integration={integration} reason={reasons.scenes} api={api} path={path} refresh={refresh} extra={sceneExtra}/>
  </>;
+}
+/** Saved scenes are one-click actions with a parameter: the controller-declared ID list, labelled by user-chosen names when the integration supplies them. One guarded scene command; the mode never changes as a side effect. */
+function SceneControls({snapshot,integration,reason,api,path,refresh,extra}:{snapshot:Snapshot;integration:Nano|Pixoo|undefined;reason?:string;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
+ const heading=useId();
+ const scenes=sceneOptions(snapshot,nano(integration)?integration:undefined);
+ const [sceneId,setSceneId]=useState('');const selected=scenes.some(s=>s.value===sceneId)?sceneId:scenes[0]?.value??'';
+ const command=useCommand(api,path,refresh,snapshot);
+ const disabled=reason??(!scenes.length?'No saved scenes are discovered by this controller':undefined);
+ return <div className="edit" role="group" aria-labelledby={heading}><h3 id={heading}>Scenes</h3><fieldset disabled={!!disabled||command.busy||command.locked}><Select label="Saved scene" value={selected} onChange={setSceneId} options={scenes.length?scenes:[{value:'',label:'No saved scenes discovered'}]}/><p className="hint">Scenes come from the controller’s discovery; names are the user-chosen Nanoleaf app names when supplied, IDs otherwise. Activating a scene is one write in Free and does not change the mode.</p><div className="actions"><button type="button" disabled={!selected} onClick={()=>void command.run('Activate scene',makeCommand(snapshot,{kind:'scene.activate',sceneId:selected}))}>Activate scene</button></div></fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{extra}{command.locked&&<div className="actions"><button type="button" className="secondary" onClick={command.unlock}>Load current / unlock</button></div>}<p role="status">{command.status}</p></div>;
 }
 function MediaControls({snapshot,reason,api,path,refresh,extra}:{snapshot:Snapshot;reason?:string;api:Api;path:string;refresh:()=>void|Promise<void>;extra?:React.ReactNode}){
  const heading=useId();

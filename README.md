@@ -142,3 +142,8 @@ issues are in the [roadmap](docs/roadmap.md#general-device-controls).
 screen power, brightness, saved-playlist and playback controls to the same
 component view; physical acceptance on the display is
 [#154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
+[#153](https://github.com/jimmie-potts/agent-device-hub/issues/153) adds Nanoleaf
+power, brightness and saved-scene controls on the capabilities delivered by
+[Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64); physical
+acceptance on the installed wall is
+[#155](https://github.com/jimmie-potts/agent-device-hub/issues/155).
