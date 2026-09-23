@@ -113,38 +113,45 @@ not implicitly invoke those skills.
 
 ### Cleanup after delivery
 
-Start once step 6 has verified the merged revision, through its Depot evidence
-or the guide-only exception evidence, and read back the issue state. Cleanup
-does not wait for installation or physical acceptance unless that work still
-uses the worktree. Clean up only what this delivery created:
+Start once step 6 has confirmed that the merged revision's Depot jobs succeeded,
+or recorded its guide-only exception evidence, and read back the issue state.
+Cleanup does not wait for installation or physical acceptance unless that work
+still uses the worktree. Clean up only what this delivery created:
 
-1. Confirm the PR is merged and the worktree's `HEAD` is the PR's merged head
-   commit. This repository squash-merges, so judge delivery by the PR's merged
-   state, never by commit ancestry. Commits after the merged head are
-   unfinished work.
-2. Run `git status --short --ignored` in the worktree. `git worktree remove`
-   deletes ignored files, including the worktree's own `.local/`, test output
-   and `node_modules/`. Move anything the issue still needs into the PR, the
-   issue or the canonical local checkout's
-   `.local/evidence/gh-<issue-number>-<slug>/`.
-3. From the canonical local checkout, run `git worktree remove <path>` and
-   confirm with `git worktree list` that the path is gone. Delete the canonical
+1. Confirm the PR is merged and the worktree's `HEAD` is the PR's reviewed head
+   (`headRefOid`, the `--match-head-commit` value), not the squash commit on
+   `main`. Squash merges leave a branch's commits off `main`, so judge delivery
+   by the PR's merged state, never by commit ancestry. Commits after the
+   reviewed head are unfinished work.
+2. Run `git status --short --ignored` in the worktree, and look inside the
+   scratch folder. `git worktree remove` deletes ignored files, including the
+   worktree's own `.local/`, test output and `node_modules/`. Move anything the
+   issue still needs into the PR, the issue or the canonical checkout's
+   `.local/evidence/gh-<issue-number>-<slug>/`. The PR and issue are public, so
+   private material goes only to `.local/evidence/`. Confirm the other ignored
+   files are disposable.
+3. For a worktree created with `git worktree add`, run
+   `git worktree remove <path>` from the canonical local checkout and confirm
+   with `git worktree list` that the path is gone. Remove any worktree
+   registered inside the scratch folder the same way, then delete the canonical
    checkout's `.local/scratch/gh-<issue-number>-<slug>/`. Do not delete the
    delivery branch yourself.
-4. Remove a tool-managed worktree, such as a Claude Code session worktree under
-   `.claude/worktrees/`, through that tool's own exit flow instead of
-   `git worktree remove`, and still delete the scratch folder. Once steps 1 and
+4. Leave a tool-managed worktree, such as a Claude Code session worktree under
+   `.claude/worktrees/`, to that tool's own exit flow instead of
+   `git worktree remove`; that flow may also delete its branch. Once steps 1 and
    2 pass on a clean worktree, accepting the tool's option to discard the
-   squash-merged commits is allowed.
+   squash-merged commits is allowed. If this session cannot run that flow,
+   delete the scratch folder, keep the worktree and report it as ready to
+   remove.
 
-Keep the worktree and scratch, and report the path and reason, when the
-worktree is dirty or locked, a process or session still uses it, its `HEAD`
-differs from the merged head, evidence is not yet preserved, or
-`git worktree remove` refuses. Never force removal, and never reset, clean or
-discard files to make a worktree removable. If main CI fails, or the work
-failed or was abandoned, ask the user whether to keep or remove it and keep it
-until they decide; discarding uncommitted work needs their explicit approval.
-Leave other sessions' worktrees, branches and scratch alone.
+Keep the worktree and scratch, and report the path and reason, when the worktree
+is dirty or locked, another process or session uses it, its `HEAD` differs from
+the reviewed head, evidence is not yet preserved, an ignored file is not
+confirmed disposable, or `git worktree remove` refuses. Without the user's
+explicit approval, never force removal or reset, clean or discard files to make
+a worktree removable. If main CI fails, or the work failed or was abandoned, ask
+the user whether to keep or remove it and keep it until they decide. Leave other
+sessions' worktrees, branches and scratch alone.
 
 ### Depot CI evidence
 
