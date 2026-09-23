@@ -43,7 +43,7 @@ def link(item, mode):
 
 
 def badge(item):
-    return f'<span class="badge {escape(item["status"])}">{escape(item["status_label"])}</span>'
+    return f'<span class="badge {escape(item["status"])}">At snapshot: {escape(item["status_label"])}</span>'
 
 
 def navigation(data, mode, current):
@@ -86,7 +86,7 @@ def frame(data, title, content, mode="overview", current=""):
 <html lang="en" data-theme="dark">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · BUNNY system design</title>
-<meta name="description" content="BUNNY system design. Component ownership, contracts, event flows, deployment and verification.">
+<meta name="description" content="BUNNY design snapshot from September 19, 2026. Component ownership, contracts, event flows, deployment and verification.">
 <style>{css}</style></head>
 <body><a class="skip" href="#main">Skip to document</a>
 <header class="mobile-bar"><a href="{prefix}index.html">BUNNY / SYSTEM DESIGN</a><button id="menu-toggle" aria-expanded="false" aria-controls="sidebar">Documents</button></header>
@@ -95,10 +95,10 @@ def frame(data, title, content, mode="overview", current=""):
 <label class="search-label" for="search">Find a document</label><input id="search" type="search" placeholder="Music, state, storage…" autocomplete="off">
 <p id="search-count" class="search-count" role="status" aria-live="polite">{len(data['components'])} component documents</p>
 <nav aria-label="Document navigation">{nav}</nav>
-<div class="sidebar-foot">Design baseline<br><strong>{escape(data['reviewed_at'])}</strong><br>Source and runtime evidence stay separate.</div></aside>
+<div class="sidebar-foot">Historical design snapshot<br><strong>{escape(data['reviewed_at'])}</strong><br>Follow owning issues for current status.</div></aside>
 <div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button">Light mode</button><button id="print" type="button">Print</button></div></div>
-<main id="main" tabindex="-1">{content}</main>
-<footer><span>BUNNY · editable design, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
+<main id="main" tabindex="-1"><aside class="notice" aria-label="Snapshot date"><strong>Design snapshot: {escape(data['reviewed_at'])}.</strong> Implementation labels, issue states and open decisions describe the pinned baseline at that date. Follow the linked owning issues and application guides for current status.</aside>{content}</main>
+<footer><span>BUNNY · dated design snapshot, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
 <script>{script}</script></body></html>\n'''
 
 

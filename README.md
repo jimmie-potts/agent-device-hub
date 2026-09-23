@@ -6,10 +6,10 @@ Nanoleaf, Pixoo, Tidbyt and LIFX.
 This repository contains versioned controller contracts with TypeScript and Python
 conformance checks, an embeddable authenticated MCP module, a shared agent-state
 package with bounded provider emitters, accepted architecture and development
-workflow tooling, and a [Linux standalone host](apps/hub/README.md) with bounded
-controller routing and supervised state-owner migration. The
-[integration dashboard](#bunny-frontend) is delivered. Installation and new device
-adapters remain separate work.
+workflow tooling, a [Linux standalone host](apps/hub/README.md) with bounded
+controller routing and supervised state-owner migration, and a
+[React dashboard](apps/dashboard/README.md). Installation and new device
+adapters have separate owners and acceptance gates.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -40,10 +40,10 @@ shared presets follow the Codex-first milestone and general-control definition.
 ## System design documents
 
 Open the [BUNNY system design atlas](docs/system-design/index.html) locally for
-the HTML overview, 26 component documents and a combined reading/print view.
-GitHub shows HTML source. The atlas distinguishes delivered contracts, planned
-services and qualification work, with links to the owning issues and sources.
-Edit its HTML fragments and inventory, then follow the
+the September 19, 2026 design snapshot, 26 component documents and a combined
+reading/print view. Its implementation labels describe that date, not current
+status. GitHub shows HTML source. Revise the snapshot only for an intentional
+design-document change, following the
 [documentation checks](docs/development.md#system-design-documents).
 
 ## Validate the contracts
@@ -126,9 +126,10 @@ Run `npm run test:agent-state`, `npm run test:agent-state:python` and
 
 ## Cross-project work guide
 
-The [work guide](docs/work-guide/README.md) contains the remaining-work map,
-delivery history and architecture diagrams for Hub, Nanoleaf and Pixoo. Its
-generator and source snapshots live here and are maintained with each delivery.
+The [work guide](docs/work-guide/README.md) is a dated remaining-work map,
+delivery history and architecture guide for Hub, Nanoleaf and Pixoo. Its
+generator and saved inputs live here. Refresh them for an intentional guide
+update or publication; GitHub issues own current status.
 
 ## BUNNY frontend
 

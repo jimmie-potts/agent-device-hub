@@ -2,10 +2,13 @@
 
 ## System design documents
 
-The human-facing design set is HTML under `docs/system-design/`. Edit
-`source/*.html` and `design.json`, then regenerate the overview, component pages
-and complete reading view. `assets/` holds the shared style and browser behavior.
-The inventory records the originating template set and source revision receipts.
+The HTML under `docs/system-design/` preserves the September 19, 2026 design
+snapshot. Its implementation labels and issue states describe that baseline;
+GitHub issues and owning application guides supply current status. Routine
+product delivery does not rebaseline it. For an intentional snapshot revision,
+edit `source/*.html` and `design.json`, then regenerate the overview, component
+pages and complete reading view. `assets/` holds the shared style and browser
+behavior. The inventory records the template set and source revision receipts.
 
 ```bash
 python3 docs/system-design/build.py
@@ -154,12 +157,12 @@ active deliverable; shared Git operations and installations still need ownership
 
 ## Package and controller validation
 
-The chosen development direction is Node 24, TypeScript and npm workspaces for
-new shared packages and the Tidbyt/LIFX controllers. No workspace packages or
-runtime entry points are created by the documentation bootstrap. The first
-implementing issue adds the needed manifests, package boundaries and executable
-commands to this document and CI. The migrated Nanoleaf worker remains Python;
-sharing a repository does not require a common runtime or combined process.
+The development direction is Node 24, TypeScript and npm workspaces for shared
+packages, applications and new Tidbyt/LIFX controllers. Existing packages and
+applications have executable commands documented below. Each new controller
+implementation must add its build, type, test and consumer checks here and in
+CI. The Nanoleaf worker remains Python; sharing a repository does not require
+a common runtime or combined process.
 
 Reserve shared contracts, root package/lockfile changes and CI for the coordinating
 writer. Work on separate deliverables uses separate worktrees, even for different

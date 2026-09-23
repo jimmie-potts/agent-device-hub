@@ -158,7 +158,7 @@ Hardware or app qualification with an unsupported result does not enable support
 | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29) | Consume shared agent sessions while preserving Nanoleaf behavior | [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31), [codex-nanoleaf#28](https://github.com/jimmie-potts/codex-nanoleaf/issues/28) |
 | [codex-nanoleaf#30](https://github.com/jimmie-potts/codex-nanoleaf/issues/30) | Verify shared monitoring migration and Nanoleaf compatibility | [codex-nanoleaf#29](https://github.com/jimmie-potts/codex-nanoleaf/issues/29), [agent-device-hub#8](https://github.com/jimmie-potts/agent-device-hub/issues/8) |
 | [codex-nanoleaf#31](https://github.com/jimmie-potts/codex-nanoleaf/issues/31) | Adopt shared OpenSpec validation tooling | [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) |
-| [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54) | Deliver source and setup for a fresh Linux installation | Source merged in [PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) at `2558df5`; installed acceptance remains #55 and documentation coordination remains Hub #43 |
+| [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54) | Deliver source and setup for a fresh Linux installation | Source receipt: [PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57) at `2558df5`; separate acceptance records: [Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) and [Hub #43](https://github.com/jimmie-potts/agent-device-hub/issues/43) |
 | [codex-nanoleaf#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) | Install and verify the Linux runtime in WSL | [codex-nanoleaf#54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54), explicit installation and physical-operation authorization |
 | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29) | Adopt qualified shared monitoring contracts in Pixoo | [agent-device-hub#2](https://github.com/jimmie-potts/agent-device-hub/issues/2), [divoom-app-upgrade#2](https://github.com/jimmie-potts/divoom-app-upgrade/issues/2), [divoom-app-upgrade#3](https://github.com/jimmie-potts/divoom-app-upgrade/issues/3) |
 | [divoom-app-upgrade#31](https://github.com/jimmie-potts/divoom-app-upgrade/issues/31) | Embed the shared agent-state service in the Pixoo backend | [divoom-app-upgrade#29](https://github.com/jimmie-potts/divoom-app-upgrade/issues/29), [agent-device-hub#3](https://github.com/jimmie-potts/agent-device-hub/issues/3), [agent-device-hub#4](https://github.com/jimmie-potts/agent-device-hub/issues/4), [divoom-app-upgrade#6](https://github.com/jimmie-potts/divoom-app-upgrade/issues/6), [divoom-app-upgrade#8](https://github.com/jimmie-potts/divoom-app-upgrade/issues/8) |
@@ -262,7 +262,8 @@ does not reopen them, claim new runtime delivery, or advance active wall-map UI
 work as a side effect.
 
 The Nanoleaf Linux sequence is separate from shared monitoring and source
-consolidation. Nanoleaf #54 delivered source and setup, Nanoleaf #55 owns installed
-and physical acceptance, and Hub #43 owns canonical architecture and work-guide
-synchronization. The delivered runtime reuses separate processes and one light
-writer; it does not add migration, rollback, a combined daemon or a new hook API.
+consolidation. Nanoleaf #54 records source and setup, #55 records installed and
+physical acceptance, and Hub #43 records architecture coordination. The runtime
+reuses separate processes and one light writer; it does not add migration,
+rollback, a combined daemon or a new hook API. Follow those issues for current
+status.

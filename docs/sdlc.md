@@ -64,23 +64,23 @@ before its fix; imported bootstrap workflow fixtures do not establish a product
 red/green result. Do not widen scope to satisfy a test or rewrite device behavior
 as incidental cleanup.
 
-## Work guide completion gate
+## Work guide updates
 
-Every authorized delivery includes review of the [cross-project work guide](work-guide/README.md).
-Explicit `plan-work` and `deliver-work` use its planning, candidate, completion
-and publication checkpoints. Ordinary work follows the same project procedure
-without implicitly invoking these skills. Retain tracker-only, read-only and
-source-only limits; existing publication authority needs no repeated approval.
-Follow its maintenance procedure, update affected inputs and generated output,
-and record the outcome in `docs/work-guide/updates.md`. The PR must name changed
-sections and validation, or give a specific no-impact reason. Cross-repository
-delivery requires a linked hub companion PR and explicit synchronization status.
-Guide status must follow verified source evidence, including any post-merge
-reconciliation. Missing updates prevent a claim of fully completed delivery.
-Report guide-source synchronization, public artifact publication and live
-verification as separate stages, with evidence or a pending owner/next action.
-Check public currency even when this source change has no guide impact. A Hub
-merge is not evidence of a current public edition.
+The [cross-project work guide](work-guide/README.md) is a dated publication, not
+a live delivery ledger. Refresh its saved inputs and generated output when the
+authorized task intentionally updates or publishes it. An unrelated planning,
+source or acceptance task does not require a guide refresh, no-impact entry,
+companion PR or public-currency check. Closing such a task does not claim that
+the dated guide or public edition reflects its latest state.
+
+For an intentional guide update, follow the guide procedure and record changed
+sections, snapshot time, validation and source revision in its PR. A
+cross-repository update may use a linked Hub companion PR with one coordinator.
+Keep source completion, guide revision, public publication and live verification
+as separate claims. Publishing remains a distinct authorized step with its own
+review and verification gates. Explicit `plan-work` and `deliver-work` use
+their applicable checkpoints within the user's authority; ordinary work does
+not implicitly invoke those skills.
 
 ## Review and merge
 
