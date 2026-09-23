@@ -1,21 +1,21 @@
-# N30 mouse qualification and completed keyboard trial
+# N30 Codex qualification
 
 Work source: [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64).
 Evidence collected September 22–23, 2026 UTC.
 
-The source investigation identifies supported interfaces and a bounded trial
-plan for the [accepted desktop controls](desktop-controls.md).
-**Route qualification remains incomplete.** Owner photographs
-identify the N Edition keyboard, model 85HA, and mouse model 85CA. The latter
-matches the N30, not the earlier R8 candidate. An authorized browser check now
-associates its four D-pad directions with distinct events. A separate authorized
-trial records Big A as Enter and Big B as a held Ctrl+Win chord with both keys
-released. The owner also passed the brief Wispr/Notepad trial and cleared both
-temporary assignments. Follow-up Windows inventory associates the N30 receiver
-with `VID_062A&PID_4101` and reports Codex package `26.917.6896.0`. The native
-D-pad mapping route remains unqualified.
-This report does not complete #64 or make
-[Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) ready.
+**The owner passed the brief Windows trial for all four Codex actions, ordinary
+input outside Codex, and restoration after stopping.** The selected route uses
+existing N30 outputs and portable AutoHotkey 2.0.28, scoped to the running Codex
+application. The owner accepted that other keyboards' PageUp/PageDown and other
+mice's Back/Forward share those mappings while Codex is active. Receiver-specific
+filtering is not part of this personal-project route.
+
+The photographed mouse is N30 model 85CA, using its 2.4 GHz receiver, associated
+by operator inventory with `VID_062A&PID_4101`. The reported Codex package is
+`OpenAI.Codex` version `26.917.6896.0`. This is a positive bounded qualification,
+not delivery or installation of the reusable mapper. Those stages remain with
+[Hub #65](https://github.com/jimmie-potts/agent-device-hub/issues/65) and
+[Hub #66](https://github.com/jimmie-potts/agent-device-hub/issues/66).
 
 The owner selected 2.4 GHz receivers and subsequently reported that both devices
 are connected and working. The large A/B accessory is plugged into the keyboard.
@@ -38,13 +38,13 @@ are independent. A supported result under `D` never implies an `L` pass.
 | Item | Evidence on the collection date | Remaining qualification |
 | --- | --- | --- |
 | Keyboard and Dual Super Buttons | O: packaging identifies Retro Mechanical Keyboard N Edition, model 85HA, with N Edition Dual Super Buttons; owner reports working keyboard and connected accessory. L via O: mapped A Enter pair and B Ctrl+Win hold/release | Outside B.U.N.N.Y.; no further keyboard qualification required |
-| Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Receiver VID/PID associated below; firmware, interface identity, native D-pad events and controlled hold behavior remain unverified |
+| Mouse | O: packaging reads 85CA, 2.4G, 1000 DPI and AA battery; design matches N30; owner reports basic operation. L via O: four distinct browser outputs below | Brief Codex action trial passed below; firmware, per-device event attribution and controlled hold timing remain unverified |
 | N30 receiver identity | L via O: `VID_062A&PID_4101` disappeared from present mouse-class inventory when the operator removed the N30 receiver; normal operation returned after reconnect | Interface/usage and native D-pad event attribution remain unverified; omit serials and instance paths from shared evidence |
 | Ultimate Software V2 | D: keyboard support is documented; N30 custom mapping support is not established | Keyboard configuration is outside scope; do not apply R8 capabilities to N30 |
 | Wispr | O: current push-to-talk setting is Ctrl+Win. S: local directories named `app-1.6.872`, `app-1.6.886`, `app-1.6.897` exist | Historical personal trial passed below; directory names do not identify the active installation; no further Wispr acceptance gate |
-| Codex | O: current-user package `OpenAI.Codex`, version `26.917.6896.0`; D: Windows defaults below | Running-process identity, customized bindings and foreground behavior; installed package metadata is not an app-action result |
+| Codex | O: current-user package `OpenAI.Codex`, version `26.917.6896.0`; D: Windows defaults below | Trial resolved the running window executable within that installed package and the owner reported action/focus checks passed; no executable path or custom settings retained |
 | CHOMPI bridge | S: local C# source inspected; no Git commit exists in that checkout | Installed binary revision and coexistence; no bridge was launched or changed |
-| Live input/application results | L via O: focused N30/Super Buttons events, successful brief Wispr/Notepad trial and mapping restoration | Receiver-attributed events, Codex routing, persistence and recovery |
+| Live input/application results | L via O: focused N30/Super Buttons events, successful brief Wispr/Notepad trial and mapping restoration | Codex routing and stop/restoration passed in the later trial; per-device attribution and long-term recovery remain unqualified |
 
 The WSL-to-Windows inventory failed with `UtilBindVsockAnyPort:307` both in the
 normal context and after an approved sandbox escalation. The native Node tool
@@ -52,8 +52,9 @@ also failed before execution because of `sandboxCwd`. The mounted Windows app
 package directory denied access. These are inventory gaps, not evidence that
 hardware or software is absent. The later N30 and Super Buttons checks used
 focused browser listeners. The owner performed separately authorized temporary
-A/B fast mappings. No system-wide listener, adapter injection or service change
-ran. The owner later supplied the selected Windows inventory values below.
+A/B fast mappings. At that stage no system-wide listener, adapter injection or service change
+ran. The later authorized AutoHotkey trial below temporarily translated the four
+selected signals. The owner supplied the selected Windows inventory values below.
 Application and restoration results are recorded separately.
 
 ## Operator receiver and package inventory
@@ -115,8 +116,9 @@ records the dated result and remaining qualification.
 
 `Supported` and `Unsupported` below apply only to the cited product family or
 API. `Unknown` means the available evidence does not establish that cell.
-The browser observations above are partial input evidence; no complete
-installed input/application route has qualified.
+The browser observations above are partial input evidence. The later temporary
+application route passed its brief owner trial; persistent installation remains
+separate.
 
 | Capability | USB cable | 2.4 GHz receiver | Bluetooth | Source and limit |
 | --- | --- | --- | --- | --- |
@@ -125,7 +127,7 @@ installed input/application route has qualified.
 | Keyboard fast mapping at its control panel | Mode-specific behavior unknown | Mode-specific behavior unknown | Mode-specific behavior unknown | [Keyboard manual][keyboard-manual], English page 05 documents on-device chord assignment without host software; it does not qualify each transport's held output or retention |
 | Keyboard Ultimate Software configuration by mode | Unknown | Unknown | Unknown | Family support is documented; mode-specific editing not established |
 | N30 vendor custom mapping | Not applicable | Unknown; no supported configuration route found | Not applicable | [N30 manual][mouse-manual] documents its existing controls, not custom mapping |
-| Mapping retention after closing software or reconnecting | Unknown for keyboard | Unknown | Unknown for keyboard | Keyboard persistence is outside scope; N30 adapter configuration remains unqualified |
+| Mapping retention after closing software or reconnecting | Unknown for keyboard | Unknown | Unknown for keyboard | Keyboard persistence is outside scope; trial hotkeys stop on exit; persistent mapper setup remains separate |
 
 The keyboard page documents programmable keyboard A/B keys and Dual Super
 Buttons. Its manual permits up to six simultaneous keys through fast mapping,
@@ -135,8 +137,8 @@ the chord remains down for the physical hold. [Keyboard][keyboard],
 
 The N30 manual labels A/B as ordinary left/right click, C as touch scrolling,
 and D/E/F/G as Page Up, Back, Page Down and Forward on its side D-pad. Those are
-four existing navigation controls, not R8 programmable side buttons. Observe
-their actual Windows events before choosing a translation. Neither the manual
+four existing navigation controls, not R8 programmable side buttons. The browser
+observations and later Windows trial establish the selected translation below. Neither the manual
 nor the product page establishes N30 vendor custom profiles. [N30 manual][mouse-manual]
 
 | Physical control | Documented assignment/default | USB event/hold/release | 2.4 GHz event/hold/release | Bluetooth event/hold/release | Qualification disposition |
@@ -152,10 +154,10 @@ nor the product page establishes N30 vendor custom profiles. [N30 manual][mouse-
 | Pair button | Reassignment unknown | Unknown | Unknown | Unknown | Preserve pairing function |
 | Fast-mapping button | Setup/cancellation D; reassignment unknown | Unknown | Unknown | Unknown | Preserve configuration function |
 | Profile button | Configuration function; reassignment unknown | Unknown | Unknown | Unknown | Vendor profile is not a hub desk preset |
-| N30 D-pad D | Page Up D; custom mapping unknown | Unsupported transport | L via O: browser `PageUp` down/up and one repeat; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Up |
-| N30 D-pad E | Back D; custom mapping unknown | Unsupported transport | L via O: browser button `3` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; suppress original navigation only in Codex |
-| N30 D-pad F | Page Down D; custom mapping unknown | Unsupported transport | L via O: browser `PageDown` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; distinguish from the keyboard's Page Down |
-| N30 D-pad G | Forward D; custom mapping unknown | Unsupported transport | L via O: browser button `4` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Candidate trigger; preserve original action outside Codex |
+| N30 D-pad D | Page Up D; custom mapping unknown | Unsupported transport | L via O: browser `PageUp` down/up and one repeat; receiver attribution and controlled hold unknown | Unsupported transport | Shared PageUp trigger; next-attention action passed in the owner trial |
+| N30 D-pad E | Back D; custom mapping unknown | Unsupported transport | L via O: browser button `3` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Shared Back/XButton1 trigger; previous action passed in Codex |
+| N30 D-pad F | Page Down D; custom mapping unknown | Unsupported transport | L via O: browser `PageDown` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Shared PageDown trigger; command menu passed in the owner trial |
+| N30 D-pad G | Forward D; custom mapping unknown | Unsupported transport | L via O: browser button `4` down/up; receiver attribution and controlled hold unknown | Unsupported transport | Shared Forward/XButton2 trigger; next action and outside-Codex behavior passed |
 | N30 A/B | Ordinary left/right click D | Unsupported transport | Unknown | Unsupported transport | Preserve clicks; these are not the keyboard's Big A/B |
 | N30 C | Touch scrolling D | Unsupported transport | Unknown | Unsupported transport | Preserve scrolling; no middle-click claim |
 | N30 power control | Power function D; reassignment unknown | Unsupported transport | Unknown | Unsupported transport | Preserve power function |
@@ -203,27 +205,36 @@ its assigned clicks can be suppressed in other apps. `Ctrl+K` is also a reserved
 Wispr combination. Do not share candidate triggers with Wispr, existing vendor
 mappings, ordinary typing or CHOMPI. [Wispr shortcuts][wispr]
 
-## Route decision and unresolved gates
+## Selected route and limits
 
-**Mouse route remains unqualified.** Preserve the N30's existing hardware
-outputs and investigate a Windows-local adapter that translates only its four
-D-pad controls within Codex. The adapter would own mouse application scope and
-action configuration; vendor mappings and the CHOMPI bridge retain their owners.
-No supported complete four-action route has been established, so AC2 remains
-open and #65 stays blocked.
+The owner selected the simpler application-scoped shared-key route after the
+receiver-specific observer failed early. Keep N30 firmware and vendor outputs
+unchanged. One Windows-local mapper owns the four translations while Codex is
+active; other applications retain the original inputs. Keyboard PageUp/PageDown
+and other mice's Back/Forward also map inside Codex. This disclosed tradeoff
+supersedes the earlier requirement for per-device attribution and suppression;
+it does not establish those capabilities.
 
-The documented keyboard fast mapping passed its authorized personal trial.
-Keyboard A/B and attached Super Buttons are now outside B.U.N.N.Y., including
-its configuration, dispatcher and preset bindings. The earlier proposed A/B
-editor and keyboard recovery/persistence gates are superseded.
+Portable AutoHotkey 2.0.28 supplied the existing supported hotkey mechanism for
+the temporary trial. Its `#HotIf WinActive(...)` condition used the full executable
+path resolved from one running window within the installed `OpenAI.Codex`
+package directory. The launcher rejects absent or ambiguous targets, checks the
+pinned runtime hash, and runs `/Validate` before enabling mappings. No installer,
+startup registration, hub service, new driver or firmware change was used.
+[AutoHotkey release][ahk-release], [application scope][ahk-hotif],
+[executable matching][ahk-wintitle], [validation][ahk-scripts]
 
-| Route | Assessment | Evidence needed before adoption |
+| Route | Disposition | Evidence and limit |
 | --- | --- | --- |
-| N30 vendor mapping alone | No supported custom four-action route established by current sources | Model-specific supported interface; R8 software evidence does not qualify N30 |
-| Existing N30 outputs plus a Windows adapter | Investigation choice; four distinct browser outputs observed | Receiver-attributed native events, Codex-only suppression, pass-through elsewhere, controlled holds/repeats, recovery, configuration ownership and rollback |
-| CHOMPI bridge unchanged | Inspected source offers a focus/output approach; existing MIDI bindings do not handle N30 | Separate input ownership and coexistence; no migration or new bridge bindings here |
-| Keyboard A/B fast mapping | Completed personal trial and restoration | None for B.U.N.N.Y.; keyboard-owned and excluded |
-| Firmware replacement, custom USB protocol or a new driver | Outside accepted scope | No implementation or experiment proposed |
+| Existing N30 outputs plus app-scoped AutoHotkey | Selected for the personal Codex route | Owner passed four actions, outside-app behavior and stop/restoration; keys are shared across devices within Codex |
+| Receiver-specific Raw Input/hook adapter | Not selected | First observer stopped on a device-change notification before events; a correction was prepared but not run; no per-device qualification claimed |
+| N30 vendor mapping alone | No supported custom route established | Manual documents navigation controls; R8 software evidence does not qualify N30 |
+| CHOMPI bridge unchanged | Retains its owner and MIDI bindings | Source inspected; concurrent installed operation was not tested |
+| Keyboard A/B fast mapping | Personal trial completed and restored; outside B.U.N.N.Y. | No further keyboard integration or acceptance gate |
+| Firmware replacement, custom USB protocol or new driver | Outside scope | No such change was made |
+
+The following API/source observations explain the unselected receiver-specific
+investigation. They are not requirements of the accepted shared-key route.
 
 [Raw Input][raw-input] can distinguish input devices. That observation API alone
 does not prove selective suppression of the foreground application's original
@@ -265,8 +276,8 @@ dictation and a separate Enter press in blank Notepad before restoration. The pr
 observer records only selected modifier/Enter codes,
 transitions, overlapping hold duration and bounded repeats; it stops on release,
 focus loss or after 15 seconds. It cannot identify the receiver or prove an app
-outcome. Broader Codex dispatch, reconnect, sleep and coexistence trials below
-still need separately scoped authorization.
+outcome. The later Codex trial has its own authorization and result below. Reconnect,
+sleep and coexistence were not part of that brief trial.
 
 The first A/B attempt ran in a separate Windows Edge/Chrome window. Both samples
 ended with "Focus left the observation area; observation incomplete" and no
@@ -303,78 +314,87 @@ manual's per-button cancellation and reopened Wispr. This closes the bounded
 trial and its restoration requirement. It does not establish persistence,
 reconnect/sleep recovery, CHOMPI coexistence or installed Codex action routing.
 
-## Remaining mouse qualification sequence
+## Completed brief Windows trial
 
-The local-controls owner operates the devices and observes application results.
-The exact hardware, input observer and trial scope must be identified before
-authorization. An observer must record only selected control IDs, down/up
-transitions, relative timing and pass/fail outcomes. Do not retain arbitrary
-keystrokes, window titles, clipboard contents, audio or dictated text.
+The owner accepted the disclosed shared-key approach with "Let's wrap up the
+remaining brief tests." After the prepared launcher was corrected, the owner
+reported "Everything passed and looks good." This is an aggregate owner report
+for the requested sequence; no per-action trace or task content was retained.
+No unavailable action or failure was reported.
 
-1. Match the N30 to the photographed 85CA packaging. Read its receiver
-   interfaces/usage, firmware if available, and running Codex identity without
-   changing firmware or pairing. VID/PID and installed package metadata are
-   recorded above; those completed inventory steps need no repeat. Omit serials and instance paths from shared
-   evidence. Keyboard A/B inventory is excluded.
-2. Read the active Codex shortcuts and mouse configuration. Identify one mapping
-   owner and a reliable rollback path before any change. Do not use factory reset.
-3. With dispatch disabled, observe only the selected D-pad direction: a tap,
-   controlled hold and release, then repeat for each direction. Compare native
-   receiver attribution with ordinary keyboard PageUp/PageDown. No arbitrary
-   keystrokes, titles or typed content may be retained.
-4. After a supported route is selected and its temporary setup authorized, test
-   each Codex action using existing operator-selected tasks, without starting
-   sessions. A hold dispatches once; outside Codex, the original mouse action
-   passes through. Verify foreground identity, view and shortcut conflicts.
-5. In separately approved recovery trials, check reconnect, sleep/resume,
-   disabling while held and vendor/CHOMPI coexistence. No stale press may replay.
-   A missing release stops dispatch and requires observed recovery.
-6. Disable the trial path and restore only changed mouse configuration. Verify
-   ordinary typing, clicks and CHOMPI behavior; leave keyboard A/B and Wispr
-   settings untouched. Record restoration separately from transport results.
-
-Only the tested model, firmware, connection and app versions can earn a live
-pass. Keyboard USB/Bluetooth behavior is outside scope;
-the N30 has no documented USB-cable or Bluetooth transport to qualify.
-No source change here installs an adapter, registers startup, implements desk
-presets, calls the hub/controllers or operates lights/displays.
-
-## Acceptance mapping and handoff
-
-Assessment refreshed against the owner's keyboard-owned A/B decision and Hub
-main `717728bd90dce4bbeab3c45310a00fb5f5a91af5`: medium complexity from Windows
-input/focus interfaces; high uncertainty from unqualified N30 translation;
-medium impact because trials can affect ordinary input and require restoration.
-Documentation work is ready; native mouse qualification remains pending.
-
-| Criterion | Evidence prepared | Remaining completion condition |
+| Requested check | Translation or expected behavior | Result |
 | --- | --- | --- |
-| AC1 | Sourced control/connection matrix, four N30 browser outputs, receiver VID/PID association and installed Codex package version; keyboard trial retained as history | Native interface/event attribution, firmware/running app context and applicable mouse hold/recovery observations |
-| AC2 | Compared mouse routes, proposed Windows-local ownership and reversible trial sequence | A supported N30 translation route with selective suppression and ordinary-input preservation |
-| AC3 | D/S/O/L evidence classes and dated trials; successful A/B trial/restoration separated from mouse results | Add remaining authorized mouse receipts as trials run |
-| AC4 | Explicit unknowns and dependent gates | Final positive or evidenced negative qualification; missing evidence alone is neither support nor rejection |
+| Up in Codex | PageUp → Ctrl+Alt+A, next existing task needing attention | Owner-reported pass |
+| Down in Codex | PageDown → Ctrl+Shift+P, command menu | Owner-reported pass |
+| Left in Codex | XButton1 → Ctrl+Shift+Tab, previous task/tab | Owner-reported pass |
+| Right in Codex | XButton2 → Ctrl+Tab, next task/tab | Owner-reported pass |
+| Separate browser | Normal page scrolling and Back/Forward | Owner-reported pass |
+| Stop trial | Down no longer opens the Codex command menu | Owner-reported pass; temporary hotkeys removed |
 
-The #64 coordinator owns physical-to-packaging verification, per-control evidence, final
-route selection and the qualification outcome. The local-controls owner owns
-permission, operation and observation for live trials. #65 remains blocked on
-successful qualification of the controls it exposes. If D-pad controls cannot be distinguished or their original actions cannot be
-selectively suppressed, do not enable four actions or silently replace the mapping;
-return the capability gap for an owner decision. Unknown hold behavior is not a
-negative hardware finding and cannot be called a completed qualification.
+The trial used existing tasks and the main Codex conversation view. Up would be
+unavailable without an existing task needing attention; the owner reported no
+exception. These results establish only this tested setup, not arbitrary app
+versions, views, customized shortcuts or other hardware.
 
-[Hub #66](https://github.com/jimmie-potts/agent-device-hub/issues/66) owns the
-later installed local-controls acceptance, not a waiver of #64's route evidence.
-[Hub #70](https://github.com/jimmie-potts/agent-device-hub/issues/70) can expose
-only qualified in-scope controls; keyboard A/B and attached Super Buttons are
-excluded even though their manual programming works. The later preset service/binding
-work stays with [#67](https://github.com/jimmie-potts/agent-device-hub/issues/67)
-and [#68](https://github.com/jimmie-potts/agent-device-hub/issues/68).
+The script uses `KeyWait` with one hotkey thread to avoid repeated dispatch
+while held. Key history and line history are disabled. It sends only the four
+complete shortcuts, has a Stop trial tray action and a five-minute deadline.
+Those are inspected source properties; no controlled physical hold duration or
+long-term recovery result is claimed. The foreground check and input dispatch
+are not atomic. [KeyWait][ahk-keywait], [key history][ahk-history]
 
-The owner photos supersede the R8 assumption and focus the mouse investigation
-on N30 D-pad translation. Reassess on new firmware/app versions, a different
-connection, conflicting events, persistence results, review findings or changed
-scope. This documentation adds no product behavior, contract or installation;
-the SDLC therefore requires no new OpenSpec capability for this candidate.
+The first launcher expected exactly one manifest executable and stopped before
+any mapping ran. The corrected launcher identifies the running window's
+executable inside the installed package directory. The actual failing manifest
+layout was not collected. Seven Linux PowerShell selection fixtures passed after
+reproducing the original error; both independent reviewers approved the fix.
+Those checks are separate from the owner's subsequent Windows pass. The earlier
+native observer's early stop is retained as an incomplete observation, not an
+unsupported-hardware finding.
+
+| Trial artifact | SHA-256 |
+| --- | --- |
+| Corrected PowerShell launcher | `b3a0f688f5d61f9e789e19a348292631dc0c20d3f06dafb1f129dbda0c310130` |
+| AutoHotkey mapping script | `349dcf9270fb9a0d22fdbe39f8c65682e1c7c8526b33d3286fd3188a31e23b9f` |
+| Official portable AutoHotkey 2.0.28 executable | `373181727d1ae858564d4daa678f9fa6cf330d1751f8b284a369c79afdb05e98` |
+
+Private launchers, runtime, owner reports and fixtures remain outside Git. No
+arbitrary keystrokes, titles, clipboard contents, dictated text or audio were
+collected. The completed trial includes stopping and restoration; no persistent
+mapper or startup entry was installed. Keyboard A/B and Wispr settings were not
+changed by this mouse trial.
+
+## Acceptance and implementation handoff
+
+The owner's September 23 scope decision selects app-scoped shared inputs for a
+personal project. The brief live result reduces the route uncertainty; it does
+not remove implementation, packaging or recovery checks for the reusable mapper.
+The qualification adds no product behavior or contract to this repository, so
+it requires no new OpenSpec capability.
+
+| Criterion | Evidence and outcome |
+| --- | --- |
+| AC1 | Sourced control/connection matrix, distinct browser signals, receiver association and installed package version; unknown firmware and per-device/hold details remain explicit |
+| AC2 | Existing AutoHotkey route selected with one Windows-local mapping owner, Codex application scope, disclosed shared-key behavior and a successful stop/restoration trial |
+| AC3 | Documentation, inspected source, synthetic fixtures and owner-reported live actions remain separate; failures and aggregate-report limits are retained |
+| AC4 | Per-device isolation, persistent startup, reconnect/sleep recovery and CHOMPI coexistence are unqualified; keyboard A/B is excluded by owner decision, not failed hardware support |
+
+The #64 coordinator owns this qualification record. The local-controls owner
+operated and accepted the temporary trial. After normal source delivery gates,
+#65 can use the selected route without repeating receiver attribution research.
+It must disclose that same-key inputs from other devices map inside Codex, retain
+ordinary input outside Codex and provide a clear enable/disable path. Its own
+issue-linked specification and implementation checks remain required.
+
+[Hub #66](https://github.com/jimmie-potts/agent-device-hub/issues/66) owns the later
+persistent installation and its proportionate lifecycle acceptance. The brief
+trial is not completion of that issue. The existing CHOMPI bridge retains its
+ownership; no coexistence result was obtained. Broader profiles, presets and
+other app/hardware versions need their own qualified capabilities. Keyboard A/B
+and attached Super Buttons remain outside all B.U.N.N.Y. mapping and preset work.
+
+Reassess this dated result when the model, transport, application shortcuts,
+application version or requested isolation changes.
 
 [keyboard]: https://www.8bitdo.com/retro-mechanical-keyboard/
 [keyboard-faq]: https://support.8bitdo.com/faq/retro-mechanical-keyboard.html
@@ -389,3 +409,10 @@ the SDLC therefore requires no new OpenSpec capability for this candidate.
 [mouse-hook]: https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelmouseproc
 [foreground]: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getforegroundwindow
 [sendinput]: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput
+
+[ahk-release]: https://github.com/AutoHotkey/AutoHotkey/releases/tag/v2.0.28
+[ahk-hotif]: https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v2/docs/lib/_HotIf.htm
+[ahk-wintitle]: https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v2/docs/misc/WinTitle.htm
+[ahk-scripts]: https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v2/docs/Scripts.htm#validate
+[ahk-keywait]: https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v2/docs/lib/KeyWait.htm
+[ahk-history]: https://github.com/AutoHotkey/AutoHotkeyDocs/blob/v2/docs/lib/KeyHistory.htm

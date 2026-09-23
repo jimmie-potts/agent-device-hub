@@ -366,8 +366,12 @@ B.U.N.N.Y. has no A/B mapping, editing, storage, dispatch, restoration or preset
 binding role, in version 1 or the later #70 profile editor.
 The first mouse mapping requests next
 task needing attention, command menu, previous task and next task within Codex,
-preserving ordinary behavior elsewhere. This local path does not wait for shared
-monitoring, general controls, Music or model calls. Preserve vendor mappings and the
+preserving ordinary behavior elsewhere. The owner selected an app-scoped
+shared-key route: PageUp/PageDown and Back/Forward from other devices also map
+while Codex is active. Receiver-specific filtering is not part of that route.
+The temporary AutoHotkey trial qualified this boundary; reusable implementation
+and persistent installation remain separate. This local path does not wait for
+shared monitoring, general controls, Music or model calls. Preserve vendor mappings and the
 existing CHOMPI bridge; its MIDI bindings do not establish 8BitDo/profile support.
 
 An explicitly selected qualified binding later requests

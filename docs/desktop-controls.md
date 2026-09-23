@@ -2,7 +2,7 @@
 
 Status: Accepted direction from [Hub #63](https://github.com/jimmie-potts/agent-device-hub/issues/63),
 revised by the owner during [Hub #64](https://github.com/jimmie-potts/agent-device-hub/issues/64)
-on September 22, 2026 UTC.
+on September 22–23, 2026 UTC.
 The 8BitDo input integration, profile editor and desk-preset service remain future
 work. This document records decisions and qualification boundaries; it does not
 establish installed mappings or device support.
@@ -29,8 +29,11 @@ keyboard setup, not B.U.N.N.Y. defaults or current installed mappings.
 
 The first supported mouse mapping requests next task needing attention, command
 menu, previous task and next task within Codex. Preserve ordinary behavior
-outside Codex and on unassigned controls. The N30's physical event identities,
-selective suppression and exact installed shortcuts still require qualification.
+outside Codex and on unassigned controls. The owner qualified a temporary
+AutoHotkey route using the N30's existing PageUp/PageDown/Back/Forward outputs.
+These same keys from other keyboards and mice also map while Codex is active.
+The owner accepted this shared-key scope; receiver-specific isolation is not
+required for this personal route.
 
 Mouse dispatch works independently of the hub, shared monitoring, general
 controls, Music and model calls. Later preset cycling uses an explicitly
@@ -85,7 +88,7 @@ hub runs in Linux/WSL or later on another host. Source packages, runtime,
 installation paths, startup behavior and profile storage belong to the owning
 implementation issues; this document selects none of them.
 
-The local path resolves a qualified physical control and gesture, checks its
+The local path resolves a qualified input signal and gesture, checks its
 profile and application scope, then dispatches its qualified navigation or
 command-menu action to Codex. Keyboard A/B and the attached Super Buttons never
 enter this dispatcher. The existing CHOMPI bridge and vendor mappings retain their
@@ -106,34 +109,38 @@ or make a partial preset look complete. A reconnect reads current state without
 replaying input or ambiguous writes. Exact concurrent-request and restart rules
 belong in #67's issue-linked specification.
 
-## Supported documentation and remaining qualification
+## Qualification result and limits
 
-The official references below were checked on September 22, 2026. They describe
-published capabilities. The owner's packaging photos identify the N Edition
-keyboard 85HA and N30 mouse 85CA. The [qualification report](desktop-input-qualification.md)
-records those observations, owner-reported basic operation, the N30's four
-distinct browser outputs and the remaining input and application trials.
-The operator-associated N30 receiver is `062A:4101`; the installed Codex package
-is `26.917.6896.0`. Native D-pad attribution and active settings remain unverified.
+The official product references were checked on September 22, 2026. The owner's
+packaging identifies keyboard N Edition 85HA and N30 mouse 85CA. The
+[qualification report](desktop-input-qualification.md) separates the sourced
+matrix, browser observations, receiver inventory and completed Windows trial.
+The operator-associated N30 receiver is `062A:4101`; the reported Codex package
+is `26.917.6896.0`.
 
-| Source | Published fact | Remaining mouse qualification |
+On September 23 the owner reported that all brief trial checks passed: the four
+Codex actions, normal browser navigation outside Codex and restoration after
+stopping. The selected route is application-scoped AutoHotkey 2.0.28 using the
+running Codex executable. No receiver-specific suppression, persistent
+installation, reconnect/sleep recovery or CHOMPI coexistence result is claimed.
+The aggregate owner report did not retain per-action traces or task content.
+
+| Source | Published fact | Qualification boundary |
 | --- | --- | --- |
-| [8BitDo N30 manual](https://download.8bitdo.com/Manual/Other/N30-Mouse/N30_Mouse_Manual.pdf?20220513=) | D-pad directions are Page Up, Back, Page Down and Forward; ordinary clicks and touch scrolling remain separate. | Native D-pad events, selective translation and recovery. N30 vendor custom mapping is not established; R8 capabilities do not apply. |
-| [Codex command reference](https://learn.chatgpt.com/docs/reference/commands#keyboard-shortcuts) | Lists command menu, previous/next chat or tab and next-chat-needing-attention actions. | Exact installed bindings, foreground detection and behavior outside Codex. |
+| [8BitDo N30 manual](https://download.8bitdo.com/Manual/Other/N30-Mouse/N30_Mouse_Manual.pdf?20220513=) | D-pad directions are Page Up, Back, Page Down and Forward; clicks and touch scrolling remain separate. | Existing outputs feed the tested shared-key route. Vendor custom profiles and R8 capabilities are not assumed. |
+| [Codex command reference](https://learn.chatgpt.com/docs/reference/commands#keyboard-shortcuts) | Command menu, previous/next chat or tab and next-chat-needing-attention shortcuts. | Owner passed the brief trial in the reported version; other versions, views and custom shortcuts remain separate. |
 
-[#64](https://github.com/jimmie-potts/agent-device-hub/issues/64) owns the bounded
-mouse investigation. Its per-control/per-connection matrix separates supported,
-unsupported and unknown results. Receiver VID/PID and installed package version
-are recorded; it must settle native event attribution, active shortcuts, a
-supported mapping route, one configuration owner and
-reversible setup. Codex focus, controlled holds/repeats, release recovery,
-reconnect, sleep/resume and coexistence need separately authorized evidence.
-The completed keyboard trial remains in the report as history; further A/B
-integration, configuration and acceptance are outside this backlog.
+The local mapper owns application scope and configuration. A clear stop/disable
+path restores original behavior. Its reusable implementation must disclose the
+shared-key effect inside Codex and preserve ordinary input elsewhere. Later
+installation owns proportionate lifecycle checks; the research trial does not
+establish a persistent service or startup behavior. The existing CHOMPI bridge
+and vendor mappings retain their owners.
 
-Use existing supported interfaces. Firmware replacement and custom USB protocol
-research are outside the accepted approach. Negative qualification may complete
-an investigation but cannot make unsupported downstream behavior ready.
+Keyboard A/B and attached Super Buttons remain outside B.U.N.N.Y. Their earlier
+successful manual mapping trial is historical evidence, not a further gate.
+Firmware replacement, new drivers and custom USB protocol research are outside
+the selected approach.
 
 ## Delivery sequence
 
