@@ -117,7 +117,7 @@ and restoration; never overwrite newer manual changes with an old snapshot.
 ## Issues
 
 GitHub issues own the delivery sequence, prerequisites and acceptance; see the
-[open PC lighting issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+lighting+OR+Strimer+OR+Varmilo+in%3Atitle).
+[open PC lighting issues](https://github.com/jimmie-potts/agent-device-hub/issues?q=is%3Aissue+is%3Aopen+%28lighting+OR+Strimer+OR+Varmilo%29+in%3Atitle+NOT+Nanoleaf).
 
 ## Development and evidence
 
