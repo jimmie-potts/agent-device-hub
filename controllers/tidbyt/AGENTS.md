@@ -1,10 +1,11 @@
 # Working on Tidbyt
 
 These instructions apply to planning, edits and review in controllers/tidbyt.
-Read the root [AGENTS.md](../../AGENTS.md), this directory's [README.md](README.md)
-and the exact issue before work. Read [architecture](../../docs/architecture.md)
-and linked contracts before changing integration or ownership. Root delivery,
-privacy, unslop and physical authorization rules remain in force.
+Read this directory's [README.md](README.md) for current status and device
+decisions. For planning or delivery, read the exact issue. Read
+[architecture](../../docs/architecture.md) and linked contracts before changing
+integration or ownership. The delivery, privacy, unslop and physical
+authorization rules in the root [AGENTS.md](../../AGENTS.md) remain in force.
 
 This directory contains documents only. Bootstrap completion grants no future
 implementation, installation, account access or physical-testing authority.

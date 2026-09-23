@@ -429,14 +429,15 @@ Exact schemas, SDK/package versions, controller reachability, client signals and
 physical timing will be settled by their bounded issues. These unknowns do not
 authorize guessed telemetry or deployment changes.
 
-## Standalone host candidate
+## Standalone host
 
-The active Hub #5 change under `apps/hub` targets native Linux in WSL, following
+The Hub #5 host under `apps/hub` targets native Linux in WSL, following
 the owner's September 21 decision. Native Windows runtime qualification is
 outside that delivery. The application composes the existing shared core and
 uses authenticated configured controller endpoints. Its private store never
-opens a controller database. This is an unmerged candidate; migration, final
-controller integration and performance acceptance remain tracked by #5 and #30.
+opens a controller database. PR #121 delivered it for #5, and PR #135
+completed source qualification of latency and failure isolation for #30.
+Installation and live migration remain separate, explicitly authorized work.
 The delivered Pixoo embedded owner remains the production source baseline.
 
 
