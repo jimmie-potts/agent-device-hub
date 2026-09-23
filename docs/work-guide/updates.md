@@ -14,6 +14,44 @@ successful. The browser check covers desktop, mobile and print; generated HTML
 is unchanged at SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
 Publication and live verification are separate.
 
+## September 22, 2026: Nanoleaf general controls candidate
+
+Hub PR #162 carries the source candidate for Hub #153: power, brightness and
+saved-scene activation in the existing Nanoleaf component view on the
+capabilities Nanoleaf #64 declares at `8062849`, one guarded controller v1
+command each through the existing hub route. Brightness is shown as an override
+until the next explicit mode command; scenes are disabled in Work and Quiet or
+while a mode change is pending, with an explicit Free switch through the
+controller v1 mode command, and are labelled by user-chosen names from the
+`nanoleaf.integration/1.0` snapshot or by ID. OpenSpec change
+`gh-153-nanoleaf-general-controls` records the `unified-dashboard` delta.
+Nothing is installed or operated; #155 owns the wall acceptance.
+
+The candidate was first stacked on the #64 hub companion PR #161 and the Pixoo
+PR #160. Both merged on September 22, 2026, so the branch was refreshed onto
+`main` and its diff is now the Nanoleaf change alone. A correction round kept
+keyboard focus through a submitted control after an accessibility review
+finding; that round changed no represented fact, and this entry records it.
+This entry refreshes the three backlogs at the snapshot time recorded in
+`work/backlogs/snapshot.json`. Hub #151 closed as completed after PR #160
+merged; PR #163 recorded that closure in the guide and this refresh merges it,
+keeping its completed Pixoo row and next-step text. Hub #153 is in progress with its blocked label retained until the merge order
+clears; the controls guide's Nanoleaf row and the controls-music next step name
+the merged Pixoo candidate and this open one.
+The paginated history records PR #160's merge, PR #163's guide closeout and
+#151's completed closure; earlier entries are unchanged. There are 92 primary open issues, 12
+guides, nine viewers, 52 roadmap nodes and 126 merged PRs in this snapshot.
+Ownership, transports, physical writers and pinned architecture viewers are
+unchanged: the browser remains a client of the hub route and the Nanoleaf worker
+remains the only light writer.
+
+Generation, nine maintenance tests and desktop/mobile/print browser checks pass;
+the HTML SHA-256 is recorded on the PR. This candidate is a mixed change, so
+every configured CI job applies and the Nanoleaf view needs explicit human UI
+approval recorded on the PR. A linked follow-up will record merge, issue closure
+and acceptance facts unavailable before merge. Public guide publication and live
+verification remain separate and were not requested.
+
 ## September 22, 2026: Keyboard-owned A/B scope revision
 
 The owner removed keyboard A/B and attached Dual Super Buttons from B.U.N.N.Y.
@@ -45,7 +83,7 @@ running-process identity, selective suppression or application outcomes. The
 report, #64 receipt, guide and pinned desktop-control source reflect that limit.
 
 Validation: Node 24.21.0 setup and workflow validation passed with 11 current
-specifications, 13 archives and 15 workflow tests. Guide generation, nine
+specifications, 14 archives and 15 workflow tests. Guide generation, nine
 maintenance tests and desktop/mobile/print browser checks passed. The print
 fixture now searches for N30 so the revised mouse diagram remains visible;
 the earlier Wispr filter correctly hid it and caused the old fixture to time out.
@@ -55,6 +93,8 @@ vertical overflow (heights 1372/1500/1500/1526 at the four desktop sizes), witho
 horizontal overflow; it is not a visual-check pass. Screenshots were inspected.
 Guide HTML SHA-256: `cd9e5eb427536332286b6c3798f7ad3f4f3cd4c0224957f9b68563c6a4215ef4`.
 Independent review found and removed one stale A/B-editor claim in the architecture introduction; the generator and output now state the keyboard-owned boundary. No behavior assertion was removed. Independent-review and hosted-CI results remain revision-specific PR evidence.
+
+The final main reconciliation incorporates Nanoleaf general controls from PR #162 unchanged. It retains both maintenance entries and the newer September 23 backlog/history snapshots over main's September 22 copies. Generated guide output is rebuilt from those coherent inputs; no tracker completion or physical result is inferred from the merge. The added Nanoleaf archive raises the workflow inventory to 14 archives.
 
 ## September 22, 2026: Pixoo general controls closeout
 

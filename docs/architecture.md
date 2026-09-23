@@ -480,8 +480,14 @@ PR #127 records Hub #6's human UI approval and source-delivery evidence.
 screen power, brightness, playlist and playback controls to the same view under
 ADR 0005: one guarded controller v1 command per control, Monitor gating with an
 explicit Media switch through the Pixoo integration mode operation, and no
-automatic restoration. Installation, physical acceptance, Nanoleaf general
-controls and full editor migration remain separately owned work.
+automatic restoration.
+[#153](https://github.com/jimmie-potts/agent-device-hub/issues/153) adds Nanoleaf
+power, brightness and saved-scene controls on the capabilities Nanoleaf #64
+declares: brightness shown as an override until the next explicit mode command,
+scenes gated to an observed Free mode with an explicit Free switch through the
+controller v1 mode command, and scene names only from the
+`nanoleaf.integration/1.0` snapshot. Installation, physical acceptance and full
+editor migration remain separately owned work.
 
 ## Standalone MCP composition
 

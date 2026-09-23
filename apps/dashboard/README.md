@@ -3,8 +3,9 @@
 The React/TypeScript frontend reads the shared hub and submits explicit integration
 commands to its existing services. It creates no collector or device writer.
 Activity, component and connection views remain useful without an active task.
-Hub #151 adds Pixoo general controls to the same component view. Nanoleaf
-general controls, exact previews and full editor migration remain separate work.
+Hub #151 adds Pixoo general controls and Hub #153 adds Nanoleaf general
+controls to the same component view. Exact previews and full editor migration
+remain separate work.
 
 ## Build and access
 
@@ -55,13 +56,14 @@ translates these into a global mode or exposes raw commands.
 
 ## General controls
 
-The component view offers screen power, brightness, saved-playlist selection and
-the declared playback actions from the controller v1 capability object. Every
-control submits one guarded controller v1 command through the existing hub route
-with the observed request ticket, configuration revision and generation. A
-disabled control names the missing capability, the read-only scope, stale or
-external-control evidence, or the Pixoo mode. Components without a declared
-capability, such as Nanoleaf today, show the same disabled controls with reasons.
+The component view offers power, brightness, saved-playlist selection, the
+declared playback actions and saved-scene activation from the controller v1
+capability object. Every control submits one guarded controller v1 command
+through the existing hub route with the observed request ticket, configuration
+revision and generation. A disabled control names the missing capability, the
+read-only scope, stale or external-control evidence, or the device mode.
+Components without a declared capability, such as the synthetic sensor fixture,
+show the same disabled controls with reasons.
 
 Pixoo declares screen power, brightness 0–100 and media with pause, resume, stop,
 next, previous and clear plus discovered playlist IDs, checked at Pixoo `main`
@@ -88,10 +90,37 @@ consumed by another client. A typed conflict is shown and the action stays
 available; an uncertain result locks the group until "Load current / unlock". Physical acceptance on the
 display is [Hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
 
+Nanoleaf declares power, brightness 0–100 and discovered saved scenes on
+controller v1, checked at Nanoleaf `main`
+`80628498136203a8f5fcb06ab5fa306e961e2def` ([Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64)),
+the revision the hub's Nanoleaf fixtures pin; media, zones and preview stay
+unsupported and the browser fixture declares the same. Power and brightness work
+in Work, Quiet and Free. A brightness command is a user override: the view shows
+a known desired brightness as an override that persists until the next explicit
+mode command, which reapplies that mode's brightness policy, and shows no
+override as unknown rather than as a value. While power is off the wall keeps
+tracking tasks and writes nothing until the next mode command.
+
+Scene activation is disabled while the wall is in Work or Quiet, while a mode
+change is pending or while the mode is unknown, with the reason and one explicit
+"Switch to Free" command through the existing controller v1 mode control;
+returning to Work or Quiet uses the same control. The scene list comes only from
+the controller v1 `scenes` capability, labelled by the user-chosen Nanoleaf app
+names the `nanoleaf.integration/1.0` snapshot supplies and by ID otherwise;
+browser and hub configuration contribute no scene identities or names. Activating
+a scene is one guarded command that starts no polling and changes no mode. A
+scene the controller rejects because its mode changed after the browser observed
+Free is a typed failure that stays available for a fresh explicit action.
+Physical acceptance on the installed wall is
+[Hub #155](https://github.com/jimmie-potts/agent-device-hub/issues/155).
+
 ## Intent and observation
 
 Drafts pin the observed controller revision/generation and server-issued ticket.
-Refreshes preserve focus, selection and drafts. A changed revision blocks stale
+Refreshes preserve focus, selection and drafts. A submitted control keeps
+keyboard focus: while a command runs its group is disabled, and once the command
+settles focus returns to that control, or to the group's first enabled control
+when the control is locked or no longer rendered. A changed revision blocks stale
 submission; server rejections retain edits. An uncertain result is locked and
 never automatically retried. Loading current values is a separate explicit action.
 Transport success and saved settings do not establish physical output.
@@ -117,8 +146,8 @@ The starting point is Nanoleaf `main` at
 forward cyan selection, magenta pending states, compact controls, a quiet grid,
 local Bahnschrift/Segoe UI typography and focus-preserving interaction. It does
 not copy wall geometry, physical Locate controls or animation rendering. This new
-candidate requires its own explicit human approval. The Hub #151 general-control
-candidate requires renewed approval, recorded in its PR.
+candidate requires its own explicit human approval. The Hub #151 and Hub #153
+general-control candidates require renewed approval, recorded in their PRs.
 
 `npm run test:dashboard` checks command guards and links.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
@@ -128,7 +157,12 @@ known observations, external control, focus, keyboard, reduced motion, responsiv
 layout and automated accessibility. The Hub #151 matrix scenarios add guarded
 general commands in Media, Monitor gating with the explicit switch and a pending
 mode, concurrent edits with typed conflicts and locked uncertain actions, and
-read-only or undeclared capabilities with named reasons. `DASHBOARD_RECEIPTS` selects an external
+read-only or undeclared capabilities with named reasons. The Hub #153 scenarios
+add Nanoleaf power and brightness in Work with the override hint, Work gating
+with the explicit Free switch, one guarded scene command with a preserved
+selection and focus across reconnect, keyboard focus kept through the Free
+switch, a scene activation and a locked draft form, and a controller-side scene
+rejection, revision conflict and uncertain result with no retry. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,

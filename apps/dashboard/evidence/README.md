@@ -13,7 +13,11 @@ budget. Keyboard activation and axe scans cover the component and connection
 views as well as the main suite's desktop/mobile activity views. The Hub #151
 scenarios record guarded general commands, Monitor gating with the explicit
 switch, conflict and uncertain handling, and read-only or undeclared reasons
-against the fake Pixoo's pinned capabilities; none is a physical result.
+against the fake Pixoo's pinned capabilities; none is a physical result. The
+Hub #153 scenarios record Nanoleaf power, brightness and scene commands, Work
+gating with the explicit Free switch, and a controller-side scene rejection,
+conflict and uncertain result against the fake Nanoleaf's declaration pinned to
+Nanoleaf `8062849`; none is a physical result either.
 
 Reproduce with `npm run build` and `npm run test:dashboard:browser` on Node 24.
 The command emits its receipt and desktop/mobile screenshots outside Git under
