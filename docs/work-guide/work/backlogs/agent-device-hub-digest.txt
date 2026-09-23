@@ -77,7 +77,7 @@
 #148 [CLOSED] Clarify work-guide story status and actionable delivery paths
 #151 [CLOSED] Add Pixoo general controls to the BUNNY component view
 #152 [OPEN] Add media tools to the hub MCP device tool set
-#153 [OPEN] Add Nanoleaf general controls to the BUNNY component view
+#153 [CLOSED] Add Nanoleaf general controls to the BUNNY component view
 #154 [OPEN] Install and verify Pixoo general controls on the physical display
 #155 [OPEN] Install and verify Nanoleaf general controls on the installed wall
 #158 [OPEN] Qualify iPhone Apple Music now-playing sources through the apartment speakers

@@ -1,15 +1,25 @@
 {
-  "fetchedAt": "2026-09-23T01:25:56.570272+00:00",
+  "fetchedAt": "2026-09-23T02:01:21.250005+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T01:24:39Z",
+      "pushedAt": "2026-09-23T01:57:06Z",
       "defaultBranch": "main",
-      "headSha": "717728bd90dce4bbeab3c45310a00fb5f5a91af5",
-      "mainCommitCount": 76,
+      "headSha": "50a1c637d9607a59b282730b4f78c0a7fd502fc7",
+      "mainCommitCount": 78,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "50a1c637d9607a59b282730b4f78c0a7fd502fc7",
+          "date": "2026-09-23T01:57:06Z",
+          "message": "Add Nanoleaf general controls to the BUNNY component view (#162)"
+        },
+        {
+          "sha": "79b30c41cbbe8e301c93b6b135f89038f26c2cf4",
+          "date": "2026-09-23T01:45:20Z",
+          "message": "Make Depot CI the authoritative gate (#164)"
+        },
         {
           "sha": "717728bd90dce4bbeab3c45310a00fb5f5a91af5",
           "date": "2026-09-23T01:13:39Z",
@@ -969,34 +979,36 @@
           "mergedAt": "2026-09-22T16:28:14Z"
         },
         {
+          "number": 162,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T16:22:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
+          "base": "main",
+          "mergedAt": "2026-09-23T01:57:06Z"
+        },
+        {
           "number": 163,
           "title": "Record the completed Pixoo general controls in the guide",
           "createdAt": "2026-09-22T21:03:25Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/163",
           "base": "main",
           "mergedAt": "2026-09-22T21:11:43Z"
+        },
+        {
+          "number": 164,
+          "title": "Make Depot CI the authoritative gate",
+          "createdAt": "2026-09-23T01:18:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/164",
+          "base": "main",
+          "mergedAt": "2026-09-23T01:45:20Z"
         }
       ],
       "openPRs": [
         {
           "number": 143,
-          "title": "Record 85HA keyboard and N30 mouse qualification findings",
+          "title": "Record N30 qualification and keep keyboard A/B outside BUNNY",
           "createdAt": "2026-09-22T02:38:29Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
-          "base": "main"
-        },
-        {
-          "number": 162,
-          "title": "Add Nanoleaf general controls to the BUNNY component view",
-          "createdAt": "2026-09-22T16:22:37Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
-          "base": "main"
-        },
-        {
-          "number": 164,
-          "title": "Add Depot CI workflows",
-          "createdAt": "2026-09-23T01:18:23Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/164",
           "base": "main"
         }
       ],
@@ -1224,9 +1236,17 @@
           "createdAt": "2026-09-22T05:37:40Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/151"
+        },
+        {
+          "number": 153,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "closedAt": "2026-09-23T02:00:22Z",
+          "createdAt": "2026-09-22T05:38:23Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/153"
         }
       ],
-      "openIssueCount": 58,
+      "openIssueCount": 57,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-22T06:22:18Z"

@@ -1,3 +1,31 @@
+## September 23, 2026: Nanoleaf general controls closeout
+
+Hub PR #162 merged as `50a1c637d9607a59b282730b4f78c0a7fd502fc7`, identical to
+reviewed head `87b0d52`, onto `main` 79b30c4. Independent Standards and
+Specification reviews approved every comparison, including both refreshes onto
+`main` and the Depot base change; the accessibility review's keyboard-focus
+finding was fixed and verified in a real browser; all six Depot checks passed on
+the PR head and on merged `main`; the owner recorded AC7 UI approval on the PR.
+Hub #153 is closed as completed with its seven acceptance criteria checked and
+its closing record posted. Nothing is installed or operated; the installed wall
+acceptance is #155.
+
+This follow-up refreshes the three backlogs and the paginated history at the
+snapshot time recorded in `work/backlogs/snapshot.json`, retains #153 as a
+completed reference with a direct read, removes it from open coverage and the
+timeline node, and rewrites the controls guide's Nanoleaf row, the
+controls-music next step and the overview's next-decision card so both view
+slices read as delivered and the two hardware acceptances follow. There are 91 primary open issues, 12 guides, nine
+viewers, 52 roadmap nodes and 128 merged PRs in this snapshot. Architecture
+diagrams, ownership, transports and physical writers are unchanged.
+
+Generation, nine maintenance tests, browser/print checks and generated-output
+consistency pass; HTML SHA-256 `df6cf685dc3e743afe07e791a8f5521ca1f3a6dc1eba46e6fd7937559789a354`.
+This follow-up changes only `docs/work-guide/**`; the Depot workflow path
+filters intentionally omit hosted checks and require the SDLC exception
+receipt, recorded on the PR. No product behavior or OpenSpec delta. Public
+guide publication and live verification remain separate and were not requested.
+
 ## September 22, 2026: Depot CI cutover candidate
 
 The Depot copies of the Checks and Work guide workflows entered Hub `main` in
@@ -91,10 +119,10 @@ No assertion was removed. All nine diagrams passed 9/9 deterministic checks.
 The mouse viewer passed its standalone browser check. The preset viewer retains
 vertical overflow (heights 1372/1500/1500/1526 at the four desktop sizes), without
 horizontal overflow; it is not a visual-check pass. Screenshots were inspected.
-Guide HTML SHA-256: `cd9e5eb427536332286b6c3798f7ad3f4f3cd4c0224957f9b68563c6a4215ef4`.
+Guide HTML SHA-256: `7f525a181fc4cf9065537518388612060e743a51c083d35ab84ab56b9397bfeb`.
 Independent review found and removed one stale A/B-editor claim in the architecture introduction; the generator and output now state the keyboard-owned boundary. No behavior assertion was removed. Independent-review and hosted-CI results remain revision-specific PR evidence.
 
-The final main reconciliation incorporates Nanoleaf general controls from PR #162 unchanged. It retains both maintenance entries and the newer September 23 backlog/history snapshots over main's September 22 copies. Generated guide output is rebuilt from those coherent inputs; no tracker completion or physical result is inferred from the merge. The added Nanoleaf archive raises the workflow inventory to 14 archives.
+The main reconciliation incorporates Nanoleaf general controls from PR #162 and their guide closeout in PR #165 unchanged. It retains every maintenance entry and the newer September 23 02:01 UTC backlog/history snapshot from main, which already includes all 11 keyboard-owned scope revisions. Generated guide output preserves the recorded #153 closure and is rebuilt from those coherent inputs. No N30 completion or physical result is inferred from the merge. The Nanoleaf archive raises the workflow inventory to 14 archives.
 
 ## September 22, 2026: Pixoo general controls closeout
 
