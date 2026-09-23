@@ -48,8 +48,9 @@ application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
-queues. These new controllers belong in this repository. Their documentation
-exists; their implementations remain in the backlog. The shared core interprets
+queues. These new controllers belong in this repository. The Tidbyt cloud
+controller exists as a fake-tested in-process package; its status integration and
+installation remain separate. LIFX is documentation only. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the

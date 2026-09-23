@@ -11,8 +11,10 @@ status; do not copy issue lists or dependency chains into repository docs.
 
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
-launched from the repository root. These directories currently contain documents
-only. Before shared package, root manifest, lockfile or CI changes, read
+launched from the repository root. controllers/tidbyt holds the fake-tested cloud
+controller package; controllers/lifx contains documents only. For Tidbyt changes,
+run npm run test:tidbyt and npm run test:tidbyt:python plus the shared build/type,
+contract and workflow checks from the worktree root. Before shared package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
 Use the owning package and application guides for implementation details and
