@@ -1,15 +1,55 @@
 {
-  "fetchedAt": "2026-09-22T03:43:10.847060+00:00",
+  "fetchedAt": "2026-09-22T21:01:47.579288+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-22T03:35:18Z",
+      "pushedAt": "2026-09-22T20:56:41Z",
       "defaultBranch": "main",
-      "headSha": "2855be7af01265e82012e131838e94d45c83e62f",
-      "mainCommitCount": 65,
+      "headSha": "d91bee7a60953e67fdfeff06d93e275746182ba8",
+      "mainCommitCount": 73,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "d91bee7a60953e67fdfeff06d93e275746182ba8",
+          "date": "2026-09-22T20:56:41Z",
+          "message": "Add Pixoo general controls to the BUNNY component view (#160)"
+        },
+        {
+          "sha": "f5e71ce36f026de843994dd797aed38dd7be9ff2",
+          "date": "2026-09-22T16:28:14Z",
+          "message": "Record Nanoleaf native controls and accept discovered scenes (#161)"
+        },
+        {
+          "sha": "2313df867dc5f4127b27da43d7984b3f23490e5b",
+          "date": "2026-09-22T10:29:21Z",
+          "message": "Record the Nanoleaf device-aware state foundation in the guide (#159)"
+        },
+        {
+          "sha": "dd00c7846d6f6da79a09948b925ddda0e9c342b7",
+          "date": "2026-09-22T06:15:11Z",
+          "message": "Record the closed general-control definition in the guide (#157)"
+        },
+        {
+          "sha": "0ba711d8f01eb35574ca449c89e537b69fbb5b18",
+          "date": "2026-09-22T06:00:07Z",
+          "message": "Define general device controls and record concurrent closures (#156)"
+        },
+        {
+          "sha": "f11334de55b700f8723387dfc15157f57ecd7388",
+          "date": "2026-09-22T04:11:10Z",
+          "message": "Record completed guide clarity delivery (#150)"
+        },
+        {
+          "sha": "56e5667342cd446a229a4234dadf13fe3d07b0a2",
+          "date": "2026-09-22T04:05:41Z",
+          "message": "Make guide status and next steps clear (#149)"
+        },
+        {
+          "sha": "7c5957f7eed4bf8d52b6c68ae63c113c3788a834",
+          "date": "2026-09-22T03:45:52Z",
+          "message": "Record installed Pixoo monitoring acceptance in the guide (#147)"
+        },
         {
           "sha": "2855be7af01265e82012e131838e94d45c83e62f",
           "date": "2026-09-22T03:28:58Z",
@@ -848,6 +888,70 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/146",
           "base": "main",
           "mergedAt": "2026-09-22T03:28:58Z"
+        },
+        {
+          "number": 147,
+          "title": "Record installed Pixoo monitoring acceptance in the guide",
+          "createdAt": "2026-09-22T03:35:20Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:45:53Z"
+        },
+        {
+          "number": 149,
+          "title": "Make guide status and next steps clear",
+          "createdAt": "2026-09-22T03:59:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/149",
+          "base": "main",
+          "mergedAt": "2026-09-22T04:05:42Z"
+        },
+        {
+          "number": 150,
+          "title": "Record completed guide clarity work",
+          "createdAt": "2026-09-22T04:08:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/150",
+          "base": "main",
+          "mergedAt": "2026-09-22T04:11:10Z"
+        },
+        {
+          "number": 156,
+          "title": "Define general device controls and record concurrent closures",
+          "createdAt": "2026-09-22T05:48:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/156",
+          "base": "main",
+          "mergedAt": "2026-09-22T06:00:08Z"
+        },
+        {
+          "number": 157,
+          "title": "Record the closed general-control definition in the guide",
+          "createdAt": "2026-09-22T06:08:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/157",
+          "base": "main",
+          "mergedAt": "2026-09-22T06:15:11Z"
+        },
+        {
+          "number": 159,
+          "title": "Record the Nanoleaf device-aware state foundation in the guide",
+          "createdAt": "2026-09-22T10:21:22Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/159",
+          "base": "main",
+          "mergedAt": "2026-09-22T10:29:21Z"
+        },
+        {
+          "number": 160,
+          "title": "Add Pixoo general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T14:50:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/160",
+          "base": "main",
+          "mergedAt": "2026-09-22T20:56:41Z"
+        },
+        {
+          "number": 161,
+          "title": "Record Nanoleaf native controls and accept discovered scenes",
+          "createdAt": "2026-09-22T15:02:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/161",
+          "base": "main",
+          "mergedAt": "2026-09-22T16:28:14Z"
         }
       ],
       "openPRs": [
@@ -859,10 +963,10 @@
           "base": "main"
         },
         {
-          "number": 147,
-          "title": "Record installed Pixoo monitoring acceptance in the guide",
-          "createdAt": "2026-09-22T03:35:20Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/147",
+          "number": 162,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T16:22:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
           "base": "main"
         }
       ],
@@ -964,12 +1068,36 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/30"
         },
         {
+          "number": 31,
+          "title": "Define agent-independent device controls after Codex integration acceptance",
+          "closedAt": "2026-09-22T06:00:09Z",
+          "createdAt": "2026-09-07T20:09:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/31"
+        },
+        {
+          "number": 32,
+          "title": "Deliver Codex-first shared monitoring and integration controls",
+          "closedAt": "2026-09-22T05:01:35Z",
+          "createdAt": "2026-09-07T20:09:28Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/32"
+        },
+        {
           "number": 33,
           "title": "Document assistant direction and remove stale skill references",
           "closedAt": "2026-09-07T21:50:50Z",
           "createdAt": "2026-09-07T21:37:55Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
+        },
+        {
+          "number": 43,
+          "title": "Adopt the Nanoleaf Linux runtime and update architecture documentation",
+          "closedAt": "2026-09-22T05:42:00Z",
+          "createdAt": "2026-09-07T21:58:20Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/43"
         },
         {
           "number": 49,
@@ -1050,12 +1178,28 @@
           "createdAt": "2026-09-22T01:53:34Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/137"
+        },
+        {
+          "number": 148,
+          "title": "Clarify work-guide story status and actionable delivery paths",
+          "closedAt": "2026-09-22T04:06:30Z",
+          "createdAt": "2026-09-22T03:47:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/148"
+        },
+        {
+          "number": 151,
+          "title": "Add Pixoo general controls to the BUNNY component view",
+          "closedAt": "2026-09-22T21:01:04Z",
+          "createdAt": "2026-09-22T05:37:40Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/151"
         }
       ],
-      "openIssueCount": 56,
+      "openIssueCount": 58,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-22T01:53:35Z"
+        "2026-09-22T06:22:18Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1065,17 +1209,27 @@
         "2026-09-12": 1,
         "2026-09-20": 2,
         "2026-09-21": 1,
-        "2026-09-22": 3
+        "2026-09-22": 10
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-21T00:04:05Z",
+      "pushedAt": "2026-09-22T15:49:43Z",
       "defaultBranch": "main",
-      "headSha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
-      "mainCommitCount": 28,
+      "headSha": "80628498136203a8f5fcb06ab5fa306e961e2def",
+      "mainCommitCount": 30,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "80628498136203a8f5fcb06ab5fa306e961e2def",
+          "date": "2026-09-22T15:49:43Z",
+          "message": "Expose native power, brightness and saved-scene controls on the controller API (#66)"
+        },
+        {
+          "sha": "773d3ca7d97a1fb585baba8e3d9c19c197f337c4",
+          "date": "2026-09-22T10:12:12Z",
+          "message": "Introduce device-aware Nanoleaf state and geometry contracts (#65)"
+        },
         {
           "sha": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
           "date": "2026-09-21T00:04:04Z",
@@ -1401,6 +1555,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/63",
           "base": "main",
           "mergedAt": "2026-09-21T00:04:05Z"
+        },
+        {
+          "number": 65,
+          "title": "Introduce device-aware Nanoleaf state and geometry contracts",
+          "createdAt": "2026-09-22T06:50:15Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/65",
+          "base": "main",
+          "mergedAt": "2026-09-22T10:12:12Z"
+        },
+        {
+          "number": 66,
+          "title": "Expose native power, brightness and saved-scene controls on the controller API",
+          "createdAt": "2026-09-22T14:43:59Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/66",
+          "base": "main",
+          "mergedAt": "2026-09-22T15:49:43Z"
         }
       ],
       "openPRs": [],
@@ -1526,6 +1696,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/38"
         },
         {
+          "number": 41,
+          "title": "Introduce device-aware Nanoleaf state and geometry contracts",
+          "closedAt": "2026-09-22T10:17:19Z",
+          "createdAt": "2026-09-07T18:43:18Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/41"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -1556,18 +1734,35 @@
           "createdAt": "2026-09-09T22:36:42Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/54"
+        },
+        {
+          "number": 55,
+          "title": "Install and verify the Linux Nanoleaf runtime in WSL",
+          "closedAt": "2026-09-22T05:36:46Z",
+          "createdAt": "2026-09-09T22:37:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/55"
+        },
+        {
+          "number": 64,
+          "title": "Expose native power, brightness and saved-scene controls through the protected controller API",
+          "closedAt": "2026-09-22T15:54:37Z",
+          "createdAt": "2026-09-22T05:37:36Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/64"
         }
       ],
-      "openIssueCount": 21,
+      "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-09T22:37:08Z"
+        "2026-09-22T05:37:36Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
         "2026-09-06": 7,
         "2026-09-07": 26,
-        "2026-09-09": 4
+        "2026-09-09": 4,
+        "2026-09-22": 1
       }
     },
     "divoom-app-upgrade": {
@@ -2145,10 +2340,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
         }
       ],
-      "openIssueCount": 14,
+      "openIssueCount": 15,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-20T20:59:48Z"
+        "2026-09-22T05:37:38Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -2156,7 +2351,8 @@
         "2026-09-07": 14,
         "2026-09-08": 1,
         "2026-09-09": 1,
-        "2026-09-20": 1
+        "2026-09-20": 1,
+        "2026-09-22": 1
       }
     }
   }

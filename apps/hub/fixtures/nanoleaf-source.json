@@ -1,16 +1,16 @@
 {
   "repository": "https://github.com/jimmie-potts/codex-nanoleaf",
-  "revision": "f12ac6653a9f3267fa9ef62a2d6667072183d8b3",
+  "revision": "80628498136203a8f5fcb06ab5fa306e961e2def",
   "contract": "nanoleaf.integration/1.0",
   "files": {
     "apps/hub/src/vendor/nanoleaf-integration.ts": "d94f2531cfcb574bf329554c66711dc67936d23051f5d44bb0b756aa55517b6c",
     "apps/hub/fixtures/nanoleaf-integration.json": "2878922a896892afb77200839ea51b0ae5582d1ca9bea17d03b9e130097e1841"
   },
   "sourceFiles": {
-    "bridge/integration_api.py": "addbf6b6041fd657e18281368f59fd39cc2af18453013e21f27bd1c822447dd6",
-    "bridge/controller_server.py": "15dff3396588d7ba0ffe4b22c2681e17cc8786806d33df6400d68f11ae430d57",
-    "bridge/controller_state.py": "ea6d8a1c627d83f5a901eebe1e72f0e54d6baa98b331d493a535418fff4cb234",
-    "tests/test_integration_api.py": "3f367b86cf2708756f5607c001dbe6528740685de0316b9eb2fe71e860f6499c",
-    "tests/test_controller_state.py": "c41c91621ef39bfecd034b114210c2a74ec42f415222ec1112ef97e7226218bf"
+    "bridge/integration_api.py": "91b06c2f6df9fd692df97ea8d71040af2ef81803e81fb8a355f4121f785dc471",
+    "bridge/controller_server.py": "833e10175397d94fb0a370543d68f48a41e4a4e37e22ae9b894c3baac66ebb28",
+    "bridge/controller_state.py": "6b52fd453374df83f176032c437a6b2ea89fbf2728b9e526e1818d3a967c9962",
+    "tests/test_integration_api.py": "42e71386f97cc94aa2b662cbb928279599ddc86a98a89a4d0fe6c838b0dfd197",
+    "tests/test_controller_state.py": "3a319e106d53864d7f04f26e91809c2ee906894c6d6dda5b3c19db2ec66bb464"
   }
 }

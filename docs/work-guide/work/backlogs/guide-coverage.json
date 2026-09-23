@@ -1,14 +1,12 @@
 {
   "local-acceptance": [],
   "shared-codex": [
-    "H32",
     "P61",
     "H123",
     "H138",
     "H139"
   ],
   "nanoleaf-devices": [
-    "N41",
     "N42",
     "N43",
     "N44",
@@ -52,23 +50,26 @@
     "P55"
   ],
   "controls-music": [
-    "H31",
     "H35",
     "H36",
     "H37",
     "H38",
     "H39",
     "H40",
-    "H41"
+    "H41",
+    "H152",
+    "H153",
+    "H154",
+    "H155",
+    "P67",
+    "H158"
   ],
   "hosting-migrations": [
     "H42",
-    "H43",
     "H44",
     "H25",
     "H26",
-    "P14",
-    "N55"
+    "P14"
   ],
   "assistant-access": [
     "H45",

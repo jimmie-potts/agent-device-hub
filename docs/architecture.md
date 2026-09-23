@@ -249,8 +249,15 @@ explanation. All commands continue through the owning services.
 this integration-view pattern with the initial device fixtures and a third
 synthetic component. New production integrations retain their own API, UI and
 acceptance work. They do not block the first Codex-integration release.
-[#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) later extends the
+[#31](https://github.com/jimmie-potts/agent-device-hub/issues/31) extends the
 same application with general controls that work without an agent session.
+[ADR 0005](decisions/0005-general-device-controls.md) records the accepted
+definition: controls stay in each component's existing view and submit one
+guarded controller v1 command each; power and brightness are mode-independent;
+content controls are disabled while a device presents agent status, with an
+explicit switch to Media or Free; nothing restores automatically; availability
+is declared capability times existing control scope. The bounded issues are in
+the [roadmap](roadmap.md#general-device-controls).
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.
@@ -465,8 +472,12 @@ unknown components expose unavailable controls. No database, reducer, device
 writer or physical effect scheduler moves into the browser.
 
 PR #127 records Hub #6's human UI approval and source-delivery evidence.
-Installation, physical acceptance, general controls and full editor migration
-remain separately owned work.
+[#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) adds Pixoo
+screen power, brightness, playlist and playback controls to the same view under
+ADR 0005: one guarded controller v1 command per control, Monitor gating with an
+explicit Media switch through the Pixoo integration mode operation, and no
+automatic restoration. Installation, physical acceptance, Nanoleaf general
+controls and full editor migration remain separately owned work.
 
 ## Standalone MCP composition
 

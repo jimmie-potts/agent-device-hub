@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 21,
+        "totalCount": 19,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -199,24 +199,6 @@
             }
           },
           {
-            "number": 41,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 28,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 42,
             "blockedBy": {
               "totalCount": 1,
@@ -226,7 +208,7 @@
               "nodes": [
                 {
                   "number": 41,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/codex-nanoleaf"
                   }
@@ -330,31 +312,13 @@
                 }
               ]
             }
-          },
-          {
-            "number": 55,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 54,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/codex-nanoleaf"
-                  }
-                }
-              ]
-            }
           }
         ]
       }
     },
     "p": {
       "issues": {
-        "totalCount": 14,
+        "totalCount": 15,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -576,6 +540,24 @@
                   "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/divoom-app-upgrade"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 67,
+            "blockedBy": {
+              "totalCount": 1,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": [
+                {
+                  "number": 31,
+                  "state": "CLOSED",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
                 }
               ]
