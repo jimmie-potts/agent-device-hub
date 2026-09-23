@@ -67,21 +67,21 @@ skill integrations or run a global OpenSpec installation.
 For a WSL sandbox with a read-only npm cache, use a writable temporary cache.
 Keep dependency caches, browser binaries and all runtime state outside source.
 
-GitHub CI runs on pull requests and pushes to main. Superseded PR revisions
-are cancelled per workflow and PR; main revisions keep independent runs. Each
-job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
+Depot CI owns the active workflows under `.depot/workflows/`. It runs on pull
+requests and pushes to main, and reports each job as a GitHub check. Superseded
+PR revisions are cancelled per workflow and PR; main revisions keep independent
+runs. Each job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
+The two original workflows under `.github/workflows/` are disabled in GitHub
+Actions; their earlier billing-blocked runs do not validate a candidate.
 
-Both Hub workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and main
+Both Depot workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and main
 pushes. Guide-only edits, including generators and tests, retain local guide
 validation under [the SDLC exception](sdlc.md#guide-only-ci-exception). Mixed
-changes run every configured job. See [GitHub's path-filter rules](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax):
-PRs use three-dot diffs and existing-branch pushes use two-dot diffs. Filtering
-considers at most 300 changed files; a larger mixed diff can miss an outside path.
-Over 1,000 commits or a diff-generation timeout causes a run. Do not rely on a
-filtered result when the complete changed-file scope is uncertain or mixed;
-retain the normal gate and split a large change when necessary. Tag pushes are
-outside the existing main-only push trigger. Static tests verify configuration;
-only hosted event evidence verifies actual scheduling.
+changes require every configured Depot job. Do not infer filtering from a missing
+run alone. Inspect the complete changed-file scope and hosted Depot event and
+check records; keep the normal gate when scope or filter behavior is uncertain.
+Tag pushes are outside the main-only push trigger. Static tests verify workflow
+configuration; only hosted event evidence verifies actual scheduling.
 
 Product CI jobs run `npm run build` and `npm run typecheck` once, then use
 `:built` variants of the controller, lifecycle, agent-state and MCP
@@ -92,7 +92,7 @@ Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal GitHub CI has six jobs, all on `ubuntu-latest`:
+Normal Depot CI has six Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |

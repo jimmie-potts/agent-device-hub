@@ -94,15 +94,17 @@ merge is not evidence of a current public edition.
 3. Obtain independent read-only Standards and Specification reviews of the same
    fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
-4. Read all GitHub reviews/threads and current-head CI pages. Require every
-   applicable configured job to succeed, including matrix jobs; missing, pending,
-   skipped, cancelled or failed jobs prevent merge except for the verified
-   guide-only filtering described below. Apply the UI approval scope below.
+4. Read all GitHub reviews/threads and current-head Depot CI checks and job pages.
+   Require every applicable configured Depot job to succeed, including matrix
+   jobs; missing, pending, skipped, cancelled or failed jobs prevent merge except
+   for the verified guide-only filtering described below. Disabled GitHub Actions
+   workflows and their historical billing-blocked runs do not qualify or replace
+   Depot evidence. Apply the UI approval scope below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
    Never use --admin, a background merge service or account/privacy changes.
-6. Read back the main merge revision and all applicable CI jobs, or record the
+6. Read back the main merge revision and all applicable Depot CI jobs, or record the
    guide-only exception evidence below. Close only the delivered
    issue after its acceptance is met, clear workflow labels and verify closure.
    Do not close future implementation or device acceptance issues with a bootstrap.
@@ -135,7 +137,7 @@ CI even though the guide UI needs no human approval.
 
 ### Guide-only CI exception
 
-Both Hub workflows exclude changes entirely under `docs/work-guide/`. This includes
+Both Depot workflows exclude changes entirely under `docs/work-guide/`. This includes
 its generators and tests. For a guide-only PR and its main merge, the coordinator
 may accept intentionally absent runs only after recording all of the following:
 
@@ -147,7 +149,7 @@ may accept intentionally absent runs only after recording all of the following:
   tests and browser checks from the exact candidate using the guide procedure.
   Retain the HTML hash, screenshots, print check and verification receipt outside
   Git. Validate the merged tree and repeat checks if its guide content differs.
-- GitHub event/head associations and check/run readbacks consistent with those
+- Depot event/head associations and GitHub check readbacks consistent with those
   filters, plus the current protection and merge-state inspection. Missing runs
   alone, failed API reads or a cancelled run do not establish intentional filtering.
 
