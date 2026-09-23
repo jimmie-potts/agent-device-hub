@@ -2,11 +2,12 @@
 
 ## Start and scope
 
-Read README.md for the actual implementation state. For planning or delivery,
-read docs/sdlc.md and the exact GitHub issue. Before changing ownership,
-provider contracts, APIs, state, integration or hosting, read docs/architecture.md
-and the linked device contracts. docs/roadmap.md links the delivery sequence;
-GitHub issues own acceptance criteria, dependencies and status.
+Read the README sections relevant to the task for current implementation state
+and setup. For planning or delivery, read docs/sdlc.md and the exact GitHub
+issue. Before changing ownership, provider contracts, APIs, state, integration
+or hosting, read docs/architecture.md and the linked device contracts.
+GitHub issues own the delivery sequence, acceptance criteria, dependencies and
+status; do not copy issue lists or dependency chains into repository docs.
 
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
@@ -14,12 +15,18 @@ launched from the repository root. These directories currently contain documents
 only. Before shared package, root manifest, lockfile or CI changes, read
 docs/development.md and coordinate with the owner of concurrent shared work.
 
-Controller contracts, pure TypeScript/Python conformance consumers, reusable MCP,
-and the shared agent-state package with source emitters are implemented.
-Production host storage adapters, installed hooks, standalone hosting, device
-adapters and UI remain separate work. Planning/review is read-only unless
-the user explicitly authorizes document or tracker changes. Preserve that scope;
-planning writes do not authorize implementing the planned features.
+Use the owning package and application guides for implementation details and
+GitHub issues for current delivery status. Keep source delivery, installation and
+physical acceptance separate.
+
+Planning and review are read-only unless the user explicitly authorizes named
+document or tracker changes. Those writes do not authorize implementing the
+planned features.
+
+During authorized work, fix failures that the requested change causes. Report
+an unrelated visual, lint, test or flaky failure with its evidence instead of
+fixing it, and ask for a separate task when a repair would expand the
+authorized scope.
 
 ## Delivery and validation
 
@@ -65,6 +72,11 @@ npm run test:agent-state, npm run test:agent-state:python and
 npm run test:agent-state:package, plus the shared build/type, controller,
 lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
 Source tests do not qualify a production storage adapter or installed provider.
+For apps/hub or apps/dashboard changes, read that app's README and its
+validation sections in docs/development.md (for the hub: Standalone hub,
+Standalone hub MCP and Shared monitoring setup checks; for the dashboard:
+Dashboard checks). Run the listed commands and the shared
+build/type/contract/workflow checks from the worktree root. All must exit zero.
 Before other product implementation, add the issue-appropriate build/type/test commands
 and contract-consumer checks to docs/development.md and CI. Workflow fixtures
 alone are not product validation.
@@ -117,13 +129,11 @@ Use `plan-work` and `deliver-work` only when explicitly invoked. Their shared
 documentation checkpoints consume the procedure below; ordinary repository
 planning and delivery also follow it within the user's authority.
 
-For every authorized delivery or planning change, read
-[the guide maintenance procedure](docs/work-guide/README.md). Update the affected
-inputs, regenerate the HTML and record the result in `docs/work-guide/updates.md`
-before completion. Record a specific no-impact reason when no represented fact
-changes. For cross-repository work, identify the coordinator and linked hub
-companion PR; pending synchronization remains explicit in the completion report.
-Read-only tasks do not authorize writes.
-Keep source completion, guide synchronization, public publication and live
-verification distinct. Tracker-only planning reports the latter stages pending;
-public publication requires the user's applicable finish line.
+Read [the guide maintenance procedure](docs/work-guide/README.md) when a task
+intentionally changes or publishes the cross-project guide. Refresh its saved
+inputs, regenerate the HTML and run the required checks for that guide revision.
+Ordinary planning and delivery do not refresh the guide or create a companion PR
+solely to record status; no no-impact ledger entry is required. Read-only tasks
+do not authorize writes. Keep source completion, guide revision, public
+publication and live verification distinct. Public publication requires the
+user's applicable finish line.

@@ -6,9 +6,10 @@ Nanoleaf, Pixoo, Tidbyt and LIFX.
 This repository contains versioned controller contracts with TypeScript and Python
 conformance checks, an embeddable authenticated MCP module, a shared agent-state
 package with bounded provider emitters, accepted architecture and development
-workflow tooling, and a [Linux standalone host](apps/hub/README.md) with bounded
-controller routing and supervised state-owner migration. Installation, dashboards
-and new device adapters remain separate work.
+workflow tooling, a [Linux standalone host](apps/hub/README.md) with bounded
+controller routing and supervised state-owner migration, and a
+[React dashboard](apps/dashboard/README.md). Installation and new device
+adapters have separate owners and acceptance gates.
 
 New Tidbyt and LIFX controllers will live in this monorepo. Their current
 [Tidbyt](controllers/tidbyt/README.md) and [LIFX](controllers/lifx/README.md)
@@ -26,10 +27,10 @@ The directory contains a guide only. Qualification, adapters, automatic status
 and physical acceptance remain future issues with separate gates for each target.
 Strimer and Varmilo do not block Corsair delivery; Varmilo does not block Strimer.
 
-Read [architecture](docs/architecture.md) for ownership and migration decisions,
-[the roadmap](docs/roadmap.md) for the linked delivery sequence, and
-[development](docs/development.md) for setup. GitHub issues own scope, acceptance,
-dependencies and status. A completed bootstrap is not a working device integration.
+Read [architecture](docs/architecture.md) for ownership and migration decisions
+and [development](docs/development.md) for setup. GitHub issues own the delivery
+sequence, scope, acceptance, dependencies and status. A completed bootstrap is
+not a working device integration.
 
 [Desktop controls](docs/desktop-controls.md) records Codex mouse actions, control
 profiles and later desk presets. These integrations remain future work. Keyboard
@@ -40,10 +41,10 @@ shared presets follow the Codex-first milestone and general-control definition.
 ## System design documents
 
 Open the [BUNNY system design atlas](docs/system-design/index.html) locally for
-the HTML overview, 26 component documents and a combined reading/print view.
-GitHub shows HTML source. The atlas distinguishes delivered contracts, planned
-services and qualification work, with links to the owning issues and sources.
-Edit its HTML fragments and inventory, then follow the
+the September 19, 2026 design snapshot, 26 component documents and a combined
+reading/print view. Its implementation labels describe that date, not current
+status. GitHub shows HTML source. Revise the snapshot only for an intentional
+design-document change, following the
 [documentation checks](docs/development.md#system-design-documents).
 
 ## Validate the contracts
@@ -126,9 +127,10 @@ Run `npm run test:agent-state`, `npm run test:agent-state:python` and
 
 ## Cross-project work guide
 
-The [work guide](docs/work-guide/README.md) contains the remaining-work map,
-delivery history and architecture diagrams for Hub, Nanoleaf and Pixoo. Its
-generator and source snapshots live here and are maintained with each delivery.
+The [work guide](docs/work-guide/README.md) is a dated remaining-work map,
+delivery history and architecture guide for Hub, Nanoleaf and Pixoo. Its
+generator and saved inputs live here. Refresh them for an intentional guide
+update or publication; GitHub issues own current status.
 
 ## BUNNY frontend
 
@@ -137,8 +139,8 @@ for activity, components and connections. It uses the existing protected hub and
 controller services, with source-only synthetic browser checks. PR #127 records
 human UI approval and source-delivery evidence. Installation and physical
 acceptance remain separate. [ADR 0005](docs/decisions/0005-general-device-controls.md)
-defines the general device controls that extend these views; their bounded
-issues are in the [roadmap](docs/roadmap.md#general-device-controls).
+defines the general device controls that extend these views and links their
+bounded issues.
 [#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) adds Pixoo
 screen power, brightness, saved-playlist and playback controls to the same
 component view; physical acceptance on the display is

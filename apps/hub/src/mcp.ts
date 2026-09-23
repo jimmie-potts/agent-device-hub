@@ -41,31 +41,31 @@ export function createHubMcp(options:Options):McpHandler {
     }
    }};
  }
- const readDescription='Read qualified evidence without changing state. Unknown observation and readership stay unknown; health and transmission do not prove physical effects or task success.';
- const writeDescription='Call the owning protected service. Read its snapshot first for request identity and revision/generation guards. Preserve the original identity for explicit replay; never automatically retry an ambiguous write. Acceptance does not prove physical effects or task success.';
+ const readDescription=(purpose:string)=>purpose+' Does not change state. Unknown observation and readership stay unknown; health and transmission do not prove physical effects or task success.';
+ const writeDescription=(purpose:string)=>purpose+' Preserve the original request identity for explicit replay; never automatically retry an ambiguous write. Acceptance does not prove physical effects or task success.';
  const host:Record<string,ServiceExtension>={
-  sessions:extension(HOST_SERVICE,'read',readDescription,shape({q:{type:'string',maxLength:120},provider:{enum:['codex','claude']}},[]),(args,p)=>options.sessions(p,args.q as string|undefined,args.provider as string|undefined)),
+  sessions:extension(HOST_SERVICE,'read',readDescription('Read observed agent sessions, optionally filtering by provider and by q, a case-insensitive match against each session\'s label, or its session ID when it has no label. Returns the qualified snapshot, matching identities and the next request ID for hub_label and hub_acknowledge.'),shape({q:{type:'string',maxLength:120},provider:{enum:['codex','claude']}},[]),(args,p)=>options.sessions(p,args.q as string|undefined,args.provider as string|undefined)),
   devices:extension(HOST_SERVICE,'read','List authorized configured device aliases and their bound tool prefixes. No network discovery or device writes.',shape({}),(_args,p)=>({devices:[...options.clients].filter(([alias])=>p.devices.includes(alias)).map(([alias,c])=>({alias,controllerId:c.config.controllerId,deviceId:c.config.deviceId,kind:c.config.kind,toolPrefix:toolPrefix(alias)}))})),
-  label:extension(HOST_SERVICE,'control',writeDescription,shape({request_id:requestString,identity,label:{anyOf:[{type:'string',maxLength:160},{type:'null'}]}}),(args,p)=>options.command(p,{operation:'label',requestId:args.request_id,identity:args.identity,label:args.label})),
-  acknowledge:extension(HOST_SERVICE,'control',writeDescription,shape({request_id:requestString,identity,noticeId:id,consumerId:id}),(args,p)=>options.command(p,{operation:'acknowledge',requestId:args.request_id,identity:args.identity,noticeId:args.noticeId,consumerId:args.consumerId}))
+  label:extension(HOST_SERVICE,'control',writeDescription('Set the user-chosen label for one session identity, or pass null to remove it. Use the next request ID from hub_sessions as request_id.'),shape({request_id:requestString,identity,label:{anyOf:[{type:'string',maxLength:160},{type:'null'}]}}),(args,p)=>options.command(p,{operation:'label',requestId:args.request_id,identity:args.identity,label:args.label})),
+  acknowledge:extension(HOST_SERVICE,'control',writeDescription('Acknowledge one attention notice on a session for a configured consumer. Use the next request ID from hub_sessions as request_id. Reading a notice never acknowledges it.'),shape({request_id:requestString,identity,noticeId:id,consumerId:id}),(args,p)=>options.command(p,{operation:'acknowledge',requestId:args.request_id,identity:args.identity,noticeId:args.noticeId,consumerId:args.consumerId}))
  };
  const registrations:DeviceRegistration[]=[{controllerId:'hub',deviceId:HOST_SERVICE,extensions:host}];
  const names=new Map<string,string>([[HOST_SERVICE,'hub']]);
  for(const [alias,client] of options.clients){
   const bound={controllerId:client.config.controllerId,deviceId:client.config.deviceId};
-  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription,shape({}),()=>client.snapshot())};
+  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription('Read this device owner\'s validated controller snapshot. Its power, brightness and mode tools take their request identity and revision/generation guards from this snapshot.'),shape({}),()=>client.snapshot())};
   const guards={requestId:ticket,expectedConfigurationRevision:count,expectedGeneration:ticket};
-  function command(name:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown){
-   extensions[name]=extension(alias,'control',writeDescription,shape({...guards,...fields}),async args=>(await client.command({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,command:make(args)})).body);
+  function command(name:string,purpose:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown){
+   extensions[name]=extension(alias,'control',writeDescription(purpose+' Take the request identity and revision/generation guards from the latest status result. An unsupported capability returns the owner\'s rejection.'),shape({...guards,...fields}),async args=>(await client.command({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,command:make(args)})).body);
   }
-  command('power_set',{on:{type:'boolean'}},a=>({kind:'power.set',on:a.on}));
-  command('brightness_set',{percent:{type:'integer',minimum:0,maximum:100}},a=>({kind:'brightness.set',percent:a.percent}));
-  command('mode_set',{mode:{enum:client.config.kind==='pixoo'?['monitor','media']:['Work','Quiet','Free']}},a=>({kind:'mode.set',mode:a.mode}));
-  extensions.integration_status=extension(alias,'read',readDescription,shape({}),()=>client.integrationSnapshot());
+  command('power_set','Turn this device on or off through its owning controller.',{on:{type:'boolean'}},a=>({kind:'power.set',on:a.on}));
+  command('brightness_set','Set this device\'s brightness percentage through its owning controller.',{percent:{type:'integer',minimum:0,maximum:100}},a=>({kind:'brightness.set',percent:a.percent}));
+  command('mode_set','Switch this device\'s controller mode through its owning controller.',{mode:{enum:client.config.kind==='pixoo'?['monitor','media']:['Work','Quiet','Free']}},a=>({kind:'mode.set',mode:a.mode}));
+  extensions.integration_status=extension(alias,'read',readDescription('Read this device\'s validated Pixoo or Nanoleaf agent-status integration snapshot, which carries the request identity and revision guards for integration_set.'),shape({}),()=>client.integrationSnapshot());
   if(client.config.kind==='pixoo'){
    const filter=shape({q:{type:'string',maxLength:120},provider:{enum:['codex','claude']},projectId:id,session:identity},[]);
    const action={oneOf:[shape({operation:{const:'mode'},mode:{enum:['monitor','media']}}),shape({operation:{const:'view'},filter,cadenceMs:{type:'integer',minimum:1000,maximum:10000}})]};
-   extensions.integration_set=extension(alias,'control',writeDescription,shape({request_id:requestString,expectedConfigurationRevision:count,expectedGeneration:count,action}),async args=>(await client.integrationCommand({apiVersion:'pixoo-integration/1.0',...bound,requestId:args.request_id,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,action:args.action})).body);
+   extensions.integration_set=extension(alias,'control',writeDescription('Change the Pixoo agent-status integration: switch between monitor and media mode, or set the monitor view filter and update interval. Take the request identity and revision/generation guards from the latest integration_status result.'),shape({request_id:requestString,expectedConfigurationRevision:count,expectedGeneration:count,action}),async args=>(await client.integrationCommand({apiVersion:'pixoo-integration/1.0',...bound,requestId:args.request_id,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,action:args.action})).body);
   }else{
    const project={type:'string',pattern:'^project-[a-f0-9]{64}$'},nullableProject={anyOf:[project,{type:'null'}]},task={type:'string',pattern:'^task-[a-f0-9]{64}$'};
    const commandSchema={oneOf:[
@@ -74,9 +74,9 @@ export function createHubMcp(options:Options):McpHandler {
     shape({kind:{const:'task.assign'},taskId:task,projectId:nullableProject}),
     shape({kind:{const:'project.color'},projectId:project,color:{type:'string',pattern:'^#[a-fA-F0-9]{6}$'}})]};
    const nativeTicket=shape({epoch:{type:'string',pattern:'^[a-f0-9]{32}$'},sequence:count});
-   extensions.integration_set=extension(alias,'control',writeDescription,shape({requestId:nativeTicket,expectedRevision:{type:'string',pattern:'^[a-f0-9]{64}$'},command:commandSchema}),async args=>(await client.integrationCommand({apiVersion:'nanoleaf.integration/1.0',...bound,...args})).body);
-   extensions.integration_receipt=extension(alias,'read',readDescription,shape({requestId:nativeTicket}),async args=>(await client.integrationReceipt(args.requestId)).body);
-   extensions.integration_cancel=extension(alias,'control',writeDescription,shape({requestId:nativeTicket}),async args=>(await client.integrationCancel({apiVersion:'nanoleaf.integration/1.0',deviceId:bound.deviceId,requestId:args.requestId})).body);
+   extensions.integration_set=extension(alias,'control',writeDescription('Apply one declared Nanoleaf integration command: display settings, panel element assignment, task assignment or project color. Take the request identity and expected revision from the latest integration_status result, then use integration_receipt to follow the outcome.'),shape({requestId:nativeTicket,expectedRevision:{type:'string',pattern:'^[a-f0-9]{64}$'},command:commandSchema}),async args=>(await client.integrationCommand({apiVersion:'nanoleaf.integration/1.0',...bound,...args})).body);
+   extensions.integration_receipt=extension(alias,'read',readDescription('Look up the Nanoleaf receipt for an earlier integration_set by its original requestId.'),shape({requestId:nativeTicket}),async args=>(await client.integrationReceipt(args.requestId)).body);
+   extensions.integration_cancel=extension(alias,'control',writeDescription('Explicitly cancel an earlier Nanoleaf integration_set by its original requestId. Check integration_receipt for the resulting outcome.'),shape({requestId:nativeTicket}),async args=>(await client.integrationCancel({apiVersion:'nanoleaf.integration/1.0',deviceId:bound.deviceId,requestId:args.requestId})).body);
   }
   registrations.push({controllerId:bound.controllerId,deviceId:alias,extensions});names.set(alias,toolPrefix(alias));
  }

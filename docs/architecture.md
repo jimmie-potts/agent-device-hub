@@ -1,18 +1,13 @@
 # Shared architecture
 
-Status: Accepted direction. Controller contracts, reusable MCP, and the shared
-agent-state package with source emitters are implemented. Production collector
-hosting, device-feed adoption and standalone hosting remain in the backlog.
-The fresh Nanoleaf Linux runtime has merged source in
-[Nanoleaf PR #57](https://github.com/jimmie-potts/codex-nanoleaf/pull/57), revision
-`2558df5a2fc543247b0c75898ef0260ba3ea264b`. Installed acceptance remains open
-under [Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55),
-and [Hub #43](https://github.com/jimmie-potts/agent-device-hub/issues/43) retains
-coordination and documentation of that outcome.
+This document records accepted ownership, state and command boundaries. The
+[package](../packages/agent-state/README.md), [host](../apps/hub/README.md) and
+[dashboard](../apps/dashboard/README.md) guides describe their implementations;
+GitHub issues hold current delivery and acceptance status.
 
-The [BUNNY HTML system design](system-design/index.html) expands these boundaries
-into component documents, complete flows, deployment designs and open decisions.
-It links existing contracts and issues without replacing their authority.
+The [BUNNY HTML system design](system-design/index.html) preserves a dated
+September 19, 2026 design snapshot. Its labels and open decisions reflect that
+baseline, not the current implementation.
 
 ## Product direction and vocabulary
 
@@ -39,16 +34,17 @@ and issue-linked specifications.
 
 The hub owns provider qualification, shared event/session contracts, one
 authoritative agent-state core, common controller contracts, shared MCP
-infrastructure and the future cross-device dashboard.
+infrastructure and the cross-device dashboard.
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
 Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
 light-writing worker, geometry, Line allocation, spatial effects,
 Work/Quiet/Free policy, scene restoration and advanced wall editor. The legacy
-installation runs on Windows. Delivered source supports a fresh installation of
-those Nanoleaf processes and private state in Ubuntu WSL without transferring
-repository ownership. Installed Linux behavior remains unverified under Nanoleaf
-#55. Common code must not import a device application's internal modules.
+installation runs on Windows. The Nanoleaf processes and private state can run
+in Ubuntu WSL without transferring repository ownership.
+[Nanoleaf #55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55) holds
+the installed acceptance record. Common code must not import a device
+application's internal modules.
 
 Tidbyt owns its 64×32 renderer, backend connection and serialized display writer.
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
@@ -113,7 +109,7 @@ previews. Nanoleaf timelines and Pixoo pixel buffers remain device-specific
 payloads. Renderer contracts carry clock domains, epochs and update outcomes;
 browsers must not create another scheduler for physical effects.
 
-## Fresh Nanoleaf Linux runtime, source delivered
+## Fresh Nanoleaf Linux runtime
 
 The delivered installer supports the existing Nanoleaf runtime as separate Linux
 processes in Ubuntu WSL. Linux Python hooks, the CLI, the wall map and the
@@ -133,13 +129,12 @@ the existing configured readers can read project, title and unread JSON from the
 mounted Windows filesystem. Those metadata files are read-only inputs to Linux;
 the browser receives neither device credentials nor private SQLite state.
 
-This is a fresh installation. Existing Nanoleaf state need not move into Linux,
-and the old installation can remain unused. Source issue #54 delivers setup,
-service units and verification with fake devices. The installed-acceptance issue
-separately owns retirement of this project's Windows writer, real WSL client and
-service checks, browser reachability and physical Work/Quiet/Free observations.
-This source delivery does not establish an installed Linux system. #55 must record those observations
-before Hub #43 can close.
+This is a fresh installation path. Existing Nanoleaf state need not move into
+Linux, and the old installation can remain unused.
+[Nanoleaf #54](https://github.com/jimmie-potts/codex-nanoleaf/issues/54)
+records source and setup; [#55](https://github.com/jimmie-potts/codex-nanoleaf/issues/55)
+records installed service, client, browser and physical Work/Quiet/Free
+acceptance. Source checks alone do not establish those installed results.
 
 This transition excludes data migration, rollback tooling, a combined daemon, a
 new hook HTTP API, shared monitoring and the Nanoleaf monorepo move. WSL service
@@ -162,12 +157,11 @@ and the pure packages/lifecycle-contracts validators. The [lifecycle contract](a
 and [provider matrix](provider-qualification.md) establish metadata and source evidence,
 without claiming installed producer qualification. Provider normalizers and bounded
 emitters live in packages/agent-state/src/providers.ts; the silent source hook is
-packages/agent-state/bin/hook.mjs. The remaining proposed layout is
-adapters/nanoleaf, adapters/pixoo,
-apps/hub, apps/dashboard, controllers/tidbyt, controllers/lifx and
-controllers/pc-lighting. The controller directories contain documents only;
-the other paths remain proposed.
-Use Node 24 and npm workspaces when executable packages are introduced.
+packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
+The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
+migrations have separate deferred issues. The controllers/tidbyt,
+controllers/lifx and controllers/pc-lighting directories currently contain
+documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
@@ -202,12 +196,11 @@ contract. Both paths retain fixed configured targets, current read/control scope
 bounded authentication and response delivery, and no automatic write retries.
 See [the MCP module](../packages/mcp/README.md) for its API and evidence boundary.
 
-First, Pixoo embeds the core in its existing backend. Nanoleaf can opt into that
-versioned shared feed while retaining its existing device worker and
-Work/Quiet/Free behavior. The legacy route uses the Windows worker. The
-delivered fresh Linux installer supports moving that owner into WSL independently
-of shared monitoring. A later hub host composes the same core and connects to
-both existing controllers.
+Pixoo's embedded owner and the standalone hub compose the same core. Nanoleaf
+can opt into the versioned shared feed while retaining its device worker and
+Work/Quiet/Free behavior. The legacy route uses the Windows worker. The fresh
+Linux installation path supports placing that writer in WSL independently of
+shared monitoring.
 
 Moving the state owner is explicit and quiesced. Preserve source identities,
 session/notice state, revisions and producer configuration with a versioned
@@ -256,8 +249,8 @@ definition: controls stay in each component's existing view and submit one
 guarded controller v1 command each; power and brightness are mode-independent;
 content controls are disabled while a device presents agent status, with an
 explicit switch to Media or Free; nothing restores automatically; availability
-is declared capability times existing control scope. The bounded issues are in
-the [roadmap](roadmap.md#general-device-controls).
+is declared capability times existing control scope. The ADR links the bounded
+issues.
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.
@@ -279,10 +272,9 @@ Assistant must delegate to an existing writer or use an explicit ownership hando
 
 Automatic agent status is the first feature priority for these new controllers.
 Qualify their connections, implement fake-backed controllers, then consume the
-core initially hosted inside Pixoo. Standalone hosting remains a later state-owner
-migration. Source status integration does not wait for a dashboard or new MCP
-tools. Full installed lifecycle acceptance depends on the reversible producer
-setup in [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8).
+selected shared state owner. Source status integration does not wait for new
+dashboard or MCP tools. Full installed lifecycle acceptance uses the reversible
+producer setup specified by [#8](https://github.com/jimmie-potts/agent-device-hub/issues/8).
 Existing local Codex control priorities under #4/#7 remain unchanged.
 
 Tidbyt starts with the official cloud. Keep a pure 64×32 WebP rendering boundary
@@ -433,16 +425,15 @@ Exact schemas, SDK/package versions, controller reachability, client signals and
 physical timing will be settled by their bounded issues. These unknowns do not
 authorize guessed telemetry or deployment changes.
 
-## Standalone host candidate
+## Standalone Linux host
 
-The active Hub #5 change under `apps/hub` targets native Linux in WSL, following
-the owner's September 21 decision. Native Windows runtime qualification is
-outside that delivery. The application composes the existing shared core and
-uses authenticated configured controller endpoints. Its private store never
-opens a controller database. This is an unmerged candidate; migration, final
-controller integration and performance acceptance remain tracked by #5 and #30.
-The delivered Pixoo embedded owner remains the production source baseline.
-
+The [host](../apps/hub/README.md) under `apps/hub` targets native Linux in WSL.
+Native Windows runtime qualification is separate. The application composes the
+shared core and uses authenticated configured controller endpoints. Its private
+store never opens a controller database. Source and performance receipts live
+with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
+[#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
+and physical acceptance retain their own owners.
 
 ## Linux host handoff implementation
 

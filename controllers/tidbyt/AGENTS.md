@@ -1,10 +1,11 @@
 # Working on Tidbyt
 
 These instructions apply to planning, edits and review in controllers/tidbyt.
-Read the root [AGENTS.md](../../AGENTS.md), this directory's [README.md](README.md)
-and the exact issue before work. Read [architecture](../../docs/architecture.md)
-and linked contracts before changing integration or ownership. Root delivery,
-privacy, unslop and physical authorization rules remain in force.
+Read this directory's [README.md](README.md) for current status and device
+decisions. For planning or delivery, read the exact issue. Read
+[architecture](../../docs/architecture.md) and linked contracts before changing
+integration or ownership. All rules in the root [AGENTS.md](../../AGENTS.md)
+remain in force, including delivery, privacy, unslop and physical authorization.
 
 This directory contains documents only. Bootstrap completion grants no future
 implementation, installation, account access or physical-testing authority.
@@ -14,7 +15,9 @@ authentication, capabilities and transport. Consume shared state and controller
 contracts; do not copy a provider reducer or create another common API. Every
 write uses the same designated controller queue.
 
-Qualify cloud behavior with fakes and record unsupported/unknown evidence.
+Build and test cloud behavior with fakes, and record unsupported or unknown
+behavior. Contact the real account only with the user's explicit go-ahead and
+where an issue allows it: one test push in #16, then installation in #21.
 Tronbyt connection work requires its own issue. Firmware flashing, server
 installation and physical transition require separate explicit authorization,
 confirmed device generation and an identified target. Never infer that changing
@@ -23,5 +26,5 @@ a URL switches stock firmware, or enable automatic backend failover.
 Before adding executable behavior, define the issue-linked OpenSpec artifacts
 and package build/type/test commands in [development](../../docs/development.md)
 and CI. Run affected shared-consumer checks and the root workflow checks from
-the assigned worktree on Node 24. Report source, installation, real-client,
-transport and visible-device evidence separately.
+the assigned worktree on Node 24. Report fake-backed source checks separately
+from what was seen on the real device.
