@@ -1,3 +1,17 @@
+## September 22, 2026: Depot workflow candidate
+
+The `codex/depot-ci-workflows` branch adds Depot copies of the existing Checks
+and Work guide workflows. This changes CI configuration only. It does not change
+the device work, issue states, guide sections, diagrams or public guide content,
+so the guide inputs and generated HTML retain their existing snapshot dates.
+
+Node 24 `npm ci`, `npm run check:workflow` and `npm run test:workflow` pass.
+The workflow check reports 11 valid specifications and 13 valid archived changes;
+all 15 workflow tests pass. Guide generation, maintenance and browser checks are
+successful. The browser check covers desktop, mobile and print; generated HTML
+is unchanged at SHA-256 `3dc4d809ebc2b21485ee1b9405f36d1dc742430e44d7ef2b078849917a4f29b4`.
+Publication and live verification are separate.
+
 ## September 22, 2026: Pixoo general controls closeout
 
 Hub PR #160 merged by guarded squash as `d91bee7a60953e67fdfeff06d93e275746182ba8`,
