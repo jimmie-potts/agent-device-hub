@@ -52,9 +52,9 @@
 #61 [OPEN] Add a qualified Varmilo keyboard adapter to PC lighting
 #62 [OPEN] Install and verify Varmilo keyboard status without affecting typing
 #63 [CLOSED] Document desktop controls, control profiles and desk presets
-#64 [OPEN] Qualify 8BitDo controls and Wispr hold-to-dictate mappings
-#65 [OPEN] Implement local Wispr and Codex controls for 8BitDo
-#66 [OPEN] Install and verify 8BitDo Wispr and Codex shortcuts
+#64 [OPEN] Qualify N30 mouse controls for Codex
+#65 [OPEN] Implement independent Codex controls for the N30 mouse
+#66 [OPEN] Install and verify N30 Codex mouse shortcuts
 #67 [OPEN] Implement Work, Free and Quiet desk preset coordination
 #68 [OPEN] Bind a selected control to desk preset cycling with visible results
 #69 [OPEN] Verify desk preset switching, manual handoff and restoration
@@ -77,7 +77,7 @@
 #148 [CLOSED] Clarify work-guide story status and actionable delivery paths
 #151 [CLOSED] Add Pixoo general controls to the BUNNY component view
 #152 [OPEN] Add media tools to the hub MCP device tool set
-#153 [OPEN] Add Nanoleaf general controls to the BUNNY component view
+#153 [CLOSED] Add Nanoleaf general controls to the BUNNY component view
 #154 [OPEN] Install and verify Pixoo general controls on the physical display
 #155 [OPEN] Install and verify Nanoleaf general controls on the installed wall
 #158 [OPEN] Qualify iPhone Apple Music now-playing sources through the apartment speakers
