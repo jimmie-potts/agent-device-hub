@@ -86,7 +86,7 @@ def frame(data, title, content, mode="overview", current=""):
 <html lang="en" data-theme="dark">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(title)} · BUNNY system design</title>
-<meta name="description" content="BUNNY design snapshot from September 19, 2026. Component ownership, contracts, event flows, deployment and verification.">
+<meta name="description" content="BUNNY design snapshot from {escape(data['reviewed_at'])}. Component ownership, contracts, event flows, deployment and verification.">
 <style>{css}</style></head>
 <body><a class="skip" href="#main">Skip to document</a>
 <header class="mobile-bar"><a href="{prefix}index.html">BUNNY / SYSTEM DESIGN</a><button id="menu-toggle" aria-expanded="false" aria-controls="sidebar">Documents</button></header>

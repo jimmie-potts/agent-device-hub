@@ -28,19 +28,13 @@ when the same PR changes the guide. Renew approval after changes to that other U
 Verify all configured current-head PR jobs, guarded merge and merged-revision
 main CI before issue closure.
 
-## Work guide
+## Work guide, when intentionally updated or published
 
-- [ ] Reviewed the cross-project guide and added an entry to `docs/work-guide/updates.md`.
-- [ ] Updated affected inputs and generated output, or explained why no represented fact changed.
-- [ ] Recorded build/browser results as applicable and any pending post-merge synchronization.
+For a guide revision, record the snapshot date, source revisions, changed
+sections, generated-output hash and local checks. Link any coordinated Hub and
+device PRs. For public publication, record the public PR, deployment, all served
+URLs and hash verification. Keep source delivery, guide revision and public
+publication as separate claims.
 
-For device-repository work, link the coordinated hub guide PR and its status.
-
-- Source/tracker completion and revision:
-- Guide-source synchronization, Hub companion and revision:
-- Public publication PR and revision, or pending/not applicable reason:
-- Live deployment, all required URLs and served-hash verification:
-- Pending stage owner and next action:
-
-Preserve the user's requested finish line. A no-impact source change still needs
-a public-currency assessment; verified current output does not need an empty PR.
+An unrelated change has no guide refresh, companion PR, no-impact entry or
+public-currency check. The existing dated guide is not a live status claim.
