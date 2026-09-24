@@ -518,6 +518,12 @@ previous release bytes. Package version changes do not change snapshot/storage 1
 
 `npm run test:hub:mcp` builds and exercises the optional host MCP route with disposable storage, synthetic credentials and fake loopback controllers. CI runs `test:hub:mcp:built` after its build/type checks; the broader hub and installed archive tests also include these scenarios. Retain all shared MCP, contract and workflow checks. No test starts an installed agent or contacts a physical device.
 
+The media cases cover alias-bound playlist start and controller v1 playback
+actions, strict inputs, current control/device permissions, typed owner
+rejections, replay and ambiguous results without automatic retries. The existing
+MCP and contracts/state CI jobs run these cases directly and in the offline hub
+archive; they require no new CI job or shared package change.
+
 ## Bounded cross-device compatibility
 
 Hub #9 adds verification tooling for the standalone Linux/WSL setup. Build this

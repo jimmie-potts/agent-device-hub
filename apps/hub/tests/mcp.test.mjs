@@ -94,6 +94,8 @@ async function controller(t,alias,kind='nanoleaf'){
    if(old&&old.fingerprint!==fingerprint){status=409;value={failure:{code:'request-conflict'}};}
    else if(old)value=old.value;
    else if(mode==='unsupported'){status=422;value={failure:{code:'unsupported-capability'}};}
+   else if(mode==='revision-conflict'||mode==='stale-generation'){status=409;value={failure:{code:mode}};}
+   else if(mode==='rejected-receipt'){status=422;value={...receipt,controllerId:input.controllerId,deviceId:input.deviceId,requestId:input.requestId,outcome:'failed',priorEffects:'none',completedOperations:[],failure:{code:'unsupported-capability'}};}
    else{effects++;value={...receipt,controllerId:input.controllerId,deviceId:input.deviceId,requestId:input.requestId,outcome:'sent',priorEffects:'confirmed-transmission'};ledger.set(key,{fingerprint,value});}
   }
   res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));
@@ -105,6 +107,100 @@ async function controller(t,alias,kind='nanoleaf'){
 }
 async function prefix(c,alias){return (await c.call('hub_devices')).structuredContent.data.result.devices.find(d=>d.alias===alias).toolPrefix;}
 const guards=s=>({requestId:s.nextRequestId,expectedConfigurationRevision:s.configurationRevision,expectedGeneration:s.generation});
+test('media tools bind every alias and forward guarded playlist and playback commands',async t=>{
+ const pixoo=await controller(t,'desk','pixoo'),wall=await controller(t,'wall');
+ const hub=await fixture(t,{controllers:[pixoo.config,wall.config],credentials:[{...credential,devices:['desk','wall']}]});
+ const c=client(hub);await c.initialize();
+ const tools=(await c.rpc('tools/list',{})).body.result.tools;
+ for(const alias of ['desk','wall']){
+  const name=await prefix(c,alias);
+  for(const suffix of ['media_start','media_control']){
+   const tool=tools.find(tool=>tool.name===name+'_'+suffix);assert.ok(tool);
+   assert.match(tool.description,/explicitly select Media through integration_set/);
+   assert.match(tool.description,/does not switch or restore modes/);
+  }
+ }
+ assert.equal(pixoo.seen.length,0);assert.equal(wall.seen.length,0);
+ const name=await prefix(c,'desk'),current=(await c.call(name+'_status')).structuredContent.data.result;
+ const commands=[{kind:'media.start',playlistId:'saved-list'},...['pause','resume','stop','next','previous','restart-with-changes','clear'].map(action=>({kind:'media.control',action}))];
+ for(const [index,command] of commands.entries()){
+  const {kind,...fields}=command;
+  const args={...guards(current),requestId:{...current.nextRequestId,sequence:current.nextRequestId.sequence+index},...fields};
+  const before=pixoo.seen.length;
+  const result=await c.call(name+'_'+kind.replace('.','_'),args);
+  assert.equal(result.isError,false);assert.equal(result.structuredContent.kind,'extension');
+  assert.deepEqual(pixoo.seen.at(-1).input,{apiVersion:'1.0',controllerId:pixoo.config.controllerId,deviceId:'native',...guards(current),requestId:args.requestId,command});
+  assert.equal(pixoo.seen.length,before+1);
+  assert.deepEqual(result.structuredContent.data.result.requestId,args.requestId);
+  assert.equal(result.structuredContent.data.result.outcome,'sent');
+  assert.equal(result.structuredContent.data.result.priorEffects,'confirmed-transmission');
+  const replay=await c.call(name+'_'+kind.replace('.','_'),args);
+  assert.deepEqual(replay,result);assert.equal(pixoo.effects,index+1);
+ }
+ assert.equal(wall.seen.length,0);
+});
+test('media tools reject invalid inputs before contacting the owner',async t=>{
+ const native=await controller(t,'desk','pixoo');
+ const hub=await fixture(t,{controllers:[native.config],credentials:[{...credential,devices:['desk']}]});
+ const c=client(hub);await c.initialize();const name=await prefix(c,'desk'),guard=guards(native.snapshot);
+ for(const [suffix,fields] of [
+  ['media_start',{}],['media_start',{playlistId:''}],['media_start',{playlistId:'a'.repeat(129)}],['media_start',{playlistId:'/private/media'}],
+  ['media_control',{}],['media_control',{action:'seek'}],['media_control',{action:'PAUSE'}]
+ ])assert.equal((await c.call(name+'_'+suffix,{...guard,...fields})).isError,true);
+ for(const [suffix,fields] of [['media_start',{playlistId:'saved-list'}],['media_control',{action:'pause'}]]){
+  for(const override of [{deviceId:'other'},{controllerId:'other'},{url:'http://elsewhere.invalid'},{renditionId:'other'}]){
+   assert.equal((await c.call(name+'_'+suffix,{...guard,...fields,...override})).isError,true);
+  }
+  for(const key of Object.keys(guard)){
+   const args={...guard,...fields};delete args[key];assert.equal((await c.call(name+'_'+suffix,args)).isError,true);
+  }
+ }
+ assert.equal(native.seen.length,0);
+});
+test('media tools preserve owner failures and ambiguous request identity without retry',async t=>{
+ const native=await controller(t,'desk','pixoo');
+ const hub=await fixture(t,{controllers:[native.config],credentials:[{...credential,devices:['desk']}]});
+ const c=client(hub);await c.initialize();const name=await prefix(c,'desk');
+ for(const [suffix,fields] of [['media_start',{playlistId:'saved-list'}],['media_control',{action:'pause'}]]){
+  const args={...guards(native.snapshot),...fields};
+  for(const [mode,code] of [['unsupported','unsupported-capability'],['revision-conflict','revision-conflict'],['stale-generation','stale-generation'],['drop','uncertain-result']]){
+   native.mode=mode;const before=native.seen.length,result=await c.call(name+'_'+suffix,args);
+   assert.equal(result.isError,true);assert.equal(result.structuredContent.kind,'extension');
+   assert.deepEqual(result.structuredContent.data,{code,priorEffects:mode==='drop'?'possible':'none',retry:'never-automatically',requestId:args.requestId});
+   assert.equal(native.seen.length,before+1);
+  }
+  native.mode='rejected-receipt';const result=await c.call(name+'_'+suffix,args);
+  assert.equal(result.isError,true);const receipt=result.structuredContent.data.result;
+  assert.equal(receipt.outcome,'failed');assert.equal(receipt.failure.code,'unsupported-capability');
+  assert.deepEqual(receipt.requestId,args.requestId);assert.equal(receipt.priorEffects,'none');
+ }
+ assert.equal(native.effects,0);
+});
+test('media discovery and calls enforce current control scope and device permissions',async t=>{
+ const native=await controller(t,'desk','pixoo'),readerToken='r'.repeat(43);
+ const operator={...credential,devices:['desk']},reader={...operator,id:'reader',digest:hash(readerToken),scopes:['read']};
+ const hub=await fixture(t,{controllers:[native.config],credentials:[operator,reader]});
+ const c=client(hub),read=client(hub,readerToken);await c.initialize();await read.initialize();
+ const name=await prefix(c,'desk');
+ async function denied(c){
+  const tools=(await c.rpc('tools/list',{})).body.result.tools;
+  for(const [suffix,fields] of [['media_start',{playlistId:'saved-list'}],['media_control',{action:'pause'}]]){
+   assert.ok(!tools.some(tool=>tool.name===name+'_'+suffix));
+   const result=await c.call(name+'_'+suffix,{...guards(native.snapshot),...fields});
+   assert.equal(result.isError,true);assert.equal(result.structuredContent.code,'forbidden');
+  }
+ }
+ await denied(read);
+ hub.replaceCredentials([{...operator,scopes:['read']}]);await denied(c);
+ hub.replaceCredentials([{...operator,devices:[]}]);await denied(c);
+ assert.equal(native.seen.length,0);
+ hub.replaceCredentials([operator]);
+ const args={...guards(native.snapshot),playlistId:'saved-list'};
+ assert.equal((await c.call(name+'_media_start',args)).isError,false);
+ hub.replaceCredentials([{...operator,devices:[]}]);
+ assert.equal((await c.call(name+'_media_start',args)).structuredContent.code,'forbidden');
+ assert.equal(native.seen.length,1);assert.equal(native.effects,1);
+});
 test('aliases bind native identities, filter discovery, preserve replay and isolate failure',async t=>{
  const first=await controller(t,'wall.one'),second=await controller(t,'wall_one');
  const hub=await fixture(t,{controllers:[first.config,second.config],credentials:[{...credential,devices:['wall.one','wall_one']}]});

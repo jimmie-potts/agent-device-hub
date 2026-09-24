@@ -54,7 +54,7 @@ export function createHubMcp(options:Options):McpHandler {
  const names=new Map<string,string>([[HOST_SERVICE,'hub']]);
  for(const [alias,client] of options.clients){
   const bound={controllerId:client.config.controllerId,deviceId:client.config.deviceId};
-  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription('Read this device owner\'s validated controller snapshot. Its power, brightness and mode tools take their request identity and revision/generation guards from this snapshot.'),shape({}),()=>client.snapshot())};
+  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription('Read this device owner\'s validated controller snapshot. Its power, brightness, mode and media tools take their request identity and revision/generation guards from this snapshot.'),shape({}),()=>client.snapshot())};
   const guards={requestId:ticket,expectedConfigurationRevision:count,expectedGeneration:ticket};
   function command(name:string,purpose:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown){
    extensions[name]=extension(alias,'control',writeDescription(purpose+' Take the request identity and revision/generation guards from the latest status result. An unsupported capability returns the owner\'s rejection.'),shape({...guards,...fields}),async args=>(await client.command({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,command:make(args)})).body);
@@ -62,6 +62,9 @@ export function createHubMcp(options:Options):McpHandler {
   command('power_set','Turn this device on or off through its owning controller.',{on:{type:'boolean'}},a=>({kind:'power.set',on:a.on}));
   command('brightness_set','Set this device\'s brightness percentage through its owning controller.',{percent:{type:'integer',minimum:0,maximum:100}},a=>({kind:'brightness.set',percent:a.percent}));
   command('mode_set','Switch this device\'s controller mode through its owning controller.',{mode:{enum:client.config.kind==='pixoo'?['monitor','media']:['Work','Quiet','Free']}},a=>({kind:'mode.set',mode:a.mode}));
+  const mediaMode=' For Pixoo, read integration_status and explicitly select Media through integration_set before playback; wait for the observed Media mode. This tool does not switch or restore modes.';
+  command('media_start','Start a saved playlist by an ID advertised in this owner\'s media capability.'+mediaMode,{playlistId:id},a=>({kind:'media.start',playlistId:a.playlistId}));
+  command('media_control','Issue a playback action supported by this owner\'s media capability.'+mediaMode,{action:{enum:['pause','resume','stop','next','previous','restart-with-changes','clear']}},a=>({kind:'media.control',action:a.action}));
   extensions.integration_status=extension(alias,'read',readDescription('Read this device\'s validated Pixoo or Nanoleaf agent-status integration snapshot, which carries the request identity and revision guards for integration_set.'),shape({}),()=>client.integrationSnapshot());
   if(client.config.kind==='pixoo'){
    const filter=shape({q:{type:'string',maxLength:120},provider:{enum:['codex','claude']},projectId:id,session:identity},[]);
