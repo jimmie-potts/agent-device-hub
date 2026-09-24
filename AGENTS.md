@@ -9,6 +9,11 @@ or hosting, read docs/architecture.md and the linked device contracts.
 GitHub issues own the delivery sequence, acceptance criteria, dependencies and
 status; do not copy issue lists or dependency chains into repository docs.
 
+When drafting or picking up a story, or after a material scope or assumption
+change, apply the [scope defaults](docs/sdlc.md#scope-defaults), including in
+ordinary work without `plan-work` or `deliver-work`. A read-only request reports
+the assessment without writing.
+
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
 launched from the repository root. controllers/tidbyt holds the fake-tested cloud
