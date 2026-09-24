@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {deduplicationKey} from '@jimmie-potts/agent-lifecycle-contracts';
-import {LIMITS, type Consumer, type Envelope, type KnownId, type Session, type Unavailable} from './types.js';
+import {LIMITS, type Attention, type Consumer, type Envelope, type KnownId, type Session, type Unavailable} from './types.js';
 import {identityKey} from './memory-storage.js';
 
 type Reduction = {outcome:'applied'|'duplicate'|'stale'|'ambiguous'; session?:Session; fresh:boolean; capacity?:boolean};
@@ -22,6 +22,12 @@ function retire(session:Session,turn:KnownId) {
     session.retiredTurns.push(turn.id);
     session.retiredTurns=session.retiredTurns.slice(-LIMITS.retiredTurns);
   }
+}
+// A newer turn proves that an approval without a request ID on a retired turn was answered.
+export const retiredApproval=(session:Session,item:Attention)=>item.kind==='approval'&&item.id.status==='unknown'&&
+  item.turn.status==='known'&&session.retiredTurns.includes(item.turn.id);
+export function forgetRetiredApprovals(session:Session) {
+  session.attention=session.attention.filter(item=>!retiredApproval(session,item));
 }
 function mergeMetadata(session:Session,event:Envelope):{changed:boolean;ambiguous:boolean} {
   let changed=false,ambiguous=false;
@@ -162,6 +168,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     case 'read.observed':session.read=event.event.state;break;
     case 'evidence.unavailable':unavailable(session,event.event.dimension,event.event.reason);break;
   }
+  forgetRetiredApprovals(session);
   if(eventDimension==='activity'){
     const conflict=previous&&previous.activity!=='unknown'&&previous.activity!==session.activity&&!orderedActivity&&!selectedStart&&!matchingStop;
     const missingStart=event.event.kind==='turn.started'&&event.turn.status==='unknown';

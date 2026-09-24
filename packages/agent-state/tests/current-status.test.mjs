@@ -145,7 +145,8 @@ test('fresh selection can recover activity while conflicting parent evidence sta
   const owner=await createAgentState(options());t.after(()=>owner.shutdown());
   const parent=id=>({status:'known',identity:{...identity,sessionId:id}});
   await owner.ingest({...hook('UserPromptSubmit','a'),parent:parent('first-parent')});
-  await owner.ingest({...hook('PermissionRequest','a',1001),parent:parent('other-parent')});
+  // A correlated approval survives selection; retired-turn no-ID approvals clear (#225).
+  await owner.ingest({...hook('PermissionRequest','a',1001),event:{kind:'attention.approval',attention:{status:'known',id:'request'}},parent:parent('other-parent')});
   await owner.ingest({...hook('UserPromptSubmit','b',1002),parent:parent('first-parent')});
   const session=owner.snapshot().sessions[0];
   assert.equal(session.activity,'active');assert.equal(session.turn.id,'b');assert.equal(session.parent.status,'unknown');

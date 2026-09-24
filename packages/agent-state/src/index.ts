@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {validateEvent} from '@jimmie-potts/agent-lifecycle-contracts';
-import {reduceSession} from './reducer.js';
+import {forgetRetiredApprovals,reduceSession,retiredApproval} from './reducer.js';
 import {Feeds} from './subscriptions.js';
 import {validateExport} from './validation.js';
 import {identityKey} from './memory-storage.js';
@@ -116,27 +116,42 @@ export async function createAgentState(options:Options) {
   // Retention forgets monitoring state after a day without lifecycle evidence. It is not
   // acknowledgment, readership, success or cancellation, and it records no journal entry.
   const expired=(at:number)=>data.sessions.filter(session=>session.lastEvidenceAtMs<=at-LIMITS.sessionAgeMs);
-  async function expire():Promise<Outcome|undefined> {
-    const at=now(),gone=expired(at);
-    if(!gone.length)return undefined;
+  async function replaceSessions(sessions:Session[],at:number):Promise<Outcome> {
     if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
     const revision=data.revision+1,pruneBeforeMs=at-LIMITS.journalAgeMs;
-    const next:DurableState={...data,revision,lastCommitAtMs:at,sessions:data.sessions.filter(session=>!gone.includes(session)),
+    const next:DurableState={...data,revision,lastCommitAtMs:at,sessions,
       journal:data.journal.filter(row=>row.atMs>pruneBeforeMs).slice(-LIMITS.journalEvents)};
     await io(signal=>lease.commit(freeze(structuredClone({expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs,replace:next})),signal));
-    for(const session of gone)restarted.delete(identityKey(session.identity));
     data=next;feeds.publish(revision);scheduleMaintenance();
     return {ok:true,revision,outcome:'applied'};
   }
+  async function expire():Promise<Outcome|undefined> {
+    const at=now(),gone=expired(at);
+    if(!gone.length)return undefined;
+    const result=await replaceSessions(data.sessions.filter(session=>!gone.includes(session)),at);
+    if(result.ok)for(const session of gone)restarted.delete(identityKey(session.identity));
+    return result;
+  }
+  // Stores written before retired-turn approvals were forgotten are settled in one revision.
+  const unsettled=(session:Session)=>session.attention.some(item=>retiredApproval(session,item));
+  async function settleApprovals():Promise<Outcome|undefined> {
+    if(!data.sessions.some(unsettled))return undefined;
+    return replaceSessions(data.sessions.map(session=>{
+      if(!unsettled(session))return session;
+      const next=structuredClone(session);forgetRetiredApprovals(next);return next;
+    }),now());
+  }
   async function maintenance():Promise<Outcome> {
-    const expiry=await expire();if(expiry)return expiry;
+    const expiry=await expire();if(expiry&&!expiry.ok)return expiry;
+    const settled=await settleApprovals();if(settled)return settled;
+    if(expiry)return expiry;
     return data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)?commit(undefined,'maintenance'):{ok:true,revision:data.revision,outcome:'duplicate'};
   }
   const get=(identity:Identity)=>data.sessions.find(session=>identityKey(session.identity)===identityKey(identity));
   function identify(identity:unknown):identity is Identity {
     return validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'}}).ok;
   }
-  if(expired(now()).length||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)){
+  if(expired(now()).length||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)){
     const result=await queue(maintenance);
     if(!result.ok){
       const outstanding=inFlight as Promise<unknown>|null;
