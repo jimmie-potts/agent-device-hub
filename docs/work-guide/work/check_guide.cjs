@@ -190,7 +190,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const evidenceExpansion=()=>page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.map(e=>e.open));
     const beforeEvidence=await evidenceExpansion();
     const beforeSearch=await expansion();
-    for(const [query,id] of [['Remove archived Codex Desktop tasks','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
+    for(const [query,id] of [['Clear Codex Desktop tasks','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
       await page.locator('#search').fill(query); assert.equal(await page.locator('.guide:not([hidden])').count(),1);
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');

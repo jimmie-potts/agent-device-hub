@@ -41,9 +41,13 @@ TRACKS = [
     ]),
     ('Monitoring follow-ups', [
         dict(id='n-shared-lifetime', x=0, label='Read state + expiry done', issues=[], guide='shared-codex'),
-        dict(id='n-shared-map-quality', x=1, label='Archive removal · push', issues=['H218', 'H222'], guide='shared-codex'),
+        dict(id='n-shared-map-quality', x=1, label='Session retirement · push', issues=['H218', 'H222'], guide='shared-codex'),
         dict(id='n-nl-push', x=2, label='Nanoleaf wakes on push', issues=['N90'], guide='shared-codex'),
     ]),
+    ('Nanoleaf presence modes', [dict(id='n-presence-modes', x=2, label='Optional Work / Free', issues=['N110'], guide='nanoleaf-presentation')]),
+    ('Nanoleaf feed scope', [dict(id='n-feed-scope', x=0, label='Undeclared source handling', issues=['N111'], guide='shared-codex')]),
+    ('Nanoleaf task follow-ups', [dict(id='n-task-followups', x=0, label='Hold visibility · effects', issues=['N112','N115'], guide='nanoleaf-presentation')]),
+    ('Nanoleaf device follow-ups', [dict(id='n-device-followups', x=0, label='Panels access · addresses', issues=['N113','N114'], guide='nanoleaf-devices')]),
     ('Reliable event history', [
         dict(id='n-event-history', x=4, label='History refinement', issues=['H139'], guide='shared-codex'),
     ]),
@@ -155,6 +159,7 @@ TRACKS = [
 ]
 # Cross-track prerequisites (from → to). Same-track order is drawn automatically.
 CROSS = [
+    ('n-shared-map-quality', 'n-presence-modes', 'H218'),
     ('n-guide-design', 'n-guide-publish', 'H85'),
     ('n-guide-design', 'n-guide-map', 'H85'), ('n-guide-design', 'n-atlas-playback', 'H85'),
     ('n-guide-mobile', 'n-guide-publish', 'H197'),
@@ -329,7 +334,9 @@ def reconcile(issues, coverage, aliases):
     global TRACKS
     owners = {key: guide for guide, keys in coverage.items() for key in keys}
     extra = [
-        ('Engineering maintenance', [dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow')]),
+        ('Engineering maintenance', [
+            dict(id='n-personal-scope', x=0, label='Personal project scope', issues=['H237'], guide='development-workflow'),
+            dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow')]),
         ('Task metadata and effects', [
             dict(id='n-map-metadata', x=0, label='Codex titles delivered', issues=[], guide='nanoleaf-presentation'),
             dict(id='n-map-threads', x=1, label='Links · titles · comet', issues=['N108', 'N100', 'N81'], guide='nanoleaf-presentation'),

@@ -21,6 +21,7 @@ None.
 
 - `agent-state-core`: atomic Desktop retirement, bounded delayed-event safeguards, fresh record generations and export compatibility.
 - `agent-lifecycle-contract`: distinguish Desktop retirement from other runtime-end policy without changing lifecycle envelopes.
+- `unified-dashboard`: discard retired session drafts when a generation changes, preserving ordinary reconnect drafts.
 - `standalone-hub-host`: optional archive admission evidence and explicit snapshot-version selection.
 
 ## Impact

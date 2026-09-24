@@ -32,7 +32,7 @@ No fresh session evidence for five minutes means uncertain observation, not fail
 | `attention.resolved` | Only the correlated attention item is resolved; unknown correlation cannot clear all attention |
 | `turn.ended` | Retained turn-ended notice; never proof of successful work or readership |
 | `turn.interrupted` | Interruption evidence, not successful completion |
-| `runtime.ended` | Runtime end, without clearing notices |
+| `runtime.ended` | Runtime end; the owner retires known Codex Desktop records and descendants, while other provider/client policies retain notices |
 | `notice.acknowledged` | Explicit `{consumerId,noticeId}` monitor acknowledgment; no provider-read write |
 | `read.observed` | Optional qualified Codex Desktop `read`/`unread` evidence only |
 | `evidence.unavailable` | Named dimension and reason `unsupported`, `inaccessible`, `missing`, `ambiguous` or `lost` |
@@ -75,3 +75,9 @@ Strict schemas reject additive unknown fields. Any new wire field needs an expli
 | Versioned reusable source and compatibility | Manifest verification, external archive consumers and immutable digest receipt |
 
 Fixture validation does not prove a runtime reducer, installed client, device transport or optical result. Those acceptance layers remain separate.
+
+## Desktop end policy
+
+The owner retires Codex Desktop records on normalized `runtime.ended`. [SessionEnd documentation](https://learn.chatgpt.com/docs/hooks#sessionend) lists archive/delete of an open conversation, normal shutdown and a conversation idle and unopened in connected clients for 30 minutes. The current reason is `other`; the existing normalizer uses one mapping. The owner adds no idle timer or cause detector. Archive access is unnecessary for retirement. Missing ends retain the separate 24-hour evidence expiry.
+
+This changes owner policy, not lifecycle envelope 1.0. Known descendants are removed atomically; unknown relationships and event ordering remain unknown. Retirement forgets monitoring state without terminating an agent or asserting cancellation, success, acknowledgment or readership.

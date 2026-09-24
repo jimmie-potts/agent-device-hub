@@ -4,7 +4,7 @@
 TOPICS = [
     ('shared-codex', 'Monitoring accuracy and recovery',
      'Keep current activity, read evidence and session lifetime accurate and prompt across devices.',
-     'Session expiry and Codex Desktop read state are delivered. Archive removal can start now. Commit notifications let the dashboard and Nanoleaf react without polling; per-task recovery keeps its own scope.', ['H218', 'H222', 'N90', 'H138']),
+     'Session expiry and Codex Desktop read state are delivered. Desktop session-end retirement is in progress. Commit notifications let the dashboard and Nanoleaf react without polling; per-task recovery keeps its own scope.', ['H218', 'H222', 'N90', 'H138']),
     ('bunny-controls', 'B.U.N.N.Y. interface and device controls',
      'Make the shared dashboard and device controls consistent and usable.',
      'The Pixoo and Nanoleaf controls are installed and verified. Fix the one-step apply and command status found during those checks, and document controller setup. The shared UI foundation precedes dashboard adoption; playlist names and Codex scene tools have their own scopes.', ['H231', 'H232', 'H181', 'P67']),
@@ -42,7 +42,7 @@ OWNER_LATER = {'P61': 'Later by owner choice; keep the recorded performance scop
 NEXT_STEPS = {
     'H231': 'Make BUNNY device settings apply in one step with plain command status, as found during the installed control checks.',
     'P77': 'Keep the installed Pixoo app running across PC and WSL restarts, so BUNNY controls and agent status return without manual steps.',
-    'H218': 'Drop archived Codex Desktop tasks from monitoring, now that session expiry is delivered.',
+    'H218': 'Retire ended Codex Desktop tasks and preserve fresh monitoring on resume, with separate installed acceptance.',
     'H222': 'Announce each hub commit to change-stream readers at once; Nanoleaf can then stop polling every second.',
     'H181': 'Define the shared UI foundation that dashboard adoption needs.',
     'H85': 'Improve the guide and atlas presentation; coordinate token names with the application foundation.',

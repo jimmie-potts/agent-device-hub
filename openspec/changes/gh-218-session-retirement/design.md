@@ -27,3 +27,7 @@ Retirement, safeguards and a fresh generation form one owner transition. Keep na
 Expand source support for both snapshot versions and legacy durable imports, then validate the Nanoleaf companion against the new source artifact. New stores use format 2.0; opening 1.0 performs a guarded replacement preserving evidence clocks and state while adding generations. No installed store is opened by source tests. Older owners cannot read format 2.0. A separately authorized installation backs up the old store and qualifies consumers; rollback after new writes requires a compatible owner or an explicitly reconciled export, never silently restoring an older database. Keep immutable previous artifacts.
 
 Installation/client/visible-device checks remain pending under the exact issue. The source proposal does not authorize them. Timing evidence must distinguish accepted owner retirement from display polling and transport cadence.
+
+## Dashboard reconciliation
+
+A focused browser test showed that the same-identity session component retained its unsaved label draft after a missed retirement. The dashboard requests snapshot 1.1, requires valid generations, and includes generation in the session component key. An ordinary refresh or reconnect retains focus and drafts; a recreated session mounts a fresh form. Controller forms retain their existing conflict and revision policy. This is a product UI behavior change and requires approval of the current candidate before merge.

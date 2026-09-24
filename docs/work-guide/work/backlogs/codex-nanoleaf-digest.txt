@@ -42,3 +42,9 @@
 #92 [OPEN] Play custom animations on the Lines when Codex asks for them
 #100 [OPEN] Show Claude Code titles and projects for shared tasks
 #108 [OPEN] Open a wall task's thread in Codex Desktop
+#110 [OPEN] Switch Nanoleaf between Work and Free based on monitored session presence
+#111 [OPEN] Keep following the hub feed when it contains an undeclared source
+#112 [OPEN] Show when the Lines are on hold and how to resume them
+#113 [OPEN] Control the NL22 Panels through the controller and local MCP server
+#114 [OPEN] Change a registered Nanoleaf device's address without re-enrolling
+#115 [OPEN] Keep completion comets and waves when the worker skips owner revisions

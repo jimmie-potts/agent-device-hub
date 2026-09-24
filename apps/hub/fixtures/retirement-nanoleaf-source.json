@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/jimmie-potts/codex-nanoleaf",
+  "revision": "d9cd6108801d7182dc78e3d67c1c3a8e3e3bdbba",
+  "workSource": "https://github.com/jimmie-potts/agent-device-hub/issues/218",
+  "contract": "agent-state snapshot/1.1",
+  "status": "source candidate; installed acceptance pending"
+}

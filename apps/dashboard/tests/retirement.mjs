@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+import {mkdir} from 'node:fs/promises';
+import {fixture} from './fixture.mjs';
+// Separate empty fixture keeps the existing CLI/other-provider scenarios intact.
+const retirement=await fixture({empty:true}),retirementBrowser=await chromium.launch({headless:true});
+const retirementPage=await retirementBrowser.newPage();
+const output=process.env.DASHBOARD_RECEIPTS;
+if(output)await mkdir(output,{recursive:true});
+try{
+ const identity={...retirement.identity,client:'desktop'};
+ await retirement.event('turn.started',{identity,label:{origin:'user',value:'Desktop retirement fixture'}});
+ await retirement.event('session.started',{identity:{...identity,sessionId:'desktop-child'},parent:{status:'known',identity},label:{origin:'user',value:'Desktop child fixture'}});
+ await retirementPage.goto(retirement.hub.url);
+ await retirementPage.getByText('Use a separately provisioned access token').click();
+ await retirementPage.getByLabel('Hub browser access token').fill(retirement.token);
+ await retirementPage.getByRole('button',{name:'Connect',exact:true}).click();
+ await retirementPage.getByRole('heading',{name:'Desktop retirement fixture',exact:true}).waitFor();
+ await retirementPage.getByRole('heading',{name:'Desktop child fixture',exact:true}).waitFor();
+ await retirement.event('runtime.ended',{identity});
+ await retirementPage.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
+ assert.equal(await retirementPage.locator('article.session').count(),0);
+ retirement.reconnect();
+ await retirementPage.reload();
+ await retirementPage.getByText('Use a separately provisioned access token').click();
+ await retirementPage.getByLabel('Hub browser access token').fill(retirement.token);
+ await retirementPage.getByRole('button',{name:'Connect',exact:true}).click();
+ await retirementPage.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
+ await retirement.event('turn.started',{identity,turn:{status:'known',id:'fresh-turn'}});
+ await retirementPage.waitForFunction(()=>document.querySelectorAll('article.session').length===1);
+ assert.equal(await retirementPage.getByRole('heading',{name:'Desktop retirement fixture',exact:true}).count(),0);
+ await retirementPage.getByLabel('Chosen label').fill('Draft from retired task');
+ if(output)await retirementPage.screenshot({path:output+'/retirement-before.png',fullPage:true});
+ const retained=await (await fetch(retirement.hub.url+'/api/monitor/v1/sessions?snapshotVersion=1.1',{headers:retirement.headers})).json();
+ let hold=true;
+ await retirementPage.route('**/api/monitor/v1/sessions*',route=>hold?route.fulfill({json:retained}):route.continue());
+ await retirement.event('runtime.ended',{identity,turn:{status:'known',id:'fresh-turn'}});
+ const resumed=await retirement.event('turn.started',{identity,turn:{status:'known',id:'resumed-turn'}});
+ hold=false;retirement.reconnect();
+ await retirementPage.waitForFunction(revision=>Number(document.getElementById('main').dataset.revision)>=revision,resumed.revision);
+ assert.equal(await retirementPage.getByLabel('Chosen label').inputValue(),'','a recreated task cannot retain the old draft');
+ if(output)await retirementPage.screenshot({path:output+'/retirement-after.png',fullPage:true});
+ assert.equal(retirement.writes.length,0,'retirement and reconnect do not command controllers');
+ console.log(JSON.stringify({desktopRetirement:true,descendantsRemoved:true,emptyReconnect:true,freshDefaults:true,physical:false}));
+}finally{await retirementBrowser.close();await retirement.close();}

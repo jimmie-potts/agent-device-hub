@@ -105,7 +105,7 @@
 #207 [CLOSED] Clean up delivered worktrees and scratch after merge
 #210 [CLOSED] Make the work guide clipboard-fallback check pass in Depot CI
 #212 [CLOSED] Use shared npm and Playwright caches in setup guidance
-#218 [OPEN] Remove archived Codex Desktop tasks from monitoring
+#218 [OPEN] Clear Codex Desktop tasks and Line assignments when sessions end
 #220 [CLOSED] Refresh work-guide priorities, new issues and defects, and reorganize topic guides
 #222 [OPEN] Push hub change notifications when state commits
 #225 [CLOSED] Clear no-ID approval markers when their turn is retired
@@ -114,3 +114,4 @@
 #231 [OPEN] Make BUNNY device settings apply in one step and simplify command status
 #232 [OPEN] Document connecting device controllers for BUNNY in the hub setup guide
 #233 [OPEN] Add the Sonos Move as a second playback source
+#237 [OPEN] Use personal-project scope defaults in story writing and pickup

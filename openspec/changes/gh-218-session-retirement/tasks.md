@@ -7,13 +7,13 @@
 ## 2. Host admission and compatibility
 
 - [x] 2.1 Add optional bounded read-only archive admission using existing configuration; test positive evidence, no configuration, missing/unreadable folders, delayed events and new work after unarchive, plus retirement without archive access.
-- [ ] 2.2 Expose opt-in snapshot 1.1 while preserving default 1.0, update shared TypeScript/Python schemas/fixtures and package versions, and pass package and host restart/migration checks. Obtain independent contract/task review before dependent consumer adoption.
-- [ ] 2.3 Verify Nanoleaf assignment release and fresh local task/effect defaults when retirement is missed, using a scoped consumer companion where required. Verify Pixoo/Tidbyt current monitoring and dashboard removal, empty idle and reconnect with focused owning-source/browser checks; preserve unavailable-feed behavior.
+- [x] 2.2 Expose opt-in snapshot 1.1 while preserving default 1.0, update shared TypeScript/Python schemas/fixtures and package versions, and pass package and host restart/migration checks. Obtain independent contract/task review before dependent consumer adoption.
+- [x] 2.3 Verify Nanoleaf assignment release and fresh local task/effect defaults when retirement is missed, using a scoped consumer companion where required. Verify Pixoo/Tidbyt current monitoring and dashboard removal, empty idle, reconnect and generation-scoped draft reset with focused owning-source/browser checks; preserve unavailable-feed behavior.
 
 ## 3. Documentation and source validation
 
-- [ ] 3.1 Update affected lifecycle/state/host guides, compatibility assessment and required development/CI checks; refresh the work guide through its maintenance procedure and verify generated output/browser checks.
-- [ ] 3.2 Run all applicable build/type, controller/lifecycle/state, MCP, Hub/setup, Tidbyt, dashboard, workflow and package checks from this worktree; retain commands/results and actual OpenSpec inventory outside the candidate.
+- [x] 3.1 Update affected lifecycle/state/host guides, compatibility assessment and required development/CI checks; refresh the work guide through its maintenance procedure and verify generated output/browser checks.
+- [x] 3.2 Run all applicable build/type, controller/lifecycle/state, MCP, Hub/setup, Tidbyt, dashboard, workflow and package checks from this worktree; retain commands/results and actual OpenSpec inventory outside the candidate.
 
 ## 4. Acceptance and delivery gates
 

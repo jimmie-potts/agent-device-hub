@@ -38,7 +38,7 @@ try {
  });
  await scenario('rejected older snapshots cannot refresh evidence; expired cursor resync preserves drafts',async(f,page)=>{
   const label=page.getByLabel('Chosen label');await label.fill('Keep my draft');const received=await page.locator('#main').getAttribute('data-received');let stale=true;
-  await page.route('**/api/monitor/v1/sessions',async route=>{const response=await route.fetch();const value=await response.json();if(stale)value.snapshot.revision=0;await route.fulfill({response,json:value});});f.reconnect();
+  await page.route('**/api/monitor/v1/sessions*',async route=>{const response=await route.fetch();const value=await response.json();if(stale)value.snapshot.revision=0;await route.fulfill({response,json:value});});f.reconnect();
   await page.getByRole('alert').filter({hasText:'stale-snapshot'}).waitFor();assert.equal(await page.locator('#main').getAttribute('data-received'),received);assert.equal(await label.inputValue(),'Keep my draft');assert.equal(await page.getByRole('button',{name:'Apply label',exact:true}).isDisabled(),true);
   let expired=false;await page.route('**/api/monitor/v1/changes',async route=>{expired=true;await route.continue({headers:{...route.request().headers(),'last-event-id':'expired:999'}});});stale=false;f.reconnect();await until(()=>expired);await page.waitForFunction(()=>!document.querySelector('[role=alert]'));assert.equal(await label.inputValue(),'Keep my draft');assert.equal(f.writes.length,0);
   const response=await fetch(f.hub.url+'/api/monitor/v1/changes',{headers:{...f.headers,'last-event-id':'expired:999'},signal:AbortSignal.timeout(3000)});const reader=response.body.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/event: resync/);await reader.cancel();
