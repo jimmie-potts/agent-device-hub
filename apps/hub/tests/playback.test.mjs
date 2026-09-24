@@ -166,6 +166,8 @@ test('playback commands go only to the configured source and only for declared c
     const other=await call('/api/playback/v1/commands',{requestId:'r1',sourceId:'kitchen',action:'pause'});
     assert.deepEqual([other.status,(await other.json()).error.code],[404,'unknown-source']);
     assert.equal((await command('r1','resume')).status,400);
+    const oversized=await call('/api/playback/v1/commands',{requestId:'r1',sourceId:'living-room',action:'pause',padding:'x'.repeat(1100)});
+    assert.deepEqual([oversized.status,(await oversized.json()).error.code],[413,'capacity']);
     const play=await command('r1','play');
     assert.deepEqual([play.status,(await play.json()).error.code],[422,'unsupported-control']);
     sony.set(()=>playingInfo([airplay({stateInfo:{state:'PAUSED'}})]));
@@ -234,11 +236,29 @@ test('playback configuration needs one selected Sony source at a private address
     assert.deepEqual(sonyConfiguration({...base,endpoint}),{...base,endpoint});
   const invalid=[null,{selected:'living-room',sources:[]},{selected:'kitchen',sources:[base]},{selected:'living-room',sources:[base,{...base,id:'kitchen'}]},
     {selected:'living-room',sources:[base],extra:true},{selected:'living-room',sources:[{...base,kind:'sonos'}]},{selected:'living-room',sources:[{...base,extra:true}]},
-    {selected:'hub-service',sources:[{...base,id:'hub-service'}]},{selected:'bad id',sources:[{...base,id:'bad id'}]}];
+    {selected:'hub-service',sources:[{...base,id:'hub-service'}]},{selected:'bad id',sources:[{...base,id:'bad id'}]},
+    {selected:'192.168.1.20',sources:[{...base,id:'192.168.1.20'}]},{selected:'10.0.0.9',sources:[{...base,id:'10.0.0.9'}]},{selected:'sony-192.168.1.20',sources:[{...base,id:'sony-192.168.1.20'}]}];
   for(const endpoint of ['https://192.168.1.20:10000/sony','http://8.8.8.8:10000/sony','http://172.32.0.1:10000/sony','http://soundbar.local:10000/sony',
     'http://192.168.1.20/sony','http://192.168.1.20:10000/sony/','http://192.168.1.20:10000/other','http://user:pw@192.168.1.20:10000/sony',
     'http://192.168.1.20:10000/sony?x=1','http://192.168.1.20:10000/sony#x','http://[::1]:10000/sony','not a url'])
     invalid.push({selected:'living-room',sources:[{...base,endpoint}]});
   for(const playback of invalid)await assert.rejects(startHub(options(playback)),/invalid-playback/,JSON.stringify(playback));
   await assert.rejects(startHub(options({selected:'living-room',sources:[base]},[controller])),/invalid-playback/);
+});
+
+test('freshness follows the monotonic clock and receipts stay bounded',async()=>{
+  const source=fakeSource();let wall=100000,elapsed=0;
+  const playback=createPlayback(source,()=>wall,()=>elapsed);
+  const unavailable=playback.command({requestId:'early',sourceId:'kitchen',action:'next'},principal);
+  await assert.rejects(unavailable,{code:'source-unavailable',status:503});
+  source.report(playing);
+  wall-=60000;elapsed+=5000;
+  assert.deepEqual([playback.snapshot().availability,playback.snapshot().observedAtMs,playback.snapshot().ageMs],['stale',100000,5000],'a wall-clock step back does not keep a source available');
+  elapsed=0;source.report(playing);
+  for(let index=0;index<65;index++)await playback.command({requestId:'r'+index,sourceId:'kitchen',action:'next'},principal);
+  await playback.command({requestId:'r1',sourceId:'kitchen',action:'next'},principal);
+  assert.equal(source.sent.length,65,'a retained receipt is replayed');
+  await playback.command({requestId:'r0',sourceId:'kitchen',action:'next'},principal);
+  assert.equal(source.sent.length,66,'the oldest of 65 receipts was evicted');
+  await playback.close();
 });

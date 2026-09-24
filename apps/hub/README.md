@@ -51,7 +51,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 }
 ```
 
-`sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use the receiver address or a track name. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
+`sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
 
 Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37).
 
@@ -64,7 +64,7 @@ Credentials need the source ID in `devices`: `read` scope for snapshots and `con
  "playback": {"status": "playing", "title": "...", "artist": "...", "album": "...", "controls": ["pause", "next", "previous"]}}
 ```
 
-`observedAtMs` is the hub-clock time of the last successful read, and `ageMs` is measured from it. A successful read refreshes the time even when nothing changed; a failed read does not.
+`observedAtMs` is the hub's wall-clock time of the last successful read. `ageMs` is measured on a monotonic clock, so a system clock change cannot make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
 
 | `availability` | Age of the last successful read | `playback` |
 | --- | --- | --- |
@@ -76,16 +76,17 @@ The hub starts `unavailable`. A receiver that stops answering never turns into `
 
 ### Commands
 
-`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted. The Sony source lists pause, next and previous only while AirPlay is playing and never lists play, because play/resume was not qualified. On this receiver, previous restarts the current song.
+`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The Sony source lists pause, next and previous only while AirPlay is playing and never lists play, because play/resume was not qualified. On this receiver, previous restarts the current song.
 
 | Result | Meaning |
 | --- | --- |
 | 200 `sent` | The receiver accepted the call. This is transport evidence, not proof the phone reacted. |
 | 502 `failed` | The receiver refused the call. |
-| 503 `uncertain` | No usable reply within 1.5 seconds. The command may have taken effect. |
+| 503 `uncertain` | No JSON-RPC result or error: a timeout after 1.5 seconds, a network error, or a non-200, malformed or mismatched reply. The command may have taken effect. |
 | 400 `invalid-input`, 403 `forbidden` | Bad body, missing scope, header or source grant |
 | 404 `unknown-source` | The body names a source other than the selected one |
 | 409 `request-conflict` | The request ID was already used with a different body |
+| 413 `capacity` | The body is larger than 1024 bytes |
 | 422 `unsupported-control` | The action is not in the current controls |
 | 429 `capacity` | Another playback command is still running |
 | 503 `source-unavailable`, `owner-quiesced` | The source is not `available`, or the host is staged |
@@ -103,7 +104,7 @@ The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup a
 - `id`: the configured neutral source ID.
 - `start(report)`: begin observing and call `report` with a normalized observation after every successful read, including unchanged ones. Never report a failed read.
 - `command(action)`: resolve `sent` when the source accepted the call or `failed` when it refused before any effect. Reject for any uncertain result, and apply your own timeout under the host's three-second request limit.
-- `close()`: stop observing and abort in-flight work.
+- `close()`: stop observing and abort in-flight work. If it fails, the host still finishes shutting down and then reports the error.
 
 `src/sony.ts` is the reference adapter. `server.ts` validates the `playback` envelope, builds the source for its `kind` and closes it with the host. A second source currently needs a new `kind` branch there. Multi-source runtime and selection are deferred. The [OpenSpec design](../../openspec/changes/archive/2026-09-24-gh-175-shared-playback/design.md#future-two-source-flow) describes how two sources keep independent freshness, commands stay bound to the selected source and an unavailable selection never falls back silently.
 

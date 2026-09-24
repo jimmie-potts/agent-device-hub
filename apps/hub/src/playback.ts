@@ -21,19 +21,20 @@ const STALE_MS = 5000, UNAVAILABLE_MS = 30000;
 const STATUS = {sent:200,failed:502,uncertain:503} as const;
 const RETAINED = 64;
 
-export function createPlayback(source:PlaybackSource,clock:()=>number) {
-  let observed:{atMs:number; value:PlaybackObservation}|undefined;
+/** `clock` stamps observation times; age comes from `monotonic` so a wall-clock step cannot make old data look fresh. */
+export function createPlayback(source:PlaybackSource,clock:()=>number,monotonic:()=>number = clock) {
+  let observed:{atMs:number; mark:number; value:PlaybackObservation}|undefined;
   let busy = false;
   // Admitted commands by principal and request ID. Only the newest can be pending, because one command runs at a time.
   const receipts = new Map<string,{body:string; result:Promise<{status:number; body:PlaybackReceipt}>}>();
-  source.start(value => {observed = {atMs:clock(),value:structuredClone(value)};});
-  const availability = (now:number) => !observed || now - observed.atMs >= UNAVAILABLE_MS ? 'unavailable' : now - observed.atMs >= STALE_MS ? 'stale' : 'available';
+  source.start(value => {observed = {atMs:clock(),mark:monotonic(),value:structuredClone(value)};});
+  const age = () => observed ? Math.max(0,monotonic() - observed.mark) : null;
+  const availability = (ms:number|null) => ms === null || ms >= UNAVAILABLE_MS ? 'unavailable' : ms >= STALE_MS ? 'stale' : 'available';
   return {
     sourceId:source.id,
     snapshot() {
-      const now = clock(), state = availability(now);
-      return {apiVersion:'1.0',sourceId:source.id,availability:state,observedAtMs:observed?.atMs ?? null,
-        ageMs:observed ? Math.max(0,now - observed.atMs) : null,playback:state === 'unavailable' ? null : observed!.value};
+      const ageMs = age(), state = availability(ageMs);
+      return {apiVersion:'1.0',sourceId:source.id,availability:state,observedAtMs:observed?.atMs ?? null,ageMs,playback:state === 'unavailable' ? null : observed!.value};
     },
     async command(input:unknown,principal:{id:string; devices:readonly string[]}):Promise<{status:number; body:PlaybackReceipt}> {
       if (!object(input) || !exact(input,['requestId','sourceId','action']) || !id(input.requestId) || !id(input.sourceId) ||
@@ -42,7 +43,7 @@ export function createPlayback(source:PlaybackSource,clock:()=>number) {
       if (input.sourceId !== source.id) throw new HttpError('unknown-source',404);
       const key = principal.id + '\n' + input.requestId, body = canonical(input), prior = receipts.get(key);
       if (prior) {if (prior.body !== body) throw new HttpError('request-conflict',409);return prior.result;}
-      if (availability(clock()) !== 'available') throw new HttpError('source-unavailable',503);
+      if (availability(age()) !== 'available') throw new HttpError('source-unavailable',503);
       const action = input.action as PlaybackAction, requestId = input.requestId;
       if (!observed!.value.controls.includes(action)) throw new HttpError('unsupported-control',422);
       if (busy) throw new HttpError('capacity',429);

@@ -50,7 +50,7 @@ The receiver adapter should poll for an initial snapshot and recovery, then use 
 
 ## Next delivery boundary
 
-Update, September 24, 2026: the plan below changed after this qualification. #36's Windows connector is deferred. [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175) now delivers a shared playback module and this Sony source together on Linux, polling `getPlayingContentInfo` without the WebSocket feed or artwork. Multi-source runtime and selection are deferred. The observations and source-selection guidance above are unchanged.
+Update, September 24, 2026: the plan changed after this qualification. #36's Windows connector is deferred, so the Windows-first ordering above no longer applies: the HT-A9 is the first source, not the second, and there is no #36 snapshot model to extend or Windows selection to initialize. [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175) delivers a shared playback module and this Sony source together on Linux, polling `getPlayingContentInfo` without the WebSocket feed or artwork. Multi-source runtime and selection are deferred; when they arrive, the explicit-selection and no-silent-switch rules above still apply. The recorded observations are unchanged.
 
 The original boundary follows.
 

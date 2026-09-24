@@ -33,11 +33,11 @@ A source reports every successful observation, including unchanged ones, and nev
 
 ### Configuration
 
-Optional `playback` is `{selected, sources}`. `sources` currently holds exactly one entry, and `selected` must name it. A Sony entry is `{id, kind: "sony", endpoint}`. `id` is a user-chosen neutral ID that becomes the stable `sourceId`. It must not equal a controller alias or `hub-service`, because it shares the credential `devices` list with controller aliases. `endpoint` must be exactly `http://<numeric private or loopback IPv4>:<port>/sony` without credentials, query or fragment. The receiver address never comes from a request.
+Optional `playback` is `{selected, sources}`. `sources` currently holds exactly one entry, and `selected` must name it. A Sony entry is `{id, kind: "sony", endpoint}`. `id` is a user-chosen neutral ID that becomes the stable `sourceId`. It must not equal a controller alias or `hub-service`, because it shares the credential `devices` list with controller aliases. An IPv4-shaped ID, or one containing the endpoint address, is rejected so the address cannot reach clients as a source ID. `endpoint` must be exactly `http://<numeric private or loopback IPv4>:<port>/sony` without credentials, query or fragment. The receiver address never comes from a request.
 
 ### Freshness
 
-The shared module stamps each reported observation with the hub clock. With age measured from the last successful observation:
+The shared module stamps each reported observation with the hub's wall clock for `observedAtMs` and with a monotonic clock for age, so a wall-clock step cannot make an old observation look fresh. Tests inject one controlled clock for both. With age measured from the last successful observation:
 
 | Availability | Rule | Snapshot `playback` |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ The receiver address stays in the owner-only configuration file and is not retur
 
 ## Failure and recovery
 
-Polling failures leave the last observation to age through `stale` into `unavailable`. The next successful read restores `available` without a reconnect step, because each read is an independent HTTP request. Closing the hub stops the poll timer, aborts in-flight requests and waits for the current read. An uncertain command keeps its receipt so a client retry with the same `requestId` does not resend it. Pause may have reached the phone even when the result is uncertain; a new `requestId` is required to try again.
+Polling failures leave the last observation to age through `stale` into `unavailable`. If a source's `close()` fails, the host still closes its listener and the agent-state owner, then reports the error. The next successful read restores `available` without a reconnect step, because each read is an independent HTTP request. Closing the hub stops the poll timer, aborts in-flight requests and waits for the current read. An uncertain command keeps its receipt so a client retry with the same `requestId` does not resend it. Pause may have reached the phone even when the result is uncertain; a new `requestId` is required to try again.
 
 ## Risks / Trade-offs
 

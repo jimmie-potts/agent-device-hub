@@ -13,7 +13,7 @@ The hub SHALL keep shared playback separate from any source protocol. The shared
 - **THEN** the unchanged shared module serves its snapshot and routes an accepted command to it
 
 #### Scenario: Invalid playback configuration
-- **WHEN** configuration lists more than one source, selects a source it does not list, reuses a controller alias, or gives a Sony endpoint that is not a numeric private or loopback IPv4 `http` URL ending in `/sony`
+- **WHEN** configuration lists more than one source, selects a source it does not list, reuses a controller alias, uses an address-shaped source ID, or gives a Sony endpoint that is not a numeric private or loopback IPv4 `http` URL ending in `/sony`
 - **THEN** the hub refuses to start
 
 ### Requirement: Observation freshness
