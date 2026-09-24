@@ -119,6 +119,24 @@ test('archive evidence has a bounded wait and a hung reader cannot accumulate pr
   }finally{await owner.shutdown();}
 });
 
+test('archive admission checks known ancestors even without a retained parent or retirement guard',async()=>{
+  const f=fixture();let archivedParent=false;
+  const owner=await f.open({isArchived:async (candidate,_signal,ancestors=[])=>
+    archivedParent&&[candidate,...ancestors].some(item=>item.sessionId==='parent')});
+  try{
+    const child=f.event('child','session.started',{parent:{status:'known',identity:identity('parent')}});
+    archivedParent=true;
+    assert.equal((await owner.ingest(child)).outcome,'stale');
+    assert.deepEqual(ids(owner),[]);
+    archivedParent=false;
+    assert.equal((await owner.ingest(child)).outcome,'applied');
+    archivedParent=true;
+    const grandchild=f.event('grandchild','session.started',{parent:{status:'known',identity:identity('child')}});
+    assert.equal((await owner.ingest(grandchild)).outcome,'stale');
+    assert.deepEqual(ids(owner),['child']);
+  }finally{await owner.shutdown();}
+});
+
 test('retirement guards survive restart and preserve fresh same-identity work after a missed removal',async()=>{
   const f=fixture();let owner=await f.open();
   const first=f.event('parent','turn.started',{eventId:'start-old'});

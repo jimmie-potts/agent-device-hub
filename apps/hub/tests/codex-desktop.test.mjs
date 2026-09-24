@@ -99,6 +99,8 @@ test('archive evidence guards admission only, unarchive admits fresh work, and s
     const emit=(name,turn,session='one',source={})=>call('/api/monitor/v1/events',hook(name,{session_id:session,...(turn?{turn_id:turn}:{})},source,Date.now()));
     const view=async(version='')=>(await (await call('/api/monitor/v1/sessions'+version)).json()).snapshot;
     assert.equal((await (await emit('UserPromptSubmit','archived-turn')).json()).outcome,'stale');
+    const delayedChild=hook('SubagentStart',{session_id:'one',agent_id:'delayed-child'},{},Date.now());
+    assert.equal((await (await call('/api/monitor/v1/events',delayedChild)).json()).outcome,'stale');
     assert.deepEqual((await view()).sessions,[]);
     await emit('UserPromptSubmit','other-source','one',{sourceId:'other'});
     assert.equal((await view()).sessions.length,1);

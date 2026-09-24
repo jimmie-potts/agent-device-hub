@@ -20,7 +20,7 @@ function freeze<T>(value:T):T {
   return value;
 }
 export type Options = {storage:Storage; ownerId:string; consumers:Consumer[]; clock?:()=>number; storageTimeoutMs?:number; importState?:unknown;
-  isArchived?:(identity:Identity,signal:AbortSignal)=>Promise<boolean>};
+  isArchived?:(identity:Identity,signal:AbortSignal,ancestors:readonly Identity[])=>Promise<boolean>};
 
 export async function createAgentState(options:Options) {
   if(!id(options.ownerId)||!Array.isArray(options.consumers)||options.consumers.length>LIMITS.consumers||
@@ -32,10 +32,18 @@ export async function createAgentState(options:Options) {
   const clock=options.clock??Date.now;
   const consumers=structuredClone(options.consumers);
   let archiveProbe:Promise<boolean>|undefined;
-  async function archived(identity:Identity):Promise<boolean> {
+  async function archived(event:Envelope):Promise<boolean> {
     if(!options.isArchived||archiveProbe)return false;
+    // Include the missing topmost parent: Desktop archive names identify the
+    // conversation, while delayed child hooks identify an agent within it.
+    const ancestors:Identity[]=[],seen=new Set([identityKey(event.identity)]);
+    let parent=event.parent;
+    while(parent.status==='known'&&!seen.has(identityKey(parent.identity))){
+      seen.add(identityKey(parent.identity));ancestors.push(parent.identity);
+      parent=get(parent.identity)?.parent??{status:'unknown'};
+    }
     const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
-    const probe=Promise.resolve().then(()=>options.isArchived!(freeze(structuredClone(identity)),abort.signal)).then(value=>value===true,()=>false);
+    const probe=Promise.resolve().then(()=>options.isArchived!(freeze(structuredClone(event.identity)),abort.signal,freeze(structuredClone(ancestors)))).then(value=>value===true,()=>false);
     archiveProbe=probe;void probe.finally(()=>{if(archiveProbe===probe)archiveProbe=undefined;});
     try{return await Promise.race([probe,new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),200);})]);}
     finally{clearTimeout(timer);abort.abort();}
@@ -224,7 +232,7 @@ export async function createAgentState(options:Options) {
           return result;
         }
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
-        if(!previous&&desktop(event.identity)&&await archived(event.identity))return {ok:true,revision:data.revision,outcome:'stale'};
+        if(!previous&&desktop(event.identity)&&await archived(event))return {ok:true,revision:data.revision,outcome:'stale'};
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}
         if(!reduced.session)return {ok:true,revision:data.revision,outcome:reduced.outcome};

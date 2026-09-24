@@ -13,8 +13,10 @@ const MARKER = '.codex-global-state.json', MAX_BYTES = 16*1024*1024, POLL_MS = 2
 export const READ_SETTLE_MS = 5000;
 
 /** Positive filename evidence only. Never read a transcript or retain an archive cache. */
-export async function archivedSession(source:CodexDesktopOptions,identity:Identity,signal:AbortSignal):Promise<boolean> {
-  if(identity.provider!=='codex'||identity.client!=='desktop'||identity.hostId!==source.hostId||identity.sourceId!==source.sourceId)return false;
+export async function archivedSession(source:CodexDesktopOptions,identity:Identity,signal:AbortSignal,ancestors:readonly Identity[]=[]):Promise<boolean> {
+  const ids=new Set([identity,...ancestors].filter(item=>item.provider==='codex'&&item.client==='desktop'&&
+    item.hostId===source.hostId&&item.sourceId===source.sourceId).map(item=>item.sessionId));
+  if(!ids.size)return false;
   try{
     const path=join(source.home,'archived_sessions'),info=await lstat(path);
     if(signal.aborted||!info.isDirectory()||info.isSymbolicLink())return false;
@@ -22,7 +24,7 @@ export async function archivedSession(source:CodexDesktopOptions,identity:Identi
     for await(const entry of directory){
       if(signal.aborted||++entries>10000)return false;
       const match=/^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([A-Za-z0-9_.-]{1,128})\.jsonl$/.exec(entry.name);
-      if(entry.isFile()&&match?.[1]===identity.sessionId)return true;
+      if(entry.isFile()&&match&&ids.has(match[1]))return true;
     }
   }catch{/* Missing or unreadable archive evidence cannot prevent monitoring. */}
   return false;

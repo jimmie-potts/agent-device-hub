@@ -86,7 +86,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
   const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,
-    ...(codexDesktop?{isArchived:(identity:Identity,signal:AbortSignal)=>archivedSession(codexDesktop,identity,signal)}:{}),
+    ...(codexDesktop?{isArchived:(identity:Identity,signal:AbortSignal,ancestors:readonly Identity[])=>archivedSession(codexDesktop,identity,signal,ancestors)}:{}),
     ...(options.clock ? {clock:options.clock} : {}),...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
     lease = await storage.acquire(ownerId,signal) as HubLease;
     if (lease.fenced() && !staged) { await lease.release(); throw new Error('owner-quiesced'); }
