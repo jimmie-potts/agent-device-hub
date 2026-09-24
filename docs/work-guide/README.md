@@ -36,7 +36,9 @@ The opening starts with the saved snapshot, including without JavaScript. A
 successful complete GitHub read replaces that repository's opening-list membership
 and status; a failed read keeps its complete snapshot. The opening's freshness
 line names each source. New issues remain accessible through task briefs and
-GitHub even before a guide assignment exists. Topic-guide counts, assignments,
+GitHub even before a guide assignment exists; an expandable list retains all
+unassigned issues, including older ones outside the newest eight. Seven-day
+membership uses each repository's own successful-read or snapshot time. Topic-guide counts, assignments,
 editorial recommendations and explanations remain dated. Recency and absence of
 an open prerequisite do not automatically make an issue a recommendation.
 

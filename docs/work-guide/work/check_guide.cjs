@@ -41,6 +41,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     // External requests are attributed per frame: the guide may read GitHub issue status; the companion Archify viewer
     // (loaded on demand in an iframe) may reference its template's Google Fonts stylesheet, which is blocked here.
     const companionRequests=[];
+    await page.addInitScript(now=>{Date.now=()=>now;},Date.parse(snapshot.refreshedAt)+8*86400000);
     page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text());}); page.on('request',r=>{if(!/^https?:/.test(r.url()))return; if(r.frame()===page.mainFrame())requests.push(r.url()); else companionRequests.push(r.url());});
     const apiIssue=(key,overrides={})=>{const source=issueMap[key];return {number:source.number,state:source.state.toLowerCase(),state_reason:source.stateReason,title:source.title,html_url:source.url,created_at:source.createdAt,labels:source.labels,...overrides};};
     const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
@@ -56,7 +57,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       apiRequests.push({url:url.href,method:route.request().method()});
       if(repo==='divoom-app-upgrade'&&state==='open')return route.fulfill({status:429,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'},body:JSON.stringify({message:'rate limited'})});
       let rows=[];
-      if(repo==='agent-device-hub'&&state==='open')rows=pageNumber===1?[hubBlocked]:pageNumber===2?[{number:999,state:'open',title:'New <issue> absent from this guide',created_at:snapshot.refreshedAt,labels:[{name:'bug'},{name:'blocked'},{name:'deferred'},{name:'priority:p1'}]}]:[];
+      if(repo==='agent-device-hub'&&state==='open')rows=pageNumber===1?[hubBlocked]:pageNumber===2?[{number:999,state:'open',title:'New <issue> absent from this guide',created_at:snapshot.refreshedAt,labels:[{name:'bug'},{name:'blocked'},{name:'deferred'},{name:'priority:p1'}]},{number:997,state:'open',title:'Older unassigned issue',created_at:'2000-01-01T00:00:00Z',labels:[]}]:[];
       else if(repo==='agent-device-hub'&&state==='closed')rows=[hubClosed,hubClosedOther];
       else if(repo==='codex-nanoleaf'&&state==='open')rows=[nanoleafReview,nanoleafProgress];
       const headers={'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'};
@@ -83,6 +84,12 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert.equal(await page.locator('#open-defects .work-card[data-key="P52"]').count(),1,'Failed Pixoo read retains its open defect');
     assert((await page.locator('#open-defects .work-card[data-key="H999"]').textContent()).includes('Deferred'),'Deferred defects stay visible');
     assert((await page.locator('#open-defects .work-card[data-key="H999"]').textContent()).includes('topic assignment pending'),'New issues stay reachable before the next guide revision');
+    const weekly=page.locator('#newly-added details').filter({has:page.locator('summary', {hasText:'Show all open issues created in the last seven days'})});
+    const cutoff=Date.parse(snapshot.refreshedAt)-7*86400000;
+    const expectedFallbackWeek=openKeys.filter(k=>k.startsWith('P')&&Date.parse(issueMap[k].createdAt)>=cutoff&&Date.parse(issueMap[k].createdAt)<=Date.parse(snapshot.refreshedAt)).sort();
+    assert.deepEqual((await weekly.locator('.work-card').evaluateAll(es=>es.map(e=>e.dataset.key))).sort(),expectedFallbackWeek,'Delayed partial refresh retains the failed repository weekly snapshot');
+    const unassigned=page.locator('#newly-added details').filter({has:page.locator('summary', {hasText:'Issues awaiting topic assignment'})});
+    assert.equal(await unassigned.locator('.work-card[data-key="H997"]').count(),1,'Unassigned issues remain reachable even outside newest eight and seven days');
     assert.equal(await page.locator('#next-steps .work-card[data-key="P61"]').count(),0);
     assert.equal(await page.locator('#later-work .work-card[data-key="P61"]').count(),1);
     assert((await page.locator('#overview-freshness').textContent()).includes('GitHub unavailable for Pixoo'));
@@ -132,7 +139,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(await page.locator(`.repo-legend .repo-${key} b`).textContent(),String(total));
     }
     const links=await page.locator('[data-issue]').evaluateAll(es=>es.map(e=>({key:e.dataset.issue,url:e.href,state:e.dataset.state})));
-    for(const l of links) {if(l.key==='H999'){assert.equal(l.url,'https://github.com/jimmie-potts/agent-device-hub/issues/999');continue;} assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,l.key==='H21'?'CLOSED':issueMap[l.key].state);}
+    for(const l of links) {if(['H999','H997'].includes(l.key)){assert.equal(l.url,`https://github.com/jimmie-potts/agent-device-hub/issues/${l.key.slice(1)}`);continue;} assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,l.key==='H21'?'CLOSED':issueMap[l.key].state);}
     for(const id of ids) {
       const guide=page.locator(`#${id}`), owned=coverage[id];
       assert.deepEqual((await guide.getAttribute('data-primary')).split(' ').filter(Boolean),owned);

@@ -29,13 +29,14 @@
     const priority = key => Math.min(5,...labels(rows[key]).map(label=>label.match(/^(?:priority:)?p([0-4])$/i)).filter(Boolean).map(match=>Number(match[1])));
     const defects = keys.filter(key=>labels(rows[key]).includes('bug')).sort((a,b)=>priority(a)-priority(b)||Date.parse(rows[b].createdAt)-Date.parse(rows[a].createdAt)||a.localeCompare(b));
     const now = Date.now();
-    const week = keys.filter(key=>Date.parse(rows[key].createdAt)>=now-7*86400000 && Date.parse(rows[key].createdAt)<=now);
+    const week = keys.filter(key=>{const asOf=refreshed.has(key[0]) ? now : Date.parse(data.asOf); return Date.parse(rows[key].createdAt)>=asOf-7*86400000 && Date.parse(rows[key].createdAt)<=asOf;});
+    const unassigned = keys.filter(key=>!data.owners[key]);
     const next = Object.keys(data.nextSteps).filter(key=>rows[key]&&!rows[key].blocked&&!deferred(key)&&!active(key));
     const blockers = keys.filter(key=>!deferred(key)&&(rows[key].blocked||key in data.decisions));
     const later = keys.filter(deferred);
     const contents = {
       'current-work': cards(keys.filter(active)),
-      'newly-added': cards(keys.slice(0,8)) + '<details class="overview-more"><summary>Show all open issues created in the last seven days</summary>'+cards(week)+'</details>',
+      'newly-added': cards(keys.slice(0,8)) + '<details class="overview-more"><summary>Show all open issues created in the last seven days</summary>'+cards(week)+'</details>'+(unassigned.length ? '<details class="overview-more"><summary>Issues awaiting topic assignment</summary>'+cards(unassigned)+'</details>' : ''),
       'open-defects': cards(defects),
       'next-steps': cards(next,data.nextSteps),
       'work-blockers': cards(blockers,data.decisions),
@@ -43,9 +44,9 @@
     };
     for (const [id,content] of Object.entries(contents)) {
       const container = document.querySelector(`#${id} [data-view-content]`);
-      const opened = container.querySelector('details')?.open;
+      const opened = new Set([...container.querySelectorAll('details[open]')].map(detail=>detail.querySelector('summary').textContent));
       container.innerHTML = content;
-      if (opened && container.querySelector('details')) container.querySelector('details').open = true;
+      container.querySelectorAll('details').forEach(detail=>detail.open=opened.has(detail.querySelector('summary').textContent));
     }
   }
   window.updateWorkOverview = (prefix, open) => {
