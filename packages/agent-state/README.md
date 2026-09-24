@@ -117,8 +117,8 @@ ingest, so a full owner frees slots before rejecting a new identity. The same
 events that refresh freshness renew the window, and a restart does not reset
 it. A `runtime.ended` or read observation for an unknown identity is stale, as
 is any observation whose `observedAtMs` is 24 hours or more before the owner's
-wall clock. Each record expires on its own clock, so a child can outlive its parent;
-consumers must tolerate a missing parent. New activity after expiry creates a
+wall clock. Each record expires on its own clock, so a child can outlive its
+parent; consumers must tolerate a missing parent. New activity after expiry creates a
 fresh record with defaults.
 
 Every committed mutation increments a safe integer revision. That revision
