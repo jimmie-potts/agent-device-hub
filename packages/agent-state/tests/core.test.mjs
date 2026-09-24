@@ -320,18 +320,21 @@ test('storage lease rejects concurrent owners and is released by shutdown',async
   await owner.shutdown();const next=await createAgentState(options(storage));await next.shutdown();
 });
 
-test('journal caps time and count without erasing state, chosen labels or undismissed notices',async()=>{
+test('journal count caps keep state, chosen labels and undismissed notices until a day without evidence',async()=>{
   let now=1000;const storage=new MemoryStorage();const owner=await createAgentState(options(storage,()=>now));
   await owner.ingest(envelope('turn.ended',1));await owner.setLabel(identity,'Retained');
   for(let sequence=2;sequence<=10002;sequence++)await owner.ingest(envelope('activity.observed',sequence));
   assert.equal(owner.journal().length,10000);
   assert.ok(owner.journal()[0].revision>1);
-  now+=86400000;
-  assert.equal(owner.journal().length,0);
-  await owner.maintain();await owner.shutdown();
-  const restored=await createAgentState(options(storage,()=>now));
-  assert.equal(restored.journal().length,0);
+  await owner.shutdown();
+  let restored=await createAgentState(options(storage,()=>now));
   assert.equal(restored.snapshot().sessions[0].label,'Retained');
   assert.equal(restored.snapshot().sessions[0].notices.length,1);
+  now+=86400000;
+  assert.equal(restored.journal().length,0);
+  await restored.maintain();await restored.shutdown();
+  restored=await createAgentState(options(storage,()=>now));
+  assert.equal(restored.journal().length,0);
+  assert.equal(restored.snapshot().sessions.length,0);
   await restored.shutdown();
 });

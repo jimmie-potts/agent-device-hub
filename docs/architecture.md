@@ -68,7 +68,9 @@ signals for actual accessible versions.
 The core identifies sessions by provider, source/host and session ID, retaining
 turn and child relationships only where evidenced. Separate sessions in one
 project stay separate. Activity, attention, retained notices, acknowledgment,
-optional provider read evidence and freshness are independent concepts.
+optional provider read evidence and freshness are independent concepts. The owner
+forgets a session after 24 hours without lifecycle evidence, which frees its
+capacity. Expiry is not acknowledgment, readership, success or cancellation.
 
 A turn end is not proof of successful work or readership. Nanoleaf's current
 Codex unread reconciliation remains a provider/consumer capability during

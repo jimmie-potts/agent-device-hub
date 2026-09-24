@@ -33,7 +33,7 @@ test('opt-in host initializes the reusable MCP transport without devices',async 
  assert.ok(list.body.result.tools.some(tool=>tool.name==='hub_sessions'));
 });
 
-const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:1,ordering:{status:'unknown'}};
+const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:Date.now(),ordering:{status:'unknown'}};
 const http=async(hub,path,body,bearer=token)=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${bearer}`,'content-type':'application/json','x-pixoo-request':'1'},...(body===undefined?{}:{body:JSON.stringify(body)})});
 test('session tools retain evidence and share HTTP command replay without read effects',async t=>{
  const hub=await fixture(t),c=client(hub);await c.initialize();

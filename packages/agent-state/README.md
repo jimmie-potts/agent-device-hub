@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.2 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.3 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -29,8 +29,8 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 All host storage operations have a maximum three-second deadline. The host
 adapter must acquire an exclusive lease across its own processes, load one
 versioned state, and atomically apply each `Commit`. `expectedRevision` is a
-compare-and-swap guard. `null` means an empty destination. `replace` initializes
-or imports the state; ordinary commits upsert the supplied session, append the
+compare-and-swap guard. `null` means an empty destination. `replace` initializes,
+imports or expires state; ordinary commits upsert the supplied session, append the
 optional journal row, remove journal rows at or before `pruneBeforeMs`, retain
 the newest 10,000 rows, and update revision/time in one transaction. No current
 session, label or notice is subject to journal retention.
@@ -109,6 +109,18 @@ Duplicates, labels, acknowledgments and read evidence do not refresh it. Read ev
 uncertain until accepted fresh evidence. Collector health reports the owner's
 ability to collect, independent of whether a session has become stale.
 
+A session with no accepted lifecycle evidence for 24 hours expires. The owner
+forgets it, including its label, notices and attention, in one `replace` commit
+without a journal row. Expiry is not acknowledgment, readership, success or
+cancellation. It runs from the maintenance timer, at startup and before each
+ingest, so a full owner frees slots before rejecting a new identity. The same
+events that refresh freshness renew the window, and a restart does not reset
+it. A `runtime.ended` or read observation for an unknown identity is stale, as
+is any observation whose `observedAtMs` is 24 hours or more before the owner
+clock. Each record expires on its own clock, so a child can outlive its parent;
+consumers must tolerate a missing parent. New activity after expiry creates a
+fresh record with defaults.
+
 Every committed mutation increments a safe integer revision. That revision
 identifies durable content; `asOfMs`, observation age, freshness and collector
 health describe the read context. An earlier snapshot never changes. Consumers
@@ -127,18 +139,18 @@ RSS qualification remain in that issue; unit and process checks do not replace i
 | Normalized event | 2,048 UTF-8 bytes |
 | Owner admission / each consumer / emitter | 128 pending entries; no more than 262,144 payload bytes |
 | Journal | Newest 10,000 events within 24 hours |
-| Sessions / registered consumers | 128 / 16 |
+| Sessions (expire after 24 hours without evidence) / registered consumers | 128 / 16 |
 | Attention / retained notices per session | 64 / 128 |
 | Retired turns / retry keys / ordering watermarks per session | 256 each |
 | Snapshot or migration input | 16 MiB, depth 20, 1,000,000 JSON nodes |
 | Hook raw stdin / configuration file | 64 KiB / 8 KiB |
 
-Journal pruning runs on writes, startup, and a timer while the owner is running.
-Reads also exclude expired rows. Hosts can call `maintain()` after an injected
-clock advance. Quiesced or stopped stores prune when ownership resumes.
-Capacity rejection is observable and retains existing state and notices. A host
-must surface saturation for operator action; it must not silently discard state
-to make room. Revision exhaustion also rejects admission.
+Journal pruning and session expiry run on writes, startup, and a timer while the
+owner is running. Journal reads also exclude expired rows. Hosts can call
+`maintain()` after an injected clock advance. Quiesced or stopped stores prune
+and expire when ownership resumes. Capacity rejection, after expiry, is observable
+and retains the remaining state and notices. A host must surface saturation for
+operator action; beyond expiry, it must not silently discard state to make room. Revision exhaustion also rejects admission.
 
 Provider observations, calculated current state and diagnostics have separate
 roles. Envelopes preserve available qualified identity/order evidence; snapshots
@@ -197,7 +209,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.2 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.3 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -215,6 +227,8 @@ Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
 Package 2.0.1 adds explicit approval recovery without changing those schemas.
 Package 2.0.2 keeps read evidence out of freshness, restart recovery and session
 admission without changing those schemas.
+Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
+without changing those schemas.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. An older package can read the same shape but restores its older

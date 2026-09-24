@@ -10,7 +10,7 @@ import {HubStorage} from '../dist/storage.js';
 
 const identity={provider:'codex',client:'cli',hostId:'host',sourceId:'source',sessionId:'session'};
 const event={apiVersion:'1.0',identity,turn:{status:'known',id:'turn'},parent:{status:'unknown'},
-  event:{kind:'session.started'},observedAtMs:1000,ordering:{status:'unknown'}};
+  event:{kind:'session.started'},observedAtMs:Date.now(),ordering:{status:'unknown'}};
 const consumers=[{id:'pixoo',clearOnNewTurn:true}];
 test('exclusive ownership, durable labels and restart uncertainty',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'hub-store-'));

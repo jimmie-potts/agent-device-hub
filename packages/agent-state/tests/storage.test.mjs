@@ -40,14 +40,13 @@ test('input canaries cannot reach storage commits, diagnostics or errors',async(
   await owner.shutdown();
 });
 
-test('idle journal entries expire through storage without another provider event',async t=>{
+test('idle journal entries and sessions expire through storage without another provider event',async t=>{
   t.mock.timers.enable({apis:['setTimeout']});
   let now=1000;
   const owner=await createAgentState({...config(new MemoryStorage()),clock:()=>now});
   await owner.ingest({...event,event:{kind:'turn.ended'}});
-  await owner.setLabel(event.identity,'Keep this label');
+  await owner.setLabel(event.identity,'Kept until expiry');
   now+=86400000;t.mock.timers.tick(86400000);await tick();
   const persisted=await owner.exportState();
-  assert.equal(persisted.journal.length,0);assert.equal(persisted.sessions[0].notices.length,1);
-  assert.equal(persisted.sessions[0].label,'Keep this label');await owner.shutdown();
+  assert.equal(persisted.journal.length,0);assert.equal(persisted.sessions.length,0);await owner.shutdown();
 });
