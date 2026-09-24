@@ -119,18 +119,34 @@ Set the optional private configuration field `mcp` to `true` to mount `/mcp` on 
 
 `hub_sessions` returns the same qualified snapshot, provider/query matches and next state request ID as the HTTP session route. `hub_label` and `hub_acknowledge` use `request_id` for that exact string ticket and share the HTTP command ledger. No ingest, quiesce, migration or administrative tool is exposed. Read/control scopes apply as on the owning routes; read permission does not grant control. Discovery and reads never acknowledge notices or infer task success.
 
-`hub_devices` lists authorized configured aliases and stable `toolPrefix` values without querying controllers. Each prefix binds status, power, brightness, mode and integration tools to one configured owner. Prefixes include a bounded alias segment and SHA-256 suffix so dotted aliases and long IDs remain valid and distinct. The reserved `hub-service` alias represents only global application tools and cannot name a configured controller when MCP is enabled. It is excluded from device discovery. Native controller/device IDs inside results remain unchanged, including when multiple controllers use the same native device ID.
+`hub_devices` lists authorized configured aliases and stable `toolPrefix` values without querying controllers. Each prefix binds status, power, brightness, mode, media and integration tools to one configured owner. Prefixes include a bounded alias segment and SHA-256 suffix so dotted aliases and long IDs remain valid and distinct. The reserved `hub-service` alias represents only global application tools and cannot name a configured controller when MCP is enabled. It is excluded from device discovery. Native controller/device IDs inside results remain unchanged, including when multiple controllers use the same native device ID.
 
 | Suffix | Behavior |
 | --- | --- |
 | `_status` | Validated native controller v1 snapshot |
 | `_power_set`, `_brightness_set`, `_mode_set` | Native request ticket, configuration revision and generation guards; unsupported capabilities return the owner's rejection |
+| `_media_start` | Forward controller v1 `media.start` with `playlistId` and the same native guards |
+| `_media_control` | Forward controller v1 `media.control` with `action` and the same native guards |
 | `_integration_status` | Validated Pixoo or Nanoleaf integration snapshot |
 | `_integration_set` | Pixoo `request_id`, revision/generation and mode/view action, or Nanoleaf `requestId`, expected revision and declared settings command |
 | `_integration_receipt`, `_integration_cancel` | Nanoleaf receipt lookup and explicit cancellation using the original ticket |
 
 All tool results use the reusable module's extension envelope. `data.result` contains the owning snapshot, outcome or receipt. Safe pre-admission errors use `data.code`; ambiguous writes retain `priorEffects: possible`, the original request ID and `retry: never-automatically`. An accepted or applied configuration is not proof of a physical effect. Disconnect and MCP session removal stop response delivery, not admitted owner work.
 
-Pixoo catalog/player handlers remain in the Pixoo application. This host has no registered machine adapter for them and does not recreate them or borrow browser tokens. Its optional local Pixoo MCP endpoint remains available independently. Unsupported device operations stay unsupported.
+Media tools take `requestId`, `expectedConfigurationRevision` and
+`expectedGeneration` from the latest `_status` result. Select a saved playlist ID
+or action advertised by the owner's media capability. Controller v1 actions are
+`pause`, `resume`, `stop`, `next`, `previous`, `restart-with-changes` and `clear`;
+each owner may support a subset. The owner returns typed rejections for
+unsupported operations. Both tools require current control scope and permission
+for the configured alias.
+
+For Pixoo, first read `_integration_status` and explicitly select Media through
+`_integration_set` if necessary; wait for the observed Media mode, then obtain
+fresh controller guards. Each media call forwards one command. It does not switch
+modes, restore Monitor or start a retry. Pixoo retains its playback and mode
+policy. Its catalog and rendition handlers remain in the Pixoo application and
+its optional local MCP endpoint remains available independently. These hub tools
+only forward the two controller v1 media commands.
 
 `npm run test:hub:mcp` exercises synthetic Codex/Claude protocol profiles for MCP 2025-11-25 and 2025-06-18, scoped discovery, Host/Origin checks, credential replacement, HTTP/MCP replay, native settings, independent controller failure, bounded concurrency, disconnect and stale evidence. The reproducible hub archive bundles MCP and its dependency closure; `npm run test:hub:package` repeats these tests after offline installation. These are source and loopback checks, not installed Codex/Claude, Windows/WSL client routing or physical acceptance. Feed this coverage into Hub #9; installed qualification remains #8 and device-owned acceptance.
