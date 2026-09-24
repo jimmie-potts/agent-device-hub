@@ -38,8 +38,9 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H205': 'First qualify supported phone-to-app handoff paths, then define owner sign-in and the '
          'outbound connector boundary before building a private task inbox and the first qualified '
          'handoff. This work is deferred behind the anonymous public release.',
- 'H218': 'Clear Codex Desktop tasks and Line assignments when a session ends, without archive '
-         'detection. Uses the session retirement delivered by [[H195]] and the Codex home configured for [[H191]].',
+ 'H218': 'Clear Codex Desktop tasks and Line assignments when a session ends; retirement does not '
+         'wait for archive detection. Uses the session retirement delivered by [[H195]] and the Codex home '
+         'configured for [[H191]].',
  'H22': 'Install the LIFX status adapter after [[H20]] and verify the agreed behavior on the named '
         'bulbs with separate authorization.',
  'H222': 'Announce each state commit to change-stream readers at once instead of on a 1-second '
