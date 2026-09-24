@@ -2,15 +2,15 @@
   {
     "number": 213,
     "title": "Refresh work guide to current GitHub status",
-    "body": "## Summary\n\nRefresh the static cross-project guide from a complete GitHub snapshot at 2026-09-23 23:55 UTC. It records 98 open issues: Hub 64, Nanoleaf 20, Pixoo 14. The snapshot includes the newly opened cache guidance and guide-check issues, closed story states needed by the guide, updated primary coverage, and merged-work history through the observed heads listed below.\n\nThe generated guide SHA-256 is `78c34357524f41e12aa746ea7820213570805636d819f04a94ad8f77e812daa6`. The history snapshot was fetched at 23:54 UTC from Hub `a19a62eb673fd17a5aecdb1db6b5575947e2feb7`, Nanoleaf `fad152e978e057258a9ebc8524469808107dbada`, and Pixoo `71fbefcfdcf6163fc7180264436a6360cbc371ae`.\n\n## Validation\n\n- `python3 docs/work-guide/work/build_guide.py` passed; rebuilding produced the same HTML hash.\n- `python3 docs/work-guide/work/test_maintenance.py` passed (10 tests).\n- `node docs/work-guide/work/check_guide.cjs` passed at 1440, 1000, 900, 768, 390 and 320 px, including task briefs, timeline, navigation, search, diagrams and print restoration; no page errors and no unexpected requests.\n- `git diff --check` passed. All changed paths are under `docs/work-guide/`.\n- Verification receipt and screenshots are in the main checkout at `.local/evidence/guide-status-20260923/`.\n\nThis is a dated snapshot; it does not implement live status fetching, install anything or operate devices. Public publication will follow this Hub source PR after its required review, merge and guide-only CI evidence.\n",
+    "body": "## Summary\n\nRefresh the static cross-project guide from paginated GitHub issue, dependency, pull request and history reads. The backlog snapshot was fetched at 2026-09-24 00:08 UTC and records 95 open issues: Hub 63, Nanoleaf 19, Pixoo 13. Closed story states referenced by the guide are retained without claiming their comments were refreshed. Primary coverage and roadmap membership match the complete open-issue set.\n\nMerged-work history was fetched at 00:08 UTC from Hub `d12fce5bf6a9c1c31254115752f255896e96386e`, Nanoleaf `d7571675dc9bf3da9d2e209103f142bec0ea5ff6`, and Pixoo `dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5`. The generated guide SHA-256 is `d50ba5784591e83059d3d5bdc77ff9d96c1a4ed73ce355f62bf9b7225a2d2b69`.\n\n## Validation\n\n- `python3 docs/work-guide/work/build_guide.py` passed; rebuilding produced the same HTML hash.\n- `python3 docs/work-guide/work/test_maintenance.py` passed (11 tests).\n- `node docs/work-guide/work/check_guide.cjs` passed at 1440, 1000, 900, 768, 390 and 320 px, including task briefs, timeline, navigation, search, diagrams and print restoration; no page errors or unexpected requests.\n- `git diff --check` passed. All changed paths are under `docs/work-guide/`.\n- The verification receipt and screenshots are in the main checkout at `.local/evidence/guide-status-20260923/`.\n- Both Hub workflows exclude this PR's paths by their `docs/work-guide/**` filters; exact-head check readback is empty, as expected for the guide-only exception.\n\nThis is a dated snapshot; it does not implement live status fetching, install anything or operate devices. The public publication PR follows this Hub source PR after review, merge, and guide-only CI evidence.\n",
     "state": "open",
     "html_url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
-    "updated_at": "2026-09-24T00:07:56Z",
+    "updated_at": "2026-09-24T00:11:14Z",
     "draft": false,
     "head": {
       "label": "jimmie-potts:codex/guide-status-20260923-latest",
       "ref": "codex/guide-status-20260923-latest",
-      "sha": "ce5106355d0e204dc22ff04882e8f6187dbb191f",
+      "sha": "814237cc672d93dca58a6525ca74e722bff60f2e",
       "user": {
         "login": "jimmie-potts",
         "id": 49133657,
@@ -101,7 +101,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-24T00:06:06Z",
-        "pushed_at": "2026-09-24T00:07:05Z",
+        "pushed_at": "2026-09-24T00:09:49Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -121,7 +121,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 64,
+        "open_issues_count": 62,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -131,7 +131,7 @@
         "topics": [],
         "visibility": "public",
         "forks": 0,
-        "open_issues": 64,
+        "open_issues": 62,
         "watchers": 0,
         "default_branch": "main"
       }
@@ -230,7 +230,7 @@
         "deployments_url": "https://api.github.com/repos/jimmie-potts/agent-device-hub/deployments",
         "created_at": "2026-09-07T02:05:13Z",
         "updated_at": "2026-09-24T00:06:06Z",
-        "pushed_at": "2026-09-24T00:07:05Z",
+        "pushed_at": "2026-09-24T00:09:49Z",
         "git_url": "git://github.com/jimmie-potts/agent-device-hub.git",
         "ssh_url": "git@github.com:jimmie-potts/agent-device-hub.git",
         "clone_url": "https://github.com/jimmie-potts/agent-device-hub.git",
@@ -250,7 +250,7 @@
         "mirror_url": null,
         "archived": false,
         "disabled": false,
-        "open_issues_count": 64,
+        "open_issues_count": 62,
         "license": null,
         "allow_forking": true,
         "is_template": false,
@@ -260,7 +260,7 @@
         "topics": [],
         "visibility": "public",
         "forks": 0,
-        "open_issues": 64,
+        "open_issues": 62,
         "watchers": 0,
         "default_branch": "main"
       }

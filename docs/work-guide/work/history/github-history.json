@@ -1,10 +1,10 @@
 {
-  "fetchedAt": "2026-09-24T00:08:31.590503+00:00",
+  "fetchedAt": "2026-09-24T00:14:36.308340+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-24T00:07:05Z",
+      "pushedAt": "2026-09-24T00:09:49Z",
       "defaultBranch": "main",
       "headSha": "d12fce5bf6a9c1c31254115752f255896e96386e",
       "mainCommitCount": 101,
@@ -1705,15 +1705,31 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/200"
         },
         {
+          "number": 207,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "closedAt": "2026-09-24T00:09:18Z",
+          "createdAt": "2026-09-23T22:57:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/207"
+        },
+        {
           "number": 210,
           "title": "Make the work guide clipboard-fallback check pass in Depot CI",
           "closedAt": "2026-09-23T23:58:39Z",
           "createdAt": "2026-09-23T23:44:02Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/210"
+        },
+        {
+          "number": 212,
+          "title": "Use shared npm and Playwright caches in setup guidance",
+          "closedAt": "2026-09-24T00:09:10Z",
+          "createdAt": "2026-09-23T23:51:38Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/212"
         }
       ],
-      "openIssueCount": 63,
+      "openIssueCount": 61,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-23T23:51:38Z"

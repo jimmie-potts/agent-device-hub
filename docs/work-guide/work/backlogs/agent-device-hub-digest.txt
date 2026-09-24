@@ -102,6 +102,6 @@
 #203 [OPEN] Define the owner workspace, sign-in, and outbound connector boundary
 #204 [OPEN] Add the authenticated owner task inbox and handoff records
 #205 [OPEN] Deliver the first qualified native-app handoff from the phone workspace
-#207 [OPEN] Clean up delivered worktrees and scratch after merge
+#207 [CLOSED] Clean up delivered worktrees and scratch after merge
 #210 [CLOSED] Make the work guide clipboard-fallback check pass in Depot CI
-#212 [OPEN] Use shared npm and Playwright caches in setup guidance
+#212 [CLOSED] Use shared npm and Playwright caches in setup guidance

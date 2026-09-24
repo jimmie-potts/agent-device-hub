@@ -103,11 +103,11 @@ TRACKS = [
     ]),
     ('Development workflow', [
         dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['H73'], guide='development-workflow'),
-        dict(id='n-dev-jobs', x=1, label='Pixoo job consolidation closed', issues=[], guide='development-workflow'),
-        dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling closed', issues=[], guide='development-workflow'),
+        dict(id='n-dev-jobs', x=1, label='Pixoo job consolidation not planned', issues=[], guide='development-workflow'),
+        dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling not planned', issues=[], guide='development-workflow'),
         dict(id='n-nanoleaf-cache-docs', x=0, label='Nanoleaf setup guidance delivered', issues=[], guide='development-workflow'),
         dict(id='n-pixoo-cache-docs', x=0, label='Pixoo setup guidance delivered', issues=[], guide='development-workflow'),
-        dict(id='n-hub-cache-docs', x=1, label='Hub shared cache guidance', issues=['H212'], guide='development-workflow'),
+        dict(id='n-hub-cache-docs', x=1, label='Hub shared cache guidance delivered', issues=[], guide='development-workflow'),
     ]),
     ('System design documents', [
         dict(id='n-system-design', x=0, label='Atlas published', issues=[], guide='development-workflow'),
@@ -117,18 +117,18 @@ TRACKS = [
     ]),
     ('Guide Prism design + rollout', [
         dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),
-        dict(id='n-guide-artwork', x=1, label='Guide artwork + motion delivered', issues=[], guide='development-workflow'),
+        dict(id='n-guide-artwork', x=1, label='Guide artwork application not planned', issues=[], guide='development-workflow'),
         dict(id='n-guide-publish', x=2, label='Local + public verification', issues=['H87'], guide='development-workflow'),
     ]),
     ('Guide mobile tasks and status', [
         dict(id='n-guide-mobile', x=0, label='Current public GitHub status', issues=['H197'], guide='development-workflow'),
     ]),
     ('Guide automatic refresh', [
-        dict(id='n-guide-refresh', x=3, label='Automatic refresh issue closed', issues=[], guide='development-workflow'),
+        dict(id='n-guide-refresh', x=3, label='Automatic refresh not planned', issues=[], guide='development-workflow'),
     ]),
     ('Guide cleanup + clipboard check', [
         dict(id='n-guide-clipboard', x=0, label='Clipboard fallback check completed', issues=[], guide='development-workflow'),
-        dict(id='n-guide-cleanup', x=1, label='Delivery cleanup follow-up', issues=['H207'], guide='development-workflow'),
+        dict(id='n-guide-cleanup', x=1, label='Delivery cleanup follow-up completed', issues=[], guide='development-workflow'),
     ]),
     ('Guide mission map', [
         dict(id='n-guide-map', x=2, label='Interactive neon mission map', issues=['H201'], guide='development-workflow'),

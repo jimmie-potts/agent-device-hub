@@ -58,8 +58,8 @@ PATHS = {
     ),
     'development-workflow': (
         'Keep delivery evidence readable and validation affordable.',
-        'Task briefs #196 and the selected Neon/Prism presentation are delivered. Implement dated public status #197 for the first combined release #87. Clipboard-check repair #210 is complete; cleanup follow-up #207 remains blocked on its main-branch Work guide CI evidence. Direct app coordination remains deferred.',
-        ['H197', 'H212'],
+        'Define the Neon/Prism presentation in #85 and implement dated public status #197 for mobile release #87. Task briefs #196 and the cache guidance are delivered; clipboard and cleanup work #210/#207 are complete. Direct app coordination remains deferred.',
+        ['H85', 'H197'],
     ),
 }
 

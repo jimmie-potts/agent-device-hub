@@ -37,7 +37,7 @@ class GuideMaintenance(unittest.TestCase):
     def test_status_only_issue_reads_do_not_claim_comments_were_refreshed(self):
         source = Path(__file__).resolve().parent / 'backlogs'
         references = {
-            'agent-device-hub-issues.json': (10, 86, 196, 200, 210, 212),
+            'agent-device-hub-issues.json': (10, 86, 196, 200, 207, 210, 212),
             'codex-nanoleaf-issues.json': (31, 84),
             'divoom-app-upgrade-issues.json': (38, 47, 68, 72),
         }
