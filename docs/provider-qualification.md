@@ -53,6 +53,17 @@ The session selector identifies the actual child when `agent_id` is present; the
 
 [Nanoleaf's existing source](https://github.com/jimmie-potts/codex-nanoleaf/blob/ea3b95661352f927aceaf92b62d74660978c201f/bridge/README.md#questions-blocks-and-read-status) distinguishes continuing questions and blocked waits, retains unread notices after runtime end and documents same-tool approval ambiguity. Its Desktop unread reconciliation is implementation-specific. This contract neither replaces it nor exports private metadata. `request_user_input_async` coverage in a particular provider version must be qualified; the legacy mapping alone does not establish shared support.
 
+## Codex Desktop read marker
+
+[Hub #191](https://github.com/jimmie-potts/agent-device-hub/issues/191) inspected the installed Windows Desktop state read-only from WSL on 2026-09-23. The Desktop version remains inaccessible, as recorded above.
+
+- Desktop keeps its state in the Windows Codex home, not WSL `~/.codex`. In `.codex-global-state.json`, `electron-thread-read-state-v1` has `version: 1` and `unreadByIdentity`. Each host entry maps identity keys to lists of unread thread IDs, which match Desktop session IDs. Nothing lists read threads.
+- The key legacy Nanoleaf reads, `electron-persisted-atom-state.unread-thread-ids-by-host-v1`, no longer exists.
+- Desktop also lists unopened subagent threads, so only top-level sessions qualify.
+- No hook reports reads, and a Linux file watcher on `/mnt/c` received no events. The reader therefore checks the file's size and modification time every two seconds and parses it only when they change.
+
+A listed session is `unread`. An unlisted session is `read` when it was unread, or when its read value is unknown, it is not known to be active, and its last lifecycle evidence is at least five seconds old. Desktop sets the flag shortly after Stop; legacy Nanoleaf used the same wait. Unordered Interrupt and SessionEnd hooks leave the owner's activity unknown, so the rule excludes only a known running turn. A missing, oversized, malformed or other-version file produces no evidence. The standalone Hub's optional `codexDesktop` configuration enables this reader; see [the Hub guide](../apps/hub/README.md#configuration-and-authority).
+
 ## Required-client stops
 
 [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8) owns authorized installed-path observation and setup. Keep a path disabled when its required version/path/coverage is unverified; mandatory identity or attention correlation cannot be established; privacy canaries fail; or the producer changes permissions, emits context, waits on devices, exceeds its deadline or permits unbounded processes/queues. Required missing signals need an accepted degraded mode exposing uncertainty. Optional unread evidence can remain unknown.

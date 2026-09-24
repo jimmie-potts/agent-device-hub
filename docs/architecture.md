@@ -72,7 +72,9 @@ optional provider read evidence and freshness are independent concepts.
 
 A turn end is not proof of successful work or readership. Nanoleaf's current
 Codex unread reconciliation remains a provider/consumer capability during
-migration. Pixoo dismissal changes monitor state only. New generic consumers
+migration. The standalone Hub can also read Codex Desktop's unread marker from
+the mounted Windows Codex home and record `read.observed` for top-level Desktop
+sessions. Pixoo dismissal changes monitor state only. New generic consumers
 must not assume every provider supplies read receipts.
 
 Only lifecycle metadata, identifiers, timestamps and explicit user-chosen labels

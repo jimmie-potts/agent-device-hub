@@ -82,6 +82,8 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     remember();return {session,outcome:'applied',fresh:false};
   }
   const eventDimension=dimension(event);
+  // Read evidence applies only to the read dimension; it is not a lifecycle observation.
+  const lifecycle=eventDimension!=='read';
   const order=event.ordering;
   const retired=event.turn.status==='known'&&session.retiredTurns.includes(event.turn.id);
   if(retired&&eventDimension==='activity')return {outcome:'stale',fresh:false};
@@ -99,7 +101,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
   const selectedStart=bestEffort&&event.event.kind==='turn.started'&&event.turn.status==='known';
   const matchingStop=bestEffort&&event.event.kind==='turn.ended'&&sameTurn(session.turn,event.turn)&&
     !session.unavailable.some(item=>item.dimension==='activity'&&item.reason==='ambiguous');
-  const canSelect=!retired&&(eventDimension==='activity'||order.status==='known');
+  const canSelect=lifecycle&&!retired&&(eventDimension==='activity'||order.status==='known');
   let ambiguous=false;
   if(selectedStart)selectTurn(session,event.turn,consumers,true);
   else if(canSelect&&previous&&event.turn.status==='known'&&session.turn.status==='known'&&!sameTurn(event.turn,session.turn)){
@@ -117,17 +119,17 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     if(session.unavailable.some(item=>item.dimension==='turn'&&item.reason==='ambiguous'))ambiguous=true;
     else session.turn=event.turn;
   }
-  if(event.turn.status==='unknown')unavailable(session,'turn','missing');
-  if(order.status==='unknown'){if(!retired)session.ordering={status:'unknown'};unavailable(session,'ordering','missing');}
+  if(lifecycle&&event.turn.status==='unknown')unavailable(session,'turn','missing');
+  if(order.status==='unknown'){if(lifecycle){if(!retired)session.ordering={status:'unknown'};unavailable(session,'ordering','missing');}}
   else{
-    if(!retired){
+    if(lifecycle&&!retired){
       if(previous?.ordering.status==='known'&&previous.ordering.epoch!==order.epoch){ambiguous=true;unavailable(session,'ordering','ambiguous');}
       if(session.ordering.status!=='known'||session.ordering.epoch!==order.epoch||session.ordering.sequence<order.sequence)session.ordering=order;
     }
     if(watermark)watermark.sequence=order.sequence;
     else session.watermarks.push({dimension:eventDimension,epoch:order.epoch,sequence:order.sequence});
   }
-  if(mergeMetadata(session,event).ambiguous)ambiguous=true;
+  if(lifecycle&&mergeMetadata(session,event).ambiguous)ambiguous=true;
   switch(event.event.kind){
     case 'session.started':
     case 'turn.started':
@@ -169,6 +171,8 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     }
   }
   if(session.notices.length>LIMITS.notices||session.attention.length>LIMITS.attention||session.watermarks.length>LIMITS.watermarks)return {outcome:'ambiguous',fresh:false,capacity:true};
-  session.lastEvidenceAtMs=now;session.observedAtMs=event.observedAtMs;remember();
-  return {session,outcome:ambiguous?'ambiguous':'applied',fresh:true};
+  // Freshness and restart uncertainty describe lifecycle observations only.
+  if(lifecycle){session.lastEvidenceAtMs=now;session.observedAtMs=event.observedAtMs;}
+  remember();
+  return {session,outcome:ambiguous?'ambiguous':'applied',fresh:lifecycle};
 }

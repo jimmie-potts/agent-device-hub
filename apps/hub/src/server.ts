@@ -9,10 +9,11 @@ import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
 import {startBrowserLaunch} from './browser-launch.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
+import {codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; clock?:()=>number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; clock?:()=>number};
 type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
 type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
@@ -55,6 +56,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let activating = false;
   let preparingConsumers = false;
   if (options.mcp !== undefined && typeof options.mcp !== 'boolean') throw new Error('invalid-configuration');
+  const codexDesktop = options.codexDesktop === undefined ? undefined : codexDesktopOptions(options.codexDesktop);
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
@@ -307,6 +309,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   } catch(error) {
     await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
+  const desktopRead = codexDesktop && startDesktopRead(codexDesktop,owner,options.clock ?? Date.now,() => !staged && !closing && !exported);
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
@@ -339,6 +342,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         closing = true;launchCodes.clear();browserSessions.clear();
         let launchFailure:unknown;
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
+        await desktopRead?.close();
         await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();

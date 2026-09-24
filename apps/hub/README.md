@@ -8,7 +8,9 @@ The host supplies private SQLite ownership, the shared agent-state engine, authe
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`. The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp` and optional `codexDesktop`. The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+
+Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
 Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must match persisted/imported state. Credentials contain a neutral `id`, SHA-256 `digest` of an independently provisioned 43-character base64url bearer token, `scopes` and registered device aliases in `devices`. Supported scopes are `read`, `ingest`, `control` and `admin`; quiesce requires control and admin. Provision producer and read-only credentials separately. Native controller tokens remain only in private server configuration. No route returns them.
 
@@ -38,7 +40,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 | Boundary | Contract and evidence |
 | --- | --- |
-| Shared state | `@jimmie-potts/agent-state` 2.0.1; lifecycle and export 1.0; no second reducer |
+| Shared state | `@jimmie-potts/agent-state` 2.0.2; lifecycle and export 1.0; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |

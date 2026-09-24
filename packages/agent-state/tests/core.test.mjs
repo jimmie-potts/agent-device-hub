@@ -39,6 +39,51 @@ test('explicit recovery retires only an uncertain uncorrelated approval',async()
   await restored.shutdown();
 });
 
+test('read evidence changes only the read dimension',async()=>{
+  let clock=1000;
+  const storage=new MemoryStorage();
+  let owner=await createAgentState(options(storage,()=>clock));
+  const desktop={...identity,client:'desktop'};
+  const provider=(name,turn)=>normalizeHook({session_id:desktop.sessionId,turn_id:turn},{provider:'codex',client:'desktop',hostId:desktop.hostId,sourceId:desktop.sourceId,hook:name},1000);
+  const read=state=>({apiVersion:'1.0',identity:desktop,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event:{kind:'read.observed',state},observedAtMs:clock,ordering:{status:'unknown'}});
+  assert.deepEqual(await owner.ingest(read('read')),{ok:true,revision:0,outcome:'stale'});
+  assert.equal(owner.snapshot().sessions.length,0);assert.equal(owner.snapshot().lossCount,0);
+  await owner.ingest(provider('UserPromptSubmit','turn-1'));await owner.ingest(provider('Stop','turn-1'));
+  const before=owner.snapshot().sessions[0];
+  clock+=300000;
+  assert.equal((await owner.ingest(read('read'))).outcome,'applied');
+  let session=owner.snapshot().sessions[0];
+  assert.equal(session.read,'read');assert.equal(session.freshness,'uncertain');
+  assert.equal(session.lastEvidenceAtMs,before.lastEvidenceAtMs);assert.equal(session.observedAtMs,before.observedAtMs);
+  assert.deepEqual([session.turn,session.activity,session.notices],[before.turn,before.activity,before.notices]);
+  clock++;assert.equal((await owner.ingest(read('unread'))).outcome,'applied');
+  clock++;assert.equal((await owner.ingest(read('read'))).outcome,'applied');
+  assert.equal(owner.snapshot().sessions[0].read,'read');
+  await owner.shutdown();
+  owner=await createAgentState(options(storage,()=>clock));
+  await owner.ingest(read('unread'));
+  session=owner.snapshot().sessions[0];
+  assert.equal(session.read,'unread');assert.equal(session.restartUncertain,true);
+  await owner.shutdown();
+});
+
+test('read evidence leaves turn, ordering and metadata evidence unchanged',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  const desktop={...identity,client:'desktop'};
+  const observed=(event,extra={})=>({apiVersion:'1.0',identity:desktop,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event,observedAtMs:1000,ordering:{status:'known',epoch:'epoch-1',sequence:1},...extra});
+  await owner.ingest(observed({kind:'turn.started'}));
+  const before=owner.snapshot().sessions[0];
+  assert.deepEqual(before.ordering,{status:'known',epoch:'epoch-1',sequence:1});
+  assert.equal((await owner.ingest(observed({kind:'read.observed',state:'read'},{turn:{status:'unknown'},ordering:{status:'unknown'}}))).outcome,'applied');
+  assert.equal((await owner.ingest(observed({kind:'read.observed',state:'unread'},{turn:{status:'known',id:'turn-2'},ordering:{status:'known',epoch:'epoch-2',sequence:5},
+    parent:{status:'known',identity:{...desktop,sessionId:'parent'}},label:{origin:'user',value:'Renamed'}}))).outcome,'applied');
+  const after=owner.snapshot().sessions[0];
+  assert.equal(after.read,'unread');
+  assert.deepEqual([after.turn,after.ordering,after.unavailable,after.parent,after.label,after.activity],
+    [before.turn,before.ordering,before.unavailable,before.parent,before.label,before.activity]);
+  await owner.shutdown();
+});
+
 test('child permission requests remain on the child established by its start',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));
   const raw={session_id:identity.sessionId,agent_id:'child',turn_id:'parent-turn'};

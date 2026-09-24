@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.1 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.2 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -105,7 +105,7 @@ IDs are stable even after the retry window expires. Unknown ordering is visible;
 the reducer never invents native sequence numbers, parents, success or readership.
 
 Five minutes without fresh session evidence changes freshness to `uncertain`.
-Duplicates, labels and acknowledgments do not refresh it. Restored sessions remain
+Duplicates, labels, acknowledgments and read evidence do not refresh it. Read evidence also leaves restart uncertainty unchanged and cannot create a session. Restored sessions remain
 uncertain until accepted fresh evidence. Collector health reports the owner's
 ability to collect, independent of whether a session has become stale.
 
@@ -197,7 +197,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.1 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.2 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -213,6 +213,8 @@ labels and acknowledgments must match. Import rejects an occupied destination.
 Version 1.0 has no predecessor migration; unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
 Package 2.0.1 adds explicit approval recovery without changing those schemas.
+Package 2.0.2 keeps read evidence out of freshness, restart recovery and session
+admission without changing those schemas.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. An older package can read the same shape but restores its older
