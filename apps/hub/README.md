@@ -12,9 +12,87 @@ Configuration is an owner-only regular JSON file with required `directory`, `own
 
 Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
-Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must match persisted/imported state. Credentials contain a neutral `id`, SHA-256 `digest` of an independently provisioned 43-character base64url bearer token, `scopes` and registered device aliases in `devices`. Supported scopes are `read`, `ingest`, `control` and `admin`; quiesce requires control and admin. Provision producer and read-only credentials separately. Native controller tokens remain only in private server configuration. No route returns them.
+Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must match persisted/imported state. [Credentials](#credentials) describes the `credentials` list, how to create an entry and what each grant allows. Native controller tokens remain only in private server configuration. No route returns them.
 
 Each controller has `id`, `kind` of `pixoo` or `nanoleaf`, `controllerId`, `deviceId`, numeric IPv4 loopback `endpoint` ending `/controller/v1`, and its dedicated `token`. There is at most one active HTTP request per device and no automatic retry. A capacity rejection does not reserve a controller ticket. Explicit commands retain the owning controller's request ID and revision guards. A timeout after submission is uncertain, never proof of no effects. `sent` is transport evidence only.
+
+## Credentials
+
+Every authenticated request carries a bearer token in `Authorization: Bearer <token>`. The hub stores only each token's SHA-256 digest, in the `credentials` list of the private configuration, together with what that token may do:
+
+```json
+{"id": "kitchen-display", "digest": "<64 lowercase hex characters>", "scopes": ["read"], "devices": ["ht-a9"]}
+```
+
+- `id`: a neutral name for the client, 1-128 characters from `A-Z`, `a-z`, `0-9`, `_`, `.` and `-`, unique in the file.
+- `digest`: the SHA-256 of the token as 64 lowercase hex characters, unique in the file.
+- `scopes`: up to four of `read`, `ingest`, `control` and `admin`.
+- `devices`: up to 16 controller aliases or playback source IDs the token may use. The hub does not check that these exist, so a misspelled entry grants nothing and the route answers 403.
+
+The file holds between 1 and 32 credentials. The hub reads them at startup, and again only when a setup grant or revoke rewrites the list and replaces the running set; that also applies any hand edits waiting in the file. Give each client its own token so you can revoke one without touching the others.
+
+### Create a credential
+
+Run these as the Linux user that owns the hub. The token is 32 random bytes in base64url, exactly 43 characters.
+
+```bash
+umask 077
+node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64url'))" > /absolute/private/client-token
+sha256sum < /absolute/private/client-token | cut -d' ' -f1
+```
+
+1. Keep the token file owner-only, outside Git and outside `/mnt`, and give the token only to the client that needs it.
+2. Add an entry to `credentials` with the printed digest and the scopes and `devices` from the tables below.
+3. Restart the hub so it reads the new list. For an installed systemd user service, run `systemctl --user restart <unit>`. An invalid list, such as a duplicate `id` or `digest`, an uppercase or wrong-length digest, an unknown scope or too many entries, stops startup with `hub-start-failed` and takes every client offline, so keep a copy of the previous file to restore.
+4. Check the grant: `curl -H "Authorization: Bearer $(cat /absolute/private/client-token)" "http://127.0.0.1:<port>/api/hub/v1/authority?scope=read"` returns the owner ID for a token with `read` scope, 403 for a known token without it and 401 for an unknown token.
+
+To rotate a token without a gap for that client, create the new credential with a new `id` as above, including the restart and the step 4 check. Then switch the client to the new token, remove the old entry and restart again. To revoke a token, remove its entry and restart; its requests then get 401. Entries named `hub-<hex>` are producer credentials owned by the [setup operations](SETUP.md#credentials-and-windows-invocation). Grant and revoke those through the setup operations instead of editing them by hand.
+
+### What each grant allows
+
+A REST request without a valid token gets 401. A valid token without the needed scope or `devices` entry gets 403. REST requests must also use the numeric loopback address the hub listens on, and every REST mutation needs `X-Pixoo-Request: 1`.
+
+| REST route | Scope | `devices` entry |
+| --- | --- | --- |
+| `GET /api/monitor/v1/sessions`, `GET /api/monitor/v1/changes`, `GET /api/hub/v1/health`, `GET /api/dashboard/v1/context` | `read` | none |
+| `POST /api/monitor/v1/events` | `ingest` | none |
+| `POST /api/monitor/v1/commands` to label, acknowledge or recover an approval | `control` | none |
+| `POST /api/monitor/v1/commands` to quiesce | `control` and `admin` | none |
+| `GET /api/hub/v1/authority?scope=<scope>` | the named scope: `read`, `control` or `ingest` | none |
+| `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/receipt` | `read` | the controller alias `:id` |
+| `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel` | `control` | the controller alias `:id` |
+| `GET /api/playback/v1/snapshot` | `read` | the selected playback source ID |
+| `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
+| `POST /api/dashboard/v1/logout` | `control` | none |
+
+`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
+
+When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. A missing or unknown token gets HTTP 401. A tool the token's scopes or `devices` do not cover is left out of the tool list, and calling it anyway returns a tool error with code `forbidden` rather than HTTP 403. `<prefix>` is the per-device value that `hub_devices` returns.
+
+| MCP tools | Scope | `devices` entry |
+| --- | --- | --- |
+| `hub_sessions`, `hub_devices` | `read` | none; `hub_devices` lists only the caller's controllers |
+| `hub_label`, `hub_acknowledge`, `hub_recover_approval` | `control` | none |
+| `<prefix>_status`, `<prefix>_integration_status`, and `<prefix>_integration_receipt` for Nanoleaf only | `read` | that controller's alias |
+| `<prefix>_power_set`, `_brightness_set`, `_mode_set`, `_media_start`, `_media_control`, `_integration_set`, and `_integration_cancel` for Nanoleaf only | `control` | that controller's alias |
+
+There are no playback MCP tools yet; [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37) owns them.
+
+### Typical clients
+
+| Client | `scopes` | `devices` |
+| --- | --- | --- |
+| Agent hook producer | `ingest` | none; the setup operations create it |
+| Display that shows agent sessions, such as Nanoleaf | `read` | none |
+| Client that also labels sessions or acknowledges notices, such as the Pixoo facade | `read`, `control` | none |
+| Tool that reads and controls one device | `read`, `control` | that controller's alias |
+| Now-playing display | `read` | the playback source ID |
+| Music controls | `read`, `control` | the playback source ID |
+| Supervised migration | `read`, `control`, `admin` | none |
+
+### Browser sessions
+
+The BUNNY launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias for up to eight hours. That session has no `ingest`, `admin` or playback grant, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
 
 ## HTTP boundary
 
@@ -53,7 +131,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 `sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
 
-Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37).
+Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37).
 
 ### Snapshot
 
