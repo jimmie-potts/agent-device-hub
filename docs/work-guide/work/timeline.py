@@ -31,7 +31,7 @@ TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='B.U.N.N.Y. UI foundation', issues=['H181', 'H182'], guide='bunny-controls', main=True),
-        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H232', 'H245', 'H247', 'P67', 'N91'], guide='bunny-controls', main=True),
+        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H232', 'H244', 'H245', 'H247', 'P67', 'N91'], guide='bunny-controls', main=True),
         dict(id='n-music', x=3, label='Music playback', issues=['H233', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35', 'H242'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
@@ -41,9 +41,9 @@ TRACKS = [
     ]),
     ('Monitoring follow-ups', [
         dict(id='n-shared-lifetime', x=0, label='Read state + expiry done', issues=[], guide='shared-codex'),
-        dict(id='n-shared-map-quality', x=1, label='Archive removal · push', issues=['H218', 'H222'], guide='shared-codex'),
+        dict(id='n-shared-map-quality', x=1, label='Task clearing · push', issues=['H218', 'H222'], guide='shared-codex'),
         dict(id='n-nl-push', x=2, label='Nanoleaf wakes on push', issues=['N90'], guide='shared-codex'),
-        dict(id='n-shared-retire', x=3, label='Retire sessions · sources', issues=['H241', 'H244', 'N111'], guide='shared-codex'),
+        dict(id='n-shared-retire', x=3, label='Retire sessions · sources', issues=['H241', 'N111'], guide='shared-codex'),
     ]),
     ('Reliable event history', [
         dict(id='n-event-history', x=4, label='History refinement', issues=['H139'], guide='shared-codex'),
@@ -347,7 +347,7 @@ def reconcile(issues, coverage, aliases):
         ('Engineering maintenance', [dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow')]),
         ('Task metadata and effects', [
             dict(id='n-map-metadata', x=0, label='Codex titles delivered', issues=[], guide='nanoleaf-presentation'),
-            dict(id='n-map-threads', x=1, label='Links · titles · comet', issues=['N100', 'N81'], guide='nanoleaf-presentation'),
+            dict(id='n-map-threads', x=1, label='Claude titles · comet', issues=['N100', 'N81'], guide='nanoleaf-presentation'),
             dict(id='n-map-animations', x=2, label='Requested animations', issues=['N92'], guide='nanoleaf-presentation'),
         ]),
         ('Guide overview', [dict(id='n-guide-overview', x=0, label='Overview refresh delivered', issues=[], guide='work-guide')]),

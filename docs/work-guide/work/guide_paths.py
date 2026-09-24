@@ -4,13 +4,13 @@
 TOPICS = [
     ('shared-codex', 'Monitoring accuracy and recovery',
      'Keep current activity, read evidence and session lifetime accurate and prompt across devices.',
-     'Session expiry and Codex Desktop read state are delivered. Archive removal can start now; retire ended sessions consistently across Codex and Claude, and let Nanoleaf keep following a feed with an undeclared source. Commit notifications let the dashboard and Nanoleaf react without polling; per-task recovery keeps its own scope.', ['H218', 'H222', 'N90', 'H138']),
+     'Session expiry and Codex Desktop read state are delivered. Clearing Desktop tasks and Line assignments when sessions end is in review; consistent retirement across Codex and Claude follows it, and Nanoleaf should keep following a feed with an undeclared source. Commit notifications let the dashboard and Nanoleaf react without polling; per-task recovery keeps its own scope.', ['H218', 'H222', 'N90', 'H138']),
     ('bunny-controls', 'B.U.N.N.Y. interface and device controls',
      'Make the shared dashboard and device controls consistent and usable.',
      'The Pixoo and Nanoleaf controls are installed and verified, and one-step apply is delivered. Share the command lifecycle between forms and actions, and document controller setup. The shared UI foundation precedes dashboard adoption; playlist names and Codex scene tools have their own scopes.', ['H245', 'H232', 'H181', 'P67']),
     ('nanoleaf-presentation', 'Nanoleaf wall map and effects',
      'Make current tasks easy to identify, inspect and open, with truthful light presentation and requested effects.',
-     'Codex task titles, current projects first and the compact inspector are delivered. Thread links and the simpler default layout are delivered. Next: keep Open in Codex focus through polling, merge the inspector cards, show the Lines hold, and keep comets on skipped revisions; Claude Code titles can follow. Rendering parity and effect customization keep their own prerequisites.', ['N117', 'N135', 'N100', 'N81']),
+     'Codex task titles, current projects first and the compact inspector are delivered. Thread links and the simpler default layout are delivered. The Open in Codex focus fix is in review. Next: merge the inspector cards, show the Lines hold, keep comets on skipped revisions and queue the delayed completion comet; Claude Code titles can follow. Rendering parity and effect customization keep their own prerequisites.', ['N135', 'N112', 'N115', 'N81']),
     ('nanoleaf-devices', 'Adding devices',
      'Extend device support through separate Panels, Tidbyt, LIFX and PC-lighting tracks.',
      'The Lines and Panels trial and Tidbyt agent status are accepted on the installed devices. Add the Lines/Panels map selector, check stale Tidbyt rows with night mode, and choose LIFX status behavior before implementation. PC lighting stays later.', ['N44', 'H227', 'H20']),
@@ -41,7 +41,7 @@ ALIASES = {'tidbyt-lifx': 'nanoleaf-devices', 'pc-lighting': 'nanoleaf-devices'}
 OWNER_LATER = {'P61': 'Later by owner choice; keep the recorded performance scope and failed measurements.'}
 NEXT_STEPS = {
     'P77': 'Keep the installed Pixoo app running across PC and WSL restarts, so BUNNY controls and agent status return without manual steps.',
-    'H218': 'Drop archived Codex Desktop tasks from monitoring, now that session expiry is delivered.',
+    'H218': 'Clear Codex Desktop tasks and Line assignments when sessions end; the PR is in review.',
     'H222': 'Announce each hub commit to change-stream readers at once; Nanoleaf can then stop polling every second.',
     'H181': 'Define the shared UI foundation that dashboard adoption needs.',
     'H85': 'Improve the guide and atlas presentation; coordinate token names with the application foundation.',

@@ -38,8 +38,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H205': 'First qualify supported phone-to-app handoff paths, then define owner sign-in and the '
          'outbound connector boundary before building a private task inbox and the first qualified '
          'handoff. This work is deferred behind the anonymous public release.',
- 'H218': 'Remove confirmed archived Codex Desktop tasks and known children from monitoring. Uses '
-         'the session retirement delivered by [[H195]] and the Codex home configured for [[H191]].',
+ 'H218': 'Clear Codex Desktop tasks and Line assignments when a session ends, without archive '
+         'detection. Uses the session retirement delivered by [[H195]] and the Codex home configured for [[H191]].',
  'H22': 'Install the LIFX status adapter after [[H20]] and verify the agreed behavior on the named '
         'bulbs with separate authorization.',
  'H222': 'Announce each state commit to change-stream readers at once instead of on a 1-second '
@@ -176,7 +176,7 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'primitives; stop passing the bridge module as a value.',
  'N119': 'Decide DOM rebuilds in one scheduler behind a view model; renderers only draw. UI PR, '
          'human approval applies.',
- 'N120': 'Keep SQLite schema knowledge with the modules that own each table. Follows [[N118]].',
+ 'N120': 'Concentrate schema knowledge where coupling is demonstrated: shared-input backup and restore, demo seeding and selected multi-table operations. Follows [[N118]].',
  'N121': 'Carry device identity as a worker context instead of a threaded parameter and '
          'primary-device branches. Follows [[N118]].',
  'N122': 'Bounded investigation: can the shared-input projection be a pure function tested without '
@@ -207,7 +207,7 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'one backend, simulator by default, explicit device activation.',
  'N100': 'Show Claude Code titles and projects for shared tasks, as [[N75]] does for Codex. The '
          'hub feed deliberately carries neither, so the wall reads them locally by session ID.',
- 'N16': 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.',
+ 'N16': 'Follow the rendering and customization work and a decision to proceed; the Lively prototype was closed as superseded.',
  'N17': 'The rendering contract [[N15]] is delivered. Build the live app renderer on it; the Lively '
         'prototype was closed as superseded.',
  'N18': 'Add project/status palettes after rendering and Hub #2’s vocabulary.',
