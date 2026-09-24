@@ -29,7 +29,7 @@ Every authenticated request carries a bearer token in `Authorization: Bearer <to
 - `scopes`: up to four of `read`, `ingest`, `control` and `admin`.
 - `devices`: up to 16 controller aliases or playback source IDs the token may use. The hub does not check that these exist, so a misspelled entry grants nothing and the route answers 403.
 
-The file holds at most 32 credentials, and the hub reads them only at startup. Give each client its own token so you can revoke one without touching the others.
+The file holds between 1 and 32 credentials. The hub reads them at startup, and again only when a setup grant or revoke rewrites the list and replaces the running set; that also applies any hand edits waiting in the file. Give each client its own token so you can revoke one without touching the others.
 
 ### Create a credential
 
@@ -43,14 +43,14 @@ sha256sum < /absolute/private/client-token | cut -d' ' -f1
 
 1. Keep the token file owner-only, outside Git and outside `/mnt`, and give the token only to the client that needs it.
 2. Add an entry to `credentials` with the printed digest and the scopes and `devices` from the tables below.
-3. Restart the hub so it reads the new list. For an installed systemd user service, run `systemctl --user restart <unit>`.
+3. Restart the hub so it reads the new list. For an installed systemd user service, run `systemctl --user restart <unit>`. An invalid list, such as a duplicate `id` or `digest`, an uppercase or wrong-length digest, an unknown scope or too many entries, stops startup with `hub-start-failed` and takes every client offline, so keep a copy of the previous file to restore.
 4. Check the grant: `curl -H "Authorization: Bearer $(cat /absolute/private/client-token)" "http://127.0.0.1:<port>/api/hub/v1/authority?scope=read"` returns the owner ID for a token with `read` scope, 403 for a known token without it and 401 for an unknown token.
 
-To rotate a token, add a new entry with a new `id`, switch the client to the new token, then remove the old entry and restart. To revoke a token, remove its entry and restart; its requests then get 401. Entries named `hub-<hex>` are producer credentials owned by the [setup operations](SETUP.md#credentials-and-windows-invocation). Grant and revoke those through the setup operations instead of editing them by hand.
+To rotate a token without an outage, create the new credential with a new `id` as above, including the restart and the step 4 check. Then switch the client to the new token, remove the old entry and restart again. To revoke a token, remove its entry and restart; its requests then get 401. Entries named `hub-<hex>` are producer credentials owned by the [setup operations](SETUP.md#credentials-and-windows-invocation). Grant and revoke those through the setup operations instead of editing them by hand.
 
 ### What each grant allows
 
-A request without a valid token gets 401. A valid token without the needed scope or `devices` entry gets 403. REST requests must also use the numeric loopback address the hub listens on, and every REST mutation needs `X-Pixoo-Request: 1`.
+A REST request without a valid token gets 401. A valid token without the needed scope or `devices` entry gets 403. REST requests must also use the numeric loopback address the hub listens on, and every REST mutation needs `X-Pixoo-Request: 1`.
 
 | REST route | Scope | `devices` entry |
 | --- | --- | --- |
@@ -67,14 +67,14 @@ A request without a valid token gets 401. A valid token without the needed scope
 
 `GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
 
-When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. `<prefix>` is the per-device value that `hub_devices` returns.
+When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. A missing or unknown token gets HTTP 401. A tool the token's scopes or `devices` do not cover is left out of the tool list, and calling it anyway returns a tool error with code `forbidden` rather than HTTP 403. `<prefix>` is the per-device value that `hub_devices` returns.
 
 | MCP tools | Scope | `devices` entry |
 | --- | --- | --- |
 | `hub_sessions`, `hub_devices` | `read` | none; `hub_devices` lists only the caller's controllers |
 | `hub_label`, `hub_acknowledge`, `hub_recover_approval` | `control` | none |
-| `<prefix>_status`, `<prefix>_integration_status`, `<prefix>_integration_receipt` | `read` | that controller's alias |
-| `<prefix>_power_set`, `_brightness_set`, `_mode_set`, `_media_start`, `_media_control`, `_integration_set`, `_integration_cancel` | `control` | that controller's alias |
+| `<prefix>_status`, `<prefix>_integration_status`, and `<prefix>_integration_receipt` for Nanoleaf only | `read` | that controller's alias |
+| `<prefix>_power_set`, `_brightness_set`, `_mode_set`, `_media_start`, `_media_control`, `_integration_set`, and `_integration_cancel` for Nanoleaf only | `control` | that controller's alias |
 
 There are no playback MCP tools yet; [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37) owns them.
 
