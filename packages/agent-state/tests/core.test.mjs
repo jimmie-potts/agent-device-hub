@@ -67,6 +67,23 @@ test('read evidence changes only the read dimension',async()=>{
   await owner.shutdown();
 });
 
+test('read evidence leaves turn, ordering and metadata evidence unchanged',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  const desktop={...identity,client:'desktop'};
+  const observed=(event,extra={})=>({apiVersion:'1.0',identity:desktop,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event,observedAtMs:1000,ordering:{status:'known',epoch:'epoch-1',sequence:1},...extra});
+  await owner.ingest(observed({kind:'turn.started'}));
+  const before=owner.snapshot().sessions[0];
+  assert.deepEqual(before.ordering,{status:'known',epoch:'epoch-1',sequence:1});
+  assert.equal((await owner.ingest(observed({kind:'read.observed',state:'read'},{turn:{status:'unknown'},ordering:{status:'unknown'}}))).outcome,'applied');
+  assert.equal((await owner.ingest(observed({kind:'read.observed',state:'unread'},{turn:{status:'known',id:'turn-2'},ordering:{status:'known',epoch:'epoch-2',sequence:5},
+    parent:{status:'known',identity:{...desktop,sessionId:'parent'}},label:{origin:'user',value:'Renamed'}}))).outcome,'applied');
+  const after=owner.snapshot().sessions[0];
+  assert.equal(after.read,'unread');
+  assert.deepEqual([after.turn,after.ordering,after.unavailable,after.parent,after.label,after.activity],
+    [before.turn,before.ordering,before.unavailable,before.parent,before.label,before.activity]);
+  await owner.shutdown();
+});
+
 test('child permission requests remain on the child established by its start',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));
   const raw={session_id:identity.sessionId,agent_id:'child',turn_id:'parent-turn'};

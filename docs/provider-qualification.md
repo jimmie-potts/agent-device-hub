@@ -62,7 +62,7 @@ The session selector identifies the actual child when `agent_id` is present; the
 - Desktop also lists unopened subagent threads, so only top-level sessions qualify.
 - No hook reports reads, and a Linux file watcher on `/mnt/c` received no events. The reader therefore checks the file's size and modification time every two seconds and parses it only when they change.
 
-A listed session is `unread`. An unlisted session is `read` when it was unread, or when its read value is unknown, its activity is idle, interrupted or ended, and its last lifecycle evidence is at least five seconds old. Desktop sets the flag shortly after Stop; legacy Nanoleaf used the same wait. A missing, oversized, malformed or other-version file produces no evidence. The standalone Hub's optional `codexDesktop` configuration enables this reader; see [the Hub guide](../apps/hub/README.md#configuration-and-authority).
+A listed session is `unread`. An unlisted session is `read` when it was unread, or when its read value is unknown, it is not known to be active, and its last lifecycle evidence is at least five seconds old. Desktop sets the flag shortly after Stop; legacy Nanoleaf used the same wait. Unordered Interrupt and SessionEnd hooks leave the owner's activity unknown, so the rule excludes only a known running turn. A missing, oversized, malformed or other-version file produces no evidence. The standalone Hub's optional `codexDesktop` configuration enables this reader; see [the Hub guide](../apps/hub/README.md#configuration-and-authority).
 
 ## Required-client stops
 

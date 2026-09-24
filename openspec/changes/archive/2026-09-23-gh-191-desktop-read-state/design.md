@@ -11,7 +11,7 @@ No hook reports reads. A Linux file watcher on `/mnt/c` received no events for W
 - **Rule.** For each top-level session (`provider: codex`, `client: desktop`, configured host and source, parent not known):
   - listed and not already `unread` → `unread`;
   - not listed and currently `unread` → `read`;
-  - not listed, `read: unknown`, activity idle, interrupted or ended, and the last session evidence at least five seconds old → `read`.
+  - not listed, `read: unknown`, activity not `active`, and the last session evidence at least five seconds old → `read`. Activity is not required to be idle, because unordered Interrupt and SessionEnd hooks leave it unknown.
   The five-second wait matches legacy Nanoleaf: Desktop sets the unread flag shortly after Stop. Child sessions are skipped because Desktop lists unopened subagent threads as unread indefinitely.
 - **Emission.** The reader ingests an event only when the desired state differs from the owner's current value. Each event carries the session's current turn, unknown parent and unknown ordering, so it does not alter turn or parent evidence.
 - **Owner semantics.** `read.observed` changes only the read dimension. It does not update `lastEvidenceAtMs` or the session's `observedAtMs`, does not clear restart uncertainty, and does not create a session for an unknown identity. Otherwise, viewing a task in Desktop would make a stale or restarted session look current and would block approval recovery.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,open,rm,writeFile} from 'node:fs/promises';
+import {chmod,mkdtemp,open,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -10,7 +10,7 @@ import {codexDesktopOptions,createDesktopRead,unreadSessions} from '../dist/code
 import {startHub} from '../dist/server.js';
 
 const marker=(ids,version=1)=>JSON.stringify({'local-projects':{},'electron-thread-read-state-v1':{version,unreadByIdentity:{host:{'local:a':ids}},legacyMigration:{}}});
-const hook=(name,raw,{client='desktop',sourceId='desktop'}={},at=1000)=>normalizeHook(raw,{provider:'codex',client,hostId:'host',sourceId,hook:name},at);
+const hook=(name,raw,{provider='codex',client='desktop',hostId='host',sourceId='desktop'}={},at=1000)=>normalizeHook(raw,{provider,client,hostId,sourceId,hook:name},at);
 
 async function fixture(){
   const home=await mkdtemp(join(tmpdir(),'hub-codex-home-'));let clock=1000;
@@ -47,11 +47,13 @@ test('read state follows the marker for configured top-level Desktop sessions',a
     await owner.ingest(hook('SubagentStart',{session_id:'one',agent_id:'child'}));await owner.ingest(hook('SubagentStop',{session_id:'one',agent_id:'child'}));
     await owner.ingest(hook('Stop',{session_id:'other',turn_id:'turn-1'},{sourceId:'other'}));
     await owner.ingest(hook('Stop',{session_id:'cli',turn_id:'turn-1'},{client:'cli'}));
-    await write(['one','child','other','cli']);
+    await owner.ingest(hook('Stop',{session_id:'host-2',turn_id:'turn-1'},{hostId:'host-2'}));
+    await owner.ingest(hook('Stop',{session_id:'claude',prompt_id:'turn-1'},{provider:'claude',client:'code'}));
+    await write(['one','child','other','cli','host-2','claude']);
     await reader.tick();
     assert.equal(read('one'),'unread');
     const others=owner.snapshot().sessions.filter(item=>item.identity.sessionId!=='one');
-    assert.equal(others.length,3);assert.ok(others.every(item=>item.read==='unknown'));
+    assert.equal(others.length,5);assert.ok(others.every(item=>item.read==='unknown'));
     let revision=owner.snapshot().revision;
     advance(10000);await reader.tick();
     assert.equal(owner.snapshot().revision,revision);
@@ -71,12 +73,14 @@ test('an unlisted completion becomes read only after the flag has had time to ap
   const {owner,reader,complete,read,write,advance,close}=await fixture();
   try{
     await complete('viewed','turn-1');
+    for(const [session,end] of [['interrupted','Interrupt'],['ended','SessionEnd']])
+      for(const name of ['UserPromptSubmit',end])await owner.ingest(hook(name,{session_id:session,turn_id:'turn-1'}));
     await owner.ingest(hook('UserPromptSubmit',{session_id:'running',turn_id:'turn-1'}));
     await write([]);
     advance(4999);await reader.tick();
-    assert.equal(read('viewed'),'unknown');
+    assert.deepEqual(['viewed','interrupted','ended'].map(read),['unknown','unknown','unknown']);
     advance(1);await reader.tick();
-    assert.equal(read('viewed'),'read');
+    assert.deepEqual(['viewed','interrupted','ended'].map(read),['read','read','read']);
     advance(600000);await reader.tick();
     assert.equal(read('running'),'unknown');
   }finally{await close();}
@@ -97,7 +101,20 @@ test('missing, oversized, malformed or changed-format markers produce no read ev
     await reader.tick();assert.equal(read('one'),'unread');
     await rm(join(home,'.codex-global-state.json'));
     await reader.tick();assert.equal(read('one'),'unread');
-    await write([]);await reader.tick();assert.equal(read('one'),'read');
+    await write([]);await chmod(join(home,'.codex-global-state.json'),0o000);
+    await reader.tick();assert.equal(read('one'),'unread');
+    await chmod(join(home,'.codex-global-state.json'),0o600);
+    await reader.tick();assert.equal(read('one'),'read');
+  }finally{await close();}
+});
+
+test('a marker that disappears after a good read stops read decisions',async()=>{
+  const {home,reader,complete,read,write,advance,close}=await fixture();
+  try{
+    await write([]);await reader.tick();
+    await rm(join(home,'.codex-global-state.json'));
+    await complete('two','turn-1');advance(10000);await reader.tick();
+    assert.equal(read('two'),'unknown');
   }finally{await close();}
 });
 
@@ -113,7 +130,7 @@ test('the host polls a configured Codex home and rejects invalid Desktop configu
     const call=(path,body)=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
     for(const name of ['UserPromptSubmit','Stop'])assert.equal((await call('/api/monitor/v1/events',hook(name,{session_id:'one',turn_id:'turn-1'},{},Date.now()))).status,200);
     let state;
-    for(const deadline=Date.now()+6000;Date.now()<deadline;await new Promise(resolve=>setTimeout(resolve,100))){
+    for(const deadline=Date.now()+10000;Date.now()<deadline;await new Promise(resolve=>setTimeout(resolve,100))){
       state=(await (await call('/api/monitor/v1/sessions')).json()).snapshot.sessions[0].read;if(state==='unread')break;
     }
     assert.equal(state,'unread');

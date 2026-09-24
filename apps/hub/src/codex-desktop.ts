@@ -45,8 +45,9 @@ function readEvents(snapshot:Snapshot,unread:ReadonlySet<string>,source:CodexDes
     if (identity.provider !== 'codex' || identity.client !== 'desktop' || identity.hostId !== source.hostId ||
         identity.sourceId !== source.sourceId || session.parent.status === 'known') continue;
     // The marker lists only unread threads, so absence means read once the flag has had time to appear.
+    // Unordered interrupt and end hooks leave activity unknown, so only a known running turn waits.
     const state = unread.has(identity.sessionId) ? 'unread' : session.read === 'unread' || (session.read === 'unknown' &&
-      ['idle','interrupted','ended'].includes(session.activity) && now - session.lastEvidenceAtMs >= READ_SETTLE_MS) ? 'read' : null;
+      session.activity !== 'active' && now - session.lastEvidenceAtMs >= READ_SETTLE_MS) ? 'read' : null;
     if (state && state !== session.read) events.push({apiVersion:'1.0',identity,turn:session.turn,parent:{status:'unknown'},
       event:{kind:'read.observed',state},observedAtMs:now,ordering:{status:'unknown'}});
   }
