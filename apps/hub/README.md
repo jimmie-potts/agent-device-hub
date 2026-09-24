@@ -105,7 +105,7 @@ The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup a
 - `command(action)`: resolve `sent` when the source accepted the call or `failed` when it refused before any effect. Reject for any uncertain result, and apply your own timeout under the host's three-second request limit.
 - `close()`: stop observing and abort in-flight work.
 
-`src/sony.ts` is the reference adapter. `server.ts` validates the `playback` envelope, builds the source for its `kind` and closes it with the host. A second source currently needs a new `kind` branch there. Multi-source runtime and selection are deferred. The [OpenSpec design](../../openspec/changes/gh-175-shared-playback/design.md#future-two-source-flow) describes how two sources keep independent freshness, commands stay bound to the selected source and an unavailable selection never falls back silently.
+`src/sony.ts` is the reference adapter. `server.ts` validates the `playback` envelope, builds the source for its `kind` and closes it with the host. A second source currently needs a new `kind` branch there. Multi-source runtime and selection are deferred. The [OpenSpec design](../../openspec/changes/archive/2026-09-24-gh-175-shared-playback/design.md#future-two-source-flow) describes how two sources keep independent freshness, commands stay bound to the selected source and an unavailable selection never falls back silently.
 
 ## Compatibility and evidence
 
