@@ -105,20 +105,22 @@ IDs are stable even after the retry window expires. Unknown ordering is visible;
 the reducer never invents native sequence numbers, parents, success or readership.
 
 Five minutes without fresh session evidence changes freshness to `uncertain`.
-Duplicates, labels, acknowledgments and read evidence do not refresh it. Read evidence also leaves restart uncertainty unchanged and cannot create a session. Restored sessions remain
-uncertain until accepted fresh evidence. Collector health reports the owner's
-ability to collect, independent of whether a session has become stale.
+Duplicates, labels, acknowledgments and read evidence do not refresh it. Read
+evidence also leaves restart uncertainty unchanged and cannot create a session.
+Restored sessions remain uncertain until accepted fresh evidence. Collector
+health reports the owner's ability to collect, independent of whether a session
+has become stale.
 
 A session with no accepted lifecycle evidence for 24 hours expires. The owner
 forgets it, including its label, notices and attention, in one `replace` commit
 without a journal row. Expiry is not acknowledgment, readership, success or
 cancellation. It runs from the maintenance timer, at startup and before each
 ingest, so a full owner frees slots before rejecting a new identity. The same
-events that refresh freshness renew the window, and a restart does not reset
-it. A `runtime.ended` or read observation for an unknown identity is stale, as
-is any observation whose `observedAtMs` is 24 hours or more before the owner's
-wall clock. Each record expires on its own clock, so a child can outlive its
-parent; consumers must tolerate a missing parent. New activity after expiry creates a
+events that refresh freshness renew the window, and a restart does not reset it.
+A `runtime.ended` or read observation for an unknown identity is stale, as is
+any observation whose `observedAtMs` is 24 hours or more before the owner's wall
+clock. Each record expires on its own clock, so a child can outlive its parent;
+consumers must tolerate a missing parent. New activity after expiry creates a
 fresh record with defaults.
 
 Every committed mutation increments a safe integer revision. That revision
