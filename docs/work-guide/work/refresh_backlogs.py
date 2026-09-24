@@ -12,9 +12,9 @@ REPOS = ['agent-device-hub', 'codex-nanoleaf', 'divoom-app-upgrade']
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
-    'agent-device-hub': [10, 86, 196, 200],
-    'codex-nanoleaf': [31],
-    'divoom-app-upgrade': [38, 47, 68],
+    'agent-device-hub': [10, 86, 196, 200, 210],
+    'codex-nanoleaf': [31, 84],
+    'divoom-app-upgrade': [38, 47, 68, 72],
 }
 
 
@@ -78,7 +78,7 @@ def refresh_repo(repo):
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'commentPages': comment_sizes, 'commentBodiesStored': not references_only})
     for number in GUIDE_STATUS_REFERENCES[repo]:
-        issue = normalize(api(f'{base}/issues/{number}'), [])
+        issue = normalize(api(f'{base}/issues/{number}'))
         issues = [i for i in issues if i['number'] != number] + [issue]
         direct.append({'number': number, 'state': issue['state'], 'purpose': 'Guide story status'})
     if repo == 'agent-device-hub':

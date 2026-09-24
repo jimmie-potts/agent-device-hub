@@ -586,7 +586,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 43,
@@ -705,7 +705,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 52,
@@ -818,28 +818,25 @@
     "milestone": null,
     "comments": [],
     "commentCount": 0,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 72,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Use shared npm and Playwright caches and fnm for Node 24 in setup guidance",
     "body": "## Outcome\n\nSetup guidance keeps npm and Playwright caches in their shared default locations instead of `/tmp`, and says how to select Node 24 without installing another copy.\n\nOn 2026-09-23 the WSL host's `/tmp`, a 7.6 GB RAM-backed tmpfs shared by all agent sessions, filled completely. Part of the cause was guidance that sends caches or per-task installs into `/tmp`. The Codex local-development sandbox profile now allows writes to `~/.npm` and `~/.cache/ms-playwright`, so the read-only-cache workaround is no longer needed.\n\n## Scope\n\n- `docs/development.md`: replace \"Use `npm ci --cache /tmp/pixoo-npm-cache` if the WSL npm cache is read-only\" and the `PLAYWRIGHT_BROWSERS_PATH` sandbox advice with guidance to use npm's default cache (`~/.npm`) and Playwright's default browser cache (`~/.cache/ms-playwright`), and to report a read-only cache instead of redirecting it.\n- Same file: when `node --version` is not v24, prefix commands with `fnm exec --using=.nvmrc --` from the worktree root and reuse one shared Node 24 installation, as agent-device-hub documents.\n\nOut of scope: other documentation, CI and tests.\n\n## Acceptance criteria\n\n- `docs/development.md` no longer recommends a `/tmp` npm cache or a sandbox browser path, and it contains the fnm note.\n- `npm run check:workflow` and `npm run test:workflow` exit zero, and every configured CI job succeeds on the PR head and the merged main revision.\n\n## Dependencies\n\nNone. Related: jimmie-potts/divoom-app-upgrade#70 (cleanup after delivery).\n\n## Verification\n\nLocal workflow checks, GitHub Actions CI, and independent Standards and Specification reviews.\n\n## Delivery target\n\nMerged to `main`.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/72",
-    "updatedAt": "2026-09-23T23:50:56Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-24T00:02:24Z",
+    "closedAt": "2026-09-24T00:02:23Z",
     "labels": [
       {
         "name": "documentation"
-      },
-      {
-        "name": "status:review"
       }
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 1,
     "commentsRefreshed": false
   }
 ]

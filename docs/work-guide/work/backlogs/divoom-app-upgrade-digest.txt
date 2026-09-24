@@ -24,4 +24,4 @@
 #61 [OPEN] Harden and qualify embedded shared-monitor performance
 #67 [OPEN] Expose user-entered playlist names through the Pixoo integration extension
 #68 [CLOSED] Align guide-maintenance rules with the current hub procedure
-#72 [OPEN] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance
+#72 [CLOSED] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance

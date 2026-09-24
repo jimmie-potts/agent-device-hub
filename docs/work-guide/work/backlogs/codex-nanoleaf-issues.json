@@ -476,7 +476,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 34,
@@ -1389,24 +1389,21 @@
   },
   {
     "number": 84,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Use the shared npm cache instead of a /tmp cache in setup guidance",
     "body": "## Outcome\n\nSetup guidance keeps npm's cache in its shared default location instead of `/tmp`.\n\nOn 2026-09-23 the WSL host's `/tmp`, a 7.6 GB RAM-backed tmpfs shared by all agent sessions, filled completely. Part of the cause was guidance that sends caches or per-task installs into `/tmp`. The Codex local-development sandbox profile now allows writes to `~/.npm` and `~/.cache/ms-playwright`, so the read-only-cache workaround is no longer needed.\n\n## Scope\n\n- `docs/development.md` (Workflow tooling): replace \"add `--cache /tmp/codex-nanoleaf-npm-cache`\" with guidance to use npm's default cache (`~/.npm`) and to report a read-only cache instead of redirecting it to `/tmp`.\n\nOut of scope: other documentation, CI and tests.\n\n## Acceptance criteria\n\n- `docs/development.md` no longer recommends a `/tmp` npm cache.\n- `npm run check:workflow` and `npm run test:workflow` exit zero, and every configured Depot job succeeds on the PR head and the merged main revision.\n\n## Dependencies\n\nNone. Related: jimmie-potts/codex-nanoleaf#82 (cleanup after delivery).\n\n## Verification\n\nLocal workflow checks, Depot CI, and independent Standards and Specification reviews.\n\n## Delivery target\n\nMerged to `main`.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/84",
-    "updatedAt": "2026-09-23T23:50:54Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-24T00:02:20Z",
+    "closedAt": "2026-09-24T00:02:20Z",
     "labels": [
       {
         "name": "documentation"
-      },
-      {
-        "name": "status:review"
       }
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 2,
     "commentsRefreshed": false
   }
 ]

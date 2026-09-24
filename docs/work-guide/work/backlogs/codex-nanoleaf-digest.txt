@@ -37,4 +37,4 @@
 #77 [OPEN] Limit and prioritize tasks in the wall map inspector
 #78 [OPEN] Reduce default wall map controls and repeated status text
 #81 [OPEN] Queue the completion comet when a subagent delays a parent's unread
-#84 [OPEN] Use the shared npm cache instead of a /tmp cache in setup guidance
+#84 [CLOSED] Use the shared npm cache instead of a /tmp cache in setup guidance

@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-23T23:54:32.951017+00:00",
+  "fetchedAt": "2026-09-24T00:03:28.056746+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T23:45:58Z",
+      "pushedAt": "2026-09-23T23:59:54Z",
       "defaultBranch": "main",
-      "headSha": "a19a62eb673fd17a5aecdb1db6b5575947e2feb7",
-      "mainCommitCount": 99,
+      "headSha": "146602fccea5dc77e6731a84826e507f62c5bf8a",
+      "mainCommitCount": 100,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "146602fccea5dc77e6731a84826e507f62c5bf8a",
+          "date": "2026-09-23T23:58:37Z",
+          "message": "Simulate the denied clipboard in the guide browser check (#211)"
+        },
         {
           "sha": "a19a62eb673fd17a5aecdb1db6b5575947e2feb7",
           "date": "2026-09-23T23:24:48Z",
@@ -1274,6 +1279,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/209",
           "base": "main",
           "mergedAt": "2026-09-23T23:23:46Z"
+        },
+        {
+          "number": 211,
+          "title": "Simulate the denied clipboard in the guide browser check",
+          "createdAt": "2026-09-23T23:48:43Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/211",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:58:38Z"
         }
       ],
       "openPRs": [],
@@ -1669,9 +1682,17 @@
           "createdAt": "2026-09-23T21:04:43Z",
           "stateReason": "not_planned",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/200"
+        },
+        {
+          "number": 210,
+          "title": "Make the work guide clipboard-fallback check pass in Depot CI",
+          "closedAt": "2026-09-23T23:58:39Z",
+          "createdAt": "2026-09-23T23:44:02Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/210"
         }
       ],
-      "openIssueCount": 64,
+      "openIssueCount": 63,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
         "2026-09-23T23:51:38Z"
@@ -1690,12 +1711,17 @@
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T23:54:35Z",
+      "pushedAt": "2026-09-23T23:59:21Z",
       "defaultBranch": "main",
-      "headSha": "fad152e978e057258a9ebc8524469808107dbada",
-      "mainCommitCount": 37,
+      "headSha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
+      "mainCommitCount": 38,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
+          "date": "2026-09-23T23:59:21Z",
+          "message": "Use the shared npm cache in setup guidance (#85)"
+        },
         {
           "sha": "fad152e978e057258a9ebc8524469808107dbada",
           "date": "2026-09-23T23:23:36Z",
@@ -2138,6 +2164,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/83",
           "base": "main",
           "mergedAt": "2026-09-23T23:23:36Z"
+        },
+        {
+          "number": 85,
+          "title": "Use the shared npm cache in setup guidance",
+          "createdAt": "2026-09-23T23:50:49Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/85",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:59:21Z"
         }
       ],
       "openPRs": [],
@@ -2397,9 +2431,17 @@
           "createdAt": "2026-09-23T22:57:26Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/82"
+        },
+        {
+          "number": 84,
+          "title": "Use the shared npm cache instead of a /tmp cache in setup guidance",
+          "closedAt": "2026-09-24T00:02:20Z",
+          "createdAt": "2026-09-23T23:49:39Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/84"
         }
       ],
-      "openIssueCount": 20,
+      "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-23T23:49:39Z"
@@ -2415,12 +2457,17 @@
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-23T23:54:36Z",
+      "pushedAt": "2026-09-23T23:59:25Z",
       "defaultBranch": "main",
-      "headSha": "71fbefcfdcf6163fc7180264436a6360cbc371ae",
-      "mainCommitCount": 31,
+      "headSha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
+      "mainCommitCount": 32,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
+          "date": "2026-09-23T23:59:25Z",
+          "message": "Use shared caches and fnm for Node 24 in setup guidance (#73)"
+        },
         {
           "sha": "71fbefcfdcf6163fc7180264436a6360cbc371ae",
           "date": "2026-09-23T23:23:00Z",
@@ -2817,6 +2864,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/71",
           "base": "main",
           "mergedAt": "2026-09-23T23:23:01Z"
+        },
+        {
+          "number": 73,
+          "title": "Use shared caches and fnm for Node 24 in setup guidance",
+          "createdAt": "2026-09-23T23:50:52Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/73",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:59:25Z"
         }
       ],
       "openPRs": [],
@@ -3044,9 +3099,17 @@
           "createdAt": "2026-09-23T22:57:27Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/70"
+        },
+        {
+          "number": 72,
+          "title": "Use shared npm and Playwright caches and fnm for Node 24 in setup guidance",
+          "closedAt": "2026-09-24T00:02:23Z",
+          "createdAt": "2026-09-23T23:49:40Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/72"
         }
       ],
-      "openIssueCount": 14,
+      "openIssueCount": 13,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
         "2026-09-23T23:49:40Z"

@@ -193,7 +193,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 11,
@@ -1827,7 +1827,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 87,
@@ -2549,7 +2549,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 197,
@@ -2646,7 +2646,7 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
-    "commentsRefreshed": true
+    "commentsRefreshed": false
   },
   {
     "number": 201,
@@ -2809,13 +2809,13 @@
   },
   {
     "number": 210,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Make the work guide clipboard-fallback check pass in Depot CI",
     "body": "## Outcome\n\nThe work guide's browser check passes in Depot CI again, so main's Work guide job is green and deliveries blocked on merged-main evidence can close.\n\n## Problem\n\n`docs/work-guide/work/check_guide.cjs:214` asserts that a denied clipboard makes the task brief select its prompt for manual copying (`A denied clipboard selects the prompt`). The test gets its \"denied\" case by calling `clearPermissions()` and relying on headless Chromium to reject `navigator.clipboard.writeText`. Main's Work guide job on `a19a62eb673fd17a5aecdb1db6b5575947e2feb7` failed on this assertion twice: check runs 107425147844 and 107426083706, Depot attempts `4z0gb8j2xf` and `cbcfp3cqdr`. The assertion arrived in #209 (Refs #196). That was a guide-only change, so Depot never ran it before merge.\n\n## Scope\n\n- Reproduce the failure with CI's browser (Playwright 1.63.0 and its headless Chromium shell).\n- Make the denied and missing clipboard cases deterministic, so they no longer depend on the browser's default permission. Keep the real granted-clipboard copy check.\n- Change the guide's copy behavior only if the reproduction shows a product defect rather than a test-environment assumption.\n\nOut of scope: guide content or snapshot refreshes, and other guide checks.\n\n## Acceptance criteria\n\n- The Work guide job passes on Depot for the candidate: a `depot ci run` of `.depot/workflows/work-guide.yml` with the change, plus main's Work guide job after merge (the next non-guide merge runs it).\n- Locally: `build_guide.py`, `test_maintenance.py` and `check_guide.cjs` pass, and `git diff --exit-code -- docs/work-guide/outputs` shows no drift.\n\n## Dependencies\n\nRegression from #196 (#209). Blocks closure of #207.\n\n## Verification\n\nA red/green reproduction with CI's browser, a Depot run of the Work guide workflow, local guide checks, and independent Standards and Specification reviews.\n\n## Delivery target\n\nMerged to `main`, with main's Work guide job green.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/210",
-    "updatedAt": "2026-09-23T23:48:45Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-23T23:58:39Z",
+    "closedAt": "2026-09-23T23:58:39Z",
     "labels": [
       {
         "name": "maintenance"
@@ -2836,17 +2836,14 @@
     "title": "Use shared npm and Playwright caches in setup guidance",
     "body": "## Outcome\n\nSetup guidance keeps npm and Playwright caches in their shared default locations instead of a temporary cache.\n\nOn 2026-09-23 the WSL host's `/tmp`, a 7.6 GB RAM-backed tmpfs shared by all agent sessions, filled completely. Part of the cause was guidance that sends caches or per-task installs into `/tmp`. The Codex local-development sandbox profile now allows writes to `~/.npm` and `~/.cache/ms-playwright`, so the read-only-cache workaround is no longer needed.\n\n## Scope\n\n- `docs/development.md` (Workflow commands): replace \"For a WSL sandbox with a read-only npm cache, use a writable temporary cache.\" with guidance to use npm's default cache (`~/.npm`) and Playwright's default browser cache (`~/.cache/ms-playwright`), and to report a read-only cache instead of redirecting it.\n\nOut of scope: examples that write a single small report file under `/tmp`, other documentation, CI and tests.\n\n## Acceptance criteria\n\n- `docs/development.md` no longer recommends a temporary npm cache.\n- `npm run check:workflow` and `npm run test:workflow` exit zero, and every configured Depot job succeeds on the PR head and the merged main revision.\n\n## Dependencies\n\nAfter #210 merges, so this PR's Work guide job runs with the fixed browser check. Its merged-main Depot run is also the main evidence #210 and #207 need.\n\n## Verification\n\nLocal workflow checks, Depot CI, and independent Standards and Specification reviews.\n\n## Delivery target\n\nMerged to `main`.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/212",
-    "updatedAt": "2026-09-23T23:51:39Z",
+    "updatedAt": "2026-09-24T00:00:09Z",
     "closedAt": null,
     "labels": [
       {
         "name": "documentation"
       },
       {
-        "name": "status:backlog"
-      },
-      {
-        "name": "blocked"
+        "name": "status:review"
       }
     ],
     "milestone": null,

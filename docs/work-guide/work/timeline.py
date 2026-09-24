@@ -105,8 +105,8 @@ TRACKS = [
         dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['H73'], guide='development-workflow'),
         dict(id='n-dev-jobs', x=1, label='Pixoo job consolidation closed', issues=[], guide='development-workflow'),
         dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling closed', issues=[], guide='development-workflow'),
-        dict(id='n-nanoleaf-cache-docs', x=0, label='Nanoleaf setup guidance', issues=['N84'], guide='development-workflow'),
-        dict(id='n-pixoo-cache-docs', x=0, label='Pixoo setup guidance', issues=['P72'], guide='development-workflow'),
+        dict(id='n-nanoleaf-cache-docs', x=0, label='Nanoleaf setup guidance delivered', issues=[], guide='development-workflow'),
+        dict(id='n-pixoo-cache-docs', x=0, label='Pixoo setup guidance delivered', issues=[], guide='development-workflow'),
         dict(id='n-hub-cache-docs', x=1, label='Hub shared cache guidance', issues=['H212'], guide='development-workflow'),
     ]),
     ('System design documents', [
@@ -127,7 +127,7 @@ TRACKS = [
         dict(id='n-guide-refresh', x=3, label='Automatic refresh issue closed', issues=[], guide='development-workflow'),
     ]),
     ('Guide cleanup + clipboard check', [
-        dict(id='n-guide-clipboard', x=0, label='Clipboard fallback check', issues=['H210'], guide='development-workflow'),
+        dict(id='n-guide-clipboard', x=0, label='Clipboard fallback check completed', issues=[], guide='development-workflow'),
         dict(id='n-guide-cleanup', x=1, label='Delivery cleanup follow-up', issues=['H207'], guide='development-workflow'),
     ]),
     ('Guide mission map', [
