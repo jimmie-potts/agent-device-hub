@@ -1,32 +1,47 @@
 name: Feature or integration
-description: Define an outcome, acceptance criteria and dependencies.
+description: Define the smallest useful change for the real setup.
 labels: ["enhancement", "status:backlog"]
 body:
+  - type: markdown
+    attributes:
+      value: >-
+        Size the story for one operator, the selected installation and its
+        configured devices. A small story may answer each prompt in a few
+        sentences. See the scope defaults in docs/sdlc.md.
   - type: textarea
     id: outcome
     attributes:
-      label: Outcome and scope
-      description: State the observable outcome, owning repository and exclusions.
+      label: Outcome and real setup
+      description: State what the user will observe, on which installation, clients and devices, and what is excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Smallest useful implementation
+      description: Start from existing components and explicit manual steps. Link required issues across repositories, or state none, and distinguish conditional gates from related independent work.
+    validations:
+      required: true
+  - type: textarea
+    id: preserve
+    attributes:
+      label: Behavior and protections to preserve
+      description: Name the existing behavior, state and device-writer ownership, targets, manual control, credentials and data that must keep working.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
-      description: Use observable criteria and identify source, client and physical gates.
+      label: Observable acceptance and planned evidence
+      description: List observable criteria and the check or observation for each. Identify source, client and physical gates. Installation or physical work requires an explicit request and an owner.
+      value: "Delivery target: source-only"
     validations:
       required: true
   - type: textarea
-    id: dependencies
+    id: deferrals
     attributes:
-      label: Dependencies
-      description: Link required issues across repositories. Distinguish conditional gates and related independent work.
-    validations:
-      required: true
-  - type: textarea
-    id: verification
-    attributes:
-      label: Verification and delivery target
-      description: Name checks, fixtures, required evidence and the authorized terminal state.
+      label: Meaningful deferrals
+      description: For each meaningful omission, state its consequence or manual alternative and its owning issue or revisit trigger.
+      value: None
     validations:
       required: true
