@@ -10,7 +10,7 @@ TOPICS = [
      'The Pixoo and Nanoleaf controls are installed and verified. Fix the one-step apply and command status found during those checks, and document controller setup. The shared UI foundation precedes dashboard adoption; playlist names and Codex scene tools have their own scopes.', ['H231', 'H232', 'H181', 'P67']),
     ('nanoleaf-presentation', 'Nanoleaf wall map and effects',
      'Make current tasks easy to identify, inspect and open, with truthful light presentation and requested effects.',
-     'Codex task titles, current projects first and the compact inspector are delivered. Thread links are in review; Claude Code titles, the completion-comet fix and a simpler default layout can follow. Rendering parity and effect customization keep their own prerequisites.', ['N108', 'N100', 'N81', 'N78']),
+     'Codex task titles, current projects first and the compact inspector are delivered. Thread-link source has merged; check its owning issue for acceptance. Claude Code titles, the completion-comet fix and a simpler default layout can follow. Rendering parity and effect customization keep their own prerequisites.', ['N108', 'N100', 'N81', 'N78']),
     ('nanoleaf-devices', 'Adding devices',
      'Extend device support through separate Panels, Tidbyt, LIFX and PC-lighting tracks.',
      'The Lines and Panels trial and Tidbyt agent status are accepted on the installed devices. Add the Lines/Panels map selector, check stale Tidbyt rows with night mode, and choose LIFX status behavior before implementation. PC lighting stays later.', ['N44', 'H227', 'H20']),
@@ -50,13 +50,12 @@ NEXT_STEPS = {
 DECISIONS = {
     'H20': 'Choose status bulbs, colors/effects, brightness cap, quiet behavior and the manual-change policy.',
     'H227': 'Record the intended night-mode settings, then decide whether stale Tidbyt rows need a renderer change.',
-    'N108': 'Verify one real Codex Desktop thread link on Windows and approve the UI candidate before merge.',
 }
 # Only source-backed, deliberately recorded workaround text belongs here.
 WORKAROUNDS = {}
 
 DEVICE_TRACKS = {
-    'Panels': ['N44', 'N47'],
+    'Panels': ['N44', 'N47', 'N113', 'N114'],
     'Tidbyt': ['H227', 'H23', 'H24'],
     'LIFX': ['H20', 'H22'],
     'PC lighting': ['H51', 'H52', 'H53', 'H55', 'H56', 'H57', 'H58', 'H60', 'H61', 'H62'],

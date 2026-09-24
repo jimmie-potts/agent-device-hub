@@ -150,8 +150,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'startup/recovery; then evaluate the installed prototype.',
  'N100': 'Show Claude Code titles and projects for shared tasks, as [[N75]] does for Codex. The '
          'hub feed deliberately carries neither, so the wall reads them locally by session ID.',
- 'N108': 'Link a wall task to its Codex Desktop thread. The source PR is in review; Windows '
-         'deep-link acceptance and UI approval remain before merge.',
+ 'N108': 'Link a wall task to its Codex Desktop thread. Source PR #109 has merged; read the '
+         'owning issue for its acceptance and closure evidence.',
  'N11': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
         'startup/recovery; then evaluate the installed prototype.',
  'N12': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
