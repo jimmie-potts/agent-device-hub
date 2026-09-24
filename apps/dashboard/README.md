@@ -118,8 +118,11 @@ tracking tasks and writes nothing until the next mode command. The mode form
 offers "Reapply <mode>", one controller v1 mode command for the observed mode.
 Nanoleaf `main` `08b6b83` ends power and brightness overrides on any mode
 command, including the same mode. When there was nothing to reapply, the
-controller cancels the command with no effects and the view says the mode is
-already in effect. The action is disabled while a mode change is pending.
+controller admits and then cancels the command with no effects, and the view
+says the mode is already in effect. Admission still advances the configuration
+revision, so other open drafts on that device show a conflict. Only this action
+reports a cancel as already in effect; any other cancel is shown as not applied.
+The action is disabled while a mode change is pending.
 
 Scene activation is disabled while the wall is in Work or Quiet, while a mode
 change is pending or while the mode is unknown, with the reason and one explicit
@@ -140,10 +143,11 @@ Drafts pin the revision they started from. Just before sending, every command
 reads the device again through the same per-device queue. It uses that read's
 server-issued ticket, configuration revision and generation, and re-checks the
 control's availability. A failed read or a control that is no longer available
-sends nothing and names the reason. General-control and controller v1 mode drafts
-conflict only on the configuration revision. The controller v1 generation
-retires output work and advances without any client edit, for example on every
-Pixoo playlist item. The integration forms keep their extension revision guards.
+sends nothing and names the reason. General-control, controller v1 mode and
+Pixoo integration drafts conflict only on the configuration revision. A
+generation retires output work and advances without any client edit, for
+example on every Pixoo playlist item or when Pixoo suspends its presentation.
+The Nanoleaf integration forms keep their content revision guard.
 A `stale-generation` race after the fresh read has no effects. It is shown with
 an invitation to press the control again, and nothing is resubmitted.
 

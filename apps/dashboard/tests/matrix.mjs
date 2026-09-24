@@ -186,8 +186,8 @@ try {
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('select')).some(el=>el.offsetParent&&!el.disabled&&el.value==='off'));assert.equal(await power.inputValue(),'off');await power.selectOption('on');await visible(page,'button','Apply screen power').click();await until(()=>general(f).length===4);assert.deepEqual(general(f)[3].command,{kind:'power.set',on:true});
   assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Physical result|Result updated/}).count(),0,'old wording is gone');
   // Uncertain results still lock the form until an explicit reload, and nothing retries.
-  f.setUncertain(true);await brightness.fill('25');await visible(page,'button','Apply brightness').click();await statusOf(page,'Brightness').filter({hasText:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.'}).waitFor();
-  const submitted=f.writes.length;await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted,'an uncertain change is not retried');assert.equal(await brightness.isDisabled(),true,'uncertain results keep the lock');f.setUncertain(false);
+  f.setUncertain(true);await brightness.fill('25');await brightness.focus();await page.keyboard.press('Tab');await page.keyboard.press('Enter');await statusOf(page,'Brightness').filter({hasText:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.'}).waitFor();
+  const submitted=f.writes.length;await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted,'an uncertain change is not retried');assert.equal(await brightness.isDisabled(),true,'uncertain results keep the lock');assert.ok(await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).evaluate(el=>el===document.activeElement),'a locked form keeps keyboard focus on its enabled reload button');f.setUncertain(false);
   await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).click();await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});assert.equal(await brightness.inputValue(),'20','reload shows the controller\'s current desired value; the lost command never reached it');
   await axe(page);
  });
@@ -212,7 +212,9 @@ try {
   const revision=f.pixoo.configurationRevision,generation=f.pixoo.generation;await start.click();await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
   await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. BUNNY can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
-  assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');assert.equal(general(f).length,0,'no media or other command is sent');assert.equal(f.writes.length,1);
+  assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');
+  await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
+  assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');assert.equal(general(f).length,0,'no media or other command is sent');assert.equal(f.writes.length,1);
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
  {
