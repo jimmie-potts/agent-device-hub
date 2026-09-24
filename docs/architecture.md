@@ -445,6 +445,25 @@ with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
 [#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
 and physical acceptance retain their own owners.
 
+## Shared playback
+
+The standalone host owns shared playback
+([#175](https://github.com/jimmie-potts/agent-device-hub/issues/175)). A shared
+module keeps each source's normalized snapshot, observation freshness and
+command results. Source modules own their protocols, endpoints and field
+mapping. The first source reads the owner's Sony HT-A9 while an iPhone plays
+Apple Music to it over AirPlay; audio never passes through the hub. Playback
+state is separate from agent sessions and state exports.
+
+Sources have stable neutral IDs. Commands name a source ID and go only to the
+explicitly selected source; they are never redirected, retried or replayed. A
+later source keeps its own freshness, and an unavailable selected source is
+shown as unavailable rather than replaced by another source. The
+[host guide](../apps/hub/README.md#playback) documents the routes and the source
+interface. The Windows connector
+([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36)) is deferred;
+if built, it becomes another source of the same module.
+
 ## Linux host handoff implementation
 
 The [host API and migration guide](../apps/hub/README.md) define the delivered

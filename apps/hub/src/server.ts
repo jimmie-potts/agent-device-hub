@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
+import {isIPv4} from 'node:net';
 import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
@@ -10,10 +11,12 @@ import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
 import {startBrowserLaunch} from './browser-launch.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
 import {codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
+import {createPlayback,type PlaybackSource} from './playback.js';
+import {createSonySource,sonyConfiguration} from './sony.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; clock?:()=>number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number};
 type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
 type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
@@ -28,6 +31,14 @@ function json(res: ServerResponse, status: number, value: unknown) {
   if (res.destroyed) return;
   res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});
   res.end(JSON.stringify(value));
+}
+/** Builds the one explicitly selected source. The playback source ID shares credential device grants with controller aliases. */
+function playbackSource(value: unknown, aliases: string[]): PlaybackSource {
+  if (!object(value) || !exact(value,['selected','sources']) || !Array.isArray(value.sources) || value.sources.length !== 1 || !object(value.sources[0]) ||
+      value.sources[0].id !== value.selected || aliases.includes(value.selected as string) || value.selected === HOST_SERVICE ||
+      isIPv4(value.selected as string)) throw new Error('invalid-playback');
+  if (value.sources[0].kind === 'sony') return createSonySource(sonyConfiguration(value.sources[0]));
+  throw new Error('invalid-playback');
 }
 async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json' || req.headers['content-encoding']) throw new HttpError('invalid-input',400);
@@ -61,6 +72,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
       (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535))) throw new Error('invalid-configuration');
+  const source = options.playback === undefined ? undefined : playbackSource(options.playback,options.controllers.map(c => c.id));
   const editorLinks:Record<string,string> = {};
   if (options.editorLinks !== undefined) {
     if (!object(options.editorLinks) || Object.keys(options.editorLinks).length > 16) throw new Error('invalid-editor-links');
@@ -94,6 +106,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let active = 0, rejected = 0, closing = false;
   let origin = '';
   let mcp: HubMcp | undefined;
+  let playback: ReturnType<typeof createPlayback> | undefined;
   let closeBrowserLaunch: (()=>Promise<void>) | undefined;
   const launchCodes=new Map<string,number>();
   const browserSessions=new Map<string,{credential:Credential;expires:number}>();
@@ -217,7 +230,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
-        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1]);
+        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
           browserSessions.delete(principal.digest);
@@ -273,6 +286,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           };
           publish();const interval = setInterval(publish,1000);interval.unref();
           res.once('close',() => {clearInterval(interval);streams.delete(res);streamOwners.delete(res);});
+        } else if (playback && req.method === 'GET' && path === '/api/playback/v1/snapshot' && !url.search) {
+          json(res,200,playback.snapshot());
+        } else if (playback && req.method === 'POST' && path === '/api/playback/v1/commands' && !url.search) {
+          // A staged migration destination must not become a second playback writer.
+          if (staged) throw new HttpError('owner-quiesced',503);
+          const response = await playback.command(await body(req,1024),principal);json(res,response.status,response.body);
         } else if (integrationRoute) {
           const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           const operation = integrationRoute[2];
@@ -310,6 +329,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
   const desktopRead = codexDesktop && startDesktopRead(codexDesktop,owner,options.clock ?? Date.now,() => !staged && !closing && !exported);
+  playback = source && createPlayback(source,options.clock ?? Date.now,options.clock ?? (() => performance.now()));
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
@@ -340,13 +360,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     close(): Promise<void> {
       return closePromise ??= (async () => {
         closing = true;launchCodes.clear();browserSessions.clear();
-        let launchFailure:unknown;
+        let launchFailure:unknown,playbackFailure:unknown;
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();
+        try{await playback?.close();}catch(error){playbackFailure=error;}
         await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();
         if(launchFailure)throw launchFailure;
+        if(playbackFailure)throw playbackFailure;
       })();
     }
   };

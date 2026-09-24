@@ -87,7 +87,7 @@ controller-contracts, shared-mcp-gateway, agent-lifecycle-contract,
 shared-monitor-performance-baseline, agent-state-core, agent-provider-emitters,
 standalone-hub-host, standalone-hub-mcp, shared-monitor-installation,
 unified-dashboard, standalone-monitor-qualification, tidbyt-cloud-controller,
-tidbyt-agent-status, tidbyt-status-installation and lifx-controller.
+tidbyt-agent-status, tidbyt-status-installation, lifx-controller and hub-playback.
 
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
@@ -421,6 +421,17 @@ fake loopback controllers. They do not start installed services or operate
 devices. The source includes supervised child release, fenced import, route readiness,
 interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
+
+Playback for #175 is covered by `apps/hub/tests/playback.test.mjs`, which
+`test:hub`, `test:hub:built` and the packaged hub tests already include through
+the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
+shared playback module against a non-Sony fake source and the Sony module
+against a fake loopback receiver. Freshness checks use a controlled clock; route
+checks cover authentication, the configured target, unsupported controls,
+duplicate and concurrent commands and failed/uncertain results. These tests do
+not contact a receiver or phone. Installed playback acceptance with a real
+iPhone and HT-A9 needs a separately authorized receiver address and is recorded
+on the issue.
 
 For owning-service acceptance, prepare the immutable revisions in
 `apps/hub/fixtures/pixoo-source.json` and `nanoleaf-source.json` in disposable

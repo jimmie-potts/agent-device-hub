@@ -8,7 +8,7 @@ The host supplies private SQLite ownership, the shared agent-state engine, authe
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp` and optional `codexDesktop`. The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop` and optional [`playback`](#playback). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 
 Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
@@ -33,8 +33,80 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | `POST /api/controllers/v1/:id/integration/commands` | Owning versioned settings request |
 | `GET /api/controllers/v1/:id/integration/receipt?epoch=...&sequence=...` | Nanoleaf extension receipt, without issuing another command |
 | `POST /api/controllers/v1/:id/integration/cancel` | Nanoleaf extension cancellation request; cannot undo an applied edit |
+| `GET /api/playback/v1/snapshot` | Selected playback source's snapshot; see [Playback](#playback) |
+| `POST /api/playback/v1/commands` | One source-bound playback command and its receipt |
 
 Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, command bodies 65536 bytes and requests three seconds. Replay retains at most 256 entries and 262144 fingerprint bytes across principals; pending entries cannot be evicted. Repeated quiesce tickets share one immutable export. Native controller calls have a two-second deadline and one MiB response limit. Slow streams disconnect after five seconds of backpressure. Credential replacement closes streams and reauthorizes future requests before replay. Restart changes the command epoch.
+
+## Playback
+
+[Hub #175](https://github.com/jimmie-potts/agent-device-hub/issues/175) adds shared playback with the Sony HT-A9 as its first source. The owner's iPhone keeps playing Apple Music to the soundbar over AirPlay; the hub reads what is playing and can send pause, next and previous. No audio passes through the hub. The [HT-A9 qualification](../../docs/iphone-apple-music-qualification.md) records the receiver behavior this relies on.
+
+### Configuration
+
+```json
+"playback": {
+  "selected": "living-room",
+  "sources": [{"id": "living-room", "kind": "sony", "endpoint": "http://192.168.1.20:10000/sony"}]
+}
+```
+
+`sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
+
+Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37).
+
+### Snapshot
+
+`GET /api/playback/v1/snapshot` returns:
+
+```json
+{"apiVersion": "1.0", "sourceId": "living-room", "availability": "available", "observedAtMs": 1790000000000, "ageMs": 850,
+ "playback": {"status": "playing", "title": "...", "artist": "...", "album": "...", "controls": ["pause", "next", "previous"]}}
+```
+
+`observedAtMs` is the hub's wall-clock time of the last successful read. `ageMs` is the larger of the monotonic and wall-clock ages, so neither a system clock change nor a suspend can make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
+
+| `availability` | Age of the last successful read | `playback` |
+| --- | --- | --- |
+| `available` | under 5 seconds | last observation |
+| `stale` | 5 to under 30 seconds | last observation, kept for context |
+| `unavailable` | 30 seconds or more, or no read yet | `null` |
+
+The hub starts `unavailable`. A receiver that stops answering never turns into `paused`. `status` is `playing`, `paused`, `stopped`, `inactive` or `unknown`. `inactive` means the receiver answered but AirPlay is not its current input. `title`, `artist` and `album` are omitted when the receiver does not supply them. Artwork, position, duration and song-change events are not part of this version; see [#229](https://github.com/jimmie-potts/agent-device-hub/issues/229) and [#39](https://github.com/jimmie-potts/agent-device-hub/issues/39).
+
+### Commands
+
+`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The Sony source lists pause, next and previous only while AirPlay is playing and never lists play, because play/resume was not qualified. On this receiver, previous restarts the current song.
+
+| Result | Meaning |
+| --- | --- |
+| 200 `sent` | The receiver accepted the call. This is transport evidence, not proof the phone reacted. |
+| 502 `failed` | The receiver refused the call. |
+| 503 `uncertain` | No JSON-RPC result or error: a timeout after 1.5 seconds, a network error, or a non-200, malformed or mismatched reply. The command may have taken effect. |
+| 400 `invalid-input`, 403 `forbidden` | Bad body, missing scope, header or source grant |
+| 404 `unknown-source` | The body names a source other than the selected one |
+| 409 `request-conflict` | The request ID was already used with a different body |
+| 413 `capacity` | The body is larger than 1024 bytes |
+| 422 `unsupported-control` | The action is not in the current controls |
+| 429 `capacity` | Another playback command is still running |
+| 503 `source-unavailable`, `owner-quiesced` | The source is not `available`, or the host is staged |
+
+Admitted results carry `{requestId, sourceId, action, outcome}`. Repeating a request ID with the same body returns the original receipt without contacting the receiver, so a client retry after a lost response is safe. The hub keeps the latest 64 receipts; a restart clears them. Only one command runs at a time, nothing is retried automatically and no command is redirected to another source or address.
+
+### Sony source behavior
+
+The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup and then every two seconds. Each call has a 1.5-second timeout and a 64 KiB reply limit, and a read already in progress is reused instead of starting another. It uses the entry whose `source` is `extInput:airPlay`, maps `PLAYING`, `PAUSED` and `STOPPED` to the shared statuses and any other state to `unknown`. It trims `title`, `artist` and `albumName` and limits each to 256 characters. Other receiver fields, including the thumbnail URL that embeds the receiver address, are dropped. JSON-RPC errors, non-200 replies, malformed bodies, timeouts and network errors are failed reads. Commands call `pausePlayingContent` 1.1, `setPlayNextContent` 1.0 or `setPlayPreviousContent` 1.0; a JSON-RPC result is `sent` and a JSON-RPC error is `failed`.
+
+### Adding a source
+
+`src/playback.ts` is the shared module and imports no source code. A source implements `PlaybackSource`:
+
+- `id`: the configured neutral source ID.
+- `start(report)`: begin observing and call `report` with a normalized observation after every successful read, including unchanged ones. Never report a failed read.
+- `command(action)`: resolve `sent` when the source accepted the call or `failed` when it refused before any effect. Reject for any uncertain result, and apply your own timeout under the host's three-second request limit.
+- `close()`: stop observing and abort in-flight work. If it fails, the host still finishes shutting down and then reports the error.
+
+`src/sony.ts` is the reference adapter. `server.ts` validates the `playback` envelope, builds the source for its `kind` and closes it with the host. A second source currently needs a new `kind` branch there. Multi-source runtime and selection are deferred. The [OpenSpec design](../../openspec/changes/archive/2026-09-24-gh-175-shared-playback/design.md#future-two-source-flow) describes how two sources keep independent freshness, commands stay bound to the selected source and an unavailable selection never falls back silently.
 
 ## Compatibility and evidence
 
@@ -46,7 +118,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
 | Nanoleaf settings | `nanoleaf.integration/1.0`, source `80628498136203a8f5fcb06ab5fa306e961e2def`; pinned request consumer and fixtures recorded in `fixtures/nanoleaf-source.json` |
 
-Run `npm run test:hub`, `npm run test:hub:package` and all shared checks from the worktree root. The tests use synthetic tokens, private temporary directories and fake loopback controllers. These checks do not qualify installed clients, physical results, live migration or performance budgets. A database lease prevents concurrent use of that store; it does not by itself prevent a second owner in another directory. The supervised migration path below verifies source-process release, destination and consumer readiness before resuming ingestion.
+Run `npm run test:hub`, `npm run test:hub:package` and all shared checks from the worktree root. The tests use synthetic tokens, private temporary directories, fake loopback controllers and a fake loopback Sony receiver. These checks do not qualify installed clients, physical results, live migration or performance budgets. A database lease prevents concurrent use of that store; it does not by itself prevent a second owner in another directory. The supervised migration path below verifies source-process release, destination and consumer readiness before resuming ingestion.
 
 The source package command is `npm run package:hub`. It creates an archive and SHA-256 sidecar under ignored `artifacts/`. Package verification compares repeated archive bytes, installs offline into a fresh directory, checks file hashes, then runs the installed tests and import check. The dependency closure comes from the exact locally built contract/state archives, including the pinned lifecycle dependency. It does not resolve private packages from a registry.
 
