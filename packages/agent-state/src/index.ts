@@ -72,12 +72,13 @@ export async function createAgentState(options:Options) {
   }
   const restarted=new Set(data.sessions.map(session=>identityKey(session.identity)));
   const feeds=new Feeds(data.revision);
-  const now=()=>{
+  const wall=()=>{
     let value:number;
     try{value=clock();}catch{throw new Error('invalid-clock');}
     if(!Number.isSafeInteger(value)||value<0)throw new Error('invalid-clock');
-    return Math.max(value,data.lastCommitAtMs);
+    return value;
   };
+  const now=()=>Math.max(wall(),data.lastCommitAtMs);
   const loss=()=>{lossCount=Math.min(Number.MAX_SAFE_INTEGER,lossCount+1);};
   let maintenanceTimer:ReturnType<typeof setTimeout>|undefined;
   function scheduleMaintenance(retry=false){
@@ -161,8 +162,9 @@ export async function createAgentState(options:Options) {
         const previous=get(event.identity);
         // Read evidence and a runtime end describe a known session; alone they cannot establish one.
         if(!previous&&(event.event.kind==='read.observed'||event.event.kind==='runtime.ended'))return {ok:true,revision:data.revision,outcome:'stale'};
-        // An observation older than the retention window is not new activity.
-        if(event.observedAtMs<=now()-LIMITS.sessionAgeMs)return {ok:true,revision:data.revision,outcome:'stale'};
+        // An observation older than the retention window is not new activity. Compare with the
+        // wall clock, not the commit-time floor, so a corrected clock jump cannot strand producers.
+        if(event.observedAtMs<=wall()-LIMITS.sessionAgeMs)return {ok:true,revision:data.revision,outcome:'stale'};
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}

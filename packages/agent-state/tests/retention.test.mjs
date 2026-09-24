@@ -117,8 +117,11 @@ test('expiry forgets notices and attention without acknowledging them and keeps 
   advance(3600000);
   const parent={status:'known',identity:identity('parent')};
   await owner.ingest(event('child','session.started',{parent,turn:{status:'unknown'}}));
-  await owner.ingest(event('other','turn.started',{turn:{status:'known',id:'turn-2'}}));
+  const second={turn:{status:'known',id:'turn-2'}};
+  for(const kind of ['turn.started','attention.approval','turn.ended'])await owner.ingest(event('other',kind,second));
+  await owner.setLabel(identity('other'),'Bystander');
   const other=owner.snapshot().sessions.find(session=>session.identity.sessionId==='other');
+  assert.deepEqual([other.label,other.notices.length,other.attention.length],['Bystander',1,1]);
   advance(DAY-3600000);await owner.maintain();
   const snapshot=owner.snapshot();
   assert.deepEqual(ids(owner),['child','other']);
@@ -152,4 +155,42 @@ test('sessions expire at startup and by timer even when no journal row is due',a
   for(let index=0;index<20&&running.snapshot().revision===revision;index++)await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(ids(running),[]);
   await running.shutdown();
+});
+
+test('journal pruning keeps the label, notices and attention of a renewed session',async()=>{
+  const {event,now,advance,open}=fixture();
+  let owner=await open();
+  await owner.ingest(event('kept','turn.started'));await owner.ingest(event('kept','turn.ended'));
+  await owner.setLabel(identity('kept'),'Kept label');
+  advance(20*3600000);
+  await owner.ingest(event('kept','attention.approval'));
+  const before=owner.snapshot().sessions[0];
+  assert.equal(before.lastEvidenceAtMs,now());
+  advance(5*3600000);await owner.maintain();
+  const current=owner.snapshot().sessions[0];
+  assert.deepEqual([current.label,current.notices,current.attention],['Kept label',before.notices,before.attention]);
+  assert.equal((await owner.exportState()).journal.some(row=>row.atMs<=now()-DAY),false);
+  await owner.shutdown();
+  owner=await open();
+  const after=owner.snapshot().sessions[0];
+  assert.deepEqual([after.label,after.notices,after.attention],['Kept label',before.notices,before.attention]);
+  await owner.shutdown();
+});
+
+test('a late observation cannot renew a live session, and a corrected clock jump does not strand producers',async()=>{
+  const {event,now,advance,open}=fixture(2*DAY);
+  const owner=await open();
+  await owner.ingest(event('live','session.started'));
+  const first=owner.snapshot().sessions[0].lastEvidenceAtMs;
+  advance(DAY-3600000);
+  const renew=(offset,id)=>event('live','turn.started',{turn:{status:'known',id},observedAtMs:now()-DAY+offset});
+  assert.equal((await owner.ingest(renew(0,'turn-2'))).outcome,'stale');
+  assert.equal(owner.snapshot().sessions[0].lastEvidenceAtMs,first);
+  assert.equal((await owner.ingest(renew(1,'turn-3'))).outcome,'applied');
+  assert.equal(owner.snapshot().sessions[0].lastEvidenceAtMs,now());
+  advance(2*DAY);assert.equal((await owner.ingest(event('ahead','session.started'))).outcome,'applied');
+  advance(-2*DAY);
+  assert.equal((await owner.ingest(event('corrected','session.started'))).outcome,'applied');
+  assert.ok(ids(owner).includes('corrected'));
+  await owner.shutdown();
 });

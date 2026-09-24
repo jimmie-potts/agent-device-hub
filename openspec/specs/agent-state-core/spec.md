@@ -45,7 +45,7 @@ The owner SHALL expose session observation age independently of collector health
 
 #### Scenario: Restored session
 - **WHEN** the owner restarts from saved active state
-- **THEN** it retains state, label and notices while reporting restart uncertainty until a fresh observation arrives
+- **THEN** it retains unexpired sessions' state, labels and notices while reporting restart uncertainty until a fresh observation arrives
 
 ### Requirement: Atomic host storage and bounded diagnostic history
 The owner SHALL persist state, chosen labels, acknowledgment and undismissed notices through an exclusively acquired host storage boundary. A revision MUST become visible only after its atomic commit succeeds. Diagnostic retention MUST keep only the newest 10,000 entries within 24 hours and MUST NOT itself delete current state, labels or notices; session expiry is governed separately.
@@ -164,7 +164,7 @@ The owner SHALL apply `read.observed` only to the session's read dimension. A re
 - **THEN** it reports unread and its notices and acknowledgments are unchanged
 
 ### Requirement: Session expiry after a day without lifecycle evidence
-The owner SHALL forget a session once 24 hours have passed since its last accepted lifecycle evidence, removing its label, notices and attention in one durable revision. Expiry MUST NOT acknowledge a notice, record readership, success or cancellation, or change any other session. Duplicates, labels, acknowledgments and read evidence MUST NOT renew the window, and a restart MUST NOT reset it. Expiry SHALL run from maintenance, at startup and before admitting an ingest. A `runtime.ended` or read observation for an unknown identity, or any observation 24 hours or more before the owner clock, MUST NOT create or renew a record. New lifecycle evidence after expiry SHALL create a fresh record with defaults. Each record SHALL expire on its own clock.
+The owner SHALL forget a session once 24 hours have passed since its last accepted lifecycle evidence, removing its label, notices and attention in one durable revision. Expiry MUST NOT acknowledge a notice, record readership, success or cancellation, or change any other session. Duplicates, labels, acknowledgments and read evidence MUST NOT renew the window, and a restart MUST NOT reset it. Expiry SHALL run from maintenance, at startup and before admitting an ingest. A `runtime.ended` or read observation for an unknown identity, or any observation 24 hours or more before the owner's wall clock, MUST NOT create or renew a record. New lifecycle evidence after expiry SHALL create a fresh record with defaults. Each record SHALL expire on its own clock.
 
 #### Scenario: Full owner admits new work
 - **WHEN** the owner holds 128 sessions whose last evidence is 24 hours old and a new identity arrives

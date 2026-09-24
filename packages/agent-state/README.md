@@ -116,8 +116,8 @@ cancellation. It runs from the maintenance timer, at startup and before each
 ingest, so a full owner frees slots before rejecting a new identity. The same
 events that refresh freshness renew the window, and a restart does not reset
 it. A `runtime.ended` or read observation for an unknown identity is stale, as
-is any observation whose `observedAtMs` is 24 hours or more before the owner
-clock. Each record expires on its own clock, so a child can outlive its parent;
+is any observation whose `observedAtMs` is 24 hours or more before the owner's
+wall clock. Each record expires on its own clock, so a child can outlive its parent;
 consumers must tolerate a missing parent. New activity after expiry creates a
 fresh record with defaults.
 
@@ -145,8 +145,8 @@ RSS qualification remain in that issue; unit and process checks do not replace i
 | Snapshot or migration input | 16 MiB, depth 20, 1,000,000 JSON nodes |
 | Hook raw stdin / configuration file | 64 KiB / 8 KiB |
 
-Journal pruning and session expiry run on writes, startup, and a timer while the
-owner is running. Journal reads also exclude expired rows. Hosts can call
+Journal pruning runs on every write. Journal pruning and session expiry both run
+at startup, before each ingest and from a timer while the owner is running. Journal reads also exclude expired rows. Hosts can call
 `maintain()` after an injected clock advance. Quiesced or stopped stores prune
 and expire when ownership resumes. Capacity rejection, after expiry, is observable
 and retains the remaining state and notices. A host must surface saturation for
@@ -222,6 +222,8 @@ To move ownership, quiesce/export the old owner, preserve its validated export,
 shut it down and verify release, then create the new owner with `importState` and
 an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
+The new owner expires imported sessions whose last lifecycle evidence is 24 hours
+old or more at startup, as it would any other store.
 Version 1.0 has no predecessor migration; unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
 Package 2.0.1 adds explicit approval recovery without changing those schemas.
