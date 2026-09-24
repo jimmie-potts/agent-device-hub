@@ -31,3 +31,7 @@ Installation/client/visible-device checks remain pending under the exact issue. 
 ## Dashboard reconciliation
 
 A focused browser test showed that the same-identity session component retained its unsaved label draft after a missed retirement. The dashboard requests snapshot 1.1, requires valid generations, and includes generation in the session component key. An ordinary refresh or reconnect retains focus and drafts; a recreated session mounts a fresh form. Controller forms retain their existing conflict and revision policy. This is a product UI behavior change and requires approval of the current candidate before merge.
+
+## Nanoleaf presentation after the installed trial
+
+The user chose to retain shared completed/read tasks on both the wall and their Lines and to add device-local eviction first. Nanoleaf's companion `gh-218-session-retirement` change owns the persistent presentation marker and guarded UI operation. It does not delete an owner record or fabricate an end event. Local eviction still leaves session presence for future Work/Free automation. Eviction across all consumers is deferred until an explicit owner command is introduced; another consumer needing the control is the revisit trigger. Original non-archive, reopen-to-read and resume qualification remain separate, incomplete live gates.

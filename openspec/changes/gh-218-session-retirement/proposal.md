@@ -10,6 +10,7 @@
 - **BREAKING**: durable format 2.0 adds retirement evidence and record generations. The new owner imports format 1.0 without resetting evidence clocks; older owners cannot read new exports. Installation and rollback require the documented owner handoff.
 - Check read-only archive filename evidence only on admission, using the existing configured Codex home. Retirement does not require archive access.
 - Update lifecycle/state contracts, compatibility evidence and the work guide. Keep installed-client and visible-device acceptance separate.
+- In the Nanoleaf companion, retain shared idle/read tasks on the wall and their Lines until removal or a guarded device-local Evict action, as requested after the installed trial. This changes local presentation only; the owner and its commands remain unchanged.
 
 ## Capabilities
 
@@ -26,6 +27,6 @@ None.
 
 ## Impact
 
-The shared state package, Hub host, TypeScript/Python schema consumers and focused dashboard/Tidbyt checks are affected. Nanoleaf's [shared-input adapter](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/bridge/shared_input.py) needs generation-aware reconciliation. Pixoo's owning-source compatibility check will establish whether it needs a change. Consumer companion work remains scoped to this issue's required compatibility; device writers, modes and unrelated effects retain their owners.
+The shared state package, Hub host, TypeScript/Python schema consumers and focused dashboard/Tidbyt checks are affected. Nanoleaf's [shared-input adapter](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/bridge/shared_input.py) needs generation-aware reconciliation and the explicitly approved retention/eviction presentation change. Its issue-linked companion specification owns that UI behavior; device writers, modes and unrelated effects retain their owners. Pixoo's owning-source compatibility check will establish whether it needs a change.
 
 Complexity is medium with a coupled compatibility boundary; uncertainty is medium until the consumer checks pass; impact is medium because only monitoring state is forgotten. Source readiness depends on fixed contract scenarios and focused red/green checks. Installation, real clients and physical acceptance require separate authorization and remain issue-completion gates.

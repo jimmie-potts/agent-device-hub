@@ -19,3 +19,4 @@
 
 - [ ] 4.1 After separate installation and named-device authorization, qualify throwaway archive and non-archive ends plus resume; record installed-client timing, dashboard removal, visible Nanoleaf Line release and fresh monitoring separately from source tests.
 - [ ] 4.2 After complete applicable acceptance and successful current lookups, synchronize affected specifications and archive before final independent Standards/Specification review. Current-head CI, guarded merge, merged-main checks and issue readback remain the subsequent SDLC gates.
+- [ ] 4.3 Verify the Nanoleaf companion's accepted read/idle retention and device-local Evict behavior through focused source and browser checks, renewed UI approval and separately authorized installed verification. Preserve owner presence and the original live gates; document the deferred cross-device command.
