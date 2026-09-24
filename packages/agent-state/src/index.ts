@@ -139,6 +139,8 @@ export async function createAgentState(options:Options) {
       const event=checked.value;
       return queue(async()=>{
         const previous=get(event.identity);
+        // Read evidence describes a known session; alone it cannot establish one.
+        if(!previous&&event.event.kind==='read.observed')return {ok:true,revision:data.revision,outcome:'stale'};
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}

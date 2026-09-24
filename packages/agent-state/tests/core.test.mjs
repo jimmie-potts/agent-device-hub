@@ -39,6 +39,34 @@ test('explicit recovery retires only an uncertain uncorrelated approval',async()
   await restored.shutdown();
 });
 
+test('read evidence changes only the read dimension',async()=>{
+  let clock=1000;
+  const storage=new MemoryStorage();
+  let owner=await createAgentState(options(storage,()=>clock));
+  const desktop={...identity,client:'desktop'};
+  const provider=(name,turn)=>normalizeHook({session_id:desktop.sessionId,turn_id:turn},{provider:'codex',client:'desktop',hostId:desktop.hostId,sourceId:desktop.sourceId,hook:name},1000);
+  const read=state=>({apiVersion:'1.0',identity:desktop,turn:{status:'known',id:'turn-1'},parent:{status:'unknown'},event:{kind:'read.observed',state},observedAtMs:clock,ordering:{status:'unknown'}});
+  assert.deepEqual(await owner.ingest(read('read')),{ok:true,revision:0,outcome:'stale'});
+  assert.equal(owner.snapshot().sessions.length,0);assert.equal(owner.snapshot().lossCount,0);
+  await owner.ingest(provider('UserPromptSubmit','turn-1'));await owner.ingest(provider('Stop','turn-1'));
+  const before=owner.snapshot().sessions[0];
+  clock+=300000;
+  assert.equal((await owner.ingest(read('read'))).outcome,'applied');
+  let session=owner.snapshot().sessions[0];
+  assert.equal(session.read,'read');assert.equal(session.freshness,'uncertain');
+  assert.equal(session.lastEvidenceAtMs,before.lastEvidenceAtMs);assert.equal(session.observedAtMs,before.observedAtMs);
+  assert.deepEqual([session.turn,session.activity,session.notices],[before.turn,before.activity,before.notices]);
+  clock++;assert.equal((await owner.ingest(read('unread'))).outcome,'applied');
+  clock++;assert.equal((await owner.ingest(read('read'))).outcome,'applied');
+  assert.equal(owner.snapshot().sessions[0].read,'read');
+  await owner.shutdown();
+  owner=await createAgentState(options(storage,()=>clock));
+  await owner.ingest(read('unread'));
+  session=owner.snapshot().sessions[0];
+  assert.equal(session.read,'unread');assert.equal(session.restartUncertain,true);
+  await owner.shutdown();
+});
+
 test('child permission requests remain on the child established by its start',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));
   const raw={session_id:identity.sessionId,agent_id:'child',turn_id:'parent-turn'};

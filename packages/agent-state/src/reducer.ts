@@ -169,6 +169,9 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     }
   }
   if(session.notices.length>LIMITS.notices||session.attention.length>LIMITS.attention||session.watermarks.length>LIMITS.watermarks)return {outcome:'ambiguous',fresh:false,capacity:true};
-  session.lastEvidenceAtMs=now;session.observedAtMs=event.observedAtMs;remember();
-  return {session,outcome:ambiguous?'ambiguous':'applied',fresh:true};
+  // Read evidence is not a lifecycle observation, so freshness and restart uncertainty stay unchanged.
+  const fresh=eventDimension!=='read';
+  if(fresh){session.lastEvidenceAtMs=now;session.observedAtMs=event.observedAtMs;}
+  remember();
+  return {session,outcome:ambiguous?'ambiguous':'applied',fresh};
 }
