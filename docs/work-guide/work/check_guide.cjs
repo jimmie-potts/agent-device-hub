@@ -4,16 +4,17 @@ const assert = require('assert/strict');
 const crypto = require('crypto');
 // Resolve installed packages and browsers. These checks never install software.
 let playwrightPath;
-for (const candidate of [process.env.GUIDE_PLAYWRIGHT_MODULE,'playwright','/mnt/c/Users/onesh/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'].filter(Boolean)) {
+for (const candidate of [process.env.GUIDE_PLAYWRIGHT_MODULE,'playwright'].filter(Boolean)) {
   try {playwrightPath=require.resolve(candidate); break;} catch {}
 }
 assert(playwrightPath,'Set GUIDE_PLAYWRIGHT_MODULE to an installed Playwright module');
 const {chromium}=require(playwrightPath);
 const cache=process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(),'.cache/ms-playwright');
 const installed=fs.existsSync(cache)?fs.readdirSync(cache).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true})):[];
+// Prefer full Chromium builds, which CI launches; chrome-headless-shell differs (for example in clipboard permission).
 const executablePath=[process.env.GUIDE_CHROMIUM_PATH,chromium.executablePath(),
-  ...installed.filter(n=>n.startsWith('chromium_headless_shell-')).map(n=>path.join(cache,n,'chrome-headless-shell-linux64/chrome-headless-shell')),
-  ...installed.filter(n=>n.startsWith('chromium-')).map(n=>path.join(cache,n,'chrome-linux64/chrome'))].find(p=>p&&fs.existsSync(p));
+  ...installed.filter(n=>n.startsWith('chromium-')).map(n=>path.join(cache,n,'chrome-linux64/chrome')),
+  ...installed.filter(n=>n.startsWith('chromium_headless_shell-')).map(n=>path.join(cache,n,'chrome-headless-shell-linux64/chrome-headless-shell'))].find(p=>p&&fs.existsSync(p));
 assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executable');
 (async()=>{
   const root=path.resolve(__dirname,'..'), file=path.join(root,'outputs/agent-device-work-guides.html');

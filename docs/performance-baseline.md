@@ -42,10 +42,13 @@ installed agent clients are needed for this admission-only tool.
 
 ```bash
 python -B scripts/check-performance.py
-python -B scripts/performance/admission.py --output /tmp/hub30-admission-new-run
+mkdir -p .local/evidence/hub30
+python -B scripts/performance/admission.py --output .local/evidence/hub30/admission-new-run
 ```
 
-The output directory must be new and its parent must exist. The default is
+The output directory must be new and its parent must exist. Keep run outputs,
+which are retained evidence, under the gitignored `.local/evidence/` rather than
+`/tmp`, which can be a small RAM-backed filesystem shared by every session. The default is
 three repeats of 1, 10 and 50 concurrent synthetic sessions, each with 100
 measured bursts and three excluded warmup bursts. The tool asserts the real
 committed session/turn/status result after each profile. It creates disposable
@@ -91,14 +94,16 @@ installed transitive dependency file. Use a fresh consumer from that lock.
 
 Use Node 24 and an existing Python 3.12/3.14 environment with the repository's
 pinned jsonschema 4.19.2 dependency. Copy the retained consumer package/lock and
-release archive into a new directory, then run `npm ci --ignore-scripts` there.
-Pass that directory with `--consumer`; the tool never imports a sibling checkout.
+release archive into a new directory under `.local/scratch/`, then run
+`npm ci --ignore-scripts` there. Pass that directory with `--consumer`; the tool
+never imports a sibling checkout. Delete the consumer after the run.
 
 ```bash
+mkdir -p .local/evidence/hub30
 python -B scripts/performance/validators.py \
   --archive scripts/performance/vendor/jimmie-potts-agent-lifecycle-contracts-1.0.0.tgz \
-  --consumer /tmp/prepared-lifecycle-consumer \
-  --output /tmp/hub30-validator-new-run
+  --consumer .local/scratch/hub30/prepared-lifecycle-consumer \
+  --output .local/evidence/hub30/validator-new-run
 ```
 
 Three fresh processes per language each measure 100 cycles through the same
@@ -165,7 +170,8 @@ Installed/client/physical acceptance remains Nanoleaf #55.
 
 ```bash
 npm run test:performance:linux
-/usr/bin/python3 -B scripts/performance/linux_hook.py --output /tmp/hub30-linux-new-run
+mkdir -p .local/evidence/hub30
+/usr/bin/python3 -B scripts/performance/linux_hook.py --output .local/evidence/hub30/linux-new-run
 ```
 
 Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.

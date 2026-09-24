@@ -26,12 +26,13 @@ It neither checks out nor changes either consumer repository.
 
 ```bash
 npm run test:performance:standalone
+mkdir -p .local/evidence/standalone
 npm run qualify:standalone -- \
   --pixoo-repo /path/to/pixoo-source-repository \
   --nanoleaf-repo /path/to/nanoleaf-source-repository \
   --node /absolute/path/to/node24 \
   --browser /absolute/path/to/chrome-headless-shell \
-  --output /tmp/new-standalone-result
+  --output .local/evidence/standalone/new-result
 ```
 
 Use a new output directory for every attempt. `report.json` contains the result,
