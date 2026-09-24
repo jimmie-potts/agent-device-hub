@@ -64,3 +64,25 @@ def load_dependencies(backlogs, issues):
             result[f'{prefix}{issue["number"]}'] = dependencies['nodes']
     assert set(result) == {key for key, issue in issues.items() if issue['state'] == 'OPEN'}
     return result
+
+
+def overview_keys(issues, as_of):
+    """Select snapshot views without turning recency or an absent blocker into priority."""
+    from datetime import datetime, timedelta
+    import re
+    moment = datetime.fromisoformat(as_of.replace('Z', '+00:00'))
+    def created(key):
+        return datetime.fromisoformat(issues[key]['createdAt'].replace('Z', '+00:00'))
+    opened = sorted((key for key, issue in issues.items() if issue['state'] == 'OPEN'),
+                    key=lambda key: (-created(key).timestamp(), key))
+    def priority(key):
+        ranks = [int(match[1]) for label in labels(issues[key])
+                 if (match := re.fullmatch(r'(?:priority:)?p([0-4])', label.lower()))]
+        return min(ranks, default=5)
+    return {
+        'new': opened[:8],
+        'week': [key for key in opened if moment - timedelta(days=7) <= created(key) <= moment],
+        'defects': sorted((key for key in opened if 'bug' in labels(issues[key])),
+                          key=lambda key: (priority(key), -created(key).timestamp(), key)),
+        'current': [key for key in opened if labels(issues[key]) & {'status:in-progress', 'status:review'}],
+    }

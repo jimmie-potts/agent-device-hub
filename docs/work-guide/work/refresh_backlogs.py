@@ -12,7 +12,7 @@ REPOS = ['agent-device-hub', 'codex-nanoleaf', 'divoom-app-upgrade']
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
-    'agent-device-hub': [10, 86, 196, 200, 207, 210, 212],
+    'agent-device-hub': [10, 86, 191, 196, 197, 200, 207, 210, 212],
     'codex-nanoleaf': [31, 84],
     'divoom-app-upgrade': [38, 47, 68, 72],
 }
@@ -46,7 +46,7 @@ def normalize(issue, comments=None):
         'number': issue['number'], 'state': issue['state'].upper(),
         'stateReason': issue.get('state_reason'), 'title': issue['title'],
         'body': issue['body'], 'url': issue['html_url'],
-        'updatedAt': issue['updated_at'], 'closedAt': issue.get('closed_at'),
+        'createdAt': issue['created_at'], 'updatedAt': issue['updated_at'], 'closedAt': issue.get('closed_at'),
         'labels': [{'name': label['name']} for label in issue['labels']],
         'milestone': issue['milestone'], 'comments': comments or [],
         'commentCount': issue['comments'],

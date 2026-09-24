@@ -1,73 +1,64 @@
-"""Editorial reading paths. Issue state and scheduling gates are applied at build time."""
+"""Reviewed topic boundaries and editorial choices; GitHub owns issue status."""
 
-PATHS = {
-    'local-acceptance': (
-        'Control the existing devices from Codex with observed local results.',
-        'The scoped local acceptance is complete. Continue with the shared milestone; Pixoo timing experiments remain in the media guide.',
-        [],
-    ),
-    'shared-codex': (
-        'One shared task state, consistent device status, and a common integration UI.',
-        'The Codex-first milestone is closed. The owner launcher #179 is delivered. The style guide #181 is ready; the dashboard styling #182 follows #181. Other items are hardening and recovery follow-ups; choose one only when its evidence and owner are clear.',
-        ['H181', 'H138'],
-    ),
-    'nanoleaf-devices': (
-        'Let Lines and Light Panels share tasks while keeping separate assignments and one writer per device.',
-        'Device state, the runtime worker and panel effects are delivered in source. Source enrollment #45 is complete. The combined wall map #44 and separately authorized installed acceptance #46 remain.',
-        ['N44'],
-    ),
-    'tidbyt-lifx': (
-        'Add automatic task status to Tidbyt and LIFX through their own controllers.',
-        'Tidbyt status and the LIFX controller are delivered in source. Resolve shared-owner capacity #195 before resuming Tidbyt installed acceptance #21. LIFX automatic status #20 remains a separate next feature.',
-        ['H20'],
-    ),
-    'pc-lighting': (
-        'Add Corsair task lighting, with optional Strimer and keyboard support.',
-        'The documentation issue #50 is closed. Select and refine qualification next, keeping optional devices on separate tracks and retaining negative or unknown support findings.',
-        ['H51'],
-    ),
-    'desktop-controls': (
-        'Use local Codex mouse shortcuts, then add optional shared desk presets.',
-        'N30 qualification is complete. Select and refine the reusable local mapper #65 when this track resumes; shared presets are deferred separately, and keyboard A/B stays outside B.U.N.N.Y.',
-        ['H65'],
-    ),
-    'nanoleaf-presentation': (
-        'Make the wall display reflect live state and support configurable presentation.',
-        'Deliver the rendering contract #15, then the live renderer #17. External-scene research is complete: externally controlled scenes display as external or unknown. Lively and ambient presentation keep their own qualification sequence.',
-        ['N15'],
-    ),
-    'pixoo-media': (
-        'Improve playlists and media behavior on the accepted local Pixoo baseline.',
-        'Choose one deferred feature or defect for refinement. Reliability acceptance does not establish transition support or precise visible GIF timing.',
-        ['P52', 'P55'],
-    ),
-    'controls-music': (
-        'Extend the shared integration UI into general controls, then music.',
-        'The general-control definition, the Nanoleaf native capabilities and both view slices are delivered. The hardware acceptances #154 and #155 follow with their own installation permissions. Choose Pixoo #67 or Hub #152 as companions. The iPhone AirPlay source is qualified; its adapter #175 follows the Windows connector #36. Playback and participation policy precede music UI and device effects.',
-        [],
-    ),
-    'hosting-migrations': (
-        'Make runtime ownership and hosting portable without sharing private databases.',
-        'The Linux installation and its architecture record are complete. Hosting, dedicated hardware and source moves remain separate deferred choices with separate evidence.',
-        [],
-    ),
-    'assistant-access': (
-        'Add approved automation and access methods on top of working controls.',
-        'Refine one access or automation path after its prerequisites. Remote Pixoo access has its own sequence; assistant and voice work remain deferred.',
-        ['H45', 'P11', 'P17'],
-    ),
-    'development-workflow': (
-        'Keep delivery evidence readable and validation affordable.',
-        'Define the Neon/Prism presentation in #85 and implement dated public status #197 for mobile release #87. Task briefs #196 and the cache guidance are delivered; clipboard and cleanup work #210/#207 are complete. Direct app coordination remains deferred.',
-        ['H85', 'H197'],
-    ),
-}
-
-# These are reviewed independent units, not an automatic list of every issue
-# without a native blocker. Their labels and dependencies can withhold a card.
-PARALLEL = [
-    ('P61', 'Pixoo embedded-host performance', 'shared-codex',
-     'Measure and improve the delivered embedded host with disposable state. Keep the frozen limits and failed receipts.'),
-    ('H197', 'Current public GitHub status', 'development-workflow',
-     'Add a dated public status projection with explicit freshness; coordinate shared guide files with the task-brief owner.'),
+# id, navigation label, outcome, next action, selected issue references
+TOPICS = [
+    ('shared-codex', 'Monitoring accuracy and recovery',
+     'Keep current activity, read evidence and session lifetime useful across devices.',
+     'Session expiration frees capacity before Tidbyt acceptance resumes. Archive removal follows expiration; read evidence and per-task recovery have separate scopes.', ['H195', 'H218', 'H138']),
+    ('bunny-controls', 'B.U.N.N.Y. interface and device controls',
+     'Make the shared dashboard and device controls consistent and usable.',
+     'Define the shared UI foundation before dashboard adoption. Media tools and playlist names have their own scopes; installed control checks remain separate.', ['H181', 'H182', 'P67', 'H152']),
+    ('nanoleaf-presentation', 'Nanoleaf wall map and effects',
+     'Make current tasks easy to identify and inspect, with truthful light presentation.',
+     'Task labels, current projects and a compact inspector can be developed separately with coordinated map edits. Rendering parity and effect customization retain their own prerequisites.', ['N75', 'N76', 'N77', 'N81']),
+    ('nanoleaf-devices', 'Adding devices',
+     'Extend device support through separate Panels, Tidbyt, LIFX and PC-lighting tracks.',
+     'Trial the enrolled Panels with CLI controls before the map selector. Resume Tidbyt acceptance after capacity recovery. Set LIFX status behavior before implementation; PC lighting stays later.', ['N46', 'N44', 'H21', 'H20']),
+    ('pixoo-media', 'Pixoo media and playlists',
+     'Improve media behavior on the accepted local Pixoo baseline.',
+     'Select a media defect or timing investigation when needed. The accepted uniform-frame profile does not establish variable visible timing.', ['P52', 'P55']),
+    ('controls-music', 'Music playback and presentation',
+     'Connect qualified playback sources before adding music controls and device effects.',
+     'This is a later track. Windows playback precedes its AirPlay companion; participation and interruption policy must be settled before music presentation.', ['H36', 'H175', 'H178']),
+    ('desktop-controls', 'Shortcuts and desk presets',
+     'Keep independent mouse actions separate from shared desk preset coordination.',
+     'These choices are deferred. Local Codex shortcuts can resume independently; shared presets retain their own handoff and restoration checks.', ['H65', 'H67']),
+    ('work-guide', 'Work guide and system atlas',
+     'Make planning, task briefs and system explanations useful on desktop and phone.',
+     'Refresh the guide overview and topic organization. Guide/atlas styling, mission-map navigation and signal playback remain separately owned work.', ['H220', 'H85', 'H201', 'H202']),
+    ('assistant-access', 'Automation and remote access',
+     'Explore approved automation, remote controls and phone-to-app handoffs.',
+     'These tracks are deferred. Keep assistant access, remote Pixoo control and native-app handoffs distinct; qualify a supported path before implementing its dependent stages.', ['H45', 'H199']),
+    ('hosting-migrations', 'Hosting and migrations',
+     'Change hosting or source location without creating competing runtime owners.',
+     'Hosting and repository migrations remain later choices. Select one target and preserve explicit ownership and private state boundaries.', []),
+    ('development-workflow', 'Engineering maintenance',
+     'Keep development tooling and resource use manageable.',
+     'Pixoo embedded-host performance is later by owner choice. Select maintenance only for a concrete need; it is not a prerequisite for the current guide or monitoring fixes.', []),
 ]
+PATHS = {key: (outcome, action, selected) for key, _, outcome, action, selected in TOPICS}
+ALIASES = {'tidbyt-lifx': 'nanoleaf-devices', 'pc-lighting': 'nanoleaf-devices'}
+OWNER_LATER = {'P61': 'Later by owner choice; keep the recorded performance scope and failed measurements.'}
+NEXT_STEPS = {
+    'H195': 'Release monitoring capacity and let Tidbyt acceptance resume. Implement the 24-hour session lifetime, then verify the installed update separately.',
+    'N76': 'Show projects associated with current tasks while keeping saved project settings accessible.',
+    'N77': 'Make the task inspector manageable while retaining truthful totals and access to every tracked task.',
+    'H181': 'Define the shared UI foundation that dashboard adoption needs.',
+    'H85': 'Improve the guide and atlas presentation; coordinate token names with the application foundation.',
+}
+DECISIONS = {
+    'H20': 'Choose status bulbs, colors/effects, brightness cap, quiet behavior and the manual-change policy.',
+    'N46': 'Select the installed Panels trial and authorize its device sequence before physical checks.',
+    'H154': 'Select and authorize the installed Pixoo general-control trial.',
+    'H155': 'Select and authorize the installed Nanoleaf general-control trial.',
+}
+# Only source-backed, deliberately recorded workaround text belongs here.
+WORKAROUNDS = {}
+
+DEVICE_TRACKS = {
+    'Panels': ['N44', 'N46', 'N47'],
+    'Tidbyt': ['H21', 'H23', 'H24'],
+    'LIFX': ['H20', 'H22'],
+    'PC lighting': ['H51', 'H52', 'H53', 'H55', 'H56', 'H57', 'H58', 'H60', 'H61', 'H62'],
+    'Other integrations': ['H11'],
+}

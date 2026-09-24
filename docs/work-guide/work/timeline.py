@@ -302,3 +302,41 @@ def build(history, snapshot_iso, issues, guides_by_id, coverage):
                 roadmapNodes=len(nodes), roadmapTracks=len(TRACKS), roadmapSlots=SLOTS,
                 headRevisions={repo: value['headSha'] for repo, value in history['repositories'].items()})
     return dict(history=chart, roadmap=roadmap, totals=totals, fetched=fetched, meta=meta, nodes=nodes, listed=listed)
+
+
+def reconcile(issues, coverage, aliases):
+    """Keep the reviewed roadmap layout aligned with current topic ownership."""
+    global TRACKS
+    owners = {key: guide for guide, keys in coverage.items() for key in keys}
+    extra = [
+        ('Engineering maintenance', [dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow')]),
+        ('Task metadata and effects', [dict(id='n-map-metadata', x=1, label='Task labels · completion comet', issues=['N75', 'N81'], guide='nanoleaf-presentation')]),
+        ('Guide overview', [dict(id='n-guide-overview', x=1, label='Priorities · new issues · defects', issues=['H220'], guide='work-guide')]),
+    ]
+    for _, items in TRACKS:
+        for node in items:
+            if node['id'] == 'n-codex':
+                node.update(issues=['H181', 'H182'], label='B.U.N.N.Y. UI foundation')
+            elif node['id'] == 'n-controls':
+                node['issues'] = ['P67', 'H152', 'H154', 'H155']
+            elif node['id'] == 'n-music':
+                node['issues'] = ['H35'] + node['issues']
+            elif node['id'] == 'n-shared-map-quality':
+                node.update(issues=['H191', 'H195', 'H218'], label='Read evidence · session lifetime')
+            elif node['id'] == 'n-nl-map':
+                node.update(x=3, label='Device selector after trial')
+            elif node['id'] == 'n-nl-accept':
+                node.update(x=2, label='Installed Panels trial')
+            elif node['id'] == 'n-guide-mobile':
+                node.update(label='Live status source delivered')
+        if any(node['id'] == 'n-nl-map' for node in items):
+            items.sort(key=lambda node: node['x'])
+    TRACKS = TRACKS + extra
+    for _, items in TRACKS:
+        for node in items:
+            node['issues'] = [key for key in node['issues'] if key in owners]
+            assigned = {owners[key] for key in node['issues']}
+            assert len(assigned) <= 1, f'Split roadmap node {node["id"]} across topic owners'
+            node['guide'] = next(iter(assigned), aliases.get(node['guide'], node['guide']))
+            if node['guide'] == 'local-acceptance':
+                node['guide'] = 'shared-codex'
