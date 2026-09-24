@@ -212,9 +212,21 @@ try {
   const revision=f.pixoo.configurationRevision,generation=f.pixoo.generation;await start.click();await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
   await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. BUNNY can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
-  assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');
+  assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');assert.equal(f.writes.length,1);
   await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
-  assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');assert.equal(general(f).length,0,'no media or other command is sent');assert.equal(f.writes.length,1);
+  assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');
+  // A Pixoo integration draft ignores a presentation-generation advance, such as a suspend after a failed frame, and is sent with the fresh generation.
+  const filter=page.getByLabel('Label / ID filter');await filter.fill('focus');const reads=f.requests.filter(r=>r.id==='pixel'&&r.url.includes('integration')).length;f.pixoo.generation++;
+  await until(()=>f.requests.filter(r=>r.id==='pixel'&&r.url.includes('integration')).length>reads);await page.waitForTimeout(300);
+  assert.equal(await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).count(),0,'a presentation-generation advance alone is not a conflict');
+  const presentation=f.pixoo.generation;await visible(page,'button','Apply monitor view').click();await until(()=>f.writes.length===2);assert.equal(f.writes[1].command.expectedGeneration,presentation,'the view command carries the fresh presentation generation');assert.equal(f.pixoo.configuration.filter.q,'focus');
+  // A configuration change from another client still conflicts.
+  await page.getByRole('button',{name:'Apply monitor view',exact:true,disabled:true}).filter({visible:true}).waitFor();await filter.fill('other');f.pixoo.configurationRevision++;await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).waitFor();assert.equal(await visible(page,'button','Apply monitor view').isDisabled(),true);
+  // An uncertain Start Monitor keeps its explicit reload even when the refreshed read shows Monitor presenting.
+  await visible(page,'button','Discard my edit').click();f.pixoo.participating=false;await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();
+  f.setUncertain(true);await visible(page,'button','Start Monitor').click();await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Result unknown'}).waitFor();f.setUncertain(false);f.pixoo.participating=true;
+  await page.getByText('Participation: yes',{exact:false}).waitFor();await form(page,'Mode').getByRole('button',{name:'Reload current values',exact:true}).click();
+  await form(page,'Mode').locator('.switch').waitFor({state:'detached'});assert.equal(f.writes.length,3,'nothing was retried');assert.equal(general(f).length,0,'no media or other command is sent across Start Monitor, the view edit and the uncertain retry check');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
  {
