@@ -46,7 +46,7 @@ sha256sum < /absolute/private/client-token | cut -d' ' -f1
 3. Restart the hub so it reads the new list. For an installed systemd user service, run `systemctl --user restart <unit>`. An invalid list, such as a duplicate `id` or `digest`, an uppercase or wrong-length digest, an unknown scope or too many entries, stops startup with `hub-start-failed` and takes every client offline, so keep a copy of the previous file to restore.
 4. Check the grant: `curl -H "Authorization: Bearer $(cat /absolute/private/client-token)" "http://127.0.0.1:<port>/api/hub/v1/authority?scope=read"` returns the owner ID for a token with `read` scope, 403 for a known token without it and 401 for an unknown token.
 
-To rotate a token without an outage, create the new credential with a new `id` as above, including the restart and the step 4 check. Then switch the client to the new token, remove the old entry and restart again. To revoke a token, remove its entry and restart; its requests then get 401. Entries named `hub-<hex>` are producer credentials owned by the [setup operations](SETUP.md#credentials-and-windows-invocation). Grant and revoke those through the setup operations instead of editing them by hand.
+To rotate a token without a gap for that client, create the new credential with a new `id` as above, including the restart and the step 4 check. Then switch the client to the new token, remove the old entry and restart again. To revoke a token, remove its entry and restart; its requests then get 401. Entries named `hub-<hex>` are producer credentials owned by the [setup operations](SETUP.md#credentials-and-windows-invocation). Grant and revoke those through the setup operations instead of editing them by hand.
 
 ### What each grant allows
 
