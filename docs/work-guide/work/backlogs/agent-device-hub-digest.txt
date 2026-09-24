@@ -90,10 +90,10 @@
 #182 [OPEN] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
 #185 [CLOSED] Add explicit recovery for uncertain approval attention
 #186 [CLOSED] Prepare the complete BUNNY atlas for public guide publication
-#191 [OPEN] Provide qualified Codex Desktop read evidence to the shared owner
-#195 [OPEN] Expire monitoring sessions after 24 hours or when archived
+#191 [OPEN] Report Codex Desktop read state to the shared owner
+#195 [OPEN] Expire monitoring sessions after 24 hours without activity
 #196 [CLOSED] Prepare Codex and Claude task briefs from the mobile work guide
-#197 [OPEN] Show current public GitHub status in the dated guide
+#197 [CLOSED] Show current public GitHub status in the dated guide
 #198 [OPEN] Replay recorded delivery history without inventing system state
 #199 [OPEN] Qualify phone-to-native-app handoff options for Codex and Claude
 #200 [CLOSED] Refresh the public status feed automatically under a reviewed publishing policy
@@ -105,3 +105,5 @@
 #207 [CLOSED] Clean up delivered worktrees and scratch after merge
 #210 [CLOSED] Make the work guide clipboard-fallback check pass in Depot CI
 #212 [CLOSED] Use shared npm and Playwright caches in setup guidance
+#218 [OPEN] Remove archived Codex Desktop tasks from monitoring
+#220 [OPEN] Refresh work-guide priorities, new issues and defects, and reorganize topic guides

@@ -25,14 +25,35 @@ context. A modified click, or a browser without scripts, opens GitHub instead.
 Other guide views open the same dialog with `openBrief(key)`.
 `work/guide_brief.css` styles it.
 
-Each guide starts with its outcome and next step. Closed stories and detailed
-evidence are expandable; search, Expand all and printing reveal them. The
-parallel-work cards list selected independent units. A blocked or deferred label,
-open prerequisite, active owner or closure removes a unit from the candidate
-group. Missing dependencies fail the build instead of implying readiness.
-`work/guide_paths.py` owns the reading paths and selected units;
-`work/guide_status.py` derives their status and scheduling gates from the saved
-snapshot. `work/guide_reading.css` styles these controls.
+The opening contains Current work, Newly added, Open defects, Useful next steps,
+Blockers and decisions, and Later. Newly added shows the latest eight open issues
+by creation date, plus an expandable seven-day list. Editing an issue does not
+make it new. Open defects includes every open `bug`, including blocked and
+deferred defects. Explicit `P0`–`P4` or `priority:p0`–`priority:p4` labels sort
+first, followed by creation date. No priority or workaround is inferred.
+
+The opening starts with the saved snapshot, including without JavaScript. A
+successful complete GitHub read replaces that repository's opening-list membership
+and status; a failed read keeps its complete snapshot. The opening's freshness
+line names each source. New issues remain accessible through task briefs and
+GitHub even before a guide assignment exists. Topic-guide counts, assignments,
+editorial recommendations and explanations remain dated. Recency and absence of
+an open prerequisite do not automatically make an issue a recommendation.
+
+Eleven topic guides own each open snapshot issue exactly once. The opening,
+roadmap and architecture links do not add to those totals. Completed milestones
+and retained evidence live in a separate expandable archive. Adding devices has
+separate Panels, Tidbyt, LIFX and PC-lighting tracks; deferred PC lighting starts
+collapsed. Earlier guide anchors remain reachable. Search, Expand all and print
+include archived evidence; printing restores the reader's prior expansion state.
+
+`work/guide_paths.py` owns topic names, next steps, owner-selected later work and
+optional recorded workarounds. `work/backlogs/guide-coverage.json` owns primary
+issue assignments. `work/guide_status.py` and `work/guide_overview.py` select and
+render snapshot lists; `work/guide_overview.js` applies complete public GitHub
+reads. Preserve the matching selection rules when changing either implementation.
+Pixoo embedded-host performance remains later by the owner's explicit choice,
+even without a tracker `deferred` label. Its issue scope and acceptance stay intact.
 
 ## Intentional guide revisions
 

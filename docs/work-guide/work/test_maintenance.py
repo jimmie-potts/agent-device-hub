@@ -10,6 +10,23 @@ import unittest
 
 
 class GuideMaintenance(unittest.TestCase):
+    def test_overview_uses_creation_dates_and_keeps_all_open_defects(self):
+        from guide_status import overview_keys
+        def issue(created, *labels, state='OPEN', updated='2026-10-01T00:00:00Z'):
+            return dict(state=state, createdAt=created, updatedAt=updated,
+                        labels=[{'name': name} for name in labels])
+        issues = {
+            'H1': issue('2026-09-01T00:00:00Z', 'bug', 'priority:p1'),
+            'N2': issue('2026-09-23T00:00:00Z', 'bug', 'blocked', 'deferred'),
+            'P3': issue('2026-09-22T00:00:00Z', 'bug', state='CLOSED'),
+            'H4': issue('2026-09-24T00:00:00Z', 'status:review'),
+        }
+        selected = overview_keys(issues, '2026-09-24T01:00:00Z')
+        self.assertEqual(selected['new'], ['H4', 'N2', 'H1'])
+        self.assertEqual(selected['week'], ['H4', 'N2'])
+        self.assertEqual(selected['defects'], ['H1', 'N2'])
+        self.assertEqual(selected['current'], ['H4'])
+
     def test_roadmap_order_does_not_claim_blocked_work_is_ready(self):
         source = Path(__file__).resolve().parent.parent
         document = (source / 'outputs/agent-device-work-guides.html').read_text()
@@ -55,9 +72,9 @@ class GuideMaintenance(unittest.TestCase):
             candidate = Path(directory) / 'guide'
             shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
                 '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
-            path = candidate / 'work/backlogs/device-native-deps.json'
+            path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['p']['issues']['nodes'] if row['number'] == 61)
+            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 195)
             issue['blockedBy']['nodes'].append({
                 'number': 11, 'state': 'OPEN',
                 'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
@@ -67,10 +84,12 @@ class GuideMaintenance(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
-            before, after = document.split('<h3>Hold or coordinate first</h3>')
-            self.assertNotIn('data-unit="P61"', before)
-            self.assertIn('data-unit="P61" data-scheduling="blocked"', after)
-            self.assertIn('Waiting for divoom-app-upgrade #11.', after)
+            next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
+            self.assertNotIn('data-key="H195"', next_section)
+            self.assertNotIn('data-key="P61"', next_section)
+            blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
+            self.assertIn('data-key="H195"', blockers)
+            self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
         from html.parser import HTMLParser
