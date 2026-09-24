@@ -1,6 +1,6 @@
-import {readFile,stat} from 'node:fs/promises';
+import {lstat,opendir,readFile,stat} from 'node:fs/promises';
 import {isAbsolute,join,normalize} from 'node:path';
-import type {Outcome,Snapshot} from '@jimmie-potts/agent-state';
+import type {Identity,Outcome,Snapshot} from '@jimmie-potts/agent-state';
 import {exact,id,object} from './common.js';
 
 // Read-only Codex Desktop read evidence for #191. See the standalone-hub-host
@@ -11,6 +11,22 @@ type Owner = {snapshot():Snapshot; ingest(input:unknown):Promise<Outcome>};
 const MARKER = '.codex-global-state.json', MAX_BYTES = 16*1024*1024, POLL_MS = 2000;
 // Desktop sets the unread flag shortly after Stop; legacy Nanoleaf used the same wait.
 export const READ_SETTLE_MS = 5000;
+
+/** Positive filename evidence only. Never read a transcript or retain an archive cache. */
+export async function archivedSession(source:CodexDesktopOptions,identity:Identity,signal:AbortSignal):Promise<boolean> {
+  if(identity.provider!=='codex'||identity.client!=='desktop'||identity.hostId!==source.hostId||identity.sourceId!==source.sourceId)return false;
+  try{
+    const path=join(source.home,'archived_sessions'),info=await lstat(path);
+    if(signal.aborted||!info.isDirectory()||info.isSymbolicLink())return false;
+    const directory=await opendir(path);let entries=0;
+    for await(const entry of directory){
+      if(signal.aborted||++entries>10000)return false;
+      const match=/^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([A-Za-z0-9_.-]{1,128})\.jsonl$/.exec(entry.name);
+      if(entry.isFile()&&match?.[1]===identity.sessionId)return true;
+    }
+  }catch{/* Missing or unreadable archive evidence cannot prevent monitoring. */}
+  return false;
+}
 
 export function codexDesktopOptions(value:unknown):CodexDesktopOptions {
   if (!object(value) || !exact(value,['home','hostId','sourceId']) || typeof value.home !== 'string' || value.home.length > 1024 ||

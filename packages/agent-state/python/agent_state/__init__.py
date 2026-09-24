@@ -5,11 +5,12 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-ARTIFACT_VERSION = '1.0.0'
+ARTIFACT_VERSION = '3.0.0'
 API_VERSION = '1.0'
 MAX_BYTES = 16 * 1024 * 1024
 _SCHEMA = json.loads((Path(__file__).resolve().parents[2] / 'schemas/snapshot-v1.schema.json').read_text(encoding='utf-8'))
 _VALIDATOR = Draft202012Validator(_SCHEMA)
+_V11_VALIDATOR = Draft202012Validator(json.loads((Path(__file__).resolve().parents[2] / 'schemas/snapshot-v1.1.schema.json').read_text(encoding='utf-8')))
 _IDENTITY_FIELDS = ('provider', 'client', 'hostId', 'sourceId', 'sessionId')
 
 
@@ -50,6 +51,8 @@ def _identity(value):
 def _semantics(snapshot):
     identities = set()
     for session in snapshot['sessions']:
+        if session.get('generation', 0) > snapshot['revision']:
+            return False
         identity = session['identity']
         key = _identity(identity)
         if key in identities:
@@ -93,7 +96,7 @@ def validate_snapshot(value):
         if not _bounded(value):
             return {'ok': False, 'code': 'invalid-state'}
         encoded = json.dumps(_normalized(value), ensure_ascii=False, separators=(',', ':'))
-        if len(encoded.encode('utf-8')) > MAX_BYTES or not _VALIDATOR.is_valid(value) or not _semantics(value):
+        if len(encoded.encode('utf-8')) > MAX_BYTES or not (_VALIDATOR.is_valid(value) or _V11_VALIDATOR.is_valid(value)) or not _semantics(value):
             return {'ok': False, 'code': 'invalid-state'}
         return {'ok': True, 'value': json.loads(encoded)}
     except (ValueError, TypeError, OverflowError, RecursionError, KeyError):

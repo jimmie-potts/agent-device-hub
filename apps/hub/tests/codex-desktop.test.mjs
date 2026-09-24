@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chmod,mkdtemp,open,rm,writeFile} from 'node:fs/promises';
+import {chmod,mkdir,mkdtemp,open,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -78,12 +78,49 @@ test('an unlisted completion becomes read only after the flag has had time to ap
     await owner.ingest(hook('UserPromptSubmit',{session_id:'running',turn_id:'turn-1'}));
     await write([]);
     advance(4999);await reader.tick();
-    assert.deepEqual(['viewed','interrupted','ended'].map(read),['unknown','unknown','unknown']);
+    assert.deepEqual(['viewed','interrupted','ended'].map(read),['unknown','unknown',undefined]);
     advance(1);await reader.tick();
-    assert.deepEqual(['viewed','interrupted','ended'].map(read),['read','read','read']);
+    assert.deepEqual(['viewed','interrupted','ended'].map(read),['read','read',undefined]);
     advance(600000);await reader.tick();
     assert.equal(read('running'),'unknown');
   }finally{await close();}
+});
+
+test('archive evidence guards admission only, unarchive admits fresh work, and snapshot versions are explicit',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'hub-retirement-')),home=await mkdtemp(join(tmpdir(),'hub-archive-fixture-'));
+  const archive=join(home,'archived_sessions'),file=join(archive,'rollout-2026-09-24T10-00-00-one.jsonl');
+  const token='b'.repeat(43),credentials=[{id:'writer',digest:createHash('sha256').update(token).digest('hex'),scopes:['read','ingest'],devices:[]}];
+  const base={directory,ownerId:'owner',consumers:[],credentials,controllers:[],codexDesktop:{home,hostId:'host',sourceId:'desktop'}};
+  let hub;
+  try{
+    await mkdir(archive);await writeFile(file,'PRIVATE_TRANSCRIPT_CANARY');
+    hub=await startHub(base);
+    const call=(path,body)=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+    const emit=(name,turn,session='one',source={})=>call('/api/monitor/v1/events',hook(name,{session_id:session,...(turn?{turn_id:turn}:{})},source,Date.now()));
+    const view=async(version='')=>(await (await call('/api/monitor/v1/sessions'+version)).json()).snapshot;
+    assert.equal((await (await emit('UserPromptSubmit','archived-turn')).json()).outcome,'stale');
+    assert.deepEqual((await view()).sessions,[]);
+    await emit('UserPromptSubmit','other-source','one',{sourceId:'other'});
+    assert.equal((await view()).sessions.length,1);
+    await emit('SessionEnd',undefined,'one',{sourceId:'other'});
+    await rm(file);
+    await emit('UserPromptSubmit','new-turn');
+    const legacy=await view(),fresh=await view('?snapshotVersion=1.1');
+    assert.equal(legacy.apiVersion,'1.0');assert.equal('generation' in legacy.sessions[0],false);
+    assert.equal(fresh.apiVersion,'1.1');assert.ok(fresh.sessions[0].generation>0);
+    assert.equal((await call('/api/monitor/v1/sessions?snapshotVersion=9.0')).status,400);
+    await chmod(archive,0o000);
+    await emit('SessionEnd');assert.deepEqual((await view()).sessions,[]);
+    await emit('UserPromptSubmit','resumed-turn');assert.equal((await view()).sessions.length,1);
+    await chmod(archive,0o700);await rm(archive,{recursive:true});
+    await emit('SessionEnd');await emit('UserPromptSubmit','missing-folder');
+    assert.equal((await view()).sessions.length,1);
+    await hub.close();hub=undefined;
+    const {codexDesktop,...withoutConfiguration}=base;hub=await startHub(withoutConfiguration);
+    await emit('SessionEnd');assert.deepEqual((await view()).sessions,[]);
+    await emit('UserPromptSubmit','no-configuration');assert.equal((await view()).sessions.length,1);
+    assert.doesNotMatch(JSON.stringify(await view()),/PRIVATE_TRANSCRIPT_CANARY/);
+  }finally{await hub?.close();await chmod(archive,0o700).catch(()=>{});await rm(directory,{recursive:true,force:true});await rm(home,{recursive:true,force:true});}
 });
 
 test('missing, oversized, malformed or changed-format markers produce no read evidence',async()=>{
