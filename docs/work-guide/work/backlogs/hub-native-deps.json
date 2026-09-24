@@ -2,29 +2,11 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 65,
+        "totalCount": 61,
         "pageInfo": {
           "hasNextPage": false
         },
         "nodes": [
-          {
-            "number": 10,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 1,
-                  "state": "CLOSED",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
           {
             "number": 11,
             "blockedBy": {
@@ -836,9 +818,9 @@
             }
           },
           {
-            "number": 86,
+            "number": 87,
             "blockedBy": {
-              "totalCount": 1,
+              "totalCount": 3,
               "pageInfo": {
                 "hasNextPage": false
               },
@@ -849,18 +831,7 @@
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
-                }
-              ]
-            }
-          },
-          {
-            "number": 87,
-            "blockedBy": {
-              "totalCount": 3,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
+                },
                 {
                   "number": 197,
                   "state": "OPEN",
@@ -870,14 +841,7 @@
                 },
                 {
                   "number": 196,
-                  "state": "OPEN",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 86,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -1068,16 +1032,6 @@
             }
           },
           {
-            "number": 196,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 197,
             "blockedBy": {
               "totalCount": 0,
@@ -1108,31 +1062,6 @@
             }
           },
           {
-            "number": 200,
-            "blockedBy": {
-              "totalCount": 2,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 87,
-                  "state": "OPEN",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                },
-                {
-                  "number": 197,
-                  "state": "OPEN",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 201,
             "blockedBy": {
               "totalCount": 2,
@@ -1149,7 +1078,7 @@
                 },
                 {
                   "number": 196,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }

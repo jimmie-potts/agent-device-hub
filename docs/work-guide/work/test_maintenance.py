@@ -34,6 +34,21 @@ class GuideMaintenance(unittest.TestCase):
         self.assertEqual(scheduling_state(issue(), [{'state': 'OPEN'}]), 'blocked')
         self.assertEqual(scheduling_state(issue(), [{'state': 'CLOSED'}]), 'candidate')
 
+    def test_status_only_issue_reads_do_not_claim_comments_were_refreshed(self):
+        source = Path(__file__).resolve().parent / 'backlogs'
+        references = {
+            'agent-device-hub-issues.json': (10, 86, 196, 200, 207, 210, 212),
+            'codex-nanoleaf-issues.json': (31, 84),
+            'divoom-app-upgrade-issues.json': (38, 47, 68, 72),
+        }
+        for filename, numbers in references.items():
+            issues = json.loads((source / filename).read_text())
+            for number in numbers:
+                with self.subTest(issue=number, file=filename):
+                    issue = next(row for row in issues if row['number'] == number)
+                    self.assertEqual(issue['comments'], [])
+                    self.assertFalse(issue['commentsRefreshed'])
+
     def test_parallel_recommendation_is_withheld_when_a_blocker_appears(self):
         source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:

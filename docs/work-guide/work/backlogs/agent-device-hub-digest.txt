@@ -6,7 +6,7 @@
 #7 [CLOSED] Provide reusable local MCP transport and device tools
 #8 [CLOSED] Package reversible shared hooks and collector ownership migration
 #9 [CLOSED] Verify shared status and command routing across both device integrations
-#10 [OPEN] Publish shared OpenSpec validation tooling
+#10 [CLOSED] Publish shared OpenSpec validation tooling
 #11 [OPEN] Evaluate Home Assistant and MQTT for additional device integrations
 #13 [CLOSED] Host shared MCP discovery and agent-status tools in the standalone hub
 #15 [CLOSED] Qualify Tidbyt cloud and Tronbyt connections
@@ -63,8 +63,8 @@
 #73 [OPEN] Fix diagram connectors hidden behind boxes in the work guide
 #80 [CLOSED] Publish the cross-project work guide on GitHub Pages
 #83 [CLOSED] Adopt plan-work and deliver-work checkpoints for guide updates and public publication
-#85 [OPEN] Design the phone-first Neon/Prism guide workspace and atlas
-#86 [OPEN] Apply the selected Neon/Prism presentation to the guide and atlas
+#85 [OPEN] Restyle the guide and atlas in the Neon skin
+#86 [CLOSED] Apply the Neon skin to the guide and atlas
 #87 [OPEN] Publish and verify the first mobile guide workspace and atlas
 #91 [CLOSED] Reduce CI minutes while preserving all test coverage
 #100 [CLOSED] Skip automatic CI for guide-only changes
@@ -86,19 +86,22 @@
 #175 [OPEN] Add the qualified HT-A9 AirPlay source to hub playback
 #178 [OPEN] Qualify Apple Music catalog search and chosen-item playback requests
 #179 [CLOSED] Open BUNNY through a local owner launcher without manual browser tokens
-#181 [OPEN] Approve and document the B.U.N.N.Y. application UI style guide
-#182 [OPEN] Apply the B.U.N.N.Y. style and display name to the dashboard
+#181 [OPEN] Define the B.U.N.N.Y. UI foundation, skin template and adoption plan
+#182 [OPEN] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
 #185 [CLOSED] Add explicit recovery for uncertain approval attention
 #186 [CLOSED] Prepare the complete BUNNY atlas for public guide publication
 #191 [OPEN] Provide qualified Codex Desktop read evidence to the shared owner
-#195 [OPEN] Support sustained shared-session admission without losing retained state
-#196 [OPEN] Prepare Codex and Claude task briefs from the mobile work guide
-#197 [OPEN] Show current public GitHub status beside the dated guide and atlas
+#195 [OPEN] Expire monitoring sessions after 24 hours or when archived
+#196 [CLOSED] Prepare Codex and Claude task briefs from the mobile work guide
+#197 [OPEN] Show current public GitHub status in the dated guide
 #198 [OPEN] Replay recorded delivery history without inventing system state
 #199 [OPEN] Qualify phone-to-native-app handoff options for Codex and Claude
-#200 [OPEN] Refresh the public status feed automatically under a reviewed publishing policy
-#201 [OPEN] Navigate development through an interactive neon mission map
+#200 [CLOSED] Refresh the public status feed automatically under a reviewed publishing policy
+#201 [OPEN] Navigate development through an interactive mission map
 #202 [OPEN] Follow a signal through the atlas with controlled playback
 #203 [OPEN] Define the owner workspace, sign-in, and outbound connector boundary
 #204 [OPEN] Add the authenticated owner task inbox and handoff records
 #205 [OPEN] Deliver the first qualified native-app handoff from the phone workspace
+#207 [CLOSED] Clean up delivered worktrees and scratch after merge
+#210 [CLOSED] Make the work guide clipboard-fallback check pass in Depot CI
+#212 [CLOSED] Use shared npm and Playwright caches in setup guidance

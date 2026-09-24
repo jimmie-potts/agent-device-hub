@@ -1,15 +1,40 @@
 {
-  "fetchedAt": "2026-09-23T21:15:47.190731+00:00",
+  "fetchedAt": "2026-09-24T00:14:36.308340+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T20:31:56Z",
+      "pushedAt": "2026-09-24T00:09:49Z",
       "defaultBranch": "main",
-      "headSha": "600d9055dacaa242cc188cf5cbca19c04f08f484",
-      "mainCommitCount": 96,
+      "headSha": "d12fce5bf6a9c1c31254115752f255896e96386e",
+      "mainCommitCount": 101,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "d12fce5bf6a9c1c31254115752f255896e96386e",
+          "date": "2026-09-24T00:06:01Z",
+          "message": "Use shared npm and Playwright caches in setup guidance (#214)"
+        },
+        {
+          "sha": "146602fccea5dc77e6731a84826e507f62c5bf8a",
+          "date": "2026-09-23T23:58:37Z",
+          "message": "Simulate the denied clipboard in the guide browser check (#211)"
+        },
+        {
+          "sha": "a19a62eb673fd17a5aecdb1db6b5575947e2feb7",
+          "date": "2026-09-23T23:24:48Z",
+          "message": "Clean up delivered worktrees and scratch after merge (#208)"
+        },
+        {
+          "sha": "e3bef350cb41cff802cdf4262788cc0fb423b676",
+          "date": "2026-09-23T23:23:46Z",
+          "message": "Open task briefs from work guide issue links (#209)"
+        },
+        {
+          "sha": "b575fbe1e962d1935b0d592a8d40dc1ee9f6799b",
+          "date": "2026-09-23T21:22:36Z",
+          "message": "Refresh public guide planning and issue statuses (#206)"
+        },
         {
           "sha": "600d9055dacaa242cc188cf5cbca19c04f08f484",
           "date": "2026-09-23T20:31:56Z",
@@ -1235,9 +1260,57 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/194",
           "base": "main",
           "mergedAt": "2026-09-23T20:26:51Z"
+        },
+        {
+          "number": 206,
+          "title": "Refresh public guide issue statuses and mobile workspace plan",
+          "createdAt": "2026-09-23T21:20:38Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/206",
+          "base": "main",
+          "mergedAt": "2026-09-23T21:22:36Z"
+        },
+        {
+          "number": 208,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "createdAt": "2026-09-23T23:00:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/208",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:24:48Z"
+        },
+        {
+          "number": 209,
+          "title": "Open task briefs from work guide issue links",
+          "createdAt": "2026-09-23T23:11:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/209",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:23:46Z"
+        },
+        {
+          "number": 211,
+          "title": "Simulate the denied clipboard in the guide browser check",
+          "createdAt": "2026-09-23T23:48:43Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/211",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:58:38Z"
+        },
+        {
+          "number": 214,
+          "title": "Use shared npm and Playwright caches in setup guidance",
+          "createdAt": "2026-09-24T00:00:07Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/214",
+          "base": "main",
+          "mergedAt": "2026-09-24T00:06:01Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 213,
+          "title": "Refresh work guide to current GitHub status",
+          "createdAt": "2026-09-23T23:57:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
@@ -1310,6 +1383,14 @@
           "createdAt": "2026-09-07T02:24:07Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/9"
+        },
+        {
+          "number": 10,
+          "title": "Publish shared OpenSpec validation tooling",
+          "closedAt": "2026-09-23T22:50:59Z",
+          "createdAt": "2026-09-07T02:24:08Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/10"
         },
         {
           "number": 13,
@@ -1464,6 +1545,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/83"
         },
         {
+          "number": 86,
+          "title": "Apply the Neon skin to the guide and atlas",
+          "closedAt": "2026-09-23T23:10:02Z",
+          "createdAt": "2026-09-10T00:34:38Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/86"
+        },
+        {
           "number": 91,
           "title": "Reduce CI minutes while preserving all test coverage",
           "closedAt": "2026-09-10T22:01:36Z",
@@ -1598,12 +1687,52 @@
           "createdAt": "2026-09-23T07:59:03Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/186"
+        },
+        {
+          "number": 196,
+          "title": "Prepare Codex and Claude task briefs from the mobile work guide",
+          "closedAt": "2026-09-23T23:26:12Z",
+          "createdAt": "2026-09-23T21:04:31Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/196"
+        },
+        {
+          "number": 200,
+          "title": "Refresh the public status feed automatically under a reviewed publishing policy",
+          "closedAt": "2026-09-23T22:36:48Z",
+          "createdAt": "2026-09-23T21:04:43Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/200"
+        },
+        {
+          "number": 207,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "closedAt": "2026-09-24T00:09:18Z",
+          "createdAt": "2026-09-23T22:57:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/207"
+        },
+        {
+          "number": 210,
+          "title": "Make the work guide clipboard-fallback check pass in Depot CI",
+          "closedAt": "2026-09-23T23:58:39Z",
+          "createdAt": "2026-09-23T23:44:02Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/210"
+        },
+        {
+          "number": 212,
+          "title": "Use shared npm and Playwright caches in setup guidance",
+          "closedAt": "2026-09-24T00:09:10Z",
+          "createdAt": "2026-09-23T23:51:38Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/212"
         }
       ],
-      "openIssueCount": 65,
+      "openIssueCount": 61,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-23T21:04:58Z"
+        "2026-09-23T23:51:38Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1614,17 +1743,27 @@
         "2026-09-20": 2,
         "2026-09-21": 1,
         "2026-09-22": 10,
-        "2026-09-23": 24
+        "2026-09-23": 27
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T20:46:37Z",
+      "pushedAt": "2026-09-23T23:59:21Z",
       "defaultBranch": "main",
-      "headSha": "a3010d2352f0f7db0d6a53e261de29fd269d18f1",
-      "mainCommitCount": 36,
+      "headSha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
+      "mainCommitCount": 38,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
+          "date": "2026-09-23T23:59:21Z",
+          "message": "Use the shared npm cache in setup guidance (#85)"
+        },
+        {
+          "sha": "fad152e978e057258a9ebc8524469808107dbada",
+          "date": "2026-09-23T23:23:36Z",
+          "message": "Clean up delivered worktrees and scratch after merge (#83)"
+        },
         {
           "sha": "a3010d2352f0f7db0d6a53e261de29fd269d18f1",
           "date": "2026-09-23T20:46:37Z",
@@ -2054,6 +2193,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/80",
           "base": "main",
           "mergedAt": "2026-09-23T20:46:38Z"
+        },
+        {
+          "number": 83,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "createdAt": "2026-09-23T23:00:17Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/83",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:23:36Z"
+        },
+        {
+          "number": 85,
+          "title": "Use the shared npm cache in setup guidance",
+          "createdAt": "2026-09-23T23:50:49Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/85",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:59:21Z"
         }
       ],
       "openPRs": [],
@@ -2153,6 +2308,14 @@
           "createdAt": "2026-09-07T02:24:20Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/30"
+        },
+        {
+          "number": 31,
+          "title": "Adopt shared OpenSpec validation tooling",
+          "closedAt": "2026-09-23T22:51:02Z",
+          "createdAt": "2026-09-07T02:24:21Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/31"
         },
         {
           "number": 33,
@@ -2297,12 +2460,28 @@
           "createdAt": "2026-09-23T08:24:55Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74"
+        },
+        {
+          "number": 82,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "closedAt": "2026-09-23T23:27:46Z",
+          "createdAt": "2026-09-23T22:57:26Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/82"
+        },
+        {
+          "number": 84,
+          "title": "Use the shared npm cache instead of a /tmp cache in setup guidance",
+          "closedAt": "2026-09-24T00:02:20Z",
+          "createdAt": "2026-09-23T23:49:39Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/84"
         }
       ],
-      "openIssueCount": 20,
+      "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-23T20:38:17Z"
+        "2026-09-23T23:49:39Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -2310,17 +2489,32 @@
         "2026-09-07": 26,
         "2026-09-09": 4,
         "2026-09-22": 1,
-        "2026-09-23": 9
+        "2026-09-23": 11
       }
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-22T03:37:52Z",
+      "pushedAt": "2026-09-23T23:59:25Z",
       "defaultBranch": "main",
-      "headSha": "c81bc31c59068e00bf9d15a81577863ba9446931",
-      "mainCommitCount": 29,
+      "headSha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
+      "mainCommitCount": 32,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
+          "date": "2026-09-23T23:59:25Z",
+          "message": "Use shared caches and fnm for Node 24 in setup guidance (#73)"
+        },
+        {
+          "sha": "71fbefcfdcf6163fc7180264436a6360cbc371ae",
+          "date": "2026-09-23T23:23:00Z",
+          "message": "Clean up delivered worktrees and scratch after merge (#71)"
+        },
+        {
+          "sha": "b7d4762bd11bbc8d15f1d04a7ef6f273f1d28050",
+          "date": "2026-09-23T22:54:07Z",
+          "message": "Make cross-project guide updates conditional (#69)"
+        },
         {
           "sha": "c81bc31c59068e00bf9d15a81577863ba9446931",
           "date": "2026-09-22T03:37:52Z",
@@ -2691,6 +2885,30 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/66",
           "base": "main",
           "mergedAt": "2026-09-22T03:37:53Z"
+        },
+        {
+          "number": 69,
+          "title": "Make cross-project guide maintenance optional for ordinary delivery",
+          "createdAt": "2026-09-23T22:50:29Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/69",
+          "base": "main",
+          "mergedAt": "2026-09-23T22:54:07Z"
+        },
+        {
+          "number": 71,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "createdAt": "2026-09-23T23:00:19Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/71",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:23:01Z"
+        },
+        {
+          "number": 73,
+          "title": "Use shared caches and fnm for Node 24 in setup guidance",
+          "createdAt": "2026-09-23T23:50:52Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/73",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:59:25Z"
         }
       ],
       "openPRs": [],
@@ -2872,6 +3090,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/37"
         },
         {
+          "number": 38,
+          "title": "Adopt shared OpenSpec validation tooling",
+          "closedAt": "2026-09-23T22:51:01Z",
+          "createdAt": "2026-09-07T02:24:14Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/38"
+        },
+        {
           "number": 42,
           "title": "Integrate an opt-in physical Pixoo adapter with the local application",
           "closedAt": "2026-09-07T17:38:00Z",
@@ -2886,12 +3112,44 @@
           "createdAt": "2026-09-07T17:14:25Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/46"
+        },
+        {
+          "number": 47,
+          "title": "Consolidate workflow and application setup without dropping checks",
+          "closedAt": "2026-09-23T22:48:05Z",
+          "createdAt": "2026-09-07T17:16:03Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/47"
+        },
+        {
+          "number": 68,
+          "title": "Align guide-maintenance rules with the current hub procedure",
+          "closedAt": "2026-09-23T22:58:10Z",
+          "createdAt": "2026-09-23T05:30:16Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/68"
+        },
+        {
+          "number": 70,
+          "title": "Clean up delivered worktrees and scratch after merge",
+          "closedAt": "2026-09-23T23:27:49Z",
+          "createdAt": "2026-09-23T22:57:27Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/70"
+        },
+        {
+          "number": 72,
+          "title": "Use shared npm and Playwright caches and fnm for Node 24 in setup guidance",
+          "closedAt": "2026-09-24T00:02:23Z",
+          "createdAt": "2026-09-23T23:49:40Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/72"
         }
       ],
-      "openIssueCount": 16,
+      "openIssueCount": 13,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-23T05:30:16Z"
+        "2026-09-23T23:49:40Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -2901,7 +3159,7 @@
         "2026-09-09": 1,
         "2026-09-20": 1,
         "2026-09-22": 1,
-        "2026-09-23": 1
+        "2026-09-23": 3
       }
     }
   }

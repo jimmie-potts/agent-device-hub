@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 20,
+        "totalCount": 19,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -171,24 +171,6 @@
             }
           },
           {
-            "number": 31,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 10,
-                  "state": "OPEN",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 44,
             "blockedBy": {
               "totalCount": 2,
@@ -304,7 +286,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 16,
+        "totalCount": 13,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -395,24 +377,6 @@
             }
           },
           {
-            "number": 38,
-            "blockedBy": {
-              "totalCount": 1,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": [
-                {
-                  "number": 10,
-                  "state": "OPEN",
-                  "repository": {
-                    "nameWithOwner": "jimmie-potts/agent-device-hub"
-                  }
-                }
-              ]
-            }
-          },
-          {
             "number": 43,
             "blockedBy": {
               "totalCount": 2,
@@ -484,16 +448,6 @@
             }
           },
           {
-            "number": 47,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 52,
             "blockedBy": {
               "totalCount": 0,
@@ -547,16 +501,6 @@
                   }
                 }
               ]
-            }
-          },
-          {
-            "number": 68,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
             }
           }
         ]
