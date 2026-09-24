@@ -111,8 +111,10 @@
 #225 [CLOSED] Clear no-ID approval markers when their turn is retired
 #227 [OPEN] Check Tidbyt stale-status readability with night mode enabled
 #229 [OPEN] Add optional shared playback artwork from the Sony source
+#231 [CLOSED] Make BUNNY device settings apply in one step and simplify command status
 #232 [OPEN] Document connecting device controllers for BUNNY in the hub setup guide
 #233 [OPEN] Add the Sonos Move as a second playback source
+#237 [CLOSED] Use personal-project scope defaults in story writing and pickup
 #240 [OPEN] Qualify enforceable Hub merge gates and guide-only CI handling
 #241 [OPEN] Retire ended monitoring sessions consistently across Codex and Claude
 #242 [OPEN] Qualify and add Sony HT-A9 play/resume when supported

@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-24T23:12:03.305983+00:00",
+  "fetchedAt": "2026-09-24T23:42:56.495786+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-24T22:19:19Z",
+      "pushedAt": "2026-09-24T23:36:49Z",
       "defaultBranch": "main",
-      "headSha": "28f759956eda24498d638392e1175b6d64c04d17",
-      "mainCommitCount": 114,
+      "headSha": "f89d42ae4bb6e28ad0c86e45be3664ca3fbb1f8a",
+      "mainCommitCount": 115,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "f89d42ae4bb6e28ad0c86e45be3664ca3fbb1f8a",
+          "date": "2026-09-24T23:23:56Z",
+          "message": "Refresh the work guide for the Nanoleaf Windows retirement decisions (#248)"
+        },
         {
           "sha": "28f759956eda24498d638392e1175b6d64c04d17",
           "date": "2026-09-24T22:19:19Z",
@@ -1469,6 +1474,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/243",
           "base": "main",
           "mergedAt": "2026-09-24T22:19:19Z"
+        },
+        {
+          "number": 248,
+          "title": "Refresh the work guide for the Nanoleaf Windows retirement decisions",
+          "createdAt": "2026-09-24T23:13:52Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/248",
+          "base": "main",
+          "mergedAt": "2026-09-24T23:23:56Z"
         }
       ],
       "openPRs": [
@@ -1477,6 +1490,13 @@
           "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
           "createdAt": "2026-09-24T20:23:18Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
+          "base": "main"
+        },
+        {
+          "number": 249,
+          "title": "Refresh the work guide to current GitHub status",
+          "createdAt": "2026-09-24T23:22:16Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/249",
           "base": "main"
         }
       ],
@@ -2038,7 +2058,7 @@
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-24T23:07:28Z",
+      "pushedAt": "2026-09-24T23:39:10Z",
       "defaultBranch": "main",
       "headSha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
       "mainCommitCount": 54,
@@ -2715,6 +2735,13 @@
           "title": "Reset recreated shared tasks and preserve Codex link focus",
           "createdAt": "2026-09-24T20:18:55Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
+          "base": "main"
+        },
+        {
+          "number": 137,
+          "title": "Show status first in the wall map with one context card",
+          "createdAt": "2026-09-24T23:39:25Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/137",
           "base": "main"
         }
       ],

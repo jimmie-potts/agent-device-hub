@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-24T23:11:33.960429+00:00",
-  "refreshedAt": "2026-09-24T23:12:03.277591+00:00",
+  "startedAt": "2026-09-24T23:42:21.710479+00:00",
+  "refreshedAt": "2026-09-24T23:42:51.864137+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        67
+        68
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -301,6 +301,16 @@
           "purpose": "Guide story status"
         },
         {
+          "number": 231,
+          "state": "CLOSED",
+          "purpose": "Guide story status"
+        },
+        {
+          "number": 237,
+          "state": "CLOSED",
+          "purpose": "Guide story status"
+        },
+        {
           "number": 3,
           "state": "CLOSED",
           "purpose": "Completed state baseline"
@@ -376,11 +386,11 @@
       "openIssues": 33,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        34
+        35
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -540,7 +550,7 @@
           "number": 133,
           "state": "CLOSED",
           "commentPages": [
-            2
+            3
           ],
           "commentBodiesStored": true
         },
@@ -573,12 +583,22 @@
           "purpose": "Guide story status"
         },
         {
+          "number": 78,
+          "state": "CLOSED",
+          "purpose": "Guide story status"
+        },
+        {
           "number": 84,
           "state": "CLOSED",
           "purpose": "Guide story status"
         },
         {
           "number": 89,
+          "state": "CLOSED",
+          "purpose": "Guide story status"
+        },
+        {
+          "number": 108,
           "state": "CLOSED",
           "purpose": "Guide story status"
         }

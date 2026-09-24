@@ -74,7 +74,7 @@ class GuideMaintenance(unittest.TestCase):
                 '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
             path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 218)
+            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 222)
             issue['blockedBy']['nodes'].append({
                 'number': 11, 'state': 'OPEN',
                 'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
@@ -84,11 +84,13 @@ class GuideMaintenance(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            baseline = (source / 'outputs/agent-device-work-guides.html').read_text()
+            self.assertIn('data-key="H222"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
             next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
-            self.assertNotIn('data-key="H218"', next_section)
+            self.assertNotIn('data-key="H222"', next_section)
             self.assertNotIn('data-key="P61"', next_section)
             blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
-            self.assertIn('data-key="H218"', blockers)
+            self.assertIn('data-key="H222"', blockers)
             self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
@@ -123,7 +125,7 @@ class GuideMaintenance(unittest.TestCase):
         for attrs, text in links.links['N41']:
             self.assertEqual(attrs.get('data-status'), 'completed')
             self.assertIn('Completed', text)
-        for attrs, text in links.links['N92']:
+        for attrs, text in links.links['N47']:
             self.assertEqual(attrs.get('data-status'), 'open')
             self.assertIn('Open', text)
         for attrs, text in links.links['H50']:
@@ -160,6 +162,22 @@ class GuideMaintenance(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Coverage mismatch', result.stderr)
+
+    def test_guide_tracks_must_cover_their_guide(self):
+        source = Path(__file__).resolve().parent.parent
+        with tempfile.TemporaryDirectory(prefix='guide-tracks-') as directory:
+            candidate = Path(directory) / 'guide'
+            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
+                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            # A row left out of every track would otherwise vanish from its guide.
+            paths = candidate / 'work/guide_paths.py'
+            text = paths.read_text()
+            self.assertEqual(text.count("'P61']"), 1)
+            paths.write_text(text.replace("'P61']", ']'))
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Tracks must cover development-workflow exactly once', result.stderr)
 
     def test_refreshed_sequences_follow_native_prerequisites(self):
         import importlib.util

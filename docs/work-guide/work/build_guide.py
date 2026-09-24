@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import architecture_diagrams as AD  # noqa: E402  diagram definitions and rendered-file layout
 import guide_status as GS
 from guide_details import DETAILS
-from guide_paths import PATHS, TOPICS, ALIASES, OWNER_LATER, NEXT_STEPS, DECISIONS, WORKAROUNDS, DEVICE_TRACKS
+from guide_paths import PATHS, TOPICS, ALIASES, OWNER_LATER, NEXT_STEPS, DECISIONS, WORKAROUNDS, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -133,9 +133,12 @@ for index, guide in enumerate(GUIDES, 1):
     def table(rows, caption):
         return f'<table><caption class="sr-only">{guide["title"]}: {caption}</caption><thead><tr>{headings}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
     work = '<h3 class="work-heading">Remaining work</h3>' + table(remaining, 'remaining work and dependencies') if remaining else '<p class="all-done">No open stories owned by this guide.</p>'
-    if guide_id == 'nanoleaf-devices':
+    if guide_id in GUIDE_TRACKS:
+        tracks = GUIDE_TRACKS[guide_id]
+        # A row outside every track would silently disappear from the guide.
+        assert sorted(key for keys in tracks.values() for key in keys) == sorted(coverage[guide_id]), f'Tracks must cover {guide_id} exactly once'
         work = ''
-        for track, keys in DEVICE_TRACKS.items():
+        for track, keys in tracks.items():
             rows = [row for row, key in zip(remaining, coverage[guide_id]) if key in keys]
             if not rows:
                 continue

@@ -28,6 +28,7 @@
 #72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
 #74 [CLOSED] Investigate and resolve retained shared unread indicators
 #75 [CLOSED] Show Codex titles and projects for shared tasks, with distinct fallback names
+#78 [CLOSED] Reduce default wall map controls and repeated status text
 #81 [OPEN] Queue the completion comet when a subagent delays a parent's unread
 #84 [CLOSED] Use the shared npm cache instead of a /tmp cache in setup guidance
 #89 [CLOSED] Remove the legacy Codex hooks after the shared-input cutover
@@ -35,6 +36,7 @@
 #91 [OPEN] Let Codex play saved Nanoleaf scenes through the local MCP server
 #92 [OPEN] Play custom animations on the Lines when Codex asks for them
 #100 [OPEN] Show Claude Code titles and projects for shared tasks
+#108 [CLOSED] Open a wall task's thread in Codex Desktop
 #110 [OPEN] Switch Nanoleaf between Work and Free based on monitored session presence
 #111 [OPEN] Keep following the hub feed when it contains an undeclared source
 #112 [OPEN] Show when the Lines are on hold and how to resume them
