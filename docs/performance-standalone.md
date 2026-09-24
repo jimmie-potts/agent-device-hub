@@ -26,21 +26,26 @@ It neither checks out nor changes either consumer repository.
 
 ```bash
 npm run test:performance:standalone
+mkdir -p .local/evidence/standalone
 npm run qualify:standalone -- \
   --pixoo-repo /path/to/pixoo-source-repository \
   --nanoleaf-repo /path/to/nanoleaf-source-repository \
   --node /absolute/path/to/node24 \
   --browser /absolute/path/to/chrome-headless-shell \
-  --output /tmp/new-standalone-result
+  --output .local/evidence/standalone/new-result
 ```
 
-Use a new output directory for every attempt. `report.json` contains the result,
-all warm samples, scenario observations, source revisions, runtime/build hashes,
-host load, failures and namespace cleanup. `runtime-manifest.json` identifies
-staged inputs; `preparation.log` separates setup from measured execution.
-`--smoke` uses incomplete sample counts for development and can never qualify.
-Retain unsuccessful attempts; do not choose favorable reruns or change targets
-after a failure without a documented reviewed decision.
+Use a new output directory for every attempt. Keep outputs in the canonical
+local checkout's `.local/evidence/`; from a delivery worktree, move them to
+`.local/evidence/gh-<issue-number>-<slug>/` there before removing the worktree
+([Cleanup after delivery](sdlc.md#cleanup-after-delivery)). `report.json`
+contains the result, all warm samples, scenario observations, source revisions,
+runtime/build hashes, host load, failures and namespace cleanup.
+`runtime-manifest.json` identifies staged inputs; `preparation.log` separates
+setup from measured execution. `--smoke` uses incomplete sample counts for
+development and can never qualify. Retain unsuccessful attempts; do not choose
+favorable reruns or change targets after a failure without a documented reviewed
+decision.
 
 ## Measurement and targets
 

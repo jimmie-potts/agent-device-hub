@@ -179,8 +179,11 @@ timeout or add guide-only merges recursively to product milestones.
 ## Commands
 
 Run from the repository root. Python 3 with zoneinfo data builds the HTML offline.
-The browser check additionally requires installed Node, Playwright and Chromium;
-use `GUIDE_PLAYWRIGHT_MODULE` and `GUIDE_CHROMIUM_PATH` for their installed paths.
+The browser check additionally requires installed Node, Playwright and Chromium.
+After `npm ci`, the repository's pinned Playwright resolves by default, and the
+check prefers full Chromium builds, as CI does; use `GUIDE_PLAYWRIGHT_MODULE`
+and `GUIDE_CHROMIUM_PATH` to override their paths. The check never installs
+software.
 No product service or hardware test is needed for this document.
 
 ```bash

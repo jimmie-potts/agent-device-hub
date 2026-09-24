@@ -42,8 +42,16 @@ installed agent clients are needed for this admission-only tool.
 
 ```bash
 python -B scripts/check-performance.py
-python -B scripts/performance/admission.py --output /tmp/hub30-admission-new-run
+mkdir -p .local/evidence/hub30
+python -B scripts/performance/admission.py --output .local/evidence/hub30/admission-new-run
 ```
+
+Run outputs are retained evidence, so keep them under the gitignored
+`.local/evidence/` rather than `/tmp`, which can be a small RAM-backed
+filesystem shared by every session. When you run from a delivery worktree, move
+the outputs to the canonical local checkout's
+`.local/evidence/gh-<issue-number>-<slug>/` before removing the worktree, as
+[Cleanup after delivery](sdlc.md#cleanup-after-delivery) requires.
 
 The output directory must be new and its parent must exist. The default is
 three repeats of 1, 10 and 50 concurrent synthetic sessions, each with 100
@@ -91,14 +99,19 @@ installed transitive dependency file. Use a fresh consumer from that lock.
 
 Use Node 24 and an existing Python 3.12/3.14 environment with the repository's
 pinned jsonschema 4.19.2 dependency. Copy the retained consumer package/lock and
-release archive into a new directory, then run `npm ci --ignore-scripts` there.
-Pass that directory with `--consumer`; the tool never imports a sibling checkout.
+release archive into a new directory outside the hub checkout and any other Node
+project, such as `/tmp/hub30-prepared-lifecycle-consumer`, then run
+`npm ci --ignore-scripts` there. Inside a checkout, a dependency missing from
+the consumer could resolve from the hub's `node_modules`. The consumer is about
+3 MB and short-lived, so `/tmp` suits it; delete it after the run. Pass that
+directory with `--consumer`; the tool never imports a sibling checkout.
 
 ```bash
+mkdir -p .local/evidence/hub30
 python -B scripts/performance/validators.py \
   --archive scripts/performance/vendor/jimmie-potts-agent-lifecycle-contracts-1.0.0.tgz \
-  --consumer /tmp/prepared-lifecycle-consumer \
-  --output /tmp/hub30-validator-new-run
+  --consumer /tmp/hub30-prepared-lifecycle-consumer \
+  --output .local/evidence/hub30/validator-new-run
 ```
 
 Three fresh processes per language each measure 100 cycles through the same
@@ -165,7 +178,8 @@ Installed/client/physical acceptance remains Nanoleaf #55.
 
 ```bash
 npm run test:performance:linux
-/usr/bin/python3 -B scripts/performance/linux_hook.py --output /tmp/hub30-linux-new-run
+mkdir -p .local/evidence/hub30
+/usr/bin/python3 -B scripts/performance/linux_hook.py --output .local/evidence/hub30/linux-new-run
 ```
 
 Use Linux system Python 3.12 or 3.14 under `/usr` with bubblewrap installed.
