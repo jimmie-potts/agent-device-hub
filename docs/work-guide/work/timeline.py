@@ -62,11 +62,11 @@ TRACKS = [
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=1, label='Panels trial accepted', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-map', x=2, label='Address · map selector', issues=['N114', 'N44'], guide='nanoleaf-devices'),
+        dict(id='n-nl-map', x=2, label='Device selector', issues=['N44'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Panels controller access', [
-        dict(id='n-nl-ctrl', x=2, label='Panels controller + MCP', issues=['N113'], guide='nanoleaf-devices'),
+        dict(id='n-nl-ctrl', x=2, label='Panels control · address', issues=['N113', 'N114'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf wall map hierarchy', [
         dict(id='n-map-hierarchy', x=0, label='Projects + tasks delivered', issues=[], guide='nanoleaf-presentation'),
