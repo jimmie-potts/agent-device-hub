@@ -40,7 +40,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 | Boundary | Contract and evidence |
 | --- | --- |
-| Shared state | `@jimmie-potts/agent-state` 2.0.3; lifecycle and export 1.0; no second reducer |
+| Shared state | `@jimmie-potts/agent-state` 2.0.4; lifecycle and export 1.0; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |

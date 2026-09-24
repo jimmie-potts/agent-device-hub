@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.3 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 2.0.4 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -85,7 +85,11 @@ restore a cleared notice, even when their receipt timestamp changes. A missing
 turn or a conflicting stop for an unselected turn leaves uncertainty visible.
 A genuinely new eligible start recovers activity/turn ambiguity, including in a
 saved version 1.0 session, while retaining parent/order uncertainty, labels,
-attention, read evidence and unrelated notices. Unknown-turn notices remain
+attention, read evidence and unrelated notices. The exception is an approval
+without a request ID on the turn that start retires: a newer turn proves it was
+answered, so the owner forgets it, and a late one for a retired turn is not
+kept. Startup settles such markers left in older stores. Markers on the current
+or a never-selected turn remain for explicit recovery or expiry. Unknown-turn notices remain
 explicit. Old stores retain only hash keys for some observations, so historical
 turn identities that were never saved cannot be reconstructed or rejected reliably.
 
@@ -214,7 +218,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.3 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Agent state 2.0.4 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
 | Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -235,6 +239,8 @@ Package 2.0.1 adds explicit approval recovery without changing those schemas.
 Package 2.0.2 keeps read evidence out of freshness, restart recovery and session
 admission without changing those schemas.
 Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
+without changing those schemas.
+Package 2.0.4 forgets approvals without a request ID on retired turns, again
 without changing those schemas.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
