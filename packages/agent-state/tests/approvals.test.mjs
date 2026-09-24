@@ -20,6 +20,18 @@ test('a no-ID approval clears when a newer turn starts',async()=>{
   await owner.ingest(hook('UserPromptSubmit','turn-2'));
   assert.deepEqual(approvals(owner),[]);
   assert.equal(owner.snapshot().sessions[0].turn.id,'turn-2');
+  // Earlier uncertainty stays visible after the marker is forgotten.
+  assert.ok(owner.snapshot().sessions[0].unavailable.some(item=>item.dimension==='attention'&&item.reason==='ambiguous'));
+  await owner.shutdown();
+});
+
+test('no-ID questions and input requests on a retired turn stay',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(hook('UserPromptSubmit','turn-1'));
+  for(const kind of ['attention.input','question.continuing'])
+    await owner.ingest({...hook('PermissionRequest','turn-1'),event:{kind,attention:{status:'unknown'}}});
+  await owner.ingest(hook('UserPromptSubmit','turn-2'));
+  assert.deepEqual(owner.snapshot().sessions[0].attention.map(item=>[item.kind,item.turn.id]).sort(),[['input','turn-1'],['question','turn-1']]);
   await owner.shutdown();
 });
 
