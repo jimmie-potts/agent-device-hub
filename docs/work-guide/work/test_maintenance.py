@@ -123,7 +123,7 @@ class GuideMaintenance(unittest.TestCase):
         for attrs, text in links.links['N41']:
             self.assertEqual(attrs.get('data-status'), 'completed')
             self.assertIn('Completed', text)
-        for attrs, text in links.links['N10']:
+        for attrs, text in links.links['N92']:
             self.assertEqual(attrs.get('data-status'), 'open')
             self.assertIn('Open', text)
         for attrs, text in links.links['H50']:

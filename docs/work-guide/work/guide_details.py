@@ -38,8 +38,9 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H205': 'First qualify supported phone-to-app handoff paths, then define owner sign-in and the '
          'outbound connector boundary before building a private task inbox and the first qualified '
          'handoff. This work is deferred behind the anonymous public release.',
- 'H218': 'Remove confirmed archived Codex Desktop tasks and known children from monitoring. Uses '
-         'the session retirement delivered by [[H195]] and the Codex home configured for [[H191]].',
+ 'H218': 'Clear Codex Desktop tasks and Line assignments when a session ends; retirement does not '
+         'wait for archive detection. Uses the session retirement delivered by [[H195]] and the Codex home '
+         'configured for [[H191]].',
  'H22': 'Install the LIFX status adapter after [[H20]] and verify the agreed behavior on the named '
         'bulbs with separate authorization.',
  'H222': 'Announce each state commit to change-stream readers at once instead of on a 1-second '
@@ -52,9 +53,6 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'now-playing ([[H37]], [[H38]]) and basic lighting ([[H39]]) do not wait for it.',
  'H23': 'Implement the Tronbyt connection, then verify the physical transition in [[H24]]. The '
         'Tidbyt cloud baseline [[H21]] is accepted.',
- 'H231': 'Found during the installed control checks: apply a setting in one step, make command '
-         'status plain, reduce stale-generation retries on Pixoo playback, and allow a same-mode '
-         'reapply, including starting an inactive Pixoo Monitor.',
  'H232': 'Document how to connect installed device controllers to BUNNY in the hub setup guide; '
          'the installed hub had no controllers configured, and the coordinator worked out the '
          'steps from source.',
@@ -144,23 +142,75 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H87': 'Publish and verify the planned mobile guide workspace and atlas after the [[H85]] '
         'restyle. This broader release is separate from the overview publication delivered in '
         '[[H220]].',
- 'N10': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
-        'startup/recovery; then evaluate the installed prototype.',
+ 'N131': 'Delete the Windows installer, tray, WSL forwarding and MCP helper from source, supersede the '
+         'Windows clauses of ADRs 0005 to 0007 and update the three affected specifications. Shares '
+         'bridge.py with [[N118]].',
+ 'N132': 'Owner task on the PC: archive or delete the retired Windows installation and its token copy, '
+         'prune stale worktree registrations and Codex trust entries. Independent of [[N131]].',
+ 'H240': 'Define enforceable hub merge gates for one maintainer with the guide-only CI exception; '
+         'finish with a reviewable configuration proposal.',
+ 'H241': 'Apply one shared-owner retirement rule to Codex Desktop, Codex CLI and Claude Code '
+         'sessions when a runtime.ended notice is accepted.',
+ 'H242': 'Qualify resuming a paused AirPlay session through the Sony source module; expose '
+         'play/resume only if the receiver supports it.',
+ 'H244': 'Release each retired browser session\'s resources and centralize retirement cleanup so '
+         'repeated BUNNY opens do not leak.',
+ 'H245': 'Give BUNNY forms and one-click actions one command lifecycle so receipt, uncertainty and '
+         'refresh fixes apply consistently.',
+ 'H246': 'Reduce the places that change when a Pixoo or Nanoleaf integration contract changes, '
+         'keeping both native protocols.',
+ 'N110': 'Enter Work while the selected shared owner has monitored sessions and Free when the last '
+         'one ends; opt-in per device.',
+ 'N111': 'Stop rejecting a whole hub snapshot because one session comes from an undeclared source; '
+         'keep following the feed.',
+ 'N112': 'Show the Lines hold, its cause and a Resume action in the wall map and CLI status; '
+         'nothing retries automatically.',
+ 'N113': 'Reach the NL22 Panels through the protected controller and local MCP, which today '
+         'address only the Lines.',
+ 'N114': 'Change a registered device\'s address after a new lease without re-enrolling; keep id, '
+         'reservations, mode, layout and scene.',
+ 'N115': 'Stop treating every skipped owner revision as a resync so completion comets and waves '
+         'survive.',
+ 'N117': 'Keep keyboard focus on Open in Codex through an unchanged state poll instead of moving '
+         'it to the Tasks heading.',
+ 'N118': 'Split bridge.py: shared configuration operations first, then hook management and runtime '
+         'primitives; stop passing the bridge module as a value.',
+ 'N119': 'Decide DOM rebuilds in one scheduler behind a view model; renderers only draw. UI PR, '
+         'human approval applies.',
+ 'N120': 'Concentrate schema knowledge where coupling is demonstrated: shared-input backup and restore, demo seeding and selected multi-table operations. Follows [[N118]].',
+ 'N121': 'Carry device identity as a worker context instead of a threaded parameter and '
+         'primary-device branches. Follows [[N118]].',
+ 'N122': 'Bounded investigation: can the shared-input projection be a pure function tested without '
+         'SQLite?',
+ 'N123': 'Decide whether the standard SVG wall stays as a fallback for Prism or a missing Prism '
+         'asset becomes an installation error.',
+ 'N124': 'Record a real rendering-cost baseline for the wall map in Edge on the PC; needs the '
+         'hardware.',
+ 'N127': 'Build one explicit device-render input per worker pass, separate from credentials, paths '
+         'and transport.',
+ 'N128': 'Investigate making wall-state construction a pure read projection with explicit refresh '
+         'and cache owners.',
+ 'N129': 'Investigate one owner for worker transaction boundaries, validity checks and '
+         'transmission journaling.',
+ 'N130': 'Measure whether shared SQLite write-lock windows block enough to justify shorter '
+         'transactions.',
+ 'N135': 'Show one context card for the selected Line or task with only the controls that act in '
+         'that context; rethink reservation and override controls.',
+ 'P79': 'Accept dashboard transport evidence in the MCP status schema so status stays valid after '
+        'uploads.',
+ 'P80': 'Share typed operation metadata between command producers and observers so changes '
+        'surface during typechecking.',
+ 'P81': 'Give SSE client queueing, credential rechecks, heartbeat and cleanup one implementation '
+        'while keeping browser and native feed contracts.',
+ 'H247': 'Give built-in dashboard pages and registered components distinct navigation identities '
+         'so a component alias cannot shadow Activity or Connections.',
+ 'P82': 'Make the Pixoo product and hub-integration docs describe the delivered runtime: one operator, '
+        'one backend, simulator by default, explicit device activation.',
  'N100': 'Show Claude Code titles and projects for shared tasks, as [[N75]] does for Codex. The '
          'hub feed deliberately carries neither, so the wall reads them locally by session ID.',
- 'N108': 'Link a wall task to its Codex Desktop thread. The source PR is in review; Windows '
-         'deep-link acceptance and UI approval remain before merge.',
- 'N11': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
-        'startup/recovery; then evaluate the installed prototype.',
- 'N12': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
-        'startup/recovery; then evaluate the installed prototype.',
- 'N13': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
-        'startup/recovery; then evaluate the installed prototype.',
- 'N14': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
-        'startup/recovery; then evaluate the installed prototype.',
- 'N16': 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.',
- 'N17': 'The rendering contract [[N15]] is delivered. Build the live app renderer on it; Lively '
-        'evaluation is not a prerequisite.',
+ 'N16': 'Follow the rendering and customization work and a decision to proceed; the Lively prototype was closed as superseded.',
+ 'N17': 'The rendering contract [[N15]] is delivered. Build the live app renderer on it; the Lively '
+        'prototype was closed as superseded.',
  'N18': 'Add project/status palettes after rendering and Hub #2’s vocabulary.',
  'N19': 'Add completion celebrations and status animations after rendering and palettes.',
  'N20': 'Add completion celebrations and status animations after rendering and palettes.',
@@ -169,8 +219,6 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'controls.',
  'N47': 'Explore a combined layout and allocation pool now that the independent-device trial '
         '[[N46]] is verified; resolve its design choices with the owner first.',
- 'N78': 'Reduce repeated default controls and status text while preserving access to the wall map '
-        'settings and task details.',
  'N81': 'Queue one completion comet when a subagent delays its parent becoming unread. Preserve '
         'restart, replay, stale-evidence and mode rules.',
  'N90': 'Wake the Nanoleaf worker from the hub change stream instead of its 1-second poll. Waits '

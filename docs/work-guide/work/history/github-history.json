@@ -1,15 +1,30 @@
 {
-  "fetchedAt": "2026-09-24T09:07:21.244023+00:00",
+  "fetchedAt": "2026-09-24T23:12:03.305983+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-24T08:52:49Z",
+      "pushedAt": "2026-09-24T22:19:19Z",
       "defaultBranch": "main",
-      "headSha": "fcb6b21b316707f88ba70a66d1ca83e342c46216",
-      "mainCommitCount": 111,
+      "headSha": "28f759956eda24498d638392e1175b6d64c04d17",
+      "mainCommitCount": 114,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "28f759956eda24498d638392e1175b6d64c04d17",
+          "date": "2026-09-24T22:19:19Z",
+          "message": "Size stories for the personal-project setup (#243)"
+        },
+        {
+          "sha": "19a623085626974e3d209c295754cc943933f686",
+          "date": "2026-09-24T21:27:10Z",
+          "message": "Make BUNNY device settings apply in one step and simplify command status (#239)"
+        },
+        {
+          "sha": "b3b243805a80b14437198f1454c6398f77800f62",
+          "date": "2026-09-24T09:42:04Z",
+          "message": "Refresh the work guide to current GitHub status (#236)"
+        },
         {
           "sha": "fcb6b21b316707f88ba70a66d1ca83e342c46216",
           "date": "2026-09-24T08:52:48Z",
@@ -1430,9 +1445,41 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/235",
           "base": "main",
           "mergedAt": "2026-09-24T08:52:49Z"
+        },
+        {
+          "number": 236,
+          "title": "Refresh the work guide to current GitHub status",
+          "createdAt": "2026-09-24T09:21:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/236",
+          "base": "main",
+          "mergedAt": "2026-09-24T09:42:04Z"
+        },
+        {
+          "number": 239,
+          "title": "Make BUNNY device settings apply in one step and simplify command status",
+          "createdAt": "2026-09-24T20:40:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/239",
+          "base": "main",
+          "mergedAt": "2026-09-24T21:27:10Z"
+        },
+        {
+          "number": 243,
+          "title": "Size stories for the personal-project setup",
+          "createdAt": "2026-09-24T22:07:30Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/243",
+          "base": "main",
+          "mergedAt": "2026-09-24T22:19:19Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 238,
+          "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
+          "createdAt": "2026-09-24T20:23:18Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
@@ -1947,18 +1994,34 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/228"
         },
         {
+          "number": 231,
+          "title": "Make BUNNY device settings apply in one step and simplify command status",
+          "closedAt": "2026-09-24T21:31:06Z",
+          "createdAt": "2026-09-24T08:07:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/231"
+        },
+        {
           "number": 234,
           "title": "Document how to create hub credentials and what each grant allows",
           "closedAt": "2026-09-24T08:55:46Z",
           "createdAt": "2026-09-24T08:41:00Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/234"
+        },
+        {
+          "number": 237,
+          "title": "Use personal-project scope defaults in story writing and pickup",
+          "closedAt": "2026-09-24T22:27:40Z",
+          "createdAt": "2026-09-24T19:31:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/237"
         }
       ],
-      "openIssueCount": 60,
+      "openIssueCount": 66,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-24T08:41:00Z"
+        "2026-09-24T23:08:23Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1970,17 +2033,37 @@
         "2026-09-21": 1,
         "2026-09-22": 10,
         "2026-09-23": 27,
-        "2026-09-24": 12
+        "2026-09-24": 20
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-24T09:04:43Z",
+      "pushedAt": "2026-09-24T23:07:28Z",
       "defaultBranch": "main",
-      "headSha": "08b6b8387268bb247e352c7e9d0604f832cad97b",
-      "mainCommitCount": 50,
+      "headSha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
+      "mainCommitCount": 54,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
+          "date": "2026-09-24T23:07:28Z",
+          "message": "Record that runtime availability follows WSL until hub hosting (#136)"
+        },
+        {
+          "sha": "49f0425ebd8f49bffdd76056581e8b91a47c22b8",
+          "date": "2026-09-24T22:44:22Z",
+          "message": "Reduce default wall map controls and repeated status text (#125)"
+        },
+        {
+          "sha": "3e6aa99813d43e4105017ec92c6a9e93c285a2cb",
+          "date": "2026-09-24T22:17:57Z",
+          "message": "Size stories for the personal-project setup (#126)"
+        },
+        {
+          "sha": "97b6b37fcbf93061adda9afab253517cee24996e",
+          "date": "2026-09-24T20:10:26Z",
+          "message": "Open qualified wall tasks in Codex Desktop (#109)"
+        },
         {
           "sha": "08b6b8387268bb247e352c7e9d0604f832cad97b",
           "date": "2026-09-24T08:02:31Z",
@@ -2592,14 +2675,46 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/107",
           "base": "main",
           "mergedAt": "2026-09-24T07:52:57Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 109,
           "title": "Open qualified wall tasks in Codex Desktop",
           "createdAt": "2026-09-24T09:01:46Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/109",
+          "base": "main",
+          "mergedAt": "2026-09-24T20:10:26Z"
+        },
+        {
+          "number": 125,
+          "title": "Reduce default wall map controls and repeated status text",
+          "createdAt": "2026-09-24T22:01:11Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/125",
+          "base": "main",
+          "mergedAt": "2026-09-24T22:44:22Z"
+        },
+        {
+          "number": 126,
+          "title": "Size stories for the personal-project setup",
+          "createdAt": "2026-09-24T22:07:32Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/126",
+          "base": "main",
+          "mergedAt": "2026-09-24T22:17:58Z"
+        },
+        {
+          "number": 136,
+          "title": "Record that runtime availability follows WSL until hub hosting",
+          "createdAt": "2026-09-24T22:49:28Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/136",
+          "base": "main",
+          "mergedAt": "2026-09-24T23:07:28Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 116,
+          "title": "Reset recreated shared tasks and preserve Codex link focus",
+          "createdAt": "2026-09-24T20:18:55Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
           "base": "main"
         }
       ],
@@ -2627,6 +2742,46 @@
           "createdAt": "2026-09-05T22:43:35Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
+        },
+        {
+          "number": 10,
+          "title": "Verify Lively compatibility on Windows",
+          "closedAt": "2026-09-24T22:46:37Z",
+          "createdAt": "2026-09-06T23:57:43Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/10"
+        },
+        {
+          "number": 11,
+          "title": "Make the map reliable for persistent displays",
+          "closedAt": "2026-09-24T22:46:40Z",
+          "createdAt": "2026-09-06T23:58:04Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/11"
+        },
+        {
+          "number": 12,
+          "title": "Add an inspection-only display mode",
+          "closedAt": "2026-09-24T22:46:44Z",
+          "createdAt": "2026-09-06T23:58:10Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/12"
+        },
+        {
+          "number": 13,
+          "title": "Integrate Lively startup and recovery",
+          "closedAt": "2026-09-24T22:46:47Z",
+          "createdAt": "2026-09-06T23:58:15Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/13"
+        },
+        {
+          "number": 14,
+          "title": "Run and evaluate the installed Lively prototype",
+          "closedAt": "2026-09-24T22:46:51Z",
+          "createdAt": "2026-09-06T23:58:20Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/14"
         },
         {
           "number": 15,
@@ -2893,6 +3048,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/77"
         },
         {
+          "number": 78,
+          "title": "Reduce default wall map controls and repeated status text",
+          "closedAt": "2026-09-24T22:48:19Z",
+          "createdAt": "2026-09-23T08:26:05Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/78"
+        },
+        {
           "number": 82,
           "title": "Clean up delivered worktrees and scratch after merge",
           "closedAt": "2026-09-23T23:27:46Z",
@@ -2955,12 +3118,36 @@
           "createdAt": "2026-09-24T07:22:35Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/105"
+        },
+        {
+          "number": 108,
+          "title": "Open a wall task's thread in Codex Desktop",
+          "closedAt": "2026-09-24T20:25:43Z",
+          "createdAt": "2026-09-24T07:47:58Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/108"
+        },
+        {
+          "number": 133,
+          "title": "Decide how the Linux runtime becomes available at Windows sign-in",
+          "closedAt": "2026-09-24T23:11:08Z",
+          "createdAt": "2026-09-24T22:41:41Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/133"
+        },
+        {
+          "number": 134,
+          "title": "Decide the disposition of the Lively wallpaper issues",
+          "closedAt": "2026-09-24T22:47:27Z",
+          "createdAt": "2026-09-24T22:41:42Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/134"
         }
       ],
-      "openIssueCount": 19,
+      "openIssueCount": 33,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-24T07:47:58Z"
+        "2026-09-24T22:43:01Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -2969,17 +3156,22 @@
         "2026-09-09": 4,
         "2026-09-22": 1,
         "2026-09-23": 11,
-        "2026-09-24": 11
+        "2026-09-24": 34
       }
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-24T01:11:44Z",
+      "pushedAt": "2026-09-24T22:19:55Z",
       "defaultBranch": "main",
-      "headSha": "01da65d32acdb800adabc8d9ad1083bdd652b823",
-      "mainCommitCount": 33,
+      "headSha": "0ca009c828fb90f278469302d367f1ac9f9ab4bf",
+      "mainCommitCount": 34,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "0ca009c828fb90f278469302d367f1ac9f9ab4bf",
+          "date": "2026-09-24T22:19:55Z",
+          "message": "Size stories for the personal-project setup (#78)"
+        },
         {
           "sha": "01da65d32acdb800adabc8d9ad1083bdd652b823",
           "date": "2026-09-24T01:11:44Z",
@@ -3341,7 +3533,7 @@
         },
         {
           "number": 63,
-          "title": "Render shared agent monitoring as paged 64\u00d764 dashboards",
+          "title": "Render shared agent monitoring as paged 64×64 dashboards",
           "createdAt": "2026-09-20T23:45:42Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/63",
           "base": "main",
@@ -3402,6 +3594,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/75",
           "base": "main",
           "mergedAt": "2026-09-24T01:11:44Z"
+        },
+        {
+          "number": 78,
+          "title": "Size stories for the personal-project setup",
+          "createdAt": "2026-09-24T22:07:34Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/78",
+          "base": "main",
+          "mergedAt": "2026-09-24T22:19:55Z"
         }
       ],
       "openPRs": [],
@@ -3544,7 +3744,7 @@
         },
         {
           "number": 32,
-          "title": "Render the 64\u00d764 agent monitoring dashboard and preview",
+          "title": "Render the 64×64 agent monitoring dashboard and preview",
           "closedAt": "2026-09-21T00:04:22Z",
           "createdAt": "2026-09-07T00:55:32Z",
           "stateReason": "completed",
@@ -3647,10 +3847,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/74"
         }
       ],
-      "openIssueCount": 15,
+      "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-24T08:35:18Z"
+        "2026-09-24T22:55:06Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -3661,7 +3861,7 @@
         "2026-09-20": 1,
         "2026-09-22": 1,
         "2026-09-23": 3,
-        "2026-09-24": 3
+        "2026-09-24": 7
       }
     }
   }
