@@ -1,17 +1,17 @@
 {
-  "startedAt": "2026-09-24T00:05:07.303221+00:00",
-  "refreshedAt": "2026-09-24T00:05:35.324640+00:00",
+  "startedAt": "2026-09-24T00:08:31.600537+00:00",
+  "refreshedAt": "2026-09-24T00:08:57.232764+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
       "openIssues": 63,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        65
+        64
       ],
-      "openPRs": 2,
+      "openPRs": 1,
       "prPageSizes": [
-        2
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -238,6 +238,11 @@
         {
           "number": 210,
           "state": "CLOSED",
+          "purpose": "Guide story status"
+        },
+        {
+          "number": 212,
+          "state": "OPEN",
           "purpose": "Guide story status"
         },
         {

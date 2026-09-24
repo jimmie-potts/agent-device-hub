@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-24T00:03:28.056746+00:00",
+  "fetchedAt": "2026-09-24T00:08:31.590503+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-23T23:59:54Z",
+      "pushedAt": "2026-09-24T00:07:05Z",
       "defaultBranch": "main",
-      "headSha": "146602fccea5dc77e6731a84826e507f62c5bf8a",
-      "mainCommitCount": 100,
+      "headSha": "d12fce5bf6a9c1c31254115752f255896e96386e",
+      "mainCommitCount": 101,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "d12fce5bf6a9c1c31254115752f255896e96386e",
+          "date": "2026-09-24T00:06:01Z",
+          "message": "Use shared npm and Playwright caches in setup guidance (#214)"
+        },
         {
           "sha": "146602fccea5dc77e6731a84826e507f62c5bf8a",
           "date": "2026-09-23T23:58:37Z",
@@ -1287,9 +1292,25 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/211",
           "base": "main",
           "mergedAt": "2026-09-23T23:58:38Z"
+        },
+        {
+          "number": 214,
+          "title": "Use shared npm and Playwright caches in setup guidance",
+          "createdAt": "2026-09-24T00:00:07Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/214",
+          "base": "main",
+          "mergedAt": "2026-09-24T00:06:01Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 213,
+          "title": "Refresh work guide to current GitHub status",
+          "createdAt": "2026-09-23T23:57:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
