@@ -64,7 +64,7 @@ Credentials need the source ID in `devices`: `read` scope for snapshots and `con
  "playback": {"status": "playing", "title": "...", "artist": "...", "album": "...", "controls": ["pause", "next", "previous"]}}
 ```
 
-`observedAtMs` is the hub's wall-clock time of the last successful read. `ageMs` is measured on a monotonic clock, so a system clock change cannot make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
+`observedAtMs` is the hub's wall-clock time of the last successful read. `ageMs` is the larger of the monotonic and wall-clock ages, so neither a system clock change nor a suspend can make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
 
 | `availability` | Age of the last successful read | `playback` |
 | --- | --- | --- |

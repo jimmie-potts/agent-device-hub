@@ -19,8 +19,8 @@ export function sonyConfiguration(value:unknown):SonyConfiguration {
   const url = new URL(value.endpoint);
   if (url.protocol !== 'http:' || !isIPv4(url.hostname) || !privateAddress(url.hostname) || !url.port || url.username || url.password ||
       url.search || url.hash || url.pathname !== '/sony' || url.href !== value.endpoint) throw new Error('invalid-playback');
-  // The source ID is returned to clients, so it must not carry a receiver address.
-  if (isIPv4(value.id) || value.id.includes(url.hostname)) throw new Error('invalid-playback');
+  // The source ID is returned to clients, so it must not carry the receiver address.
+  if (value.id.includes(url.hostname)) throw new Error('invalid-playback');
   return {id:value.id,kind:'sony',endpoint:value.endpoint};
 }
 

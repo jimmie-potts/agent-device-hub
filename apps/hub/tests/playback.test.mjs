@@ -254,6 +254,9 @@ test('freshness follows the monotonic clock and receipts stay bounded',async()=>
   source.report(playing);
   wall-=60000;elapsed+=5000;
   assert.deepEqual([playback.snapshot().availability,playback.snapshot().observedAtMs,playback.snapshot().ageMs],['stale',100000,5000],'a wall-clock step back does not keep a source available');
+  wall+=60000+30000;
+  assert.deepEqual([playback.snapshot().availability,playback.snapshot().ageMs],['unavailable',30000],'a suspend that pauses the monotonic clock does not keep a source available');
+  wall=100000;
   elapsed=0;source.report(playing);
   for(let index=0;index<65;index++)await playback.command({requestId:'r'+index,sourceId:'kitchen',action:'next'},principal);
   await playback.command({requestId:'r1',sourceId:'kitchen',action:'next'},principal);

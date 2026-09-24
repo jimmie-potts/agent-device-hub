@@ -21,14 +21,14 @@ const STALE_MS = 5000, UNAVAILABLE_MS = 30000;
 const STATUS = {sent:200,failed:502,uncertain:503} as const;
 const RETAINED = 64;
 
-/** `clock` stamps observation times; age comes from `monotonic` so a wall-clock step cannot make old data look fresh. */
+/** Age is the larger of the monotonic and wall-clock ages, so neither a clock step back nor a suspend makes old data look fresh. */
 export function createPlayback(source:PlaybackSource,clock:()=>number,monotonic:()=>number = clock) {
   let observed:{atMs:number; mark:number; value:PlaybackObservation}|undefined;
   let busy = false;
   // Admitted commands by principal and request ID. Only the newest can be pending, because one command runs at a time.
   const receipts = new Map<string,{body:string; result:Promise<{status:number; body:PlaybackReceipt}>}>();
   source.start(value => {observed = {atMs:clock(),mark:monotonic(),value:structuredClone(value)};});
-  const age = () => observed ? Math.max(0,monotonic() - observed.mark) : null;
+  const age = () => observed ? Math.max(0,monotonic() - observed.mark,clock() - observed.atMs) : null;
   const availability = (ms:number|null) => ms === null || ms >= UNAVAILABLE_MS ? 'unavailable' : ms >= STALE_MS ? 'stale' : 'available';
   return {
     sourceId:source.id,

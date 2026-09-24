@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
+import {isIPv4} from 'node:net';
 import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
@@ -34,7 +35,8 @@ function json(res: ServerResponse, status: number, value: unknown) {
 /** Builds the one explicitly selected source. The playback source ID shares credential device grants with controller aliases. */
 function playbackSource(value: unknown, aliases: string[]): PlaybackSource {
   if (!object(value) || !exact(value,['selected','sources']) || !Array.isArray(value.sources) || value.sources.length !== 1 || !object(value.sources[0]) ||
-      value.sources[0].id !== value.selected || aliases.includes(value.selected as string) || value.selected === HOST_SERVICE) throw new Error('invalid-playback');
+      value.sources[0].id !== value.selected || aliases.includes(value.selected as string) || value.selected === HOST_SERVICE ||
+      isIPv4(value.selected as string)) throw new Error('invalid-playback');
   if (value.sources[0].kind === 'sony') return createSonySource(sonyConfiguration(value.sources[0]));
   throw new Error('invalid-playback');
 }

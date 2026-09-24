@@ -1,7 +1,7 @@
 ## 1. Shared playback module
 
 - [x] 1.1 Serve snapshots and source-bound commands from a non-Sony fake source through `createPlayback`. Evidence: `a non-Sony source uses the shared playback interface unchanged` in `apps/hub/tests/playback.test.mjs` failed with `ERR_MODULE_NOT_FOUND` for `dist/playback.js` before the module existed and passes after.
-- [x] 1.2 Apply the freshness rules with a controlled clock. Evidence: `only successful Sony reads refresh freshness, which ages through stale to unavailable` failed at five seconds of age (actual `available`, expected `stale`) before the thresholds existed and passes after. The same test shows JSON-RPC errors, HTTP 500, malformed and mismatched replies, dropped connections and timeouts leave the observation time unchanged. `freshness follows the monotonic clock and receipts stay bounded` failed (a wall-clock step back kept the source available) before age used a monotonic clock, and passes after.
+- [x] 1.2 Apply the freshness rules with a controlled clock. Evidence: `only successful Sony reads refresh freshness, which ages through stale to unavailable` failed at five seconds of age (actual `available`, expected `stale`) before the thresholds existed and passes after. The same test shows JSON-RPC errors, HTTP 500, malformed and mismatched replies, dropped connections and timeouts leave the observation time unchanged. `freshness follows the monotonic clock and receipts stay bounded` failed (a wall-clock step back kept the source available) before age used a monotonic clock; its suspend case (wall clock advanced, monotonic clock paused) failed before age took the larger of the two. Both pass after.
 
 ## 2. Sony source
 

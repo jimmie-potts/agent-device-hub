@@ -33,11 +33,11 @@ A source reports every successful observation, including unchanged ones, and nev
 
 ### Configuration
 
-Optional `playback` is `{selected, sources}`. `sources` currently holds exactly one entry, and `selected` must name it. A Sony entry is `{id, kind: "sony", endpoint}`. `id` is a user-chosen neutral ID that becomes the stable `sourceId`. It must not equal a controller alias or `hub-service`, because it shares the credential `devices` list with controller aliases. An IPv4-shaped ID, or one containing the endpoint address, is rejected so the address cannot reach clients as a source ID. `endpoint` must be exactly `http://<numeric private or loopback IPv4>:<port>/sony` without credentials, query or fragment. The receiver address never comes from a request.
+Optional `playback` is `{selected, sources}`. `sources` currently holds exactly one entry, and `selected` must name it. A Sony entry is `{id, kind: "sony", endpoint}`. `id` is a user-chosen neutral ID that becomes the stable `sourceId`. It must not equal a controller alias or `hub-service`, because it shares the credential `devices` list with controller aliases. The hub rejects an IPv4-shaped ID for any source kind, and the Sony module rejects an ID containing its endpoint address, so the address cannot reach clients as a source ID. `endpoint` must be exactly `http://<numeric private or loopback IPv4>:<port>/sony` without credentials, query or fragment. The receiver address never comes from a request.
 
 ### Freshness
 
-The shared module stamps each reported observation with the hub's wall clock for `observedAtMs` and with a monotonic clock for age, so a wall-clock step cannot make an old observation look fresh. Tests inject one controlled clock for both. With age measured from the last successful observation:
+The shared module stamps each reported observation with the hub's wall clock for `observedAtMs` and with a monotonic clock. Age is the larger of the two elapsed times, so neither a wall-clock step back nor a suspend, which pauses the monotonic clock, can make an old observation look fresh. Tests inject one controlled clock for both. With age measured from the last successful observation:
 
 | Availability | Rule | Snapshot `playback` |
 | --- | --- | --- |
