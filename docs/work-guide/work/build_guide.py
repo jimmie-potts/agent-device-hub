@@ -249,7 +249,7 @@ for receipt in DIAGRAM_RECEIPTS['diagrams']:
     assert validation['checksPassed'] == validation['checkCount'] == 9 and validation['errors'] == 0 and validation['warnings'] == 0, receipt['id']
     assert AD.sha256(AD.RENDERED / f"{receipt['id']}.svg") == receipt['svgSha256'], f"Stale SVG for {receipt['id']}"
     assert AD.sha256(AD.RENDERED / receipt['viewer']) == receipt['artifact']['sha256'], f"Stale viewer for {receipt['id']}"
-METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], staticSnapshot=True, openIssues=TOTAL,
+METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], snapshotDate=REFRESHED.strftime('%-d %b'), staticSnapshot=True, openIssues=TOTAL,
                 guideCount=len(GUIDES), projectCount=len(REPOS), repositoryCounts=COUNTS,
                 primaryCoverage=coverage, completedBaselines=['H5', 'N29', 'P12', 'P26', 'P29', 'P37', 'H2', 'H4', 'H7'],
                 history=TIMELINE['meta'],
@@ -372,7 +372,7 @@ for number, diagram in enumerate(AD.DIAGRAMS, 1):
 assert [d['status'] == 'future' for d in AD.DIAGRAMS] == sorted(d['status'] == 'future' for d in AD.DIAGRAMS), 'List future diagrams last'
 architecture_section = f'''<details class="reference" id="architecture" data-diagrams="{len(AD.DIAGRAMS)}" open>
       <summary><span class="guide-number">A</span><span class="guide-heading"><span class="eyebrow">Reference · not a work guide</span><h2>Architecture and sequence diagrams</h2></span><span class="guide-count">{len(AD.DIAGRAMS)} diagrams</span><span class="chevron" aria-hidden="true">−</span></summary>
-      <div class="guide-body"><p class="intro">Three system diagrams and six sequence diagrams show what runs where, who owns state and who writes to each device. Start with the system map (A2) and the agent observation walkthrough (S4); the BUNNY design atlas embeds these same two definitions, which keep their hub main 5db67a09 pins. The other seven views were revised on 23 September 2026 under {render("[[H173]]")} against Hub d8527cd3, Nanoleaf cbb94851 and Pixoo c81bc31c, following the same pattern: dashed boxes are processes, devices sit outside them, and each sequence keeps a short numbered main path with alternatives in separate lanes and a walkthrough below. Current, historical and planned behavior are labelled separately: the Nanoleaf views show the installed Linux runtime ({render("[[N55]]")}) and name the retired Windows route as historical, and the two future scenarios sit behind a marked, collapsed group. Each figure lists the revisions its sources are pinned to. The baseline review time is <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time>. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals, and their status badges come from the dated backlog snapshot. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline; this guide itself loads nothing remote.</p>
+      <div class="guide-body"><p class="intro">Three system diagrams and six sequence diagrams show what runs where, who owns state and who writes to each device. Start with the system map (A2) and the agent observation walkthrough (S4); the BUNNY design atlas embeds these same two definitions, which keep their hub main 5db67a09 pins. The other seven views were revised on 23 September 2026 under {render("[[H173]]")} against Hub d8527cd3, Nanoleaf cbb94851 and Pixoo c81bc31c, following the same pattern: dashed boxes are processes, devices sit outside them, and each sequence keeps a short numbered main path with alternatives in separate lanes and a walkthrough below. Current, historical and planned behavior are labelled separately: the Nanoleaf views show the installed Linux runtime ({render("[[N55]]")}) and name the retired Windows route as historical, and the two future scenarios sit behind a marked, collapsed group. Each figure lists the revisions its sources are pinned to. The baseline review time is <time datetime="{html.escape(AD.SOURCES['reviewedAt'])}">@@REVIEW_TIMESTAMP@@</time>. Repository history was read separately at @@HISTORY_TIMESTAMP@@; its main revisions may be newer than the architecture review. Diagram links repeat issues that already belong to a work guide; they add nothing to the issue totals, and their status badges start from the dated backlog snapshot and update from public GitHub when the page opens. Each figure has zoom and fit controls, a scrollable stage, a text explanation and a link to the full interactive Archify viewer shipped beside this file in the architecture folder. Those viewers are Archify's own HTML: they reference one Google Fonts stylesheet and fall back to system fonts when offline.</p>
       <div class="status-legend" aria-label="Status key"><span class="status status-implemented">Implemented source</span><span class="status status-planned">Planned composition</span><span class="status status-future">Future work</span><span class="status-note">Implemented means reviewed source at the pinned revision. It is not installed-client, transport or physical evidence.</span></div>
       <nav class="diagram-index" aria-label="Diagrams">{''.join(diagram_index)}</nav>
       {''.join(figures)}
@@ -646,6 +646,89 @@ JS = '''
    if (!link || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
    if (window.openBrief(link.dataset.issue, link)) e.preventDefault();
  });
+ const snapshotData = JSON.parse(document.querySelector('#snapshot-data').textContent);
+ const statusLine = document.querySelector('#github-status');
+ const repositories = {
+   H: {name:'agent-device-hub', label:'Hub'},
+   N: {name:'codex-nanoleaf', label:'Nanoleaf'},
+   P: {name:'divoom-app-upgrade', label:'Pixoo'}
+ };
+ const statusValues = {
+   open:['○','Open'], 'in-progress':['◐','In progress'], review:['◐','In review'],
+   blocked:['⊘','Blocked'], completed:['✓','Completed'], closed:['−','Closed']
+ };
+ const snapshotDate = snapshotData.snapshotDate;
+ const readTime = () => new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+ const joinNames = names => names.length < 2 ? names.join('') : `${names.slice(0,-1).join(', ')} and ${names.at(-1)}`;
+ async function readPages(repo,state) {
+   const query = new URLSearchParams({state,per_page:'100'});
+   if (state === 'closed') query.set('since',snapshotData.refreshedAt);
+   let next = `https://api.github.com/repos/jimmie-potts/${repo}/issues?${query}`;
+   const rows = [], seen = new Set();
+   while (next) {
+     const url = new URL(next);
+     if (url.origin !== 'https://api.github.com' || url.pathname !== `/repos/jimmie-potts/${repo}/issues` || seen.has(url.href)) throw new Error('Invalid GitHub pagination link');
+     seen.add(url.href);
+     const response = await fetch(url.href,{method:'GET',credentials:'omit',cache:'no-store',headers:{Accept:'application/vnd.github+json'},redirect:'error'});
+     if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+     const page = await response.json();
+     if (!Array.isArray(page)) throw new Error('GitHub returned an invalid issue page');
+     rows.push(...page.filter(issue => !issue.pull_request));
+     const link = response.headers.get('Link') || '';
+     const match = link.split(/,\\s*(?=<)/).find(value => /;\\s*rel="next"/.test(value));
+     next = match?.match(/<([^>]+)>/)?.[1] || null;
+   }
+   return rows;
+ }
+ function liveStatus(issue) {
+   if (issue.state === 'closed') return issue.state_reason === 'completed' ? 'completed' : 'closed';
+   const names = new Set((issue.labels || []).map(label => typeof label === 'string' ? label : label.name));
+   let status = names.has('status:review') ? 'review' : names.has('status:in-progress') ? 'in-progress' : 'open';
+   const blocked = names.has('blocked') || Number(issue.issue_dependencies_summary?.blocked_by || 0) > 0;
+   if (blocked && status === 'open') status = 'blocked';
+   return {status,blockedQualifier:blocked && (status === 'review' || status === 'in-progress')};
+ }
+ function updateBadges(prefix,issues) {
+   const byNumber = new Map(issues.map(issue => [String(issue.number),issue]));
+   for (const badge of document.querySelectorAll(`a.issue[data-issue^="${prefix}"]`)) {
+     const number = badge.dataset.issue.slice(1), issue = byNumber.get(number);
+     if (!issue) continue;
+     const result = liveStatus(issue), status = typeof result === 'string' ? result : result.status;
+     const blockedQualifier = typeof result === 'string' ? false : result.blockedQualifier;
+     const [symbol,label] = statusValues[status];
+     const statusText = `${label}${blockedQualifier ? ' · blocked' : ''}`;
+     const repository = repositories[prefix].label, issueName = issue.title || badge.querySelector('.issue-id').textContent;
+     const title = `${repository} #${number}: ${issueName} (${statusText}; opens a task brief)`;
+     badge.dataset.state = issue.state.toUpperCase(); badge.dataset.status = status;
+     badge.querySelector('.status-symbol').textContent = symbol;
+     badge.querySelector('.issue-status').textContent = statusText;
+     badge.setAttribute('title',title); badge.setAttribute('aria-label',title);
+   }
+ }
+ async function refreshIssueStatus() {
+   if (navigator.onLine === false) {
+     statusLine.textContent = `GitHub unavailable for Hub, Nanoleaf and Pixoo; showing snapshot status for all badges. Guide text and counts from the ${snapshotDate} snapshot.`;
+     return;
+   }
+   const outcomes = await Promise.all(Object.entries(repositories).map(async ([prefix,repo]) => {
+     try {
+       const [open,closed] = await Promise.all([readPages(repo.name,'open'),readPages(repo.name,'closed')]);
+       updateBadges(prefix,[...open,...closed]);
+       return {label:repo.label,ok:true};
+     } catch {
+       return {label:repo.label,ok:false};
+     }
+   }));
+   const unavailable = outcomes.filter(outcome => !outcome.ok).map(outcome => outcome.label);
+   const time = readTime();
+   if (!unavailable.length) statusLine.textContent = `Status from GitHub at ${time}. Guide text and counts from the ${snapshotDate} snapshot.`;
+   else {
+     const names = joinNames(unavailable), fallback = unavailable.length === Object.keys(repositories).length ? 'all badges' : `badges for ${names}`;
+     const available = outcomes.filter(outcome => outcome.ok).map(outcome => outcome.label);
+     statusLine.textContent = `GitHub unavailable for ${names}; showing snapshot status for ${fallback}.${available.length ? ` Other badges read from GitHub at ${time}.` : ''} Guide text and counts from the ${snapshotDate} snapshot.`;
+   }
+ }
+ refreshIssueStatus();
 })();
 '''
 
@@ -672,7 +755,8 @@ document = '''<!doctype html>
 <article><h3>Independent work</h3><p>Pixoo embedded performance, Tidbyt automatic status and LIFX connection qualification can be selected independently.</p><a href="#parallel-work">Compare parallel units</a></article></div>
 <div class="path"><a href="#shared-codex">Codex milestone</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">General controls</a><span class="arrow" aria-hidden="true">→</span><a href="#controls-music">Music</a><span class="arrow" aria-hidden="true">→</span><a href="#assistant-access">Assistant</a></div></section>
 <section class="issue-legend" aria-label="Issue status key"><h2>Read status on the issue link</h2><div><span class="status-key" data-status="open"><span aria-hidden="true">○</span> Open</span><span class="status-key" data-status="in-progress"><span aria-hidden="true">◐</span> In progress</span><span class="status-key" data-status="review"><span aria-hidden="true">◐</span> In review</span><span class="status-key" data-status="blocked"><span aria-hidden="true">⊘</span> Blocked</span><span class="status-key" data-status="completed"><span aria-hidden="true">✓</span> Completed</span><span class="status-key" data-status="closed"><span aria-hidden="true">−</span> Closed</span></div><p>Completed means the issue closed as completed within its own scope. Closed alone does not claim delivery. In-progress and review links retain a blocked qualifier when needed. Counts show open stories; closed evidence is expandable.</p></section>
-<p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. This document does not refresh issue status automatically.</p>
+<p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. Issue badges refresh from public GitHub when this page loads; guide text, counts and dependency explanations stay on this snapshot.</p>
+<p id="github-status" class="document-note" role="status" aria-live="polite">Loading GitHub issue status. Guide text and counts from the @@SNAPSHOT_DATE@@ snapshot.</p>
 <div id="parallel-work">''' + parallel_section + '''</div>
 <div class="guides references">''' + timeline_section + '''</div>
 <div class="toolbar" aria-label="Document controls"><div class="search-wrap"><label class="sr-only" for="search">Search guides by topic, device, or issue</label><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m12 12 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="search" type="search" placeholder="Find a topic, device, or issue…" autocomplete="off"></div><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button><button id="print" type="button">Print / PDF</button></div>
@@ -695,7 +779,7 @@ document = document.replace('scoped Pixoo/Nanoleaf acceptance.</p>', 'scoped Pix
 tokens = {
     'TOTAL': str(TOTAL), 'GUIDE_COUNT': str(len(GUIDES)), 'PROJECTS_PADDED': f'{len(REPOS):02}',
     'H_COUNT': str(COUNTS['H']), 'N_COUNT': str(COUNTS['N']), 'P_COUNT': str(COUNTS['P']),
-    'TIMESTAMP': REFRESHED.strftime('%B %d, %Y at %H:%M:%S %Z'), 'ISO': SNAPSHOT['refreshedAt'],
+    'TIMESTAMP': REFRESHED.strftime('%B %d, %Y at %H:%M:%S %Z'), 'ISO': SNAPSHOT['refreshedAt'], 'SNAPSHOT_DATE': REFRESHED.strftime('%-d %b'),
     'DATE': REFRESHED.strftime('%d %b %Y').upper(), 'MONTH_TITLE': REFRESHED.strftime('%B %Y'),
     'MONTH_CODE': REFRESHED.strftime('%Y.%m'), 'MONTH_UPPER': REFRESHED.strftime('%B %Y').upper(),
     'DIAGRAM_COUNT': str(len(AD.DIAGRAMS)), 'REVIEW_TIMESTAMP': SOURCE_REVIEW.strftime('%B %d, %Y at %H:%M:%S %Z'),
