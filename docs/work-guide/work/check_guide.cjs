@@ -19,6 +19,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
   const root=path.resolve(__dirname,'..'), file=path.join(root,'outputs/agent-device-work-guides.html');
   const read=name=>JSON.parse(fs.readFileSync(path.join(root,'work/backlogs',name),'utf8'));
   const coverage=read('guide-coverage.json'), snapshot=read('snapshot.json');
+  const sourceHtml=fs.readFileSync(file,'utf8'), pixooSnapshotStatuses=Object.fromEntries([...sourceHtml.matchAll(/<a class="issue repo-P" data-issue="(P\d+)"[^>]*data-status="([^"]+)"/g)].map(match=>[match[1],match[2]]));
   const receipts=JSON.parse(fs.readFileSync(path.join(root,'work/architecture/diagram-receipts.json'),'utf8')), sources=JSON.parse(fs.readFileSync(path.join(root,'work/architecture/source-receipts.json'),'utf8')), history=JSON.parse(fs.readFileSync(path.join(root,'work/history/github-history.json'),'utf8'));
   const diagramIds=receipts.diagrams.map(d=>d.id), sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   assert.equal(diagramIds.length,9,'Nine diagrams rendered');
@@ -34,13 +35,46 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
   assert.deepEqual(ids.slice().sort(),[...oldIds,'pc-lighting','desktop-controls'].sort());
   const browser=await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
   try {
-    const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'}), errors=[],requests=[];
-    // External requests are attributed per frame: the guide's own frame must make none; the companion Archify viewer
+    const page=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'}), errors=[],consoleErrors=[],requests=[],apiRequests=[];
+    // External requests are attributed per frame: the guide may read GitHub issue status; the companion Archify viewer
     // (loaded on demand in an iframe) may reference its template's Google Fonts stylesheet, which is blocked here.
     const companionRequests=[];
-    page.on('pageerror',e=>errors.push(e.message)); page.on('request',r=>{if(!/^https?:/.test(r.url()))return; if(r.frame()===page.mainFrame())requests.push(r.url()); else companionRequests.push(r.url());});
-    await page.route(/^https?:/,r=>r.abort());
+    page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text());}); page.on('request',r=>{if(!/^https?:/.test(r.url()))return; if(r.frame()===page.mainFrame())requests.push(r.url()); else companionRequests.push(r.url());});
+    const apiIssue=(key,overrides={})=>{const source=issueMap[key];return {number:source.number,state:source.state.toLowerCase(),state_reason:source.stateReason,title:source.title,html_url:source.url,labels:source.labels,...overrides};};
+    const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
+    const hubClosed=apiIssue('H21',{state:'closed',state_reason:'completed'});
+    const hubClosedOther=apiIssue('H17',{state:'closed',state_reason:'not_planned'});
+    const nanoleafReview=apiIssue('N10',{labels:[...issueMap.N10.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
+    const nanoleafProgress=apiIssue('N15',{labels:[...issueMap.N15.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
+    const pixooProgress=apiIssue('P11',{labels:[...issueMap.P11.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
+    const apiOrigin='https://api.github.com', issueRoute=(repo,state,pageNumber=1)=>`${apiOrigin}/repos/jimmie-potts/${repo}/issues?state=${state}&per_page=100${state==='closed'?`&since=${encodeURIComponent(snapshot.refreshedAt)}`:''}${pageNumber>1?`&page=${pageNumber}`:''}`;
+    await page.route(/^https?:/,route=>route.abort());
+    await page.route(/^https:\/\/api\.github\.com\//,async route=>{
+      const url=new URL(route.request().url()),repo=url.pathname.split('/')[3],state=url.searchParams.get('state'),pageNumber=Number(url.searchParams.get('page')||1);
+      apiRequests.push({url:url.href,method:route.request().method()});
+      if(repo==='divoom-app-upgrade'&&state==='open')return route.fulfill({status:429,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'},body:JSON.stringify({message:'rate limited'})});
+      let rows=[];
+      if(repo==='agent-device-hub'&&state==='open')rows=pageNumber===1?[hubBlocked]:pageNumber===2?[{number:197,state:'open',title:'New issue absent from this guide',labels:[]}]:[];
+      else if(repo==='agent-device-hub'&&state==='closed')rows=[hubClosed,hubClosedOther];
+      else if(repo==='codex-nanoleaf'&&state==='open')rows=[nanoleafReview,nanoleafProgress];
+      const headers={'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'};
+      if(repo==='agent-device-hub'&&state==='open'&&pageNumber===1)headers.Link=`<${issueRoute(repo,state,2)}>; rel="next"`;
+      return route.fulfill({status:200,headers,body:JSON.stringify(rows)});
+    });
     await page.goto(pathToFileURL(file).href);
+    await page.waitForFunction(()=>document.querySelector('#github-status')?.textContent.startsWith('GitHub unavailable for Pixoo;'));
+    assert(apiRequests.some(r=>r.url===issueRoute('agent-device-hub','open',2)),'Follows the GitHub Link pagination header');
+    assert(apiRequests.every(r=>r.method==='GET'&&new URL(r.url).origin===apiOrigin),'Uses only anonymous GitHub API GET requests');
+    const liveStatus=key=>page.locator(`a[data-issue="${key}"]`);
+    assert(await liveStatus('H21').evaluateAll(es=>es.every(e=>e.dataset.status==='completed'&&e.dataset.state==='CLOSED'&&e.title.includes('Completed')&&e.getAttribute('aria-label').includes('Completed')&&e.querySelector('.issue-status').textContent==='Completed'&&e.querySelector('.status-symbol').textContent==='✓')),'Every badge updates its state, symbol, text and accessible labels');
+    assert(await liveStatus('H17').evaluateAll(es=>es.every(e=>e.dataset.status==='closed'&&e.querySelector('.issue-status').textContent==='Closed'&&e.querySelector('.status-symbol').textContent==='−')),'Other closures remain Closed');
+    assert(await liveStatus('H11').evaluateAll(es=>es.every(e=>e.dataset.status==='blocked')),'Open dependency summary marks an issue blocked');
+    assert(await liveStatus('N10').evaluateAll(es=>es.every(e=>e.dataset.status==='review')),'Review label updates the live status');
+    assert(await liveStatus('N15').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
+    assert(await liveStatus('H25').evaluateAll(es=>es.every(e=>e.dataset.status==='open')),'Issues absent from both reads keep their snapshot status');
+    const pixooAfterFailure=await page.locator('a.issue.repo-P[data-issue]').evaluateAll(es=>Object.fromEntries(es.map(e=>[e.dataset.issue,e.dataset.status])));
+    assert.deepEqual(pixooAfterFailure,pixooSnapshotStatuses,'A failed repository keeps every badge at its snapshot status');
+    assert((await page.locator('#github-status').textContent()).includes('23 Sep snapshot'));
     const meta=JSON.parse(await page.locator('#snapshot-data').textContent());
     assert.equal(meta.refreshedAt,snapshot.refreshedAt); assert.equal(meta.staticSnapshot,true);
     assert.equal(meta.openIssues,openKeys.length); assert.equal(meta.guideCount,count); assert.equal(meta.projectCount,Object.keys(repos).length);
@@ -84,7 +118,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(await page.locator(`.repo-legend .repo-${key} b`).textContent(),String(total));
     }
     const links=await page.locator('[data-issue]').evaluateAll(es=>es.map(e=>({key:e.dataset.issue,url:e.href,state:e.dataset.state})));
-    for(const l of links) {assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,issueMap[l.key].state);}
+    for(const l of links) {assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,l.key==='H21'?'CLOSED':issueMap[l.key].state);}
     for(const id of ids) {
       const guide=page.locator(`#${id}`), owned=coverage[id];
       assert.deepEqual((await guide.getAttribute('data-primary')).split(' ').filter(Boolean),owned);
@@ -99,7 +133,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert(await page.locator('a[href^="#"]').evaluateAll(es=>es.every(e=>document.getElementById(e.getAttribute('href').slice(1)))));
     assert(await page.locator('a[href^="https:"]').evaluateAll(es=>es.every(e=>new URL(e.getAttribute('href')).hostname==='github.com'&&e.getAttribute('target')==='_blank'&&(e.getAttribute('rel')||'').includes('noopener')&&(e.getAttribute('rel')||'').includes('noreferrer'))));
     assert(await page.locator('svg a[href^="#"], svg a[href^="https:"]').count()>0,'SVG anchors are covered by the link checks');
-    assert((await page.locator('.document-note').textContent()).includes('Static snapshot refreshed'));
+    assert((await page.locator('p.document-note:not(#github-status)').textContent()).includes('Static snapshot refreshed'));
     assert((await page.locator('meta[name="description"]').getAttribute('content')).includes(`${openKeys.length} open issues`));
     const summary=`${count} guides · ${openKeys.length} issues in these guides · ${diagramIds.length} diagrams`;
     assert.equal(await page.locator('#result-count').textContent(),summary);
@@ -237,9 +271,20 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#clear-search').click();assert.equal(await page.locator('.guide[open]').count(),1);
     assert.equal(await page.locator('.guide[open]').getAttribute('id'),'local-acceptance');
     await page.evaluate(()=>{window.print=()=>{window.printButtonCalled=true;};});await page.locator('#print').click();assert(await page.evaluate(()=>window.printButtonCalled));
-    assert.deepEqual(errors,[]);assert.deepEqual(requests,[],'The guide makes no external requests');
+    assert.deepEqual(errors,[]);
+    assert(requests.every(u=>u.startsWith(`${apiOrigin}/repos/jimmie-potts/`)),'The guide makes only its approved GitHub API requests');
     assert(companionRequests.every(u=>u.startsWith('https://fonts.googleapis.com/')),'Companion viewer requests are limited to its font stylesheet');
-    const receipt={checkedAt:new Date().toISOString(),snapshot:snapshot.refreshedAt,architectureReviewedAt:sources.reviewedAt,historyFetchedAt:history.fetchedAt,htmlSha256:sha(file),htmlBytes:fs.statSync(file).size,guides:count,primaryOpenIssues:openKeys.length,linkedIssues:new Set(links.map(l=>l.key)).size,diagrams:diagramIds.length,companionViewers:receipts.diagrams.map(d=>({id:d.id,sha256:d.artifact.sha256,bytes:d.artifact.bytes})),roadmapNodes:meta.history.roadmapNodes,mergedPRs:prs,viewports:widths,issueStatusAndEvidence:'passed',parallelCandidates:'passed',coverage:'passed',linksAndAnchors:'passed',search:'passed',navigation:'passed',expandCollapse:'passed',architecture:'passed',diagramZoomFitAndInlineViewer:'passed',timelineTooltipsAndFilters:'passed',taskBriefs:'passed',printExpansionAndRestoration:'passed',externalRequests:requests.length,companionViewerRequests:[...new Set(companionRequests)],companionViewerRenderedWithRequestsBlocked:true,errors,runtime:{node:process.version,playwright:playwrightPath,chromium:executablePath,browserVersion:browser.version()}};
+    const success=await browser.newPage(); await success.route(/^https:\/\/api\.github\.com\//,route=>{const url=new URL(route.request().url()),rows=url.pathname.endsWith('/divoom-app-upgrade/issues')&&url.searchParams.get('state')==='open'?[pixooProgress]:[];return route.fulfill({status:200,headers:{'Access-Control-Allow-Origin':'*','Content-Type':'application/json'},body:JSON.stringify(rows)});});
+    await success.goto(pathToFileURL(file).href); await success.waitForFunction(()=>document.querySelector('#github-status')?.textContent.startsWith('Status from GitHub at '));
+    assert.match(await success.locator('#github-status').textContent(),/^Status from GitHub at \d{2}:\d{2}\. Guide text and counts from the 23 Sep snapshot\.$/,'All-success freshness line names the read time and dated snapshot');
+    assert(await success.locator('a.issue.repo-P[data-issue="P11"]').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress')),'A successful repository read updates its badges'); await success.close();
+    const offline=await browser.newPage(); const offlineErrors=[]; offline.on('pageerror',e=>offlineErrors.push(e.message)); offline.on('console',m=>{if(m.type()==='error')offlineErrors.push(m.text());}); await offline.context().setOffline(true);
+    await offline.context().addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));
+    await offline.goto(pathToFileURL(file).href);
+    await offline.waitForFunction(()=>document.querySelector('#github-status')?.textContent.includes('GitHub unavailable for Hub, Nanoleaf and Pixoo;'));
+    assert(await offline.locator('a[data-issue="H21"]').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress')),'Unavailable reads keep snapshot badges');
+    assert.deepEqual(offlineErrors,[],'Failed or offline reads do not produce console or page errors'); await offline.close();
+    const receipt={checkedAt:new Date().toISOString(),snapshot:snapshot.refreshedAt,architectureReviewedAt:sources.reviewedAt,historyFetchedAt:history.fetchedAt,htmlSha256:sha(file),htmlBytes:fs.statSync(file).size,guides:count,primaryOpenIssues:openKeys.length,linkedIssues:new Set(links.map(l=>l.key)).size,diagrams:diagramIds.length,companionViewers:receipts.diagrams.map(d=>({id:d.id,sha256:d.artifact.sha256,bytes:d.artifact.bytes})),roadmapNodes:meta.history.roadmapNodes,mergedPRs:prs,viewports:widths,issueStatusAndEvidence:'passed',liveGitHubStatus:'passed',allSuccessFreshness:'passed',repositoryFallback:'passed',offlineFallback:'passed',pagination:'passed',parallelCandidates:'passed',coverage:'passed',linksAndAnchors:'passed',search:'passed',navigation:'passed',expandCollapse:'passed',architecture:'passed',diagramZoomFitAndInlineViewer:'passed',timelineTooltipsAndFilters:'passed',taskBriefs:'passed',printExpansionAndRestoration:'passed',externalRequests:requests.length,approvedGitHubRequests:apiRequests.length,companionViewerRequests:[...new Set(companionRequests)],companionViewerRenderedWithRequestsBlocked:true,errors,consoleErrors,runtime:{node:process.version,playwright:playwrightPath,chromium:executablePath,browserVersion:browser.version()}};
     fs.writeFileSync(path.join(root,'work/guide-verification.json'),JSON.stringify(receipt,null,2)+'\n');console.log(JSON.stringify(receipt,null,2));
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
