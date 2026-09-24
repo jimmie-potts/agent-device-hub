@@ -50,4 +50,8 @@ The receiver adapter should poll for an initial snapshot and recovery, then use 
 
 ## Next delivery boundary
 
+Update, September 24, 2026: the plan below changed after this qualification. #36's Windows connector is deferred. [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175) now delivers a shared playback module and this Sony source together on Linux, polling `getPlayingContentInfo` without the WebSocket feed or artwork. Multi-source runtime and selection are deferred. The observations and source-selection guidance above are unchanged.
+
+The original boundary follows.
+
 [Issue #175](https://github.com/jimmie-potts/agent-device-hub/issues/175) owns the Sony adapter and hub multi-source behavior. It depends on #36's published playback contract and this qualification. Its fake Sony source must cover populated and missing metadata, delayed artwork, duplicate notifications, stale/unavailable transitions, simultaneous Windows and iPhone playback, explicit selection, supported and unsupported controls, and uncertain command results. Local fake tests will not replace a separately authorized installed-client check.

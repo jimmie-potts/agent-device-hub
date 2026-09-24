@@ -19,10 +19,19 @@ The initial device set is Nanoleaf, Pixoo, Tidbyt and LIFX. Expose supported
 controls and status in the shared frontend, with links to specialized editors.
 Existing independently delivered controls remain available.
 
-Apple Music follows the basic local controls and frontend. Begin by qualifying
-a connector for the Apple Music app on Windows. The initial feature direction
-is now-playing information, supported playback commands, Pixoo/Tidbyt
+Apple Music follows the basic local controls and frontend. The initial feature
+direction is now-playing information, supported playback commands, Pixoo/Tidbyt
 now-playing displays and approved song-change lighting effects.
+
+Amended September 24, 2026: this decision originally began with a connector for
+the Apple Music app on Windows. The owner mostly plays Apple Music from an
+iPhone over AirPlay to a Sony HT-A9, which
+[#158](https://github.com/jimmie-potts/agent-device-hub/issues/158) qualified
+from Linux. The first playback source is therefore that receiver, read by the
+Linux hub through a shared playback module
+([#175](https://github.com/jimmie-potts/agent-device-hub/issues/175)). A
+Windows connector ([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36))
+is deferred and would be another source of the same module.
 
 Audio-reactive visualizers are separate qualification work. Target speakers
 and headphones. Distinguish measured audio levels from decorative animations.
@@ -34,7 +43,7 @@ existing mode intent and restoring prior presentation after an interruption.
 Docker on the always-running PC is the initial container-hosting target.
 The eventual target is a Linux server running the hub and portable device
 controllers. Small host-specific connectors may remain beside Codex and
-the Windows music player.
+any later Windows music source.
 
 Container migration does not block the first useful local release.
 Nanoleaf retains its current Windows worker until a separately qualified,
@@ -60,9 +69,10 @@ allows new clients without duplicating physical writers or agent-state owners.
 
 Keeping host-specific connectors permits gradual migration but retains a PC
 dependency for activity or playback originating there. A server cannot report
-fresh Windows playback when that source is unavailable.
+fresh Windows playback when that source is unavailable. The HT-A9 source needs
+only LAN access from the hub, not the PC.
 
-Qualify Windows Apple Music metadata and playback commands, audio capture,
+Qualify playback metadata and commands for each source, audio capture,
 Nanoleaf scene control, display update cadence and container networking.
 Tidbyt starts with its accepted cloud connection; now-playing cards traverse
 that service. Smooth synchronized visualizers are not established by image
