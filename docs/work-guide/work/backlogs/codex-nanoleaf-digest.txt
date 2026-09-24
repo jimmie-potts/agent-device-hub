@@ -1,8 +1,3 @@
-#10 [OPEN] Verify Lively compatibility on Windows
-#11 [OPEN] Make the map reliable for persistent displays
-#12 [OPEN] Add an inspection-only display mode
-#13 [OPEN] Integrate Lively startup and recovery
-#14 [OPEN] Run and evaluate the installed Lively prototype
 #15 [CLOSED] Expose authoritative light rendering state for display clients
 #16 [OPEN] Build the ambient view
 #17 [OPEN] Show bridge-controlled lights live in the app
@@ -33,7 +28,6 @@
 #72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
 #74 [CLOSED] Investigate and resolve retained shared unread indicators
 #75 [CLOSED] Show Codex titles and projects for shared tasks, with distinct fallback names
-#78 [OPEN] Reduce default wall map controls and repeated status text
 #81 [OPEN] Queue the completion comet when a subagent delays a parent's unread
 #84 [CLOSED] Use the shared npm cache instead of a /tmp cache in setup guidance
 #89 [CLOSED] Remove the legacy Codex hooks after the shared-input cutover
@@ -41,4 +35,26 @@
 #91 [OPEN] Let Codex play saved Nanoleaf scenes through the local MCP server
 #92 [OPEN] Play custom animations on the Lines when Codex asks for them
 #100 [OPEN] Show Claude Code titles and projects for shared tasks
-#108 [OPEN] Open a wall task's thread in Codex Desktop
+#110 [OPEN] Switch Nanoleaf between Work and Free based on monitored session presence
+#111 [OPEN] Keep following the hub feed when it contains an undeclared source
+#112 [OPEN] Show when the Lines are on hold and how to resume them
+#113 [OPEN] Control the NL22 Panels through the controller and local MCP server
+#114 [OPEN] Change a registered Nanoleaf device's address without re-enrolling
+#115 [OPEN] Keep completion comets and waves when the worker skips owner revisions
+#117 [OPEN] Preserve Open in Codex keyboard focus through unchanged polling
+#118 [OPEN] Separate shared configuration operations, runtime primitives and hook management
+#119 [OPEN] Move the wall page's rebuild policy into one scheduler behind a view model
+#120 [OPEN] Contain SQLite backup, fixture and operation knowledge within state owners
+#121 [OPEN] Carry device identity as a worker context instead of threading parameters
+#122 [OPEN] Investigate a pure shared-input projection function
+#123 [OPEN] Decide whether the standard wall renderer remains a fallback for Prism
+#124 [OPEN] Record an on-device rendering cost baseline for the wall map in Edge
+#127 [OPEN] Separate device render inputs from runtime configuration and transport
+#128 [OPEN] Investigate separating wall-state projection from refresh work
+#129 [OPEN] Investigate one owner for worker execution transactions and journaling
+#130 [OPEN] Measure worker SQLite contention before changing transport lock duration
+#131 [OPEN] Retire the legacy Windows runtime from source
+#132 [OPEN] Decommission the retired Windows installation on the PC
+#133 [OPEN] Decide how the Linux runtime becomes available at Windows sign-in
+#134 [CLOSED] Decide the disposition of the Lively wallpaper issues
+#135 [OPEN] Merge the wall map inspector cards and rethink reservation and override controls

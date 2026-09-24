@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-09-24T09:36:05.649420+00:00",
-  "refreshedAt": "2026-09-24T09:36:35.440241+00:00",
+  "startedAt": "2026-09-24T22:54:32.169967+00:00",
+  "refreshedAt": "2026-09-24T22:55:02.390459+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 60,
+      "openIssues": 65,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        61
+        66
       ],
       "openPRs": 1,
       "prPageSizes": [
@@ -373,14 +373,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 19,
+      "openIssues": 34,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        20
+        36
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -537,6 +537,22 @@
           "commentBodiesStored": false
         },
         {
+          "number": 133,
+          "state": "OPEN",
+          "commentPages": [
+            1
+          ],
+          "commentBodiesStored": true
+        },
+        {
+          "number": 134,
+          "state": "CLOSED",
+          "commentPages": [
+            1
+          ],
+          "commentBodiesStored": true
+        },
+        {
           "number": 15,
           "state": "CLOSED",
           "purpose": "Guide story status"
@@ -569,10 +585,10 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 15,
+      "openIssues": 18,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        15
+        18
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -683,7 +699,7 @@
       ]
     }
   },
-  "openIssues": 94,
+  "openIssues": 117,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15/#17/#18/#19/#64/#158/#186, Nanoleaf #30/#41/#42/#54/#55/#64/#74 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }
