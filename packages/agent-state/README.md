@@ -145,12 +145,15 @@ RSS qualification remain in that issue; unit and process checks do not replace i
 | Snapshot or migration input | 16 MiB, depth 20, 1,000,000 JSON nodes |
 | Hook raw stdin / configuration file | 64 KiB / 8 KiB |
 
-Journal pruning runs on every write. Journal pruning and session expiry both run
-at startup, before each ingest and from a timer while the owner is running. Journal reads also exclude expired rows. Hosts can call
-`maintain()` after an injected clock advance. Quiesced or stopped stores prune
-and expire when ownership resumes. Capacity rejection, after expiry, is observable
-and retains the remaining state and notices. A host must surface saturation for
-operator action; beyond expiry, it must not silently discard state to make room. Revision exhaustion also rejects admission.
+Journal pruning runs with every commit, at startup and from a timer while the
+owner is running. Session expiry runs at startup, before each ingest and from the
+same timer, and its commit also prunes the journal. An ingest that commits nothing
+leaves due rows for the timer, but journal reads always exclude them. Hosts can
+call `maintain()` after an injected clock advance. Quiesced or stopped stores
+prune and expire when ownership resumes. Capacity rejection, after expiry, is
+observable and retains the remaining state and notices. A host must surface
+saturation for operator action; beyond expiry, it must not silently discard
+state to make room. Revision exhaustion also rejects admission.
 
 Provider observations, calculated current state and diagnostics have separate
 roles. Envelopes preserve available qualified identity/order evidence; snapshots
