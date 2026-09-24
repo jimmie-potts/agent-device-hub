@@ -17,7 +17,11 @@ against the fake Pixoo's pinned capabilities; none is a physical result. The
 Hub #153 scenarios record Nanoleaf power, brightness and scene commands, Work
 gating with the explicit Free switch, and a controller-side scene rejection,
 conflict and uncertain result against the fake Nanoleaf's declaration pinned to
-Nanoleaf `8062849`; none is a physical result either.
+Nanoleaf `8062849`; none is a physical result either. The Hub #231 scenarios
+record fresh guards after a generation advance, a `stale-generation` race that
+is not resubmitted, and one-step brightness and power forms. They also record
+Reapply Work and Start Monitor against the fake controllers' same-mode and
+participation behavior. None is a physical result.
 
 Reproduce with `npm run build` and `npm run test:dashboard:browser` on Node 24.
 The command emits its receipt and desktop/mobile screenshots outside Git under

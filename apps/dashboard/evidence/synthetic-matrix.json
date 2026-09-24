@@ -13,8 +13,13 @@
     "general control drafts survive concurrent edits; typed conflicts and uncertain results never retry",
     "read-only credentials and undeclared capabilities name their reasons",
     "Nanoleaf power and brightness work in Work; scenes wait for the explicit Free switch and each control sends one guarded command",
-    "a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry"
+    "a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry",
+    "a generation advance between render and activation sends one command with current guards; a later race is shown and never resubmitted",
+    "accepted brightness and power changes leave their forms ready for the next change without another action",
+    "Reapply Work ends a Nanoleaf override with one mode command; nothing to reapply is shown as already in effect",
+    "Start Monitor starts an inactive Pixoo Monitor with one mode command and names the screen-off reason",
+    "one-click owner launch, history clearing, no-write inspection and reload"
   ],
   "pixelReadDelayMs": 800,
-  "independentDeviceReadMs": 3.0982130000002144
+  "independentDeviceReadMs": 1.971465999999964
 }
