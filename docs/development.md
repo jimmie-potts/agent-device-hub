@@ -488,6 +488,16 @@ scene commands are schema-validated before forwarding. Client unit tests cover
 the scene availability order, name-or-ID labelling from the integration snapshot
 and the Work/Quiet/pending/unknown gating. Human UI approval of the candidate is
 recorded in its PR.
+
+Hub #231 adds matrix scenarios for fresh guards and one-step settings:
+- A controller generation advance between render and activation sends one command with current guards, and an open draft shows no conflict.
+- A generation advance after the fresh read is shown as `stale-generation` and is not resubmitted.
+- Accepted brightness and power changes leave their forms ready for the next change. Uncertain results still lock until an explicit reload.
+- Reapply Work sends one Nanoleaf mode command that ends an override, and a same-mode command with nothing to reapply is shown as already in effect.
+- Start Monitor sends one Pixoo integration Monitor command and names the screen-off reason.
+
+The fake controllers reject a generation mismatch as `stale-generation`. The fake Nanoleaf follows Nanoleaf `main` `08b6b83` same-mode handling, and the fake Pixoo reports participation like Pixoo `main` `01da65d`. Client unit tests cover the status wording and lock rules. Human UI approval of the candidate is recorded in its PR.
+
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`
