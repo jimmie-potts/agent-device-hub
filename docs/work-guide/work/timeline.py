@@ -31,7 +31,7 @@ TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='B.U.N.N.Y. UI foundation', issues=['H181', 'H182'], guide='bunny-controls', main=True),
-        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H232', 'H245', 'P67', 'N91'], guide='bunny-controls', main=True),
+        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H232', 'H245', 'H247', 'P67', 'N91'], guide='bunny-controls', main=True),
         dict(id='n-music', x=3, label='Music playback', issues=['H233', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35', 'H242'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
@@ -107,7 +107,7 @@ TRACKS = [
         dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-acceptance', x=1, label='Linux install accepted', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-portability', x=2, label='Architecture documented', issues=[], guide='hosting-migrations'),
-        dict(id='n-linux-availability', x=3, label='Availability decision', issues=['N133'], guide='hosting-migrations'),
+        dict(id='n-linux-availability', x=3, label='Availability decided', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-retire', x=4, label='Retire Windows runtime', issues=['N131', 'N132'], guide='hosting-migrations'),
     ]),
     ('Pixoo installation', [
@@ -126,7 +126,7 @@ TRACKS = [
         dict(id='n-dev-gates', x=4, label='Hub gates · contracts', issues=['H240', 'H246'], guide='development-workflow'),
     ]),
     ('Pixoo maintenance', [
-        dict(id='n-px-typed', x=0, label='Typed commands · SSE', issues=['P80', 'P81'], guide='development-workflow'),
+        dict(id='n-px-typed', x=0, label='Typed commands · SSE · docs', issues=['P80', 'P81', 'P82'], guide='development-workflow'),
     ]),
     ('Guide defects', [
         dict(id='n-dev-ci', x=0, label='Diagram connector fix', issues=['H73'], guide='development-workflow'),

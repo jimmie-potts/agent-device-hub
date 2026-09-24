@@ -1,13 +1,13 @@
 {
-  "startedAt": "2026-09-24T22:54:32.169967+00:00",
-  "refreshedAt": "2026-09-24T22:55:02.390459+00:00",
+  "startedAt": "2026-09-24T23:11:33.960429+00:00",
+  "refreshedAt": "2026-09-24T23:12:03.277591+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 65,
+      "openIssues": 66,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        66
+        67
       ],
       "openPRs": 1,
       "prPageSizes": [
@@ -373,14 +373,14 @@
       ]
     },
     "codex-nanoleaf": {
-      "openIssues": 34,
+      "openIssues": 33,
       "openIssueEndpoint": "repos/jimmie-potts/codex-nanoleaf/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        36
+        34
       ],
-      "openPRs": 2,
+      "openPRs": 1,
       "prPageSizes": [
-        2
+        1
       ],
       "paginationComplete": true,
       "directReads": [
@@ -538,9 +538,9 @@
         },
         {
           "number": 133,
-          "state": "OPEN",
+          "state": "CLOSED",
           "commentPages": [
-            1
+            2
           ],
           "commentBodiesStored": true
         },
@@ -585,10 +585,10 @@
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 18,
+      "openIssues": 19,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        18
+        19
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -699,7 +699,7 @@
       ]
     }
   },
-  "openIssues": 117,
+  "openIssues": 118,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15/#17/#18/#19/#64/#158/#186, Nanoleaf #30/#41/#42/#54/#55/#64/#74 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

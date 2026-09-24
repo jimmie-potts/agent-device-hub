@@ -31,7 +31,7 @@ TOPICS = [
      'These tracks are deferred. Keep assistant access, remote Pixoo control and native-app handoffs distinct; qualify a supported path before implementing its dependent stages.', ['H45', 'H199']),
     ('hosting-migrations', 'Hosting and migrations',
      'Change hosting or source location without creating competing runtime owners.',
-     'Run the installed Pixoo app as a user service so BUNNY controls and agent status survive restarts. Retire the Windows Nanoleaf runtime from source and decommission the old Windows installation; Nanoleaf availability follows WSL until hosting moves off it (Nanoleaf ADR 0011). Other hosting and repository migrations remain later choices; select one target and preserve explicit ownership and private state boundaries.', ['P77', 'N131']),
+     'Run the installed Pixoo app as a user service so BUNNY controls and agent status survive restarts. Retire the Windows Nanoleaf runtime from source and decommission the old Windows installation; Nanoleaf availability follows WSL until hosting moves off it (Nanoleaf ADR 0011, decided). Other hosting and repository migrations remain later choices; select one target and preserve explicit ownership and private state boundaries.', ['P77', 'N131']),
     ('development-workflow', 'Engineering maintenance',
      'Keep development tooling and resource use manageable.',
      'Pixoo embedded-host performance is later by owner choice. The Nanoleaf architecture sequence starts with the bridge.py split; hub merge gates and contract consolidation are separate maintenance. Select maintenance only for a concrete need.', ['N118']),

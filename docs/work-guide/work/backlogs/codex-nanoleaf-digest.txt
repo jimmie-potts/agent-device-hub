@@ -55,6 +55,6 @@
 #130 [OPEN] Measure worker SQLite contention before changing transport lock duration
 #131 [OPEN] Retire the legacy Windows runtime from source
 #132 [OPEN] Decommission the retired Windows installation on the PC
-#133 [OPEN] Decide how the Linux runtime becomes available at Windows sign-in
+#133 [CLOSED] Decide how the Linux runtime becomes available at Windows sign-in
 #134 [CLOSED] Decide the disposition of the Lively wallpaper issues
 #135 [OPEN] Merge the wall map inspector cards and rethink reservation and override controls

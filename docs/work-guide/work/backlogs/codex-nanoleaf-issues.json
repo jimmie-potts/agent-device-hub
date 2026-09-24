@@ -1821,20 +1821,17 @@
   },
   {
     "number": 133,
-    "state": "OPEN",
-    "stateReason": null,
+    "state": "CLOSED",
+    "stateReason": "completed",
     "title": "Decide how the Linux runtime becomes available at Windows sign-in",
     "body": "## Outcome and real setup\n\nOne operator on the PC, the Linux runtime in WSL, and its registered devices. The decision settles how the lights and the shared monitor become available after a Windows sign-in or reboot without the operator opening a WSL terminal, or records that manual start is accepted. The result is an ADR and, if a launcher is chosen, one follow-up implementation issue.\n\nExcluded: hub hosting work itself ([agent-device-hub#42](https://github.com/jimmie-potts/agent-device-hub/issues/42) Docker on the PC, [agent-device-hub#44](https://github.com/jimmie-potts/agent-device-hub/issues/44) dedicated server) and any change to the runtime's state ownership.\n\n## Evidence\n\nObserved on 2026-09-24. The Windows tray used to start at sign-in and launch the worker; it is gone. The four Linux user services start when the Ubuntu distribution boots, but nothing starts the distribution: the Windows Startup folder has no WSL entry and no scheduled task references WSL or the runtime. Until something opens the distribution, hooks, the wall map, the controller, and the hub feed are all unavailable. [ADR 0007](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0007-linux-runtime-ownership.md) and the [`linux-runtime` specification](https://github.com/jimmie-potts/codex-nanoleaf/blob/3e6aa99813d43e4105017ec92c6a9e93c285a2cb/openspec/specs/linux-runtime/spec.md#L56-L58) accept this deliberately: availability follows WSL lifetime, with no Windows startup automation. The operator's stated direction since then is to remove Windows-native components, so the gap needs an explicit choice.\n\n## Options to decide\n\n1. One Windows-side launcher: a Startup shortcut or scheduled task that runs `wsl.exe -d <distro>` with a no-op command at sign-in, so systemd starts the services. Smallest change; it is a single Windows artifact outside this repository and would be documented as the one accepted exception. WSL idle shutdown must be disabled or the services stop again.\n2. Accept manual start and make it visible: no launcher; the wall map and hub show the runtime as unavailable and the operator opens WSL when needed. No Windows component, but hooks fire into nothing until then.\n3. Move hosting off WSL: fold this into the hub's Docker or dedicated-server plans. Removes the dependency on WSL lifetime and the PC's sign-in, at the cost of waiting for those deliveries. Docker Desktop on the PC has the same sign-in dependency unless it autostarts.\n\n## Smallest useful implementation\n\nChoose an option, record it in an ADR (next available number) with the reason and the accepted Windows-side exception if any, and update the `linux-runtime` specification and `docs/linux-install.md` sentence on availability. If option 1 is chosen, open one implementation issue for the launcher and its runbook; the launcher is an owner installation step, not source.\n\nDependencies: none. Related: [#131](https://github.com/jimmie-potts/codex-nanoleaf/issues/131) removes the Windows runtime from source and should not add a launcher. [#134](https://github.com/jimmie-potts/codex-nanoleaf/issues/134) decides the Lively issues, whose #13 overlaps this decision.\n\n## Behavior and protections to preserve\n\nOne state owner and one light writer per device; no second runtime starts because of a launcher. The Linux services keep their explicit start and stop commands. Nothing here changes hooks, credentials, or task and scene state.\n\n## Observable acceptance and planned evidence\n\nDelivery target: source-only for the ADR and documentation; any launcher is a separate owner installation.\n\n- AC1: An ADR states the chosen option, the rejected options, and the accepted Windows-side boundary. Evidence: the document in independent review.\n- AC2: The `linux-runtime` specification and `docs/linux-install.md` describe availability consistently with the decision. Evidence: `npm run check:workflow` and inspection.\n- AC3: If a launcher is chosen, a follow-up issue exists with its own acceptance: after a sign-in, `nanoleaf status` answers without a manual WSL start.\n\n## Meaningful deferrals\n\n- Hosting off the PC stays with the hub issues.\n- Automatic recovery after WSL crashes or updates is not in scope; manual restart remains the alternative until a hosting move.\n\n## Assessment\n\nPlanning stage, observation date 2026-09-24, session reasoning setting high.\n\n- Assumptions: one operator; the PC is the host; the distribution is not started by anything else at sign-in (verified). Unknown: how often the operator reboots and whether occasional manual starts are acceptable.\n- Complexity low. Uncertainty high: this is an owner decision, not a technical question. Impact medium: the choice determines whether the lights and monitor work after every reboot.\n- Readiness: needs the owner's decision; blocked on it. Reassess when the hub hosting issues become ready.\n\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/133",
     "createdAt": "2026-09-24T22:41:41Z",
-    "updatedAt": "2026-09-24T22:46:59Z",
-    "closedAt": null,
+    "updatedAt": "2026-09-24T23:11:08Z",
+    "closedAt": "2026-09-24T23:11:08Z",
     "labels": [
       {
         "name": "maintenance"
-      },
-      {
-        "name": "status:in-progress"
       }
     ],
     "milestone": null,
@@ -1844,9 +1841,15 @@
         "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/133#issuecomment-5823483218",
         "createdAt": "2026-09-24T22:46:58Z",
         "updatedAt": "2026-09-24T22:46:58Z"
+      },
+      {
+        "body": "Delivered. [PR #136](https://github.com/jimmie-potts/codex-nanoleaf/pull/136) merged as `9e2c41313de3c69c32b8ddf5259b30517c14588f` on `main` (squash of reviewed head `c6ee118`, base `49f0425`).\n\n- AC1: [ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/9e2c41313de3c69c32b8ddf5259b30517c14588f/docs/decisions/0011-runtime-availability-follows-wsl.md) states the chosen option (wait for hub hosting), both rejected options with reasons, and the Windows-side boundary (no launcher, scheduled task, Startup entry or indicator).\n- AC2: `openspec/specs/linux-runtime/spec.md` is unchanged and consistent (Service operation scenario); `docs/linux-install.md` links the ADR. No OPSX delta; reason recorded in the PR.\n- AC3: not applicable, no launcher chosen.\n- Reviews: independent Standards and Specification reviews, three rounds, all findings fixed, none blocking at the merged head. Depot CI: all five jobs succeeded at `c6ee118` and on `main` at `9e2c413`.\n- Dependency notes posted on [agent-device-hub#42](https://github.com/jimmie-potts/agent-device-hub/issues/42) and [#44](https://github.com/jimmie-potts/agent-device-hub/issues/44).\n- Revisit trigger: reopen this issue if the services are found stopped while the PC is on.\n\nHub work guide refresh follows in a linked hub PR.",
+        "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/133#issuecomment-5823764043",
+        "createdAt": "2026-09-24T23:11:05Z",
+        "updatedAt": "2026-09-24T23:11:05Z"
       }
     ],
-    "commentCount": 1,
+    "commentCount": 2,
     "commentsRefreshed": true
   },
   {

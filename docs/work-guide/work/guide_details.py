@@ -193,8 +193,6 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'transmission journaling.',
  'N130': 'Measure whether shared SQLite write-lock windows block enough to justify shorter '
          'transactions.',
- 'N133': 'Decided 2026-09-24: no Windows-side launcher; availability follows WSL until hub hosting '
-         '([[H42]] or [[H44]]). ADR 0011 records it.',
  'N135': 'Show one context card for the selected Line or task with only the controls that act in '
          'that context; rethink reservation and override controls.',
  'P79': 'Accept dashboard transport evidence in the MCP status schema so status stays valid after '
@@ -203,6 +201,10 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'surface during typechecking.',
  'P81': 'Give SSE client queueing, credential rechecks, heartbeat and cleanup one implementation '
         'while keeping browser and native feed contracts.',
+ 'H247': 'Give built-in dashboard pages and registered components distinct navigation identities '
+         'so a component alias cannot shadow Activity or Connections.',
+ 'P82': 'Make the Pixoo product and hub-integration docs describe the delivered runtime: one operator, '
+        'one backend, simulator by default, explicit device activation.',
  'N100': 'Show Claude Code titles and projects for shared tasks, as [[N75]] does for Codex. The '
          'hub feed deliberately carries neither, so the wall reads them locally by session ID.',
  'N16': 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.',

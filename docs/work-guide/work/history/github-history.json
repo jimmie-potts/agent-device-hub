@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-09-24T22:55:58.036868+00:00",
+  "fetchedAt": "2026-09-24T23:12:03.305983+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
@@ -2018,10 +2018,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/237"
         }
       ],
-      "openIssueCount": 65,
+      "openIssueCount": 66,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-24T22:46:44Z"
+        "2026-09-24T23:08:23Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -2033,17 +2033,22 @@
         "2026-09-21": 1,
         "2026-09-22": 10,
         "2026-09-23": 27,
-        "2026-09-24": 19
+        "2026-09-24": 20
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-24T22:55:54Z",
+      "pushedAt": "2026-09-24T23:07:28Z",
       "defaultBranch": "main",
-      "headSha": "49f0425ebd8f49bffdd76056581e8b91a47c22b8",
-      "mainCommitCount": 53,
+      "headSha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
+      "mainCommitCount": 54,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
+          "date": "2026-09-24T23:07:28Z",
+          "message": "Record that runtime availability follows WSL until hub hosting (#136)"
+        },
         {
           "sha": "49f0425ebd8f49bffdd76056581e8b91a47c22b8",
           "date": "2026-09-24T22:44:22Z",
@@ -2694,6 +2699,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/126",
           "base": "main",
           "mergedAt": "2026-09-24T22:17:58Z"
+        },
+        {
+          "number": 136,
+          "title": "Record that runtime availability follows WSL until hub hosting",
+          "createdAt": "2026-09-24T22:49:28Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/136",
+          "base": "main",
+          "mergedAt": "2026-09-24T23:07:28Z"
         }
       ],
       "openPRs": [
@@ -2702,13 +2715,6 @@
           "title": "Reset recreated shared tasks and preserve Codex link focus",
           "createdAt": "2026-09-24T20:18:55Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
-          "base": "main"
-        },
-        {
-          "number": 136,
-          "title": "Record that runtime availability follows WSL until hub hosting",
-          "createdAt": "2026-09-24T22:49:28Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/136",
           "base": "main"
         }
       ],
@@ -3122,6 +3128,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/108"
         },
         {
+          "number": 133,
+          "title": "Decide how the Linux runtime becomes available at Windows sign-in",
+          "closedAt": "2026-09-24T23:11:08Z",
+          "createdAt": "2026-09-24T22:41:41Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/133"
+        },
+        {
           "number": 134,
           "title": "Decide the disposition of the Lively wallpaper issues",
           "closedAt": "2026-09-24T22:47:27Z",
@@ -3130,7 +3144,7 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/134"
         }
       ],
-      "openIssueCount": 34,
+      "openIssueCount": 33,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-24T22:43:01Z"

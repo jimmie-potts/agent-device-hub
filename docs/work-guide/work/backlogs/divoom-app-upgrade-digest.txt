@@ -30,3 +30,4 @@
 #79 [OPEN] Keep MCP status valid after dashboard uploads with typed display evidence
 #80 [OPEN] Separate typed command observations from replay payloads
 #81 [OPEN] Share SSE client delivery while preserving browser and native feed contracts
+#82 [OPEN] Reconcile product and hub-integration docs with delivered runtime behavior

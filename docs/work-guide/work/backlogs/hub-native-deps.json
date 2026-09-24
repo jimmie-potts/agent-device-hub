@@ -2,7 +2,7 @@
   "data": {
     "repository": {
       "issues": {
-        "totalCount": 65,
+        "totalCount": 66,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -1200,6 +1200,16 @@
           },
           {
             "number": 246,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 247,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {
