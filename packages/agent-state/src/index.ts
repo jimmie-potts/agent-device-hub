@@ -72,22 +72,22 @@ export async function createAgentState(options:Options) {
   }
   const restarted=new Set(data.sessions.map(session=>identityKey(session.identity)));
   const feeds=new Feeds(data.revision);
-  const now=()=>{
+  const wall=()=>{
     let value:number;
     try{value=clock();}catch{throw new Error('invalid-clock');}
     if(!Number.isSafeInteger(value)||value<0)throw new Error('invalid-clock');
-    return Math.max(value,data.lastCommitAtMs);
+    return value;
   };
+  const now=()=>Math.max(wall(),data.lastCommitAtMs);
   const loss=()=>{lossCount=Math.min(Number.MAX_SAFE_INTEGER,lossCount+1);};
   let maintenanceTimer:ReturnType<typeof setTimeout>|undefined;
   function scheduleMaintenance(retry=false){
     clearTimeout(maintenanceTimer);
-    if(collector!=='running'||!data.journal.length)return;
-    const delay=Math.max(retry?50:1,data.journal[0]!.atMs+LIMITS.journalAgeMs-now());
-    maintenanceTimer=setTimeout(()=>{
-      void queue(()=>data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)?commit(undefined,'maintenance'):
-        Promise.resolve({ok:true,revision:data.revision,outcome:'duplicate'})).then(()=>scheduleMaintenance(true));
-    },Math.min(delay,LIMITS.journalAgeMs));
+    const due=Math.min(...data.journal.slice(0,1).map(row=>row.atMs+LIMITS.journalAgeMs),
+      ...data.sessions.map(session=>session.lastEvidenceAtMs+LIMITS.sessionAgeMs));
+    if(collector!=='running'||due===Infinity)return;
+    const delay=Math.max(retry?50:1,due-now());
+    maintenanceTimer=setTimeout(()=>{void queue(maintenance).then(()=>scheduleMaintenance(true));},Math.min(delay,LIMITS.journalAgeMs));
     maintenanceTimer.unref();
   }
   function queue(operation:()=>Promise<Outcome>):Promise<Outcome> {
@@ -113,12 +113,31 @@ export async function createAgentState(options:Options) {
     data.revision=revision;data.lastCommitAtMs=at;feeds.publish(revision);scheduleMaintenance();
     return {ok:true,revision,outcome};
   }
+  // Retention forgets monitoring state after a day without lifecycle evidence. It is not
+  // acknowledgment, readership, success or cancellation, and it records no journal entry.
+  const expired=(at:number)=>data.sessions.filter(session=>session.lastEvidenceAtMs<=at-LIMITS.sessionAgeMs);
+  async function expire():Promise<Outcome|undefined> {
+    const at=now(),gone=expired(at);
+    if(!gone.length)return undefined;
+    if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
+    const revision=data.revision+1,pruneBeforeMs=at-LIMITS.journalAgeMs;
+    const next:DurableState={...data,revision,lastCommitAtMs:at,sessions:data.sessions.filter(session=>!gone.includes(session)),
+      journal:data.journal.filter(row=>row.atMs>pruneBeforeMs).slice(-LIMITS.journalEvents)};
+    await io(signal=>lease.commit(freeze(structuredClone({expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs,replace:next})),signal));
+    for(const session of gone)restarted.delete(identityKey(session.identity));
+    data=next;feeds.publish(revision);scheduleMaintenance();
+    return {ok:true,revision,outcome:'applied'};
+  }
+  async function maintenance():Promise<Outcome> {
+    const expiry=await expire();if(expiry)return expiry;
+    return data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)?commit(undefined,'maintenance'):{ok:true,revision:data.revision,outcome:'duplicate'};
+  }
   const get=(identity:Identity)=>data.sessions.find(session=>identityKey(session.identity)===identityKey(identity));
   function identify(identity:unknown):identity is Identity {
     return validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'}}).ok;
   }
-  if(data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)){
-    const result=await queue(()=>commit(undefined,'maintenance'));
+  if(expired(now()).length||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)){
+    const result=await queue(maintenance);
     if(!result.ok){
       const outstanding=inFlight as Promise<unknown>|null;
       if(outstanding)void outstanding.then(()=>lease.release(),()=>lease.release()).catch(()=>{});
@@ -138,9 +157,14 @@ export async function createAgentState(options:Options) {
       if(!checked.ok||Buffer.byteLength(JSON.stringify(checked.value))>LIMITS.eventBytes)return Promise.resolve({ok:false,code:'invalid-event'});
       const event=checked.value;
       return queue(async()=>{
+        // Expire before admission so a freed slot or a fresh record replaces the expired one.
+        const expiry=await expire();if(expiry&&!expiry.ok)return expiry;
         const previous=get(event.identity);
-        // Read evidence describes a known session; alone it cannot establish one.
-        if(!previous&&event.event.kind==='read.observed')return {ok:true,revision:data.revision,outcome:'stale'};
+        // Read evidence and a runtime end describe a known session; alone they cannot establish one.
+        if(!previous&&(event.event.kind==='read.observed'||event.event.kind==='runtime.ended'))return {ok:true,revision:data.revision,outcome:'stale'};
+        // An observation older than the retention window is not new activity. Compare with the
+        // wall clock, not the commit-time floor, so a corrected clock jump cannot strand producers.
+        if(event.observedAtMs<=wall()-LIMITS.sessionAgeMs)return {ok:true,revision:data.revision,outcome:'stale'};
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}
@@ -197,7 +221,7 @@ export async function createAgentState(options:Options) {
       return freeze({apiVersion:'1.0',revision:data.revision,asOfMs:at,collector,lossCount,sessions});
     },
     journal(){const at=now();return freeze(structuredClone(data.journal.filter(row=>row.atMs>at-LIMITS.journalAgeMs).slice(-LIMITS.journalEvents)));},
-    maintain(){return queue(()=>commit(undefined,'maintenance'));},
+    maintain(){return queue(maintenance);},
     async exportState():Promise<DurableState>{
       if(collector==='faulted'||collector==='closed')throw new Error('unavailable');
       collector='quiesced';clearTimeout(maintenanceTimer);await tail;

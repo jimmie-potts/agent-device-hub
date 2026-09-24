@@ -40,7 +40,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 | Boundary | Contract and evidence |
 | --- | --- |
-| Shared state | `@jimmie-potts/agent-state` 2.0.2; lifecycle and export 1.0; no second reducer |
+| Shared state | `@jimmie-potts/agent-state` 2.0.3; lifecycle and export 1.0; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
@@ -68,7 +68,7 @@ The route coordinator uses an exclusive OS-released SQLite lease in a separate m
 
 Any activation failure consumes that attempt's activation permission and leaves admission fenced. Some producer files may already be enabled, but their requests still reject. Restart the destination with `serve-staged`, supervise that process, quiesce/export its current state and migrate into another empty store. Recover route intent before selecting that new destination. Never clear a fence or resume the old embedded store to bypass an uncertain attempt. If a failure happens before destination import, the synchronized export and fenced source remain available for explicit owner-led recovery; no automatic fallback runs.
 
-Rollback after accepted writes uses the same procedure with the current hub as source and a fresh host store as destination. The original Pixoo app remains a remote facade, retaining media and preferences. This tooling does not restore embedded ownership into Pixoo's occupied original monitor store. Every rollback preserves the latest labels, notices, acknowledgment, source identities and revisions. Restarted evidence remains uncertain, and presentation does not resume automatically.
+Rollback after accepted writes uses the same procedure with the current hub as source and a fresh host store as destination. The original Pixoo app remains a remote facade, retaining media and preferences. This tooling does not restore embedded ownership into Pixoo's occupied original monitor store. Every rollback preserves the latest labels, notices, acknowledgment, source identities and revisions of unexpired sessions; the destination expires any session whose last lifecycle evidence is 24 hours old or more at startup. Restarted evidence remains uncertain, and presentation does not resume automatically.
 
 The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-potts/hub/migration-routes` alongside its host API. The source checks exercise disposable state and real owning-service code; they do not migrate a personal installation or establish physical display accuracy.
 

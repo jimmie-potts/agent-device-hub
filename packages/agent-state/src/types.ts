@@ -1,10 +1,10 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '2.0.2';
+export const VERSION = '2.0.3';
 export const FORMAT_VERSION = '1.0';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
-  journalEvents:10000, journalAgeMs:86400000, staleMs:300000, deadlineMs:3000,
+  journalEvents:10000, journalAgeMs:86400000, sessionAgeMs:86400000, staleMs:300000, deadlineMs:3000,
   sessions:128, consumers:16, attention:64, notices:128, retiredTurns:256, seen:256, watermarks:256});
 export type Consumer = {id:string; clearOnNewTurn:boolean};
 export type Attention = {id:KnownId; kind:'question'|'input'|'approval'; turn:KnownId};

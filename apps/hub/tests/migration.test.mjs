@@ -63,7 +63,7 @@ test('concurrent release, changed route and wrong producer credentials fail clos
   route=await stageProducer(path,await routeDigest(path),destination.url+'/api/monitor/v1/events','z'.repeat(43));
   await assert.rejects(stageProducer(path,await routeDigest(path),destination.url+'/api/monitor/v1/events',token),/route-owner-live/);
   await assert.rejects(destination.activate({producers:[route],consumers:[]}),/route-not-ready/);assert.equal(destination.staged(),true);
-  const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:1,ordering:{status:'unknown'}};
+  const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:Date.now(),ordering:{status:'unknown'}};
   assert.equal((await fetch(destination.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(event)})).status,503);
   await destination.close();destination=undefined;
   await assert.rejects(startHub(options(join(root,'destination'))),/owner-quiesced/);

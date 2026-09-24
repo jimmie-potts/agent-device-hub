@@ -14,7 +14,7 @@ const hash=value=>createHash('sha256').update(value).digest('hex');
 const credentials=[{id:'writer',digest:hash(token),scopes:['read','ingest','control','admin'],devices:[]},
   {id:'reader',digest:hash(readToken),scopes:['read'],devices:[]}];
 const event={apiVersion:'1.0',identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'},
- turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:1,ordering:{status:'unknown'}};
+ turn:{status:'known',id:'turn'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:Date.now(),ordering:{status:'unknown'}};
 
 test('approval recovery requires control authority, exact revision and stale evidence',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'hub-approval-'));let hub,clock=1000;
