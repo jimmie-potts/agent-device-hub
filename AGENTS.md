@@ -9,7 +9,7 @@ or hosting, read docs/architecture.md and the linked device contracts.
 GitHub issues own the delivery sequence, acceptance criteria, dependencies and
 status; do not copy issue lists or dependency chains into repository docs.
 
-When drafting or picking up a story, or after a material scope change, apply
+When drafting or picking up a story, or after a material scope or assumption change, apply
 the [scope defaults](docs/sdlc.md#scope-defaults), including in ordinary work
 without `plan-work` or `deliver-work`. A read-only request reports the
 assessment without writing.
