@@ -56,8 +56,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'status plain, reduce stale-generation retries on Pixoo playback, and allow a same-mode '
          'reapply, including starting an inactive Pixoo Monitor.',
  'H232': 'Document how to connect installed device controllers to BUNNY in the hub setup guide; '
-         'the installed hub had no controllers configured until the owner reconstructed the steps '
-         'from source.',
+         'the installed hub had no controllers configured, and the coordinator worked out the '
+         'steps from source.',
  'H233': 'Add the Sonos Move, qualified in [[H158]], as a second playback source. One selected '
          'source drives the snapshot and commands; an unavailable source is shown, never swapped '
          'silently.',
@@ -86,25 +86,22 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H46': 'Use shared controls and automation tools.',
  'H47': 'Add phone access and tap-to-talk after local delivery.',
  'H48': 'Explore after useful phone access.',
- 'H51': 'Qualification follows Hub #50. The controller requires Hub #51 and the completed contract '
-        'baseline [[H4]]. Physical acceptance also requires shared automatic status [[H55]] and '
-        'lifecycle setup [[H8]].',
+ 'H51': 'Qualify Corsair RAM and H150i lighting through iCUE. Its documentation prerequisite '
+        '[[H50]] is complete; the Corsair controller [[H53]] builds on this qualification.',
  'H52': 'Hub #54 is closed in the refreshed tracker and retained as a reference; this refresh does '
         'not establish adapter or physical acceptance. Qualification and acceptance retain their '
         'owning issues and prerequisites.',
- 'H53': 'Qualification follows Hub #50. The controller requires Hub #51 and the completed contract '
-        'baseline [[H4]]. Physical acceptance also requires shared automatic status [[H55]] and '
-        'lifecycle setup [[H8]].',
- 'H55': 'Requires the Corsair controller [[H53]], shared state [[H3]] and its first host [[P31]]. '
-        'Strimer participation requires Hub #54; Varmilo requires Hub #61 and a supported '
-        'interface. Neither optional adapter gates Corsair status.',
+ 'H53': 'Implement the Corsair controller after qualification [[H51]], on the completed contract '
+        'baseline [[H4]].',
+ 'H55': 'Requires the Corsair controller [[H53]]; shared state [[H3]] and its first host [[P31]] '
+        'are delivered. Strimer ([[H58]]) and Varmilo ([[H61]]) participation are optional and do '
+        'not gate Corsair status.',
  'H56': 'Requires Hub #53, the completed MCP baseline [[H7]] and general-control definition '
         '[[H31]]. The [[H31]] definition is delivered; refine frontend prerequisites when this '
         'issue is selected. Monitoring policy and optional adapters apply only when selected. This '
         'does not block automatic status or Corsair acceptance.',
- 'H57': 'Qualification follows Hub #50. The controller requires Hub #51 and the completed contract '
-        'baseline [[H4]]. Physical acceptance also requires shared automatic status [[H55]] and '
-        'lifecycle setup [[H8]].',
+ 'H57': 'Install and verify Corsair status and restoration after shared automatic status [[H55]], '
+        'using the delivered lifecycle setup [[H8]].',
  'H58': 'Hub #54 is closed in the refreshed tracker and retained as a reference; this refresh does '
         'not establish adapter or physical acceptance. Qualification and acceptance retain their '
         'owning issues and prerequisites.',
@@ -170,8 +167,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'N44': 'The installed Lines and Panels trial [[N46]] is accepted. Add a selector for Lines or '
         'Panels to the existing wall map; each device keeps its own settings and targeted '
         'controls.',
- 'N47': 'Explore a combined layout and allocation pool after the independent-device release is '
-        'verified.',
+ 'N47': 'Explore a combined layout and allocation pool now that the independent-device trial '
+        '[[N46]] is verified; resolve its design choices with the owner first.',
  'N78': 'Reduce repeated default controls and status text while preserving access to the wall map '
         'settings and task details.',
  'N81': 'Queue one completion comet when a subagent delays its parent becoming unread. Preserve '

@@ -286,7 +286,7 @@
    "id": "desktop-hooks",
    "from": "desktop",
    "to": "hooksCli",
-   "label": "rollback only",
+   "label": "hooks on rollback",
    "variant": "dashed",
    "fromSide": "bottom",
    "toSide": "top",
@@ -297,7 +297,7 @@
    "id": "cli-hooks",
    "from": "cliClient",
    "to": "hooksCli",
-   "label": "rollback only",
+   "label": "hooks on rollback",
    "variant": "dashed",
    "fromSide": "left",
    "toSide": "right",
@@ -318,7 +318,8 @@
    "id": "hooks-state",
    "from": "hooksCli",
    "to": "linuxState",
-   "label": "task events",
+   "label": "CLI · rollback events",
+   "variant": "dashed",
    "fromSide": "bottom",
    "toSide": "top",
    "labelDx": 40,
@@ -414,7 +415,7 @@
    "items": [
     "Three user services: wall map, controller and MCP host",
     "Workers start on demand, one instance and lock per device",
-    "Hooks, CLI, map and controller share the private Linux SQLite"
+    "CLI, map and controller share the private Linux SQLite"
    ]
   },
   {

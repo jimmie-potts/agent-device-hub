@@ -124,6 +124,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert(!issueMap[unit].labels.some(l=>['blocked','deferred','status:in-progress','status:review'].includes(l.name)));
     }
     // Timeline: history marks link to GitHub, roadmap covers every open issue once, tooltips and filters work.
+    const overlaps=await page.locator('.history').evaluate(svg=>{const hit=(a,b)=>a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;const count=sel=>{const boxes=[...svg.querySelectorAll(sel)].map(t=>t.getBBox());return boxes.reduce((n,a,i)=>n+boxes.slice(i+1).filter(b=>hit(a,b)).length,0);};return {axis:count('.tick-label'),captions:count('.milestone-label'),axisLabels:svg.querySelectorAll('.tick-label').length};});
+    assert(overlaps.axisLabels>0&&overlaps.axis===0&&overlaps.captions===0,`History labels overlap: ${JSON.stringify(overlaps)}`);
+    const overflowing=await page.locator('.roadmap').evaluate(svg=>[...svg.querySelectorAll('.node')].filter(n=>n.querySelector('.node-label').getBBox().width>n.querySelector('rect').getBBox().width-4).map(n=>n.dataset.node));
+    assert.deepEqual(overflowing,[],'Roadmap labels fit their nodes');
     const prs=Object.values(history.repositories).reduce((n,r)=>n+r.mergedPRs.length,0); assert.equal(await page.locator('.history a.pr').count(),prs); assert.equal(Number(await page.locator('#timeline .stats-row .stat strong').first().textContent()),prs);
     const roadmapIssues=(await page.locator('.roadmap .node').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')))).join(' ');
     for(const key of openKeys){const label=new RegExp(`${{H:'Hub',N:'Nanoleaf',P:'Pixoo'}[key[0]]} #${key.slice(1)}(?!\\d)`); assert(label.test(roadmapIssues),`Roadmap lists ${key}`); assert.equal((roadmapIssues.match(new RegExp(label.source,'g'))||[]).length,1,`Roadmap lists ${key} exactly once`);}
@@ -303,8 +307,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await offline.context().addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));
     await offline.goto(pathToFileURL(file).href);
     await offline.waitForFunction(()=>document.querySelector('#github-status')?.textContent.includes('GitHub unavailable for Hub, Nanoleaf and Pixoo;'));
-    const offlineExpected=sourceHtml.match(/data-issue="H23"[^>]*data-status="([^"]+)"/)[1]; assert.notEqual(offlineExpected,'completed','The offline example differs from its mocked live status');
-    assert(await offline.locator('a[data-issue="H23"]').evaluateAll((es,status)=>es.every(e=>e.dataset.status===status),offlineExpected),'Unavailable reads keep snapshot badges');
+    const snapshotStatuses=Object.fromEntries([...sourceHtml.matchAll(/data-issue="([HNP]\d+)"[^>]*data-status="([^"]+)"/g)].map(match=>[match[1],match[2]]));
+    assert(new Set(Object.values(snapshotStatuses)).size>=4,'The snapshot exercises several badge statuses');
+    const offlineStatuses=await offline.locator('a.issue[data-issue]').evaluateAll(es=>es.map(e=>[e.dataset.issue,e.dataset.status]));
+    assert(offlineStatuses.length>0&&offlineStatuses.every(([key,status])=>status===snapshotStatuses[key]),'Unavailable reads keep every snapshot badge');
     assert.deepEqual((await offline.locator('#open-defects .work-card').evaluateAll(es=>es.map(e=>e.dataset.key))).sort(),openKeys.filter(k=>issueMap[k].labels.some(l=>l.name==='bug')).sort(),'Offline view includes every open bug');
     assert((await offline.locator('#overview-freshness').textContent()).includes('snapshot'));
     assert.deepEqual(offlineErrors,[],'Failed or offline reads do not produce console or page errors'); await offline.close();

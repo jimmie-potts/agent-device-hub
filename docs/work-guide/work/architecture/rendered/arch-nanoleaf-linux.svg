@@ -30,10 +30,10 @@
         <path data-edge-from="browser" data-edge-to="wallMap" data-edge-label="HTTP :8765" data-edge-key="0" data-edge-id="arch-nanoleaf-linux-browser-map" data-composition-points="115,104;115,128;256,128;256,206;280,206" d="M 115 104 L 115 120 Q 115 128 123 128 L 248 128 Q 256 128 256 136 L 256 198 Q 256 206 264 206 L 280 206" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
         <path data-edge-from="desktop" data-edge-to="desktopJson" data-edge-label="own state files" data-edge-key="1" data-edge-id="arch-nanoleaf-linux-desktop-json" data-composition-points="520,72;430,72" d="M 520 72 L 430 72" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
         <path data-edge-from="desktopJson" data-edge-to="wallMap" data-edge-label="metadata read" data-edge-key="2" data-edge-id="arch-nanoleaf-linux-json-map" data-composition-points="355,104;355,174" d="M 355 104 L 355 174" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
-        <path data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="rollback only" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks" data-composition-points="595,104;595,174" d="M 595 104 L 595 174" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
-        <path data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="rollback only" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks" data-composition-points="760,72;715,72;715,206;670,206" d="M 760 72 L 723 72 Q 715 72 715 80 L 715 198 Q 715 206 707 206 L 670 206" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
+        <path data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks" data-composition-points="595,104;595,174" d="M 595 104 L 595 174" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
+        <path data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks" data-composition-points="760,72;715,72;715,206;670,206" d="M 760 72 L 723 72 Q 715 72 715 80 L 715 198 Q 715 206 707 206 L 670 206" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
         <path data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp" data-composition-points="835,104;835,174" d="M 835 104 L 835 174" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
-        <path data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state" data-composition-points="595,238;595,308" d="M 595 238 L 595 308" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="CLI · rollback events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state" data-composition-points="595,238;595,308" d="M 595 238 L 595 308" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
         <path data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state" data-composition-points="355,238;355,262;496,262;496,340;520,340" d="M 355 238 L 355 254 Q 355 262 363 262 L 488 262 Q 496 262 496 270 L 496 332 Q 496 340 504 340 L 520 340" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
         <path data-edge-from="mcpHost" data-edge-to="controller" data-edge-label="loopback HTTP" data-edge-key="8" data-edge-id="arch-nanoleaf-linux-mcp-controller" data-composition-points="835,238;835,308" d="M 835 238 L 835 308" class="a-security" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-security)"/>
         <path data-edge-from="controller" data-edge-to="linuxState" data-edge-label="journal" data-edge-key="9" data-edge-id="arch-nanoleaf-linux-controller-state" data-composition-points="760,340;670,340" d="M 760 340 L 670 340" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
@@ -232,21 +232,21 @@
           <rect x="362.8" y="108" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="399" y="118" class="t-messagebus" font-size="8" text-anchor="middle">metadata read</text>
         </g>
-        <g data-detail="context" data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="rollback only" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks">
-          <rect x="528.8" y="108" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="565" y="118" class="t-messagebus" font-size="8" text-anchor="middle">rollback only</text>
+        <g data-detail="context" data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks">
+          <rect x="519.2" y="108" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="565" y="118" class="t-messagebus" font-size="8" text-anchor="middle">hooks on rollback</text>
         </g>
-        <g data-detail="context" data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="rollback only" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks">
-          <rect x="678.8" y="101" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="715" y="111" class="t-messagebus" font-size="8" text-anchor="middle">rollback only</text>
+        <g data-detail="context" data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks">
+          <rect x="669.2" y="101" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="715" y="111" class="t-messagebus" font-size="8" text-anchor="middle">hooks on rollback</text>
         </g>
         <g data-detail="context" data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp">
           <rect x="844" y="108" width="30" height="14" rx="3" class="c-mask"/>
           <text x="859" y="118" class="t-backend" font-size="8" text-anchor="middle">MCP</text>
         </g>
-        <g data-detail="context" data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state">
-          <rect x="603.6" y="242" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="635" y="252" class="t-muted" font-size="8" text-anchor="middle">task events</text>
+        <g data-detail="context" data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="CLI · rollback events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state">
+          <rect x="579.6" y="242" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="635" y="252" class="t-messagebus" font-size="8" text-anchor="middle">CLI · rollback events</text>
         </g>
         <g data-detail="context" data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state">
           <rect x="394.1" y="266" width="62.8" height="14" rx="3" class="c-mask"/>

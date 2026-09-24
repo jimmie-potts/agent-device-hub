@@ -1372,7 +1372,7 @@
     "body": "## Future work\n\nQualify supported automation for the user-identified Varmilo VA108M-RGB. The selected first behavior is whole-keyboard shared agent-status lighting. Preserve stock firmware and the existing keyboard setup.\n\nThe official Varmilo support page lists a VA108MRGB driver. The downloaded archive was inspected in memory and contained an installer only; it was not installed or executed. No documented automation API has been established. The OpenRGB pipeline compatibility data inspected on September 7, 2026 had no Varmilo/VA108 entry. Windows generic HID inventory did not establish the Varmilo model; a candidate USB ID was also listed by OpenRGB for an Anne Pro 2, so never infer protocol compatibility from that ID alone.\n\nRefine exact model/revision, USB/interface identity, installed vendor software, documented SDK/API support, supported whole-board colors/presets/brightness, volatile versus persistent updates, update limits, ownership and restoration. Existing vendor or maintained supported interfaces are the allowed research scope. If none exists, record the limitation and defer integration. Custom USB protocol investigation/reverse engineering, simulated key shortcuts, firmware changes and replacement lighting software are outside this accepted path.\n\nExpected evidence: a sourced capability and compatibility report that distinguishes documentation, enumeration, transport and visible output. A negative qualification result can complete this research but does not make the adapter ready. Source investigation performs no keyboard writes, captures no keystrokes and changes no key mappings or lock states.\n\nSources:\n- https://varmilo.cn/394565-394565.html\n- https://openrgb.org/data/supported_devices_pipeline.csv\n\n## Required source prerequisites\n\n- https://github.com/jimmie-potts/agent-device-hub/issues/50\n\nBlocked while source prerequisites or the supported-interface decision are unresolved. Next action: refine the exact issue after its prerequisites; keep status:backlog until scope, acceptance and evidence requirements are settled.\n\n## Ownership and delivery\n\nSkeleton for future refinement under https://github.com/jimmie-potts/agent-device-hub/issues/50. Owner: `controllers/pc-lighting`. Reuse shared agent state rather than adding a collector. Preserve iCUE, L-Connect 3 and existing device behavior. Keyboard support is optional and cannot block Corsair/Strimer releases. Follow `AGENTS.md` and `docs/sdlc.md`; no implementation, installation or device operation is authorized by issue creation. Physical work requires its own explicit authorization.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/60",
     "createdAt": "2026-09-08T01:09:04Z",
-    "updatedAt": "2026-09-08T01:09:04Z",
+    "updatedAt": "2026-09-24T09:35:14Z",
     "closedAt": null,
     "labels": [
       {
@@ -1380,9 +1380,6 @@
       },
       {
         "name": "status:backlog"
-      },
-      {
-        "name": "blocked"
       },
       {
         "name": "deferred"
@@ -1393,7 +1390,7 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 1,
     "commentsRefreshed": false
   },
   {
@@ -2897,19 +2894,19 @@
     "body": "## Outcome\n\nWhen you archive an open Codex Desktop conversation, the owner removes it and its subagents from monitoring within seconds. Otherwise they stay until #195's 24-hour expiry.\n\n## Signal\n\nCodex has no archive hook ([hook reference](https://learn.chatgpt.com/docs/hooks)). `SessionEnd` fires when you archive or delete an open conversation, when Codex closes, and after a conversation sits idle for 30 minutes with no client open. Its `reason` is always `\"other\"`. The owner already receives it as `runtime.ended`.\n\nTo archive a session, Codex Desktop moves its `rollout-*-<session id>.jsonl` file from `sessions/` to `archived_sessions/` in its Codex home, and it moves subagent files too. A `runtime.ended` event plus that file in `archived_sessions/` therefore means the conversation was archived.\n\nThis needs no polling, App Server client or Windows-side watcher. Two alternatives, checked on September 23, 2026, do not work here. App Server `thread/archived` notifications only reach clients of the server that did the archiving. A Linux file watcher on `/mnt/c` received no events.\n\n## Scope\n\n- [ ] On `runtime.ended` for a Codex Desktop session (`provider: codex`, `client: desktop`), look for its session ID in `archived_sessions/` under the configured Codex home. If it is not there, check once more a few seconds later in case the move lands after the hook.\n- [ ] If the file is found, retire the session and its known children with #195's retirement.\n- [ ] Run the same check before admitting a new Codex Desktop record, so late events do not bring an archived task back. Unarchiving moves the file back, so new work is admitted and starts fresh.\n- [ ] A missing or unreadable folder means not archived. The owner never writes or moves Codex files.\n\n## Known gap\n\nArchiving a conversation that has been idle for 30 minutes fires no hook, because its `SessionEnd` already ran. #195's 24-hour expiry removes it.\n\n## Acceptance criteria\n\n- [ ] Tests with a temporary Codex home cover:\n  - archived when `runtime.ended` arrives\n  - archived on the recheck\n  - not archived\n  - missing folder\n  - children retired with the parent\n  - a late event for an archived session\n  - new work after unarchive\n- [ ] Live: archive an open throwaway conversation and see it leave the wall and dashboard. Note whether the file moved before or after `SessionEnd`. One comment records it.\n\n## Dependencies\n\nBlocked by #195. Does not block [#21](https://github.com/jimmie-potts/agent-device-hub/issues/21). Uses the same configured Codex home as #191.\n\n## Not included\n\nPolling, App Server clients, a Windows-side watcher, an archive browser, restoring archived tasks, Claude sessions and archiving from the hub.\n\n## Readiness\n\nComplexity small. Uncertainty low; the live test settles the timing. Backlog until #195 merges. Delivery follows docs/sdlc.md.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/218",
     "createdAt": "2026-09-24T01:03:08Z",
-    "updatedAt": "2026-09-24T09:04:12Z",
+    "updatedAt": "2026-09-24T09:35:21Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:backlog"
+        "name": "status:ready"
       }
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 1,
+    "commentCount": 2,
     "commentsRefreshed": false
   },
   {

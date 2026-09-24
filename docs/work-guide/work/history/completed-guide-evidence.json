@@ -323,7 +323,7 @@
         [
           "Completed / Pixoo controls",
           "[[H151]] → [[H154]]",
-          "Hub #151 closed as completed on September 22, 2026 after PR #160 merged as d91bee7 with three rounds of independent Standards and Specification review, all six PR and merged-main checks passing and the owner’s approval of the UI candidate. The existing Pixoo view gains screen power, brightness, saved-playlist selection and the six playback actions, one guarded controller v1 command each through the existing hub route; playlist and playback controls are disabled in Monitor with an explicit Media switch through the Pixoo integration mode operation, because the real controller declares controller v1 modes unsupported, and nothing restores automatically. Playlists are listed by ID until Pixoo #67. Source and browser evidence only: nothing is installed or operated, and the display acceptance is [[H154]] under its own installation permission. The installed acceptance [[H154]] passed on September 24, 2026 after a configuration-only install that registered the Pixoo controller with the hub; the owner watched the display throughout."
+          "Hub #151 closed as completed on September 22, 2026 after PR #160 merged as d91bee7 with three rounds of independent Standards and Specification review, all six PR and merged-main checks passing and the owner’s approval of the UI candidate. The existing Pixoo view gains screen power, brightness, saved-playlist selection and the six playback actions, one guarded controller v1 command each through the existing hub route; playlist and playback controls are disabled in Monitor with an explicit Media switch through the Pixoo integration mode operation, because the real controller declares controller v1 modes unsupported, and nothing restores automatically. Playlists are listed by ID until Pixoo #67. Source and browser evidence only: the source merge installed and operated nothing. Installed acceptance [[H154]] passed on September 24, 2026 after a configuration-only install that registered the Pixoo controller with the hub; the owner watched the display throughout."
         ],
         [
           "Completed / Nanoleaf native controls",
@@ -333,7 +333,7 @@
         [
           "Completed / Nanoleaf controls",
           "[[H153]] → [[H155]]",
-          "Hub #153 closed as completed on September 23, 2026 after PR #162 merged as 50a1c63 with independent Standards and Specification reviews on every comparison, an accessibility review whose keyboard-focus finding was fixed and verified in a real browser, all six Depot checks on the PR head and merged main, and explicit human UI approval recorded on the PR. The Nanoleaf view offers power, brightness and saved-scene activation on the capabilities Nanoleaf #64 declares, one guarded controller v1 command each through the existing hub route: brightness is shown as an override until the next explicit mode command, scenes are disabled in Work and Quiet or while a mode change is pending with an explicit Free switch, and scene names come only from the integration snapshot. Nothing is installed or operated by the source merge; the installed wall is [[H155]]. The installed acceptance [[H155]] passed on September 24, 2026 after a configuration-only install that registered the wall with the hub; the owner watched the wall throughout."
+          "Hub #153 closed as completed on September 23, 2026 after PR #162 merged as 50a1c63 with independent Standards and Specification reviews on every comparison, an accessibility review whose keyboard-focus finding was fixed and verified in a real browser, all six Depot checks on the PR head and merged main, and explicit human UI approval recorded on the PR. The Nanoleaf view offers power, brightness and saved-scene activation on the capabilities Nanoleaf #64 declares, one guarded controller v1 command each through the existing hub route: brightness is shown as an override until the next explicit mode command, scenes are disabled in Work and Quiet or while a mode change is pending with an explicit Free switch, and scene names come only from the integration snapshot. The source merge installed and operated nothing. Installed acceptance [[H155]] passed on September 24, 2026 after a configuration-only install that registered the wall with the hub; the owner watched the wall throughout."
         ],
         [
           "Completed / iPhone playback sources",
@@ -435,9 +435,9 @@
           "The atlas and diagram source work is complete. Hub PR #188 delivered the export as 1aeafb6; public PR #10 deployed the atlas beside the guide as 6f2289c. <a href=\"https://github.com/jimmie-potts/agent-device-guide/issues/9\" target=\"_blank\" rel=\"noopener noreferrer\">Public issue #9</a> records a successful Pages deployment and 396 exact unauthenticated served-file hash matches. This is documentation publication, not installation or device acceptance."
         ],
         [
-          "Pixoo guide-maintenance rules",
+          "Completed / Pixoo guide-maintenance rules",
           "[[P68]] (Nanoleaf done: [[N70]])",
-          "Align Pixoo’s delivery instructions with the Hub procedure: guide updates are intentional revisions, with no per-delivery ledger or automatic companion PR. Nanoleaf #70 made the same change through PR #71, merged as 77f188d on September 23, 2026."
+          "Pixoo’s delivery instructions now follow the Hub procedure: guide updates are intentional revisions, with no per-delivery ledger or automatic companion PR. Pixoo PR #69 merged as b7d4762 and #68 closed as completed on September 23, 2026; Nanoleaf #70 made the same change through PR #71, merged as 77f188d."
         ],
         [
           "Optional Pixoo job consolidation",
@@ -470,9 +470,9 @@
           "Hub #85 remains open for the Neon/Prism presentation; #86 was closed as not planned. Mobile release #87 remains open and requires #85, delivered task briefs [[H196]] and current public status [[H197]]. This snapshot does not implement those features."
         ],
         [
-          "Mobile task briefs and status",
+          "Completed / Mobile task briefs and status",
           "[[H196]] [[H197]]",
-          "Copyable Explain, Plan, Implement and Review briefs for the existing Codex and Claude apps are delivered. Implement dated public GitHub status with explicit freshness; anonymous phone reading and manual handoff remain available."
+          "Copyable Explain, Plan, Implement and Review briefs for the existing Codex and Claude apps are delivered through PR #209 (e3bef35). PR #215 (4efab3b) added dated public GitHub status with explicit freshness; both issues closed as completed. Anonymous phone reading and manual handoff remain available."
         ],
         [
           "Guide cleanup and browser check",

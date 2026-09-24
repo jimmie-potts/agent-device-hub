@@ -11,6 +11,9 @@ import html
 import json
 
 TZ = ZoneInfo('America/New_York')
+# Layout limits tied to the guide CSS: 10px axis labels and 11px node labels in 188-unit nodes.
+DAY_LABEL_GAP = 56
+NODE_LABEL_CHARS = 27
 REPO_ORDER = ['H', 'N', 'P']
 REPO_NAME = {'H': 'agent-device-hub', 'N': 'codex-nanoleaf', 'P': 'divoom-app-upgrade'}
 REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
@@ -26,7 +29,7 @@ MILESTONES = {
 SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
+        dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='B.U.N.N.Y. UI foundation', issues=['H181', 'H182'], guide='bunny-controls', main=True),
         dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H231', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
         dict(id='n-music', x=3, label='Music playback', issues=['H233', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
@@ -161,10 +164,11 @@ CROSS = [
     ('n-guide-publish', 'n-guide-refresh', 'H87'),
     ('n-app-qualify', 'n-app-handoff', 'H199'),
     ('n-app-boundary', 'n-app-handoff', 'H203'),
-    ('n-codex', 'n-desk-presets', 'H32 · H31 · H5'), ('n-codex', 'n-tl-status', 'H3 · P31'), ('n-codex', 'n-pc-ctrl', 'H3 · P31'),
-    ('n-codex', 'n-tl-accept', 'H8'), ('n-codex', 'n-pc-accept', 'H8'), ('n-codex', 'n-desk-verify', 'H8'),
-    ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-codex', 'n-host', 'H5'),
-    ('n-controls', 'n-desk-presets', 'H31'), ('n-music', 'n-desk-later', 'H175 · H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
+    # Delivered local and Codex milestone inputs (H3, H5, H8, H31, H32, P31) start at the first main-path node.
+    ('n-local', 'n-desk-presets', 'H32 · H31 · H5'), ('n-local', 'n-tl-status', 'H3 · P31'), ('n-local', 'n-pc-ctrl', 'H3 · P31'),
+    ('n-local', 'n-tl-accept', 'H8'), ('n-local', 'n-pc-accept', 'H8'), ('n-local', 'n-desk-verify', 'H8'),
+    ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-local', 'n-host', 'H5'),
+    ('n-music', 'n-desk-later', 'H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
 ]
 
 
@@ -192,7 +196,7 @@ def history_chart(history, snapshot_iso, issues):
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
              f'<title id="history-title">Merged pull requests per repository through {esc(end.strftime("%B %d, %Y"))}</title>',
-             f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
+             f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are ringed and captioned where space allows; each milestone is named in its tooltip. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)
     labelled = -100
@@ -202,7 +206,7 @@ def history_chart(history, snapshot_iso, issues):
             major = tick.hour == 0
             parts.append(f'<line class="tick{" major" if major else ""}" x1="{tx:.1f}" y1="{top - 6}" x2="{tx:.1f}" y2="{height - 40}"/>')
             # Day labels only, spaced so they never overlap as the history grows.
-            if major and tx - labelled >= 56:
+            if major and tx - labelled >= DAY_LABEL_GAP:
                 parts.append(f'<text class="tick-label" x="{tx:.1f}" y="{height - 22}" text-anchor="middle">{esc(tick.strftime("%b %-d"))}</text>')
                 labelled = tx
         tick += timedelta(hours=12)
@@ -308,8 +312,9 @@ def build(history, snapshot_iso, issues, guides_by_id, coverage):
             assert set(item['issues']) <= set(coverage[item['guide']]), f'{item["id"]} lists issues outside its guide'
     for track, items in TRACKS:
         columns = [item['x'] for item in items]
-        assert len(columns) == len(set(columns)), f'Overlapping roadmap nodes in {track}'
-        assert all(len(item['label']) <= 27 for item in items), f'Roadmap label too long for its node in {track}'
+        # Same-track arrows follow list order, so columns must be unique and ascending.
+        assert columns == sorted(set(columns)), f'Overlapping or unordered roadmap nodes in {track}'
+        assert all(len(item['label']) <= NODE_LABEL_CHARS for item in items), f'Roadmap label too long for its node in {track}'
     chart, totals = history_chart(history, snapshot_iso, issues)
     roadmap, nodes, listed = roadmap_map(issues, guides_by_id)
     fetched = local(history['fetchedAt'])

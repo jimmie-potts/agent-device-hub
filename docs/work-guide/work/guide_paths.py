@@ -50,6 +50,7 @@ NEXT_STEPS = {
 DECISIONS = {
     'H20': 'Choose status bulbs, colors/effects, brightness cap, quiet behavior and the manual-change policy.',
     'H227': 'Record the intended night-mode settings, then decide whether stale Tidbyt rows need a renderer change.',
+    'N108': 'Verify one real Codex Desktop thread link on Windows and approve the UI candidate before merge.',
 }
 # Only source-backed, deliberately recorded workaround text belongs here.
 WORKAROUNDS = {}
