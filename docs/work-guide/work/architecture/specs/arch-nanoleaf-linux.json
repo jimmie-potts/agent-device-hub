@@ -125,13 +125,14 @@
    "id": "hooksCli",
    "type": "backend",
    "label": "Hooks and CLI",
-   "sublabel": "short-lived · legacy input",
+   "sublabel": "short-lived · rollback input",
    "row": 1,
    "col": 2,
    "size": [
     150,
     64
-   ]
+   ],
+   "tag": "legacy hooks removed"
   },
   {
    "id": "mcpHost",
@@ -182,7 +183,7 @@
     150,
     64
    ],
-   "tag": "source · hardware check open"
+   "tag": "installed · verified"
   },
   {
    "id": "linesWorker",
@@ -285,8 +286,8 @@
    "id": "desktop-hooks",
    "from": "desktop",
    "to": "hooksCli",
-   "label": "task hooks",
-   "variant": "emphasis",
+   "label": "rollback only",
+   "variant": "dashed",
    "fromSide": "bottom",
    "toSide": "top",
    "labelDx": -30,
@@ -296,8 +297,8 @@
    "id": "cli-hooks",
    "from": "cliClient",
    "to": "hooksCli",
-   "label": "hooks · CLI",
-   "variant": "emphasis",
+   "label": "rollback only",
+   "variant": "dashed",
    "fromSide": "left",
    "toSide": "right",
    "labelDy": -18
@@ -421,7 +422,7 @@
    "title": "Input and clients",
    "items": [
     "One input source per installation: legacy hooks or shared input",
-    "The installed runtime selected shared input from the hub (Nanoleaf #30)",
+    "Installed: shared input from the hub (Nanoleaf #30); legacy hooks removed (#89)",
     "Windows Desktop and browser stay clients; mounted JSON is only read"
    ]
   },
@@ -430,7 +431,7 @@
    "title": "Evidence boundary",
    "items": [
     "Fresh install, no data migration (Nanoleaf #55)",
-    "NL22 support is source; the joint hardware check is Nanoleaf #46",
+    "Lines and NL22 Panels verified together (Nanoleaf #46)",
     "No runtime SQLite is shared through /mnt/c"
    ]
   }

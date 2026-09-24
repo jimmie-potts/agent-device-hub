@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "99ff4cc",
+  "sourceRevision": "fcb6b21",
   "note": "Historical scope and evidence retained from the prior guide. Read the linked receipts for accepted scope; current work is organized in the topic guides.",
   "groups": [
     {
@@ -45,7 +45,7 @@
         [
           "Completed / Codex-first milestone",
           "[[H32]]",
-          "Hub #32 closed as completed on September 22, 2026 UTC. Its dependency table is fully closed: Hub #2, #3, #5, #6, #8, #9, #13 and #30; Pixoo #29, #31, #32, #33, #34 and #37; Nanoleaf #29, #49 and #30. The accepted installed evidence is the reduced Codex Desktop/Ubuntu-WSL Pixoo sequence and the Linux/WSL Nanoleaf checks; Windows-client and Claude qualification were deferred beyond Nanoleaf #30 and are not reported as passing. General controls were defined under [[H31]] and delivered as source in [[H151]] and [[H153]]; their hardware acceptances are [[H154]] and [[H155]]."
+          "Hub #32 closed as completed on September 22, 2026 UTC. Its dependency table is fully closed: Hub #2, #3, #5, #6, #8, #9, #13 and #30; Pixoo #29, #31, #32, #33, #34 and #37; Nanoleaf #29, #49 and #30. The accepted installed evidence is the reduced Codex Desktop/Ubuntu-WSL Pixoo sequence and the Linux/WSL Nanoleaf checks; Windows-client and Claude qualification were deferred beyond Nanoleaf #30 and are not reported as passing. General controls were defined under [[H31]] and delivered as source in [[H151]] and [[H153]]; both passed installed hardware acceptance on September 24, 2026 under [[H154]] and [[H155]]."
         ],
         [
           "01 / Qualification and budgets",
@@ -118,6 +118,16 @@
           "Nanoleaf PR #80 merged as a3010d2 with all five merged-main checks passing. Subagent sessions fold into their parent task instead of creating separate unread map entries. Genuine top-level notices remain until supported recovery or qualified read evidence. Source delivery only; installation remains separate."
         ],
         [
+          "Completed / Desktop read state and session expiry",
+          "[[H191]] [[H195]] [[H225]]",
+          "Hub PR #219 (99ff4cc) reports qualified Codex Desktop read state to the shared owner. PR #223 (d0d5670) expires sessions after 24 hours without lifecycle evidence, and PR #226 (91cb3a1) clears unknown-ID approval markers when their turn is retired. All three issues closed as completed on September 24, 2026. Archive removal continues in [[H218]]."
+        ],
+        [
+          "Completed / Legacy hook removal",
+          "[[N89]]",
+          "After the shared-input cutover, the owner removed the legacy Nanoleaf hooks from both Codex homes on September 24, 2026 and confirmed a real Codex Desktop task on the wall: green while working, blue while unread, and cleared after it was read. One command restores the hooks for a rollback to legacy input."
+        ],
+        [
           "Optional per-task recovery",
           "[[H138]] after [[H137]]",
           "Add bounded activity/current-turn reset for one task, preserving notices, attention, labels and other sessions. This does not block Pixoo acceptance and does not control Codex or devices."
@@ -167,12 +177,17 @@
         [
           "Completed / Panel effects",
           "[[N43]]",
-          "Nanoleaf #43 closed as completed on September 23, 2026 after PR #67 merged as cbb9485 with independent Standards and Specification reviews and all five merged-main checks passing. The worker runs Lines and NL22 Light Panels as independent devices with triangle geometry and task effects. Source only; installation and physical NL22 verification, including payload version and orientation, remain with [[N46]]."
+          "Nanoleaf #43 closed as completed on September 23, 2026 after PR #67 merged as cbb9485 with independent Standards and Specification reviews and all five merged-main checks passing. The worker runs Lines and NL22 Light Panels as independent devices with triangle geometry and task effects. Source only; installation and physical NL22 verification, including payload version and orientation, were accepted later under [[N46]]."
         ],
         [
           "Completed / Enrollment tooling",
           "[[N45]]",
-          "Explicit Linux source enrollment is delivered. Actual pairing and visible-light acceptance remain with [[N46]]."
+          "Explicit Linux source enrollment is delivered. Actual pairing and visible-light acceptance were accepted under [[N46]]."
+        ],
+        [
+          "Completed / Installed Lines + Panels trial",
+          "[[N46]]",
+          "Nanoleaf #46 closed as completed on September 24, 2026. The operator confirmed a bounded Lines + NL22 trial on the installed Linux runtime: shared tasks appeared once per device, and the Panels’ saved scene and brightness were restored afterward. The map selector continues in [[N44]]."
         ]
       ],
       "notes": [
@@ -188,9 +203,9 @@
       ],
       "rows": [
         [
-          "Tidbyt cloud",
+          "Completed / Tidbyt cloud",
           "[[H16]] → [[H19]] → [[H21]]",
-          "The cloud controller is delivered through PR #174. Automatic shared status is delivered through PR #189, merged as ff9d8c6 with all six merged-main checks passing; layout, cadence and rotation decisions are recorded in the controller guide. Installed acceptance [[H21]] remains open and is blocked by shared-owner capacity [[H195]] before another fresh-session trial."
+          "The cloud controller is delivered through PR #174. Automatic shared status is delivered through PR #189, merged as ff9d8c6 with all six merged-main checks passing; layout, cadence and rotation decisions are recorded in the controller guide. Installed acceptance [[H21]] passed on September 24, 2026: the owner confirmed RUN, ASK, DONE, the stale marker, and stop and restoration on the Tidbyt. Stale-row readability with night mode continues in [[H227]]."
         ],
         [
           "LIFX LAN",
@@ -199,7 +214,7 @@
         ]
       ],
       "notes": [
-        "Tidbyt automatic status and the LIFX controller are source-complete. Shared-owner capacity [[H195]] blocks the next Tidbyt acceptance trial. LIFX automatic status [[H20]] retains its own readiness and selection; real-display checks require separate authorization.",
+        "Tidbyt agent status is installed and accepted; the LIFX controller is source-complete. LIFX automatic status [[H20]] retains its own readiness and selection; real-bulb checks require separate authorization.",
         "These devices extend the system without becoming prerequisites for the first Pixoo/Nanoleaf Codex milestone."
       ]
     },
@@ -308,7 +323,7 @@
         [
           "Completed / Pixoo controls",
           "[[H151]] → [[H154]]",
-          "Hub #151 closed as completed on September 22, 2026 after PR #160 merged as d91bee7 with three rounds of independent Standards and Specification review, all six PR and merged-main checks passing and the owner’s approval of the UI candidate. The existing Pixoo view gains screen power, brightness, saved-playlist selection and the six playback actions, one guarded controller v1 command each through the existing hub route; playlist and playback controls are disabled in Monitor with an explicit Media switch through the Pixoo integration mode operation, because the real controller declares controller v1 modes unsupported, and nothing restores automatically. Playlists are listed by ID until Pixoo #67. Source and browser evidence only: nothing is installed or operated, and the display acceptance is [[H154]] under its own installation permission."
+          "Hub #151 closed as completed on September 22, 2026 after PR #160 merged as d91bee7 with three rounds of independent Standards and Specification review, all six PR and merged-main checks passing and the owner’s approval of the UI candidate. The existing Pixoo view gains screen power, brightness, saved-playlist selection and the six playback actions, one guarded controller v1 command each through the existing hub route; playlist and playback controls are disabled in Monitor with an explicit Media switch through the Pixoo integration mode operation, because the real controller declares controller v1 modes unsupported, and nothing restores automatically. Playlists are listed by ID until Pixoo #67. Source and browser evidence only: nothing is installed or operated, and the display acceptance is [[H154]] under its own installation permission. The installed acceptance [[H154]] passed on September 24, 2026 after a configuration-only install that registered the Pixoo controller with the hub; the owner watched the display throughout."
         ],
         [
           "Completed / Nanoleaf native controls",
@@ -318,12 +333,22 @@
         [
           "Completed / Nanoleaf controls",
           "[[H153]] → [[H155]]",
-          "Hub #153 closed as completed on September 23, 2026 after PR #162 merged as 50a1c63 with independent Standards and Specification reviews on every comparison, an accessibility review whose keyboard-focus finding was fixed and verified in a real browser, all six Depot checks on the PR head and merged main, and explicit human UI approval recorded on the PR. The Nanoleaf view offers power, brightness and saved-scene activation on the capabilities Nanoleaf #64 declares, one guarded controller v1 command each through the existing hub route: brightness is shown as an override until the next explicit mode command, scenes are disabled in Work and Quiet or while a mode change is pending with an explicit Free switch, and scene names come only from the integration snapshot. Nothing is installed or operated by the source merge; the installed wall is [[H155]]."
+          "Hub #153 closed as completed on September 23, 2026 after PR #162 merged as 50a1c63 with independent Standards and Specification reviews on every comparison, an accessibility review whose keyboard-focus finding was fixed and verified in a real browser, all six Depot checks on the PR head and merged main, and explicit human UI approval recorded on the PR. The Nanoleaf view offers power, brightness and saved-scene activation on the capabilities Nanoleaf #64 declares, one guarded controller v1 command each through the existing hub route: brightness is shown as an override until the next explicit mode command, scenes are disabled in Work and Quiet or while a mode change is pending with an explicit Free switch, and scene names come only from the integration snapshot. Nothing is installed or operated by the source merge; the installed wall is [[H155]]. The installed acceptance [[H155]] passed on September 24, 2026 after a configuration-only install that registered the wall with the hub; the owner watched the wall throughout."
         ],
         [
           "Completed / iPhone playback sources",
           "[[H158]]",
           "Hub #158 closed as completed on September 23, 2026 after PR #176 merged the qualification record as 5db67a0. The Sony HT-A9 and a Sonos Move each supplied iPhone Apple Music metadata, artwork and phone-confirmed pause, next and previous over AirPlay; Sony adds a change feed and Sonos adds position. Sony is recommended for the first receiver adapter. Live results qualify the owner’s devices, not installed hub adapters."
+        ],
+        [
+          "Completed / Hub MCP media tools",
+          "[[H152]]",
+          "Hub PR #224 merged as 33c99ba and #152 closed as completed on September 24, 2026. Each configured hub MCP alias gains guarded media start and playback tools that forward one controller v1 command through the owning controller. Pixoo playlists show IDs until [[P67]]."
+        ],
+        [
+          "Completed / Shared playback, Sony source",
+          "[[H175]]",
+          "Hub PR #230 merged as c6f33ef, and Hub 0.2.5 was installed on September 24, 2026 with the owner. The installed check read now-playing and a track change from the Sony HT-A9, and a hub pause command paused Apple Music on the iPhone. The Sonos Move [[H233]], optional artwork [[H229]] and the deferred Windows source [[H36]] remain separate."
         ]
       ],
       "notes": [
@@ -463,6 +488,11 @@
           "Automatic public refresh",
           "[[H200]]",
           "Hub #200 was closed as not planned; no automatic status publication scheduler is running."
+        ],
+        [
+          "Guide overview refresh",
+          "[[H220]]",
+          "Hub PR #221 (ddeecd8) added current work, newly added issues, open defects and the eleven topic guides; public PR #13 published that revision. The Neon restyle [[H85]] and mobile publication [[H87]] remain separate."
         ]
       ],
       "notes": [

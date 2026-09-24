@@ -11,31 +11,6 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H139': 'Define capture, ordering, retention and inspection guarantees separately from '
          'best-effort current status. The bounded diagnostic journal is not complete history. This '
          'refinement does not block current status, per-task reset or Pixoo acceptance.',
- 'H152': 'Pixoo #67 adds user-entered playlist names to the Pixoo integration extension so the '
-         'view can label playlists; the UI ships with IDs until then. Hub #152 adds media tools to '
-         'the hub MCP device tool set; delivered Hub #151 supplies the view.',
- 'H154': 'Hub #151 closed as completed on September 22, 2026 after PR #160 merged as d91bee7 with '
-         'three rounds of independent Standards and Specification review, all six PR and '
-         'merged-main checks passing and the owner’s approval of the UI candidate. The existing '
-         'Pixoo view gains screen power, brightness, saved-playlist selection and the six playback '
-         'actions, one guarded controller v1 command each through the existing hub route; playlist '
-         'and playback controls are disabled in Monitor with an explicit Media switch through the '
-         'Pixoo integration mode operation, because the real controller declares controller v1 '
-         'modes unsupported, and nothing restores automatically. Playlists are listed by ID until '
-         'Pixoo #67. Source and browser evidence only: nothing is installed or operated, and the '
-         'display acceptance is [[H154]] under its own installation permission.',
- 'H155': 'Hub #153 closed as completed on September 23, 2026 after PR #162 merged as 50a1c63 with '
-         'independent Standards and Specification reviews on every comparison, an accessibility '
-         'review whose keyboard-focus finding was fixed and verified in a real browser, all six '
-         'Depot checks on the PR head and merged main, and explicit human UI approval recorded on '
-         'the PR. The Nanoleaf view offers power, brightness and saved-scene activation on the '
-         'capabilities Nanoleaf #64 declares, one guarded controller v1 command each through the '
-         'existing hub route: brightness is shown as an override until the next explicit mode '
-         'command, scenes are disabled in Work and Quiet or while a mode change is pending with an '
-         'explicit Free switch, and scene names come only from the integration snapshot. Nothing '
-         'is installed or operated by the source merge; the installed wall is [[H155]].',
- 'H175': 'Add the qualified HT-A9 as a second playback source once [[H36]] delivers the Windows '
-         'source and hub playback contract.',
  'H178': 'Deferred investigation: qualify finding Apple Music content and requesting a specific '
          'song, album or playlist through the actual player and output path, then propose '
          'implementation issues.',
@@ -43,11 +18,6 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'semantic token names with [[H85]]; that guide/atlas work is independent.',
  'H182': 'Apply the accepted foundation from [[H181]] to the existing dashboard and its B.U.N.N.Y. '
          'display name. Application UI needs approval of its current candidate.',
- 'H191': 'Report qualified Codex Desktop read evidence to the shared owner so supported consumers '
-         'can clear unread presentation. Read evidence is separate from notice acknowledgment.',
- 'H195': 'Expire monitoring sessions after 24 hours without new agent evidence. Release owner '
-         'capacity while preserving global settings; new activity creates a fresh entry. This '
-         'enables the remaining Tidbyt acceptance checks.',
  'H198': 'Later: replay recorded delivery events without inferring past system or device state.',
  'H199': 'First qualify supported phone-to-app handoff paths, then define owner sign-in and the '
          'outbound connector boundary before building a private task inbox and the first qualified '
@@ -68,28 +38,44 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H205': 'First qualify supported phone-to-app handoff paths, then define owner sign-in and the '
          'outbound connector boundary before building a private task inbox and the first qualified '
          'handoff. This work is deferred behind the anonymous public release.',
- 'H21': 'Finish installed Tidbyt RUN, DONE, stale-feed, rotation and stop observations after '
-        '[[H195]] resolves owner capacity and the installed update is verified.',
  'H218': 'Remove confirmed archived Codex Desktop tasks and known children from monitoring. Uses '
-         'the session retirement delivered by [[H195]]; does not block Tidbyt acceptance.',
+         'the session retirement delivered by [[H195]] and the Codex home configured for [[H191]].',
  'H22': 'Install the LIFX status adapter after [[H20]] and verify the agreed behavior on the named '
         'bulbs with separate authorization.',
- 'H220': 'Deliver the balanced opening, newly added issues, all open defects, eleven topic guides '
-         'and completed-evidence archive, then publish and verify this revision.',
- 'H23': 'Implement the connection, then verify the physical transition. The transition also '
-        'requires the Tidbyt cloud acceptance baseline.',
- 'H24': 'Implement the connection, then verify the physical transition. The transition also '
-        'requires the Tidbyt cloud acceptance baseline.',
+ 'H222': 'Announce each state commit to change-stream readers at once instead of on a 1-second '
+         'timer. Covers every commit source, including hook ingest and the Desktop read-state '
+         'reader. Nanoleaf [[N90]] consumes it.',
+ 'H227': 'The [[H21]] owner check found stale Tidbyt rows and their ? marker hard to read, with '
+         'night mode on and device brightness low. Assess readability with the intended night-mode '
+         'settings before changing the renderer.',
+ 'H229': 'Optional artwork from the Sony source through the shared playback service. Text-only '
+         'now-playing ([[H37]], [[H38]]) and basic lighting ([[H39]]) do not wait for it.',
+ 'H23': 'Implement the Tronbyt connection, then verify the physical transition in [[H24]]. The '
+        'Tidbyt cloud baseline [[H21]] is accepted.',
+ 'H231': 'Found during the installed control checks: apply a setting in one step, make command '
+         'status plain, reduce stale-generation retries on Pixoo playback, and allow a same-mode '
+         'reapply, including starting an inactive Pixoo Monitor.',
+ 'H232': 'Document how to connect installed device controllers to BUNNY in the hub setup guide; '
+         'the installed hub had no controllers configured until the owner reconstructed the steps '
+         'from source.',
+ 'H233': 'Add the Sonos Move, qualified in [[H158]], as a second playback source. One selected '
+         'source drives the snapshot and commands; an unavailable source is shown, never swapped '
+         'silently.',
+ 'H24': 'Implement the connection in [[H23]], then verify the physical transition. The Tidbyt '
+        'cloud baseline [[H21]] is accepted.',
  'H25': 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, '
         'and rollback decisions.',
  'H26': 'Schedule Pixoo and Nanoleaf repository migrations separately, with ownership, provenance, '
         'and rollback decisions.',
- 'H36': 'Qualify and build the Apple Music connector.',
- 'H37': 'Add music controls to the shared UI and Codex tools.',
- 'H38': 'Add Pixoo/Tidbyt now-playing cards, song-change lighting, and Nanoleaf scene '
-        'qualification.',
- 'H39': 'Add Pixoo/Tidbyt now-playing cards, song-change lighting, and Nanoleaf scene '
-        'qualification.',
+ 'H36': 'Optional Windows Apple Music source. Revisit once the Sony path from [[H175]] proves '
+        'useful; it is not a prerequisite for the other music stories.',
+ 'H37': 'Text-only now-playing and the Sony-qualified controls (pause, next, previous) in BUNNY '
+        'and Codex tools, using shared playback from [[H175]]. BUNNY sessions need a small hub '
+        'change to read the playback source.',
+ 'H38': 'Readable track and artist cards on Pixoo and Tidbyt from the shared playback snapshot, '
+        'rendered by each display’s controller. Artwork from [[H229]] is optional.',
+ 'H39': 'Song-change lighting and Nanoleaf music-scene qualification from the shared playback '
+        'snapshot. Select effect mappings, policy inputs and acceptance targets first.',
  'H40': 'Define per-device music and alert policy. Settle this alongside connector qualification, '
         'before effects take over devices. This is a recommended sequence.',
  'H41': 'Investigate audio capture and visualizers.',
@@ -151,18 +137,22 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H70': 'Requires [[H65]]. Add saved profiles, supported app/hub actions and custom shortcuts for '
         'qualified remappable controls. Keyboard A/B and attached Super Buttons remain excluded. '
         'Local profile editing stays useful without optional preset or Music providers.',
- 'H71': 'Requires [[H68]], playback [[H36]] and policy owner [[H40]]. Add presentation '
+ 'H71': 'Requires [[H68]], shared playback [[H175]] and policy owner [[H40]]. Add presentation '
         'prerequisites [[H38]] and/or [[H39]] only for selected branches. [[H41]] is conditional '
         'on measured-audio effects.',
  'H73': 'Reserved UI evaluation case. Preserve the pinned defective input; this prerequisite '
         'delivery does not repair it or authorize evaluation runs.',
  'H85': 'Restyle the guide and atlas using shared semantic tokens and the Neon skin. Preserve '
         'reduced motion and phone readability; publication stays in [[H87]].',
- 'H87': 'Publish and verify the planned mobile guide workspace and atlas after its own '
-        'prerequisites. This broader release is separate from the bounded overview publication in '
+ 'H87': 'Publish and verify the planned mobile guide workspace and atlas after the [[H85]] '
+        'restyle. This broader release is separate from the overview publication delivered in '
         '[[H220]].',
  'N10': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
         'startup/recovery; then evaluate the installed prototype.',
+ 'N100': 'Show Claude Code titles and projects for shared tasks, as [[N75]] does for Codex. The '
+         'hub feed deliberately carries neither, so the wall reads them locally by session ID.',
+ 'N108': 'Link a wall task to its Codex Desktop thread. The source PR is in review; Windows '
+         'deep-link acceptance and UI approval remain before merge.',
  'N11': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
         'startup/recovery; then evaluate the installed prototype.',
  'N12': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
@@ -171,31 +161,29 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'startup/recovery; then evaluate the installed prototype.',
  'N14': 'Qualify compatibility; add persistent addressing and inspection mode; integrate '
         'startup/recovery; then evaluate the installed prototype.',
- 'N15': 'Deliver the rendering contract, then the live app renderer.',
  'N16': 'Follow the prototype evaluation, rendering/customization work, and a decision to proceed.',
- 'N17': 'Deliver the rendering contract, then the live app renderer.',
+ 'N17': 'The rendering contract [[N15]] is delivered. Build the live app renderer on it; Lively '
+        'evaluation is not a prerequisite.',
  'N18': 'Add project/status palettes after rendering and Hub #2’s vocabulary.',
  'N19': 'Add completion celebrations and status animations after rendering and palettes.',
  'N20': 'Add completion celebrations and status animations after rendering and palettes.',
- 'N44': 'After the installed Panels trial, add a selector for Lines or Panels to the existing wall '
-        'map. Each device keeps its own settings and targeted controls; the Linux runtime has no '
-        'tray.',
- 'N46': 'Enroll and trial Panels alongside Lines on the installed Linux runtime using CLI device '
-        'targets. Verify visible behavior and scene restoration before the map-selector work; '
-        'explicit device authorization is required.',
+ 'N44': 'The installed Lines and Panels trial [[N46]] is accepted. Add a selector for Lines or '
+        'Panels to the existing wall map; each device keeps its own settings and targeted '
+        'controls.',
  'N47': 'Explore a combined layout and allocation pool after the independent-device release is '
         'verified.',
- 'N75': 'Qualify task label and project provenance, improve distinguishable fallback names, and '
-        'preserve privacy-safe exact-identity matching. Retired sessions must not be recreated by '
-        'metadata lookup.',
- 'N76': 'Show projects with current retained tasks first and keep saved projects accessible. '
-        'Preserve global colors and reservations; the shared owner controls session lifetime.',
- 'N77': 'Show at most eight priority task rows by default, with truthful totals and an accessible '
-        'full list. Remove duplicate waiting rows without changing task state or acknowledgment.',
  'N78': 'Reduce repeated default controls and status text while preserving access to the wall map '
         'settings and task details.',
  'N81': 'Queue one completion comet when a subagent delays its parent becoming unread. Preserve '
         'restart, replay, stale-evidence and mode rules.',
+ 'N90': 'Wake the Nanoleaf worker from the hub change stream instead of its 1-second poll. Waits '
+        'for [[H222]]; the worker keeps its single device writer.',
+ 'N91': 'Let Codex list saved Nanoleaf scenes and play one through the local MCP server. The '
+        'controller already activates discovered scenes in Free mode ([[N64]]); MCP exposes only '
+        'status and mode today.',
+ 'N92': 'Let Codex describe an animation that plays on the Lines through the local MCP server, '
+        'reusing the worker’s existing effect upload and single writer. Controller v1 has no '
+        'animation command yet.',
  'P11': 'Deliver HTTPS LAN access, then browser acceptance. Also requires Pixoo #12’s local '
         'physical baseline.',
  'P13': 'Timezone-aware playlist schedules.',
@@ -217,6 +205,9 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'supports a change. Physical tests need separate authorization.',
  'P61': 'Later by owner choice. Measure and improve embedded shared-monitor performance under the '
         'existing frozen limits, retaining failed receipts.',
- 'P67': 'Pixoo #67 adds user-entered playlist names to the Pixoo integration extension so the view '
-        'can label playlists; the UI ships with IDs until then. Hub #152 adds media tools to the '
-        'hub MCP device tool set; delivered Hub #151 supplies the view.'}
+ 'P67': 'Add user-entered playlist names to the Pixoo integration extension, so BUNNY and the hub '
+        'MCP media tools ([[H152]]) can label playlists. They show playlist IDs until then.',
+ 'P76': 'Keep Divoom cloud content off the Pixoo after screen-on and device reboots, and document '
+        'owner actions that cut the device off from Divoom’s cloud. Found during [[H154]].',
+ 'P77': 'Run the installed Pixoo app as a user service with the settings the hub needs, so BUNNY '
+        'controls and agent status return after PC or WSL restarts. Found during [[H154]].'}

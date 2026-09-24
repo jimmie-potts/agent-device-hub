@@ -25,3 +25,5 @@
 #67 [OPEN] Expose user-entered playlist names through the Pixoo integration extension
 #68 [CLOSED] Align guide-maintenance rules with the current hub procedure
 #72 [CLOSED] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance
+#76 [OPEN] Keep Divoom cloud content off the Pixoo after screen-on and device reboots
+#77 [OPEN] Run the installed Pixoo app as a user service with hub settings

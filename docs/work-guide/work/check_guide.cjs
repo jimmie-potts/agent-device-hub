@@ -45,10 +45,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')consoleErrors.push(m.text());}); page.on('request',r=>{if(!/^https?:/.test(r.url()))return; if(r.frame()===page.mainFrame())requests.push(r.url()); else companionRequests.push(r.url());});
     const apiIssue=(key,overrides={})=>{const source=issueMap[key];return {number:source.number,state:source.state.toLowerCase(),state_reason:source.stateReason,title:source.title,html_url:source.url,created_at:source.createdAt,labels:source.labels,...overrides};};
     const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
-    const hubClosed=apiIssue('H21',{state:'closed',state_reason:'completed'});
+    const hubClosed=apiIssue('H23',{state:'closed',state_reason:'completed'});
     const hubClosedOther=apiIssue('H17',{state:'closed',state_reason:'not_planned'});
     const nanoleafReview=apiIssue('N10',{labels:[...issueMap.N10.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
-    const nanoleafProgress=apiIssue('N15',{labels:[...issueMap.N15.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
+    const nanoleafProgress=apiIssue('N17',{labels:[...issueMap.N17.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
     const pixooProgress=apiIssue('P11',{labels:[...issueMap.P11.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
     const apiOrigin='https://api.github.com', issueRoute=(repo,state,pageNumber=1)=>`${apiOrigin}/repos/jimmie-potts/${repo}/issues?state=${state}&per_page=100${state==='closed'?`&since=${encodeURIComponent(snapshot.refreshedAt)}`:''}${pageNumber>1?`&page=${pageNumber}`:''}`;
     await page.route(/^https?:/,route=>route.abort());
@@ -69,11 +69,11 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert(apiRequests.some(r=>r.url===issueRoute('agent-device-hub','open',2)),'Follows the GitHub Link pagination header');
     assert(apiRequests.every(r=>r.method==='GET'&&new URL(r.url).origin===apiOrigin),'Uses only anonymous GitHub API GET requests');
     const liveStatus=key=>page.locator(`a[data-issue="${key}"]`);
-    assert(await liveStatus('H21').evaluateAll(es=>es.every(e=>e.dataset.status==='completed'&&e.dataset.state==='CLOSED'&&e.title.includes('Completed')&&e.getAttribute('aria-label').includes('Completed')&&e.querySelector('.issue-status').textContent==='Completed'&&e.querySelector('.status-symbol').textContent==='✓')),'Every badge updates its state, symbol, text and accessible labels');
+    assert(await liveStatus('H23').evaluateAll(es=>es.every(e=>e.dataset.status==='completed'&&e.dataset.state==='CLOSED'&&e.title.includes('Completed')&&e.getAttribute('aria-label').includes('Completed')&&e.querySelector('.issue-status').textContent==='Completed'&&e.querySelector('.status-symbol').textContent==='✓')),'Every badge updates its state, symbol, text and accessible labels');
     assert(await liveStatus('H17').evaluateAll(es=>es.every(e=>e.dataset.status==='closed'&&e.querySelector('.issue-status').textContent==='Closed'&&e.querySelector('.status-symbol').textContent==='−')),'Other closures remain Closed');
     assert(await liveStatus('H11').evaluateAll(es=>es.every(e=>e.dataset.status==='blocked')),'Open dependency summary marks an issue blocked');
     assert(await liveStatus('N10').evaluateAll(es=>es.every(e=>e.dataset.status==='review')),'Review label updates the live status');
-    assert(await liveStatus('N15').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
+    assert(await liveStatus('N17').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
     assert(await liveStatus('H25').evaluateAll(es=>es.every(e=>e.dataset.status==='open')),'Issues absent from both reads keep their snapshot status');
     const pixooAfterFailure=await page.locator('a.issue.repo-P[data-issue]').evaluateAll(es=>Object.fromEntries(es.map(e=>[e.dataset.issue,e.dataset.status])));
     assert.deepEqual(pixooAfterFailure,pixooSnapshotStatuses,'A failed repository keeps every badge at its snapshot status');
@@ -109,7 +109,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#timeline > summary').click();
     assert.equal(await page.locator('.next-action').count(),count,'Every guide leads with its next step');
     assert.equal(await page.locator('.delivery-evidence[open],.guide-evidence[open]').count(),0,'Evidence starts folded');
-    for(const [key,status,label] of [['P34','completed','Completed'],['N46','blocked','Blocked'],['H50','completed','Completed']]) {
+    for(const [key,status,label] of [['P34','completed','Completed'],['N16','blocked','Blocked'],['H50','completed','Completed']]) {
       const refs=page.locator(`a[data-issue="${key}"]`);
       assert(await refs.evaluateAll((es,status)=>es.every(e=>e.dataset.status===status),status));
       assert(await refs.evaluateAll((es,label)=>es.every(e=>e.querySelector('.issue-status').textContent.includes(label)),label));
@@ -139,7 +139,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(await page.locator(`.repo-legend .repo-${key} b`).textContent(),String(total));
     }
     const links=await page.locator('[data-issue]').evaluateAll(es=>es.map(e=>({key:e.dataset.issue,url:e.href,state:e.dataset.state})));
-    for(const l of links) {if(['H999','H997'].includes(l.key)){assert.equal(l.url,`https://github.com/jimmie-potts/agent-device-hub/issues/${l.key.slice(1)}`);continue;} assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,l.key==='H21'?'CLOSED':issueMap[l.key].state);}
+    for(const l of links) {if(['H999','H997'].includes(l.key)){assert.equal(l.url,`https://github.com/jimmie-potts/agent-device-hub/issues/${l.key.slice(1)}`);continue;} assert.equal(l.url,issueMap[l.key].url);assert.equal(l.state,l.key==='H23'?'CLOSED':issueMap[l.key].state);}
     for(const id of ids) {
       const guide=page.locator(`#${id}`), owned=coverage[id];
       assert.deepEqual((await guide.getAttribute('data-primary')).split(' ').filter(Boolean),owned);
@@ -186,7 +186,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const evidenceExpansion=()=>page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.map(e=>e.open));
     const beforeEvidence=await evidenceExpansion();
     const beforeSearch=await expansion();
-    for(const [query,id] of [['Expire monitoring sessions after 24 hours','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
+    for(const [query,id] of [['Remove archived Codex Desktop tasks','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
       await page.locator('#search').fill(query); assert.equal(await page.locator('.guide:not([hidden])').count(),1);
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');
@@ -303,7 +303,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await offline.context().addInitScript(()=>Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false}));
     await offline.goto(pathToFileURL(file).href);
     await offline.waitForFunction(()=>document.querySelector('#github-status')?.textContent.includes('GitHub unavailable for Hub, Nanoleaf and Pixoo;'));
-    assert(await offline.locator('a[data-issue="H21"]').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress')),'Unavailable reads keep snapshot badges');
+    const offlineExpected=sourceHtml.match(/data-issue="H23"[^>]*data-status="([^"]+)"/)[1]; assert.notEqual(offlineExpected,'completed','The offline example differs from its mocked live status');
+    assert(await offline.locator('a[data-issue="H23"]').evaluateAll((es,status)=>es.every(e=>e.dataset.status===status),offlineExpected),'Unavailable reads keep snapshot badges');
     assert.deepEqual((await offline.locator('#open-defects .work-card').evaluateAll(es=>es.map(e=>e.dataset.key))).sort(),openKeys.filter(k=>issueMap[k].labels.some(l=>l.name==='bug')).sort(),'Offline view includes every open bug');
     assert((await offline.locator('#overview-freshness').textContent()).includes('snapshot'));
     assert.deepEqual(offlineErrors,[],'Failed or offline reads do not produce console or page errors'); await offline.close();

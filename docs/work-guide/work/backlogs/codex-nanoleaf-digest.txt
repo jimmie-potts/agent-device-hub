@@ -3,7 +3,7 @@
 #12 [OPEN] Add an inspection-only display mode
 #13 [OPEN] Integrate Lively startup and recovery
 #14 [OPEN] Run and evaluate the installed Lively prototype
-#15 [OPEN] Expose authoritative light rendering state for display clients
+#15 [CLOSED] Expose authoritative light rendering state for display clients
 #16 [OPEN] Build the ambient view
 #17 [OPEN] Show bridge-controlled lights live in the app
 #18 [OPEN] Configure project and status colors consistently
@@ -21,7 +21,7 @@
 #43 [CLOSED] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
 #44 [OPEN] Switch the wall map between Lines and Light Panels
 #45 [CLOSED] Enroll a second Nanoleaf device on the Linux runtime
-#46 [OPEN] Verify Lines and NL22 Panels together on the installed Linux runtime
+#46 [CLOSED] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
 #49 [CLOSED] Expose Nanoleaf integration settings and assignments to the shared frontend
 #52 [CLOSED] Expose connector geometry for the Prism wall map
@@ -32,9 +32,13 @@
 #70 [CLOSED] Align guide-maintenance rules with the current hub procedure
 #72 [CLOSED] Stale shared approval evidence keeps two Nanoleaf Lines red
 #74 [CLOSED] Investigate and resolve retained shared unread indicators
-#75 [OPEN] Provide source-backed labels and project associations for shared tasks
-#76 [OPEN] Show current projects first and hide inactive saved projects
-#77 [OPEN] Limit and prioritize tasks in the wall map inspector
+#75 [CLOSED] Show Codex titles and projects for shared tasks, with distinct fallback names
 #78 [OPEN] Reduce default wall map controls and repeated status text
 #81 [OPEN] Queue the completion comet when a subagent delays a parent's unread
 #84 [CLOSED] Use the shared npm cache instead of a /tmp cache in setup guidance
+#89 [CLOSED] Remove the legacy Codex hooks after the shared-input cutover
+#90 [OPEN] Wake the worker from the hub's change stream instead of polling each second
+#91 [OPEN] Let Codex play saved Nanoleaf scenes through the local MCP server
+#92 [OPEN] Play custom animations on the Lines when Codex asks for them
+#100 [OPEN] Show Claude Code titles and projects for shared tasks
+#108 [OPEN] Open a wall task's thread in Codex Desktop
