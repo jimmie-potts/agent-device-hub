@@ -11,6 +11,9 @@ import html
 import json
 
 TZ = ZoneInfo('America/New_York')
+# Layout limits tied to the guide CSS: 10px axis labels and 11px node labels in 188-unit nodes.
+DAY_LABEL_GAP = 56
+NODE_LABEL_CHARS = 27
 REPO_ORDER = ['H', 'N', 'P']
 REPO_NAME = {'H': 'agent-device-hub', 'N': 'codex-nanoleaf', 'P': 'divoom-app-upgrade'}
 REPO_LABEL = {'H': 'Hub', 'N': 'Nanoleaf', 'P': 'Pixoo'}
@@ -26,24 +29,26 @@ MILESTONES = {
 SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
     ('Main product path', [
-        dict(id='n-local', x=0, label='Local acceptance done', issues=[], guide='local-acceptance'),
-        dict(id='n-codex', x=1, label='Shared Codex integration', issues=['P61', 'H123', 'H181', 'H182'], guide='shared-codex', main=True),
-        dict(id='n-controls', x=2, label='General controls', issues=['H35', 'P67', 'H152', 'H154', 'H155'], guide='controls-music', main=True),
-        dict(id='n-music', x=3, label='Apple Music', issues=['H36', 'H175', 'H178', 'H40', 'H37', 'H38', 'H39', 'H41'], guide='controls-music', main=True),
+        dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
+        dict(id='n-codex', x=1, label='B.U.N.N.Y. UI foundation', issues=['H181', 'H182'], guide='bunny-controls', main=True),
+        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H231', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
+        dict(id='n-music', x=3, label='Music playback', issues=['H233', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('Monitor status and recovery', [
         dict(id='n-status-fix', x=0, label='Current status delivered', issues=[], guide='shared-codex'),
         dict(id='n-status-reset', x=1, label='Optional per-task reset', issues=['H138'], guide='shared-codex'),
     ]),
-    ('Nanoleaf shared map follow-ups', [
-        dict(id='n-shared-map-quality', x=1, label='Labels · read evidence · capacity', issues=['N75', 'H191', 'H195', 'N81'], guide='shared-codex'),
+    ('Monitoring follow-ups', [
+        dict(id='n-shared-lifetime', x=0, label='Read state + expiry done', issues=[], guide='shared-codex'),
+        dict(id='n-shared-map-quality', x=1, label='Archive removal · push', issues=['H218', 'H222'], guide='shared-codex'),
+        dict(id='n-nl-push', x=2, label='Nanoleaf wakes on push', issues=['N90'], guide='shared-codex'),
     ]),
     ('Reliable event history', [
-        dict(id='n-event-history', x=4, label='Deferred history refinement', issues=['H139'], guide='shared-codex'),
+        dict(id='n-event-history', x=4, label='History refinement', issues=['H139'], guide='shared-codex'),
     ]),
     ('Desktop controls (shortcut path)', [
-        dict(id='n-desk-doc', x=0, label='Input qualification delivered', issues=[], guide='desktop-controls'),
+        dict(id='n-desk-doc', x=0, label='Input qualified', issues=[], guide='desktop-controls'),
         dict(id='n-desk-local', x=1, label='Codex mouse controls', issues=['H65', 'H66'], guide='desktop-controls'),
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
@@ -51,19 +56,18 @@ TRACKS = [
     ]),
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-worker', x=1, label='Worker + panel effects delivered', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-map', x=2, label='Map, tray, upgrades', issues=['N44'], guide='nanoleaf-devices'),
-        dict(id='n-nl-accept', x=3, label='Installed acceptance', issues=['N46'], guide='nanoleaf-devices'),
+        dict(id='n-nl-worker', x=1, label='Panel effects delivered', issues=[], guide='nanoleaf-devices'),
+        dict(id='n-nl-accept', x=2, label='Panels trial accepted', issues=[], guide='nanoleaf-devices'),
+        dict(id='n-nl-map', x=3, label='Device selector', issues=['N44'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf wall map hierarchy', [
-        dict(id='n-map-projects', x=1, label='Current projects first', issues=['N76'], guide='nanoleaf-presentation'),
-        dict(id='n-map-tasks', x=1, label='Priority tasks first', issues=['N77'], guide='nanoleaf-presentation'),
-        dict(id='n-map-layout', x=2, label='Simplify default layout', issues=['N78'], guide='nanoleaf-presentation'),
+        dict(id='n-map-hierarchy', x=0, label='Projects + tasks delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-map-layout', x=1, label='Simplify default layout', issues=['N78'], guide='nanoleaf-presentation'),
     ]),
     ('Nanoleaf rendering + displays', [
-        dict(id='n-np-fix', x=0, label='External-scene findings delivered', issues=[], guide='nanoleaf-presentation'),
-        dict(id='n-np-render', x=1, label='Rendering + live renderer', issues=['N15', 'N17'], guide='nanoleaf-presentation'),
+        dict(id='n-np-fix', x=0, label='Scene findings delivered', issues=[], guide='nanoleaf-presentation'),
+        dict(id='n-np-render', x=1, label='Live app renderer', issues=['N17'], guide='nanoleaf-presentation'),
         dict(id='n-np-custom', x=2, label='Palettes + effects', issues=['N18', 'N19', 'N20'], guide='nanoleaf-presentation'),
         dict(id='n-np-lively', x=3, label='Lively prototype', issues=['N10', 'N11', 'N12', 'N13', 'N14'], guide='nanoleaf-presentation'),
         dict(id='n-np-ambient', x=4, label='Ambient view', issues=['N16'], guide='nanoleaf-presentation'),
@@ -74,10 +78,10 @@ TRACKS = [
         dict(id='n-prism-numbers', x=2, label='Luminous numbers delivered', issues=[], guide='nanoleaf-presentation'),
     ]),
     ('Tidbyt + LIFX', [
-        dict(id='n-tl-qual', x=0, label='Connection qualification done', issues=[], guide='tidbyt-lifx'),
-        dict(id='n-tl-ctrl', x=1, label='Controller sources delivered', issues=[], guide='tidbyt-lifx'),
+        dict(id='n-tl-qual', x=0, label='Qualification done', issues=[], guide='tidbyt-lifx'),
+        dict(id='n-tl-ctrl', x=1, label='Controllers delivered', issues=[], guide='tidbyt-lifx'),
         dict(id='n-tl-status', x=2, label='LIFX automatic status', issues=['H20'], guide='tidbyt-lifx'),
-        dict(id='n-tl-accept', x=3, label='Installed acceptance', issues=['H21', 'H22'], guide='tidbyt-lifx'),
+        dict(id='n-tl-accept', x=3, label='LIFX check · Tidbyt text', issues=['H22', 'H227'], guide='tidbyt-lifx'),
         dict(id='n-tl-later', x=4, label='Tronbyt · other options', issues=['H23', 'H24', 'H11'], guide='tidbyt-lifx'),
     ]),
     ('PC + desk lighting', [
@@ -88,13 +92,16 @@ TRACKS = [
         dict(id='n-pc-opt', x=4, label='Strimer · Varmilo', issues=['H58', 'H61', 'H62'], guide='pc-lighting'),
     ]),
     ('Pixoo media + access', [
-        dict(id='n-px-media', x=2, label='Media features', issues=['P13', 'P15', 'P16', 'P18', 'P52', 'P55'], guide='pixoo-media'),
+        dict(id='n-px-media', x=2, label='Media · cloud-free display', issues=['P76', 'P52', 'P55', 'P13', 'P15', 'P16', 'P18'], guide='pixoo-media'),
         dict(id='n-px-access', x=3, label='Remote browser · ChatGPT', issues=['P11', 'P43', 'P17', 'P44'], guide='assistant-access'),
     ]),
     ('Nanoleaf Linux runtime', [
         dict(id='n-linux-source', x=0, label='Linux source delivered', issues=[], guide='hosting-migrations'),
-        dict(id='n-linux-acceptance', x=1, label='Linux installation accepted', issues=[], guide='hosting-migrations'),
+        dict(id='n-linux-acceptance', x=1, label='Linux install accepted', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-portability', x=2, label='Architecture documented', issues=[], guide='hosting-migrations'),
+    ]),
+    ('Pixoo installation', [
+        dict(id='n-px-service', x=0, label='Run as a user service', issues=['P77'], guide='hosting-migrations'),
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
@@ -102,36 +109,36 @@ TRACKS = [
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
-        dict(id='n-dev-ci', x=0, label='CI + guide maintenance', issues=['H73'], guide='development-workflow'),
-        dict(id='n-dev-jobs', x=1, label='Pixoo job consolidation not planned', issues=[], guide='development-workflow'),
-        dict(id='n-dev-spec', x=2, label='Shared OpenSpec tooling not planned', issues=[], guide='development-workflow'),
-        dict(id='n-nanoleaf-cache-docs', x=0, label='Nanoleaf setup guidance delivered', issues=[], guide='development-workflow'),
-        dict(id='n-pixoo-cache-docs', x=0, label='Pixoo setup guidance delivered', issues=[], guide='development-workflow'),
-        dict(id='n-hub-cache-docs', x=1, label='Hub shared cache guidance delivered', issues=[], guide='development-workflow'),
+        dict(id='n-dev-jobs', x=0, label='Job merge not planned', issues=[], guide='development-workflow'),
+        dict(id='n-dev-spec', x=1, label='OpenSpec tools not planned', issues=[], guide='development-workflow'),
+        dict(id='n-hub-cache-docs', x=2, label='Setup cache docs delivered', issues=[], guide='development-workflow'),
+    ]),
+    ('Guide defects', [
+        dict(id='n-dev-ci', x=0, label='Diagram connector fix', issues=['H73'], guide='development-workflow'),
     ]),
     ('System design documents', [
         dict(id='n-system-design', x=0, label='Atlas published', issues=[], guide='development-workflow'),
     ]),
     ('Guide workflow checkpoints', [
-        dict(id='n-guide-workflow', x=0, label='Pixoo guide maintenance delivered', issues=[], guide='development-workflow'),
+        dict(id='n-guide-workflow', x=0, label='Pixoo guide rules done', issues=[], guide='development-workflow'),
     ]),
-    ('Guide Prism design + rollout', [
-        dict(id='n-guide-design', x=0, label='Approve guide design', issues=['H85'], guide='development-workflow'),
-        dict(id='n-guide-artwork', x=1, label='Guide artwork application not planned', issues=[], guide='development-workflow'),
-        dict(id='n-guide-publish', x=2, label='Local + public verification', issues=['H87'], guide='development-workflow'),
+    ('Guide Neon restyle + rollout', [
+        dict(id='n-guide-design', x=0, label='Neon restyle', issues=['H85'], guide='development-workflow'),
+        dict(id='n-guide-artwork', x=1, label='Guide artwork not planned', issues=[], guide='development-workflow'),
+        dict(id='n-guide-publish', x=2, label='Mobile publication', issues=['H87'], guide='development-workflow'),
     ]),
     ('Guide mobile tasks and status', [
-        dict(id='n-guide-mobile', x=0, label='Current public GitHub status', issues=['H197'], guide='development-workflow'),
+        dict(id='n-guide-mobile', x=0, label='Live status delivered', issues=[], guide='development-workflow'),
     ]),
     ('Guide automatic refresh', [
-        dict(id='n-guide-refresh', x=3, label='Automatic refresh not planned', issues=[], guide='development-workflow'),
+        dict(id='n-guide-refresh', x=3, label='Auto refresh not planned', issues=[], guide='development-workflow'),
     ]),
     ('Guide cleanup + clipboard check', [
-        dict(id='n-guide-clipboard', x=0, label='Clipboard fallback check completed', issues=[], guide='development-workflow'),
-        dict(id='n-guide-cleanup', x=1, label='Delivery cleanup follow-up completed', issues=[], guide='development-workflow'),
+        dict(id='n-guide-clipboard', x=0, label='Clipboard check completed', issues=[], guide='development-workflow'),
+        dict(id='n-guide-cleanup', x=1, label='Cleanup follow-up done', issues=[], guide='development-workflow'),
     ]),
     ('Guide mission map', [
-        dict(id='n-guide-map', x=2, label='Interactive neon mission map', issues=['H201'], guide='development-workflow'),
+        dict(id='n-guide-map', x=2, label='Neon mission map', issues=['H201'], guide='development-workflow'),
     ]),
     ('Atlas signal playback', [
         dict(id='n-atlas-playback', x=2, label='Controlled signal playback', issues=['H202'], guide='development-workflow'),
@@ -157,10 +164,11 @@ CROSS = [
     ('n-guide-publish', 'n-guide-refresh', 'H87'),
     ('n-app-qualify', 'n-app-handoff', 'H199'),
     ('n-app-boundary', 'n-app-handoff', 'H203'),
-    ('n-codex', 'n-desk-presets', 'H32 · H31 · H5'), ('n-codex', 'n-tl-status', 'H3 · P31'), ('n-codex', 'n-pc-ctrl', 'H3 · P31'),
-    ('n-codex', 'n-tl-accept', 'H8'), ('n-codex', 'n-pc-accept', 'H8'), ('n-codex', 'n-desk-verify', 'H8'),
-    ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-codex', 'n-host', 'H5'),
-    ('n-controls', 'n-desk-presets', 'H31'), ('n-music', 'n-desk-later', 'H36 · H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
+    # Delivered local and Codex milestone inputs (H3, H5, H8, H31, H32, P31) start at the first main-path node.
+    ('n-local', 'n-desk-presets', 'H32 · H31 · H5'), ('n-local', 'n-tl-status', 'H3 · P31'), ('n-local', 'n-pc-ctrl', 'H3 · P31'),
+    ('n-local', 'n-tl-accept', 'H8'), ('n-local', 'n-pc-accept', 'H8'), ('n-local', 'n-desk-verify', 'H8'),
+    ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-local', 'n-host', 'H5'),
+    ('n-music', 'n-desk-later', 'H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
 ]
 
 
@@ -188,15 +196,19 @@ def history_chart(history, snapshot_iso, issues):
 
     parts = [f'<svg class="history" viewBox="0 0 {width} {height}" role="img" aria-labelledby="history-title history-desc" preserveAspectRatio="xMidYMid meet">',
              f'<title id="history-title">Merged pull requests per repository through {esc(end.strftime("%B %d, %Y"))}</title>',
-             f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are labeled. A vertical line marks the backlog snapshot time.</desc>']
+             f'<desc id="history-desc">Three rows, one per repository, with a mark for every pull request merged to main between repository creation and the backlog snapshot. Milestone deliveries are ringed and captioned where space allows; each milestone is named in its tooltip. A vertical line marks the backlog snapshot time.</desc>']
     # ticks every 12 hours, day labels at local midnight
     tick = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    labelled = -100
     while tick <= end + timedelta(hours=4):
         if tick >= start:
             tx = x(tick)
             major = tick.hour == 0
             parts.append(f'<line class="tick{" major" if major else ""}" x1="{tx:.1f}" y1="{top - 6}" x2="{tx:.1f}" y2="{height - 40}"/>')
-            parts.append(f'<text class="tick-label" x="{tx:.1f}" y="{height - 22}" text-anchor="middle">{esc(tick.strftime("%a %b %d") if major else tick.strftime("%H:%M"))}</text>')
+            # Day labels only, spaced so they never overlap as the history grows.
+            if major and tx - labelled >= DAY_LABEL_GAP:
+                parts.append(f'<text class="tick-label" x="{tx:.1f}" y="{height - 22}" text-anchor="middle">{esc(tick.strftime("%b %-d"))}</text>')
+                labelled = tx
         tick += timedelta(hours=12)
     snapshot_x = x(end)
     parts.append(f'<line class="snapshot-line" x1="{snapshot_x:.1f}" y1="{top - 14}" x2="{snapshot_x:.1f}" y2="{height - 40}"/>')
@@ -226,11 +238,14 @@ def history_chart(history, snapshot_iso, issues):
             caption = ''
             if milestone:
                 half = len(milestone) * 2.7 + 4
-                level = next((lv for lv in levels if all(px + half < a or px - half > b for a, b in placed[lv])), levels[-1])
-                placed[level].append((px - half, px + half))
-                leader = f'<line class="leader" x1="{px:.1f}" y1="{py + (7 if level > cy else -7):.1f}" x2="{px:.1f}" y2="{level - (8 if level > cy else -3):.1f}"/>' if abs(level - cy) > 30 else ''
-                caption = leader + f'<text class="milestone-label" x="{px:.1f}" y="{level:.1f}" text-anchor="middle">{esc(milestone)}</text>'
-            parts.append(f'<a class="{classes}" href="{esc(pr["url"])}" target="_blank" rel="noopener noreferrer" data-repo="{key}" data-tip="{esc(label)}" data-when="{esc(when.strftime("%a %b %d, %H:%M %Z"))}" aria-label="{esc(label)}, merged {esc(when.strftime("%b %d %H:%M %Z"))}">'
+                level = next((lv for lv in levels if all(px + half < a or px - half > b for a, b in placed[lv])), None)
+                # A crowded baseline keeps its ring and names itself in the tooltip instead of overlapping another caption.
+                if level is not None:
+                    placed[level].append((px - half, px + half))
+                    leader = f'<line class="leader" x1="{px:.1f}" y1="{py + (7 if level > cy else -7):.1f}" x2="{px:.1f}" y2="{level - (8 if level > cy else -3):.1f}"/>' if abs(level - cy) > 30 else ''
+                    caption = leader + f'<text class="milestone-label" x="{px:.1f}" y="{level:.1f}" text-anchor="middle">{esc(milestone)}</text>'
+            detail = f' data-detail="Delivery baseline: {esc(milestone)}"' if milestone else ''
+            parts.append(f'<a class="{classes}" href="{esc(pr["url"])}" target="_blank" rel="noopener noreferrer" data-repo="{key}" data-tip="{esc(label)}" data-when="{esc(when.strftime("%a %b %d, %H:%M %Z"))}"{detail} aria-label="{esc(label)}, merged {esc(when.strftime("%b %d %H:%M %Z"))}{", delivery baseline " + esc(milestone) if milestone else ""}">'
                          f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{7 if milestone else 5}"/>' + caption + '</a>')
         totals['merged'] += len(repo['mergedPRs']); totals['closed'] += len(repo['closedIssues']); totals['commits'] += repo['mainCommitCount']
     parts.append('</svg>')
@@ -295,6 +310,11 @@ def build(history, snapshot_iso, issues, guides_by_id, coverage):
     for _, items in TRACKS:
         for item in items:
             assert set(item['issues']) <= set(coverage[item['guide']]), f'{item["id"]} lists issues outside its guide'
+    for track, items in TRACKS:
+        columns = [item['x'] for item in items]
+        # Same-track arrows follow list order, so columns must be unique and ascending.
+        assert columns == sorted(set(columns)), f'Overlapping or unordered roadmap nodes in {track}'
+        assert all(len(item['label']) <= NODE_LABEL_CHARS for item in items), f'Roadmap label too long for its node in {track}'
     chart, totals = history_chart(history, snapshot_iso, issues)
     roadmap, nodes, listed = roadmap_map(issues, guides_by_id)
     fetched = local(history['fetchedAt'])
@@ -310,27 +330,13 @@ def reconcile(issues, coverage, aliases):
     owners = {key: guide for guide, keys in coverage.items() for key in keys}
     extra = [
         ('Engineering maintenance', [dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow')]),
-        ('Task metadata and effects', [dict(id='n-map-metadata', x=1, label='Task labels · completion comet', issues=['N75', 'N81'], guide='nanoleaf-presentation')]),
-        ('Guide overview', [dict(id='n-guide-overview', x=1, label='Priorities · new issues · defects', issues=['H220'], guide='work-guide')]),
+        ('Task metadata and effects', [
+            dict(id='n-map-metadata', x=0, label='Codex titles delivered', issues=[], guide='nanoleaf-presentation'),
+            dict(id='n-map-threads', x=1, label='Links · titles · comet', issues=['N108', 'N100', 'N81'], guide='nanoleaf-presentation'),
+            dict(id='n-map-animations', x=2, label='Requested animations', issues=['N92'], guide='nanoleaf-presentation'),
+        ]),
+        ('Guide overview', [dict(id='n-guide-overview', x=0, label='Overview refresh delivered', issues=[], guide='work-guide')]),
     ]
-    for _, items in TRACKS:
-        for node in items:
-            if node['id'] == 'n-codex':
-                node.update(issues=['H181', 'H182'], label='B.U.N.N.Y. UI foundation')
-            elif node['id'] == 'n-controls':
-                node['issues'] = ['P67', 'H152', 'H154', 'H155']
-            elif node['id'] == 'n-music':
-                node['issues'] = ['H35'] + node['issues']
-            elif node['id'] == 'n-shared-map-quality':
-                node.update(issues=['H191', 'H195', 'H218'], label='Read evidence · session lifetime')
-            elif node['id'] == 'n-nl-map':
-                node.update(x=3, label='Device selector after trial')
-            elif node['id'] == 'n-nl-accept':
-                node.update(x=2, label='Installed Panels trial')
-            elif node['id'] == 'n-guide-mobile':
-                node.update(label='Live status source delivered')
-        if any(node['id'] == 'n-nl-map' for node in items):
-            items.sort(key=lambda node: node['x'])
     TRACKS = TRACKS + extra
     for _, items in TRACKS:
         for node in items:

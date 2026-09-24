@@ -1,15 +1,65 @@
 {
-  "fetchedAt": "2026-09-24T00:14:36.308340+00:00",
+  "fetchedAt": "2026-09-24T09:07:21.244023+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-24T00:09:49Z",
+      "pushedAt": "2026-09-24T08:52:49Z",
       "defaultBranch": "main",
-      "headSha": "d12fce5bf6a9c1c31254115752f255896e96386e",
-      "mainCommitCount": 101,
+      "headSha": "fcb6b21b316707f88ba70a66d1ca83e342c46216",
+      "mainCommitCount": 111,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "fcb6b21b316707f88ba70a66d1ca83e342c46216",
+          "date": "2026-09-24T08:52:48Z",
+          "message": "Document how to create hub credentials and what each grant allows (#235)"
+        },
+        {
+          "sha": "c6f33eff775bb099b34d39f49cc72a4f10031881",
+          "date": "2026-09-24T07:53:34Z",
+          "message": "Add shared playback with a Sony HT-A9 source (#230)"
+        },
+        {
+          "sha": "91cb3a12888b1fbe0b056ca1c4fa9bd909953d11",
+          "date": "2026-09-24T04:41:56Z",
+          "message": "Clear no-ID approval markers when their turn is retired (#226)"
+        },
+        {
+          "sha": "33c99ba8f6aabb58057382f55ca6a44bf510c6d3",
+          "date": "2026-09-24T03:16:00Z",
+          "message": "Add guarded media tools to hub MCP (#224)"
+        },
+        {
+          "sha": "d0d5670fe7620b08299b3fe42878aa4f39996f6b",
+          "date": "2026-09-24T03:00:31Z",
+          "message": "Expire monitoring sessions after 24 hours without activity (#223)"
+        },
+        {
+          "sha": "ddeecd8a4da9d6fc57c9f0506ff36157389bbfd6",
+          "date": "2026-09-24T02:04:25Z",
+          "message": "Make the work guide show current priorities, new issues and defects (#221)"
+        },
+        {
+          "sha": "99ff4cc6a62b0407d452f4ac22718e22e754c3e9",
+          "date": "2026-09-24T01:40:29Z",
+          "message": "Report Codex Desktop read state to the shared owner (#219)"
+        },
+        {
+          "sha": "159c46fba6b3fbd2df9169fc3f1c7a8236a44cbf",
+          "date": "2026-09-24T01:20:43Z",
+          "message": "Align guide-check browser selection and keep performance runs off /tmp (#217)"
+        },
+        {
+          "sha": "4efab3b4586e32bdedb5415c35a28af31bf78ec8",
+          "date": "2026-09-24T01:00:56Z",
+          "message": "Add live GitHub status to work guide (#197) (#215)"
+        },
+        {
+          "sha": "359717d7604a0d9f61b82c4385a84c71a92c9828",
+          "date": "2026-09-24T00:17:49Z",
+          "message": "Refresh work guide to current GitHub status (#213)"
+        },
         {
           "sha": "d12fce5bf6a9c1c31254115752f255896e96386e",
           "date": "2026-09-24T00:06:01Z",
@@ -1294,23 +1344,95 @@
           "mergedAt": "2026-09-23T23:58:38Z"
         },
         {
+          "number": 213,
+          "title": "Refresh work guide to current GitHub status",
+          "createdAt": "2026-09-23T23:57:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
+          "base": "main",
+          "mergedAt": "2026-09-24T00:17:50Z"
+        },
+        {
           "number": 214,
           "title": "Use shared npm and Playwright caches in setup guidance",
           "createdAt": "2026-09-24T00:00:07Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/214",
           "base": "main",
           "mergedAt": "2026-09-24T00:06:01Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
-          "number": 213,
-          "title": "Refresh work guide to current GitHub status",
-          "createdAt": "2026-09-23T23:57:44Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
-          "base": "main"
+          "number": 215,
+          "title": "Show live public GitHub status in the guide",
+          "createdAt": "2026-09-24T00:55:56Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/215",
+          "base": "main",
+          "mergedAt": "2026-09-24T01:00:56Z"
+        },
+        {
+          "number": 217,
+          "title": "Align guide-check browser selection and keep performance runs off /tmp",
+          "createdAt": "2026-09-24T01:02:08Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/217",
+          "base": "main",
+          "mergedAt": "2026-09-24T01:20:44Z"
+        },
+        {
+          "number": 219,
+          "title": "Report Codex Desktop read state to the shared owner",
+          "createdAt": "2026-09-24T01:19:26Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/219",
+          "base": "main",
+          "mergedAt": "2026-09-24T01:40:30Z"
+        },
+        {
+          "number": 221,
+          "title": "Make the work guide show current priorities, new issues and defects",
+          "createdAt": "2026-09-24T02:00:14Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/221",
+          "base": "main",
+          "mergedAt": "2026-09-24T02:04:25Z"
+        },
+        {
+          "number": 223,
+          "title": "Expire monitoring sessions after 24 hours without activity",
+          "createdAt": "2026-09-24T02:37:16Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/223",
+          "base": "main",
+          "mergedAt": "2026-09-24T03:00:31Z"
+        },
+        {
+          "number": 224,
+          "title": "Add guarded media tools to hub MCP",
+          "createdAt": "2026-09-24T03:12:25Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/224",
+          "base": "main",
+          "mergedAt": "2026-09-24T03:16:00Z"
+        },
+        {
+          "number": 226,
+          "title": "Clear no-ID approval markers when their turn is retired",
+          "createdAt": "2026-09-24T04:28:59Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/226",
+          "base": "main",
+          "mergedAt": "2026-09-24T04:41:56Z"
+        },
+        {
+          "number": 230,
+          "title": "Add shared playback with a Sony HT-A9 source",
+          "createdAt": "2026-09-24T07:34:03Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/230",
+          "base": "main",
+          "mergedAt": "2026-09-24T07:53:34Z"
+        },
+        {
+          "number": 235,
+          "title": "Document how to create hub credentials and what each grant allows",
+          "createdAt": "2026-09-24T08:43:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/235",
+          "base": "main",
+          "mergedAt": "2026-09-24T08:52:49Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -1447,6 +1569,14 @@
           "createdAt": "2026-09-07T05:54:17Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/19"
+        },
+        {
+          "number": 21,
+          "title": "Install and verify Tidbyt agent status",
+          "closedAt": "2026-09-24T06:02:16Z",
+          "createdAt": "2026-09-07T05:54:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/21"
         },
         {
           "number": 30,
@@ -1609,12 +1739,36 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/151"
         },
         {
+          "number": 152,
+          "title": "Add media tools to the hub MCP device tool set",
+          "closedAt": "2026-09-24T03:20:33Z",
+          "createdAt": "2026-09-22T05:37:42Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/152"
+        },
+        {
           "number": 153,
           "title": "Add Nanoleaf general controls to the BUNNY component view",
           "closedAt": "2026-09-23T02:00:22Z",
           "createdAt": "2026-09-22T05:38:23Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/153"
+        },
+        {
+          "number": 154,
+          "title": "Install and verify Pixoo general controls on the physical display",
+          "closedAt": "2026-09-24T08:07:41Z",
+          "createdAt": "2026-09-22T05:38:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/154"
+        },
+        {
+          "number": 155,
+          "title": "Install and verify Nanoleaf general controls on the installed wall",
+          "closedAt": "2026-09-24T08:07:46Z",
+          "createdAt": "2026-09-22T05:38:42Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/155"
         },
         {
           "number": 158,
@@ -1665,6 +1819,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/173"
         },
         {
+          "number": 175,
+          "title": "Deliver shared Linux playback with a separate Sony HT-A9 source",
+          "closedAt": "2026-09-24T08:18:42Z",
+          "createdAt": "2026-09-23T05:46:50Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/175"
+        },
+        {
           "number": 179,
           "title": "Open BUNNY through a local owner launcher without manual browser tokens",
           "closedAt": "2026-09-23T07:20:50Z",
@@ -1689,12 +1851,36 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/186"
         },
         {
+          "number": 191,
+          "title": "Report Codex Desktop read state to the shared owner",
+          "closedAt": "2026-09-24T04:03:16Z",
+          "createdAt": "2026-09-23T19:45:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/191"
+        },
+        {
+          "number": 195,
+          "title": "Expire monitoring sessions after 24 hours without activity",
+          "closedAt": "2026-09-24T03:29:45Z",
+          "createdAt": "2026-09-23T21:00:05Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/195"
+        },
+        {
           "number": 196,
           "title": "Prepare Codex and Claude task briefs from the mobile work guide",
           "closedAt": "2026-09-23T23:26:12Z",
           "createdAt": "2026-09-23T21:04:31Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/196"
+        },
+        {
+          "number": 197,
+          "title": "Show current public GitHub status in the dated guide",
+          "closedAt": "2026-09-24T01:01:30Z",
+          "createdAt": "2026-09-23T21:04:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/197"
         },
         {
           "number": 200,
@@ -1727,12 +1913,52 @@
           "createdAt": "2026-09-23T23:51:38Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/212"
+        },
+        {
+          "number": 216,
+          "title": "Align guide-check browser selection and keep performance runs off /tmp",
+          "closedAt": "2026-09-24T01:23:46Z",
+          "createdAt": "2026-09-24T01:00:21Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/216"
+        },
+        {
+          "number": 220,
+          "title": "Refresh work-guide priorities, new issues and defects, and reorganize topic guides",
+          "closedAt": "2026-09-24T02:11:06Z",
+          "createdAt": "2026-09-24T01:46:04Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/220"
+        },
+        {
+          "number": 225,
+          "title": "Clear no-ID approval markers when their turn is retired",
+          "closedAt": "2026-09-24T04:56:56Z",
+          "createdAt": "2026-09-24T04:23:27Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/225"
+        },
+        {
+          "number": 228,
+          "title": "Consolidated into #175: shared playback service",
+          "closedAt": "2026-09-24T07:00:36Z",
+          "createdAt": "2026-09-24T06:43:13Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/228"
+        },
+        {
+          "number": 234,
+          "title": "Document how to create hub credentials and what each grant allows",
+          "closedAt": "2026-09-24T08:55:46Z",
+          "createdAt": "2026-09-24T08:41:00Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/234"
         }
       ],
-      "openIssueCount": 61,
+      "openIssueCount": 60,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-23T23:51:38Z"
+        "2026-09-24T08:41:00Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -1743,17 +1969,78 @@
         "2026-09-20": 2,
         "2026-09-21": 1,
         "2026-09-22": 10,
-        "2026-09-23": 27
+        "2026-09-23": 27,
+        "2026-09-24": 12
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-23T23:59:21Z",
+      "pushedAt": "2026-09-24T09:04:43Z",
       "defaultBranch": "main",
-      "headSha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
-      "mainCommitCount": 38,
+      "headSha": "08b6b8387268bb247e352c7e9d0604f832cad97b",
+      "mainCommitCount": 50,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "08b6b8387268bb247e352c7e9d0604f832cad97b",
+          "date": "2026-09-24T08:02:31Z",
+          "message": "Keep task positions when selecting in the wall map inspector (#106)"
+        },
+        {
+          "sha": "f17a42400236ec7d2a9696f57f1ecc2279669664",
+          "date": "2026-09-24T07:52:56Z",
+          "message": "Show Codex titles and projects in shared input (#107)"
+        },
+        {
+          "sha": "8088c533a4e937f02923e9d93842a4ec24f1e718",
+          "date": "2026-09-24T07:31:21Z",
+          "message": "Preserve hook positions during legacy registration (#104)"
+        },
+        {
+          "sha": "d3002e921103da062ed667d93cd24ff6ecefb563",
+          "date": "2026-09-24T06:19:23Z",
+          "message": "Recover unread completion receipts after legacy rollback (#102)"
+        },
+        {
+          "sha": "dd7d531e5c4d0a982fc2089b6ba5d67c8450d051",
+          "date": "2026-09-24T06:01:33Z",
+          "message": "Tolerate controller read contention and stabilize focus assertions (#101)"
+        },
+        {
+          "sha": "cf270750820b49dab9c48bdd5f4530706d8a1bb7",
+          "date": "2026-09-24T05:33:26Z",
+          "message": "Fix legacy unread tracking for current Codex Desktop (#99)"
+        },
+        {
+          "sha": "6a0a1f79a0c895bdb9badf0761a2b67f75834ea0",
+          "date": "2026-09-24T04:29:31Z",
+          "message": "Match the task inspector to the wall's Line count (#95)"
+        },
+        {
+          "sha": "0b7340d3e5f791af4b9a6350b96d36da17895fac",
+          "date": "2026-09-24T04:23:32Z",
+          "message": "Add safe legacy hook lifecycle for shared input (#94)"
+        },
+        {
+          "sha": "d069cf0f0de70fb44ac8c4a5cbcfdc8aab41bd6a",
+          "date": "2026-09-24T04:00:17Z",
+          "message": "Expose read-only worker rendering snapshot (#97)"
+        },
+        {
+          "sha": "bcefb1df89cffca3c27987a56c602873ef725c70",
+          "date": "2026-09-24T03:55:20Z",
+          "message": "Clear stale unread tasks when the shared feed reports them read (#96)"
+        },
+        {
+          "sha": "b4f206e1a2f3535e3a8171c487b89190123fc4b0",
+          "date": "2026-09-24T03:16:27Z",
+          "message": "Show current projects first and retain saved project access (#93)"
+        },
+        {
+          "sha": "a89788fdccd2fb3d8f390ffe61c3e6ac151f50a3",
+          "date": "2026-09-24T01:11:24Z",
+          "message": "Describe the repository as public in the delivery guide (#87)"
+        },
         {
           "sha": "d7571675dc9bf3da9d2e209103f142bec0ea5ff6",
           "date": "2026-09-23T23:59:21Z",
@@ -2209,9 +2496,113 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/85",
           "base": "main",
           "mergedAt": "2026-09-23T23:59:21Z"
+        },
+        {
+          "number": 87,
+          "title": "Describe the repository as public in the delivery guide",
+          "createdAt": "2026-09-24T01:03:58Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/87",
+          "base": "main",
+          "mergedAt": "2026-09-24T01:11:24Z"
+        },
+        {
+          "number": 93,
+          "title": "Show current projects first and hide inactive saved projects",
+          "createdAt": "2026-09-24T03:07:49Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/93",
+          "base": "main",
+          "mergedAt": "2026-09-24T03:16:27Z"
+        },
+        {
+          "number": 94,
+          "title": "Add safe legacy hook lifecycle for shared input",
+          "createdAt": "2026-09-24T03:27:53Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/94",
+          "base": "main",
+          "mergedAt": "2026-09-24T04:23:32Z"
+        },
+        {
+          "number": 95,
+          "title": "Match the task inspector to the wall's Line count",
+          "createdAt": "2026-09-24T03:38:34Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/95",
+          "base": "main",
+          "mergedAt": "2026-09-24T04:29:32Z"
+        },
+        {
+          "number": 96,
+          "title": "Clear stale unread tasks when the shared feed reports them read",
+          "createdAt": "2026-09-24T03:43:08Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/96",
+          "base": "main",
+          "mergedAt": "2026-09-24T03:55:20Z"
+        },
+        {
+          "number": 97,
+          "title": "Expose read-only worker rendering snapshot",
+          "createdAt": "2026-09-24T03:55:27Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/97",
+          "base": "main",
+          "mergedAt": "2026-09-24T04:00:18Z"
+        },
+        {
+          "number": 99,
+          "title": "Fix legacy unread tracking for current Codex Desktop",
+          "createdAt": "2026-09-24T05:24:11Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/99",
+          "base": "main",
+          "mergedAt": "2026-09-24T05:33:27Z"
+        },
+        {
+          "number": 101,
+          "title": "Fix controller read contention and polling focus checks",
+          "createdAt": "2026-09-24T05:54:36Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/101",
+          "base": "main",
+          "mergedAt": "2026-09-24T06:01:34Z"
+        },
+        {
+          "number": 102,
+          "title": "Recover completion receipts after legacy rollback",
+          "createdAt": "2026-09-24T06:13:53Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/102",
+          "base": "main",
+          "mergedAt": "2026-09-24T06:19:23Z"
+        },
+        {
+          "number": 104,
+          "title": "Preserve trusted hook positions during registration",
+          "createdAt": "2026-09-24T07:21:09Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/104",
+          "base": "main",
+          "mergedAt": "2026-09-24T07:31:21Z"
+        },
+        {
+          "number": 106,
+          "title": "Keep task positions when selecting in the wall map inspector",
+          "createdAt": "2026-09-24T07:34:28Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/106",
+          "base": "main",
+          "mergedAt": "2026-09-24T08:02:32Z"
+        },
+        {
+          "number": 107,
+          "title": "Show Codex titles and projects in shared input",
+          "createdAt": "2026-09-24T07:41:37Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/107",
+          "base": "main",
+          "mergedAt": "2026-09-24T07:52:57Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 109,
+          "title": "Open qualified wall tasks in Codex Desktop",
+          "createdAt": "2026-09-24T09:01:46Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/109",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 2,
@@ -2236,6 +2627,14 @@
           "createdAt": "2026-09-05T22:43:35Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/8"
+        },
+        {
+          "number": 15,
+          "title": "Expose authoritative light rendering state for display clients",
+          "closedAt": "2026-09-24T04:03:02Z",
+          "createdAt": "2026-09-06T23:58:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/15"
         },
         {
           "number": 21,
@@ -2382,6 +2781,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/45"
         },
         {
+          "number": 46,
+          "title": "Verify Lines and NL22 Panels together on the installed Linux runtime",
+          "closedAt": "2026-09-24T04:14:17Z",
+          "createdAt": "2026-09-07T18:43:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/46"
+        },
+        {
           "number": 49,
           "title": "Expose Nanoleaf integration settings and assignments to the shared frontend",
           "closedAt": "2026-09-21T00:09:58Z",
@@ -2462,6 +2869,30 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/74"
         },
         {
+          "number": 75,
+          "title": "Show Codex titles and projects for shared tasks, with distinct fallback names",
+          "closedAt": "2026-09-24T07:56:03Z",
+          "createdAt": "2026-09-23T08:24:56Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/75"
+        },
+        {
+          "number": 76,
+          "title": "Show current projects first and hide inactive saved projects",
+          "closedAt": "2026-09-24T03:19:59Z",
+          "createdAt": "2026-09-23T08:25:57Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/76"
+        },
+        {
+          "number": 77,
+          "title": "Limit and prioritize tasks in the wall map inspector",
+          "closedAt": "2026-09-24T04:33:41Z",
+          "createdAt": "2026-09-23T08:25:58Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/77"
+        },
+        {
           "number": 82,
           "title": "Clean up delivered worktrees and scratch after merge",
           "closedAt": "2026-09-23T23:27:46Z",
@@ -2476,12 +2907,60 @@
           "createdAt": "2026-09-23T23:49:39Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/84"
+        },
+        {
+          "number": 86,
+          "title": "Describe the repository as public in the delivery guide",
+          "closedAt": "2026-09-24T01:14:53Z",
+          "createdAt": "2026-09-24T01:02:59Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/86"
+        },
+        {
+          "number": 88,
+          "title": "Clear stale unread tasks when the shared feed reports them read",
+          "closedAt": "2026-09-24T04:03:24Z",
+          "createdAt": "2026-09-24T02:25:06Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/88"
+        },
+        {
+          "number": 89,
+          "title": "Remove the legacy Codex hooks after the shared-input cutover",
+          "closedAt": "2026-09-24T08:50:05Z",
+          "createdAt": "2026-09-24T02:37:53Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/89"
+        },
+        {
+          "number": 98,
+          "title": "Restore legacy unread tracking for the current Codex Desktop state format",
+          "closedAt": "2026-09-24T07:11:52Z",
+          "createdAt": "2026-09-24T05:20:41Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/98"
+        },
+        {
+          "number": 103,
+          "title": "Preserve hook positions when registering legacy rollback hooks",
+          "closedAt": "2026-09-24T07:36:46Z",
+          "createdAt": "2026-09-24T07:15:29Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/103"
+        },
+        {
+          "number": 105,
+          "title": "Keep task positions when selecting a task in the wall map inspector",
+          "closedAt": "2026-09-24T08:05:42Z",
+          "createdAt": "2026-09-24T07:22:35Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/105"
         }
       ],
       "openIssueCount": 19,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-23T23:49:39Z"
+        "2026-09-24T07:47:58Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -2489,17 +2968,23 @@
         "2026-09-07": 26,
         "2026-09-09": 4,
         "2026-09-22": 1,
-        "2026-09-23": 11
+        "2026-09-23": 11,
+        "2026-09-24": 11
       }
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-23T23:59:25Z",
+      "pushedAt": "2026-09-24T01:11:44Z",
       "defaultBranch": "main",
-      "headSha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
-      "mainCommitCount": 32,
+      "headSha": "01da65d32acdb800adabc8d9ad1083bdd652b823",
+      "mainCommitCount": 33,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "01da65d32acdb800adabc8d9ad1083bdd652b823",
+          "date": "2026-09-24T01:11:44Z",
+          "message": "Describe the repository as public in the delivery guide and ADR 0001 (#75)"
+        },
         {
           "sha": "dc2401b1c7b1a8507f3f75f1a69c2881a28cefd5",
           "date": "2026-09-23T23:59:25Z",
@@ -2909,6 +3394,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/73",
           "base": "main",
           "mergedAt": "2026-09-23T23:59:25Z"
+        },
+        {
+          "number": 75,
+          "title": "Describe the repository as public in the delivery guide and ADR 0001",
+          "createdAt": "2026-09-24T01:04:00Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/75",
+          "base": "main",
+          "mergedAt": "2026-09-24T01:11:44Z"
         }
       ],
       "openPRs": [],
@@ -3144,12 +3637,20 @@
           "createdAt": "2026-09-23T23:49:40Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/72"
+        },
+        {
+          "number": 74,
+          "title": "Describe the repository as public in the delivery guide and ADR 0001",
+          "closedAt": "2026-09-24T01:14:56Z",
+          "createdAt": "2026-09-24T01:03:01Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/74"
         }
       ],
-      "openIssueCount": 13,
+      "openIssueCount": 15,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-23T23:49:40Z"
+        "2026-09-24T08:35:18Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -3159,7 +3660,8 @@
         "2026-09-09": 1,
         "2026-09-20": 1,
         "2026-09-22": 1,
-        "2026-09-23": 3
+        "2026-09-23": 3,
+        "2026-09-24": 3
       }
     }
   }

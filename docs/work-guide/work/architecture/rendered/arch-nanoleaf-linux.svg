@@ -30,10 +30,10 @@
         <path data-edge-from="browser" data-edge-to="wallMap" data-edge-label="HTTP :8765" data-edge-key="0" data-edge-id="arch-nanoleaf-linux-browser-map" data-composition-points="115,104;115,128;256,128;256,206;280,206" d="M 115 104 L 115 120 Q 115 128 123 128 L 248 128 Q 256 128 256 136 L 256 198 Q 256 206 264 206 L 280 206" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
         <path data-edge-from="desktop" data-edge-to="desktopJson" data-edge-label="own state files" data-edge-key="1" data-edge-id="arch-nanoleaf-linux-desktop-json" data-composition-points="520,72;430,72" d="M 520 72 L 430 72" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
         <path data-edge-from="desktopJson" data-edge-to="wallMap" data-edge-label="metadata read" data-edge-key="2" data-edge-id="arch-nanoleaf-linux-json-map" data-composition-points="355,104;355,174" d="M 355 104 L 355 174" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
-        <path data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="task hooks" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks" data-composition-points="595,104;595,174" d="M 595 104 L 595 174" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
-        <path data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks · CLI" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks" data-composition-points="760,72;715,72;715,206;670,206" d="M 760 72 L 723 72 Q 715 72 715 80 L 715 198 Q 715 206 707 206 L 670 206" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
+        <path data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks" data-composition-points="595,104;595,174" d="M 595 104 L 595 174" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
+        <path data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks" data-composition-points="760,72;715,72;715,206;670,206" d="M 760 72 L 723 72 Q 715 72 715 80 L 715 198 Q 715 206 707 206 L 670 206" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
         <path data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp" data-composition-points="835,104;835,174" d="M 835 104 L 835 174" class="a-emphasis" stroke-width="1.8" marker-end="url(#arch-nanoleaf-linux-arrowhead-emphasis)"/>
-        <path data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state" data-composition-points="595,238;595,308" d="M 595 238 L 595 308" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
+        <path data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="CLI · rollback events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state" data-composition-points="595,238;595,308" d="M 595 238 L 595 308" class="a-dashed" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-dashed)"/>
         <path data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state" data-composition-points="355,238;355,262;496,262;496,340;520,340" d="M 355 238 L 355 254 Q 355 262 363 262 L 488 262 Q 496 262 496 270 L 496 332 Q 496 340 504 340 L 520 340" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
         <path data-edge-from="mcpHost" data-edge-to="controller" data-edge-label="loopback HTTP" data-edge-key="8" data-edge-id="arch-nanoleaf-linux-mcp-controller" data-composition-points="835,238;835,308" d="M 835 238 L 835 308" class="a-security" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead-security)"/>
         <path data-edge-from="controller" data-edge-to="linuxState" data-edge-label="journal" data-edge-key="9" data-edge-id="arch-nanoleaf-linux-controller-state" data-composition-points="760,340;670,340" d="M 760 340 L 670 340" class="a-default" stroke-width="1.5" marker-end="url(#arch-nanoleaf-linux-arrowhead)"/>
@@ -109,15 +109,16 @@
         <text data-detail="fine" x="355" y="96" class="t-database" font-size="7" text-anchor="middle">read-only</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-hooksCli" data-node-id="arch-nanoleaf-linux-hooksCli" data-node-label="Hooks and CLI" tabindex="0" role="button" aria-label="Focus Hooks and CLI, short-lived · legacy input, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="short-lived · legacy input" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
-          <title>Hooks and CLI · short-lived · legacy input · Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)</title>
+        <g id="arch-nanoleaf-linux-node-hooksCli" data-node-id="arch-nanoleaf-linux-hooksCli" data-node-label="Hooks and CLI" tabindex="0" role="button" aria-label="Focus Hooks and CLI, short-lived · rollback input, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="short-lived · rollback input" data-node-tag="legacy hooks removed" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
+          <title>Hooks and CLI · short-lived · rollback input · Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf) · legacy hooks removed</title>
           <rect x="520" y="174" width="150" height="64" rx="6" class="c-mask"/>
           <rect x="520" y="174" width="150" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(526 180) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="595" y="204" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Hooks and CLI</text>
-        <text data-detail="context" x="595" y="220" class="t-muted" font-size="9" text-anchor="middle">short-lived · legacy input</text>
+        <text data-detail="context" x="595" y="220" class="t-muted" font-size="8.4" text-anchor="middle">short-lived · rollback input</text>
+        <text data-detail="fine" x="595" y="230" class="t-backend" font-size="7" text-anchor="middle">legacy hooks removed</text>
         </g>
 
         <g id="arch-nanoleaf-linux-node-mcpHost" data-node-id="arch-nanoleaf-linux-mcpHost" data-node-label="MCP host" tabindex="0" role="button" aria-label="Focus MCP host, user service · :41230, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="security" data-node-sublabel="user service · :41230" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
@@ -158,8 +159,8 @@
         <text data-detail="fine" x="835" y="364" class="t-security" font-size="7" text-anchor="middle">bearer</text>
         </g>
 
-        <g id="arch-nanoleaf-linux-node-panelsWorker" data-node-id="arch-nanoleaf-linux-panelsWorker" data-node-label="NL22 worker" tabindex="0" role="button" aria-label="Focus NL22 worker, own lock · on demand, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="own lock · on demand" data-node-tag="source · hardware check open" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
-          <title>NL22 worker · own lock · on demand · Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf) · source · hardware check open</title>
+        <g id="arch-nanoleaf-linux-node-panelsWorker" data-node-id="arch-nanoleaf-linux-panelsWorker" data-node-label="NL22 worker" tabindex="0" role="button" aria-label="Focus NL22 worker, own lock · on demand, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="own lock · on demand" data-node-tag="installed · verified" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
+          <title>NL22 worker · own lock · on demand · Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf) · installed · verified</title>
           <rect x="520" y="442" width="150" height="64" rx="6" class="c-mask"/>
           <rect x="520" y="442" width="150" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(526 448) scale(0.6875)">
@@ -167,7 +168,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="595" y="472" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">NL22 worker</text>
         <text data-detail="context" x="595" y="488" class="t-muted" font-size="9" text-anchor="middle">own lock · on demand</text>
-        <text data-detail="fine" x="595" y="498" class="t-backend" font-size="7" text-anchor="middle">source · hardware check open</text>
+        <text data-detail="fine" x="595" y="498" class="t-backend" font-size="7" text-anchor="middle">installed · verified</text>
         </g>
 
         <g id="arch-nanoleaf-linux-node-linesWorker" data-node-id="arch-nanoleaf-linux-linesWorker" data-node-label="Lines worker" tabindex="0" role="button" aria-label="Focus Lines worker, instance wall · on demand, Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)" aria-pressed="false" data-node-kind="backend" data-node-sublabel="instance wall · on demand" data-node-tag="reads shared feed" data-node-context="Nanoleaf runtime in Ubuntu WSL (codex-nanoleaf)">
@@ -231,21 +232,21 @@
           <rect x="362.8" y="108" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="399" y="118" class="t-messagebus" font-size="8" text-anchor="middle">metadata read</text>
         </g>
-        <g data-detail="context" data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="task hooks" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks">
-          <rect x="536" y="108" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="565" y="118" class="t-backend" font-size="8" text-anchor="middle">task hooks</text>
+        <g data-detail="context" data-edge-from="desktop" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="3" data-edge-id="arch-nanoleaf-linux-desktop-hooks">
+          <rect x="519.2" y="108" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="565" y="118" class="t-messagebus" font-size="8" text-anchor="middle">hooks on rollback</text>
         </g>
-        <g data-detail="context" data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks · CLI" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks">
-          <rect x="683.6" y="101" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="715" y="111" class="t-backend" font-size="8" text-anchor="middle">hooks · CLI</text>
+        <g data-detail="context" data-edge-from="cliClient" data-edge-to="hooksCli" data-edge-label="hooks on rollback" data-edge-key="4" data-edge-id="arch-nanoleaf-linux-cli-hooks">
+          <rect x="669.2" y="101" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="715" y="111" class="t-messagebus" font-size="8" text-anchor="middle">hooks on rollback</text>
         </g>
         <g data-detail="context" data-edge-from="cliClient" data-edge-to="mcpHost" data-edge-label="MCP" data-edge-key="5" data-edge-id="arch-nanoleaf-linux-cli-mcp">
           <rect x="844" y="108" width="30" height="14" rx="3" class="c-mask"/>
           <text x="859" y="118" class="t-backend" font-size="8" text-anchor="middle">MCP</text>
         </g>
-        <g data-detail="context" data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="task events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state">
-          <rect x="603.6" y="242" width="62.8" height="14" rx="3" class="c-mask"/>
-          <text x="635" y="252" class="t-muted" font-size="8" text-anchor="middle">task events</text>
+        <g data-detail="context" data-edge-from="hooksCli" data-edge-to="linuxState" data-edge-label="CLI · rollback events" data-edge-key="6" data-edge-id="arch-nanoleaf-linux-hooks-state">
+          <rect x="579.6" y="242" width="110.8" height="14" rx="3" class="c-mask"/>
+          <text x="635" y="252" class="t-messagebus" font-size="8" text-anchor="middle">CLI · rollback events</text>
         </g>
         <g data-detail="context" data-edge-from="wallMap" data-edge-to="linuxState" data-edge-label="preferences" data-edge-key="7" data-edge-id="arch-nanoleaf-linux-map-state">
           <rect x="394.1" y="266" width="62.8" height="14" rx="3" class="c-mask"/>

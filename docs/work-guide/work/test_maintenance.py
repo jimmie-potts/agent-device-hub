@@ -74,7 +74,7 @@ class GuideMaintenance(unittest.TestCase):
                 '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
             path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 195)
+            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 218)
             issue['blockedBy']['nodes'].append({
                 'number': 11, 'state': 'OPEN',
                 'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
@@ -85,10 +85,10 @@ class GuideMaintenance(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
-            self.assertNotIn('data-key="H195"', next_section)
+            self.assertNotIn('data-key="H218"', next_section)
             self.assertNotIn('data-key="P61"', next_section)
             blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
-            self.assertIn('data-key="H195"', blockers)
+            self.assertIn('data-key="H218"', blockers)
             self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):

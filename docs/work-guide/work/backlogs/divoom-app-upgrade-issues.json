@@ -584,17 +584,11 @@
     "body": "## Outcome\nReplace the copied OpenSpec wrapper/validator implementation with a pinned shared package.\n\n## Scope\nConsume [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10) while retaining Pixoo's scripts/command names as needed, specifications, workflow matrices and device boundaries.\n\n## Acceptance criteria\n- [ ] Pin the released artifact and preserve npm run openspec, check:workflow and test:workflow behavior from the caller's assigned worktree.\n- [ ] Remove duplicated implementation only after equivalent empty/valid/invalid/archive/configuration-isolation fixtures pass.\n- [ ] Preserve Node 24, all existing application/browser jobs and independent review/main-CI requirements.\n- [ ] Document upgrades and rollback without personal skill installation or changes to application behavior.\n\n## Dependencies\n- [agent-device-hub#10](https://github.com/jimmie-potts/agent-device-hub/issues/10)\n\n## Verification\nnpm ci, npm run check:workflow and npm run test:workflow on Ubuntu/Windows, plus npm run check for tooling changes.\n\n## Delivery target\nSource-only, including configuration/installation tooling. Personal setup, agent launches and physical tests need separate explicit authorization.\n\n## Planning and delivery\nGitHub owns scope, acceptance, dependencies and status. Follow this repository's AGENTS.md and docs/sdlc.md. The current request authorizes this backlog definition and repository setup; it does not authorize implementing these future features.\n\nNo product specification delta applies to planning/bootstrap/development tooling. If implementation later changes a product contract, prepare its own issue-linked change first.\n\n## Priority and access decision\nDeferred behind local Codex control for Pixoo and Nanoleaf. Keep the existing per-repository OpenSpec checks in use. Tooling consolidation is not a prerequisite for controller contracts, local MCP source delivery, or local acceptance.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/38",
     "createdAt": "2026-09-07T02:24:14Z",
-    "updatedAt": "2026-09-23T22:51:01Z",
+    "updatedAt": "2026-09-24T09:04:38Z",
     "closedAt": "2026-09-23T22:51:01Z",
     "labels": [
       {
         "name": "enhancement"
-      },
-      {
-        "name": "status:backlog"
-      },
-      {
-        "name": "blocked"
       },
       {
         "name": "deferred"
@@ -710,14 +704,11 @@
     "body": "## Outcome and status\n\nOptional backlog work. Reduce repeated checkout, Node setup, and dependency installation while retaining every validation command on its existing operating system.\n\nDepends on #46 being delivered. After that, inspect representative current runs and select this item only if setup savings justify changing the job layout. Creation does not select or start implementation.\n\n## Scope and acceptance criteria\n\n- [ ] Move `check:workflow` and `test:workflow` into the application matrix job on each OS, reusing that job's checkout, Node setup, and `npm ci`.\n- [ ] Remove the separate workflow matrix and retain the browser job. Five expanded jobs become three; both Ubuntu and Windows still execute every former workflow and application check.\n- [ ] Preserve application/browser check names where possible, ordinary failure propagation, browser coverage, action pins, permissions, caches, runtime setup, and existing build behavior.\n- [ ] Preserve #46's PR/main triggers, PR-specific cancellation, and ten-minute bounds.\n- [ ] Before editing, map every old check name to its surviving job and inspect protections, rulesets, delivery scripts, and documentation that consume job names. Define the transition validation before deleting jobs.\n- [ ] Any required-check setting change has separate authorization and verified access. If the transition cannot preserve required gates, leave this ticket pending and retain #46's completed improvements. The candidate cannot waive its own approval gates.\n- [ ] Every former validation command succeeds on its existing OS in the surviving jobs. A command skipped after an earlier failure is not successful validation.\n- [ ] Canonical local checks, both independent review axes, every applicable current-head PR job, guarded squash merge, and every merged-revision main job pass before closure.\n\n## Validation and delivery\n\nRun `npm run check` and the existing browser gate with documented prerequisites. Inspect the effective three-job expansion and command placement. Retain the mapping and actual per-OS command evidence in the PR; update directly affected job-name consumers in the same scoped change. Do not introduce an aggregate test framework or reduce coverage.\n\nFor later selected delivery, use the canonical `$deliver-work` entry point for this exact issue, the current repository SDLC, and an isolated branch from refreshed main. Obtain independent Standards and Specification reviews against the same committed comparison. Preserve other issue owners and reacquire affected evidence when main or the candidate changes.\n\nSource-only tooling; record why no product spec delta applies. Hosted validation remains required. If Actions cannot execute, local checks and review can prepare a PR, but cannot establish merge eligibility or ticket completion. No account changes or runner migration are included.\n\n## References\n\n[Prerequisite #46](https://github.com/jimmie-potts/divoom-app-upgrade/issues/46) · [Workflow](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/.github/workflows/ci.yml) · [SDLC](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/sdlc.md)\n\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/47",
     "createdAt": "2026-09-07T17:16:03Z",
-    "updatedAt": "2026-09-23T22:48:05Z",
+    "updatedAt": "2026-09-24T09:04:36Z",
     "closedAt": "2026-09-23T22:48:05Z",
     "labels": [
       {
         "name": "maintenance"
-      },
-      {
-        "name": "status:backlog"
       },
       {
         "name": "deferred"
@@ -864,6 +855,55 @@
     "milestone": null,
     "comments": [],
     "commentCount": 1,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 76,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Keep Divoom cloud content off the Pixoo after screen-on and device reboots",
+    "body": "## Outcome\n\nThe Pixoo shows only this app's content, or a black screen, and never Divoom cloud content, including after a screen-on or a device reboot. Owner actions that cut the device off from Divoom's cloud are documented alongside.\n\n## Background and evidence\n\nFound during [hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154) hardware acceptance and a follow-up check on September 24, 2026. The owner wants the Pixoo disconnected from every backend except this one.\n\n**What the app does today:**\n\n- Startup never activates Monitor presentation.\n- Screen-off pauses, and screen-on does not resume. See [controller UI](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/controller-ui.md).\n- After an app-issued screen off/on, the device shows its native random GIFs. This happened during #154 and matches the earlier \"Random GIFs return\" note in [hardware validation](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/hardware-validation.md).\n\n**What Divoom's local API offers:**\n\n- `Channel/SetIndex` selects 0 Faces, 1 Cloud Channel, 2 Visualizer, 3 Custom or 4 black screen. The same [official page](https://doc.divoom-gz.com/web/#/12?page_id=89) also says \"channel id 0~3\", so black-screen support may depend on firmware.\n- `Channel/GetAllConf` reports `PowerOnChannelId`, described as the channel shown at power-on ([get all setting](https://doc.divoom-gz.com/web/#/12?page_id=243)). No documented command sets it.\n- No documented command deletes stored content.\n- The device keeps cloud links. Reboot is documented as an MQTT command through Divoom's server ([System reboots](https://doc.divoom-gz.com/web/#/12?page_id=610)), and the uploaded and liked image lists are served from `app.divoom-gz.com`.\n\n**What the device did on September 24, 2026 (firmware unknown):**\n\n| Step | Result |\n| --- | --- |\n| Before any change | `SelectIndex` 1 (Cloud), `PowerOnChannelId` 1, `RotationFlag` 0 |\n| `Channel/SetIndex` 4, with the app stopped so it was the only writer | `error_code` 0, `SelectIndex` 4. `PowerOnChannelId` still 1 after 10 seconds |\n| Unplug and replug | Booted to `SelectIndex` 0 (Faces), face 38 (\"YouTube Account\", a cloud-fed dial). Brightness reset from 80 to 100. `PowerOnChannelId` still 1 |\n| App restarted and an explicit Monitor mode command sent | Presentation active, first frame `sent` |\n\nThe black-screen channel therefore does not survive a power cycle, and `PowerOnChannelId` does not predict the boot channel. Only this app, while presenting, keeps Divoom content off the display.\n\n## Scope\n\n- **Screen-on:** decide what an app-issued screen-on shows: resume Monitor presentation, select black screen, or keep today's behavior. Resuming reverses the accepted \"screen-on does not resume\" rule, so it needs the owner's decision.\n- **Device reboot:** detect a device reboot or an external channel change, for example with a bounded `Channel/GetIndex` probe after reconnect or on an interval. Then restore the chosen state. Use the existing serialized adapter queue with no automatic retry storms, and run it only in device mode.\n- **Idle display:** optionally select black screen when nothing is presented (Media stopped or presentation inactive), rather than leaving firmware content on screen.\n- **Documentation:**\n  - Record the observations above in the hardware notes.\n  - In local operations, describe the owner-only actions and their effects: blocking the Pixoo's internet at the router while allowing LAN, and clearing uploads, likes and Custom pages in the Divoom app.\n  - Blocking the internet stops the cloud gallery, cloud-fed faces and firmware updates. Local HTTP control keeps working. Time can be set with `Device/SetUTC` and `Sys/TimeZone`.\n\n## Acceptance criteria\n\n- [ ] The owner's decisions on screen-on behavior and reboot recovery are recorded.\n- [ ] After an app-issued screen-on, the display shows the chosen state, not firmware content.\n- [ ] After a device power cycle while the app runs, the app restores the chosen state within a stated bound, without an app restart.\n- [ ] Any new device probe is bounded, serialized through the adapter queue, device-mode only and covered by fake-adapter tests.\n- [ ] The hardware notes and local operations guide cover the observations and the owner-only network and Divoom-account actions.\n- [ ] A separately authorized physical check on the owner's Pixoo confirms both display criteria.\n\n## Out of scope\n\nRouter or firewall changes, firmware changes, factory reset and Divoom account edits are owner actions. This issue documents them but does not perform them.\n\n## Work assessment\n\nPlanning assessment, September 24, 2026.\n\n- **Complexity: medium.** Screen, presentation and player state interact with a new recovery path.\n- **Uncertainty: medium.** Boot behavior and black-screen support vary with firmware, and the boot face appeared to change on its own (from 144 to 38).\n- **Impact: medium.** The change affects what the physical display shows. Recovery is an explicit mode command.\n\n**Readiness:** backlog, waiting on the owner's screen-on and reboot decisions.\n\n## Planning and delivery\n\nFollow AGENTS.md and docs/sdlc.md, including an issue-linked OpenSpec change for the behavior delta. This issue grants no permission to change network settings, contact devices or install software.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/76",
+    "createdAt": "2026-09-24T08:29:40Z",
+    "updatedAt": "2026-09-24T08:29:40Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 77,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Run the installed Pixoo app as a user service with hub settings",
+    "body": "## Outcome\n\nThe installed Pixoo app keeps running across PC and WSL restarts, with the settings the shared hub needs, so BUNNY controls and agent-status presentation come back without manual steps.\n\n## Background\n\nFound during [hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154) on September 24, 2026.\n\n- The installed app runs as a detached manual process. [Local operations](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/local-operations.md) says no startup or restart service is installed. After a PC or WSL restart the app is gone: BUNNY reports the Pixoo controller unavailable, and agent status stops.\n- The hub needs `PIXOO_CONTROLLER_ENABLED=1` and device mode. #154 added the flag to the owner's private start script, but the packaged operator runbook from #65 does not mention it. A reinstall from the runbook would drop it.\n- Even after a manual restart, startup never activates Monitor presentation. Someone still has to send an explicit Monitor mode command.\n\nThe Nanoleaf installation already runs as user services on the same host, so a user service is a proven pattern there.\n\n## Scope\n\n- Provide a supported user-service setup for the installed app: start on login or boot, restart on failure, and stop gracefully with SIGTERM so the player drains. Keep one backend per data directory.\n- Put device mode, monitoring, the controller flag and the stable controller identity in that setup and in the operator runbook.\n- Decide, with the owner, whether startup should restore Monitor presentation when the saved mode is Monitor. This reverses the accepted \"startup never activates presentation\" rule, so it needs the owner's decision. Coordinate with [#76](https://github.com/jimmie-potts/divoom-app-upgrade/issues/76), which covers screen-on and device-reboot recovery.\n- Document install, upgrade, rollback and removal of the service.\n\n## Acceptance criteria\n\n- [ ] The service setup and runbook exist, including the controller flag and device mode.\n- [ ] After a WSL restart, the app is running and the hub reports the Pixoo controller ready without manual steps.\n- [ ] The startup-presentation decision is recorded, and implemented if accepted.\n- [ ] Graceful stop is verified: the player drains and the catalog closes.\n- [ ] Installing the service on the owner's host is a separately authorized step, with its own backup and receipt.\n\n## Work assessment\n\nPlanning assessment, September 24, 2026.\n\n- **Complexity: low to medium.** Service wiring and documentation, plus one optional startup behavior change.\n- **Uncertainty: low.** A matching user-service pattern already runs on the host.\n- **Impact: medium.** It affects display ownership after restarts. Rollback means disabling the service.\n\n**Readiness:** backlog, waiting on the startup-presentation decision.\n\n## Planning and delivery\n\nFollow AGENTS.md and docs/sdlc.md. Source delivery does not install the service or contact the device.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/77",
+    "createdAt": "2026-09-24T08:35:18Z",
+    "updatedAt": "2026-09-24T08:35:18Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
     "commentsRefreshed": false
   }
 ]
