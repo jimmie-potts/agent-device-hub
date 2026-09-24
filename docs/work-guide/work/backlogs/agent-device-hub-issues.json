@@ -3028,6 +3028,26 @@
     "commentsRefreshed": false
   },
   {
+    "number": 231,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Make BUNNY device settings apply in one step and simplify command status",
+    "body": "## Problem\n\nDuring the #154 and #155 hardware checks on September 24, 2026, the owner found the BUNNY device controls awkward to use:\n\n- **Extra click after every setting.** After a brightness or power change is applied successfully, the form stays locked and keeps the old draft. The owner has to press **Discard edit / load current** before changing the setting again, and that label reads as if it undoes the change.\n- **Hard-to-read status text.** Messages such as \"Previous: queued. Physical result is not confirmed.\" and the **Load current / unlock** button are hard to read.\n- **Frequent `stale-generation` failures.** Pixoo playback advances the controller generation on every item, so Pause or Next often fails with `stale-generation`. It happened three times in one short session. Nothing runs, but the owner has to click again.\n- **No same-mode reapply.** BUNNY does not resend the active mode. After a Nanoleaf brightness override, the only way to reapply Work's brightness policy is to switch to another mode and back.\n\n## Outcome\n\nChanging a supported setting takes one deliberate action, and the status text says plainly what happened.\n\n## Scope\n\n- After an apply settles with a non-uncertain outcome, clear the draft and unlock once the refreshed snapshot arrives, as the one-click commands already do. Uncertain results keep the lock.\n- Reword the pending, sent, queued, uncertain and failed states and the unlock action. Keep the rule that transport success is not a physical result.\n- Reduce `stale-generation` friction, for example by reading fresh guards immediately before submitting, or by offering one click to try again with current values. A `stale-generation` failure has no effects. Never retry automatically.\n- Decide whether re-selecting the active mode should send an explicit mode command that reapplies that mode's policy.\n\n## Acceptance criteria\n\n- [ ] A successful brightness or power change leaves the form ready for the next change without an extra click.\n- [ ] Uncertain results still lock and require an explicit reload.\n- [ ] The owner reviews the new status and button wording.\n- [ ] `stale-generation` handling never resubmits automatically. Browser fixtures cover a generation advance between read and submit.\n- [ ] The same-mode reapply decision is recorded, and implemented if accepted.\n- [ ] Existing dashboard, browser and accessibility checks pass. The PR records human approval of the UI candidate under the SDLC UI approval scope.\n\n## Context\n\nFound during #154 and #155. The change affects the shared controls from #151 and #153 in `apps/dashboard`. No device or controller change is expected. Follow AGENTS.md and docs/sdlc.md. This issue grants no permission for installation or device operations.\n",
+    "url": "https://github.com/jimmie-potts/agent-device-hub/issues/231",
+    "createdAt": "2026-09-24T08:07:19Z",
+    "updatedAt": "2026-09-24T21:31:07Z",
+    "closedAt": "2026-09-24T21:31:06Z",
+    "labels": [
+      {
+        "name": "enhancement"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 3,
+    "commentsRefreshed": false
+  },
+  {
     "number": 232,
     "state": "OPEN",
     "stateReason": null,
@@ -3071,6 +3091,29 @@
     "milestone": null,
     "comments": [],
     "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 237,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Use personal-project scope defaults in story writing and pickup",
+    "body": "## Outcome\n\nNew stories and story pickup in agent-device-hub, codex-nanoleaf and divoom-app-upgrade consistently start with the smallest useful scope for this personal project. Agents preserve needed behavior and make meaningful omissions visible before implementation.\n\n## Scope\n\nOne coordinated documentation/template change across the three repositories: update each `docs/sdlc.md`, keep a short `AGENTS.md` pointer, preserve the `CLAUDE.md` route to the same guidance, and refine the existing feature issue form. Use the shared assessment from https://github.com/jimmie-potts/agent-skills/issues/52; do not copy its implementation into each repository.\n\nKeep GitHub issues authoritative. No product/runtime changes, backlog-wide rewrite, new planning service, required guide refresh or separate scope ledger.\n\n## Acceptance criteria\n\n- [ ] Each repository records its actual operating assumptions: one operator, the selected installation and explicitly configured devices. Support additional hosts, users, services or automation only when the story needs them; do not remove an already accepted capability by applying a default.\n- [ ] Normal planning and delivery assess scope at story drafting, pickup and material changes, including when `plan-work`/`deliver-work` were not invoked. Reading the shared assessment does not invoke either skill. Codex and Claude follow the same repository policy, and a read-only request stays read-only.\n- [ ] The feature form and agent drafting guidance use five concise prompts: outcome and real setup; smallest useful implementation; behavior/protections to preserve; observable acceptance and planned evidence; meaningful deferrals with consequence/manual alternative and owning issue or revisit trigger. Retain dependency and delivery-target information within those prompts. A small story may answer in a few sentences.\n- [ ] Guidance favors existing components and explicit manual steps where practical. Avoid speculative platform support, abstraction layers, automatic rollback systems and broad outage matrices. Protect supported behavior: one authoritative state owner and device writer, correct targets, bounded queued work, no unsafe replay, accurate freshness/completion, manual control, and user data integrity.\n- [ ] Basic credential hygiene and existing authorization/origin protections apply to local use. Reassess before remote/public exposure, additional operators/writers, expanded compatibility or recurring failures. A change that could lose irreplaceable data needs practical recovery evidence using existing facilities where possible; this is not a universal backup-tooling requirement.\n- [ ] Each meaningful cut identifies the capability or assurance lost and reconciles dependent issues/specifications within the task's authority. Do not silently remove requested behavior. Preserve current review, CI, UI approval, source/installation/physical boundaries and applicable OpenSpec requirements; apply existing proportional exceptions without inventing new gates.\n- [ ] Check the guidance against the recent LIFX #20/#22 refinement and Nanoleaf [map selector](https://github.com/jimmie-potts/codex-nanoleaf/issues/44)/[future pool](https://github.com/jimmie-potts/codex-nanoleaf/issues/47) split: prevent heartbeat-driven manual override, retain Lines-only protected API limits, and expose future pool migration work without pulling it into the map selector. Record a concise example assessment and any limitation; no bulk ticket edits are required.\n\n- [ ] For consequential changes to credentials, persistent state, concurrency or device commands, provide a short owner walkthrough with code/test links: state and writer ownership, timeout/restart/duplicate behavior, the important failure test, and diagnosis/recovery. Define acceptance examples before implementation and explain changes that weaken an existing test assertion. This is an understanding aid, not a new universal approval gate.\n- [ ] Keep feedback proportionate: use existing PR evidence when reviewing delivery time, correction rounds, defects after merge and human effort. Unknown effort/usage stays unknown. The comparative evaluation remains in https://github.com/jimmie-potts/agent-skills/issues/44; no new metrics service or mandatory parallel report.\n\n## Dependency and delivery\n\nThe source prerequisite https://github.com/jimmie-potts/agent-skills/issues/52 is delivered in [PR #53](https://github.com/jimmie-potts/agent-skills/pull/53), merged as `3a16cc8ce6bba5ea3d31204110c7da865abd4ab9`; both merged-main checks passed. This project-documentation work is ready. Local activation is separately tracked in https://github.com/jimmie-potts/agent-skills/issues/55; source closure here does not claim installed-host adoption. Follow each repository's current workflow, with a reviewed PR and applicable checks per changed repository; link those PRs here and close only after all three source changes are verified. No product behavior delta is intended, so record why product OpenSpec changes are unnecessary.\n\nPlanning, 2026-09-24: medium complexity from three instruction entry points; low uncertainty about the documented project direction; medium impact from future scope decisions. Source-only delivery. Publication of this issue does not install skills or change running systems.\n\n\nRelated independent follow-ups: [review evidence retention](https://github.com/jimmie-potts/agent-skills/issues/54) and [Hub merge enforcement/guide CI qualification](https://github.com/jimmie-potts/agent-device-hub/issues/240). These do not block the scope-default documentation. Readiness and remaining adoption work refreshed on 2026-09-24.\n",
+    "url": "https://github.com/jimmie-potts/agent-device-hub/issues/237",
+    "createdAt": "2026-09-24T19:31:34Z",
+    "updatedAt": "2026-09-24T22:27:40Z",
+    "closedAt": "2026-09-24T22:27:40Z",
+    "labels": [
+      {
+        "name": "documentation"
+      },
+      {
+        "name": "maintenance"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 1,
     "commentsRefreshed": false
   },
   {

@@ -46,11 +46,11 @@ Eleven topic guides own each open snapshot issue exactly once. The opening,
 roadmap and architecture links do not add to those totals. Completed milestones
 and retained evidence live in a separate expandable archive. Adding devices has
 separate Panels, Tidbyt, LIFX and PC-lighting tracks; deferred PC lighting starts
-collapsed. Earlier guide anchors remain reachable. Search, Expand all and print
+collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. Earlier guide anchors remain reachable. Search, Expand all and print
 include archived evidence; printing restores the reader's prior expansion state.
 
-`work/guide_paths.py` owns topic names, next steps, owner-selected later work and
-optional recorded workarounds. `work/backlogs/guide-coverage.json` owns primary
+`work/guide_paths.py` owns topic names, next steps, owner-selected later work,
+track groupings and optional recorded workarounds. `work/backlogs/guide-coverage.json` owns primary
 issue assignments. `work/guide_status.py` and `work/guide_overview.py` select and
 render snapshot lists; `work/guide_overview.js` applies complete public GitHub
 reads. Preserve the matching selection rules when changing either implementation.

@@ -47,7 +47,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
     const hubClosed=apiIssue('H23',{state:'closed',state_reason:'completed'});
     const hubClosedOther=apiIssue('H17',{state:'closed',state_reason:'not_planned'});
-    const nanoleafReview=apiIssue('N92',{labels:[...issueMap.N92.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
+    const nanoleafReview=apiIssue('N47',{labels:[...issueMap.N47.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
     const nanoleafProgress=apiIssue('N17',{labels:[...issueMap.N17.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:1,total_blocked_by:2}});
     const pixooProgress=apiIssue('P11',{labels:[...issueMap.P11.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:in-progress'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
     const apiOrigin='https://api.github.com', issueRoute=(repo,state,pageNumber=1)=>`${apiOrigin}/repos/jimmie-potts/${repo}/issues?state=${state}&per_page=100${state==='closed'?`&since=${encodeURIComponent(snapshot.refreshedAt)}`:''}${pageNumber>1?`&page=${pageNumber}`:''}`;
@@ -72,7 +72,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert(await liveStatus('H23').evaluateAll(es=>es.every(e=>e.dataset.status==='completed'&&e.dataset.state==='CLOSED'&&e.title.includes('Completed')&&e.getAttribute('aria-label').includes('Completed')&&e.querySelector('.issue-status').textContent==='Completed'&&e.querySelector('.status-symbol').textContent==='✓')),'Every badge updates its state, symbol, text and accessible labels');
     assert(await liveStatus('H17').evaluateAll(es=>es.every(e=>e.dataset.status==='closed'&&e.querySelector('.issue-status').textContent==='Closed'&&e.querySelector('.status-symbol').textContent==='−')),'Other closures remain Closed');
     assert(await liveStatus('H11').evaluateAll(es=>es.every(e=>e.dataset.status==='blocked')),'Open dependency summary marks an issue blocked');
-    assert(await liveStatus('N92').evaluateAll(es=>es.every(e=>e.dataset.status==='review')),'Review label updates the live status');
+    assert(await liveStatus('N47').evaluateAll(es=>es.every(e=>e.dataset.status==='review')),'Review label updates the live status');
     assert(await liveStatus('N17').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
     assert(await liveStatus('H25').evaluateAll(es=>es.every(e=>e.dataset.status==='open')),'Issues absent from both reads keep their snapshot status');
     const pixooAfterFailure=await page.locator('a.issue.repo-P[data-issue]').evaluateAll(es=>Object.fromEntries(es.map(e=>[e.dataset.issue,e.dataset.status])));
