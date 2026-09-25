@@ -52,7 +52,8 @@ roadmap and architecture links do not add to those totals. Completed milestones
 and retained evidence live in a separate expandable archive. Adding devices has
 separate Panels, Tidbyt, LIFX and PC-lighting tracks; deferred PC lighting starts
 collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. Earlier guide anchors remain reachable. Search, Expand all and print
-include archived evidence; printing restores the reader's prior expansion state.
+include archived evidence and the Direction section; printing restores the reader's
+prior expansion state.
 
 `work/guide_paths.py` owns the eleven topic names, their outcome and next-step
 prose, aliases and track groupings; these are the guide's structure, not story
@@ -104,6 +105,49 @@ and counts on the dated snapshot, same as its opening lists and badges. The
 freshness line under the opening names which parts are live for which
 repositories and which parts (topic outcomes, next-step boxes, history and
 the roadmap) stay dated regardless.
+
+## Direction section
+
+Beside the timeline's "Where we've been" and "Where we're going" panels, one
+dated Direction section answers, in the owner's words, where B.U.N.N.Y. stands
+on each surface, what it is becoming, what to build next and in what order,
+what to improve in what already exists, and which later ideas are worth
+keeping. Below the narrative, a computed "Least work, most unblocked" table
+ranks open stories by how many other open stories record them as a native
+GitHub prerequisite. It is a reference section: it adds nothing to issue
+counts, and it joins search, Expand all and print.
+
+`work/guide_direction.py` is the saved input, in the same pattern as
+`guide_paths.py`: `AS_OF` and `REVISION` (the hub commit the text was written
+against), `STANDING` (one entry per surface with its evidence keys),
+`BECOMING`, `SEQUENCE` (ordered `(keys, why)` for what to build next),
+`IMPROVEMENTS`, `IDEAS` and `DELIVERED_SINCE` (keys moved out of `SEQUENCE` at
+a refresh, with the date). Text renders literally; keys render through
+`issue_link`, so they carry the same status icon and live GitHub relabel as
+every other link. The narrative is dated editorial prose and never claims live
+state.
+
+`guide_status.leverage()` computes the table from the native `blockedBy`
+records that `load_dependencies` already asserts complete. For each open story,
+Direct counts the open stories whose records name it, and Total follows those
+stories' own records transitively, counting each open story once and never the
+blocker itself. Only open stories carry a chain; a closed record or a blocker
+outside the three repositories is not counted, and a cycle ends once every
+reachable story has been seen. The renderer shows the ten highest Total values
+with at least one dependent, each with its existing scheduling state
+(candidate, active, blocked, deferred, or later by owner), "decision, no code"
+for a story whose Guide highlight is a decision, and "in review" from its
+label. Prose-only dependencies are not counted, and a high count is not a
+priority; nothing in the table promotes a blocked, deferred or owner-later
+story.
+
+`build_guide.py` runs `guide_direction.check()` against the saved snapshot
+before anything renders. Every cited key must exist in the snapshot, every
+`SEQUENCE` key must be open unless it is listed in `DELIVERED_SINCE`, and every
+`DELIVERED_SINCE` key must be closed; a violation fails the build naming the
+key and the list. The check is what keeps the text from going stale the way
+`docs/roadmap.md` did before #170: a refresh that finds a closed story moves it
+to `DELIVERED_SINCE` and rewrites the sequence.
 
 ## Execution recommendations
 
@@ -331,10 +375,13 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
 
 1. Read current issue states and acceptance evidence. Refresh the backlog using
    the helper below when status or scope changes, then reconcile primary coverage
-   and narrative in `work/build_guide.py`. Refresh queries can partially write
-   files on failure; discard or complete that candidate before publishing it.
-   Every open issue must have exactly one primary guide. Reference links do not
-   own issues or increase counts.
+   and narrative in `work/build_guide.py`. Review `work/guide_direction.py`:
+   move delivered keys to `DELIVERED_SINCE`, rewrite the sequence, and update
+   `AS_OF` and `REVISION` when the text changes; the build fails naming any
+   cited story that closed without that review. Refresh queries can partially
+   write files on failure; discard or complete that candidate before publishing
+   it. Every open issue must have exactly one primary guide. Reference links do
+   not own issues or increase counts.
 2. Update history inputs in `work/history/github-history.json` from paginated
    read-only GitHub queries when recording merged work. Keep PR creation, source
    merge, installation and physical acceptance distinct. Never predict a merge

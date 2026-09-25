@@ -49,6 +49,43 @@ def scheduling_state(issue, dependencies):
     return 'candidate'
 
 
+def sort_key(key):
+    return (key[0], int(key[1:]))
+
+
+def leverage(issues, dependencies):
+    """For each open issue, the open issues whose native blockedBy records name it.
+
+    `direct` lists the open issues that record it as a prerequisite; `total`
+    follows those issues' own recorded prerequisites transitively, counting
+    each open issue once and never the blocker itself. Only open issues
+    carry a chain: a closed record neither counts nor connects, and a
+    blocker outside the three repositories is not counted. Cycles end when
+    every reachable issue has been seen. Counts come from recorded GitHub
+    prerequisites only, never from prose, and a high count is not a priority.
+    """
+    prefixes = {'agent-device-hub': 'H', 'codex-nanoleaf': 'N', 'divoom-app-upgrade': 'P'}
+    opened = {key for key, issue in issues.items() if issue['state'] == 'OPEN'}
+    direct = {key: [] for key in opened}
+    for key in sorted(opened, key=sort_key):
+        for record in dependencies.get(key, ()):
+            repository = record['repository']['nameWithOwner'].split('/')[-1]
+            blocker = prefixes.get(repository, '?') + str(record['number'])
+            if record['state'] != 'CLOSED' and blocker in direct and blocker != key:
+                direct[blocker].append(key)
+    result = {}
+    for key in sorted(opened, key=sort_key):
+        seen, frontier = {key}, list(direct[key])
+        while frontier:
+            dependent = frontier.pop(0)
+            if dependent not in seen:
+                seen.add(dependent)
+                frontier.extend(direct[dependent])
+        seen.discard(key)
+        result[key] = dict(direct=list(direct[key]), total=sorted(seen, key=sort_key))
+    return result
+
+
 def load_dependencies(backlogs, issues):
     hub = json.loads((backlogs / 'hub-native-deps.json').read_text())['data']['repository']
     devices = json.loads((backlogs / 'device-native-deps.json').read_text())['data']
