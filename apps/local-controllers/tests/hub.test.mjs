@@ -50,7 +50,8 @@ test('the hub reaches Tidbyt and LIFX through the local host, over HTTP and MCP'
   assert.equal(light.body.lighting.observation.status, 'known');
   const color = await call('/api/controllers/v1/desk/lighting/commands', { ...guards(light.body.controller, 'desk'), profile, command: { kind: 'lifx.color.set', hue: 280, saturation: 90 } });
   assert.deepEqual([color.status, color.body.outcome], [200, 'sent']);
-  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 102], ['desk', 101], ['desk', 102]]);
+  // One on-demand read from the first snapshot, then two read-modify-writes.
+  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 101], ['desk', 102], ['desk', 101], ['desk', 102]]);
   assert.ok(!tidbyt.calls.includes('push'));
 
   // MCP discovery and the LIFX lighting tool reach the same owner.
@@ -70,7 +71,7 @@ test('the hub reaches Tidbyt and LIFX through the local host, over HTTP and MCP'
   const latest = (await rpc('tools/call', { name: prefix + '_status', arguments: {} })).result.structuredContent.data.result;
   const warm = await rpc('tools/call', { name: prefix + '_temperature_set', arguments: { requestId: latest.nextRequestId, expectedConfigurationRevision: latest.configurationRevision, expectedGeneration: latest.generation, kelvin: 2700 } });
   assert.deepEqual([warm.result.isError, warm.result.structuredContent.data.result.outcome], [false, 'sent']);
-  assert.equal(lifx.log.length, 6);
+  assert.equal(lifx.log.length, 7);
 });
 
 test('the hub lighting validator accepts exactly what the LIFX profile schema accepts', async () => {

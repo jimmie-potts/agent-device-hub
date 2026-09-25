@@ -701,8 +701,14 @@ host or runner, CLI start and stop, and restart without replay. It also runs the
 real hub against the real host over HTTP and MCP, and checks the hub's lighting
 validator against the LIFX profile schema. `npm run test:dashboard:browser`
 adds `apps/dashboard/tests/local-controllers.mjs`, which drives the Tidbyt and
-LIFX views through the same host. No check contacts a device, the Tidbyt cloud
-or the LAN. Installation and the physical brightness check stay separate.
+LIFX views through the same host. Hub #330 adds on-demand read cases: one
+LightGet for a missing or 30-second-old observation, none inside 30 s or for an
+unqualified bulb, and a failed read keeping its observation. The browser
+scenario adds the Power starting value from unknown and observed power, the
+not-declared lines, an unreachable bulb and the distinct disabled button colors.
+`apps/dashboard/tests/layout.mjs` fails any checked view whose text overlaps. No check contacts a
+device, the Tidbyt cloud or the LAN. Installation and the physical brightness
+check stay separate.
 
 ## Session retirement checks
 

@@ -7,9 +7,9 @@ button,a,input,select{outline-offset:4px}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus)}
 button{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:10px 15px;border-radius:var(--radius);font-weight:650;cursor:pointer}
 button:hover:not(:disabled){background:var(--primary-hover)}
-button:disabled{opacity:.52;cursor:not-allowed}
 button.secondary{background:transparent;color:var(--secondary-text);border-color:var(--secondary-edge)}
 button.secondary:hover:not(:disabled){background:var(--secondary-hover-bg);color:var(--emphasis-text);border-color:var(--secondary-hover-edge)}
+button:disabled,button.secondary:disabled{background:var(--disabled-bg);color:var(--disabled-text);border-color:var(--disabled-edge);cursor:not-allowed}
 input,select{background:var(--inset);color:var(--text);border:1px solid var(--secondary-edge);border-radius:var(--radius);padding:10px;width:100%;min-width:0}
 label{display:grid;gap:7px;font-size:.86rem;color:var(--muted-dense);min-width:0}
 a{color:var(--link)}
@@ -78,6 +78,8 @@ footer{border-top:1px solid var(--edge-dense);padding:25px 0;font-size:.65rem;co
 input[type=color]{height:42px}
 input[type=range]{padding:0;height:42px;accent-color:var(--accent)}
 .eyebrow.general{margin:30px 0 -10px}
+/* A message in place of a control section keeps the same rule and rhythm as a form, including one right after a section label. */
+.eyebrow.general+.hint,.hint.undeclared{border-top:1px solid var(--edge-dense);margin-top:22px;padding-top:20px}
 .switch{border-left:2px solid var(--pending);padding-left:16px;margin:12px 0}
 .switch .actions{margin:8px 0}
 .edit fieldset:disabled label{color:var(--muted-dense)}

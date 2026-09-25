@@ -11,23 +11,27 @@ export const digest = token => createHash('sha256').update(token).digest('hex');
 export const QUALIFIED = { vendor: 1, product: 27, firmwareMajor: 2, firmwareMinor: 90 };
 export const bulb = (deviceId, address) => ({ deviceId, address, ...QUALIFIED });
 
-/** A LightState payload: hue, saturation, brightness, kelvin, then power on. */
-export function lightState() {
+/** A LightState payload: hue, saturation, brightness, kelvin, then power. */
+export function lightState(on = true) {
   const b = Buffer.alloc(52);
   [12000, 32000, 50000, 3500].forEach((v, i) => b.writeUInt16LE(v, i * 2));
-  b.writeUInt16LE(65535, 10);
+  b.writeUInt16LE(on ? 65535 : 0, 10);
   return b;
 }
 
-/** Fake LIFX transports: every exchange is logged per bulb; `hang` never answers until aborted. */
+/**
+ * Fake LIFX transports: every exchange is logged per bulb. `hang` never answers until aborted, `fail` rejects at once,
+ * `failFor` rejects for the listed bulbs only, and `power` is the power each read reports.
+ */
 export function fakeLifx() {
   const log = [];
-  const mode = { hang: false };
+  const mode = { hang: false, fail: false, failFor: new Set(), power: true };
   const transportFactory = bulb => ({
     exchange(type, _payload, _expected, signal) {
       log.push([bulb.deviceId, type]);
       if (mode.hang) return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
-      return Promise.resolve(type === 101 ? lightState() : Buffer.alloc(0));
+      if (mode.fail || mode.failFor.has(bulb.deviceId)) return Promise.reject(new Error('unreachable'));
+      return Promise.resolve(type === 101 ? lightState(mode.power) : Buffer.alloc(0));
     },
     close() {},
   });
@@ -78,3 +82,12 @@ export function privateFiles(t, hubUrl = 'http://127.0.0.1:9') {
   };
   return { dir, write, runnerConfig, host, locks: join(dir, 'locks') };
 }
+
+/** LightSetColor (102) and DeviceSetPower (21) change a bulb; LightGet (101) only reads it. */
+export const writes = log => log.filter(([, type]) => type !== 101);
+export const reads = (log, deviceId) => log.filter(([id, type]) => type === 101 && (deviceId === undefined || id === deviceId));
+export async function until(condition, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (!condition()) { if (Date.now() > deadline) throw new Error('condition-timeout'); await new Promise(r => setTimeout(r, 5)); }
+}
+export const settle = () => new Promise(r => setTimeout(r, 60));

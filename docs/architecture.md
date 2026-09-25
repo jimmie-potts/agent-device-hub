@@ -325,8 +325,9 @@ The hub reaches both through the local controller host, registered as the
 v1 snapshot and commands on one loopback port. The Tidbyt controller declares no
 v1 capability, so the hub can read its status but never pushes frames. LIFX color
 and color temperature use the controller's own `lifx-light` 1.0.0 profile on a
-separate typed route, not a v1 extension. The host never polls or paints bulbs
-on its own; automatic LIFX status stays with #20.
+separate typed route, not a v1 extension. The host never paints bulbs on its
+own; automatic LIFX status stays with #20. It reads a qualified bulb only on
+demand, at most every 30 s while its snapshot is being read (#330).
 
 The status issues own the initial display layout, session selection, lighting
 effects, update limits, takeover/manual-control and restoration policies. Resolve

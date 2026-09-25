@@ -76,7 +76,7 @@ Tidbyt and LIFX components ([#289](https://github.com/jimmie-potts/agent-device-
 come from the [local controller host](../local-controllers/README.md) and have no
 integration settings or advanced editor. The Tidbyt view says that the host
 publishes its status and now-playing tiles. The Tidbyt controller declares no
-controller v1 capability, so every general control names that reason. A LIFX view reads one
+controller v1 capability, so the view shows one line instead of general controls. A LIFX view reads one
 lighting snapshot, whose controller v1 part guards the general and lighting
 controls alike. It shows the last color the bulb reported with its age, or
 Unknown, and adds Color (hue and saturation) and Color temperature (kelvin within
@@ -84,7 +84,7 @@ the declared range) under Lighting. Each sends one `lifx-light` 1.0.0 request
 through the hub's lighting route, built from a lighting read taken just before
 sending, and never changes power or brightness. Color temperature keeps hue and
 saturation, so the light looks white only at 0% saturation. A bulb without
-qualified model evidence declares neither, and both forms name that reason.
+qualified model evidence declares neither and shows one line for each section.
 
 Mode controls preserve Work/Quiet/Free and Monitor/Media. Nanoleaf settings include
 layout, coverage, element/project/task mapping and project colors. Pixoo controls
@@ -124,10 +124,16 @@ The component view offers power, brightness, saved-playlist selection, the
 declared playback actions and saved-scene activation from the controller v1
 capability object. Every control submits one guarded controller v1 command
 through the existing hub route with the observed request ticket, configuration
-revision and generation. A disabled control names the missing capability, the
-read-only scope, stale or external-control evidence, or the device mode.
-Components without a declared capability, such as the synthetic sensor fixture,
-show the same disabled controls with reasons.
+revision and generation. A declared control that is unavailable is disabled and names the read-only
+scope, stale or external-control evidence, or the device mode.
+Only declared capabilities get a form; one line names the undeclared ones, such
+as "Not declared by this controller: media and scenes." A component that declares
+none of them, such as the Tidbyt or the synthetic sensor fixture, shows only "No
+general controls" ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)).
+Power starts from the desired value, then from the last observed value with its
+age, and otherwise from no selection with "Current power is unknown", so an
+unknown state is never presented as On or Off. Disabled buttons use their own
+skin tokens rather than transparency.
 
 Pixoo declares screen power, brightness 0–100 and media with pause, resume, stop,
 next, previous and clear plus discovered playlist IDs, checked at Pixoo `main`
@@ -265,9 +271,12 @@ switch, a scene activation and a locked draft form, and a controller-side scene
 rejection, revision conflict and uncertain result with no retry. The Hub #289
 scenario (`tests/local-controllers.mjs`) runs the real local controller host with
 fake Tidbyt and LIFX transports behind the real hub. It checks the Tidbyt view's
-disabled controls, LIFX power, brightness, color and color temperature, one
+no-controls line, LIFX power, brightness, color and color temperature, one
 guarded lighting request per change with no power write, an unqualified bulb, a
-read-only credential, phone width and automated accessibility. `DASHBOARD_RECEIPTS` selects an external
+bulb read as off, a bulb with unknown power, an unreachable bulb, a read-only
+credential, phone width and automated accessibility. `tests/layout.mjs` fails
+any visited view whose text blocks overlap; the browser, Pixoo, wall and
+synthetic views use it too. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,
