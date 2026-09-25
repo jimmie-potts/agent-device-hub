@@ -161,7 +161,7 @@ def render(issues, leverage, issue_link, scheduling_state, decisions, owner_late
         f'{issue_link(row["key"])}<span class="direction-title">{html.escape(row["title"])}</span>',
         html.escape(row['label']) + ''.join(f'<span class="direction-mark">{html.escape(mark)}</span>' for mark in row['marks']),
         str(row['direct']), str(row['total']), _keys(row['dependents'], issue_link)])) + '</tr>' for row in rows)
-    table = (f'<table class="leverage"><caption class="sr-only">Open stories ranked by the open stories that record them as a prerequisite</caption><thead><tr>{"".join(f"<th>{h}</th>" for h in headers)}</tr></thead><tbody>{body}</tbody></table>'
+    table = (f'<table class="leverage"><caption class="sr-only">Open stories ranked by the open stories that record them as a prerequisite</caption><thead><tr>{"".join(f"<th scope=\"col\">{h}</th>" for h in headers)}</tr></thead><tbody>{body}</tbody></table>'
              if rows else '<p class="direction-note">No open story records another open story as a prerequisite in this snapshot.</p>')
     return f'''<details class="reference direction" id="direction">
       <summary><span class="guide-number">D</span><span class="guide-heading"><span class="eyebrow">Direction · dated · written by the owner</span><h2>Where B.U.N.N.Y. stands and what to build next</h2></span><span class="guide-count">as of {html.escape(AS_OF)}</span><span class="chevron" aria-hidden="true">−</span></summary>

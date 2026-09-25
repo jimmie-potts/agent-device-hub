@@ -761,11 +761,11 @@ class Direction(unittest.TestCase):
         issues = {'H1': issue(), 'H2': issue(), 'H3': issue(), 'H4': issue('OPEN', 'deferred'), 'H5': issue(),
                   'N6': issue(), 'H7': issue('CLOSED'), 'P8': issue(), 'H9': issue('OPEN', 'status:review')}
         dependencies = {
-            'H2': [record('H1')],                          # direct
+            'H2': [record('H1'), record('H2')],            # direct; a self-referencing record never counts
             'H3': [record('H2'), record('H9')],            # transitive from H1; also names H9
             'H4': [record('H1')],                          # a deferred dependent still counts
             'H5': [record('H4')],                          # reached through the deferred story
-            'N6': [record('H3')],                          # cross-repository chain
+            'N6': [record('H3'), record('H5', 'CLOSED')],  # cross-repository chain; a CLOSED record for an open issue is not followed
             'H9': [record('H3')],                          # cycle: H3 <-> H9
             'P8': [record('H7', 'CLOSED'), {'number': 1, 'state': 'OPEN', 'repository': {'nameWithOwner': 'jimmie-potts/agent-skills'}}],
             'H1': [], 'H7': [record('H1')],                # a closed dependent never counts
@@ -780,6 +780,8 @@ class Direction(unittest.TestCase):
         self.assertEqual(result['H1']['direct'], ['H2', 'H4'])
         self.assertEqual(result['H1']['total'], ['H2', 'H3', 'H4', 'H5', 'H9', 'N6'])
         self.assertEqual(result['H4'], dict(direct=['H5'], total=['H5']))
+        self.assertEqual(result['H2'], dict(direct=['H3'], total=['H3', 'H9', 'N6']), 'H2 does not depend on itself')
+        self.assertEqual(result['H5'], dict(direct=[], total=[]), 'A record marked CLOSED does not count even for an open issue')
         # A cycle counts each story once and never the blocker itself.
         self.assertEqual(result['H3'], dict(direct=['H9', 'N6'], total=['H9', 'N6']))
         self.assertEqual(result['H9'], dict(direct=['H3'], total=['H3', 'N6']))
@@ -862,12 +864,12 @@ class Direction(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='guide-direction-hostile-') as directory:
             candidate = copy_guide(directory)
             module = candidate / 'work/guide_direction.py'
-            module.write_text(module.read_text() + f"\nSTANDING.append(({hostile!r}, {hostile!r}, ['H241']))\nIDEAS.append(({hostile!r}, []))\nDELIVERED_SINCE.append(({hostile!r}, ['H252'], {hostile!r}))\n")
+            module.write_text(module.read_text() + f"\nSTANDING.append(({hostile!r}, {hostile!r}, ['H241']))\nBECOMING.append(({hostile!r}, []))\nSEQUENCE.append((['H20'], {hostile!r}))\nIMPROVEMENTS.append(({hostile!r}, []))\nIDEAS.append(({hostile!r}, []))\nDELIVERED_SINCE.append(({hostile!r}, ['H252'], {hostile!r}))\n")
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             self.assertNotIn(hostile, document)
-            self.assertEqual(document.count('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H241]]'), 5)
+            self.assertEqual(document.count('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H241]]'), 8, 'every prose field of every list is escaped')
 
     def test_committed_guide_carries_the_direction_section(self):
         import guide_direction as GDIR
