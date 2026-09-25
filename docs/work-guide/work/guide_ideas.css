@@ -1,0 +1,20 @@
+/* Ideas section: role tokens only, no decoration, no motion. */
+.ideas-note{font-size:12px;color:var(--muted);margin:0 0 20px;line-height:1.8;max-width:900px}
+.ideas-topic{margin:0 0 22px;min-width:0}
+.ideas-topic h3{font-size:15px;font-weight:500;margin:0 0 8px}
+.ideas-topic h3 a{color:var(--text);text-decoration:none;border-bottom:1px solid var(--edge-strong)}
+.ideas-topic h3 a:hover,.ideas-topic h3 a:focus-visible{color:var(--accent);border-color:var(--accent)}
+.ideas-topic h4{font-size:12px;font-weight:500;margin:14px 0 6px;color:var(--muted)}
+.ideas-list{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.idea{border:1px solid var(--edge);border-left:2px solid var(--edge-strong);padding:12px 15px;background:var(--panel);min-width:0}
+.idea p{margin:0;font-size:13px;line-height:1.75;color:var(--muted);overflow-wrap:anywhere}
+.idea-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.idea-title{color:var(--text);font-weight:500}
+.idea-reason{margin-top:6px!important}
+.idea-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:8px!important}
+.idea-state{font:var(--type-label) var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--pending)}
+.idea-extends{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+.idea-label{font:var(--type-label) var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ideas-empty{font-size:12px;border-left:2px solid color-mix(in srgb,var(--pending) 38%,transparent);padding-left:12px;color:var(--muted)}
+.direction-idea-title{color:var(--text);margin-left:8px}
+@media print{.idea{background:var(--panel);border-color:var(--edge);break-inside:avoid}.idea-title,.ideas-topic h3 a{color:var(--text)}.idea p,.ideas-note,.idea-state,.idea-label{color:var(--muted)}}

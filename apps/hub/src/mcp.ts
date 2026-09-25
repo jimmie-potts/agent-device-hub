@@ -4,6 +4,7 @@ import type {Credential} from './server.js';
 import type {ControllerClient} from './controllers.js';
 import {HttpError,object} from './common.js';
 import type {PlaybackReceipt} from './playback.js';
+import {LIGHTING_PROFILE} from './lifx-lighting.js';
 
 // Logical application service; never advertised as a physical device.
 export const HOST_SERVICE = 'hub-service';
@@ -63,8 +64,20 @@ export function createHubMcp(options:Options):McpHandler {
   function command(name:string,purpose:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown){
    extensions[name]=extension(alias,'control',writeDescription(purpose+' Take the request identity and revision/generation guards from the latest status result. An unsupported capability returns the owner\'s rejection.'),shape({...guards,...fields}),async args=>(await client.command({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,command:make(args)})).body);
   }
+  const kind=client.config.kind;
+  // The Tidbyt owner declares every controller v1 capability unsupported; its local host publishes the status and now-playing tiles.
+  if(kind==='tidbyt'){registrations.push({controllerId:bound.controllerId,deviceId:alias,extensions});names.set(alias,toolPrefix(alias));continue;}
   command('power_set','Turn this device on or off through its owning controller.',{on:{type:'boolean'}},a=>({kind:'power.set',on:a.on}));
   command('brightness_set','Set this device\'s brightness percentage through its owning controller.',{percent:{type:'integer',minimum:0,maximum:100}},a=>({kind:'brightness.set',percent:a.percent}));
+  if(kind==='lifx'){
+   extensions.lighting_status=extension(alias,'read',readDescription('Read this LIFX bulb\'s lighting snapshot: its controller v1 snapshot, whether color and color temperature are qualified, pending lighting requests, and the last observed color in LIFX wire units with its age. Its request identity and revision/generation guards serve color_set and temperature_set.'),shape({}),()=>client.lightingSnapshot());
+   const lighting=(name:string,purpose:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown)=>{
+    extensions[name]=extension(alias,'control',writeDescription(purpose+' It never turns the bulb on or changes power or brightness. Take the request identity and revision/generation guards from the latest status or lighting_status result. An unqualified bulb returns the owner\'s rejection.'),shape({...guards,...fields}),async args=>(await client.lightingCommand({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,profile:{...LIGHTING_PROFILE},command:make(args)})).body);
+   };
+   lighting('color_set','Set this LIFX bulb\'s hue in degrees and saturation in percent.',{hue:{type:'integer',minimum:0,maximum:360},saturation:{type:'integer',minimum:0,maximum:100}},a=>({kind:'lifx.color.set',hue:a.hue,saturation:a.saturation}));
+   lighting('temperature_set','Set this LIFX bulb\'s color temperature in kelvin. Hue and saturation are kept, so the light looks white only at zero saturation.',{kelvin:{type:'integer',minimum:1500,maximum:9000}},a=>({kind:'lifx.temperature.set',kelvin:a.kelvin}));
+   registrations.push({controllerId:bound.controllerId,deviceId:alias,extensions});names.set(alias,toolPrefix(alias));continue;
+  }
   command('mode_set','Switch this device\'s controller mode through its owning controller.',{mode:{enum:client.config.kind==='pixoo'?['monitor','media']:['Work','Quiet','Free']}},a=>({kind:'mode.set',mode:a.mode}));
   const mediaMode=' For Pixoo, read integration_status and explicitly select Media through integration_set before playback; wait for the observed Media mode. This tool does not switch or restore modes.';
   command('media_start','Start a saved playlist by an ID advertised in this owner\'s media capability.'+mediaMode,{playlistId:id},a=>({kind:'media.start',playlistId:a.playlistId}));

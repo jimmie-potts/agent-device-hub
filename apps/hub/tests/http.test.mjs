@@ -121,3 +121,45 @@ test('aggregate replay retention expires old tickets and rejects them after cred
   hub.replaceCredentials([credentials[1]]);assert.equal((await replay()).status,401);
  }finally{await hub?.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('tidbyt and lifx components route controller v1 and only lifx has lighting routes',async()=>{
+ const fixtures=JSON.parse(await readFile(new URL('../fixtures/controller-v1.json',import.meta.resolve('@jimmie-potts/device-contracts')),'utf8'));
+ const snapshot=structuredClone(fixtures.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value);
+ const identity=deviceId=>({...snapshot,identity:{...snapshot.identity,controllerId:'local',deviceId}});
+ const profile={profileId:'lifx-light',profileVersion:'1.0.0'};
+ const lighting={capabilities:{color:true,temperature:{minimum:1500,maximum:9000},effects:false},pending:[],observation:{status:'unknown'},visible:{status:'unknown'}};
+ const seen=[];
+ const fake=createServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;
+  const url=new URL(req.url,'http://x'),deviceId=url.searchParams.get('deviceId')??JSON.parse(body||'{}').deviceId;seen.push(req.method+' '+url.pathname+' '+deviceId);
+  if(url.pathname==='/controller/lifx-light/v1/snapshot'){res.end(JSON.stringify({profile,controller:identity(deviceId),lighting}));return;}
+  if(req.method==='POST'){const request=JSON.parse(body);res.end(JSON.stringify({apiVersion:'1.0',controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId,configurationRevision:1,generation:snapshot.generation,outcome:'sent',priorEffects:'confirmed-transmission',completedOperations:['write'],uncertainOperations:[]}));return;}
+  res.end(JSON.stringify(identity(deviceId)));
+ });
+ await new Promise(resolve=>fake.listen(0,'127.0.0.1',resolve));
+ const endpoint=`http://127.0.0.1:${fake.address().port}/controller/v1`;
+ const directory=await mkdtemp(join(tmpdir(),'hub-local-'));let hub;
+ try {
+  hub=await startHub({directory,ownerId:'owner',consumers:[],credentials:[{...credentials[0],devices:['tidbyt','desk']},{...credentials[1],devices:['tidbyt','desk']}],controllers:[
+   {id:'tidbyt',kind:'tidbyt',controllerId:'local',deviceId:'tidbyt',token:'c'.repeat(43),endpoint},{id:'desk',kind:'lifx',controllerId:'local',deviceId:'desk',token:'d'.repeat(43),endpoint}]});
+  const call=(path,body,credential=token)=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',headers:{authorization:`Bearer ${credential}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const context=await (await call('/api/dashboard/v1/context')).json();
+  assert.deepEqual(context.components.map(c=>[c.id,c.kind]),[['tidbyt','tidbyt'],['desk','lifx']]);
+  assert.equal((await (await call('/api/controllers/v1/tidbyt/snapshot')).json()).identity.deviceId,'tidbyt');
+  const desk=await (await call('/api/controllers/v1/desk/lighting/snapshot')).json();
+  assert.deepEqual([desk.profile,desk.controller.identity.deviceId],[profile,'desk']);
+  const request={apiVersion:'1.0',controllerId:'local',deviceId:'desk',requestId:snapshot.nextRequestId,expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:snapshot.generation,profile,command:{kind:'lifx.color.set',hue:30,saturation:100}};
+  const sent=await call('/api/controllers/v1/desk/lighting/commands',request);
+  assert.equal(sent.status,200);assert.equal((await sent.json()).outcome,'sent');
+  const before=seen.length;
+  assert.equal((await call('/api/controllers/v1/desk/lighting/commands',request,readToken)).status,403);
+  assert.equal((await call('/api/controllers/v1/tidbyt/lighting/snapshot')).status,422);
+  assert.equal((await call('/api/controllers/v1/tidbyt/lighting/commands',{...request,deviceId:'tidbyt'})).status,422);
+  assert.equal((await call('/api/controllers/v1/desk/lighting/commands',{...request,command:{kind:'lifx.color.set',hue:400,saturation:1}})).status,400);
+  assert.equal((await call('/api/controllers/v1/desk/integration/snapshot')).status,422);
+  assert.equal((await call('/api/controllers/v1/desk/lighting/receipt')).status,404);
+  assert.equal((await call('/api/controllers/v1/hall/lighting/snapshot')).status,403);
+  assert.equal(seen.length,before);
+  assert.deepEqual(seen,['GET /controller/v1/snapshot tidbyt','GET /controller/lifx-light/v1/snapshot desk','POST /controller/lifx-light/v1/commands desk']);
+ }finally{await hub?.close();await new Promise(resolve=>{fake.close(resolve);fake.closeAllConnections();});await rm(directory,{recursive:true,force:true});}
+});

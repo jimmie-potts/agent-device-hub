@@ -95,8 +95,8 @@ function outsideCheckout(path: string): void {
   }
 }
 
-/** Read through one no-follow descriptor; errors never include path or contents. */
-function privateText(path: unknown): string {
+/** Read one private file through a no-follow descriptor; errors never include path or contents. Shared with the local controller host. */
+export function privateText(path: unknown): string {
   let fd: number | undefined;
   try {
     if (typeof path !== 'string' || !isAbsolute(path)) return fail('unsafe-private-file');
@@ -203,6 +203,8 @@ export function startStatusRunner(config: RunnerConfig, options: { connection?: 
     publisher.start();
     nowPlaying?.start();
     return {
+      /** The device's one queue. A host may serve its snapshot and submit controller v1 requests; display writes stay with the publishers. */
+      controller,
       state: () => ({ ...publisher.state(), ...(nowPlaying ? { nowPlaying: nowPlaying.state() } : {}) }),
       stop: () => stopping ??= (async () => {
         publisher.stop();

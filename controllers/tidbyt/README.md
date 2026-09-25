@@ -216,6 +216,13 @@ result.
 
 ## Run against an installed hub
 
+To make the Tidbyt appear in B.U.N.N.Y., run it inside the
+[local controller host](../../apps/local-controllers/README.md) instead of on its
+own. The host loads the same runner JSON, starts this runner in-process and
+serves the controller's v1 snapshot to the hub. Run either the host or this
+runner, never both; they take the same lease. `@jimmie-potts/tidbyt-controller/runner`
+exports the runner for that host, and `startStatusRunner` returns its controller.
+
 The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. With the optional `nowPlaying` block it also reads `/api/playback/v1/snapshot` every 5 seconds, with a 2.5-second deadline and a 64 KiB bound; another source ID, an invalid envelope, a redirect or a failed read counts as a failed read. All pushes and removals still use the existing controller queue.
 
 Build a pinned reviewed revision in a separate release directory outside your working checkout. Use that revision's `package-lock.json` with `npm ci`, then `npm run build` on Node 24. Keep the release after stopping so its revision and installed bytes remain inspectable. Installing a release does not require restarting the hub or changing provider hooks.

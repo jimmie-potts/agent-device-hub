@@ -49,8 +49,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const apiIssue=(key,overrides={})=>{const source=issueMap[key];return {number:source.number,state:source.state.toLowerCase(),state_reason:source.stateReason,title:source.title,html_url:source.url,created_at:source.createdAt,labels:source.labels,body:source.body,...overrides};};
     // A live-edited Note (#259): the mocked body carries a changed Note under the same Topic.
     const editedNote='Deferred Home Assistant and MQTT evaluation. Edited live for the check.';
+    // Live idea marks (#308): H11 is newly marked with Extends; H998 is a new story marked as an idea.
+    const ideaReason='Home Assistant could reach devices the hub does not speak to <b>yet</b>.', newIdeaReason='A brand-new live idea.';
     const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2},
-      body:issueMap.H11.body.replace(/\*\*Note:\*\*[^\n]*/,`**Note:** ${editedNote}`)});
+      body:issueMap.H11.body.replace(/\*\*Note:\*\*[^\n]*/,`**Note:** ${editedNote}\n**Highlight:** idea, ${ideaReason}\n**Extends:** N47, H252`)});
     const hubClosed=apiIssue('H23',{state:'closed',state_reason:'completed'});
     const hubClosedOther=apiIssue('H17',{state:'closed',state_reason:'not_planned'});
     const nanoleafReview=apiIssue('N47',{labels:[...issueMap.N47.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
@@ -59,7 +61,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     // A story unknown to the snapshot, carrying its own live Topic and Note (#259).
     const newGuidedNote='Brand-new live note from the mocked body.';
     const hubNewGuided={number:998,state:'open',title:'New guided issue absent from the snapshot',created_at:new Date(Date.parse(snapshot.refreshedAt)-3600000).toISOString(),
-      labels:[],body:`## Guide\n\n**Topic:** bunny-controls\n**Note:** ${newGuidedNote}\n`};
+      labels:[],body:`## Guide\n\n**Topic:** bunny-controls\n**Note:** ${newGuidedNote}\n**Highlight:** idea, ${newIdeaReason}\n**Extends:** H11\n`};
+    const hubPageTwo=[{number:999,state:'open',title:'New <issue> absent from this guide',created_at:snapshot.refreshedAt,labels:[{name:'bug'},{name:'blocked'},{name:'deferred'},{name:'priority:p1'}]},{number:997,state:'open',title:'Older unassigned issue',created_at:'2000-01-01T00:00:00Z',labels:[]}];
     const apiOrigin='https://api.github.com', issueRoute=(repo,state,pageNumber=1)=>`${apiOrigin}/repos/jimmie-potts/${repo}/issues?state=${state}&per_page=100${state==='closed'?`&since=${encodeURIComponent(snapshot.refreshedAt)}`:''}${pageNumber>1?`&page=${pageNumber}`:''}`;
     await page.route(/^https?:/,route=>route.abort());
     await page.route(/^https:\/\/api\.github\.com\//,async route=>{
@@ -67,7 +70,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       apiRequests.push({url:url.href,method:route.request().method()});
       if(repo==='divoom-app-upgrade'&&state==='open')return route.fulfill({status:429,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'},body:JSON.stringify({message:'rate limited'})});
       let rows=[];
-      if(repo==='agent-device-hub'&&state==='open')rows=pageNumber===1?[hubBlocked,hubNewGuided]:pageNumber===2?[{number:999,state:'open',title:'New <issue> absent from this guide',created_at:snapshot.refreshedAt,labels:[{name:'bug'},{name:'blocked'},{name:'deferred'},{name:'priority:p1'}]},{number:997,state:'open',title:'Older unassigned issue',created_at:'2000-01-01T00:00:00Z',labels:[]}]:[];
+      if(repo==='agent-device-hub'&&state==='open')rows=pageNumber===1?[hubBlocked,hubNewGuided]:pageNumber===2?hubPageTwo:[];
       else if(repo==='agent-device-hub'&&state==='closed')rows=[hubClosed,hubClosedOther];
       else if(repo==='codex-nanoleaf'&&state==='open')rows=[nanoleafReview,nanoleafProgress];
       const headers={'Access-Control-Allow-Origin':'*','Access-Control-Expose-Headers':'Link','Content-Type':'application/json'};
@@ -133,8 +136,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(Number(await page.locator(`#${topicId}`).getAttribute('data-count')),expected.length,`${topicId} live count`);
       assert.equal(Number(await page.locator(`nav a[data-guide="${topicId}"] .nav-count`).textContent()),expected.length,`${topicId} live nav count`);
     }
-    assert((await page.locator('#overview-freshness').textContent()).includes('topic placement and counts read from GitHub'),'The freshness line names the live parts');
-    assert((await page.locator('#overview-freshness').textContent()).includes('GitHub unavailable for Pixoo; those lists and topic counts retain'),'The freshness line names the dated fallback');
+    assert((await page.locator('#overview-freshness').textContent()).includes('topic placement, ideas and counts read from GitHub'),'The freshness line names the live parts');
+    assert((await page.locator('#overview-freshness').textContent()).includes('GitHub unavailable for Pixoo; those lists, topic counts and ideas retain'),'The freshness line names the dated fallback');
     assert((await page.locator('#overview-freshness').textContent()).includes('Topic outcomes, next-step boxes, history and the roadmap remain on the dated snapshot'),'The freshness line names what stays dated');
     for(const id of oldIds.concat('pc-lighting','desktop-controls')) assert.equal(await page.locator(`[id="${id}"]`).count(),1,'Old deep link retained');
     const meta=JSON.parse(await page.locator('#snapshot-data').textContent());
@@ -144,7 +147,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert.equal(meta.architecture.diagramCount,9); assert.equal(meta.architecture.countedInIssueTotals,false); assert.equal(meta.architecture.reviewedAt,sources.reviewedAt); assert.deepEqual(meta.architecture.sourceRevisions,sources.sourceRevisions);
     assert.notEqual(meta.architecture.reviewedAt,meta.refreshedAt,'Architecture review timestamp is separate from the backlog snapshot');
     assert.equal(meta.history.historyFetchedAt,history.fetchedAt); assert.equal(meta.history.roadmapNodes,await page.locator('.roadmap .node').count());
-    assert.equal(await page.locator('.reference').count(),3); assert.equal(await page.locator('#direction.reference.direction:not(.guide)').count(),1); assert.equal(meta.direction.countedInIssueTotals,false); assert.equal(await page.locator('#architecture.reference:not(.guide)').count(),1); assert.equal(await page.locator('#timeline.reference:not(.guide)').count(),1);
+    assert.equal(await page.locator('.reference').count(),4); assert.equal(await page.locator('#ideas.reference.ideas:not(.guide)').count(),1); assert.equal(meta.ideas.countedInIssueTotals,false); assert.equal(await page.locator('#direction.reference.direction:not(.guide)').count(),1); assert.equal(meta.direction.countedInIssueTotals,false); assert.equal(await page.locator('#architecture.reference:not(.guide)').count(),1); assert.equal(await page.locator('#timeline.reference:not(.guide)').count(),1);
     assert.deepEqual(await page.locator('.diagram').evaluateAll(es=>es.map(e=>e.id)),diagramIds);
     for(const id of diagramIds){const fig=page.locator(`#${id}`); assert.equal(await fig.locator('.diagram-canvas > svg').count(),1); assert((await fig.locator('.diagram-canvas > svg > title').textContent()).length>5,'SVG title'); assert((await fig.locator('.diagram-canvas > svg > desc').textContent()).length>40,'SVG accessible description'); assert(await fig.locator('.status').textContent()); assert(await fig.locator('.diagram-text li').count()>=4,'Reading and boundary text'); assert(await fig.locator('.diagram-sources a[href^="https://github.com/"]').count()>=1,'Pinned source links'); assert.equal(await fig.locator('.viewer-link').getAttribute('href'),`architecture/${id}.html`);}
     const svgIds=await page.locator('.diagram-canvas svg [id]').evaluateAll(es=>es.map(e=>e.id)); assert.equal(new Set(svgIds).size,svgIds.length,'Inline SVG ids are unique across diagrams');
@@ -259,7 +262,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     await page.locator('#search').fill('N30'); await page.evaluate(()=>{location.hash='pc-lighting';});
     await page.waitForFunction(()=>document.querySelector('#search').value==='');
     assert.equal(await page.locator('#nanoleaf-devices').getAttribute('open'),'');
-    await page.locator('#expand-all').click(); assert.equal(await page.locator('.guide[open]').count(),count); assert.equal(await page.locator('.reference[open]').count(),3,'Expand all opens the direction section too');
+    await page.locator('#expand-all').click(); assert.equal(await page.locator('.guide[open]').count(),count); assert.equal(await page.locator('.reference[open]').count(),4,'Expand all opens the direction and ideas sections too');
     // Direction (#290): the dated narrative and computed leverage table join search, Expand all and live status.
     {const direction=page.locator('#direction'); const dated=await direction.locator('.direction-dated').textContent();
      assert(/^Direction written \d{4}-\d{2}-\d{2} against hub [0-9a-f]{7}; leverage computed from the \d+ \w+ \d{4} prerequisite records\./.test(dated),`Dated line: ${dated}`);
@@ -271,6 +274,61 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      await page.locator('#search').fill('no-such-topic-987'); assert.equal(await direction.isVisible(),false,'Direction hides without a match'); await page.locator('#search').press('Escape'); assert(await direction.isVisible(),'Clearing search restores the direction section');
      for(const width of [390,1440]){await page.setViewportSize({width,height:width===390?844:1000}); await direction.evaluate(e=>{e.open=true;}); await direction.scrollIntoViewIfNeeded(); assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No page overflow with the direction section at ${width}`); assert(await direction.evaluate(e=>e.scrollWidth<=e.clientWidth+1),`The direction section has no inner overflow at ${width}`); assert(await direction.locator('table.leverage').evaluate(e=>{const r=e.getBoundingClientRect();return r.right<=innerWidth&&r.left>=0;}),`The leverage table fits at ${width}`); await direction.screenshot({path:path.join(root,`work/guide-direction-${width}.png`)});}
      await page.setViewportSize({width:1440,height:1000});}
+    // Ideas (#308): the committed snapshot carries no idea marks, so every row here comes from the mocked
+    // live read. Pixoo's read failed (429), so its snapshot rows stay; Hub and Nanoleaf read successfully.
+    {const ideas=page.locator('#ideas'), keysIn=async locator=>locator.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key));
+     assert.deepEqual(meta.ideas.keys,[],'The committed snapshot carries no idea marks yet');
+     assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] .newly-added-since-snapshot')),['H11'],'A story newly marked since the snapshot lands in the Newly added block of its topic');
+     assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="bunny-controls"] .newly-added-since-snapshot')),['H998'],'A new live story marked as an idea lands in its topic');
+     assert.deepEqual(await ideas.locator('.ideas-topic').evaluateAll(es=>es.map(e=>e.dataset.topic)),['bunny-controls','nanoleaf-devices'],'Topic groups follow guide order');
+     const h11=ideas.locator('li.idea[data-key="H11"]');
+     assert.equal(await h11.locator('.idea-reason').textContent(),ideaReason,'The reason renders literally');
+     assert.equal(await h11.locator('.idea-reason b').count(),0,'Hostile markup in a reason is text');
+     assert.deepEqual(await h11.locator('.idea-extends a.issue').evaluateAll(es=>es.map(e=>[e.dataset.issue,e.dataset.status])),[['N47','review'],['H252','completed']],'Extends keys link with live status');
+     assert.equal(await h11.locator('.idea-state').textContent(),'Blocked','The live scheduling state is shown, not promoted');
+     assert.equal(await ideas.locator('summary .guide-count').textContent(),'2 marked'); assert.equal(await page.locator('nav a[data-section="ideas"] .nav-count').textContent(),'02');
+     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['H998','H11'],'Direction Later ideas follows the live marked set');
+     assert.equal(await page.locator('#direction .direction-ideas-empty').isVisible(),false); assert.equal(await ideas.locator('.ideas-empty').isVisible(),false);
+     assert((await page.locator('#overview-freshness').textContent()).includes('ideas and counts read from GitHub'),'The freshness line names the Ideas section among the live parts');
+     await page.locator('#search').fill(newIdeaReason); assert(await ideas.isVisible(),'Ideas joins search, including live rows'); assert.equal(await ideas.getAttribute('open'),'','A search match opens the ideas section');
+     await page.locator('#search').fill('no-such-topic-987'); assert.equal(await ideas.isVisible(),false,'Ideas hides without a match'); await page.locator('#search').press('Escape'); assert(await ideas.isVisible());
+     for(const width of [390,1440]){await page.setViewportSize({width,height:width===390?844:1000}); await ideas.evaluate(e=>{e.open=true;}); await ideas.scrollIntoViewIfNeeded(); assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No page overflow with the ideas section at ${width}`); assert(await ideas.evaluate(e=>e.scrollWidth<=e.clientWidth+1),`The ideas section has no inner overflow at ${width}`); await ideas.screenshot({path:path.join(root,`work/guide-ideas-${width}.png`)});}
+     await page.setViewportSize({width:1440,height:1000});
+     // A snapshot row patches in place; a failed repository keeps its snapshot row. The committed snapshot has
+     // no marked rows, so these two are inserted in the snapshot's markup before the next live pass.
+     const groupsBefore=await page.evaluate(()=>document.querySelector('#ideas .ideas-groups').innerHTML);
+     await page.evaluate(()=>{const groups=document.querySelector('#ideas .ideas-groups');
+       const row=(key,topic,link)=>`<section class="ideas-topic" data-topic="${topic}"><h3><a href="#${topic}">x</a></h3><ul class="ideas-list"><li class="idea" data-key="${key}" data-topic="${topic}"><p class="idea-head">${link}<span class="idea-title">t</span></p><p class="idea-reason">Snapshot reason.</p><p class="idea-meta"></p></li></ul></section>`;
+       groups.querySelector('.ideas-topic[data-topic="nanoleaf-devices"]').remove();
+       groups.insertAdjacentHTML('beforeend',row('H11','nanoleaf-devices',document.querySelector('a.issue[data-issue="H11"]').outerHTML)+row('P11','pixoo-media',document.querySelector('a.issue[data-issue="P11"]').outerHTML));});
+     await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[blocked,guided,...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
+     assert.equal(await ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] > .ideas-list li.idea[data-key="H11"] .idea-reason').textContent(),ideaReason,'A known row patches its reason in place');
+     assert.equal(await ideas.locator('.newly-added-since-snapshot li.idea[data-key="H11"]').count(),0,'A known row is not duplicated in the Newly added block');
+     assert.deepEqual(await h11.locator('.idea-extends a.issue').evaluateAll(es=>es.map(e=>e.dataset.issue)),['N47','H252'],'A known row patches its Extends in place');
+     assert.equal(await ideas.locator('li.idea[data-key="P11"] .idea-reason').textContent(),'Snapshot reason.','A failed repository keeps its snapshot row');
+     // A story that closes live, or loses its mark, is removed from the section and from Later ideas.
+     await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[{...blocked,body:blocked.body.replace(/\n\*\*Highlight:\*\*[^\n]*\n\*\*Extends:\*\*[^\n]*/,'')},...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
+     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['P11'],'Closed and unmarked stories leave the section');
+     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['P11']);
+     assert.equal(await ideas.locator('summary .guide-count').textContent(),'1 marked');
+     // The live parser rejects what the build rejects: Extends beside another kind, a lowercase key, a duplicate.
+     const invalidIdeas=[['Highlight:** next step, r\n**Extends:** H11',995],['Highlight:** idea, r\n**Extends:** h11',994],['Highlight:** idea, r\n**Extends:** H11, H11',993]]
+       .map(([lines,number])=>({number,state:'open',title:`Invalid idea ${number}`,created_at:snapshot.refreshedAt,labels:[],body:`## Guide\n\n**Topic:** bunny-controls\n**${lines}\n`}));
+     await page.evaluate(([blocked,guided,more,invalid])=>window.updateWorkOverview('H',[blocked,guided,...more,...invalid]),[hubBlocked,hubNewGuided,hubPageTwo,invalidIdeas]);
+     for(const number of [995,994,993]){assert.equal(await page.locator(`#ideas [data-key="H${number}"]`).count(),0,`H${number} is not an idea`); assert.equal(await page.locator(`.guide [data-issue="H${number}"]`).count(),0,`H${number} owns no topic`);}
+     // A story moved to another topic leaves its old group and lands in the new topic's Newly added block.
+     const movedGuided={...hubNewGuided,body:hubNewGuided.body.replace('**Topic:** bunny-controls','**Topic:** work-guide')};
+     await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[blocked,guided,...more]),[hubBlocked,movedGuided,hubPageTwo]);
+     assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="work-guide"] .newly-added-since-snapshot')),['H998'],'A moved idea lands in its new topic');
+     assert.equal(await ideas.locator('.ideas-topic[data-topic="bunny-controls"]').count(),0,'Its old, now empty, topic group is removed');
+     // A second repository's pass keeps unchanged rows as the same nodes, so relabels and focus survive.
+     await ideas.locator('li.idea[data-key="H998"]').evaluate(e=>{e.dataset.probe='kept';});
+     await page.evaluate(([review,progress])=>window.updateWorkOverview('N',[review,progress]),[nanoleafReview,nanoleafProgress]);
+     assert.equal(await ideas.locator('li.idea[data-key="H998"]').getAttribute('data-probe'),'kept','An unchanged live row is not rebuilt by another repository pass');
+     // Restore the built markup and the full mocked reads for the checks that follow.
+     await page.evaluate(html=>{document.querySelector('#ideas .ideas-groups').innerHTML=html;},groupsBefore);
+     await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[blocked,guided,...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
+     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['H998','H11'],'The page is back to the mocked live state');}
     for(const id of ['nanoleaf-devices','desktop-controls']) {await page.locator(`#${id} > summary`).scrollIntoViewIfNeeded();await screenshot(`${id}-desktop`);}
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-desktop.png')});
     for(const id of ['arch-local-paths','arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-desktop.png`)});
@@ -450,10 +508,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const beforePrint=await uiState();
     await page.evaluate(()=>{window.dispatchEvent(new Event('beforeprint'));window.dispatchEvent(new Event('beforeprint'));});
     assert(await page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.every(e=>e.open)),'Print expands delivery evidence');
-    assert.equal(await page.locator('.guide[open]:not([hidden])').count(),count); assert(await page.locator('#direction table.leverage').isVisible(),'Print shows the direction section and its leverage table'); assert.equal(await page.locator('.reference[open]:not([hidden])').count(),3,'Print expands timeline and architecture'); assert.equal(await page.locator('.diagram:not([hidden])').count(),diagramIds.length);
+    assert.equal(await page.locator('.guide[open]:not([hidden])').count(),count); assert(await page.locator('#direction table.leverage').isVisible(),'Print shows the direction section and its leverage table'); assert.equal(await page.locator('.reference[open]:not([hidden])').count(),4,'Print expands the timeline, direction, ideas and architecture'); assert.equal(await page.locator('.diagram:not([hidden])').count(),diagramIds.length);
     await page.emulateMedia({media:'print'});assert.equal(await page.locator('.sidebar').isVisible(),false);assert.equal(await page.locator('.toolbar').isVisible(),false);
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-print-timeline.png')}); await page.locator('#arch-local-paths').screenshot({path:path.join(root,'work/guide-print-arch-local-paths.png')}); await page.locator('#arch-nanoleaf-linux').screenshot({path:path.join(root,'work/guide-print-arch-nanoleaf-linux.png')}); await page.locator('#seq-nanoleaf-command').screenshot({path:path.join(root,'work/guide-print-seq-nanoleaf-command.png')});
-    assert.equal(await page.locator('.guide-body:visible').count(),count+3,'Print shows every guide body plus the timeline, direction and architecture references');
+    assert.equal(await page.locator('.guide-body:visible').count(),count+4,'Print shows every guide body plus the timeline, direction, ideas and architecture references'); assert(await page.locator('#ideas li.idea').first().isVisible(),'Print shows the ideas');
     assert.equal(await page.locator('.diagram-canvas > svg:visible').count(),diagramIds.length,'Every diagram renders in print'); assert.equal(await page.locator('.walk-step:visible').count(),await page.locator('.walk-step').count(),'Print shows every walkthrough step'); assert(await page.locator('.future-scenarios').evaluate(e=>e.open),'Print opens the future group'); assert.equal(await page.locator('.diagram-tools:visible').count(),0); assert(await page.locator('.diagram-canvas > svg').evaluateAll(es=>es.every(e=>{const r=e.getBoundingClientRect();return r.width<=e.closest('.diagram').getBoundingClientRect().width+1&&r.height<=700;})),'Diagrams fit the page width in print');
     await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));await page.emulateMedia({media:'screen'});
     assert.deepEqual(await uiState(),beforePrint,'Repeated print events restore state');

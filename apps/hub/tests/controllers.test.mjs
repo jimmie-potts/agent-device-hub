@@ -52,3 +52,70 @@ test('redirects never forward credentials; ambiguous timed-out commands are not 
   await assert.rejects(writer.snapshot(),error=>error.code==='controller-unavailable');
  }finally{reader.close();writer.close();await redirect.close();await target.close();await stalled.close();}
 });
+
+const profile={profileId:'lifx-light',profileVersion:'1.0.0'};
+const lightingSnapshot=snapshot=>({profile,controller:snapshot,lighting:{capabilities:{color:true,temperature:{minimum:1500,maximum:9000},effects:false},pending:[],
+ observation:{status:'known',color:{hue:12000,saturation:32000,brightness:50000,kelvin:3500},readAt:{...snapshot.sampleClock},evidenceAgeMs:0},visible:{status:'unknown'}}});
+const colorRequest=snapshot=>({apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:snapshot.nextRequestId,
+ expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:snapshot.generation,profile,command:{kind:'lifx.color.set',hue:200,saturation:80}});
+
+test('tidbyt and lifx kinds read their configured device and have no integration route',async()=>{
+ const seen=[],snapshot=value('snapshot'),request=value('request');
+ const upstream=await fake((req,res)=>{seen.push(req.method+' '+req.url);res.end(JSON.stringify(snapshot));});
+ try {
+  for(const kind of ['tidbyt','lifx']){
+   const client=new ControllerClient({...config(upstream.endpoint),kind});
+   try {
+    assert.deepEqual(await client.snapshot(),snapshot);
+    assert.equal(client.status().kind,kind);
+    for(const call of [()=>client.integrationSnapshot(),()=>client.integrationCommand(request),()=>client.integrationReceipt({epoch:'e',sequence:1}),()=>client.integrationCancel({})])
+     await assert.rejects(call(),error=>error.code==='unsupported-capability'&&error.status===422);
+   } finally {client.close();}
+  }
+  const read='GET /controller/v1/snapshot?deviceId='+encodeURIComponent(snapshot.identity.deviceId);
+  assert.deepEqual(seen,[read,read]);
+ } finally {await upstream.close();}
+});
+
+test('lifx lighting forwards only strict profile requests and checks what comes back',async()=>{
+ const snapshot=value('snapshot'),seen=[];let reply;
+ const upstream=await fake(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;seen.push([req.method,req.url,body&&JSON.parse(body)]);res.writeHead(reply.status??200,{'content-type':'application/json'});res.end(JSON.stringify(reply.body));});
+ let client;
+ try {
+  client=new ControllerClient({...config(upstream.endpoint),kind:'lifx'});
+  reply={body:lightingSnapshot(snapshot)};
+  assert.deepEqual(await client.lightingSnapshot(),lightingSnapshot(snapshot));
+  assert.deepEqual(seen.at(-1).slice(0,2),['GET','/controller/lifx-light/v1/snapshot?deviceId='+encodeURIComponent(snapshot.identity.deviceId)]);
+  const request=colorRequest(snapshot);
+  const receipt={...value('receipt'),controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId};
+  reply={body:receipt};
+  assert.deepEqual(await client.lightingCommand(request),{status:200,body:receipt});
+  assert.deepEqual(seen.at(-1),['POST','/controller/lifx-light/v1/commands',request]);
+  const temperature={...request,command:{kind:'lifx.temperature.set',kelvin:2700}};
+  assert.equal((await client.lightingCommand(temperature)).status,200);
+  const calls=seen.length;
+  for(const invalid of [{...request,profile:{...profile,profileVersion:'2.0.0'}},{...request,command:{kind:'lifx.color.set',hue:361,saturation:1}},
+   {...request,command:{kind:'lifx.color.set',hue:1.5,saturation:1}},{...request,command:{kind:'lifx.color.set',hue:1,saturation:1,brightness:1}},
+   {...request,command:{kind:'lifx.temperature.set',kelvin:1000}},{...request,command:{kind:'brightness.set',percent:5}},{...request,address:'192.0.2.1'},
+   (({profile:_,...rest})=>rest)(request),{...request,apiVersion:'2.0'}])
+   await assert.rejects(client.lightingCommand(invalid),error=>error.code==='invalid-request'&&error.status===400);
+  await assert.rejects(client.lightingCommand({...request,deviceId:'other'}),error=>error.code==='unknown-device');
+  assert.equal(seen.length,calls);
+  // What comes back must be for this device and this request.
+  reply={body:{...receipt,requestId:{...receipt.requestId,sequence:receipt.requestId.sequence+1}}};
+  await assert.rejects(client.lightingCommand(request),error=>error.code==='uncertain-result');
+  reply={body:{...lightingSnapshot(snapshot),controller:{...snapshot,identity:{...snapshot.identity,deviceId:'other'}}}};
+  await assert.rejects(client.lightingSnapshot(),error=>error.code==='incompatible-controller');
+  reply={body:{...lightingSnapshot(snapshot),lighting:{...lightingSnapshot(snapshot).lighting,address:'192.0.2.1'}}};
+  await assert.rejects(client.lightingSnapshot(),error=>error.code==='incompatible-controller');
+  reply={status:409,body:{failure:{code:'request-conflict'}}};
+  await assert.rejects(client.lightingCommand(request),error=>error.code==='request-conflict'&&error.status===409);
+ } finally {client?.close();await upstream.close();}
+ for(const kind of ['tidbyt','nanoleaf','pixoo']){
+  const other=new ControllerClient({...config('http://127.0.0.1:9/controller/v1'),kind});
+  try {
+   await assert.rejects(other.lightingSnapshot(),error=>error.code==='unsupported-capability'&&error.status===422);
+   await assert.rejects(other.lightingCommand(colorRequest(snapshot)),error=>error.code==='unsupported-capability'&&error.status===422);
+  } finally {other.close();}
+ }
+});

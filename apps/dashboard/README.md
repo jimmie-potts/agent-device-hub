@@ -72,6 +72,20 @@ name does not qualify a new device. A third synthetic sensor fixture verifies
 that the shell supports a component with different capabilities without adding
 production hardware support.
 
+Tidbyt and LIFX components ([#289](https://github.com/jimmie-potts/agent-device-hub/issues/289))
+come from the [local controller host](../local-controllers/README.md) and have no
+integration settings or advanced editor. The Tidbyt view says that the host
+publishes its status and now-playing tiles. The Tidbyt controller declares no
+controller v1 capability, so every general control names that reason. A LIFX view reads one
+lighting snapshot, whose controller v1 part guards the general and lighting
+controls alike. It shows the last color the bulb reported with its age, or
+Unknown, and adds Color (hue and saturation) and Color temperature (kelvin within
+the declared range) under Lighting. Each sends one `lifx-light` 1.0.0 request
+through the hub's lighting route, built from a lighting read taken just before
+sending, and never changes power or brightness. Color temperature keeps hue and
+saturation, so the light looks white only at 0% saturation. A bulb without
+qualified model evidence declares neither, and both forms name that reason.
+
 Mode controls preserve Work/Quiet/Free and Monitor/Media. Nanoleaf settings include
 layout, coverage, element/project/task mapping and project colors. Pixoo controls
 include monitor filters and cadence. Advanced editors remain links. The UI never
@@ -248,7 +262,12 @@ add Nanoleaf power and brightness in Work with the override hint, Work gating
 with the explicit Free switch, one guarded scene command with a preserved
 selection and focus across reconnect, keyboard focus kept through the Free
 switch, a scene activation and a locked draft form, and a controller-side scene
-rejection, revision conflict and uncertain result with no retry. `DASHBOARD_RECEIPTS` selects an external
+rejection, revision conflict and uncertain result with no retry. The Hub #289
+scenario (`tests/local-controllers.mjs`) runs the real local controller host with
+fake Tidbyt and LIFX transports behind the real hub. It checks the Tidbyt view's
+disabled controls, LIFX power, brightness, color and color temperature, one
+guarded lighting request per change with no power write, an unqualified bulb, a
+read-only credential, phone width and automated accessibility. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,

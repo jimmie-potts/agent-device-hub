@@ -14,7 +14,7 @@ Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, n
 
 Consumer policies use the shared core's `{id,clearOnNewTurn}` contract and must match persisted/imported state. [Credentials](#credentials) describes the `credentials` list, how to create an entry and what each grant allows. Native controller tokens remain only in private server configuration. No route returns them.
 
-Each controller has `id`, `kind` of `pixoo` or `nanoleaf`, `controllerId`, `deviceId`, numeric IPv4 loopback `endpoint` ending `/controller/v1`, and its dedicated `token`. There is at most one active HTTP request per device and no automatic retry. A capacity rejection does not reserve a controller ticket. Explicit commands retain the owning controller's request ID and revision guards. A timeout after submission is uncertain, never proof of no effects. `sent` is transport evidence only.
+Each controller has `id`, `kind` of `pixoo`, `nanoleaf`, `tidbyt` or `lifx`, `controllerId`, `deviceId`, numeric IPv4 loopback `endpoint` ending `/controller/v1`, and its dedicated `token`. Tidbyt and LIFX devices are served by the [local controller host](../local-controllers/README.md); register each device as its own entry, with the host's endpoint and a token it accepts for that device. There is at most one active HTTP request per device and no automatic retry. A capacity rejection does not reserve a controller ticket. Explicit commands retain the owning controller's request ID and revision guards. A timeout after submission is uncertain, never proof of no effects. `sent` is transport evidence only.
 
 ## Credentials
 
@@ -59,8 +59,8 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `POST /api/monitor/v1/commands` to label, acknowledge or recover an approval | `control` | none |
 | `POST /api/monitor/v1/commands` to quiesce | `control` and `admin` | none |
 | `GET /api/hub/v1/authority?scope=<scope>` | the named scope: `read`, `control` or `ingest` | none |
-| `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/receipt` | `read` | the controller alias `:id` |
-| `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel` | `control` | the controller alias `:id` |
+| `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/receipt`, `GET .../lighting/snapshot` | `read` | the controller alias `:id` |
+| `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel`, `POST .../lighting/commands` | `control` | the controller alias `:id` |
 | `GET /api/playback/v1/snapshot` | `read` | the selected playback source ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
@@ -113,8 +113,12 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | `POST /api/controllers/v1/:id/integration/commands` | Owning versioned settings request |
 | `GET /api/controllers/v1/:id/integration/receipt?epoch=...&sequence=...` | Nanoleaf extension receipt, without issuing another command |
 | `POST /api/controllers/v1/:id/integration/cancel` | Nanoleaf extension cancellation request; cannot undo an applied edit |
+| `GET /api/controllers/v1/:id/lighting/snapshot` | Validated LIFX lighting snapshot: `lifx-light` 1.0.0 profile, the controller v1 snapshot and the lighting section. `lifx` aliases only; other kinds answer 422 |
+| `POST /api/controllers/v1/:id/lighting/commands` | One strict `lifx-light` 1.0.0 color or color-temperature request and its controller v1 receipt. `lifx` aliases only |
 | `GET /api/playback/v1/snapshot` | Selected playback source's snapshot; see [Playback](#playback) |
 | `POST /api/playback/v1/commands` | One source-bound playback command and its receipt |
+
+Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 
 Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, command bodies 65536 bytes and requests three seconds. Replay retains at most 256 entries and 262144 fingerprint bytes across principals; pending entries cannot be evicted. Repeated quiesce tickets share one immutable export. Native controller calls have a two-second deadline and one MiB response limit. Slow streams disconnect after five seconds of backpressure. Credential replacement closes streams, retires every browser session and removed credential's tickets, and reauthorizes future requests before replay. Restart changes the command epoch.
 
@@ -271,7 +275,7 @@ Set the optional private configuration field `mcp` to `true` to mount `/mcp` on 
 
 `hub_sessions` returns the same qualified snapshot, provider/query matches and next state request ID as the HTTP session route. `hub_label` and `hub_acknowledge` use `request_id` for that exact string ticket and share the HTTP command ledger. No ingest, quiesce, migration or administrative tool is exposed. Read/control scopes apply as on the owning routes; read permission does not grant control. Discovery and reads never acknowledge notices or infer task success.
 
-`hub_devices` lists authorized configured aliases and stable `toolPrefix` values without querying controllers. Each prefix binds status, power, brightness, mode, media and integration tools to one configured owner. Prefixes include a bounded alias segment and SHA-256 suffix so dotted aliases and long IDs remain valid and distinct. The reserved `hub-service` alias represents only global application tools and cannot name a configured controller when MCP is enabled. It is excluded from device discovery. Native controller/device IDs inside results remain unchanged, including when multiple controllers use the same native device ID.
+`hub_devices` lists authorized configured aliases, their kinds and stable `toolPrefix` values without querying controllers. A Pixoo or Nanoleaf prefix binds status, power, brightness, mode, media and integration tools to one configured owner. A Tidbyt prefix binds only `status`, because the Tidbyt controller declares no controller v1 capability. A LIFX prefix binds `status`, `power_set`, `brightness_set`, `lighting_status`, `color_set` (hue 0–360, saturation 0–100) and `temperature_set` (1500–9000 K). The two lighting tools send one `lifx-light` request each and never change power or brightness. Prefixes include a bounded alias segment and SHA-256 suffix so dotted aliases and long IDs remain valid and distinct. The reserved `hub-service` alias represents only global application tools and cannot name a configured controller when MCP is enabled. It is excluded from device discovery. Native controller/device IDs inside results remain unchanged, including when multiple controllers use the same native device ID.
 
 | Suffix | Behavior |
 | --- | --- |
