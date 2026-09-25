@@ -57,7 +57,7 @@ export type ReceiptV1_1 = Omit<Receipt, 'apiVersion' | 'failure'> & {
 };
 export type MomentCurrent = { status: 'none' }
   | { status: 'scheduled'; momentId: string; requestId: Ticket; mood: string; priorityClass: PriorityClass;
-      coversStatus: boolean; startAt: Instant; durationMs: number }
+      coversStatus: boolean; startAt: Instant; toleranceMs: number; durationMs: number }
   | { status: 'playing'; momentId: string; requestId: Ticket; mood: string; priorityClass: PriorityClass;
       coversStatus: boolean; endAt: Instant };
 export type MomentEnding = 'completed' | 'preempted' | 'superseded' | 'interrupted';
@@ -124,7 +124,9 @@ export type Presentation = 'status' | 'content' | 'quiet';
 export type Alert = 'none' | 'attention' | 'failure';
 /** Trusted owner state for the moment reference. `base` is a neutral label of whatever the device shows without a moment. */
 export type MomentDevice = MomentState & {
-  clockEpoch: string; presentation: Presentation; base: string; alert: Alert; recentMomentIds: string[];
+  clockEpoch: string; presentation: Presentation;
+  /** The device's own `moments.coversStatus` capability. */
+  canCoverStatus: boolean; base: string; alert: Alert; recentMomentIds: string[];
 };
 /** Events arrive in the device writer's order. Times are the device's own monotonic milliseconds. */
 export type MomentEvent =
@@ -152,4 +154,5 @@ export type ReferenceInput =
   | { operation: 'clock'; renderer: Renderer | null; supportedProfiles: Profile[]; expectedClockEpoch: string;
       fresh: boolean; receivedAtLocalMs: number; nowLocalMs: number }
   | { operation: 'moment'; device: MomentDevice; events: MomentEvent[] }
-  | { operation: 'downgrade'; snapshot: SnapshotV1_1 };
+  | { operation: 'downgrade'; snapshot: SnapshotV1_1 }
+  | { operation: 'negotiate'; requested: unknown; served: ApiVersion[] };

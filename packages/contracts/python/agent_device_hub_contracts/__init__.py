@@ -3,6 +3,7 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -93,10 +94,25 @@ def _supports(capabilities: dict[str, Any], command: dict[str, Any]) -> bool:
         cap = capabilities.get("modes", {"supported": False})
         return cap["supported"] and command["mode"] in cap["values"]
     if kind == "moment":
+        # coversStatus is a permission; the writer blocks it on status when the device cannot cover status.
         cap = capabilities.get("moments", {"supported": False})
-        return (cap["supported"] and command["mood"] in cap["moods"] and command["durationMs"] <= cap["maxDurationMs"]
-                and (not command["coversStatus"] or cap["coversStatus"]))
+        return cap["supported"] and command["mood"] in cap["moods"] and command["durationMs"] <= cap["maxDurationMs"]
     return False
+
+
+def negotiate_api_version(requested: Any, served: list[str]) -> dict[str, Any]:
+    """The API version a read is served at. No request means 1.0, so 1.0 readers never see 1.1 shapes. Otherwise
+    the controller serves the highest version it has of the same major that is not above the request."""
+    if requested is None:
+        return {"decision": "serve", "apiVersion": "1.0"}
+    match = re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", requested) if isinstance(requested, str) else None
+    if match is None or match.group(1) != "1":
+        return {"decision": "invalid-request"}
+    minor = int(match.group(2))
+    candidates = [version for version in served if int(version.split(".")[1]) <= minor]
+    if not candidates:
+        return {"decision": "invalid-request"}
+    return {"decision": "serve", "apiVersion": max(candidates, key=lambda version: int(version.split(".")[1]))}
 
 
 def admit(value: dict[str, Any]) -> dict[str, Any]:
@@ -258,7 +274,8 @@ def _moment(value: dict[str, Any]) -> dict[str, Any]:
                         or begin["atMs"] > now + MOMENT_MAX_LEAD_MS):
                     drop("moment-missed")
                 elif (device["presentation"] == "quiet"
-                      or (device["presentation"] == "status" and (not command["coversStatus"] or device["alert"] != "none"))
+                      or (device["presentation"] == "status"
+                          and (not command["coversStatus"] or not device["canCoverStatus"] or device["alert"] != "none"))
                       or (current["status"] != "none" and current["priorityClass"] == "event"
                           and command["priorityClass"] == "flourish")):
                     drop("moment-blocked")
@@ -267,12 +284,17 @@ def _moment(value: dict[str, Any]) -> dict[str, Any]:
                     device["current"] = {"status": "scheduled", "momentId": command["momentId"],
                                          "requestId": deepcopy(event["requestId"]), "mood": command["mood"],
                                          "priorityClass": command["priorityClass"], "coversStatus": command["coversStatus"],
-                                         "startAt": at(begin["atMs"]), "durationMs": command["durationMs"]}
+                                         "startAt": at(begin["atMs"]), "toleranceMs": begin["toleranceMs"],
+                                         "durationMs": command["durationMs"]}
                     if begin["atMs"] <= now:
                         start()
         elif kind == "tick":
             current = device["current"]
-            if current["status"] == "scheduled" and now >= current["startAt"]["atMs"]:
+            if current["status"] == "scheduled" and now > current["startAt"]["atMs"] + current["toleranceMs"]:
+                # The writer reached the start too late: drop it as it would a late delivery. It never played.
+                receipts.append({"requestId": deepcopy(current["requestId"]), "outcome": "failed", "failure": "moment-missed"})
+                device["current"] = {"status": "none"}
+            elif current["status"] == "scheduled" and now >= current["startAt"]["atMs"]:
                 start()
             elif current["status"] == "playing" and now >= current["endAt"]["atMs"]:
                 end("completed")
@@ -346,6 +368,8 @@ def evaluate(value: dict[str, Any]) -> Any:
         return _moment(value)
     if operation == "downgrade":
         return {"snapshot": downgrade_snapshot(value["snapshot"]), "effects": 0}
+    if operation == "negotiate":
+        return negotiate_api_version(value["requested"], value["served"])
     if operation == "read":
         return {"snapshot": deepcopy(value["snapshot"]), "effects": 0}
     if operation == "sample":

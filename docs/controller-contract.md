@@ -85,7 +85,8 @@ A moment is a short, hub-decided presentation request ([ADR 0006](decisions/0006
 
 API 1.1 is opt-in:
 
-- A client reads the snapshot at the highest version it supports. The controller answers with the highest version it serves that is not above the requested one, and the client validates the answer against that version's schema.
+- A snapshot or feed read names the version it wants with `apiVersion`, which is the `apiVersion` query parameter over HTTP. A read without it is served at 1.0, so today's 1.0 readers never receive a 1.1 shape.
+- `negotiateApiVersion` serves the highest version the controller has that has the same major and is not above the request: 1.7 gets 1.1, and 1.1 on a 1.0-only controller gets 1.0. Another major or a malformed value such as `1.01` is `invalid-request`. The client validates the answer against the schema of the version it received.
 - A client sends a moment only after it has read a 1.1 snapshot that declares `moments` supported.
 - A 1.1 controller keeps accepting 1.0 requests. Both envelopes share one ticket sequence, and each receipt carries its own request's API version.
 - A 1.0-only controller rejects a 1.1 envelope as `invalid-request` before admission, without reserving a ticket.
@@ -99,18 +100,18 @@ API 1.1 is opt-in:
 - `mood`: a neutral ID that the device declares. `palette` is optional: 1 to 8 `#rrggbb` colors that the device may approximate or replace with its own preset for the mood.
 - `durationMs`: an integer from 1,000 to 300,000.
 - `priorityClass`: `event` for a moment that a rule triggers, or `flourish` for one that an agent proposes.
-- `coversStatus`: whether the moment may play over status presentation. It is true only for event kinds in the owner's interrupt set, so a `flourish` must set it to false.
+- `coversStatus`: permission for the moment to play over status presentation. It is true only for event kinds in the owner's interrupt set, so a `flourish` must set it to false. The flag never stops a moment from playing over content.
 - `start`: `{domain:"controller-monotonic", epoch, atMs, toleranceMs}`, described below.
 
 The `moments` capability is `{supported:false}` or `{supported:true, moods, maxDurationMs, coversStatus}`:
 
 - `moods` lists 3 to 64 unique IDs and must include the core moods `celebrate` (pull request merged), `setback` (CI failed) and `reminder` (meeting).
 - `maxDurationMs` is the device's own limit, within the contract range.
-- `coversStatus` says whether the device can play a moment over status presentation.
+- `coversStatus` says whether the device can play a moment over status presentation. A device that cannot still accepts moments with `coversStatus:true`, and plays them only over content.
 
-1.1 capabilities always list `moments`. Tidbyt and LIFX declare it unsupported until their own interlude stories.
+1.1 capabilities always list `moments`. The Tidbyt and LIFX hosts stay on API 1.0 until their own interlude stories. A host that serves 1.1 before then declares `moments` unsupported.
 
-Admission applies every 1.0 rule first: authentication, schema, target, ticket, capacity, configuration revision and generation. A mood the device does not declare, a duration above `maxDurationMs`, or `coversStatus:true` on a device that cannot cover status fails with `unsupported-capability`. An accepted moment does not advance the configuration revision, because it changes no desired configuration. Concurrent edits therefore do not conflict with it.
+Admission applies every 1.0 rule first: authentication, schema, target, ticket, capacity, configuration revision and generation. A mood the device does not declare, or a duration above `maxDurationMs`, fails with `unsupported-capability`. An accepted moment does not advance the configuration revision, because it changes no desired configuration. Concurrent edits therefore do not conflict with it.
 
 ### Start time and clock domain
 
@@ -119,6 +120,7 @@ The contract compares times only inside one controller's monotonic clock epoch. 
 - The hub already reads a snapshot before every command. It computes `atMs` as the snapshot's `sampleClock.sampledAtMs`, plus its own monotonic time elapsed since it received that snapshot, plus any lead it wants. It sets `epoch` to that `sampleClock.epoch`.
 - Choreography gives each device its own `atMs` for the same hub instant. Start times are best effort, and no device synchronization is claimed.
 - When the writer takes the moment, it drops the moment as `moment-missed` if its clock epoch differs from `start.epoch`, if its clock is more than `toleranceMs` past `atMs`, or if `atMs` is more than 60,000 ms ahead. `toleranceMs` is at most 60,000.
+- The writer checks lateness again at the scheduled start. A moment that the writer reaches more than `toleranceMs` after `atMs`, for example after a stall, is dropped as `moment-missed` instead of playing late.
 - A moment that misses its window is dropped, not queued. A late delivery after a hub outage therefore never plays.
 
 ### Precedence and return to base
@@ -131,7 +133,7 @@ The device writer plays at most one moment at a time. For each moment that reach
 2. A moment outside its start window is dropped as `moment-missed`.
 3. The moment is dropped as `moment-blocked`, not deferred, when:
    - the device shows `quiet`;
-   - the device shows `status` and either `coversStatus` is false or an alert is active; or
+   - the device shows `status` and the moment's or the device's `coversStatus` is false, or an alert is active; or
    - it is a `flourish` and an `event` moment is scheduled or playing.
 4. Otherwise it replaces any current moment, which ends as `superseded`. It is scheduled until `atMs` and then plays for `durationMs`.
 
@@ -150,13 +152,13 @@ A delivered moment no longer depends on the hub. It ends on the device's own clo
 
 Receipts keep their transmission-only meaning:
 
-- A moment that fails a check in the list above gets a `failed` receipt with `moment-duplicate`, `moment-missed` or `moment-blocked`. These failure codes exist only in 1.1 receipts.
+- A moment that fails a check in the list above, or reaches its start too late, gets a `failed` receipt with `moment-duplicate`, `moment-missed` or `moment-blocked`. These failure codes exist only in 1.1 receipts. A dropped moment was never current, so it records no ending.
 - A moment that starts gets `sent` for its start transmission.
 - A scheduled moment that ends before starting gets `cancelled`, with no prior effects.
 
 The 1.1 snapshot adds `state.moment`:
 
-- `current` is `none`, `scheduled` (with `startAt` and `durationMs`) or `playing` (with `endAt`). It carries the moment and request IDs, mood, priority class and `coversStatus`.
+- `current` is `none`, `scheduled` (with `startAt`, `toleranceMs` and `durationMs`) or `playing` (with `endAt`). It carries the moment and request IDs, mood, priority class and `coversStatus`.
 - `last` is `none` or the most recent moment that ended, with its `ending` and `endedAt`.
 
 Instants use `{domain:"controller-monotonic", epoch, atMs}` and follow the same clock rule as the renderer metadata. The hub's moment log reads endings and pre-emption from this state and the feed.
@@ -205,17 +207,18 @@ Use one JSON corpus. Each case names a pure operation, input state/request and e
 API 1.1 adds these cases:
 
 27. Moment commands, `moments` capabilities, 1.1 receipts, snapshots and feeds validate. Short or long durations, oversized tolerances, malformed palettes, a flourish that covers status, a missing start, another clock domain, frames, raw commands, titles and text moods fail. 1.0 definitions reject every 1.1 shape.
-28. A 1.1 controller queues a moment without advancing the configuration revision, applies stale revisions and unsupported mood, duration or status cover first, accepts 1.0 and 1.1 envelopes, and replays a reordered moment request. A 1.0-only controller and an unknown 1.2 envelope reject before reservation.
-29. A moment returns to the current base after status changes during it, starts on schedule and expires after its duration.
-30. An alert pre-empts a scheduled or playing moment on status, and an existing alert blocks one. Alerts neither pre-empt nor block over content.
-31. Quiet, and status without `coversStatus`, block a moment.
-32. Late delivery, another clock epoch and an over-long lead are missed; a start within tolerance plays.
-33. A duplicate ID is ignored while playing and after ending, and the device remembers the last 64 IDs.
-34. A newer event supersedes a moment and an event supersedes a flourish, while a flourish during an event is blocked.
-35. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
-36. With the hub down, a playing moment ends on the device clock, and a late delivery after recovery is missed.
-37. A restart replays nothing and forgets the moment memory.
-38. The 1.0 view of a 1.1 snapshot omits moment content, reports a 1.1 outcome as unknown and keeps a 1.0 outcome.
+28. A 1.1 controller queues a moment without advancing the configuration revision. It applies stale revisions and an unsupported mood or duration first, accepts a duration at the device limit, and leaves status cover to the writer. It accepts 1.0 and 1.1 envelopes on one ticket sequence, including in one batch, and replays a reordered moment request. A 1.0-only controller and an unknown 1.2 envelope reject before reservation.
+29. Reads without a version get 1.0. A newer minor gets the highest served version, another major or a malformed value is invalid, and a 1.0-only controller answers 1.1 reads at 1.0.
+30. A moment returns to the current base after status changes during it, starts on schedule and expires after its duration.
+31. An alert pre-empts a scheduled or playing moment on status, and an existing alert blocks one. Alerts neither pre-empt nor block over content.
+32. Quiet blocks a moment, and so does status when the moment or the device cannot cover status. A device that cannot cover status still plays the moment over content.
+33. Late delivery, another clock epoch, an over-long lead and a start reached after its tolerance are missed; a start within tolerance plays.
+34. A duplicate ID is ignored while playing and after ending, and the device remembers the last 64 IDs.
+35. A newer event supersedes a moment, an event supersedes a flourish, and a flourish supersedes a scheduled flourish, which is then cancelled. A flourish during an event is blocked.
+36. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
+37. With the hub down, a playing moment ends on the device clock, and a late delivery after recovery is missed.
+38. A restart replays nothing and forgets the moment memory.
+39. The 1.0 view of a 1.1 snapshot omits moment content, reports a 1.1 outcome as unknown and keeps a 1.0 outcome.
 
 Schema checking proves payload shape. Pure semantic fixtures prove the reference algorithm. Device adoption tests must later run equivalent cases against real owning services/queues and authenticate through their actual HTTP layer. This issue must report that remaining consumer adoption explicitly.
 
@@ -223,8 +226,8 @@ Schema checking proves payload shape. Pure semantic fixtures prove the reference
 
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
-| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 309 shared cases (189 schema, 120 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 309 cases and archive import |
+| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 324 shared cases (190 schema, 134 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
+| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 324 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
 

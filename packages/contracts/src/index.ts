@@ -3,7 +3,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv';
 import type {
   Admission, AdmissionResult, AdmissionResultV1_1, AdmissionState, AdmissionStateV1_1, AdmissionV1_1,
-  Authorization, CapabilitiesV1_1, CommandV1_1,
+  ApiVersion, Authorization, CapabilitiesV1_1, CommandV1_1,
   FailureCode, FeedEvent, MomentDevice, MomentEvent, MomentStep, Receipt, ReceiptV1_1, ReferenceInput,
   Request, RequestV1_1, Snapshot, SnapshotV1_1, Ticket,
 } from './types.js';
@@ -86,9 +86,24 @@ function supports(c: AdmissionState['capabilities'] & Partial<CapabilitiesV1_1>,
     case 'scene.activate': return c.scenes.supported && c.scenes.sceneIds.includes(command.sceneId);
     case 'zone.power.set': return c.zones.supported && c.zones.zoneIds.includes(command.zoneId);
     case 'mode.set': return !!c.modes?.supported && c.modes.values.includes(command.mode);
+    // coversStatus is a permission; the writer blocks it on status when the device cannot cover status.
     case 'moment': return !!c.moments?.supported && c.moments.moods.includes(command.mood)
-      && command.durationMs <= c.moments.maxDurationMs && (!command.coversStatus || c.moments.coversStatus);
+      && command.durationMs <= c.moments.maxDurationMs;
   }
+}
+
+/**
+ * The API version a read is served at. No request means 1.0, so 1.0 readers never see 1.1 shapes. Otherwise
+ * the controller serves the highest version it has of the same major that is not above the request.
+ */
+export function negotiateApiVersion(requested: unknown, served: readonly ApiVersion[]):
+    { decision: 'serve'; apiVersion: ApiVersion } | { decision: 'invalid-request' } {
+  if (requested === null || requested === undefined) return { decision: 'serve', apiVersion: '1.0' };
+  const match = typeof requested === 'string' ? /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(requested) : null;
+  if (!match || match[1] !== '1') return { decision: 'invalid-request' };
+  const minor = Number(match[2]);
+  const best = served.filter(v => Number(v.split('.')[1]) <= minor).sort((a, b) => Number(b.split('.')[1]) - Number(a.split('.')[1]))[0];
+  return best ? { decision: 'serve', apiVersion: best } : { decision: 'invalid-request' };
 }
 
 /** A pure admission decision. The owner must atomically apply a reservation and retain its receipt. */
@@ -233,19 +248,25 @@ function moment(input: Extract<ReferenceInput, { operation: 'moment' }>) {
         if (m.start.epoch !== d.clockEpoch || e.nowMs > m.start.atMs + m.start.toleranceMs
             || m.start.atMs > e.nowMs + MOMENT_MAX_LEAD_MS) {
           drop('moment-missed');
-        } else if (d.presentation === 'quiet' || (d.presentation === 'status' && (!m.coversStatus || d.alert !== 'none'))
+        } else if (d.presentation === 'quiet'
+            || (d.presentation === 'status' && (!m.coversStatus || !d.canCoverStatus || d.alert !== 'none'))
             || (d.current.status !== 'none' && d.current.priorityClass === 'event' && m.priorityClass === 'flourish')) {
           drop('moment-blocked');
         } else {
           end('superseded');
           d.current = { status: 'scheduled', momentId: m.momentId, requestId: structuredClone(e.requestId), mood: m.mood,
-            priorityClass: m.priorityClass, coversStatus: m.coversStatus, startAt: at(m.start.atMs), durationMs: m.durationMs };
+            priorityClass: m.priorityClass, coversStatus: m.coversStatus, startAt: at(m.start.atMs),
+            toleranceMs: m.start.toleranceMs, durationMs: m.durationMs };
           if (m.start.atMs <= e.nowMs) start();
         }
         break;
       }
       case 'tick':
-        if (d.current.status === 'scheduled' && e.nowMs >= d.current.startAt.atMs) start();
+        if (d.current.status === 'scheduled' && e.nowMs > d.current.startAt.atMs + d.current.toleranceMs) {
+          // The writer reached the start too late: drop it as it would a late delivery. It never played.
+          receipts.push({ requestId: structuredClone(d.current.requestId), outcome: 'failed', failure: 'moment-missed' });
+          d.current = { status: 'none' };
+        } else if (d.current.status === 'scheduled' && e.nowMs >= d.current.startAt.atMs) start();
         else if (d.current.status === 'playing' && e.nowMs >= d.current.endAt.atMs) end('completed');
         break;
       case 'alert':
@@ -310,6 +331,7 @@ export function evaluate(input: ReferenceInput): unknown {
     case 'clock': return clock(input);
     case 'moment': return moment(input);
     case 'downgrade': return { snapshot: downgradeSnapshot(input.snapshot), effects: 0 };
+    case 'negotiate': return negotiateApiVersion(input.requested, input.served);
     case 'read': return { snapshot: structuredClone(input.snapshot), effects: 0 };
     case 'sample': return { snapshot: { ...structuredClone(input.snapshot), sampleClock: structuredClone(input.sampleClock), serviceHealth: input.serviceHealth }, effects: 0 };
     default: throw new Error('Unknown reference operation');

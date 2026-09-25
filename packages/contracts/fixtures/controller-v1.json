@@ -7756,6 +7756,7 @@
                 "epoch": "clock-1",
                 "atMs": 5000
               },
+              "toleranceMs": 2000,
               "durationMs": 20000
             },
             "last": {
@@ -8726,6 +8727,7 @@
                 "epoch": "clock-1",
                 "atMs": 5000
               },
+              "toleranceMs": 2000,
               "durationMs": 20000
             },
             "last": {
@@ -9322,6 +9324,219 @@
             },
             "observation": {
               "status": "unknown"
+            }
+          }
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "feed-v1.0-rejects-v1.1",
+      "definition": "feed",
+      "value": {
+        "apiVersion": "1.1",
+        "kind": "change",
+        "cursor": {
+          "epoch": "feed-1",
+          "sequence": 3
+        },
+        "snapshot": {
+          "apiVersion": "1.1",
+          "identity": {
+            "deviceId": "light",
+            "controllerId": "controller",
+            "sourceId": "source",
+            "controllerEpoch": "runtime-1"
+          },
+          "configurationRevision": 4,
+          "generation": {
+            "epoch": "generation-1",
+            "sequence": 3
+          },
+          "nextRequestId": {
+            "epoch": "requests-1",
+            "sequence": 1
+          },
+          "cursor": {
+            "epoch": "feed-1",
+            "sequence": 3
+          },
+          "sampleClock": {
+            "domain": "controller-monotonic",
+            "epoch": "clock-1",
+            "sampledAtMs": 1000
+          },
+          "serviceHealth": "ready",
+          "capabilities": {
+            "power": {
+              "supported": true
+            },
+            "brightness": {
+              "supported": true,
+              "minimum": 0,
+              "maximum": 100
+            },
+            "media": {
+              "supported": false
+            },
+            "zones": {
+              "supported": false
+            },
+            "scenes": {
+              "supported": false
+            },
+            "preview": {
+              "supported": false
+            },
+            "modes": {
+              "supported": true,
+              "values": [
+                "Work",
+                "Quiet",
+                "Free"
+              ]
+            },
+            "moments": {
+              "supported": true,
+              "moods": [
+                "celebrate",
+                "setback",
+                "reminder",
+                "cozy"
+              ],
+              "maxDurationMs": 60000,
+              "coversStatus": true
+            }
+          },
+          "limits": {
+            "maxPending": 32,
+            "maxBodyBytes": 65536,
+            "maxInFlight": 32,
+            "maxReceipts": 256,
+            "maxEvents": 32,
+            "maxStreams": 16,
+            "authenticationTimeoutMs": 5000
+          },
+          "state": {
+            "desired": {
+              "power": {
+                "status": "known",
+                "value": true
+              },
+              "brightness": {
+                "status": "known",
+                "value": 80
+              },
+              "mode": {
+                "status": "known",
+                "value": "Work"
+              }
+            },
+            "pending": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 1
+                },
+                "command": {
+                  "kind": "brightness.set",
+                  "percent": 80
+                },
+                "generation": {
+                  "epoch": "generation-1",
+                  "sequence": 3
+                }
+              },
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 2
+                },
+                "command": {
+                  "kind": "moment",
+                  "momentId": "evt-merge",
+                  "mood": "celebrate",
+                  "durationMs": 20000,
+                  "priorityClass": "event",
+                  "coversStatus": true,
+                  "start": {
+                    "domain": "controller-monotonic",
+                    "epoch": "clock-1",
+                    "atMs": 1000,
+                    "toleranceMs": 2000
+                  }
+                },
+                "generation": {
+                  "epoch": "generation-1",
+                  "sequence": 3
+                }
+              }
+            ],
+            "lastSuccessfulSend": {
+              "status": "known",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 1
+              },
+              "clock": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "sampledAtMs": 1000
+              },
+              "operationIds": [
+                "brightness"
+              ]
+            },
+            "lastOutcome": {
+              "status": "known",
+              "receipt": {
+                "apiVersion": "1.1",
+                "controllerId": "controller",
+                "deviceId": "light",
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 2
+                },
+                "configurationRevision": 4,
+                "generation": {
+                  "epoch": "generation-1",
+                  "sequence": 3
+                },
+                "outcome": "failed",
+                "priorEffects": "none",
+                "completedOperations": [],
+                "uncertainOperations": [],
+                "failure": {
+                  "code": "moment-blocked"
+                }
+              }
+            },
+            "externalControl": {
+              "status": "unknown"
+            },
+            "observation": {
+              "status": "unknown"
+            },
+            "moment": {
+              "current": {
+                "status": "playing",
+                "momentId": "evt-merge",
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 2
+                },
+                "mood": "celebrate",
+                "priorityClass": "event",
+                "coversStatus": true,
+                "endAt": {
+                  "domain": "controller-monotonic",
+                  "epoch": "clock-1",
+                  "atMs": 21000
+                }
+              },
+              "last": {
+                "status": "none"
+              }
             }
           }
         }
@@ -22894,6 +23109,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -22980,6 +23196,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-busy",
           "alert": "none",
           "current": {
@@ -23013,6 +23230,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -23120,6 +23338,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -23153,6 +23372,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23240,6 +23460,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23273,6 +23494,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "attention",
           "current": {
@@ -23330,6 +23552,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "attention",
           "current": {
@@ -23352,6 +23575,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -23475,6 +23699,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "failure",
           "current": {
@@ -23522,6 +23747,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23579,6 +23805,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23601,6 +23828,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "quiet",
+          "canCoverStatus": true,
           "base": "quiet",
           "alert": "none",
           "current": {
@@ -23658,6 +23886,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "quiet",
+          "canCoverStatus": true,
           "base": "quiet",
           "alert": "none",
           "current": {
@@ -23680,6 +23909,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23736,6 +23966,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23771,6 +24002,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23828,6 +24060,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23850,6 +24083,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23907,6 +24141,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -23929,6 +24164,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24015,6 +24251,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24032,6 +24269,7 @@
               "epoch": "clock-1",
               "atMs": 61000
             },
+            "toleranceMs": 2000,
             "durationMs": 20000
           },
           "last": {
@@ -24052,6 +24290,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24202,6 +24441,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24235,6 +24475,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24353,6 +24594,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24387,6 +24629,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24481,6 +24724,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24517,6 +24761,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24617,6 +24862,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24664,6 +24910,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -24751,6 +24998,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24784,6 +25032,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24869,6 +25118,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -24902,6 +25152,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -25000,6 +25251,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -25033,6 +25285,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -25156,6 +25409,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -25190,6 +25444,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-idle",
           "alert": "none",
           "current": {
@@ -25310,6 +25565,7 @@
         "device": {
           "clockEpoch": "clock-2",
           "presentation": "status",
+          "canCoverStatus": true,
           "base": "work-busy",
           "alert": "none",
           "current": {
@@ -25332,6 +25588,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -25491,6 +25748,7 @@
         "device": {
           "clockEpoch": "clock-1",
           "presentation": "content",
+          "canCoverStatus": true,
           "base": "free-scene",
           "alert": "none",
           "current": {
@@ -26018,7 +26276,7 @@
       }
     },
     {
-      "id": "v1.1-moment-status-cover-unsupported",
+      "id": "v1.1-moment-status-cover-left-to-writer",
       "input": {
         "operation": "admit",
         "request": {
@@ -26136,10 +26394,10 @@
         "bodyBytes": 200
       },
       "expected": {
-        "decision": "unsupported-capability",
+        "decision": "queued",
         "reserved": true,
         "nextSequence": 2,
-        "scheduled": 0,
+        "scheduled": 1,
         "receipt": {
           "apiVersion": "1.1",
           "controllerId": "controller",
@@ -26153,13 +26411,10 @@
             "epoch": "generation-1",
             "sequence": 3
           },
-          "outcome": "failed",
+          "outcome": "queued",
           "priorEffects": "none",
           "completedOperations": [],
-          "uncertainOperations": [],
-          "failure": {
-            "code": "unsupported-capability"
-          }
+          "uncertainOperations": []
         }
       }
     },
@@ -27787,6 +28042,977 @@
           }
         },
         "effects": 0
+      }
+    },
+    {
+      "id": "moment-scheduled-start-missed",
+      "input": {
+        "operation": "moment",
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "events": [
+          {
+            "kind": "deliver",
+            "nowMs": 1000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "evt-late",
+              "mood": "celebrate",
+              "durationMs": 20000,
+              "priorityClass": "event",
+              "coversStatus": true,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 5000,
+                "toleranceMs": 1000
+              }
+            }
+          },
+          {
+            "kind": "tick",
+            "nowMs": 6001
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          },
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 1
+                },
+                "outcome": "failed",
+                "failure": "moment-missed"
+              }
+            ],
+            "ended": null
+          }
+        ],
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": [
+            "evt-late"
+          ]
+        },
+        "starts": 0
+      }
+    },
+    {
+      "id": "moment-scheduled-start-within-tolerance",
+      "input": {
+        "operation": "moment",
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "events": [
+          {
+            "kind": "deliver",
+            "nowMs": 1000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "evt-late",
+              "mood": "celebrate",
+              "durationMs": 20000,
+              "priorityClass": "event",
+              "coversStatus": true,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 5000,
+                "toleranceMs": 1000
+              }
+            }
+          },
+          {
+            "kind": "tick",
+            "nowMs": 6000
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          },
+          {
+            "showing": "moment",
+            "base": "work-idle",
+            "momentId": "evt-late",
+            "receipts": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 1
+                },
+                "outcome": "sent"
+              }
+            ],
+            "ended": null
+          }
+        ],
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "playing",
+            "momentId": "evt-late",
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "mood": "celebrate",
+            "priorityClass": "event",
+            "coversStatus": true,
+            "endAt": {
+              "domain": "controller-monotonic",
+              "epoch": "clock-1",
+              "atMs": 26000
+            }
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": [
+            "evt-late"
+          ]
+        },
+        "starts": 1
+      }
+    },
+    {
+      "id": "moment-status-cover-follows-device",
+      "input": {
+        "operation": "moment",
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "content",
+          "canCoverStatus": false,
+          "base": "free-scene",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "events": [
+          {
+            "kind": "deliver",
+            "nowMs": 1000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "evt-merge",
+              "mood": "celebrate",
+              "durationMs": 20000,
+              "priorityClass": "event",
+              "coversStatus": true,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 1000,
+                "toleranceMs": 2000
+              }
+            }
+          },
+          {
+            "kind": "mode",
+            "nowMs": 2000,
+            "presentation": "status",
+            "base": "work-idle"
+          },
+          {
+            "kind": "deliver",
+            "nowMs": 3000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 2
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "evt-ci",
+              "mood": "setback",
+              "durationMs": 20000,
+              "priorityClass": "event",
+              "coversStatus": true,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 3000,
+                "toleranceMs": 2000
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "showing": "moment",
+            "base": "free-scene",
+            "momentId": "evt-merge",
+            "receipts": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 1
+                },
+                "outcome": "sent"
+              }
+            ],
+            "ended": null
+          },
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [],
+            "ended": {
+              "momentId": "evt-merge",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 1
+              },
+              "ending": "interrupted"
+            }
+          },
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 2
+                },
+                "outcome": "failed",
+                "failure": "moment-blocked"
+              }
+            ],
+            "ended": null
+          }
+        ],
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": false,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "known",
+            "momentId": "evt-merge",
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "ending": "interrupted",
+            "endedAt": {
+              "domain": "controller-monotonic",
+              "epoch": "clock-1",
+              "atMs": 2000
+            }
+          },
+          "recentMomentIds": [
+            "evt-merge",
+            "evt-ci"
+          ]
+        },
+        "starts": 1
+      }
+    },
+    {
+      "id": "moment-flourish-supersedes-scheduled-flourish",
+      "input": {
+        "operation": "moment",
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "content",
+          "canCoverStatus": true,
+          "base": "free-scene",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "events": [
+          {
+            "kind": "deliver",
+            "nowMs": 1000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "flourish-1",
+              "mood": "celebrate",
+              "durationMs": 20000,
+              "priorityClass": "flourish",
+              "coversStatus": false,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 5000,
+                "toleranceMs": 2000
+              }
+            }
+          },
+          {
+            "kind": "deliver",
+            "nowMs": 2000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 2
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "flourish-2",
+              "mood": "celebrate",
+              "durationMs": 3000,
+              "priorityClass": "flourish",
+              "coversStatus": false,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 2000,
+                "toleranceMs": 2000
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "showing": "base",
+            "base": "free-scene",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          },
+          {
+            "showing": "moment",
+            "base": "free-scene",
+            "momentId": "flourish-2",
+            "receipts": [
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 1
+                },
+                "outcome": "cancelled"
+              },
+              {
+                "requestId": {
+                  "epoch": "requests-1",
+                  "sequence": 2
+                },
+                "outcome": "sent"
+              }
+            ],
+            "ended": {
+              "momentId": "flourish-1",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 1
+              },
+              "ending": "superseded"
+            }
+          }
+        ],
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "content",
+          "canCoverStatus": true,
+          "base": "free-scene",
+          "alert": "none",
+          "current": {
+            "status": "playing",
+            "momentId": "flourish-2",
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 2
+            },
+            "mood": "celebrate",
+            "priorityClass": "flourish",
+            "coversStatus": false,
+            "endAt": {
+              "domain": "controller-monotonic",
+              "epoch": "clock-1",
+              "atMs": 5000
+            }
+          },
+          "last": {
+            "status": "known",
+            "momentId": "flourish-1",
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "ending": "superseded",
+            "endedAt": {
+              "domain": "controller-monotonic",
+              "epoch": "clock-1",
+              "atMs": 2000
+            }
+          },
+          "recentMomentIds": [
+            "flourish-1",
+            "flourish-2"
+          ]
+        },
+        "starts": 1
+      }
+    },
+    {
+      "id": "v1.1-moment-at-device-duration-limit",
+      "input": {
+        "operation": "admit",
+        "request": {
+          "apiVersion": "1.1",
+          "controllerId": "controller",
+          "deviceId": "light",
+          "requestId": {
+            "epoch": "requests-1",
+            "sequence": 1
+          },
+          "expectedConfigurationRevision": 4,
+          "expectedGeneration": {
+            "epoch": "generation-1",
+            "sequence": 3
+          },
+          "command": {
+            "kind": "moment",
+            "momentId": "evt-merge",
+            "mood": "celebrate",
+            "durationMs": 60000,
+            "priorityClass": "event",
+            "coversStatus": true,
+            "start": {
+              "domain": "controller-monotonic",
+              "epoch": "clock-1",
+              "atMs": 1000,
+              "toleranceMs": 2000
+            }
+          }
+        },
+        "state": {
+          "controllerId": "controller",
+          "deviceId": "light",
+          "epoch": "requests-1",
+          "nextSequence": 1,
+          "configurationRevision": 4,
+          "generation": {
+            "epoch": "generation-1",
+            "sequence": 3
+          },
+          "capabilities": {
+            "power": {
+              "supported": true
+            },
+            "brightness": {
+              "supported": true,
+              "minimum": 0,
+              "maximum": 100
+            },
+            "media": {
+              "supported": false
+            },
+            "zones": {
+              "supported": false
+            },
+            "scenes": {
+              "supported": false
+            },
+            "preview": {
+              "supported": false
+            },
+            "modes": {
+              "supported": true,
+              "values": [
+                "Work",
+                "Quiet",
+                "Free"
+              ]
+            },
+            "moments": {
+              "supported": true,
+              "moods": [
+                "celebrate",
+                "setback",
+                "reminder",
+                "cozy"
+              ],
+              "maxDurationMs": 60000,
+              "coversStatus": true
+            }
+          },
+          "maxBodyBytes": 65536,
+          "maxInFlight": 32,
+          "maxQueue": 32,
+          "maxReceipts": 256,
+          "inFlight": 0,
+          "queueDepth": 0,
+          "cache": [],
+          "pending": [],
+          "apiVersions": [
+            "1.0",
+            "1.1"
+          ]
+        },
+        "auth": {
+          "credential": {
+            "kind": "machine",
+            "status": "active",
+            "declared": true,
+            "devices": [
+              "light"
+            ],
+            "scopes": [
+              "read",
+              "control"
+            ]
+          },
+          "deviceId": "light",
+          "scope": "control",
+          "hostAllowed": true,
+          "originPresent": false,
+          "originAllowed": true,
+          "fetchMetadataAllowed": true
+        },
+        "bodyBytes": 200
+      },
+      "expected": {
+        "decision": "queued",
+        "reserved": true,
+        "nextSequence": 2,
+        "scheduled": 1,
+        "receipt": {
+          "apiVersion": "1.1",
+          "controllerId": "controller",
+          "deviceId": "light",
+          "requestId": {
+            "epoch": "requests-1",
+            "sequence": 1
+          },
+          "configurationRevision": 4,
+          "generation": {
+            "epoch": "generation-1",
+            "sequence": 3
+          },
+          "outcome": "queued",
+          "priorEffects": "none",
+          "completedOperations": [],
+          "uncertainOperations": []
+        }
+      }
+    },
+    {
+      "id": "v1.1-mixed-batch-one-sequence",
+      "input": {
+        "operation": "batch-admit",
+        "state": {
+          "controllerId": "controller",
+          "deviceId": "light",
+          "epoch": "requests-1",
+          "nextSequence": 1,
+          "configurationRevision": 4,
+          "generation": {
+            "epoch": "generation-1",
+            "sequence": 3
+          },
+          "capabilities": {
+            "power": {
+              "supported": true
+            },
+            "brightness": {
+              "supported": true,
+              "minimum": 0,
+              "maximum": 100
+            },
+            "media": {
+              "supported": false
+            },
+            "zones": {
+              "supported": false
+            },
+            "scenes": {
+              "supported": false
+            },
+            "preview": {
+              "supported": false
+            },
+            "modes": {
+              "supported": true,
+              "values": [
+                "Work",
+                "Quiet",
+                "Free"
+              ]
+            },
+            "moments": {
+              "supported": true,
+              "moods": [
+                "celebrate",
+                "setback",
+                "reminder",
+                "cozy"
+              ],
+              "maxDurationMs": 60000,
+              "coversStatus": true
+            }
+          },
+          "maxBodyBytes": 65536,
+          "maxInFlight": 32,
+          "maxQueue": 32,
+          "maxReceipts": 256,
+          "inFlight": 0,
+          "queueDepth": 0,
+          "cache": [],
+          "pending": [],
+          "apiVersions": [
+            "1.0",
+            "1.1"
+          ]
+        },
+        "items": [
+          {
+            "auth": {
+              "credential": {
+                "kind": "machine",
+                "status": "active",
+                "declared": true,
+                "devices": [
+                  "light"
+                ],
+                "scopes": [
+                  "read",
+                  "control"
+                ]
+              },
+              "deviceId": "light",
+              "scope": "control",
+              "hostAllowed": true,
+              "originPresent": false,
+              "originAllowed": true,
+              "fetchMetadataAllowed": true
+            },
+            "request": {
+              "apiVersion": "1.0",
+              "controllerId": "controller",
+              "deviceId": "light",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 1
+              },
+              "expectedConfigurationRevision": 4,
+              "expectedGeneration": {
+                "epoch": "generation-1",
+                "sequence": 3
+              },
+              "command": {
+                "kind": "power.set",
+                "on": true
+              }
+            },
+            "bodyBytes": 200
+          },
+          {
+            "auth": {
+              "credential": {
+                "kind": "machine",
+                "status": "active",
+                "declared": true,
+                "devices": [
+                  "light"
+                ],
+                "scopes": [
+                  "read",
+                  "control"
+                ]
+              },
+              "deviceId": "light",
+              "scope": "control",
+              "hostAllowed": true,
+              "originPresent": false,
+              "originAllowed": true,
+              "fetchMetadataAllowed": true
+            },
+            "request": {
+              "apiVersion": "1.1",
+              "controllerId": "controller",
+              "deviceId": "light",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 2
+              },
+              "expectedConfigurationRevision": 5,
+              "expectedGeneration": {
+                "epoch": "generation-1",
+                "sequence": 3
+              },
+              "command": {
+                "kind": "moment",
+                "momentId": "evt-merge",
+                "mood": "celebrate",
+                "durationMs": 20000,
+                "priorityClass": "event",
+                "coversStatus": true,
+                "start": {
+                  "domain": "controller-monotonic",
+                  "epoch": "clock-1",
+                  "atMs": 1000,
+                  "toleranceMs": 2000
+                }
+              }
+            },
+            "bodyBytes": 200
+          }
+        ]
+      },
+      "expected": {
+        "results": [
+          {
+            "decision": "queued",
+            "reserved": true,
+            "nextSequence": 2,
+            "scheduled": 1,
+            "receipt": {
+              "apiVersion": "1.0",
+              "controllerId": "controller",
+              "deviceId": "light",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 1
+              },
+              "configurationRevision": 5,
+              "generation": {
+                "epoch": "generation-1",
+                "sequence": 3
+              },
+              "outcome": "queued",
+              "priorEffects": "none",
+              "completedOperations": [],
+              "uncertainOperations": []
+            }
+          },
+          {
+            "decision": "queued",
+            "reserved": true,
+            "nextSequence": 3,
+            "scheduled": 1,
+            "receipt": {
+              "apiVersion": "1.1",
+              "controllerId": "controller",
+              "deviceId": "light",
+              "requestId": {
+                "epoch": "requests-1",
+                "sequence": 2
+              },
+              "configurationRevision": 5,
+              "generation": {
+                "epoch": "generation-1",
+                "sequence": 3
+              },
+              "outcome": "queued",
+              "priorEffects": "none",
+              "completedOperations": [],
+              "uncertainOperations": []
+            }
+          }
+        ],
+        "nextSequence": 3,
+        "scheduled": 2
+      }
+    },
+    {
+      "id": "negotiate-absent-reads-v1.0",
+      "input": {
+        "operation": "negotiate",
+        "requested": null,
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "serve",
+        "apiVersion": "1.0"
+      }
+    },
+    {
+      "id": "negotiate-v1.1-served",
+      "input": {
+        "operation": "negotiate",
+        "requested": "1.1",
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "serve",
+        "apiVersion": "1.1"
+      }
+    },
+    {
+      "id": "negotiate-v1.1-from-v1.0-controller",
+      "input": {
+        "operation": "negotiate",
+        "requested": "1.1",
+        "served": [
+          "1.0"
+        ]
+      },
+      "expected": {
+        "decision": "serve",
+        "apiVersion": "1.0"
+      }
+    },
+    {
+      "id": "negotiate-newer-minor-falls-back",
+      "input": {
+        "operation": "negotiate",
+        "requested": "1.7",
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "serve",
+        "apiVersion": "1.1"
+      }
+    },
+    {
+      "id": "negotiate-explicit-v1.0",
+      "input": {
+        "operation": "negotiate",
+        "requested": "1.0",
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "serve",
+        "apiVersion": "1.0"
+      }
+    },
+    {
+      "id": "negotiate-other-major-rejects",
+      "input": {
+        "operation": "negotiate",
+        "requested": "2.0",
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "invalid-request"
+      }
+    },
+    {
+      "id": "negotiate-malformed-rejects",
+      "input": {
+        "operation": "negotiate",
+        "requested": "1.01",
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "invalid-request"
+      }
+    },
+    {
+      "id": "negotiate-non-string-rejects",
+      "input": {
+        "operation": "negotiate",
+        "requested": 1.1,
+        "served": [
+          "1.0",
+          "1.1"
+        ]
+      },
+      "expected": {
+        "decision": "invalid-request"
       }
     }
   ]

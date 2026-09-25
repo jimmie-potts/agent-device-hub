@@ -2688,6 +2688,9 @@
             "startAt": {
               "$ref": "#/$defs/instant"
             },
+            "toleranceMs": {
+              "$ref": "#/$defs/momentStart/properties/toleranceMs"
+            },
             "durationMs": {
               "$ref": "#/$defs/momentDuration"
             }
@@ -2700,6 +2703,7 @@
             "priorityClass",
             "coversStatus",
             "startAt",
+            "toleranceMs",
             "durationMs"
           ],
           "additionalProperties": false

@@ -24,6 +24,10 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
     - Widening the 1.0 definitions would change what 1.0 consumers accept.
     - A second schema file would duplicate every shared leaf.
     - Extending closed objects with `unevaluatedProperties` would rewrite the 1.0 definitions.
+- **Read negotiation with a 1.0 default.**
+  - `negotiateApiVersion` serves a read without a version at 1.0. A named version gets the highest served version of the same major that is not above it, and another major or a malformed value is `invalid-request`.
+  - Over HTTP the signal is the `apiVersion` query parameter, matching agent-state's opt-in `snapshotVersion=1.1` style.
+  - The default keeps the installed hub's 1.0 snapshot validation working when a device adopts 1.1.
 - **Overloaded `admit`.**
   - `admit(Admission)` keeps returning the 1.0 `AdmissionResult` type.
   - A state with `apiVersions` (`AdmissionStateV1_1`) selects the 1.1 overload.
@@ -46,8 +50,11 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
   - A newer accepted moment ends the current one immediately, and the device shows its base until the new start. This keeps one current moment and one clear ending.
   - The alternative was to keep the old moment playing until the new start, which needs a queue of two.
 - **A moment starts at its tick and plays the full duration from the actual start.**
-  - Lateness is judged when the moment is delivered.
-  - Any later ineligibility ends a scheduled moment immediately: an alert on status is `preempted`, and a mode change or explicit command is `interrupted`. The start itself therefore needs no second eligibility check.
+  - Lateness is judged when the moment is delivered and again at the scheduled start. A writer that reaches the start more than `toleranceMs` late drops the moment as `moment-missed`, so a stall cannot make it play out of step with other devices. The scheduled state carries `toleranceMs` for this.
+  - Any later ineligibility ends a scheduled moment immediately: an alert on status is `preempted`, and a mode change or explicit command is `interrupted`. The start therefore needs no second eligibility check.
+- **`coversStatus` is a permission the writer applies.**
+  - A device whose capability cannot cover status blocks status-covering moments only while it shows status. It still plays them over content.
+  - The hub can therefore send one interrupt-set moment to every device. Rejecting the flag at admission would have required per-device hub logic.
 - **`downgradeSnapshot` omits moment content instead of translating it.**
   - A 1.0 reader cannot act on moments.
   - A 1.1 `lastOutcome` could carry a 1.1-only failure code, so it becomes `unknown`, which is the contract's rule for missing evidence.
@@ -57,9 +64,9 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
 
 ## Risks / Trade-offs
 
-- [The workspace MCP source builds against 1.1.0 while its archive bundles 1.0.0] → The MCP uses only `identity`, `ticket` and `id` validation, which are unchanged. `test:mcp:package` runs the bundled archive.
+- [The workspace MCP source builds against 1.1.0 while its archive bundles 1.0.0] → The MCP validates only 1.0 definitions (`identity`, `ticket`, `id`, `snapshot`, `request`, `receipt` and `failureCode`), and all of them are unchanged. `test:mcp:package` runs the bundled archive.
 - [The reference assumes a start transmission succeeds] → Documented. Devices report real transport outcomes through the ordinary receipt fields.
-- [A suspended controller could start a scheduled moment late] → Bounded by the 60-second lead and the 5-minute duration. The harm is low, and the device stories may add their own staleness checks.
+- [`snapshotV1_1` repeats the 1.0 `maxPending` ladder] → Sharing it would mean editing the 1.0 `snapshot` definition. Revisit if a later minor changes snapshots again.
 - [The core mood names may not suit every device] → Moods stay open IDs; only three core names are required, and devices map them to their own presets.
 
 ## Migration Plan

@@ -63,7 +63,7 @@ The versioned artifact SHALL include strict schemas and one fixture corpus consu
 - **THEN** both language consumers validate the shared fixtures and report matching expected decisions
 
 ### Requirement: Typed moment command and capability
-API 1.1 SHALL carry a `moment` command with a neutral moment ID from the triggering event, a declared mood, an optional palette of 1 to 8 colors, a duration from 1,000 to 300,000 milliseconds, an `event` or `flourish` priority class, a status-cover flag and a start time. Only `event` moments MAY cover status presentation. The command and the capability MUST reject frames, raw protocol, titles and other unknown fields. A 1.1 capability set SHALL declare `moments` as unsupported or as supported, with 3 to 64 unique moods including `celebrate`, `setback` and `reminder`, a duration limit within the contract range and whether status can be covered. Admission SHALL apply every 1.0 rule first, then reject an undeclared mood, an over-limit duration or an unsupported status cover as unsupported-capability. An accepted moment MUST NOT advance the configuration revision. Source: #292 decisions 2 and 5; ADR 0006.
+API 1.1 SHALL carry a `moment` command with a neutral moment ID from the triggering event, a declared mood, an optional palette of 1 to 8 colors, a duration from 1,000 to 300,000 milliseconds, an `event` or `flourish` priority class, a status-cover flag and a start time. Only `event` moments MAY cover status presentation. The command and the capability MUST reject frames, raw protocol, titles and other unknown fields. A 1.1 capability set SHALL declare `moments` as unsupported or as supported, with 3 to 64 unique moods including `celebrate`, `setback` and `reminder`, a duration limit within the contract range and whether status can be covered. Admission SHALL apply every 1.0 rule first, then reject an undeclared mood or an over-limit duration as unsupported-capability. The status-cover flag is a permission that the device writer applies. It MUST NOT be rejected at admission. An accepted moment MUST NOT advance the configuration revision. Source: #292 decisions 2 and 5; ADR 0006.
 
 #### Scenario: Undeclared mood
 - **WHEN** a 1.1 controller whose moments capability lacks `party` admits a moment with mood `party`
@@ -78,11 +78,15 @@ API 1.1 SHALL carry a `moment` command with a neutral moment ID from the trigger
 - **THEN** its receipt keeps the current configuration revision, so another client's pending edit does not conflict
 
 ### Requirement: Compatible API 1.1 negotiation
-API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
+API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A snapshot or feed read without a version signal SHALL be served at 1.0. A read that names a version SHALL be served at the highest version the controller has that has the same major and is not above it. Another major or a malformed version MUST be invalid-request. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
 
 #### Scenario: 1.0-only controller
 - **WHEN** a controller without API 1.1 receives a 1.1 moment request
 - **THEN** the decision is invalid-request with no reservation and no effect
+
+#### Scenario: Read without a version signal
+- **WHEN** a reader that sends no version reads a controller that serves 1.0 and 1.1
+- **THEN** it receives a 1.0 snapshot, and a reader asking for 1.7 receives 1.1
 
 #### Scenario: 1.0 reader of a 1.1 controller
 - **WHEN** a 1.1 snapshot with a playing moment, a pending moment and a moment-blocked outcome is served to a 1.0 reader
@@ -93,18 +97,22 @@ API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission 
 - **THEN** every case still produces its original expected result
 
 ### Requirement: Moment start in the controller clock
-A moment's start SHALL use the receiving controller's monotonic clock domain and epoch, with a tolerance of at most 60,000 milliseconds. The hub derives it from the device's snapshot clock sample and its own elapsed time. The device MUST drop a moment as moment-missed when the clock epoch differs, when it would start more than the tolerance late, or when the start is more than 60,000 milliseconds ahead. A missed moment MUST NOT be queued or replayed. Source: #292 decision 1; ADR 0006 degradation.
+A moment's start SHALL use the receiving controller's monotonic clock domain and epoch, with a tolerance of at most 60,000 milliseconds. The hub derives it from the device's snapshot clock sample and its own elapsed time. The device MUST drop a moment as moment-missed when the clock epoch differs, when it would start more than the tolerance late, or when the start is more than 60,000 milliseconds ahead. It SHALL apply the lateness rule both when the writer takes the moment and at the scheduled start. A missed moment MUST NOT be queued or replayed. Source: #292 decision 1; ADR 0006 degradation.
 
 #### Scenario: Late delivery after a hub outage
 - **WHEN** a moment arrives after its start plus tolerance
 - **THEN** the device drops it as moment-missed and starts nothing
+
+#### Scenario: Stalled writer at the scheduled start
+- **WHEN** a scheduled moment's start is reached more than its tolerance after the start time
+- **THEN** the device drops it as moment-missed and never plays it
 
 #### Scenario: Start within tolerance
 - **WHEN** a moment arrives exactly at its start plus tolerance
 - **THEN** it plays for its full duration from arrival
 
 ### Requirement: Moment precedence and return to base
-A device writer SHALL play at most one moment at a time. It MUST drop a recent moment ID as moment-duplicate, retaining at least the last 64 IDs per clock epoch. It MUST drop a moment as moment-blocked in quiet presentation, on status presentation without status cover or with an active attention or failure alert, and for a flourish while an event moment is current. Otherwise the new moment SHALL replace the current one, which ends as superseded. An attention or failure alert on status presentation SHALL pre-empt a scheduled or playing moment. Alerts MUST NOT pre-empt or override content. Any explicit command, including a mode change, SHALL interrupt the moment. When a moment ends, the device SHALL show its current base and never a saved earlier one, and no moment SHALL change the mode. A playing moment SHALL end on the device clock without the hub. A restart SHALL resume and replay nothing. Source: #292 decisions 3 and 4, its review comments and ADR 0006.
+A device writer SHALL play at most one moment at a time. It MUST drop a recent moment ID as moment-duplicate, retaining at least the last 64 IDs per clock epoch. It MUST drop a moment as moment-blocked in quiet presentation, on status presentation when the moment lacks status cover, the device cannot cover status or an attention or failure alert is active, and for a flourish while an event moment is current. A device that cannot cover status SHALL still play a status-covering moment over content. Otherwise the new moment SHALL replace the current one, which ends as superseded. An attention or failure alert on status presentation SHALL pre-empt a scheduled or playing moment. Alerts MUST NOT pre-empt or override content. Any explicit command, including a mode change, SHALL interrupt the moment. When a moment ends, the device SHALL show its current base and never a saved earlier one, and no moment SHALL change the mode. A playing moment SHALL end on the device clock without the hub. A restart SHALL resume and replay nothing. Source: #292 decisions 3 and 4, its review comments and ADR 0006.
 
 #### Scenario: Current base after a status change
 - **WHEN** status changes during an interlude and the interlude's duration elapses
@@ -127,7 +135,7 @@ A device writer SHALL play at most one moment at a time. It MUST drop a recent m
 - **THEN** it shows its current base, its moment memory is empty, and a redelivery with the old clock epoch is missed
 
 ### Requirement: Moment evidence
-Moment receipts SHALL keep transmission-only meaning. A dropped moment gets a failed receipt with a moment failure code that only 1.1 receipts carry. A started moment gets sent, and a scheduled moment that ends before starting gets cancelled with no prior effects. The 1.1 snapshot SHALL report the current moment as none, scheduled or playing with its instants, and SHALL report the last ended moment with completed, preempted, superseded or interrupted and its end instant. Every instant uses the controller clock. Source: #292 decision 4.
+Moment receipts SHALL keep transmission-only meaning. A dropped moment, including one reached too late at its scheduled start, gets a failed receipt with a moment failure code that only 1.1 receipts carry. A started moment gets sent, and a scheduled moment that ends before starting gets cancelled with no prior effects. The 1.1 snapshot SHALL report the current moment as none, scheduled or playing with its instants, and SHALL report the last ended moment with completed, preempted, superseded or interrupted and its end instant. Every instant uses the controller clock. Source: #292 decision 4.
 
 #### Scenario: Cancelled before start
 - **WHEN** an explicit command arrives while a moment is scheduled
