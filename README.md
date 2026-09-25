@@ -158,3 +158,6 @@ acceptance on the installed wall is
 moments and interludes. The hub decides which events play what, where and
 when. Each device controller guarantees safe playback and a return to its
 current presentation.
+[ADR 0007](docs/decisions/0007-bunny-shell.md) makes this dashboard the one
+B.U.N.N.Y. shell; the Nanoleaf wall map stays a linked advanced editor until
+each remaining operation has a home in the shell, then retires.
