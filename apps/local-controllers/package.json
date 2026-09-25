@@ -1,0 +1,20 @@
+{
+  "name": "@jimmie-potts/local-controllers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/device-contracts": "1.0.0",
+    "@jimmie-potts/lifx-controller": "0.1.0",
+    "@jimmie-potts/tidbyt-controller": "0.1.0"
+  }
+}

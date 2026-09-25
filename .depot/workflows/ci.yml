@@ -81,6 +81,7 @@ jobs:
       - run: npm run test:agent-state:package:built
       - run: npm run test:lifx:built
       - run: npm run test:tidbyt:built
+      - run: npm run test:local-controllers:built
       - run: npm run test:tidbyt:python
   mcp:
     name: MCP on ${{ matrix.os }}

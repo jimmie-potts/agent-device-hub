@@ -259,8 +259,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
+        const lightingRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/lighting\/(snapshot|commands)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
-        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
+        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? lightingRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
         // Every write reads its body after authorization; a principal retired meanwhile sends nothing.
         const admitted = async (maximum:number) => {const value = await body(req,maximum);live(principal);return value;};
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
@@ -311,6 +312,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await admitted(65536));json(res,receipt.status,receipt.body);}
           else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await admitted(65536));json(res,response.status,response.body);}
           else throw new HttpError('invalid-input',400);
+        } else if (lightingRoute && !url.search && ((req.method === 'GET' && lightingRoute[2] === 'snapshot') || (req.method === 'POST' && lightingRoute[2] === 'commands'))) {
+          // LIFX color and temperature: the owner's typed lifx-light profile, never a controller v1 extension.
+          const client = clients.get(lightingRoute[1]);if (!client) throw new HttpError('unknown-device',404);
+          if (lightingRoute[2] === 'snapshot') json(res,200,await client.lightingSnapshot());
+          else {const response = await client.lightingCommand(await admitted(65536));json(res,response.status,response.body);}
         } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           if (route[2] === 'snapshot') json(res,200,await client.snapshot());

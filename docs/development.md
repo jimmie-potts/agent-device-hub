@@ -678,6 +678,29 @@ commands, unsupported capabilities and partial multi-bulb results. Tests validat
 common receipts/snapshots against controller v1 and never open a native socket.
 Installation and physical acceptance remain separate from these source checks.
 
+## Local controller host checks
+
+Hub #289 adds `apps/local-controllers`, the loopback host that serves controller
+v1 and the LIFX `lifx-light` profile for the in-process Tidbyt and LIFX
+controllers. Use Node 24 and run `npm run build`, `npm run typecheck` and
+`npm run test:local-controllers` from the worktree root, plus the controller
+contract, Tidbyt, LIFX, hub, MCP, dashboard and workflow checks. The combined
+contracts/state CI jobs run `npm run test:local-controllers:built` after their
+fresh build.
+
+The suite starts the real host with a fake Tidbyt connection, fake LIFX
+transports and a loopback feed from a real in-memory shared owner. It covers
+private configuration, authentication, scope and device grants, browser and
+Host checks, body, depth and in-flight bounds, Tidbyt `unsupported-capability`
+receipts and refused frames, LIFX tickets, guards, replay and conflicts, the
+202 `queued` answer, the lighting profile route, writer leases against a second
+host or runner, CLI start and stop, and restart without replay. It also runs the
+real hub against the real host over HTTP and MCP, and checks the hub's lighting
+validator against the LIFX profile schema. `npm run test:dashboard:browser`
+adds `apps/dashboard/tests/local-controllers.mjs`, which drives the Tidbyt and
+LIFX views through the same host. No check contacts a device, the Tidbyt cloud
+or the LAN. Installation and the physical brightness check stay separate.
+
 ## Session retirement checks
 
 Hub #218 added focused cases to the existing `test:agent-state`, `test:hub` and their packaged suites. Hub #241 parameterizes the owner, Tidbyt and dashboard cases over Codex Desktop, Codex CLI and Claude Code, and adds mixed-path and upgraded-store cases. Run their Python snapshot fixtures as well. The existing CI jobs include these paths; no new device job is needed. Cover atomic tree removal, one revision, released capacity, other paths preserved, old ends/events across restart and resume, history bounds, legacy import, stored accepted ends settled on startup, failed commits, archive admission with unavailable evidence, default snapshot 1.0 and opt-in 1.1. Existing fake-clock retention tests preserve the 24-hour fallback.

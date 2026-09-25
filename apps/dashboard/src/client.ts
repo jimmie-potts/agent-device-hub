@@ -38,6 +38,27 @@ export function safeEditorUrl(value:unknown):string|undefined {
 export function makeCommand(snapshot:Snapshot,command:Command):Request {
  return {apiVersion:'1.0',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,requestId:structuredClone(snapshot.nextRequestId),expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:structuredClone(snapshot.generation),command};
 }
+/** A LIFX color or color-temperature command in the owner's `lifx-light` 1.0.0 profile. */
+export type LightingCommand={kind:'lifx.color.set';hue:number;saturation:number}|{kind:'lifx.temperature.set';kelvin:number};
+/** The LIFX owner's lighting snapshot through the hub: its controller v1 snapshot and the lighting section. Colors are LIFX wire units. */
+export type Lighting={profile:{profileId:'lifx-light';profileVersion:'1.0.0'};controller:Snapshot;lighting:{capabilities:{color:boolean;temperature:{minimum:number;maximum:number}|null;effects:false};
+ pending:{requestId:{epoch:string;sequence:number};command:LightingCommand}[];observation:{status:'unknown'}|{status:'known';color:{hue:number;saturation:number;brightness:number;kelvin:number};evidenceAgeMs:number};visible:{status:'unknown'}}};
+/** One lighting request carrying the guards of the controller v1 snapshot read with it. */
+export function lightingCommand(snapshot:Snapshot,command:LightingCommand){
+ const {command:_placeholder,...envelope}=makeCommand(snapshot,{kind:'power.set',on:true});
+ return {...envelope,profile:{profileId:'lifx-light',profileVersion:'1.0.0'},command};
+}
+/** The last color the bulb reported, in degrees, percent and kelvin. It is read evidence, not the bulb's visible color. */
+export function observedColor(lighting:Lighting['lighting']):{hue:number;saturation:number;kelvin:number;ageMs:number}|undefined {
+ const o=lighting.observation;if(o.status!=='known')return;
+ return {hue:Math.round(o.color.hue*360/65535),saturation:Math.round(o.color.saturation*100/65535),kelvin:o.color.kelvin,ageMs:o.evidenceAgeMs};
+}
+/** A missing lighting capability is named before scope or stale evidence, like the general controls. */
+export function lightingReasons(lighting:Lighting|undefined,disabled?:string):{color?:string;temperature?:string}{
+ if(!lighting)return {color:'No lighting snapshot',temperature:'No lighting snapshot'};
+ const {color,temperature}=lighting.lighting.capabilities;
+ return {color:color?disabled:'Color is not declared for this bulb’s qualified model',temperature:temperature?disabled:'Color temperature is not declared for this bulb’s qualified model'};
+}
 export type GeneralReasons={power?:string;brightness?:string;media?:string;scenes?:string};
 /** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. Content gating applies to media and scenes only. */
 export function generalReasons({snapshot,control,common,content}:{snapshot:Pick<Snapshot,'capabilities'>|undefined;control:boolean;common?:string;content?:string}):GeneralReasons {
