@@ -9,6 +9,9 @@ product delivery does not rebaseline it. For an intentional snapshot revision,
 edit `source/*.html` and `design.json`, then regenerate the overview, component
 pages and complete reading view. `assets/` holds the shared style and browser
 behavior. The inventory records the template set and source revision receipts.
+Atlas and guide colors come from the token files in `docs/skins/`;
+`python3 docs/skins/check_tokens.py`, which `check.py` also runs, fails on a color
+literal in their styles (see the work guide README's "Skin and tokens" section).
 
 ```bash
 python3 docs/system-design/build.py
