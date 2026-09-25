@@ -275,8 +275,9 @@ Every moment is a time-boxed interlude, and only owner-approved event kinds
 may cover status presentation. No moment changes a mode. ADR 0005's explicit
 restoration stays, except that an interlude ends automatically.
 [ADR 0007](decisions/0007-bunny-shell.md) makes the dashboard the one
-B.U.N.N.Y. shell: home widgets, a page per registered controller device and a
-later group page, drawn with hub-owned shared device art from hub snapshots.
+B.U.N.N.Y. shell, with a starting page set of home widgets, a page per
+registered controller device and a later group page, drawn with hub-owned
+shared device art from hub snapshots; the final page split stays open in #271.
 The Nanoleaf wall map is a linked advanced editor until each remaining
 operation has a home in the shell, then retires under its own issue.
 Routine supported operations belong in the central UI; full migration of the

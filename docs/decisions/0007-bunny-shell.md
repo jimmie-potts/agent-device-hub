@@ -23,7 +23,7 @@ hub's browser session.
 
 The wall map is Nanoleaf's page: `bridge/wall.html`, the Prism renderer
 (`bridge/prism.js` and its adapters, with reference exports under
-`bridge/assets/prism/`) and `wall_server.py`. It runs as its own process, the
+`bridge/assets/prism/`) and `bridge/wall_server.py`. It runs as its own process, the
 `codex-nanoleaf-wall` user service, on the wall-map port beside the controller
 and MCP services, and coordinates with them through the bridge's SQLite
 database. It reads that database directly, and its routes write into it:
@@ -105,13 +105,18 @@ then retires.
   passes it through the integration snapshot. Presentation animation in the
   shell is derived from snapshot status, never from device frames, and a stale
   snapshot renders as stale, not as an empty device.
-- **Editing moves behind the integration extension.** Mode, power, brightness
-  and saved scenes are already in the shell for the Lines
-  ([#153](https://github.com/jimmie-potts/agent-device-hub/issues/153)).
-  Reservations, overrides, saved colors, layout and coverage already travel
-  through `nanoleaf.integration/1.0` for the Lines, so the Nanoleaf page adopts
-  them under Nanoleaf ADR 0013's rules: Classic layout shows no placement
-  editing, and the Project-layout controls are secondary. Operations the
+- **Editing moves behind the integration extension.** The shell already has
+  most of it for the Lines: mode and the integration settings forms for layout
+  style, coverage, element assignments, task mappings and project colors, with
+  a link to the advanced wall editor
+  ([#6](https://github.com/jimmie-potts/agent-device-hub/issues/6)), and
+  power, brightness and saved scenes
+  ([#153](https://github.com/jimmie-potts/agent-device-hub/issues/153)). Those
+  forms travel through `nanoleaf.integration/1.0`. The task-mapping form stays,
+  because Nanoleaf ADR 0013 keeps the per-task override for machine clients
+  through the extension. A proposal, not decided here: apply ADR 0013's
+  visibility rules to the placement forms, so Classic layout shows no placement
+  editing and the Project-layout controls are secondary. Operations the
   extension does not carry yet, such as orientation, the palette, Locate,
   device-only eviction and every Panels operation, gain an integration
   operation or another hub route in their own Nanoleaf or hub issue before the
@@ -167,11 +172,13 @@ then retires.
   is the editor's device switch and informs the two device pages.
 - **Human UI approval** applies to every shell change as before; nothing here
   changes that gate.
-- **Follow-ups.** The Direction section's "what it is becoming" text, #271's
-  first open question and #286's second phase are updated to this decision.
-  Issues to file: extract the shared device art in the hub; expose element
-  geometry read-only and add integration operations for orientation, palette
-  and Locate in Nanoleaf; retire the wall map with its parity list. Group-page
+- **Follow-ups.** After this decision is accepted, the Direction section's
+  "what it is becoming" text is updated through the guide maintenance
+  procedure, and #271's first open question and #286's second phase are
+  updated to match. Issues to file: extract the shared device art in the hub;
+  expose element geometry read-only and add integration operations for
+  orientation, palette, Locate, device-only eviction and the Panels in
+  Nanoleaf; retire the wall map with its parity list. Group-page
   layout (physical or logical arrangement, #271 and
   [Nanoleaf #47](https://github.com/jimmie-potts/codex-nanoleaf/issues/47)),
   the final page split (#271, #277) and the widget inventory

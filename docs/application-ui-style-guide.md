@@ -202,7 +202,9 @@ semantics, keyboard order, text cues, or which control is primary.
   none of their own raw colors; `apps/dashboard/src/style.css` is a consumer, not
   a token definition site.
 - Wall-rendering and device-specific tokens stay in the Nanoleaf domain
-  (`wall.html` `@layer tokens`: canvas, halo, connector, pulse and chip values).
+  (`wall.html` `@layer tokens`: canvas, halo, connector, pulse and chip values)
+  until the shared device art of [ADR 0007](decisions/0007-bunny-shell.md)
+  lands, then move with it into the application token layer.
 - Documentation tokens live in `docs/skins/` and are consumed by the guide
   and the atlas generators.
 - Pixoo keeps its media, player and display rendering.
