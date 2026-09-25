@@ -24,7 +24,13 @@ class Conformance(unittest.TestCase):
                 self.assertEqual(case["input"], original, "reference evaluation must not mutate owner state")
                 for result in actual.get("results", [actual]):
                     if "receipt" in result:
-                        self.assertTrue(validate("receipt", result["receipt"]))
+                        definition = "receiptV1_1" if result["receipt"]["apiVersion"] == "1.1" else "receipt"
+                        self.assertTrue(validate(definition, result["receipt"]))
+                if case["input"]["operation"] == "moment":
+                    device = actual["device"]
+                    self.assertTrue(validate("momentState", {"current": device["current"], "last": device["last"]}))
+                if case["input"]["operation"] == "downgrade":
+                    self.assertTrue(validate("snapshot", actual["snapshot"]))
 
 
 if __name__ == "__main__":

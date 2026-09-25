@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { CONTRACT_ARTIFACT_SHA256, verifyArchiveChecksum } from '../packages/mcp/dist/index.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const BUNDLED_CONTRACT_VERSION = '1.0.0';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8', env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' }, maxBuffer: 8 * 1024 * 1024 });
@@ -29,12 +30,17 @@ async function files(directory, prefix = '') {
 const scratch = await mkdtemp(join(tmpdir(), 'hub-mcp-package-'));
 try {
   const stage = join(scratch, 'stage'); await mkdir(stage);
-  const contracts = join(root, 'vendor/jimmie-potts-device-contracts-1.0.0.tgz');
+  const contracts = join(root, `vendor/jimmie-potts-device-contracts-${BUNDLED_CONTRACT_VERSION}.tgz`);
   await verifyArchiveChecksum(contracts, CONTRACT_ARTIFACT_SHA256);
   for (const name of ['package.json', 'src', 'dist', 'tests', 'fixtures', 'SDK-LICENSE', 'README.md', 'examples']) {
     await cp(join(root, 'packages/mcp', name), join(stage, name), { recursive: true });
   }
-  const packageJson = await readFile(join(stage, 'package.json'));
+  // The workspace builds against the current contract source, but this archive keeps bundling the released
+  // 1.0.0 contract, so its dependency pin names the bundled version.
+  const metadata = JSON.parse(await readFile(join(stage, 'package.json'), 'utf8'));
+  metadata.dependencies['@jimmie-potts/device-contracts'] = BUNDLED_CONTRACT_VERSION;
+  const packageJson = JSON.stringify(metadata, null, 2) + '\n';
+  await writeFile(join(stage, 'package.json'), packageJson);
   // Installing the verified local archive prevents a private registry lookup. Restore the portable version pin before packing.
   npm(['install', '--ignore-scripts', '--no-audit', '--no-fund', contracts], stage);
   await writeFile(join(stage, 'package.json'), packageJson);
@@ -42,7 +48,7 @@ try {
   const hashes = {};
   for (const name of await files(stage)) hashes[name] = sha256(await readFile(join(stage, name)));
   await writeFile(join(stage, 'manifest.json'), JSON.stringify({ artifact: '@jimmie-potts/device-mcp', version: '1.0.0',
-    contractVersion: '1.0.0', contractSha256: CONTRACT_ARTIFACT_SHA256, sdk: '@modelcontextprotocol/sdk@1.30.0',
+    contractVersion: BUNDLED_CONTRACT_VERSION, contractSha256: CONTRACT_ARTIFACT_SHA256, sdk: '@modelcontextprotocol/sdk@1.30.0',
     protocolVersions: ['2025-11-25', '2025-06-18'], fixtureFormat: 1, files: hashes }, null, 2) + '\n');
   const destination = join(root, 'artifacts'); await mkdir(destination, { recursive: true });
   const packed = JSON.parse(npm(['pack', '--ignore-scripts', '--json', '--pack-destination', destination], stage))[0];

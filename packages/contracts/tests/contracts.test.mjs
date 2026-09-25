@@ -20,7 +20,13 @@ for (const item of corpus.semanticCases) {
     assert.deepEqual(actual, item.expected);
     assert.deepEqual(item.input, original, 'reference evaluation must not mutate owner state');
     for (const result of actual.results ?? [actual]) {
-      if (result.receipt) assert(validate('receipt', result.receipt), 'produced receipt must conform');
+      if (result.receipt) {
+        assert(validate(result.receipt.apiVersion === '1.1' ? 'receiptV1_1' : 'receipt', result.receipt), 'produced receipt must conform');
+      }
     }
+    if (item.input.operation === 'moment') {
+      assert(validate('momentState', { current: actual.device.current, last: actual.device.last }), 'moment state must conform');
+    }
+    if (item.input.operation === 'downgrade') assert(validate('snapshot', actual.snapshot), '1.0 view must conform');
   });
 }

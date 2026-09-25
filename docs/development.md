@@ -288,7 +288,8 @@ Python dependencies in an isolated environment with
 
 Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
 `npm run test:contracts:python` and `npm run test:package`. Every command must
-exit zero. Both languages execute the same 134 schema and 86 semantic cases.
+exit zero. Both languages execute the same 190 schema and 137 semantic cases,
+including the API 1.1 moment cases from Hub #292.
 The package check installs a newly built archive into a temporary consumer,
 checks every manifest hash, imports the named package, and runs both full corpora.
 It requires npm dependency access and creates no device or controller service.
@@ -309,8 +310,10 @@ synthetic authentication and fake owning services. No test discovers or contacts
 a device or launches an installed agent client.
 
 `npm run package:mcp` creates `@jimmie-potts/device-mcp` 1.0.0 under artifacts/.
-The private controller-contract archive is pinned under vendor/ with its original
-release receipt. Packaging verifies its SHA-256 before bundling it. The MCP package
+The private controller-contract 1.0.0 archive is pinned under vendor/ with its
+original release receipt. Packaging verifies its SHA-256 before bundling it and
+pins the packed dependency to that bundled version, while the workspace builds
+against the 1.1.0 contract source. The MCP package
 test installs outside the checkout, verifies both manifests, runs the tool/protocol
 suite and typechecks consumer examples without private-registry credentials.
 

@@ -26,7 +26,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.2.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.0.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.0.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.2.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.1.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.0.tgz']]){
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
     const result=spawnSync('tar',['-xzf',join(root,'artifacts',archive),'--strip-components=1','-C',target],{encoding:'utf8'});
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);
