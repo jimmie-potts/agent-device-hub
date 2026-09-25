@@ -78,7 +78,8 @@ footer{border-top:1px solid var(--edge-dense);padding:25px 0;font-size:.65rem;co
 input[type=color]{height:42px}
 input[type=range]{padding:0;height:42px;accent-color:var(--accent)}
 .eyebrow.general{margin:30px 0 -10px}
-.hint.undeclared{margin-top:22px}
+/* A message in place of a control section keeps the same rule and rhythm as a form, including one right after a section label. */
+.eyebrow.general+.hint,.hint.undeclared{border-top:1px solid var(--edge-dense);margin-top:22px;padding-top:20px}
 .switch{border-left:2px solid var(--pending);padding-left:16px;margin:12px 0}
 .switch .actions{margin:8px 0}
 .edit fieldset:disabled label{color:var(--muted-dense)}

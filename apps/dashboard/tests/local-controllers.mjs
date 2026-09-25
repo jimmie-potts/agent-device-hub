@@ -8,6 +8,7 @@ import {createHash} from 'node:crypto';
 import {startHub} from '../../hub/dist/server.js';
 import {loadHostConfig,startLocalControllers} from '../../local-controllers/dist/index.js';
 import {TOKENS,bulb,fakeHub,fakeLifx,fakeTidbyt,privateFiles,writes} from '../../local-controllers/tests/helpers.mjs';
+import {textOverlaps} from './layout.mjs';
 
 // Hub #289: the real local controller host with fake Tidbyt and LIFX transports behind the real hub and dashboard.
 const hash=x=>createHash('sha256').update(x).digest('hex');
@@ -29,17 +30,19 @@ try {
   controllers:[{id:'tidbyt',kind:'tidbyt',controllerId:'tidbyt-status',deviceId:'tidbyt',endpoint,token:TOKENS.hub},
    {id:'desk',kind:'lifx',controllerId:'lifx',deviceId:'desk',endpoint,token:TOKENS.hub},{id:'shelf',kind:'lifx',controllerId:'lifx',deviceId:'shelf',endpoint,token:TOKENS.hub},{id:'lamp',kind:'lifx',controllerId:'lifx',deviceId:'lamp',endpoint,token:TOKENS.hub}]});
  cleanup.push(async()=>{await hub.close();await rm(directory,{recursive:true,force:true});});
- async function open(credential,{width=1280,height=1000}={}){
+ async function open(credential,{width=1280,height=1000,setup}={}){
   const context=await browser.newContext({viewport:{width,height},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);
   const errors=[],posts=[];page.on('pageerror',e=>errors.push(e.message));
   page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/controllers/'))posts.push({path:new URL(r.url()).pathname,body:r.postDataJSON()});});
+  await setup?.(page);
   await page.goto(hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(credential);await page.getByRole('button',{name:'Connect',exact:true}).click();
   await page.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
   return {page,errors,posts,close:()=>context.close()};
  }
  const section=page=>page.locator('section:visible');
  // A full-page capture taken while scrolled would draw the off-screen skip link mid-page, so capture from the top.
- const capture=async(page,name)=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:join(output,name),fullPage:true});};
+ // Every captured view is also checked for overlapping text.
+ const capture=async(page,name)=>{assert.deepEqual(await textOverlaps(page),[],name+': no text overlaps');await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:join(output,name),fullPage:true});};
  const axe=async page=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target.join(' '))})),[]);};
 
  const none='No general controls: this controller declares no power, brightness, media or scenes.';
@@ -126,7 +129,13 @@ try {
  await narrow.page.getByRole('button',{name:'desk lifx',exact:true}).click();await section(narrow.page).getByLabel('Hue (°)').waitFor();
  assert.equal(await narrow.page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'no horizontal scroll at phone width');
  await capture(narrow.page,'lifx-phone.png');
- assert.deepEqual([...viewer.errors,...narrow.errors],[]);await viewer.close();await narrow.close();
+ // An unreachable bulb shows both unavailable messages under their section labels without overlap.
+ const unreachable=await open(token,{setup:page=>page.route('**/api/controllers/v1/lamp/lighting/snapshot',route=>route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}}))});
+ await unreachable.page.getByRole('button',{name:'lamp lifx',exact:true}).click();
+ await section(unreachable.page).getByText('General controls unavailable: no controller snapshot.',{exact:true}).waitFor();
+ await section(unreachable.page).getByText('Lighting controls unavailable: no lighting snapshot.',{exact:true}).waitFor();
+ await capture(unreachable.page,'lifx-unreachable.png');
+ assert.deepEqual([...viewer.errors,...narrow.errors,...unreachable.errors],[]);await viewer.close();await narrow.close();await unreachable.close();
  assert.equal(lifx.log.filter(([id])=>id==='shelf').length,0,'an unqualified bulb gets no traffic');
  assert.deepEqual(writes(lifx.log).filter(([id])=>id==='desk'),[['desk',21],['desk',102],['desk',102],['desk',102]],'only explicit commands write');
  console.log(JSON.stringify({localControllers:'passed',screenshots:output}));

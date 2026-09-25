@@ -271,9 +271,12 @@ switch, a scene activation and a locked draft form, and a controller-side scene
 rejection, revision conflict and uncertain result with no retry. The Hub #289
 scenario (`tests/local-controllers.mjs`) runs the real local controller host with
 fake Tidbyt and LIFX transports behind the real hub. It checks the Tidbyt view's
-disabled controls, LIFX power, brightness, color and color temperature, one
+no-controls line, LIFX power, brightness, color and color temperature, one
 guarded lighting request per change with no power write, an unqualified bulb, a
-read-only credential, phone width and automated accessibility. `DASHBOARD_RECEIPTS` selects an external
+bulb read as off, a bulb with unknown power, an unreachable bulb, a read-only
+credential, phone width and automated accessibility. `tests/layout.mjs` fails
+any visited view whose text blocks overlap; the browser, Pixoo, wall and
+synthetic views use it too. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,

@@ -705,7 +705,8 @@ LIFX views through the same host. Hub #330 adds on-demand read cases: one
 LightGet for a missing or 30-second-old observation, none inside 30 s or for an
 unqualified bulb, and a failed read keeping its observation. The browser
 scenario adds the Power starting value from unknown and observed power, the
-not-declared lines and the distinct disabled button colors. No check contacts a
+not-declared lines, an unreachable bulb and the distinct disabled button colors.
+`apps/dashboard/tests/layout.mjs` fails any checked view whose text overlaps. No check contacts a
 device, the Tidbyt cloud or the LAN. Installation and the physical brightness
 check stay separate.
 
