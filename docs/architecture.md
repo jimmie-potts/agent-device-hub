@@ -481,8 +481,8 @@ and physical acceptance retain their own owners.
 services run: in the Ubuntu WSL distribution, today started only by a user
 session, with linger, an idle timeout and one Windows scheduled task decided
 but not yet installed. A dedicated Linux server (#44, which absorbs #42's
-Docker packaging) follows when the Tronbyt move starts, when a story needs LAN
-discovery or events, or when the keep-alive fails.
+Docker packaging) follows under the ADR's proposed trigger: the Tronbyt move
+starting, a story needing LAN discovery or events, or a failed keep-alive.
 
 ## Shared playback
 

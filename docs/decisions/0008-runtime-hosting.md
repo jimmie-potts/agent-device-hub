@@ -75,8 +75,7 @@ relay for the Windows-only inputs above.
    - `loginctl enable-linger` for the installing user, so the six user
      services start with the distribution instead of with a login session.
    - A `.wslconfig` idle timeout, so the virtual machine does not stop when
-     the last terminal closes. This is the piece ADR 0011's second reason
-     asked for.
+     the last terminal closes. This answers ADR 0011's second reason.
    - One Windows scheduled task at system startup, running as the installing
      user, that starts the distribution without a sign-in. It is the only
      Windows artifact this decision accepts. It belongs to the hub's hosting
@@ -87,8 +86,9 @@ relay for the Windows-only inputs above.
    *Proposed* trial, owned by the keep-alive story: after a Windows restart
    with no interactive sign-in, all six units are active and the hub answers
    on its loopback port from the first WSL session; and after every WSL
-   session has been closed for longer than the idle timeout, the units are
-   still active. The second check measures ADR 0011's two open conditions.
+   session has been closed for one hour, the units are still active and the
+   hub answers again. The second check measures ADR 0011's two open
+   conditions; the keep-alive story may lengthen the wait.
    Whether the task also holds a session open is an implementation choice for
    that story. Source delivery documents the three pieces and the checks in the
    hub setup guide; installation is a separate explicit request with a named
@@ -108,8 +108,9 @@ relay for the Windows-only inputs above.
 
 3. **The server (#44) has a trigger and does not start before it.** The owner
    delegated this choice; the *proposed* trigger is any one of:
-   - the owner picks up the Tronbyt move (#23), because it needs an always-on
-     host the Tidbyt connects to and the owner wants it off the PC;
+   - the owner picks up the Tronbyt connection (#23) and transition (#24),
+     because they need an always-on host the Tidbyt connects to and the owner
+     wants it off the PC;
    - the first story that needs LAN discovery or event subscriptions from the
      runtime, such as LIFX discovery, Sonos UPnP events or mDNS, which the WSL
      NAT does not carry; or
@@ -150,9 +151,10 @@ relay for the Windows-only inputs above.
 - **Availability improves; NAT limits stay.** Discovery, event subscriptions
   and inbound device connections remain unavailable until the server, which is
   why they are triggers.
-- **Relation to Nanoleaf ADR 0011.** This ADR changes nothing in the Nanoleaf
-  repository. It takes the Windows artifact and the idle timeout into the
-  hub's scope, which is what ADR 0011 declined for the Nanoleaf project. The
+- **Relation to Nanoleaf ADR 0011.** This ADR revises ADR 0011's option 1
+  rejection by moving the Windows artifact and the idle timeout into the hub's
+  hosting scope, which is what ADR 0011 declined for the Nanoleaf project. It
+  changes no Nanoleaf source, record or installation. The
   reopen condition ADR 0011 set for Nanoleaf #133 is already met by the
   observation above; reopening it with that observation is a Nanoleaf tracker
   action for its owner, linked from the keep-alive story.
