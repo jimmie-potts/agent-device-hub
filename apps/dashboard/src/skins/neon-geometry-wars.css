@@ -17,4 +17,5 @@
 --secondary-text:#c7d8fc;--secondary-edge:#526482;--secondary-hover-bg:#1a2a3d;--secondary-hover-edge:#7b93b8;
 --stats-gradient-1:#0d202b;--stats-gradient-2:#100d22;
 --badge-bg:#1b2940;--badge-edge:#476086;--warning-badge-bg:#28172e;--warning-badge-edge:#9f5baa;
---notice-edge:#5977a7;--empty-edge:#40516b}
+--notice-edge:#5977a7;--empty-edge:#40516b;
+--disabled-bg:#151d2b;--disabled-text:#7f8ca3;--disabled-edge:#2a3549}

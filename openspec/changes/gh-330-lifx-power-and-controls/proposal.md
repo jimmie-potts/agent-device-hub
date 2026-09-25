@@ -11,7 +11,7 @@ The owner asked for the bulb's real power on page load, a single line for device
 
 - The local controller host reads a qualified LIFX bulb on demand. When its snapshot is read and it has no observation, or the observation is 30 s old or more, the host queues one read-only LightGet through the bulb's queue. It does this at most once per bulb every 30 s and only while something reads, and it never reads an unqualified bulb. This relaxes #289's "never reads on its own"; it still never writes or paints on its own.
 - B.U.N.N.Y.'s Power control starts from desired power when known, otherwise from observed power, and otherwise from no selection with an explicit unknown hint. Its hint shows the last reading and its age.
-- A component whose snapshot declares no power, brightness, media or scenes shows one line naming that, instead of four disabled forms. A LIFX bulb that declares neither color nor temperature does the same for Lighting.
+- General controls show a form only for each declared capability and one line naming the undeclared ones; a component with none, like the Tidbyt, shows one line only. This also removes the dead Media and Scenes forms from LIFX pages, the Scenes form from the Pixoo and the Media form from the wall. A LIFX bulb that declares neither color nor temperature gets one line for Lighting.
 - Disabled buttons get a distinct style from new skin tokens instead of half opacity.
 - The hub is bumped to 0.3.7 because the bundled dashboard changes.
 

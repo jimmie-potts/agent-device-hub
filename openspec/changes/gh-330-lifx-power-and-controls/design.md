@@ -24,7 +24,7 @@ The form starts from desired power, then observed power, then an explicit empty 
 
 ### No-controls line and disabled style
 
-`GeneralControls` returns one line when none of the four capabilities is declared. The line names them, so the missing-capability explanation stays. Lighting does the same for a bulb with neither color nor temperature. Disabled buttons get `--disabled-bg`, `--disabled-text` and `--disabled-edge` skin tokens instead of half opacity, and the style test keeps every consumed token defined in the skin.
+`GeneralControls` renders a form only for each declared capability, and one line names the undeclared ones; with none declared, it renders only a one-line summary. The missing-capability explanation stays, now in one place instead of one per dead form. The owner's complaint was the Tidbyt page, but the LIFX, Pixoo and wall pages had the same dead forms for media or scenes, so the rule applies to every component. Lighting does the same for a bulb with neither color nor temperature. Disabled buttons get `--disabled-bg`, `--disabled-text` and `--disabled-edge` skin tokens instead of half opacity, and the style test keeps every consumed token defined in the skin.
 
 ## Risks / Trade-offs
 
