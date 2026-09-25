@@ -63,7 +63,7 @@ Build a pinned reviewed revision in a release directory outside your working che
 node apps/local-controllers/dist/cli.js /absolute/private/local-controllers.json
 ```
 
-It prints `local-controllers-started` once every lease is held and the listener is open. SIGINT or SIGTERM stops the listener and the Tidbyt publishers, cancels queued work, settles work in flight, releases every lease and prints `local-controllers-stopped`. Shutdown leaves the Tidbyt tiles in rotation and the bulbs as they are. A restart gets fresh request IDs and replays nothing.
+It prints `local-controllers-started` once every lease is held and the listener is open. SIGINT or SIGTERM, including one that arrives during startup, stops the listener and the Tidbyt publishers, cancels queued work, settles work in flight, releases every lease and prints `local-controllers-stopped`. Shutdown leaves the Tidbyt tiles in rotation and the bulbs as they are. A restart gets fresh request IDs and replays nothing.
 
 ## Register it with the hub
 
