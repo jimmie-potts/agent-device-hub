@@ -36,6 +36,33 @@ The Sony response lacked position and duration, so the owner supplied an explici
 
 This check qualifies the Move's current AirPlay path. It does not establish other Sonos models, grouped-speaker behavior, event callback delivery to WSL, network recovery, or an installed hub adapter. [SoCo's documented track fields](https://docs.python-soco.com/en/stable/api/soco.core.html) describe the local API surface; the observations above came from direct requests to this Move.
 
+## Play and resume check
+
+Follow-up for [Hub #242](https://github.com/jimmie-potts/agent-device-hub/issues/242), observed September 25, 2026, on the same HT-A9 and Sonos Move with the owner's iPhone. The owner authorized each sequence. Addresses and track metadata are omitted here, and the redacted logs and scripts stay outside Git in the owner's evidence folder.
+
+### Sony HT-A9
+
+| Check | Observation |
+| --- | --- |
+| API inventory | `avContent.getMethodTypes` lists `setPlayContent` v1.2 with `uri`, `output`, `resume`, `requester`, position and repeat parameters, plus `pausePlayingContent` v1.1, `stopPlayingContent` v1.1, `scanPlayingContent` v1.0 and next/previous v1.0. `getAvailablePlaybackFunction` reported `playback`, `stop`, `pause`, `fwdScan`, `bwdScan`, `next` and `prev` as available on `extInput:airPlay` while paused. `getSupportedPlaybackFunction` returned empty function lists for all six sources and rejected any specific URI. |
+| `setPlayContent` | With AirPlay paused from the phone, twelve forms were each rejected with `[3, "Illegal Argument"]`: an empty `uri` with and without `resume: true` and `requester: "ui"`, `uri` `extInput:airPlay` with the same variations, `output` empty and `extOutput:zone?zone=1`, and an empty parameter object. Sony's reference describes the empty URI as the resume form for content the receiver plays itself. |
+| `pausePlayingContent` | Documented as a play/pause toggle. Sent while paused from the phone, with both output forms, it returned an empty success result and the state stayed `PAUSED`. Sent four seconds after a hub-issued pause, it returned success and the state stayed `PAUSED` for eight seconds. |
+| `scanPlayingContent` | `direction: "fwd"` returned success and changed nothing. |
+| Other control paths | No UPnP AVTransport: a unicast SSDP search got no reply and port 52323 refused. No IRCC: ports 50001 and 50002 are closed. Only the Cast ports and the Audio Control API port answered. The remote's Play/Pause button is documented as resuming, but the API has no key-injection method, and the button was not checked. |
+
+Result: the HT-A9 cannot resume a paused AirPlay session over its network API, regardless of which side paused it. The Sony source keeps play unavailable.
+
+### Sonos Move
+
+| Check | Observation |
+| --- | --- |
+| Transport actions | `GetCurrentTransportActions` listed `Set, Stop, Pause, Play, Next, Previous` while playing and while paused with an `x-sonos-vli` track URI. |
+| Move alone | The phone streamed to the Move only, and the HT-A9 showed no AirPlay entry. `Pause` read `PAUSED_PLAYBACK` within 0.5 seconds. `Play` four seconds later read `PLAYING` within 0.5 seconds, and the position advanced from 3:09 to 3:12 over the next three seconds. |
+| Grouped with the HT-A9 | The phone streamed to both. The Move's `Pause` put the HT-A9 in `PAUSED` within 0.5 seconds. The Move's `Play` put both back to `PLAYING` within 0.5 seconds and the position advanced. The HT-A9 received no command. |
+| Phone observation | The owner regrouped the outputs between the runs while playback was running. An explicit phone-state confirmation for each run was not recorded. |
+
+Result: the Move's firmware sends the AirPlay play command back to the phone, and one phone session serves the whole AirPlay 2 group. Play for the grouped HT-A9 is therefore available through a Sonos source. [Hub #301](https://github.com/jimmie-potts/agent-device-hub/issues/301) owns that adapter.
+
 ## Recommendation and playback contract
 
 Use the HT-A9 Audio Control API as the second hub playback source after #36 defines the service. It is the owner's preferred speaker, and the live check supplied title, artist, album, artwork, outbound WebSocket changes, and phone-confirmed pause, next, and previous. Position and duration were absent, which triggered the Sonos check. The Move supplied those progress fields and the same basic controls, but it is the owner's fallback output; building only its adapter would leave the preferred Sony route without a live source. A Sony-only adapter will not observe playback when the phone switches to the Move. Qualifying a future Sonos adapter remains possible; it is not part of [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175). Neither result required the Linux AirPlay receiver or Last.fm fallback spikes.
@@ -51,6 +78,8 @@ The receiver adapter should poll for an initial snapshot and recovery, then use 
 ## Next delivery boundary
 
 Update, September 24, 2026: the plan changed after this qualification. #36's Windows connector is deferred, so the Windows-first ordering above no longer applies: the HT-A9 is the first source, not the second, and there is no #36 snapshot model to extend or Windows selection to initialize. [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175) delivers a shared playback module and this Sony source together on Linux, polling `getPlayingContentInfo` without the WebSocket feed or artwork. Multi-source runtime and selection are deferred; when they arrive, the explicit-selection and no-silent-switch rules above still apply. The recorded observations are unchanged.
+
+Update, September 25, 2026: the [play and resume check](#play-and-resume-check) closed the [#242](https://github.com/jimmie-potts/agent-device-hub/issues/242) question. The HT-A9 cannot resume, and the Sonos Move can, for itself and for a grouped HT-A9. [Hub #301](https://github.com/jimmie-potts/agent-device-hub/issues/301) adds the Move as a selectable second source under the existing single-selection rule; two concurrently observed sources remain deferred.
 
 The original boundary follows.
 
