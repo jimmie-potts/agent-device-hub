@@ -515,6 +515,19 @@ wording and lock rules, including that only a same-mode reapply reports a
 cancel as already in effect. Human UI approval of the candidate is recorded in
 its PR.
 
+Hub #245 moves the command lifecycle shared by draft forms and one-click actions
+into `apps/dashboard/src/lifecycle.ts`. `apps/dashboard/tests/lifecycle.test.mjs`
+runs under `npm run test:dashboard` and applies each case to both consumers:
+- blocked and failed preparation;
+- accepted, queued and terminal receipts;
+- definite rejection, where another client's receipt is never adopted;
+- uncertain and partial locks with explicit reload;
+- a failed refresh after a result, and a stale read reaching the controller once.
+
+A matrix scenario covers the same failed fresh read and failed refresh on the
+Pixoo brightness form and the Pause action, plus a double activation that sends
+one command. The existing Dashboard CI job runs both; no new job is needed.
+
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`
