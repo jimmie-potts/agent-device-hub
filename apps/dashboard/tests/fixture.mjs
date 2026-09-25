@@ -8,7 +8,7 @@ import {validate} from '@jimmie-potts/device-contracts';
 import {validateRequest} from '../../hub/dist/vendor/nanoleaf-integration.js';
 import {validatePixooRequest} from '../../hub/dist/pixoo-integration.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
-export async function fixture({empty=false}={}){
+export async function fixture({empty=false,playback=false}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64),sceneA='scene-'+'a'.repeat(64),sceneB='scene-'+'b'.repeat(64);
@@ -71,12 +71,25 @@ export async function fixture({empty=false}={}){
    }
   });await new Promise(r=>server.listen(0,'127.0.0.1',r));controllers.push({id,server});
  }
+ // A fake Sony HT-A9 like playback.test.mjs: `sony.state` is the AirPlay state, `sony.reads` 'ok' or 'down', `sony.commands` 'sent', 'failed' or 'hang'.
+ const sony={state:'PLAYING',reads:'ok',commands:'sent',calls:[],skew:0};let receiver;
+ if(playback){
+  receiver=createServer(async(req,res)=>{
+   let text='';for await(const chunk of req)text+=chunk;const request=JSON.parse(text);const read=request.method==='getPlayingContentInfo';
+   if(!read){sony.calls.push(request.method);if(sony.commands==='hang')return;}
+   if(read&&sony.reads==='down'){res.writeHead(500);res.end();return;}
+   const body=read?{result:[[{source:'extInput:airPlay',stateInfo:{state:sony.state},title:'Song',artist:'Artist',albumName:'Album'}]]}:sony.commands==='failed'?{error:[40000,'refused']}:{result:[]};
+   res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:request.id,...body}));
+  });
+  await new Promise(r=>receiver.listen(0,'127.0.0.1',r));
+ }
+ const devices=['wall','pixel',...(playback?['ht-a9']:[])];
  const directory=await mkdtemp(join(tmpdir(),'dashboard-browser-')),token='d'.repeat(43),reader='r'.repeat(43),native='n'.repeat(43);
- const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}],controllers:controllers.map(({id,server})=>({id,kind:id==='wall'?'nanoleaf':'pixoo',controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'}});
+ const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices},{id:'reader',digest:hash(reader),scopes:['read'],devices}],...(playback?{clock:()=>Date.now()+sony.skew,playback:{selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:`http://127.0.0.1:${receiver.address().port}/sony`}]}}:{}),controllers:controllers.map(({id,server})=>({id,kind:id==='wall'?'nanoleaf':'pixoo',controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'}});
  const headers={authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'};
  const identity={provider:'codex',client:'cli',hostId:'local',sourceId:'codex',sessionId:'task-one'};
  let seq=0;
  async function event(kind,extra={}){const value={apiVersion:'1.0',identity,turn:{status:'known',id:'turn-one'},parent:{status:'unknown'},event:{kind},observedAtMs:Date.now(),ordering:{status:'known',epoch:'fixture',sequence:seq++},...extra};const r=await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(value)});if(!r.ok)throw new Error('fixture-event-'+r.status);return r.json();}
  if(!empty)await event('session.started',{label:{origin:'user',value:'Build the integration'}});
- return {hub,token,reader,media,scenes,sceneA,sceneB,reconnect(){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices:['wall','pixel']},{id:'reader',digest:hash(reader),scopes:['read'],devices:['wall','pixel']}]);},writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+ return {hub,token,reader,media,scenes,sceneA,sceneB,reconnect({scopes=['read','control','ingest'],granted=devices}={}){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes,devices:granted},{id:'reader',digest:hash(reader),scopes:['read'],devices}]);},sony,writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});if(receiver)await new Promise(r=>{receiver.close(r);receiver.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }

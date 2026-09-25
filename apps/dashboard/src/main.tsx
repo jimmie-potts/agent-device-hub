@@ -2,7 +2,7 @@ import React, {useEffect,useId,useReducer,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
-import {Api,ApiError,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,type GeneralReasons,type Context,type Component} from './client';
+import {Api,ApiError,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,playbackControls,playbackEvidence,playbackRequest,isPlaybackReceipt,type GeneralReasons,type Context,type Component,type PlaybackAction,type PlaybackReceipt,type PlaybackSnapshot} from './client';
 import {actionWording,blocked,commandTransition,formWording,initialCommand,runCommand,unreadable,type Attempt,type Prepared,type ResultOptions} from './lifecycle';
 import './style.css';
 
@@ -199,6 +199,55 @@ function NanoMappings({integration:s,disabled,api,path,refresh,reread}:{integrat
  {s.projects.map(p=><div key={p.id} hidden={project!==p.id}><EditForm {...base} title="Project color" initial={{color:p.color}} disabled={disabled??(!s.capabilities['project.color']?.supported?'Project color unsupported':undefined)} build={(state,v)=>command(state,{kind:'project.color',projectId:p.id,color:v.color})}>{(v,c)=><label>Color<input type="color" value={v.color} onChange={e=>c('color',e.target.value)}/></label>}</EditForm></div>)}
  </div>;
 }
+type PlaybackRead={snapshot?:PlaybackSnapshot;error?:string;received?:number};
+const playbackPoll=2000;
+// Results name no device check: the view itself shows the receiver's next report.
+const playbackOptions={device:false,unreadable:'B.U.N.N.Y. couldn’t read the playback source'};
+/** Text-only now playing for the one granted source. It polls the hub's snapshot at the source's read cadence. Buttons appear only for actions the source declares now, for a control-scoped caller while the source is available; each press reads again and sends one command bound to this source. */
+function PlaybackView({api,sourceId,control,now}:{api:Api;sourceId:string;control:boolean;now:number}){
+ const heading=useId();
+ const [read,setRead]=useState<PlaybackRead>({});
+ const latest=useRef<PlaybackRead>({}),stop=useRef<AbortSignal|undefined>(undefined);
+ // Resolves with this call's own read. A failed read keeps the last snapshot for display and records the error.
+ const refresh=useRef(async():Promise<PlaybackRead>=>({}));
+ refresh.current=async()=>{
+  let next:PlaybackRead;
+  try{const snapshot=await api.request<PlaybackSnapshot>('/api/playback/v1/snapshot',undefined,stop.current);next=snapshot.sourceId===sourceId?{snapshot,received:Date.now()}:{...latest.current,error:'unknown-source'};}
+  catch(e){next={...latest.current,error:e instanceof ApiError?e.code:'unavailable'};}
+  if(!stop.current?.aborted){latest.current=next;setRead(next);}
+  return next;
+ };
+ useEffect(()=>{
+  const abort=new AbortController();stop.current=abort.signal;
+  void refresh.current();const timer=setInterval(()=>void refresh.current(),playbackPoll);
+  return ()=>{abort.abort();clearInterval(timer);};
+ },[api,sourceId]);
+ const command=useCommandLifecycle(read.snapshot,playbackOptions);
+ const {snapshot,error}=read,playback=snapshot?.playback??null,available=playbackControls(error?undefined:snapshot,control);
+ const labels:Record<PlaybackAction,string>={play:'Play',pause:'Pause',next:'Next',previous:'Previous'};
+ const send=(request:unknown)=>api.request<PlaybackReceipt>('/api/playback/v1/commands',request).then(playbackEvidence,(e:unknown)=>{if(e instanceof ApiError&&isPlaybackReceipt(e.detail))return playbackEvidence(e.detail);throw e;});
+ const run=(action:PlaybackAction)=>void command.run({wording:actionWording(labels[action]),send,refresh:()=>refresh.current(),
+  prepare:async()=>{const fresh=await refresh.current();const result=playbackRequest(fresh,{sourceId,action,control,requestId:'bunny-'+crypto.randomUUID()});return 'blocked' in result?result:{request:result.request};}});
+ const elapsed=read.received?Math.max(0,now-read.received):0;
+ const availability=snapshot?title(snapshot.availability):'Unknown';
+ return <><header className="section-heading"><div><p className="eyebrow">NOW PLAYING / {sourceId}</p><h2>{playback?.title??(playback?'Untitled':'No track information')}</h2></div><Badge warning={!!error||snapshot?.availability!=='available'}>{error?'Stale / unavailable':availability}</Badge></header>
+ <p className="muted">{[playback?.artist,playback?.album].filter(Boolean).join(' · ')||'Artist not reported'}</p>
+ <Facts items={[['Status',playback?title(playback.status):'Unknown'],['Title',playback?.title??'Not reported'],['Artist',playback?.artist??'Not reported'],['Album',playback?.album??'Not reported'],['Source',sourceId],['Availability',availability],
+  ['Observation age',snapshot?.ageMs!=null?age(snapshot.ageMs+elapsed):'Never observed'],['Snapshot fetched',read.received?`${age(elapsed)} ago`:'Never']]}/>
+ {error&&<p role="status" className="warning">{error}. Last evidence is retained.</p>}
+ {snapshot?.availability==='stale'&&<p className="hint">The receiver hasn’t answered for a few seconds; these are its last values.</p>}
+ {snapshot?.availability==='unavailable'&&<p className="hint">The receiver hasn’t answered for 30 seconds or more, or not yet, so no track is shown. A silent receiver is never treated as paused.</p>}
+ {playback?.status==='inactive'&&<p className="hint">The receiver is answering, but AirPlay isn’t its current input.</p>}
+ <div className="edit" role="group" aria-labelledby={heading}><h3 id={heading}>Playback controls</h3>
+ {available.actions.length>0&&<div className="actions">{available.actions.map(action=><button key={action} type="button" className={action==='pause'?undefined:'secondary'} disabled={command.busy||command.locked} onClick={()=>run(action)}>{labels[action]}</button>)}</div>}
+ {available.reason&&<p className="hint">Unavailable: {available.reason}</p>}
+ {!!available.undeclared?.length&&<p className="hint">Not offered by this source: {available.undeclared.map(a=>labels[a]).join(', ')}.</p>}
+ {playback?.status==='paused'&&available.actions.length>0&&<p className="hint">The receiver may keep showing the previous title after Next or Previous until playback resumes.</p>}
+ {available.actions.length>0&&<p className="hint">Commands go only to {sourceId}. A sent command reached the receiver; check the phone to confirm.</p>}
+ {command.locked&&<div className="actions"><button type="button" className="secondary" onClick={()=>command.reload(()=>refresh.current())}>Reload current values</button></div>}
+ <p role="status" data-tone={command.tone}>{command.status}</p></div>
+ </>;
+}
 function SessionView({session:s,monitor,context,api,refresh,stale,elapsed}:{session:SessionSnapshot;monitor:Monitor;context:Context;api:Api;refresh:()=>Promise<void>;stale:boolean;elapsed:number}){
  return <article className="session"><div className="section-heading"><h3>{s.label??s.identity.sessionId}</h3><Badge warning={s.freshness!=='current'||stale}>{stale?'Stale connection':s.freshness}</Badge></div><p className="muted">{s.identity.provider} · {s.identity.client} · {s.identity.hostId} / {s.identity.sourceId}</p>
  <Facts items={[
@@ -235,9 +284,10 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
   return ()=>{stop.abort();clearInterval(interval);clearInterval(clock);};
  },[api]);
  const sessions=monitor?.snapshot.sessions??[],filtered=sessions.filter(s=>(!provider||s.identity.provider===provider)&&(!q||(s.label??s.identity.sessionId).toLowerCase().includes(q.toLowerCase())));
- return <div className="shell"><a className="skip" href="#main">Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><button aria-current={view==='activity'?'page':undefined} onClick={()=>setView('activity')}>Activity <span>{sessions.length}</span></button><p className="nav-label">COMPONENTS</p>{context?.components.map(c=><button key={c.id} aria-current={view===c.id?'page':undefined} onClick={()=>setView(c.id)}>{c.id}<small>{c.kind}</small></button>)}<button aria-current={view==='connections'?'page':undefined} onClick={()=>setView('connections')}>Connections</button></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p><button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
+ return <div className="shell"><a className="skip" href="#main">Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><button aria-current={view==='activity'?'page':undefined} onClick={()=>setView('activity')}>Activity <span>{sessions.length}</span></button><p className="nav-label">COMPONENTS</p>{context?.components.map(c=><button key={c.id} aria-current={view===c.id?'page':undefined} onClick={()=>setView(c.id)}>{c.id}<small>{c.kind}</small></button>)}{context?.playback&&<><p className="nav-label">MUSIC</p><button aria-current={view==='playback:'+context.playback.sourceId?'page':undefined} onClick={()=>setView('playback:'+context.playback!.sourceId)}>{context.playback.sourceId}<small>now playing</small></button></>}<button aria-current={view==='connections'?'page':undefined} onClick={()=>setView('connections')}>Connections</button></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p><button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
  <section hidden={view!=='activity'}><header className="hero"><p className="eyebrow">CODEX & CONNECTED COMPONENTS</p><h1>Your work, at a glance.</h1><p>Activity, attention and device participation. Every action stays explicit.</p></header><div className="stats"><div><strong>{sessions.filter(s=>s.activity==='active').length}</strong><span>Active sessions</span></div><div><strong>{sessions.reduce((n,s)=>n+s.attention.length,0)}</strong><span>Attention signals</span></div><div><strong>{context?.components.length??0}</strong><span>Components</span></div><div><strong>{monitor?.snapshot.collector??'Unknown'}</strong><span>Collector health</span></div></div><div className="filters"><label>Find a session<input type="search" maxLength={120} value={q} onChange={e=>setQ(e.target.value)} placeholder="Chosen label or session ID"/></label><Select label="Provider" value={provider} onChange={setProvider} options={[{value:'',label:'All providers'},...options(['codex','claude'])]}/></div>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}{!filtered.length&&<div className="empty"><h2>{q||provider?'No matching sessions':'No sessions observed'}</h2><p>{q||provider?'Change the filters to see other observations.':'Component status and supported integration controls remain available.'}</p></div>}<div className="sessions">{sessions.map(s=><div key={key(s)} hidden={!filtered.includes(s)}><SessionView session={s} monitor={monitor!} context={context!} api={api} refresh={()=>refreshRef.current()} stale={!!error||!received||now-received>10000} elapsed={Math.max(0,now-received)} /></div>)}</div></section>
  {context?.components.map(c=><section key={c.id} hidden={view!==c.id}><ComponentView component={c} device={devices[c.id]??{}} context={{...context,control:context.control&&!error}} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/></section>)}
+ {context?.playback&&<section key={'playback:'+context.playback.sourceId} hidden={view!=='playback:'+context.playback.sourceId}><PlaybackView api={api} sourceId={context.playback.sourceId} control={context.control&&!error} now={now}/></section>}
  <section hidden={view!=='connections'}><header className="hero"><p className="eyebrow">SOURCES & CONNECTIONS</p><h1>Evidence, not assumptions.</h1></header><Facts items={[
  ['Collector',monitor?.snapshot.collector??'Unknown'],['State owner',monitor?.ownerId??'Unknown'],['Feed',feed?'Connected':'Reconnecting'],['Snapshot age',received?age(now-received):'Unknown'],['Lost observations',monitor?.snapshot.lossCount??'Unknown'],['Connection error',error||'None observed']
  ]}/><h2>Observed sources</h2>{[...new Set(sessions.map(s=>`${s.identity.provider} / ${s.identity.hostId} / ${s.identity.sourceId}`))].map(s=><p key={s}>{s}</p>)}{!sessions.length&&<p>No source evidence yet.</p>}<p className="hint">A connected collector does not prove a fresh session, successful task, read chat or physical device result.</p></section><footer>B.U.N.N.Y. / Source observations and deliberate controls</footer></main></div>;

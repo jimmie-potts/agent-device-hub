@@ -3,6 +3,7 @@ import {createDeviceRegistry,bindServiceTools,createMcpHandler,type ServiceExten
 import type {Credential} from './server.js';
 import type {ControllerClient} from './controllers.js';
 import {HttpError,object} from './common.js';
+import type {PlaybackReceipt} from './playback.js';
 
 // Logical application service; never advertised as a physical device.
 export const HOST_SERVICE = 'hub-service';
@@ -10,7 +11,9 @@ export type HubMcp = McpHandler;
 type Options = {origin:string;clients:Map<string,ControllerClient>;authenticate(token:string):Credential|null;
  principal(id:string,scope:'read'|'control',device:string):Credential;
  sessions(principal:Credential,query?:string,provider?:string):Record<string,unknown>;
- command(principal:Credential,input:unknown):Promise<unknown>};
+ command(principal:Credential,input:unknown):Promise<unknown>;
+ /** The configured playback source. Tools bind its ID; the caller never supplies a target. */
+ playback?:{sourceId:string;snapshot():unknown;command(principal:Credential,input:unknown):Promise<{status:number;body:PlaybackReceipt}>}};
 export const shape=(properties:Record<string,object>,required=Object.keys(properties)):JsonSchema=>({type:'object',additionalProperties:false,properties,required});
 const id={type:'string',pattern:'^[A-Za-z0-9_.-]{1,128}$'};
 const count={type:'integer',minimum:0,maximum:Number.MAX_SAFE_INTEGER};
@@ -19,7 +22,7 @@ const identity=shape({provider:{enum:['codex','claude']},client:{enum:['cli','de
 const requestString={type:'string',minLength:1,maxLength:100};
 const resultSchema=shape({result:{type:'object'},status:{type:'integer'},code:{type:'string'},priorEffects:{enum:['none','possible']},retry:{const:'never-automatically'},requestId:{anyOf:[ticket,{type:'string',maxLength:128}]}},[]);
 // Known owner rejections before effects; all other write failures remain uncertain.
-const rejected=new Set(['unauthenticated','forbidden','invalid-input','invalid-request','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','capacity','unsupported-capability','owner-quiesced','monitor-unavailable']);
+const rejected=new Set(['unauthenticated','forbidden','invalid-input','invalid-request','unknown-device','revision-conflict','stale-generation','request-conflict','request-expired','request-order','capacity','unsupported-capability','owner-quiesced','monitor-unavailable','unsupported-control','source-unavailable','unknown-source']);
 export function toolPrefix(alias:string):string {return 'device_'+alias.replace(/[^A-Za-z0-9_]/g,'_').slice(0,48)+'_'+createHash('sha256').update(alias).digest('hex').slice(0,16);}
 export function createHubMcp(options:Options):McpHandler {
  if(options.clients.has(HOST_SERVICE))throw new Error('reserved-mcp-alias');
@@ -45,7 +48,8 @@ export function createHubMcp(options:Options):McpHandler {
  const writeDescription=(purpose:string)=>purpose+' Preserve the original request identity for explicit replay; never automatically retry an ambiguous write. Acceptance does not prove physical effects or task success.';
  const host:Record<string,ServiceExtension>={
   sessions:extension(HOST_SERVICE,'read',readDescription('Read observed agent sessions, optionally filtering by provider and by q, a case-insensitive match against each session\'s label, or its session ID when it has no label. Returns the qualified snapshot, matching identities and the next request ID for hub_label, hub_acknowledge and hub_recover_approval.'),shape({q:{type:'string',maxLength:120},provider:{enum:['codex','claude']}},[]),(args,p)=>options.sessions(p,args.q as string|undefined,args.provider as string|undefined)),
-  devices:extension(HOST_SERVICE,'read','List authorized configured device aliases and their bound tool prefixes. No network discovery or device writes.',shape({}),(_args,p)=>({devices:[...options.clients].filter(([alias])=>p.devices.includes(alias)).map(([alias,c])=>({alias,controllerId:c.config.controllerId,deviceId:c.config.deviceId,kind:c.config.kind,toolPrefix:toolPrefix(alias)}))})),
+  devices:extension(HOST_SERVICE,'read','List authorized configured device aliases and their bound tool prefixes, and the authorized playback source with its playback tool prefix. No network discovery or device writes.',shape({}),(_args,p)=>({devices:[...options.clients].filter(([alias])=>p.devices.includes(alias)).map(([alias,c])=>({alias,controllerId:c.config.controllerId,deviceId:c.config.deviceId,kind:c.config.kind,toolPrefix:toolPrefix(alias)})),
+   ...(options.playback&&p.devices.includes(options.playback.sourceId)?{playback:{sourceId:options.playback.sourceId,toolPrefix:toolPrefix(options.playback.sourceId)}}:{})})),
   label:extension(HOST_SERVICE,'control',writeDescription('Set the user-chosen label for one session identity, or pass null to remove it. Use the next request ID from hub_sessions as request_id.'),shape({request_id:requestString,identity,label:{anyOf:[{type:'string',maxLength:160},{type:'null'}]}}),(args,p)=>options.command(p,{operation:'label',requestId:args.request_id,identity:args.identity,label:args.label})),
   acknowledge:extension(HOST_SERVICE,'control',writeDescription('Acknowledge one attention notice on a session for a configured consumer. Use the next request ID from hub_sessions as request_id. Reading a notice never acknowledges it.'),shape({request_id:requestString,identity,noticeId:id,consumerId:id}),(args,p)=>options.command(p,{operation:'acknowledge',requestId:args.request_id,identity:args.identity,noticeId:args.noticeId,consumerId:args.consumerId})),
   recover_approval:extension(HOST_SERVICE,'control',writeDescription('Only on explicit user request, retire one uncertain uncorrelated approval monitor marker for an exact session and turn. Read hub_sessions immediately first for request_id and expected_revision. This does not approve or deny the Codex permission, and fresh approval evidence can create a new marker.'),shape({request_id:requestString,identity,turn_id:id,expected_revision:count}),(args,p)=>options.command(p,{operation:'recover-approval',requestId:args.request_id,identity:args.identity,turnId:args.turn_id,expectedRevision:args.expected_revision}))
@@ -83,6 +87,19 @@ export function createHubMcp(options:Options):McpHandler {
    extensions.integration_cancel=extension(alias,'control',writeDescription('Explicitly cancel an earlier Nanoleaf integration_set by its original requestId. Check integration_receipt for the resulting outcome.'),shape({requestId:nativeTicket}),async args=>(await client.integrationCancel({apiVersion:'nanoleaf.integration/1.0',deviceId:bound.deviceId,requestId:args.requestId})).body);
   }
   registrations.push({controllerId:bound.controllerId,deviceId:alias,extensions});names.set(alias,toolPrefix(alias));
+ }
+ if(options.playback){
+  const playback=options.playback,sourceId=playback.sourceId;
+  // A receipt is the source's answer: sent was transmitted, failed was refused before any effect, uncertain may have taken effect.
+  const effects={sent:'confirmed-transmission',failed:'none',uncertain:'possible'} as const;
+  registrations.push({controllerId:'hub-playback',deviceId:sourceId,extensions:{
+   playback_status:extension(sourceId,'read',readDescription('Read this playback source\'s shared snapshot: availability, observation age, status, the title, artist and album it reports, and the controls it currently declares. A stale snapshot keeps its last values for context; an unavailable one has no playback. While paused, some sources, including the Sony HT-A9, keep reporting the previous title after next or previous until playback resumes.'),shape({}),()=>playback.snapshot()),
+   playback_command:extension(sourceId,'control',writeDescription('Send one playback action to this source. Only actions in the latest playback_status controls are accepted, and only while the source is available. Choose a new requestId for each intended action; repeating one returns its original receipt without another call.'),shape({requestId:id,action:{enum:['play','pause','next','previous']}}),async(args,p)=>{
+    const {body}=await playback.command(p,{requestId:args.requestId,sourceId,action:args.action});
+    return {...body,priorEffects:effects[body.outcome]};
+   })
+  }});
+  names.set(sourceId,toolPrefix(sourceId));
  }
  const registry=createDeviceRegistry(registrations);
  const tools=registrations.flatMap(r=>bindServiceTools(registry,{deviceId:r.deviceId,bindings:Object.keys(r.extensions!).map(extension=>({extension,name:names.get(r.deviceId)+'_'+extension}))}));

@@ -77,6 +77,33 @@ layout, coverage, element/project/task mapping and project colors. Pixoo control
 include monitor filters and cadence. Advanced editors remain links. The UI never
 translates these into a global mode or exposes raw commands.
 
+## Now playing
+
+[Hub #37](https://github.com/jimmie-potts/agent-device-hub/issues/37) adds a
+text-only Music entry when the dashboard context names a playback source, which
+happens only when the credential grants that source. Launcher sessions always
+have the grant. `PlaybackView` in `src/main.tsx` polls
+`/api/playback/v1/snapshot` every two seconds, matching the source's read
+cadence, and shows the title, artist, album, status, availability and
+observation age. A stale snapshot keeps its last values with a warning, an
+unavailable one shows no track, and `inactive` says AirPlay is not the receiver's
+input. There is no artwork ([#229](https://github.com/jimmie-potts/agent-device-hub/issues/229))
+and no source selection.
+
+`playbackControls` in `src/client.ts` decides the buttons. They are the actions
+the snapshot declares now, and they appear only for a control-scoped caller
+while the source is available. Otherwise the view names the one reason, then
+lists the actions the source does not offer, such as Play until
+[#242](https://github.com/jimmie-potts/agent-device-hub/issues/242). While
+paused, the Sony source offers Next and Previous, and the view warns that the
+receiver may keep the old title until playback resumes. Each press runs the
+shared command lifecycle. `playbackRequest` builds the command from a fresh
+read, bound to the displayed source ID with a new request ID, or sends nothing
+and names why. `playbackEvidence` maps the hub receipt: `sent` is accepted, a
+receiver refusal changes nothing, and `uncertain` locks until an explicit
+reload. Playback requests use their own API channel, so a playback command never
+supersedes an in-flight monitor read.
+
 ## General controls
 
 The component view offers power, brightness, saved-playlist selection, the
