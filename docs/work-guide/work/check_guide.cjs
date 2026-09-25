@@ -277,6 +277,97 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      await page.screenshot({path:path.join(root,'work/guide-brief-fallback-mobile.png')});
      await dialog.locator('.brief-close').click(); assert(await focusedOn(badge)); await page.evaluate(()=>{delete navigator.clipboard; delete navigator.clipboard.writeText;});
      assert.equal(await page.locator('#search').evaluate(e=>e.placeholder.length>0),true); assert(/task brief/i.test(await page.locator('.search-meta').textContent()),'Search hint explains that issue links open a brief');}
+    // Starting-session recommendations (#252): snapshot labels survive the live refresh, the brief shows the saved
+    // recommendation, and Implement copies a saved prompt only while the recommendation is current.
+    {const dialog=page.locator('#brief'), prompt=dialog.locator('#brief-prompt'), start=dialog.locator('.brief-start'), hint=dialog.locator('.brief-hint');
+     const recs=JSON.parse(sourceHtml.match(/<script id="issue-recommendations" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+     assert.deepEqual(Object.keys(recs).sort(),openKeys,'Every open snapshot story carries a recommendation state');
+     const staticLabels=Object.fromEntries([...sourceHtml.matchAll(/<p class="rec" data-key="([HNP]\d+)" data-rec="([a-z]+)"><span class="rec-key">Start<\/span> ([^<]*)<\/p>/g)].map(m=>[m[1],[m[2],m[3]]]));
+     const decode=text=>text.replace(/&quot;/g,'"').replace(/&#x27;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+     for(const [key,[state,label]] of Object.entries(staticLabels)){assert.equal(state,recs[key].state,`${key} snapshot label state`);assert.equal(decode(label),recs[key].label,`${key} snapshot label text`);}
+     // After the live refresh (awaited above), every rendered label, including cards rebuilt from GitHub, keeps its snapshot state and date.
+     const rendered=await page.locator('.rec').evaluateAll(es=>es.map(e=>[e.dataset.key,e.dataset.rec,e.textContent]));
+     assert(rendered.length>=primary.length,'Topic rows and opening cards carry a recommendation label');
+     for(const [key,state,text] of rendered){const rec=recs[key]||{state:'unassessed',label:'Not yet assessed'};assert.equal(state,rec.state,`${key} live label state`);assert.equal(text,`Start ${rec.label}`,`${key} live label text`);}
+     assert.equal(await page.locator('.work-card[data-key="H999"] .rec').first().textContent(),'Start Not yet assessed','A live-only issue is not yet assessed');
+     // Recommendations from the saved backlog when present, otherwise labeled fixtures injected into this page only.
+     const real=state=>Object.entries(recs).find(([,r])=>r.state===state&&(state!=='recommended'||r.prompts.cheaper));
+     const fixtureHosts={claude:{model:'Opus',identifier:'opus',thinking:'high',session:'Orchestrate',subagents:'<img src=x onerror="window.recInjected=1"> scouts',availability:'Verified: fixture host evidence',verified:true,checkpoints:null},
+                         codex:{model:'Sol',identifier:'gpt-6-sol',thinking:'high',session:'Orchestrate',subagents:'One Luna scout',availability:'Provisional: fixture',verified:false,checkpoints:null}};
+     const fixture={state:'recommended',label:'Orchestrate · Opus high / Sol high',date:'2026-09-24',policy:'agent-skills@fixture',evidence:'fixture',answer:'<b>fixture</b> answer & "quote"',hosts:fixtureHosts,
+       why:'fixture why',reassess:'fixture trigger',cheaper:'Fixture cheaper start.',ratings:{Complexity:'medium',Uncertainty:'medium',Impact:'high'},
+       prompts:{recommended:{claude:'FIXTURE claude recommended <b>',codex:'FIXTURE codex recommended'},cheaper:{claude:'FIXTURE claude cheaper',codex:'FIXTURE codex cheaper'}}};
+     const others=primary.filter(k=>k.startsWith('H')), pick=n=>others[n];
+     const cases={recommended:real('recommended')?.[0]||pick(0), plain:pick(1), insufficient:real('insufficient')?.[0]||pick(2), stale:pick(3), unavailable:pick(4)};
+     await page.evaluate(([cases,fixture,useReal])=>{const d=document.querySelector('#issue-recommendations'),j=JSON.parse(d.textContent);window.savedRecommendations=d.textContent;
+       if(!useReal.recommended)j[cases.recommended]=fixture;
+       j[cases.plain]={...fixture,cheaper:undefined,prompts:{...fixture.prompts,cheaper:null}};
+       if(!useReal.insufficient)j[cases.insufficient]={state:'insufficient',label:'Insufficient information',date:'2026-09-24',policy:'agent-skills@fixture',missing:'the fixture owner decision.',ratings:{}};
+       j[cases.stale]={state:'stale',label:'Needs reassessment (story text changed after 2026-09-20)',date:'2026-09-20',policy:'agent-skills@fixture',ratings:{}};
+       j[cases.unavailable]={state:'unavailable',label:'Assessment unavailable',reason:'unknown key "Rationale"',ratings:{}};
+       d.textContent=JSON.stringify(j);},[cases,fixture,{recommended:!!real('recommended'),insufficient:!!real('insufficient')}]);
+     const current=await page.evaluate(()=>JSON.parse(document.querySelector('#issue-recommendations').textContent));
+     const open=async key=>{await page.evaluate(k=>window.openBrief(k),key); assert(await dialog.evaluate(d=>d.open));};
+     const generic=key=>`Use the deliver-work skill to deliver ${issueMap[key].url}. If deliver-work isn't available here, say so and stop.`;
+     const noOverflow=async label=>{assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${label}: no page overflow`);assert(await dialog.evaluate(d=>d.scrollWidth<=d.clientWidth&&d.getBoundingClientRect().right<=innerWidth),`${label}: the brief fits`);};
+     await page.evaluate(()=>{try{localStorage.removeItem('guide-brief-host');}catch{}});
+     for(const width of [390,1440]){
+       await page.setViewportSize({width,height:width===390?844:1000});
+       const rec=current[cases.recommended];
+       await open(cases.recommended);
+       const text=await start.innerText();
+       assert(text.includes(rec.answer),'The answer line is text'); assert(/Claude Code/i.test(text)&&/Codex/i.test(text),'Both hosts are labeled');
+       for(const host of ['claude','codex']){assert(text.includes(rec.hosts[host].session),'Session type as text');assert(text.includes(`${rec.hosts[host].model} (${rec.hosts[host].identifier})`),'Model as text');assert(text.includes(rec.hosts[host].verified?'verified':'provisional'),'Availability label as text');}
+       assert((await start.locator('.brief-rec-state').textContent()).startsWith(`Recommended · assessed ${rec.date}`),'State, date and policy');
+       assert(/before pasting/.test(text),'The reader chooses the model and effort in the host');
+       assert.equal(await page.evaluate(()=>window.recInjected),undefined,'Recommendation text never executes'); assert.equal(await start.locator('img,b').count(),0,'Recommendation text stays literal');
+       await noOverflow(`Recommendation at ${width}`);
+       await dialog.screenshot({path:path.join(root,`work/guide-brief-recommendation-${width}.png`)});
+       for(const action of ['explain','plan','review']){await dialog.locator(`[data-action="${action}"]`).click(); assert(await dialog.locator('.brief-options').isHidden(),'Toggles belong to Implement'); assert(!(await prompt.inputValue()).includes('FIXTURE'),`${action} keeps its generic prompt`);}
+       await dialog.locator('[data-action="implement"]').click(); assert(await dialog.locator('.brief-options').isVisible());
+       if(width===390){assert.equal(await prompt.inputValue(),rec.prompts.recommended.claude,'Implement copies the saved Claude Code prompt');
+         await dialog.locator('button[data-host="codex"]').click();}
+       assert.equal(await dialog.locator('button[data-host="codex"]').getAttribute('aria-pressed'),'true',width===390?'Codex selected':'The host choice persists');
+       assert.equal(await prompt.inputValue(),rec.prompts.recommended.codex,'Implement copies the saved Codex prompt');
+       await dialog.locator('button[data-start="cheaper"]').click(); assert.equal(await prompt.inputValue(),rec.prompts.cheaper.codex,'Cheaper copies the saved cheaper prompt');
+       assert((await hint.textContent()).includes(rec.date));
+       await page.keyboard.press('Escape');
+       await open(cases.plain); await dialog.locator('[data-action="implement"]').click();
+       assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled without a cheaper start'); assert.equal(await dialog.locator('.brief-option-note').textContent(),'No cheaper start is recorded for this story.');
+       assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
+       await page.keyboard.press('Escape');
+       for(const [name,key,expect] of [['insufficient',cases.insufficient,/^Insufficient information/],['stale',cases.stale,/^Needs reassessment \(story text changed after 2026-09-20\)/],['unavailable',cases.unavailable,/^Assessment unavailable/],['unassessed','H999',/^Not yet assessed/]]){
+         await open(key); await dialog.locator('[data-action="implement"]').click();
+         assert.match(await start.locator('.brief-rec-state').textContent(),expect,`${name} state as text`);
+         assert(await dialog.locator('.brief-options').isHidden(),`${name}: no host or start toggles`); assert(await start.locator('.brief-hosts').isHidden(),`${name}: no host table`);
+         assert.equal(await prompt.inputValue(),key==='H999'?'Use the deliver-work skill to deliver https://github.com/jimmie-potts/agent-device-hub/issues/999. If deliver-work isn\'t available here, say so and stop.':generic(key),`${name} falls back to the generic prompt`);
+         assert.match(await hint.textContent(),/generic prompt/,`${name} notice`);
+         if(name==='insufficient'){assert((await start.locator('.brief-answer').textContent()).startsWith('Missing: '),'The missing input is shown'); if(width===390)await dialog.screenshot({path:path.join(root,'work/guide-brief-insufficient-390.png')});}
+         await noOverflow(`${name} at ${width}`); await page.keyboard.press('Escape');
+       }
+     }
+     // The details control is reachable by keyboard, and printing an open brief prints it with the details expanded.
+     await open(cases.recommended); await dialog.locator('.brief-link').focus(); await page.keyboard.press('Tab');
+     assert(await dialog.locator('.brief-why summary').evaluate(e=>e===document.activeElement),'Tab reaches the details control');
+     await page.keyboard.press('Enter'); assert(await dialog.locator('.brief-why').evaluate(e=>e.open),'Enter opens the details'); await page.keyboard.press('Enter');
+     assert.equal(await dialog.locator('.brief-why').evaluate(e=>e.open),false);
+     await page.evaluate(()=>window.dispatchEvent(new Event('beforeprint'))); await page.emulateMedia({media:'print'});
+     assert(await dialog.locator('.brief-why').evaluate(e=>e.open),'Print expands the details'); assert(await dialog.isVisible(),'Print shows the open brief'); assert.equal(await page.locator('.shell').isVisible(),false,'Print hides the page behind an open brief');
+     assert(await dialog.locator('.brief-why dd').first().isVisible()); await dialog.screenshot({path:path.join(root,'work/guide-brief-print.png')});
+     await page.evaluate(()=>window.dispatchEvent(new Event('afterprint'))); await page.emulateMedia({media:'screen'});
+     assert.equal(await dialog.locator('.brief-why').evaluate(e=>e.open),false,'Print restores the details'); await page.keyboard.press('Escape');
+     await page.evaluate(()=>{document.querySelector('#issue-recommendations').textContent=window.savedRecommendations;});
+     // Without storage the brief still works and falls back to Claude Code.
+     const noStorage=await browser.newPage({viewport:{width:390,height:844}}); await noStorage.route(/^https?:/,route=>route.abort());
+     await noStorage.addInitScript(()=>{Object.defineProperty(window,'localStorage',{configurable:true,get(){throw new DOMException('blocked','SecurityError');}});});
+     await noStorage.goto(pathToFileURL(file).href);
+     const firstRec=Object.keys(recs).find(k=>recs[k].state==='recommended')||cases.recommended;
+     if(recs[firstRec]?.state!=='recommended')await noStorage.evaluate(([k,f])=>{const d=document.querySelector('#issue-recommendations'),j=JSON.parse(d.textContent);j[k]=f;d.textContent=JSON.stringify(j);},[firstRec,fixture]);
+     await noStorage.evaluate(k=>window.openBrief(k),firstRec); await noStorage.locator('#brief [data-action="implement"]').click();
+     assert.equal(await noStorage.locator('#brief button[data-host="claude"]').getAttribute('aria-pressed'),'true','Blocked storage falls back to Claude Code');
+     await noStorage.locator('#brief button[data-host="codex"]').click(); assert.equal(await noStorage.locator('#brief button[data-host="codex"]').getAttribute('aria-pressed'),'true','The toggle works without storage');
+     await noStorage.close();
+     await page.setViewportSize({width:390,height:844});}
     // Exercise a real PDF from filtered, mixed expansion state, plus repeated print events.
     await page.locator('#collapse-all').click();await page.locator('#local-acceptance > summary').click();await page.locator('#search').fill('N30');
     await page.locator('#architecture > summary').click(); assert.equal(await page.locator('#architecture').getAttribute('open'),null,'Architecture collapsed before the print test');

@@ -17,4 +17,36 @@
 .brief-status{margin:0;font-size:12px;line-height:1.5;color:var(--muted)}
 .brief-status:not(:empty){margin-top:10px}
 @media(max-width:600px){.brief-body{padding:18px 16px}.brief-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.brief h2{font-size:17px}}
-@media print{.brief{display:none!important}}
+/* Starting-session recommendation: text states, never color alone. */
+.rec{margin:6px 0 0;font:11px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.rec-key{color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-right:4px}
+.rec[data-rec="recommended"]{color:var(--text)}
+.brief-start{margin:18px 0 0;padding:14px;border:1px solid var(--edge);border-radius:var(--radius);background:var(--inset)}
+.brief-start h3{margin:0 0 6px;font:10px/1.5 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.brief-start p{margin:0 0 8px;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.brief-rec-state{color:var(--text);font-weight:600}
+.brief-ratings,.brief-choose{color:var(--muted)}
+.brief-hosts{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:12px;line-height:1.5;table-layout:fixed}
+.brief-hosts th,.brief-hosts td{padding:6px 8px;border:1px solid var(--edge);text-align:left;vertical-align:top;overflow-wrap:anywhere}
+.brief-hosts thead th{font:10px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.brief-hosts tbody th{width:28%;font-weight:500;color:var(--muted)}
+.brief-avail{display:block;text-transform:none;letter-spacing:0;color:var(--muted)}
+.brief-cell-host{display:none}
+.brief-why{font-size:12px;line-height:1.6}
+.brief-why summary{cursor:pointer;color:var(--accent)}
+.brief-why summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.brief-why dl{margin:8px 0 0}.brief-why dt{font-weight:600;margin-top:6px}.brief-why dd{margin:0;overflow-wrap:anywhere}
+.brief-options{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:0 0 10px}
+.brief-toggle{display:inline-flex;gap:4px}
+.brief-toggle button{font-size:11px;padding:4px 8px}
+.brief-toggle button[aria-pressed="true"]{border-color:var(--accent);background:var(--raised)}
+.brief-toggle button:disabled{opacity:.55;cursor:not-allowed}
+.brief-option-note{flex-basis:100%;margin:0;color:var(--muted);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.brief-option-note:empty{display:none}
+[hidden].brief-options,.brief-start [hidden]{display:none!important}
+@media(max-width:600px){.brief-hosts thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.brief-hosts,.brief-hosts tbody,.brief-hosts tr,.brief-hosts th,.brief-hosts td{display:block;width:auto}.brief-hosts tr{margin-bottom:8px}.brief-hosts tbody th{width:auto;border-bottom:0}.brief-cell-host{display:inline;font:10px/1.5 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}}
+@media print{.brief:not([open]){display:none!important}
+ body:has(#brief[open]) .shell{display:none!important}
+ .brief[open]{position:absolute;inset:0 auto auto 0;width:100%;max-width:none;max-height:none;margin:0;overflow:visible;border:0}
+ .brief[open]::backdrop{display:none}
+ .brief-actions,.brief-options,.brief-foot,.brief-status{display:none!important}}

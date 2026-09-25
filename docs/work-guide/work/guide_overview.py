@@ -5,7 +5,7 @@ import guide_status as GS
 from guide_paths import NEXT_STEPS, DECISIONS, OWNER_LATER, WORKAROUNDS
 
 
-def render_overview(issues, dependencies, as_of, owners, titles, issue_link, gate_text):
+def render_overview(issues, dependencies, as_of, owners, titles, issue_link, gate_text, recommendation):
     selected = GS.overview_keys(issues, as_of)
     def card(key, description=None):
         issue = issues[key]
@@ -17,7 +17,7 @@ def render_overview(issues, dependencies, as_of, owners, titles, issue_link, gat
         qualifiers.extend(priority)
         guide = owners[key]
         return (f'<article class="work-card" data-key="{key}"><h3>{html.escape(issue["title"])}</h3>'
-                + issue_link(key) + f'<p class="work-meta">Created <time datetime="{issue["createdAt"]}">{issue["createdAt"][:10]}</time> UTC'
+                + issue_link(key) + recommendation(key) + f'<p class="work-meta">Created <time datetime="{issue["createdAt"]}">{issue["createdAt"][:10]}</time> UTC'
                 + (f' · {html.escape(" · ".join(qualifiers))}' if qualifiers else '') + '</p>'
                 + (f'<p>{html.escape(description)}</p>' if description else '')
                 + f'<p class="work-gate">{gate_text(key)}</p>'

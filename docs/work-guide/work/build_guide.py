@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skins'))
 import skin as SKIN  # noqa: E402  shared token files, theme and motion controls
 import architecture_diagrams as AD  # noqa: E402  diagram definitions and rendered-file layout
 import guide_status as GS
+import recommendations as REC
 from guide_details import DETAILS
 from guide_paths import PATHS, TOPICS, ALIASES, OWNER_LATER, NEXT_STEPS, DECISIONS, WORKAROUNDS, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
@@ -32,6 +33,8 @@ for key, (repo, _) in REPOS.items():
         ISSUES[f'{key}{issue["number"]}'] = issue
 
 DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
+# Saved Execution recommendation sections, read strictly from the snapshot bodies.
+RECOMMENDATIONS = {key: REC.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
 
 # The catalog holds reading paths; the saved coverage owns each open issue once.
 coverage = json.loads((ROOT / 'work/backlogs/guide-coverage.json').read_text())
@@ -130,8 +133,11 @@ for index, guide in enumerate(GUIDES, 1):
         destination = closed if owners and all(ISSUES[key]['state'] == 'CLOSED' for key in owners) else remaining
         # The issue chip owns status; avoid repeating "Completed" in row labels.
         row = [row[0], row[1], DETAILS.get(owners[0], '') + '<p>' + gate_text(owners[0]) + '</p>']
-        cells = [re.sub(r'^Completed(?: / | )', '', cell) for cell in row]
-        destination.append('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{render(cell)}</td>' for n, cell in enumerate(cells)) + '</tr>')
+        cells = [render(re.sub(r'^Completed(?: / | )', '', cell)) for cell in row]
+        # The starting-session label is added after link rendering so its text stays literal.
+        if owners[0] in RECOMMENDATIONS:
+            cells[-1] += REC.label_html(owners[0], RECOMMENDATIONS[owners[0]])
+        destination.append('<tr>' + ''.join(f'<td data-label="{guide["headers"][n]}">{cell}</td>' for n, cell in enumerate(cells)) + '</tr>')
     def table(rows, caption):
         return f'<table><caption class="sr-only">{guide["title"]}: {caption}</caption><thead><tr>{headings}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
     work = '<h3 class="work-heading">Remaining work</h3>' + table(remaining, 'remaining work and dependencies') if remaining else '<p class="all-done">No open stories owned by this guide.</p>'
@@ -164,7 +170,8 @@ for index, guide in enumerate(GUIDES, 1):
 from guide_overview import render_overview
 owners = {key: guide for guide, keys in coverage.items() for key in keys}
 overview = render_overview(ISSUES, DEPENDENCIES, SNAPSHOT['refreshedAt'], owners,
-                           {g['id']: g['short'] for g in GUIDES}, issue_link, gate_text)
+                           {g['id']: g['short'] for g in GUIDES}, issue_link, gate_text,
+                           lambda key: REC.label_html(key, RECOMMENDATIONS[key]))
 archive_groups = []
 for group in ARCHIVE['groups']:
     rows = ''.join('<tr>' + ''.join('<td>' + render(cell) + '</td>' for cell in row) + '</tr>' for row in group['rows'])
@@ -466,11 +473,65 @@ JS = '''
    review: [url => `Review the open pull request for ${url}. If there isn't exactly one, ask me which revision to review. Read-only: report findings without changing files or GitHub.`,
             'Read-only findings on the open pull request.'],
  };
- let action = 'explain', issue = null, opener = null;
+ // Starting-session recommendations come from the snapshot. Live reads never add
+ // or refresh one: a story absent from the snapshot is not yet assessed.
+ const HOSTS = {claude:'Claude Code', codex:'Codex'};
+ const ROWS = [['Model',h=>`${h.model} (${h.identifier})`],['Thinking level',h=>h.thinking],['Session type',h=>h.session],['Subagents',h=>h.subagents],['Checkpoints',h=>h.checkpoints]];
+ const NOTICES = {stale:'The story changed after this recommendation was saved, so Implement uses the generic prompt.',
+   insufficient:'Implement uses the generic prompt until the missing input is recorded.',
+   unassessed:'No starting session is recorded for this story. Implement uses the generic prompt.',
+   unavailable:'The saved section could not be read, so Implement uses the generic prompt.'};
+ const start = dialog.querySelector('.brief-start'), hostTable = start.querySelector('.brief-hosts'), why = start.querySelector('.brief-why');
+ const hostButtons = [...dialog.querySelectorAll('button[data-host]')], startButtons = [...dialog.querySelectorAll('[data-start]')];
+ const options = dialog.querySelector('.brief-options'), optionNote = dialog.querySelector('.brief-option-note');
+ const readHost = () => { try { const saved = localStorage.getItem('guide-brief-host'); return saved in HOSTS ? saved : 'claude'; } catch { return 'claude'; } };
+ const saveHost = value => { try { localStorage.setItem('guide-brief-host', value); } catch {} };
+ const element = (tag, text, attributes = {}) => { const node = document.createElement(tag); node.textContent = text; Object.entries(attributes).forEach(([k, v]) => node.setAttribute(k, v)); return node; };
+ const recommendationFor = key => JSON.parse(document.querySelector('#issue-recommendations').textContent)[key] || {state:'unassessed', label:'Not yet assessed', ratings:{}};
+ function showRecommendation(rec) {
+   const current = rec.state === 'recommended';
+   start.dataset.rec = rec.state;
+   const provenance = rec.date ? ` · assessed ${rec.date}${rec.policy ? ` · policy ${rec.policy}` : ''}` : '';
+   start.querySelector('.brief-rec-state').textContent = current ? `Recommended${provenance}` : `${rec.label}${rec.state === 'stale' ? '' : provenance}. ${NOTICES[rec.state]}`;
+   const ratings = Object.entries(rec.ratings || {});
+   start.querySelector('.brief-ratings').textContent = ratings.length ? 'Assessment: ' + ratings.map(([name, level]) => `${name} ${level}`).join(' · ') : 'Assessment ratings are not recorded in the story.';
+   start.querySelector('.brief-answer').textContent = current ? rec.answer : rec.state === 'insufficient' ? `Missing: ${rec.missing}` : rec.state === 'unavailable' ? `Reason: ${rec.reason}` : '';
+   hostTable.hidden = !current; start.querySelector('.brief-choose').hidden = !current;
+   const body = hostTable.querySelector('tbody'); body.replaceChildren();
+   if (current) {
+     for (const [name, value] of ROWS) {
+       if (name === 'Checkpoints' && !Object.keys(HOSTS).some(key => rec.hosts[key].checkpoints)) continue;
+       const row = document.createElement('tr'); row.append(element('th', name, {scope:'row'}));
+       Object.entries(HOSTS).forEach(([host, label]) => { const cell = element('td', value(rec.hosts[host]) || 'None'); cell.prepend(element('span', `${label}: `, {class:'brief-cell-host'})); row.append(cell); });
+       body.append(row);
+     }
+     Object.keys(HOSTS).forEach(host => { hostTable.querySelector(`.brief-avail[data-avail="${host}"]`).textContent = rec.hosts[host].verified ? 'verified' : 'provisional'; });
+   }
+   const details = why.querySelector('dl'); details.replaceChildren();
+   const entries = [['Why', rec.why], ...(current ? Object.entries(HOSTS).map(([host, label]) => [`${label} availability`, rec.hosts[host].availability]) : []), ['Reassess when', rec.reassess], ['Evidence', rec.evidence], ...(rec.cheaper ? [['Cheaper start', rec.cheaper]] : [])].filter(([, value]) => value);
+   entries.forEach(([term, value]) => details.append(element('dt', term), element('dd', value)));
+   why.hidden = !entries.length; why.open = false;
+ }
+ let action = 'explain', issue = null, opener = null, rec = null, host = readHost(), begin = 'recommended';
  const show = () => {
    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.action === action)));
+   const current = rec.state === 'recommended', custom = action === 'implement' && current;
+   const cheaper = current && rec.prompts.cheaper;
+   if (!cheaper) begin = 'recommended';
+   options.hidden = !custom;
+   hostButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.host === host)));
+   startButtons.forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.start === begin)); if (b.dataset.start === 'cheaper') b.disabled = !cheaper; });
+   optionNote.textContent = cheaper ? (begin === 'cheaper' ? rec.cheaper : '') : 'No cheaper start is recorded for this story.';
    const [build, text] = ACTIONS[action];
-   prompt.value = build(issue.url, issue.title); hint.textContent = text; status.textContent = '';
+   if (custom) {
+     const session = rec.hosts[host].session;
+     prompt.value = rec.prompts[begin][host];
+     hint.textContent = `Saved ${HOSTS[host]} prompt from the story's recommendation, ${rec.date}. ` + (session === 'Investigate first' && begin === 'recommended' ? 'It starts a read-only investigation; the story is reassessed before implementation.' : 'It runs to a merged PR and a closed issue unless it says otherwise.');
+   } else {
+     prompt.value = build(issue.url, issue.title);
+     hint.textContent = action === 'implement' ? `${rec.label}: generic prompt. ${text}` : text;
+   }
+   status.textContent = '';
  };
  // Returns false for a key without brief data, so callers can fall back to the issue link.
  window.openBrief = (key, from = document.activeElement) => {
@@ -482,6 +543,8 @@ JS = '''
    dialog.querySelector('.brief-number').textContent = `#${number}`;
    dialog.querySelector('#brief-title').textContent = title;
    dialog.querySelector('.brief-link').href = url;
+   rec = recommendationFor(key); begin = 'recommended';
+   showRecommendation(rec);
    show();
    opener = from;
    if (!dialog.open) dialog.showModal();
@@ -489,6 +552,12 @@ JS = '''
    return true;
  };
  buttons.forEach(b => b.addEventListener('click', () => { action = b.dataset.action; show(); }));
+ hostButtons.forEach(b => b.addEventListener('click', () => { host = b.dataset.host; saveHost(host); show(); }));
+ startButtons.forEach(b => b.addEventListener('click', () => { if (!b.disabled) { begin = b.dataset.start; show(); } }));
+ // Printing an open brief prints it with its details expanded, then restores them.
+ let whyWasOpen = null;
+ window.addEventListener('beforeprint', () => { if (dialog.open && whyWasOpen === null) { whyWasOpen = why.open; why.open = true; } });
+ window.addEventListener('afterprint', () => { if (whyWasOpen !== null) why.open = whyWasOpen; whyWasOpen = null; });
  dialog.querySelector('.brief-copy').addEventListener('click', async () => {
    const manual = () => { prompt.focus(); prompt.setSelectionRange(0, prompt.value.length); status.textContent = 'Copying is blocked here. The prompt is selected; copy it manually.'; };
    if (!navigator.clipboard?.writeText) return manual();
@@ -625,7 +694,12 @@ document = '''<!doctype html>
 </main></div>
 <dialog id="brief" class="brief" aria-labelledby="brief-title"><div class="brief-body">
 <header class="brief-head"><p class="eyebrow"><span class="brief-repo"></span><span class="brief-number"></span></p><h2 id="brief-title"></h2><a class="brief-link" target="_blank" rel="noopener noreferrer">Open the issue in GitHub ↗</a></header>
+<section class="brief-start" aria-labelledby="brief-start-title"><h3 id="brief-start-title">Start with</h3><p class="brief-rec-state"></p><p class="brief-ratings"></p><p class="brief-answer"></p>
+<table class="brief-hosts"><caption class="sr-only">Starting session per host</caption><thead><tr><td></td><th scope="col">Claude Code<span class="brief-avail" data-avail="claude"></span></th><th scope="col">Codex<span class="brief-avail" data-avail="codex"></span></th></tr></thead><tbody></tbody></table>
+<p class="brief-choose">Choose the model and effort in your host before pasting. The agent can confirm the model but not the thinking level.</p>
+<details class="brief-why"><summary>Why, availability and when to reassess</summary><dl></dl></details></section>
 <div class="brief-actions" role="group" aria-label="Agent action"><button type="button" data-action="explain" aria-pressed="true">Explain</button><button type="button" data-action="plan" aria-pressed="false">Plan</button><button type="button" data-action="implement" aria-pressed="false">Implement</button><button type="button" data-action="review" aria-pressed="false">Review</button></div>
+<div class="brief-options"><div class="brief-toggle" role="group" aria-label="Host"><button type="button" data-host="claude" aria-pressed="true">Claude Code</button><button type="button" data-host="codex" aria-pressed="false">Codex</button></div><div class="brief-toggle" role="group" aria-label="Start"><button type="button" data-start="recommended" aria-pressed="true">Recommended</button><button type="button" data-start="cheaper" aria-pressed="false">Cheaper</button></div><p class="brief-option-note"></p></div>
 <p class="brief-hint"></p><label class="brief-label" for="brief-prompt">Prompt for a Codex or Claude session</label><textarea id="brief-prompt" rows="5" readonly spellcheck="false"></textarea>
 <div class="brief-foot"><button type="button" class="brief-copy">Copy prompt</button><button type="button" class="brief-close">Close</button></div><p class="brief-status" role="status" aria-live="polite"></p>
 </div></dialog><script>''' + JS + '''</script></body></html>'''
@@ -648,8 +722,9 @@ assert not re.search(r'@@[A-Z_]+@@', document), 'Unresolved document metadata'
 metadata_json = json.dumps(METADATA, ensure_ascii=False).replace('<', r'\u003c')
 referenced = set(re.findall(r'data-issue="([HNP]\d+)"', document))
 briefs_json = json.dumps({key: [ISSUES[key]['url'], ISSUES[key]['title']] for key in sorted(referenced)}, ensure_ascii=False).replace('<', r'\u003c')
+recommendations_json = json.dumps({key: REC.brief(RECOMMENDATIONS[key]) for key in sorted(RECOMMENDATIONS)}, ensure_ascii=False).replace('<', r'\u003c')
 assert document.count('</dialog><script>') == 1, 'Page script anchor missing'
-document = document.replace('</dialog><script>', f'</dialog><script id="snapshot-data" type="application/json">{metadata_json}</script><script id="issue-briefs" type="application/json">{briefs_json}</script><script>')
+document = document.replace('</dialog><script>', f'</dialog><script id="snapshot-data" type="application/json">{metadata_json}</script><script id="issue-briefs" type="application/json">{briefs_json}</script><script id="issue-recommendations" type="application/json">{recommendations_json}</script><script>')
 assert set(all_primary) <= referenced
 assert document.count('class="diagram"') == len(AD.DIAGRAMS) and document.count('<details class="guide"') == len(GUIDES)
 assert 'src="http' not in document and 'href="http' not in re.sub(r'href="https://github\.com/[^"]*"', '', document), 'Only GitHub links may leave the document'
