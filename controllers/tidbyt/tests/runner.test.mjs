@@ -119,6 +119,21 @@ test('runner consumes a real owner feed through its queue and stops without dele
   acquireWriterLease('device',join(s.dir,'locks'))();
 });
 
+test('runner exposes its one controller through the package runner export', async t=>{
+  const s=privateSetup(t);
+  const exported=await import('@jimmie-potts/tidbyt-controller/runner');
+  assert.equal(exported.startStatusRunner,startStatusRunner);
+  const connection={capabilities:{backend:'tidbyt-cloud',backgroundPush:{supported:true},foregroundPush:{supported:false},installationRead:{supported:true},installationRemove:{supported:true}},
+    async push(){return {outcome:'sent'};},async remove(){return {outcome:'sent'};},async readInstallation(){return {ok:true,present:false};}};
+  const runner=startStatusRunner(loadRunnerConfig(s.configFile),{connection,leaseRoot:join(s.dir,'locks')});t.after(()=>runner.stop());
+  const {controller}=runner.controller.snapshot();
+  assert.deepEqual([controller.identity.controllerId,controller.identity.deviceId,controller.identity.sourceId],['tidbyt-status','tidbyt','tidbyt-cloud']);
+  const receipt=runner.controller.submit({apiVersion:'1.0',controllerId:'tidbyt-status',deviceId:'tidbyt',requestId:controller.nextRequestId,
+    expectedConfigurationRevision:controller.configurationRevision,expectedGeneration:controller.generation,command:{kind:'power.set',on:false}});
+  assert.equal(receipt.decision,'unsupported-capability');
+  await runner.stop();
+});
+
 import { HubPlaybackFeed, runnerConnection } from '../dist/runner.js';
 
 const playbackSnapshot=(extra={})=>({apiVersion:'1.0',sourceId:'ht-a9',availability:'available',observedAtMs:Date.now(),ageMs:400,

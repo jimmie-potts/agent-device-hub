@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && npm run build:dashboard",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -58,7 +58,9 @@
     "test:performance:standalone": "/usr/bin/python3 -B -m unittest discover -s tests/performance_standalone -v && node --test tests/standalone_report.test.mjs",
     "qualify:standalone": "/usr/bin/python3 -B scripts/performance/standalone.py",
     "test:lifx": "npm run build && npm run test:lifx:built",
-    "test:lifx:built": "node --test controllers/lifx/tests/*.test.mjs"
+    "test:lifx:built": "node --test controllers/lifx/tests/*.test.mjs",
+    "test:local-controllers": "npm run build && npm run test:local-controllers:built",
+    "test:local-controllers:built": "node --test apps/local-controllers/tests/*.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -79,7 +81,8 @@
     "packages/agent-state",
     "apps/hub",
     "controllers/tidbyt",
-    "controllers/lifx"
+    "controllers/lifx",
+    "apps/local-controllers"
   ],
   "dependencies": {
     "react": "19.3.0",
