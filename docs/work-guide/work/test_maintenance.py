@@ -40,7 +40,8 @@ class GuideMaintenance(unittest.TestCase):
         self.assertEqual(check.color_literals('/* #fff */\n.a{outline:1px solid Black;color:transparent}', '.css'), [(2, 'Black')])
         # Fragment ids that happen to look like hex are not colors; a hex attribute value still is.
         self.assertEqual(check.color_literals('.a{fill:url(#fade)}<a href="#dead">x</a><use href=\'#cafe\'/>', '.css'), [])
-        self.assertEqual(check.color_literals("document.querySelector('#face');q(\"#bead\");", '.js'), [])
+        self.assertEqual(check.color_literals("document.querySelector('#face');root.querySelectorAll(\"#bead\");", '.js'), [])
+        self.assertEqual(check.color_literals("paint('#ffcc00');tint(\"#bead\")", '.js'), [(1, '#bead'), (1, '#ffcc00')])
         self.assertEqual(check.color_literals('<path fill="#abc" stroke="#face"/>', '.css'), [(1, '#abc'), (1, '#face')])
         with tempfile.TemporaryDirectory(prefix='guide-tokens-') as directory:
             root = Path(directory)

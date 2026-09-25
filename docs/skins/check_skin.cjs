@@ -32,7 +32,10 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     for (let attempt = 1; ; attempt++) {
       await page.reload();
       const settled = await page.evaluate(([key, attribute, value]) => localStorage.getItem(key) === value && (document.documentElement.dataset[attribute] ?? null) === value, [key, attribute, value]);
-      if (settled || attempt >= 20) return;
+      if (settled) return;
+      // Diagnostics for a hosted runner: what the fresh document actually sees on each retry.
+      console.log(JSON.stringify({retry: attempt, key, value, url: page.url(), storage: await page.evaluate(() => Object.entries(localStorage)), attribute: await page.evaluate(a => document.documentElement.dataset[a] ?? null, attribute)}));
+      if (attempt >= 20) return;
       await page.waitForTimeout(100);
     }
   };
@@ -134,7 +137,10 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     return {skin: SKIN, themeToggleAndPersistence: 'passed', systemPreferenceFallback: 'passed', pauseAndResume: 'passed',
             reducedMotion: 'passed', decorationOutOfTheWay: 'passed', printWithoutDecoration: 'passed', layouts};
   } finally {
-    for (const context of contexts) await context.close();
+    // The contexts stay open until the caller closes the browser. Chromium keeps file:// storage in
+    // one shared area, and closing a context can purge it while a later context on the same browser
+    // is still writing, which lost a stored theme on a hosted runner.
+    void contexts;
   }
 }
 
