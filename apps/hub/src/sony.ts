@@ -32,8 +32,10 @@ function sonyObservation(result:unknown[]):PlaybackObservation {
   const state = object(entry.stateInfo) ? entry.stateInfo.state : undefined;
   const status = typeof state === 'string' && Object.hasOwn(STATES,state) ? STATES[state] : 'unknown';
   const title = text(entry.title), artist = text(entry.artist), album = text(entry.albumName);
-  // Controls were qualified only while AirPlay was playing; play/resume was not qualified.
-  return {status,...(title ? {title} : {}),...(artist ? {artist} : {}),...(album ? {album} : {}),controls:status === 'playing' ? ['pause','next','previous'] : []};
+  // Pause, next and previous were qualified while playing (#158). The owner's 2026-09-25 live check (#37) qualified next and previous
+  // while paused: the phone changes track without resuming, but the receiver keeps reporting the old title. Play/resume is not qualified.
+  const controls:PlaybackAction[] = status === 'playing' ? ['pause','next','previous'] : status === 'paused' ? ['next','previous'] : [];
+  return {status,...(title ? {title} : {}),...(artist ? {artist} : {}),...(album ? {album} : {}),controls};
 }
 
 export function createSonySource(config:SonyConfiguration,options:{pollMs?:number; timeoutMs?:number} = {}) {

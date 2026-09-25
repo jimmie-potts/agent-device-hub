@@ -4,6 +4,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {createServer} from 'node:http';
 import {startHub} from '../dist/server.js';
 
 const token='a'.repeat(43), hash=value=>createHash('sha256').update(value).digest('hex');
@@ -320,4 +321,73 @@ test('staged owner permits inspection but rejects MCP state mutation',async t=>{
  assert.equal(view.snapshot.collector,'quiesced');
  const result=await c.call('hub_label',{request_id:view.nextRequestId,identity:event.identity,label:'chosen'});
  assert.equal(result.structuredContent.data.code,'owner-quiesced');assert.equal(result.structuredContent.data.priorEffects,'none');
+});
+
+// A fake Sony receiver for the playback tools. `mode` switches commands between accepted, refused and unanswered.
+async function receiver(t){
+ const calls=[];let state='PLAYING',mode='sent';
+ const server=createServer(async(req,res)=>{
+  let text='';for await(const chunk of req)text+=chunk;const request=JSON.parse(text);
+  if(request.method!=='getPlayingContentInfo'){calls.push(request.method);if(mode==='hang')return;}
+  const body=request.method==='getPlayingContentInfo'?{result:[[{source:'extInput:airPlay',stateInfo:{state},title:'Song',artist:'Artist'}]]}:mode==='failed'?{error:[40000,'refused']}:{result:[]};
+  res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:request.id,...body}));
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));
+ return {calls,endpoint:`http://127.0.0.1:${server.address().port}/sony`,set:(next={})=>{state=next.state??state;mode=next.mode??mode;}};
+}
+const playbackConfig=endpoint=>({selected:'living-room',sources:[{id:'living-room',kind:'sony',endpoint}]});
+const playbackTools=async c=>(await c.rpc('tools/list',{})).body.result.tools.map(tool=>tool.name).filter(name=>name.includes('_playback_')).sort();
+async function available(c,status){for(let i=0;i<100;i++){const view=(await c.call(status)).structuredContent?.data?.result;if(view?.availability==='available')return view;await new Promise(r=>setTimeout(r,50));}throw new Error('playback never became available');}
+test('playback tools are bound to the configured source and listed only for granted credentials',async t=>{
+ const sony=await receiver(t),readerToken='r'.repeat(43),otherToken='o'.repeat(43);
+ const operator={...credential,devices:['living-room']},reader={...operator,id:'reader',digest:hash(readerToken),scopes:['read']},other={...credential,id:'other',digest:hash(otherToken)};
+ const hub=await fixture(t,{credentials:[operator,reader,other],playback:playbackConfig(sony.endpoint)});
+ const c=client(hub),read=client(hub,readerToken),none=client(hub,otherToken);await c.initialize();await read.initialize();await none.initialize();
+ const [command,status]=await playbackTools(c);
+ assert.match(status,/^device_living_room_[a-f0-9]{16}_playback_status$/);assert.equal(command,status.replace(/status$/,'command'));
+ const tools=(await c.rpc('tools/list',{})).body.result.tools;
+ assert.deepEqual(Object.keys(tools.find(tool=>tool.name===command).inputSchema.properties).sort(),['action','requestId'],'the source is bound by the tool, never an argument');
+ assert.deepEqual(await playbackTools(read),[status]);assert.deepEqual(await playbackTools(none),[]);
+ const discovered=async who=>(await who.call('hub_devices')).structuredContent.data.result.playback;
+ assert.deepEqual(await discovered(c),{sourceId:'living-room',toolPrefix:status.replace(/_playback_status$/,'')});
+ assert.deepEqual(await discovered(read),{sourceId:'living-room',toolPrefix:status.replace(/_playback_status$/,'')});assert.equal(await discovered(none),undefined);
+ const view=await available(c,status);
+ assert.deepEqual([view.sourceId,view.playback.title,view.playback.controls],['living-room','Song',['pause','next','previous']]);
+ const first=await c.call(command,{requestId:'m1',action:'next'}),again=await c.call(command,{requestId:'m1',action:'next'});
+ const receipt={requestId:'m1',sourceId:'living-room',action:'next',outcome:'sent',priorEffects:'confirmed-transmission'};
+ assert.deepEqual([first.isError,first.structuredContent.data.result,again.structuredContent.data.result],[false,receipt,receipt]);
+ assert.deepEqual(sony.calls,['setPlayNextContent'],'a repeated request ID returns the original receipt');
+ for(const [who,name,args] of [[read,command,{requestId:'m2',action:'pause'}],[none,status,{}],[none,command,{requestId:'m2',action:'pause'}]]){
+  const denied=await who.call(name,args);assert.deepEqual([denied.isError,denied.structuredContent.code],[true,'forbidden']);
+ }
+ hub.replaceCredentials([{...operator,devices:[]},reader,other]);
+ assert.deepEqual(await playbackTools(c),[]);
+ assert.equal((await c.call(command,{requestId:'m3',action:'pause'})).structuredContent.code,'forbidden');
+ assert.deepEqual(sony.calls,['setPlayNextContent']);
+});
+test('playback tool rejections are typed, uncertain results are not retried and staged hubs refuse commands',async t=>{
+ const sony=await receiver(t),operator={...credential,devices:['living-room']};
+ const hub=await fixture(t,{credentials:[operator],playback:playbackConfig(sony.endpoint)});
+ const c=client(hub);await c.initialize();const [command,status]=await playbackTools(c);await available(c,status);
+ const code=async args=>{const result=await c.call(command,args);return [result.isError,result.structuredContent.data.code,result.structuredContent.data.priorEffects];};
+ assert.deepEqual(await code({requestId:'r1',action:'play'}),[true,'unsupported-control','none']);
+ assert.equal((await c.call(command,{requestId:'r1',action:'pause',sourceId:'kitchen'})).isError,true,'a target override is refused by the schema');
+ sony.set({mode:'failed'});
+ const refused=await c.call(command,{requestId:'r2',action:'previous'});
+ assert.deepEqual([refused.isError,refused.structuredContent.data.result],[true,{requestId:'r2',sourceId:'living-room',action:'previous',outcome:'failed',priorEffects:'none'}]);
+ sony.set({mode:'hang'});
+ const uncertain=await c.call(command,{requestId:'r3',action:'pause'});
+ assert.deepEqual([uncertain.isError,uncertain.structuredContent.data.result],[true,{requestId:'r3',sourceId:'living-room',action:'pause',outcome:'uncertain',priorEffects:'possible'}]);
+ assert.deepEqual(sony.calls,['setPlayPreviousContent','pausePlayingContent'],'nothing is retried');
+ sony.set({state:'PAUSED',mode:'sent'});
+ for(let i=0;i<100&&(await c.call(status)).structuredContent.data.result.playback?.status!=='paused';i++)await new Promise(r=>setTimeout(r,50));
+ assert.deepEqual(await code({requestId:'r4',action:'pause'}),[true,'unsupported-control','none']);
+ const directory=await mkdtemp(join(tmpdir(),'hub-mcp-playback-staged-'));
+ const staged=await startHub({directory,ownerId:'owner',consumers:[],controllers:[],credentials:[operator],mcp:true,playback:playbackConfig(sony.endpoint)},{staged:true});
+ t.after(async()=>{await staged.close();await rm(directory,{recursive:true,force:true});});
+ const s=client(staged);await s.initialize();await available(s,status);
+ const result=await s.call(command,{requestId:'s1',action:'next'});
+ assert.deepEqual([result.structuredContent.data.code,result.structuredContent.data.priorEffects],['owner-quiesced','none']);
+ assert.deepEqual(sony.calls,['setPlayPreviousContent','pausePlayingContent']);
 });

@@ -543,6 +543,21 @@ read after an accepted command keeps its receipt, and a double click sends one
 command. The app's reads resolve with an error record rather than rejecting, so
 the rejected-promise paths are covered by the unit tests. The existing Dashboard CI job runs both; no new job is needed.
 
+Hub #37 adds a now-playing matrix scenario with a fake Sony receiver behind the
+fixture's hub. It covers only declared controls (no Play), one Next command,
+paused Next/Previous with the stale-title note, a receiver refusal, an uncertain
+result that locks without retry, a read-only credential, stale and unavailable
+snapshots, and the view disappearing with no further playback reads once the
+grant is removed. Client unit tests cover the button and reason rules, the
+fresh-read command builder and the receipt mapping. The hub's `playback.test.mjs`
+covers the launcher session's playback grant, the context field and the paused
+Sony declaration. `mcp.test.mjs` covers the source-bound playback tools:
+discovery by scope and grant, `hub_devices`, duplicate request IDs, typed
+rejections, uncertain results, credential changes and a staged hub. The existing
+Hub, MCP and Dashboard jobs run all of them. None contacts a receiver; the
+2026-09-25 paused-state live check and installed acceptance are recorded on the
+issue. Human UI approval of the candidate is recorded in its PR.
+
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`

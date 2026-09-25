@@ -253,7 +253,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           launchCodes.delete(input.code);
           if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
           const token=randomBytes(32).toString('base64url');
-          const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys()]};
+          const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};
           browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
           json(res,200,{token,expiresInSeconds:8*60*60});return;
         }
@@ -269,7 +269,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(source && principal.devices.includes(source.id) ? {playback:{sourceId:source.id}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
@@ -333,7 +333,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
-    },sessions,command});
+    },sessions,command,...(source ? {playback:{sourceId:source.id,
+      // MCP is mounted before playback starts; until then the source is unavailable and nothing is sent.
+      snapshot:() => {if (!playback) throw new HttpError('source-unavailable',503);return playback.snapshot();},
+      command:async (principal:Credential,input:unknown) => {
+        // Like the HTTP route: a staged migration destination must not become a second playback writer.
+        if (staged) throw new HttpError('owner-quiesced',503);
+        if (!playback) throw new HttpError('source-unavailable',503);
+        return playback.command(input,principal);
+      }}} : {})});
     closeBrowserLaunch=await startBrowserLaunch(options.directory,issueLaunch);
   } catch(error) {
     clearInterval(feedTimer);unlistenFeed();

@@ -259,6 +259,41 @@ try {
   assert.equal(f.writes.length,before+1,'a double click sends one command');assert.deepEqual(general(f).at(-1).command,{kind:'media.control',action:'next'});
   await enabled('Next').waitFor();await axe(page);
  });
+ await scenario('now playing shows the source text and only declared, permitted controls',async(f,page)=>{
+  const section=page.locator('section:visible'),status=section.locator('[role=status]').last();
+  const buttons=async()=>(await section.getByRole('button').allTextContents()).filter(name=>['Play','Pause','Next','Previous'].includes(name));
+  const fact=async label=>section.locator('dl>div').filter({has:page.getByText(label,{exact:true})}).locator('dd').innerText();
+  await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).click();
+  await section.getByRole('heading',{name:'Song',exact:true}).waitFor();
+  assert.deepEqual([await fact('Artist'),await fact('Album'),await fact('Status'),await fact('Source')],['Artist','Album','Playing','ht-a9']);
+  assert.deepEqual(await buttons(),['Pause','Next','Previous'],'only declared controls appear; Play is not declared');
+  await section.getByText('Not offered by this source: Play.',{exact:true}).waitFor();await axe(page);
+  await section.getByRole('button',{name:'Next',exact:true}).click();await status.filter({hasText:'Next: Sent to the device.'}).waitFor();
+  assert.deepEqual(f.sony.calls,['setPlayNextContent']);
+  // The owner's live check: next and previous work while paused, but the receiver may keep the old title.
+  f.sony.state='PAUSED';await section.getByText('The receiver may keep showing the previous title after Next or Previous until playback resumes.',{exact:true}).waitFor();
+  assert.deepEqual(await buttons(),['Next','Previous']);assert.equal(await fact('Status'),'Paused');
+  f.sony.commands='failed';await section.getByRole('button',{name:'Previous',exact:true}).click();
+  await status.filter({hasText:'Previous: Not applied: the receiver refused it (receiver-refused). Nothing changed.'}).waitFor();
+  f.sony.commands='hang';await section.getByRole('button',{name:'Next',exact:true}).click();
+  await status.filter({hasText:/^Next: Result unknown: this may have reached the device \(uncertain-result\)/}).waitFor({timeout:8000});
+  assert.equal(await section.getByRole('button',{name:'Next',exact:true}).isDisabled(),true,'an uncertain result locks the controls');
+  await page.waitForTimeout(2500);assert.deepEqual(f.sony.calls,['setPlayNextContent','setPlayPreviousContent','setPlayNextContent'],'nothing is retried');
+  f.sony.commands='sent';await section.getByRole('button',{name:'Reload current values',exact:true}).click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('section:not([hidden]) button')].some(b=>b.textContent==='Next'&&!b.disabled));
+  // A read-only credential sees no buttons and the reason.
+  f.reconnect({scopes:['read','ingest']});await section.getByText('Unavailable: Your credential is read-only',{exact:true}).waitFor({timeout:8000});assert.deepEqual(await buttons(),[]);
+  f.reconnect();await section.getByRole('button',{name:'Next',exact:true}).waitFor({timeout:8000});
+  // Failed reads age the snapshot through stale to unavailable; a silent receiver never looks paused or playing.
+  f.sony.reads='down';f.sony.skew=6000;await section.getByText('Unavailable: The source’s last read is stale; controls return when it answers again',{exact:true}).waitFor();
+  assert.deepEqual(await buttons(),[]);assert.equal(await fact('Availability'),'Stale');
+  f.sony.skew=31000;await section.getByRole('heading',{name:'No track information',exact:true}).waitFor();
+  await section.getByText('Unavailable: The source is unavailable',{exact:true}).waitFor();assert.equal(await fact('Title'),'Not reported');await axe(page);
+  // Without the source grant the view disappears and polling stops.
+  f.reconnect({granted:['wall','pixel']});await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
+  let reads=0;page.on('request',r=>{if(r.url().includes('/api/playback/'))reads++;});await page.waitForTimeout(2500);assert.equal(reads,0,'no playback reads without the grant');
+  assert.deepEqual(f.sony.calls,['setPlayNextContent','setPlayPreviousContent','setPlayNextContent']);
+ },{playback:true});
  {
   const f=await fixture({empty:true}),context=await browser.newContext(),page=await context.newPage();
   try{

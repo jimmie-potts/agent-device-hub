@@ -7,7 +7,7 @@ import {join} from 'node:path';
 const dir=await mkdtemp(join(tmpdir(),'dashboard-client-'));
 try {
  await build({entryPoints:['apps/dashboard/src/client.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'client.mjs')});
- const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,resultMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason}=await import(join(dir,'client.mjs'));
+ const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,resultMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,playbackControls,playbackEvidence,playbackRequest}=await import(join(dir,'client.mjs'));
  test('mode commands preserve the edited revision and original server ticket',()=>{
   const snapshot={identity:{controllerId:'c',deviceId:'d'},configurationRevision:2,generation:{epoch:'g',sequence:7},nextRequestId:{epoch:'e',sequence:3}};
   const command=makeCommand(snapshot,{kind:'mode.set',mode:'Quiet'});
@@ -97,6 +97,35 @@ try {
   assert.deepEqual(brightnessDraft({capabilities,state:{desired:{brightness:{status:'unknown'}},observation:{status:'known',clock,evidenceAgeMs:0,power:{status:'unknown'},brightness:{status:'known',value:10}}}}),{value:10,source:'observed'});
   assert.deepEqual(brightnessDraft({capabilities,state:{desired:{brightness:{status:'unknown'}},observation:{status:'unknown'}}}),{value:50,source:'unknown'});
   assert.deepEqual(brightnessDraft({capabilities:{brightness:{supported:false}},state:{desired:{brightness:{status:'unknown'}},observation:{status:'unknown'}}}),{value:50,source:'unknown'});
+ });
+ test('playback buttons follow declared controls, control scope and availability, and name what is missing',()=>{
+  const snap=(availability,playback)=>({apiVersion:'1.0',sourceId:'ht-a9',availability,observedAtMs:1,ageMs:0,playback});
+  const playing=snap('available',{status:'playing',title:'Song',controls:['pause','next','previous']});
+  assert.deepEqual(playbackControls(playing,true),{actions:['pause','next','previous'],undeclared:['play']});
+  assert.deepEqual(playbackControls(snap('available',{status:'paused',controls:['next','previous']}),true),{actions:['next','previous'],undeclared:['play','pause']});
+  assert.deepEqual(playbackControls(playing,false),{actions:[],reason:'Your credential is read-only'});
+  assert.deepEqual(playbackControls(undefined,true),{actions:[],reason:'B.U.N.N.Y. couldn’t read the playback source'});
+  assert.deepEqual(playbackControls(snap('stale',playing.playback),true),{actions:[],reason:'The source’s last read is stale; controls return when it answers again'});
+  assert.deepEqual(playbackControls(snap('unavailable',null),true),{actions:[],reason:'The source is unavailable'});
+  assert.deepEqual(playbackControls(snap('available',{status:'inactive',controls:[]}),true),{actions:[],reason:'AirPlay isn’t the receiver’s current input'});
+  assert.deepEqual(playbackControls(snap('available',{status:'stopped',controls:[]}),true),{actions:[],reason:'The source declares no controls while stopped'});
+ });
+ test('playback receipts map to the shared command outcomes',()=>{
+  const receipt=outcome=>({requestId:'r',sourceId:'ht-a9',action:'next',outcome});
+  assert.deepEqual(resultMessage(playbackEvidence(receipt('sent')),{device:false}),{message:'Sent to the device.',locked:false,settled:'accepted'});
+  assert.deepEqual(resultMessage(playbackEvidence(receipt('failed')),{device:false}),{message:'Not applied: the receiver refused it (receiver-refused). Nothing changed.',locked:false,settled:'rejected',code:'receiver-refused'});
+  const uncertain=resultMessage(playbackEvidence(receipt('uncertain')),{device:false});
+  assert.deepEqual([uncertain.locked,uncertain.settled,uncertain.code],[true,'locked','uncertain-result']);
+  assert.equal(failureMessage(new ApiError('unsupported-control',422,{error:{code:'unsupported-control'}})).message,'Not applied: the source doesn’t offer this right now (unsupported-control). Nothing changed.');
+  assert.equal(failureMessage(new ApiError('source-unavailable',503,{error:{code:'source-unavailable'}})).message,'Not applied: the source isn’t answering (source-unavailable). Nothing changed.');
+ });
+ test('a playback command is built only from a fresh read that still offers the action for the displayed source',()=>{
+  const snapshot=(controls,extra={})=>({apiVersion:'1.0',sourceId:'ht-a9',availability:'available',observedAtMs:1,ageMs:0,playback:{status:'playing',controls},...extra});
+  assert.deepEqual(playbackRequest({snapshot:snapshot(['pause','next'])},{sourceId:'ht-a9',action:'next',control:true,requestId:'bunny-1'}),{request:{requestId:'bunny-1',sourceId:'ht-a9',action:'next'}});
+  assert.deepEqual(playbackRequest({snapshot:snapshot(['next','previous'])},{sourceId:'ht-a9',action:'pause',control:true,requestId:'bunny-2'}),{blocked:'this source no longer offers pause'});
+  assert.deepEqual(playbackRequest({snapshot:snapshot(['pause'],{availability:'stale'})},{sourceId:'ht-a9',action:'pause',control:true,requestId:'bunny-3'}),{blocked:'The source’s last read is stale; controls return when it answers again'});
+  assert.deepEqual(playbackRequest({snapshot:snapshot(['pause'],{sourceId:'kitchen'})},{sourceId:'ht-a9',action:'pause',control:true,requestId:'bunny-4'}),{blocked:'the hub now reports a different playback source'});
+  assert.deepEqual(playbackRequest({snapshot:snapshot(['pause']),error:'connection-unavailable'},{sourceId:'ht-a9',action:'pause',control:true,requestId:'bunny-5'}),{blocked:'B.U.N.N.Y. couldn’t read the playback source'});
  });
  test('editor links reject credentials, javascript, nonloopback and secret query strings',()=>{
   assert.equal(safeEditorUrl('http://127.0.0.1:8765/wall'),'http://127.0.0.1:8765/wall');
