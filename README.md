@@ -142,7 +142,10 @@ controller services, with source-only synthetic browser checks. PR #127 records
 human UI approval and source-delivery evidence. Installation and physical
 acceptance remain separate. [ADR 0005](docs/decisions/0005-general-device-controls.md)
 defines the general device controls that extend these views and links their
-bounded issues.
+bounded issues. [ADR 0006](docs/decisions/0006-hub-moments-and-interludes.md)
+defines hub moments and interludes: the hub decides which events play what,
+where and when, and each device controller guarantees safe playback and
+restoration.
 [#151](https://github.com/jimmie-potts/agent-device-hub/issues/151) adds Pixoo
 screen power, brightness, saved-playlist and playback controls to the same
 component view; physical acceptance on the display is
