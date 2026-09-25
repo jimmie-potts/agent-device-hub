@@ -120,7 +120,7 @@
         [
           "Completed / Desktop read state and session expiry",
           "[[H191]] [[H195]] [[H225]]",
-          "Hub PR #219 (99ff4cc) reports qualified Codex Desktop read state to the shared owner. PR #223 (d0d5670) expires sessions after 24 hours without lifecycle evidence, and PR #226 (91cb3a1) clears unknown-ID approval markers when their turn is retired. All three issues closed as completed on September 24, 2026. Archive removal continues in [[H218]]."
+          "Hub PR #219 (99ff4cc) reports qualified Codex Desktop read state to the shared owner. PR #223 (d0d5670) expires sessions after 24 hours without lifecycle evidence, and PR #226 (91cb3a1) clears unknown-ID approval markers when their turn is retired. All three issues closed as completed on September 24, 2026. Retiring ended sessions continues in [[H218]]."
         ],
         [
           "Completed / Legacy hook removal",
@@ -289,10 +289,25 @@
           "Prism crystal artwork",
           "Completed [[N52]] → [[N53]] → [[N26]]",
           "Connector geometry, crystal artwork with two-second inward flow, and luminous numbering are delivered through Nanoleaf PRs #56, #58 and #60. Each passed all nine main jobs, and the user approved the integrated UI. The browser suite passed 360 click cases and 720 label-clearance measurements. Hub companion PR #82 merged and passed all thirteen main jobs. All three stories are closed as completed. Installation, tray artwork, physical-light animation changes and public guide publication are separate."
+        ],
+        [
+          "Completed / Codex thread links",
+          "[[N108]]",
+          "Nanoleaf PR #109 merged as 97b6b37 and #108 closed as completed on September 24, 2026. A qualified wall task opens its Codex Desktop thread; the owner approved the UI and confirmed on Windows that the intended thread opens. Source delivery only, with no installation."
+        ],
+        [
+          "Completed / Simpler default layout",
+          "[[N78]]",
+          "Nanoleaf PR #125 merged as 49f0425 and #78 closed as completed on September 24, 2026, with the owner’s UI approval: a one-row wall heading with an Options menu, a live status readout, and one place each for the Line and task totals and the selection hint. The inspector card merge the owner asked for during review continues in [[N135]]."
+        ],
+        [
+          "Not planned / Lively wallpaper",
+          "[[N134]]",
+          "The owner closed Nanoleaf #10 to #14 as not planned on September 24, 2026. Lively is a Windows application, the runtime now runs on Linux, and Windows-native components are being retired; nothing had been delivered under those issues. The live renderer [[N17]] and the ambient view [[N16]] own the persistent-display direction."
         ]
       ],
       "notes": [
-        "Live rendering does not need Lively acceptance. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring."
+        "Live rendering never depended on Lively, which closed as not planned. The first shared hub frontend and basic Light Panels support also remain independent of exact animation mirroring."
       ]
     },
     {
@@ -349,6 +364,11 @@
           "Completed / Shared playback, Sony source",
           "[[H175]]",
           "Hub PR #230 merged as c6f33ef, and Hub 0.2.5 was installed on September 24, 2026 with the owner. The installed check read now-playing and a track change from the Sony HT-A9, and a hub pause command paused Apple Music on the iPhone. The Sonos Move [[H233]], optional artwork [[H229]] and the deferred Windows source [[H36]] remain separate."
+        ],
+        [
+          "Completed / One-step device settings",
+          "[[H231]]",
+          "Hub PR #239 merged as 19a6230 and #231 closed as completed on September 24, 2026. A successful brightness or power change leaves its form ready for the next change, uncertain results still lock until current values are reloaded, stale-generation commands are never resubmitted, and a same-mode reapply appears as Reapply and Start Monitor. The owner approved the UI candidate, and all six PR and merged-main checks passed. No installation or device operation was part of the delivery."
         ]
       ],
       "notes": [
@@ -372,6 +392,11 @@
           "Completed / Nanoleaf Linux installation",
           "[[N55]] → [[H43]]",
           "Nanoleaf #55 closed as completed on September 22, 2026 on existing evidence: the Linux runtime installed on September 11 from the #54 release, updated to f12ac66 on September 21 under #30, with the Windows owner retired, one Linux light writer, enabled user services, real WSL hook sessions and the owner-observed Quiet/Free/Work light sequence. Authenticated MCP mode calls and Desktop title metadata paths were not separately exercised. Hub #43 closed the same day: its architecture, diagram and guide inputs were delivered earlier by Hub PRs #84 and #98, and the owner chose to close on that documentation rather than wait further."
+        ],
+        [
+          "Completed / Runtime availability decision",
+          "[[N133]]",
+          "Nanoleaf PR #136 merged as 9e2c413 and #133 closed as completed on September 24, 2026. ADR 0011 records the owner’s decision: no Windows launcher, scheduled task or Startup entry. The runtime stays available while WSL runs, until hub hosting ([[H42]] or [[H44]]) moves it."
         ]
       ],
       "notes": [
@@ -493,6 +518,11 @@
           "Guide overview refresh",
           "[[H220]]",
           "Hub PR #221 (ddeecd8) added current work, newly added issues, open defects and the eleven topic guides; public PR #13 published that revision. The Neon restyle [[H85]] and mobile publication [[H87]] remain separate."
+        ],
+        [
+          "Completed / Personal-project scope defaults",
+          "[[H237]]",
+          "Hub PR #243 (28f7599), Nanoleaf PR #126 (3e6aa99) and Pixoo PR #78 (0ca009c) merged on September 24, 2026, and #237 closed as completed. Each repository’s docs/sdlc.md now has a Scope defaults section that story writing and pickup apply, including in ordinary work without plan-work or deliver-work."
         ]
       ],
       "notes": [

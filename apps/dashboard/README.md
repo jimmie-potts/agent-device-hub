@@ -88,15 +88,22 @@ screen on does not resume it. Playlists are listed by ID until
 [Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67)
 supplies user-entered names.
 
-Power and brightness use the draft pattern below; the brightness slider starts
-from desired, then observed evidence, and says when the current brightness is
-unknown. Playlist start, playback actions and the Media switch are one-click
-commands that use the latest observed snapshot and stay busy until the refreshed
-snapshot arrives, so a following activation carries fresh guards. Only an
+Power and brightness use the draft pattern below. The brightness slider starts
+from desired evidence, then observed evidence, and says when the current
+brightness is unknown. Playlist start, playback actions and the Media switch are
+one-click commands. Like every command, they read the device again just before
+sending (see below) and stay busy until the refreshed snapshot arrives. Only an
 accepted ticket is watched for its terminal outcome; a rejected ticket may be
-consumed by another client. A typed conflict is shown and the action stays
-available; an uncertain result locks the group until "Load current / unlock". Physical acceptance on the
-display is [Hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
+consumed by another client. A typed rejection is shown and the action stays
+available. An uncertain result locks the group until "Reload current values".
+
+Pixoo can be configured for Monitor without presenting it, for example after the
+app restarts or the screen turns off and on. The Pixoo mode form then offers
+"Start Monitor". It sends one integration Monitor mode command with that
+extension's guards and no media command. It is disabled while desired screen
+power is known to be off, because Pixoo `main` `01da65d` starts presentation only
+while the screen is on. Physical acceptance on the display is
+[Hub #154](https://github.com/jimmie-potts/agent-device-hub/issues/154).
 
 Nanoleaf declares power, brightness 0–100 and discovered saved scenes on
 controller v1, checked at Nanoleaf `main`
@@ -107,7 +114,15 @@ in Work, Quiet and Free. A brightness command is a user override: the view shows
 a known desired brightness as an override that persists until the next explicit
 mode command, which reapplies that mode's brightness policy, and shows no
 override as unknown rather than as a value. While power is off the wall keeps
-tracking tasks and writes nothing until the next mode command.
+tracking tasks and writes nothing until the next mode command. The mode form
+offers "Reapply <mode>", one controller v1 mode command for the observed mode.
+Nanoleaf `main` `08b6b83` ends power and brightness overrides on any mode
+command, including the same mode. When there was nothing to reapply, the
+controller admits and then cancels the command with no effects, and the view
+says the mode is already in effect. Admission still advances the configuration
+revision, so other open drafts on that device show a conflict. Only this action
+reports a cancel as already in effect; any other cancel is shown as not applied.
+The action is disabled while a mode change is pending.
 
 Scene activation is disabled while the wall is in Work or Quiet, while a mode
 change is pending or while the mode is unknown, with the reason and one explicit
@@ -124,14 +139,30 @@ Physical acceptance on the installed wall is
 
 ## Intent and observation
 
-Drafts pin the observed controller revision/generation and server-issued ticket.
+Drafts pin the revision they started from. Just before sending, every command
+reads the device again through the same per-device queue. It uses that read's
+server-issued ticket, configuration revision and generation, and re-checks the
+control's availability. A failed read or a control that is no longer available
+sends nothing and names the reason. General-control, controller v1 mode and
+Pixoo integration drafts conflict only on the configuration revision. A
+generation retires output work and advances without any client edit, for
+example on every Pixoo playlist item or when Pixoo suspends its presentation.
+The Nanoleaf integration forms keep their content revision guard.
+A `stale-generation` race after the fresh read has no effects. It is shown with
+an invitation to press the control again, and nothing is resubmitted.
+
 Refreshes preserve focus, selection and drafts. A submitted control keeps
 keyboard focus: while a command runs its group is disabled, and once the command
 settles focus returns to that control, or to the group's first enabled control
-when the control is locked or no longer rendered. A changed revision blocks stale
-submission; server rejections retain edits. An uncertain result is locked and
-never automatically retried. Loading current values is a separate explicit action.
-Transport success and saved settings do not establish physical output.
+when the control is locked or no longer rendered. An accepted result that is not
+uncertain clears the draft once the refreshed snapshot arrives, so the form is
+ready for the next change. A changed revision blocks stale submission, and a
+rejection keeps the edit. An uncertain or partly applied result, including one
+observed later, locks the form or group and is never retried. "Reload current
+values" is the separate explicit action that unlocks it. Status text says
+whether a command was queued, sent, saved, already in effect, not applied or
+unknown, names the typed code, and never presents transport success or a saved
+setting as physical output.
 
 The bounded authenticated change feed requests current monitor snapshots on state
 or resync events. A stream reconnect uses its last cursor and backs off up to ten

@@ -7,7 +7,7 @@ import {join} from 'node:path';
 const dir=await mkdtemp(join(tmpdir(),'dashboard-client-'));
 try {
  await build({entryPoints:['apps/dashboard/src/client.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'client.mjs')});
- const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason}=await import(join(dir,'client.mjs'));
+ const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,resultMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason}=await import(join(dir,'client.mjs'));
  test('mode commands preserve the edited revision and original server ticket',()=>{
   const snapshot={identity:{controllerId:'c',deviceId:'d'},configurationRevision:2,generation:{epoch:'g',sequence:7},nextRequestId:{epoch:'e',sequence:3}};
   const command=makeCommand(snapshot,{kind:'mode.set',mode:'Quiet'});
@@ -19,8 +19,33 @@ try {
   try {const api=new Api('a'.repeat(43));const read=api.request('/snapshot');await api.request('/commands',{action:'explicit'});release(Response.json({revision:1}));await assert.rejects(read,error=>error.code==='snapshot-superseded');}finally{globalThis.fetch=original;}
  });
  test('partial receipts retain prior effects instead of claiming no application',()=>{
-  const result=failureMessage(new ApiError('transport-failure',503,{outcome:'partially-applied',priorEffects:'confirmed-transmission',completedOperations:['mode'],uncertainOperations:['refresh']}));assert.match(result.message,/partially-applied/);assert.match(result.message,/confirmed-transmission/);assert.equal(result.locked,true);assert.doesNotMatch(result.message,/Not applied/);
-  assert.equal(failureMessage(new ApiError('capacity',429)).locked,false);
+  const result=failureMessage(new ApiError('transport-failure',503,{outcome:'partially-applied',priorEffects:'confirmed-transmission',completedOperations:['mode'],uncertainOperations:['refresh']}));assert.equal(result.message,'Partly applied: mode was sent; refresh is unknown (transport-failure). Check the device, then reload current values before trying again.');assert.equal(result.locked,true);assert.doesNotMatch(result.message,/Not applied/);
+  assert.deepEqual(failureMessage(new ApiError('capacity',429)),{message:'Not applied: too many commands are waiting (capacity). Nothing changed.',locked:false,settled:'rejected',code:'capacity'});
+ });
+ test('status text says what happened and whether anything changed, never claiming a physical result',()=>{
+  const check='BUNNY can’t see the device, so check it to confirm.';
+  assert.deepEqual(resultMessage({outcome:'queued',priorEffects:'none'}),{message:'Queued. The device hasn’t received it yet.',locked:false,settled:'accepted'});
+  assert.deepEqual(resultMessage({outcome:'sent',priorEffects:'confirmed-transmission'}),{message:`Sent to the device. ${check}`,locked:false,settled:'accepted'});
+  assert.deepEqual(resultMessage({outcome:'applied',priorEffects:'configuration'}),{message:`Saved. ${check}`,locked:false,settled:'accepted'});
+  assert.deepEqual(resultMessage(undefined),{message:`Saved. ${check}`,locked:false,settled:'accepted'},'a saved integration configuration is not a physical result');
+  assert.deepEqual(resultMessage(undefined,{device:false}),{message:'Saved.',locked:false,settled:'accepted'},'session labels and acknowledgments carry no device wording');
+  assert.deepEqual(resultMessage({outcome:'cancelled',priorEffects:'none'},{sameMode:true}),{message:'Already in effect. Nothing was sent.',locked:false,settled:'accepted'},'a same-mode command with nothing to reapply');
+  assert.deepEqual(resultMessage({outcome:'cancelled',priorEffects:'none'}),{message:'Not applied: it was cancelled before it ran (cancelled). Nothing changed.',locked:false,settled:'rejected',code:'cancelled'},'any other cancel, such as another client cancelling a queued integration command, is not reported as in effect');
+  assert.equal(resultMessage({outcome:'cancelled',priorEffects:'none',failure:{code:'stale-generation'}},{sameMode:true}).settled,'rejected','a superseded same-mode command is still a rejection');
+  assert.deepEqual(resultMessage({outcome:'cancelled',priorEffects:'none',failure:{code:'stale-generation'}}),{message:'Not applied: the device moved on before this arrived (stale-generation). Nothing changed.',locked:false,settled:'rejected',code:'stale-generation'});
+  assert.deepEqual(resultMessage({outcome:'failed',priorEffects:'none',failure:{code:'unsupported-capability'}}),{message:'Not applied: the device doesn’t accept this in its current state (unsupported-capability). Nothing changed.',locked:false,settled:'rejected',code:'unsupported-capability'});
+  assert.deepEqual(resultMessage({outcome:'failed',priorEffects:'none',failure:{code:'new-code'}}),{message:'Not applied: the controller refused it (new-code). Nothing changed.',locked:false,settled:'rejected',code:'new-code'},'an unknown code is still named');
+  for(const receipt of [{outcome:'uncertain',priorEffects:'possible',failure:{code:'uncertain-result'}},{outcome:'failed',priorEffects:'possible',failure:{code:'transport-failure'}},{outcome:'failed',failure:{code:'transport-failure'}},{outcome:'mystery',priorEffects:'none'}]){
+   const result=resultMessage(receipt);assert.equal(result.locked,true,JSON.stringify(receipt));assert.equal(result.settled,'locked');assert.match(result.message,/^Result unknown: this may have reached the device/);assert.match(result.message,/reload current values before trying again\.$/);
+  }
+  assert.deepEqual(resultMessage({outcome:'failed',priorEffects:'confirmed-transmission',completedOperations:['display'],failure:{code:'stale-generation'}}),{message:'Partly applied: display was sent (stale-generation). Check the device, then reload current values before trying again.',locked:true,settled:'locked',code:'stale-generation'});
+  for(const text of [check,'Queued. The device hasn’t received it yet.'])assert.doesNotMatch(text,/confirmed on|changed on the device|is now/,'transport success never claims a physical result');
+ });
+ test('transport failures without a receipt are uncertain; definite rejections name the code',()=>{
+  assert.deepEqual(failureMessage(new ApiError('uncertain-result')),{message:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.',locked:true,settled:'locked',code:'uncertain-result'});
+  assert.deepEqual(failureMessage(new Error('lost')),failureMessage(new ApiError('uncertain-result')));
+  assert.deepEqual(failureMessage(new ApiError('revision-conflict',409)),{message:'Not applied: another client changed this device first (revision-conflict). Nothing changed.',locked:false,settled:'rejected',code:'revision-conflict'});
+  assert.deepEqual(failureMessage(new ApiError('stale-generation',409,{outcome:'failed',priorEffects:'none',failure:{code:'stale-generation'}})).settled,'rejected');
  });
  test('controller reads and commands serialize per device without blocking another device',async()=>{
   const original=globalThis.fetch;const order=[];let release;

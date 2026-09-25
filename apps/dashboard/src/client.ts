@@ -97,19 +97,44 @@ export class Api {
  }
 }
 
-export type ReceiptEvidence={priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[]};
-export function receiptEvidence(receipt:ReceiptEvidence):string {
- return `Prior effects: ${receipt.priorEffects??'unknown'}. Completed: ${receipt.completedOperations?.join(', ')||'none recorded'}. Uncertain operations: ${receipt.uncertainOperations?.join(', ')||'none recorded'}.`;
+export type ReceiptEvidence={outcome?:string;priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[];failure?:{code:string}};
+/** accepted: the command was taken or is already in effect. rejected: nothing changed, so a draft stays editable. locked: effects are unknown or partial, so the control waits for an explicit reload. */
+export type Settled='accepted'|'rejected'|'locked';
+const reasons:Record<string,string>={
+ 'revision-conflict':'another client changed this device first','stale-generation':'the device moved on before this arrived','unsupported-capability':'the device doesn’t accept this in its current state',
+ capacity:'too many commands are waiting','external-control':'the device is controlled elsewhere','transport-failure':'the controller couldn’t reach the device',
+ 'request-conflict':'this request was already used','request-expired':'this request expired','request-order':'this request arrived out of order',
+ forbidden:'your credential doesn’t allow this',unauthenticated:'your sign-in is no longer valid','invalid-request':'the request wasn’t valid','invalid-input':'the request wasn’t valid',
+ cancelled:'it was cancelled before it ran','unknown-device':'the hub doesn’t know this device','controller-unavailable':'the controller isn’t responding','monitor-unavailable':'the controller isn’t responding',
+};
+const reason=(code:string)=>`${reasons[code]??'the controller refused it'} (${code})`;
+const unknown=(code:string)=>`Result unknown: this may have reached the device (${code}). Check the device, then reload current values before trying again.`;
+/** Plain status for a command result. Transport success and saved settings are never a physical result, so accepted results ask the user to check the device. */
+export type ResultMessage={message:string;locked:boolean;settled:Settled;code?:string};
+/** sameMode marks a command that sends the active mode again; only then does a cancel with no code and no effects mean nothing needed reapplying. */
+export function resultMessage(receipt:ReceiptEvidence|undefined,{device=true,sameMode=false}:{device?:boolean;sameMode?:boolean}={}):ResultMessage{
+ const check=device?' BUNNY can’t see the device, so check it to confirm.':'';
+ const outcome=receipt?.outcome,code=receipt?.failure?.code,named=code?{code}:{};
+ const accepted=(message:string):ResultMessage=>({message,locked:false,settled:'accepted'}),locked=(message:string):ResultMessage=>({message,locked:true,settled:'locked',...named});
+ if(outcome===undefined||outcome==='applied')return accepted('Saved.'+check);
+ if(outcome==='queued')return accepted('Queued. The device hasn’t received it yet.');
+ if(outcome==='sent')return accepted('Sent to the device.'+check);
+ if(receipt?.priorEffects==='confirmed-transmission'||outcome==='partially-applied'){
+  const sent=receipt?.completedOperations?.length?`${receipt.completedOperations.join(', ')} was sent`:'part of it was sent',open=receipt?.uncertainOperations?.length?`; ${receipt.uncertainOperations.join(', ')} is unknown`:'';
+  return locked(`Partly applied: ${sent}${open}${code?` (${code})`:''}. Check the device, then reload current values before trying again.`);
+ }
+ if((outcome==='failed'||outcome==='cancelled')&&receipt?.priorEffects==='none'){
+  if(!code&&outcome==='cancelled'&&sameMode)return accepted('Already in effect. Nothing was sent.');
+  const named=code??(outcome==='cancelled'?'cancelled':'unavailable');
+  return {message:`Not applied: ${reason(named)}. Nothing changed.`,locked:false,settled:'rejected',code:named};
+ }
+ return locked(unknown(code??'uncertain-result'));
 }
-
-/** A transport error must never erase a controller's explicit effect evidence. */
-export function failureMessage(error:unknown):{message:string;locked:boolean}{
+/** A transport error must never erase a controller's explicit effect evidence. A lost response without a receipt is uncertain; a typed error without a receipt had no effect. */
+export function failureMessage(error:unknown,options?:{device?:boolean;sameMode?:boolean}):ResultMessage{
  const code=error instanceof ApiError?error.code:'uncertain-result';
  const detail=error instanceof ApiError?error.detail:undefined;
- if(detail&&typeof detail==='object'&&'outcome' in detail){
-  const receipt=detail as {outcome:string;priorEffects?:string;completedOperations?:string[];uncertainOperations?:string[]};
-  return {message:`${receipt.outcome}. ${receiptEvidence(receipt)} ${code}. Your edit is retained.`,locked:receipt.priorEffects!=='none'||['uncertain','partially-applied'].includes(receipt.outcome)};
- }
- if(code==='uncertain-result')return {message:'Uncertain result. Do not repeat this command. Refresh observations before starting a new edit.',locked:true};
- return {message:`Not applied: ${code}. Your edit is retained.`,locked:false};
+ if(detail&&typeof detail==='object'&&'outcome' in detail){const receipt=detail as ReceiptEvidence;return resultMessage({...receipt,failure:receipt.failure??{code}},options);}
+ if(code==='uncertain-result')return {message:unknown(code),locked:true,settled:'locked',code};
+ return {message:`Not applied: ${reason(code)}. Nothing changed.`,locked:false,settled:'rejected',code};
 }

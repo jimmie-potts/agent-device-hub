@@ -24,6 +24,84 @@ labels. Each open delivery issue has one of status:backlog, status:ready,
 status:in-progress or status:review. Add blocked with its dependency/decision and
 next action when applicable. Remove workflow status/blocked labels on closure.
 
+## Scope defaults
+
+This is a personal project. Size each story for how it actually runs: one
+operator, the selected hub installation with the agent clients it already
+supports, and the devices explicitly configured there. Add hosts, users,
+services or automation only when the story needs them. These defaults never
+remove an already accepted capability.
+
+Assess scope when drafting a story, at pickup and after a material scope or
+assumption change, whether or not `plan-work` or `deliver-work` was invoked.
+Use the shared assessment in the installed deliver-work package's
+`references/work-assessment.md`, found through the host's skill discovery.
+Reading it does not invoke either skill. If it is unavailable, report that and
+apply this section. Codex and Claude follow the same policy. A read-only request
+reports the assessment instead of editing the issue.
+
+Draft stories with the five prompts of the
+[feature form](../.github/ISSUE_TEMPLATE/feature.yml), using the same headings in
+Markdown for maintenance and investigation issues. A small story may answer them
+in a few sentences.
+
+1. Outcome and real setup.
+2. Smallest useful implementation, with dependencies.
+3. Behavior and protections to preserve.
+4. Observable acceptance and planned evidence, with the delivery target.
+5. Meaningful deferrals, each with its consequence or manual alternative and
+   its owning issue or revisit trigger.
+
+Prefer existing components and explicit manual steps where practical. Avoid
+speculative platform support, abstraction layers, automatic rollback systems and
+broad outage matrices. Always protect supported behavior: one authoritative
+state owner and one writer per device, correct targets, bounded queued work, no
+unsafe replay, accurate freshness and completion, manual control, and user data
+integrity.
+
+Basic credential hygiene and the existing authorization and origin checks apply
+to local use too. Reassess before remote or public exposure, an additional
+operator or writer, expanded compatibility, or recurring failures. A change that
+could lose irreplaceable data needs practical recovery evidence, using existing
+facilities where possible; this is not a general backup-tooling requirement.
+
+For each meaningful cut, name the capability or assurance lost and reconcile
+dependent issues and specifications within the task's authority. Never silently
+remove requested behavior; ask the user when a cut would change it. Scope
+defaults keep review, CI, UI approval, OpenSpec and the source, installation and
+physical boundaries, with their existing exceptions, and add no new gate.
+
+For a consequential change to credentials, persistent state, concurrency or
+device commands, define acceptance examples before implementation. Give the owner
+a short walkthrough in the PR with code and test links: state and writer
+ownership, timeout, restart and duplicate behavior, the important failure test,
+and diagnosis and recovery. Explain any change that weakens an existing test
+assertion. The walkthrough is an understanding aid, not an approval gate.
+
+Judge these defaults from existing PR evidence: delivery time, correction rounds,
+defects after merge and human effort. Unknown effort or usage stays unknown.
+[agent-skills#44](https://github.com/jimmie-potts/agent-skills/issues/44) owns
+the comparative evaluation; no metrics service or parallel report is required.
+
+Example, checked on 2026-09-24 against LIFX status
+([#20](https://github.com/jimmie-potts/agent-device-hub/issues/20)) and its
+installed trial ([#22](https://github.com/jimmie-potts/agent-device-hub/issues/22)):
+
+- Setup: one operator, one designated controller runner and the bulbs selected
+  by explicit IP.
+- Smallest implementation: consume the shared state owner's feed through #18's
+  per-bulb queues. No second lifecycle reducer, cross-process lease service or
+  effect engine.
+- Preserve: a heartbeat or unchanged snapshot never resumes painting over a
+  manual change, stale input never means done, and stop retires pending
+  automation without claiming to undo a request already sent.
+- Evidence: fake feed and transport tests for manual override, stale input and
+  one offline bulb; #22's trial is the visual acceptance.
+- Deferred: every-client compatibility and long-running reliability. A
+  repeatable observed defect gets a focused follow-up.
+- Limitation: this checks the issue text against the guidance. It does not show
+  how an agent will apply it.
+
 ## Scope and implementation
 
 Follow this workflow for authorized delivery. Select code-review for review,
