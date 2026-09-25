@@ -1,0 +1,76 @@
+/* Neon Geometry Wars skin: values for the role tokens, then decoration scoped to
+   html[data-skin="neon-geometry-wars"]. Templates only read the role names; a new
+   skin copies this file, changes values and decoration, and keeps every name. */
+:root{color-scheme:dark;
+--bg:#05070d;--panel:#080c16;--panel-translucent:rgba(8,12,22,.9);--raised:rgba(34,211,238,.08);--inset:#060a14;
+--text:#d7e3ff;--muted:#93a6cc;
+--edge:rgba(34,211,238,.2);--edge-strong:rgba(34,211,238,.45);--edge-faint:rgba(34,211,238,.09);
+--accent:#22d3ee;--accent-ink:#04121a;--link:#22d3ee;--focus:#ffffff;--pending:#e879f9;
+--glow:0 0 9px rgba(34,211,238,.35);
+--grid-image:linear-gradient(rgba(34,211,238,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.025) 1px,transparent 1px);
+--grid-size:32px 32px;--radius:2px;
+--font:Bahnschrift,"Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
+--type-body:15px;--type-small:12px;--type-label:10px;
+--space-xs:4px;--space-s:8px;--space-m:16px;--space-l:24px;--space-xl:48px}
+@media screen{:root[data-theme="light"]{color-scheme:light;
+--bg:#f3f7fb;--panel:#ffffff;--panel-translucent:rgba(255,255,255,.9);--raised:rgba(14,116,144,.08);--inset:#eaf1f6;
+--text:#10202e;--muted:#4a5b6e;
+--edge:rgba(14,116,144,.22);--edge-strong:rgba(14,116,144,.5);--edge-faint:rgba(14,116,144,.1);
+--accent:#0e7490;--accent-ink:#ffffff;--link:#0b6780;--focus:#10202e;--pending:#a21caf;
+--glow:0 0 9px rgba(14,116,144,.2);
+--grid-image:linear-gradient(rgba(14,116,144,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(14,116,144,.05) 1px,transparent 1px)}}
+/* Without scripts, follow the reader's system preference. Keep identical to the block above. */
+@media screen and (prefers-color-scheme:light){:root:not([data-theme="dark"]){color-scheme:light;
+--bg:#f3f7fb;--panel:#ffffff;--panel-translucent:rgba(255,255,255,.9);--raised:rgba(14,116,144,.08);--inset:#eaf1f6;
+--text:#10202e;--muted:#4a5b6e;
+--edge:rgba(14,116,144,.22);--edge-strong:rgba(14,116,144,.5);--edge-faint:rgba(14,116,144,.1);
+--accent:#0e7490;--accent-ink:#ffffff;--link:#0b6780;--focus:#10202e;--pending:#a21caf;
+--glow:0 0 9px rgba(14,116,144,.2);
+--grid-image:linear-gradient(rgba(14,116,144,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(14,116,144,.05) 1px,transparent 1px)}}
+/* Print ignores the screen theme: white paper, dark ink, no glow or grid. */
+@media print{:root{color-scheme:light;
+--bg:#ffffff;--panel:#ffffff;--panel-translucent:#ffffff;--raised:#edf2f4;--inset:#ffffff;
+--text:#17212e;--muted:#384756;
+--edge:#bdc6cd;--edge-strong:#879ca8;--edge-faint:#d5dde3;
+--accent:#1b6872;--accent-ink:#ffffff;--link:#145565;--focus:#17212e;--pending:#7b2c8a;
+--glow:none;--grid-image:none}}
+
+/* Decoration. It sits on rules, brackets and artwork: never on text, issue badges or
+   diagram edges, and it never reports agent or device activity. Every piece is a
+   pseudo-element or aria-hidden artwork below the controls and ignores the pointer. */
+html[data-skin="neon-geometry-wars"] .topbar{position:relative;isolation:isolate}
+html[data-skin="neon-geometry-wars"] .topbar::before,html[data-skin="neon-geometry-wars"] .topbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;z-index:-1;pointer-events:none}
+html[data-skin="neon-geometry-wars"] .topbar::after{height:1px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 35%,transparent) 40%,transparent 85%);transform-origin:left}
+html[data-skin="neon-geometry-wars"] .topbar::before{height:2px;opacity:0;background:linear-gradient(90deg,transparent,var(--accent) 45%,var(--text) 50%,var(--accent) 55%,transparent) no-repeat -180px 0/180px 100%;filter:drop-shadow(var(--glow))}
+html[data-skin="neon-geometry-wars"] .component-card{position:relative}
+html[data-skin="neon-geometry-wars"] .guide::before,html[data-skin="neon-geometry-wars"] .reference::before,html[data-skin="neon-geometry-wars"] .component-card::before{content:"";position:absolute;top:-1px;left:-1px;width:16px;height:16px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);pointer-events:none;transform-origin:top left;filter:drop-shadow(var(--glow))}
+html[data-skin="neon-geometry-wars"] .guide::after,html[data-skin="neon-geometry-wars"] .reference::after,html[data-skin="neon-geometry-wars"] .component-card::after{content:"";position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-right:1px solid var(--edge-strong);border-bottom:1px solid var(--edge-strong);pointer-events:none;transform-origin:bottom right}
+html[data-skin="neon-geometry-wars"] .shell .hero::before{content:"";position:absolute;z-index:-1;width:490px;height:340px;right:-140px;top:0;background:radial-gradient(ellipse,color-mix(in srgb,var(--accent) 8%,transparent),transparent 65%);pointer-events:none}
+html[data-skin="neon-geometry-wars"] .hero-art{pointer-events:none}
+html[data-skin="neon-geometry-wars"] .hero-art .art-halo{stroke:var(--accent);opacity:.1}
+html[data-skin="neon-geometry-wars"] .hero-art .art-line{stroke:var(--accent)}
+html[data-skin="neon-geometry-wars"] .hero-art .art-pending{stroke:var(--pending);opacity:.55}
+html[data-skin="neon-geometry-wars"] .hero-art .art-node{fill:var(--accent)}
+html[data-skin="neon-geometry-wars"] .hero-art .art-base{stroke:var(--accent);opacity:.3}
+html[data-skin="neon-geometry-wars"] .brand svg{filter:drop-shadow(var(--glow))}
+html[data-skin="neon-geometry-wars"] .mark{box-shadow:var(--glow)}
+html[data-skin="neon-geometry-wars"] .snapshot-dot{box-shadow:0 0 8px color-mix(in srgb,var(--pending) 35%,transparent)}
+html[data-skin="neon-geometry-wars"] .repo-legend a::before{box-shadow:0 0 8px color-mix(in srgb,var(--repo) 30%,transparent)}
+
+/* Motion: CSS animations only. The opening (about 2 s) plays once on a fresh load while
+   data-motion is absent; Resume sets data-motion="running" so it never replays. The
+   streak (about 1 s) crosses the top rule every 25 s. Pause and reduced motion stop both;
+   base styles above are the finished state. */
+@keyframes ngw-draw{from{transform:scaleX(0)}}
+@keyframes ngw-bracket{from{transform:scale(0);opacity:0}}
+@keyframes ngw-fade{from{opacity:0}}
+@keyframes ngw-trace{from{stroke-dashoffset:1}}
+@keyframes ngw-streak{0%{opacity:1;background-position:-180px 0}4%{opacity:1;background-position:calc(100% + 180px) 0}4.01%,100%{opacity:0;background-position:calc(100% + 180px) 0}}
+html[data-skin="neon-geometry-wars"]:not([data-motion]) .topbar::after,html[data-skin="neon-geometry-wars"]:not([data-motion]) .sidebar-rule{animation:ngw-draw 1.4s cubic-bezier(.2,.7,.2,1) .15s both}
+html[data-skin="neon-geometry-wars"]:not([data-motion]) .guide::before,html[data-skin="neon-geometry-wars"]:not([data-motion]) .reference::before,html[data-skin="neon-geometry-wars"]:not([data-motion]) .component-card::before{animation:ngw-bracket .8s cubic-bezier(.2,.7,.2,1) .7s both}
+html[data-skin="neon-geometry-wars"]:not([data-motion]) .guide::after,html[data-skin="neon-geometry-wars"]:not([data-motion]) .reference::after,html[data-skin="neon-geometry-wars"]:not([data-motion]) .component-card::after{animation:ngw-bracket .8s cubic-bezier(.2,.7,.2,1) 1.1s both}
+html[data-skin="neon-geometry-wars"]:not([data-motion]) .shell .hero::before{animation:ngw-fade 2s ease-out both}
+html[data-skin="neon-geometry-wars"]:not([data-motion]) .hero-art .art-line{stroke-dasharray:1;animation:ngw-trace 1.8s cubic-bezier(.3,.6,.2,1) .2s both}
+html[data-skin="neon-geometry-wars"]:not([data-motion="paused"]) .topbar::before{animation:ngw-streak 25s linear 3s infinite}
+@media (prefers-reduced-motion:reduce){html[data-skin="neon-geometry-wars"] *,html[data-skin="neon-geometry-wars"] *::before,html[data-skin="neon-geometry-wars"] *::after{animation:none!important}}
+@media print{html[data-skin="neon-geometry-wars"] .topbar::before,html[data-skin="neon-geometry-wars"] .topbar::after,html[data-skin="neon-geometry-wars"] .guide::before,html[data-skin="neon-geometry-wars"] .guide::after,html[data-skin="neon-geometry-wars"] .reference::before,html[data-skin="neon-geometry-wars"] .reference::after,html[data-skin="neon-geometry-wars"] .component-card::before,html[data-skin="neon-geometry-wars"] .component-card::after,html[data-skin="neon-geometry-wars"] .shell .hero::before,html[data-skin="neon-geometry-wars"] .hero-art{display:none!important}html[data-skin="neon-geometry-wars"] .brand svg,html[data-skin="neon-geometry-wars"] .mark,html[data-skin="neon-geometry-wars"] .snapshot-dot,html[data-skin="neon-geometry-wars"] .repo-legend a::before{filter:none;box-shadow:none}}

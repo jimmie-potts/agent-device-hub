@@ -1,7 +1,7 @@
 {
   "system": {
     "id": "SYS-bunny",
-    "name": "BUNNY",
+    "name": "B.U.N.N.Y.",
     "summary": "Local-first personal device control, shared agent monitoring and future music automation."
   },
   "reviewed_at": "2026-09-19",
@@ -264,7 +264,7 @@
       "type": "Logical database design",
       "status": "planned",
       "status_label": "Planned",
-      "summary": "Defines what BUNNY persists and who may change it, while leaving the storage engine and schema to implementation.",
+      "summary": "Defines what B.U.N.N.Y. persists and who may change it, while leaving the storage engine and schema to implementation.",
       "depends_on": [
         "VOL-state"
       ],
@@ -470,7 +470,7 @@
       "type": "Host adapter",
       "status": "qualification",
       "status_label": "Qualification required",
-      "summary": "Keeps Windows player access beside Apple Music while presenting a portable boundary to BUNNY.",
+      "summary": "Keeps Windows player access beside Apple Music while presenting a portable boundary to B.U.N.N.Y.",
       "depends_on": [
         "EVT-playback"
       ],
@@ -813,7 +813,7 @@
       "type": "Kubernetes workload / process lifecycle",
       "status": "planned",
       "status_label": "Planned",
-      "summary": "Describes how a future BUNNY host starts, stops and hands off state ownership without duplicate effects.",
+      "summary": "Describes how a future B.U.N.N.Y. host starts, stops and hands off state ownership without duplicate effects.",
       "depends_on": [
         "API-bunny",
         "CORE-agent",
@@ -962,7 +962,7 @@
       "type": "Development runbook / acceptance",
       "status": "mixed",
       "status_label": "Mixed evidence",
-      "summary": "The executable documentation workflow and the separate evidence needed before BUNNY can run devices.",
+      "summary": "The executable documentation workflow and the separate evidence needed before B.U.N.N.Y. can run devices.",
       "depends_on": [
         "DEP-local",
         "INF-telemetry"

@@ -27,7 +27,7 @@ ARCHIFY = Path(os.environ.get('ARCHIFY_DIR', Path.home() / '.agents' / 'skills' 
 
 SOURCES = json.loads(RECEIPTS.read_text())
 SOURCE_URL = {(f['repo'], f['path'], f['revision']): f['url'] for f in SOURCES['files']}
-# The system map and observation walkthrough (shared with the BUNNY atlas) keep
+# The system map and observation walkthrough (shared with the B.U.N.N.Y. atlas) keep
 # sourceRevisions; the other views were revised later against viewRevisions.
 BASELINE, VIEW = SOURCES['sourceRevisions'], SOURCES['viewRevisions']
 
@@ -160,7 +160,7 @@ D1 = arch(
 )
 
 # ---------------------------------------------------------------------------
-# 2. System map: what runs where (shared with the BUNNY atlas)
+# 2. System map: what runs where (shared with the B.U.N.N.Y. atlas)
 # ---------------------------------------------------------------------------
 SIZE2 = [150, 62]
 
@@ -173,11 +173,11 @@ def c2(id, type, label, sublabel, row, col, tag=None):
 
 
 D2 = arch(
-    'BUNNY system map: what runs where',
+    'B.U.N.N.Y. system map: what runs where',
     components=[
         c2('providers', 'external', 'Agent providers', 'Codex CLI · Desktop · Claude Code', 0, 0),
         c2('hooks', 'security', 'Provider hooks', 'allowlisted metadata · fail-open', 0, 1, 'source · setup SDK'),
-        c2('dashboard', 'frontend', 'BUNNY dashboard', 'React · served by the hub at /', 0, 2, 'source delivered'),
+        c2('dashboard', 'frontend', 'B.U.N.N.Y. dashboard', 'React · served by the hub at /', 0, 2, 'source delivered'),
         c2('mcpClients', 'external', 'MCP clients', 'Codex · Claude Code', 0, 3),
         c2('future', 'external', 'Music + automation', 'Windows connector · rules', 0, 4, 'future · own owner'),
         c2('mcpModule', 'backend', 'device-mcp module', 'library · no listener', 1, 1, 'source 1.0.0'),
@@ -232,7 +232,7 @@ D2 = arch(
 # Responsibility text and owning code for every map node. The atlas renders these
 # behind selection; design.json adds the atlas-owned document and reference links.
 MAP_DETAILS = {
-    'providers': dict(role='Codex CLI, Codex Desktop and Claude Code execute agent work. Only their lifecycle hooks feed BUNNY, and each client remains a distinct qualification target. Prompts, transcripts and tool content stay with the provider.', sources=[(H, 'docs/provider-qualification.md'), (H, 'docs/agent-lifecycle-contract.md')]),
+    'providers': dict(role='Codex CLI, Codex Desktop and Claude Code execute agent work. Only their lifecycle hooks feed B.U.N.N.Y., and each client remains a distinct qualification target. Prompts, transcripts and tool content stay with the provider.', sources=[(H, 'docs/provider-qualification.md'), (H, 'docs/agent-lifecycle-contract.md')]),
     'hooks': dict(role='The setup SDK installs one producer per qualified source. Each hook normalizes allowlisted metadata, sends one bounded request to the selected owner within a 2.9-second deadline, and returns silently on invalid input, saturation or an offline owner. It never changes agent permissions or waits for a device.', sources=[(H, 'apps/hub/SETUP.md'), (H, 'docs/agent-lifecycle-contract.md')]),
     'dashboard': dict(role='The React frontend is built into apps/hub/public and served by the hub at / with a same-origin content security policy. It reads the dashboard context route with a browser credential and submits explicit integration commands. It creates no collector and no device writer.', sources=[(H, 'apps/dashboard/README.md'), (H, 'apps/hub/README.md')]),
     'mcpClients': dict(role='Codex or Claude Code connect to the optional /mcp route on the same loopback listener with an independently provisioned machine credential. Tools cover hub sessions, labels, acknowledgment, device discovery and per-device status, power, brightness, mode and integration operations. Read scope never grants control.', sources=[(H, 'apps/hub/README.md'), (H, 'apps/hub/src/mcp.ts')]),
@@ -260,7 +260,7 @@ WALK_PHASES = [
 ]
 
 # ---------------------------------------------------------------------------
-# 3. One agent observation, from hook to device (shared with the BUNNY atlas)
+# 3. One agent observation, from hook to device (shared with the B.U.N.N.Y. atlas)
 # ---------------------------------------------------------------------------
 D3 = seq(
     'lifecycle-observation', 'One agent observation, from hook to device',
@@ -597,7 +597,7 @@ DIAGRAMS = [
          issues=['P37', 'N34', 'N55', 'N64']),
     dict(id='arch-shared-system', spec=D2, kind='architecture', status='implemented',
          status_label='Source delivered at the pinned revisions; planned and future nodes are tagged', short='System map',
-         summary='Where BUNNY runs at the pinned revisions. Provider hooks send lifecycle metadata to the Linux hub process, which composes the agent-state core, a private SQLite store, the authenticated HTTP routes and the embedded MCP module. Each controller keeps its own designated writer and private state. Music, rules and new controllers are labelled future or planned.',
+         summary='Where B.U.N.N.Y. runs at the pinned revisions. Provider hooks send lifecycle metadata to the Linux hub process, which composes the agent-state core, a private SQLite store, the authenticated HTTP routes and the embedded MCP module. Each controller keeps its own designated writer and private state. Music, rules and new controllers are labelled future or planned.',
          reading=['Green arrows are the observation path: providers → hooks → hub routes → core → private store. Dashed arrows are the state feed that consumers read; red arrows are explicit controller v1 commands from the dashboard or MCP clients; gray arrows are internal calls, commits and the library import. Publication and commands never share a path.',
                   'Each dashed box is one process or runtime: the Linux hub under apps/hub, the Nanoleaf Linux runtime in WSL and the Pixoo backend. Devices sit outside every box, and each device has exactly one designated writer.',
                   'Tags record source state at the pinned revision. Installed appears only where an owning issue recorded installed acceptance ([[N55]], [[N30]]); the hub itself is source only.'],

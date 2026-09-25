@@ -1,13 +1,5 @@
 (() => {
-  const root = document.documentElement;
-  const theme = document.querySelector('#theme-toggle');
-  function setTheme(value) {
-    root.dataset.theme = value === 'light' ? 'light' : 'dark';
-    theme.textContent = root.dataset.theme === 'dark' ? 'Light mode' : 'Dark mode';
-    try { localStorage.setItem('bunny-design-theme', root.dataset.theme); } catch {}
-  }
-  try { setTheme(localStorage.getItem('bunny-design-theme') || 'dark'); } catch { setTheme('dark'); }
-  theme.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark'));
+  // Theme and motion toggles come from docs/skins/skin.py, inlined ahead of this file.
   document.querySelector('#print').addEventListener('click', () => window.print());
   const menu = document.querySelector('#menu-toggle');
   menu.addEventListener('click', () => {

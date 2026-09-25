@@ -54,7 +54,7 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'now-playing ([[H37]], [[H38]]) and basic lighting ([[H39]]) do not wait for it.',
  'H23': 'Implement the Tronbyt connection, then verify the physical transition in [[H24]]. The '
         'Tidbyt cloud baseline [[H21]] is accepted.',
- 'H232': 'Document how to connect installed device controllers to BUNNY in the hub setup guide; '
+ 'H232': 'Document how to connect installed device controllers to B.U.N.N.Y. in the hub setup guide; '
          'the installed hub had no controllers configured, and the coordinator worked out the '
          'steps from source.',
  'H233': 'Add the Sonos Move, qualified in [[H158]], as a second playback source. One selected '
@@ -71,10 +71,10 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H242': 'Deferred. Qualify hub-issued resume of a paused iPhone AirPlay session on the Sony '
          'receiver, then add play/resume only if it works. The installed [[H175]] check confirmed '
          'pause; resume was manual from the phone.',
- 'H244': 'Source inspection found that retiring a BUNNY browser session leaves its per-session '
+ 'H244': 'Source inspection found that retiring a B.U.N.N.Y. browser session leaves its per-session '
          'ledger behind, so the 16-session cap does not bound those entries. Give session '
          'resources one retirement path. Memory growth has not been measured.',
- 'H245': 'Give BUNNY forms and one-click actions one command lifecycle, so receipt, uncertainty '
+ 'H245': 'Give B.U.N.N.Y. forms and one-click actions one command lifecycle, so receipt, uncertainty '
          'and refresh fixes apply to both. Preserve the behavior delivered in [[H231]]. Preferred '
          'after [[H244]].',
  'H246': 'Map where Pixoo and Nanoleaf contract facts repeat across hub validators, MCP schemas '
@@ -90,8 +90,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'and rollback decisions.',
  'H36': 'Optional Windows Apple Music source. Revisit once the Sony path from [[H175]] proves '
         'useful; it is not a prerequisite for the other music stories.',
- 'H37': 'Text-only now-playing and the Sony-qualified controls (pause, next, previous) in BUNNY '
-        'and Codex tools, using shared playback from [[H175]]. BUNNY sessions need a small hub '
+ 'H37': 'Text-only now-playing and the Sony-qualified controls (pause, next, previous) in B.U.N.N.Y. '
+        'and Codex tools, using shared playback from [[H175]]. B.U.N.N.Y. sessions need a small hub '
         'change to read the playback source. Sony play/resume is qualified separately in [[H242]].',
  'H38': 'Readable track and artist cards on Pixoo and Tidbyt from the shared playback snapshot, '
         'rendered by each display’s controller. Artwork from [[H229]] is optional.',
@@ -268,11 +268,11 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
         'supports a change. Physical tests need separate authorization.',
  'P61': 'Later by owner choice. Measure and improve embedded shared-monitor performance under the '
         'existing frozen limits, retaining failed receipts.',
- 'P67': 'Add user-entered playlist names to the Pixoo integration extension, so BUNNY and the hub '
+ 'P67': 'Add user-entered playlist names to the Pixoo integration extension, so B.U.N.N.Y. and the hub '
         'MCP media tools ([[H152]]) can label playlists. They show playlist IDs until then.',
  'P76': 'Keep Divoom cloud content off the Pixoo after screen-on and device reboots, and document '
         'owner actions that cut the device off from Divoom’s cloud. Found during [[H154]].',
- 'P77': 'Run the installed Pixoo app as a user service with the settings the hub needs, so BUNNY '
+ 'P77': 'Run the installed Pixoo app as a user service with the settings the hub needs, so B.U.N.N.Y. '
         'controls and agent status return after PC or WSL restarts. Found during [[H154]].',
  'P79': 'Dashboard uploads record display evidence that the MCP status schema rejects, so status '
         'can fail after an upload. Map it to the public upload value. This is a source finding, '
