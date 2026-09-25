@@ -76,7 +76,7 @@ turn and child relationships only where evidenced. Separate sessions in one
 project stay separate. Activity, attention, retained notices, acknowledgment,
 optional provider read evidence and freshness are independent concepts. The owner
 forgets a session after 24 hours without lifecycle evidence, which frees its
-capacity. Expiry is not acknowledgment, readership, success or cancellation. Codex Desktop runtime ends retire the known session tree sooner through the same atomic replacement boundary; other provider/client policies retain their existing behavior. Bounded durable guards reject recognizable delayed events. Opt-in snapshot 1.1 generations let consumers reset a recreated task even if they missed its removal.
+capacity. Expiry is not acknowledgment, readership, success or cancellation. An accepted runtime end on any supported path (Codex Desktop, Codex CLI or Claude Code) retires the known session tree sooner through the same atomic replacement boundary; the owner interprets that evidence once and devices add no end filters or timers. Bounded durable guards reject recognizable delayed events. Opt-in snapshot 1.1 generations let consumers reset a recreated task even if they missed its removal.
 
 A turn end is not proof of successful work or readership. Nanoleaf's current
 Codex unread reconciliation remains a provider/consumer capability during

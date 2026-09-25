@@ -32,7 +32,7 @@ No fresh session evidence for five minutes means uncertain observation, not fail
 | `attention.resolved` | Only the correlated attention item is resolved; unknown correlation cannot clear all attention |
 | `turn.ended` | Retained turn-ended notice; never proof of successful work or readership |
 | `turn.interrupted` | Interruption evidence, not successful completion |
-| `runtime.ended` | Runtime end; the owner retires known Codex Desktop records and descendants, while other provider/client policies retain notices |
+| `runtime.ended` | Runtime end; the owner retires the known record and its known descendants on every supported provider/client path |
 | `notice.acknowledged` | Explicit `{consumerId,noticeId}` monitor acknowledgment; no provider-read write |
 | `read.observed` | Optional qualified Codex Desktop `read`/`unread` evidence only |
 | `evidence.unavailable` | Named dimension and reason `unsupported`, `inaccessible`, `missing`, `ambiguous` or `lost` |
@@ -76,8 +76,8 @@ Strict schemas reject additive unknown fields. Any new wire field needs an expli
 
 Fixture validation does not prove a runtime reducer, installed client, device transport or optical result. Those acceptance layers remain separate.
 
-## Desktop end policy
+## Runtime end policy
 
-The owner retires Codex Desktop records on normalized `runtime.ended`. [SessionEnd documentation](https://learn.chatgpt.com/docs/hooks#sessionend) lists archive/delete of an open conversation, normal shutdown and a conversation idle and unopened in connected clients for 30 minutes. The current reason is `other`; the existing normalizer uses one mapping. The owner adds no idle timer or cause detector. Archive access is unnecessary for retirement. Missing ends retain the separate 24-hour evidence expiry.
+The owner retires a known record on normalized `runtime.ended` for every supported path: Codex Desktop (`codex`/`desktop`), Codex CLI (`codex`/`cli`) and Claude Code (`claude`/`code`). [Hub #218](https://github.com/jimmie-potts/agent-device-hub/issues/218) delivered the rule for Codex Desktop. [Hub #241](https://github.com/jimmie-potts/agent-device-hub/issues/241) removed the exception that let an ended Claude or CLI record wait for expiry. The Codex [SessionEnd documentation](https://learn.chatgpt.com/docs/hooks#sessionend) lists archive/delete of an open conversation, normal shutdown and a conversation idle and unopened in connected clients for 30 minutes, always with reason `other`. The Claude Code [SessionEnd documentation](https://code.claude.com/docs/en/hooks) lists the reasons `clear`, `resume`, `logout`, `prompt_input_exit` and `other`. The existing normalizer maps every cause to the same event and never copies the reason or a start's `source`. The owner adds no idle timer or cause detector, and retirement needs no archive access. Missing ends fall back to the separate 24-hour evidence expiry. [Provider qualification](provider-qualification.md#runtime-ends-and-archive-admission) records the per-path evidence and gaps.
 
-This changes owner policy, not lifecycle envelope 1.0. Known descendants are removed atomically; unknown relationships and event ordering remain unknown. Retirement forgets monitoring state without terminating an agent or asserting cancellation, success, acknowledgment or readership.
+This changes owner policy, not lifecycle envelope 1.0. Known descendants are removed atomically; unknown relationships and event ordering remain unknown. Retirement forgets monitoring state without terminating an agent or asserting cancellation, success, acknowledgment or readership. `Stop`/`turn.ended`, `SubagentStop`, interruption, waiting, completed/read status and freshness uncertainty are never ends.

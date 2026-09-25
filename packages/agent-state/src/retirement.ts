@@ -26,11 +26,12 @@ export function oldEnd(event:Envelope,session:Session):boolean {
     priorSequence(event,sessionOrders(session));
 }
 
-export function rememberRetirement(session:Session,old:Retirement|undefined,atMs:number,end:Envelope):Retirement {
-  const ownEnd=identityKey(session.identity)===identityKey(end.identity);
+/** `end` is absent when startup settles a stored accepted end; only the session's own end adds its turn, key and order. */
+export function rememberRetirement(session:Session,old:Retirement|undefined,atMs:number,end?:Envelope):Retirement {
+  const ownEnd=end!==undefined&&identityKey(session.identity)===identityKey(end.identity);
   const turns=[...session.retiredTurns,session.turn,...session.notices.map(n=>n.turn),...session.attention.map(a=>a.turn),
-    ...(ownEnd?[end.turn]:[])].flatMap(turn=>typeof turn==='string'?[turn]:turn.status==='known'?[turn.id]:[]);
+    ...(ownEnd?[end!.turn]:[])].flatMap(turn=>typeof turn==='string'?[turn]:turn.status==='known'?[turn.id]:[]);
   return {identity:session.identity,atMs,turns:recent([...(old?.turns??[]),...turns],LIMITS.retiredTurns),
-    keys:recent([...(old?.keys??[]),...session.seen.map(entry=>entry.key),...(ownEnd?[key(end)]:[])],LIMITS.seen),
-    ordering:orders([...(old?.ordering??[]),...sessionOrders(session),...(ownEnd&&end.ordering.status==='known'?[end.ordering]:[])])};
+    keys:recent([...(old?.keys??[]),...session.seen.map(entry=>entry.key),...(ownEnd?[key(end!)]:[])],LIMITS.seen),
+    ordering:orders([...(old?.ordering??[]),...sessionOrders(session),...(ownEnd&&end!.ordering.status==='known'?[end!.ordering]:[])])};
 }

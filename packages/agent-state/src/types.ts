@@ -1,7 +1,7 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '3.1.0';
+export const VERSION = '3.2.0';
 export const FORMAT_VERSION = '2.0';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
   journalEvents:10000, journalAgeMs:86400000, sessionAgeMs:86400000, staleMs:300000, deadlineMs:3000,
@@ -13,6 +13,7 @@ export type Unavailable = Extract<Envelope['event'],{kind:'evidence.unavailable'
 export type Session = {
   generation?:number;
   identity:Identity; turn:KnownId; parent:Envelope['parent']; label?:string; projectId?:string;
+  // `ended` survives only in stores written before every path retired on an accepted end; startup settles it.
   activity:'unknown'|'active'|'idle'|'interrupted'|'ended'; attention:Attention[]; notices:Notice[];
   read:'unknown'|'read'|'unread'; unavailable:Unavailable[]; ordering:Envelope['ordering'];
   lastEvidenceAtMs:number; observedAtMs:number; retiredTurns:string[];

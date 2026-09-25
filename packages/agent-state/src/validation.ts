@@ -65,8 +65,7 @@ export function validateExport(input:unknown):Validation<DurableState>{
     if(!unique(retirements.map(item=>identityKey(item.identity))))return false;
     let retiredAt=-1;
     for(const item of retirements){
-      if(item.atMs<retiredAt||item.atMs>state.lastCommitAtMs||!unique(item.ordering.map(order=>order.epoch))||
-        item.identity.provider!=='codex'||item.identity.client!=='desktop')return false;
+      if(item.atMs<retiredAt||item.atMs>state.lastCommitAtMs||!unique(item.ordering.map(order=>order.epoch)))return false;
       retiredAt=item.atMs;
     }
     let lastRevision=-1,lastTime=-1;

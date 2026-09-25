@@ -192,7 +192,7 @@ The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup a
 
 | Boundary | Contract and evidence |
 | --- | --- |
-| Shared state | `@jimmie-potts/agent-state` 3.1.0; lifecycle 1.0, durable export 2.0 (1.0 import), snapshots 1.0/1.1; no second reducer |
+| Shared state | `@jimmie-potts/agent-state` 3.2.0; lifecycle 1.0, durable export 2.0 (1.0 import), snapshots 1.0/1.1; no second reducer |
 | Pixoo remote source | Monitor v1 from source #31; actual facade, producer, browser actions and renderer exercised by `scripts/check-hub-pixoo.mjs` |
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
@@ -305,12 +305,12 @@ only forward the two controller v1 media commands.
 
 `npm run test:hub:mcp` exercises synthetic Codex/Claude protocol profiles for MCP 2025-11-25 and 2025-06-18, scoped discovery, Host/Origin checks, credential replacement, HTTP/MCP replay, native settings, independent controller failure, bounded concurrency, disconnect and stale evidence. The reproducible hub archive bundles MCP and its dependency closure; `npm run test:hub:package` repeats these tests after offline installation. These are source and loopback checks, not installed Codex/Claude, Windows/WSL client routing or physical acceptance. Feed this coverage into Hub #9; installed qualification remains #8 and device-owned acceptance.
 
-## Desktop retirement and archive admission
+## Session retirement and archive admission
 
-Codex Desktop `runtime.ended` retires the known session tree through the shared owner without Codex-home access. The existing `codexDesktop` configuration additionally supplies read-only archive admission evidence for its exact host/source namespace. The host inspects at most 10,000 entries under `archived_sessions` within the owner's 200 ms bound, matching regular `rollout-YYYY-MM-DDTHH-MM-SS-<sessionId>.jsonl` filenames. It does not open transcripts, poll archives, follow an archive-directory symlink, or change Codex files. Missing/unreadable evidence allows ordinary admission. A later eligible start after unarchive can create fresh monitoring; retained old-turn/retry/order evidence still rejects recognizable delayed events.
+A normalized `runtime.ended` from any supported path (Codex Desktop, Codex CLI or Claude Code) retires the known session tree through the shared owner without Codex-home access. Opening a store written by an older owner retires, in one revision, the records that hold an accepted end as activity `ended`. Other records keep their clocks and the 24-hour fallback. The existing `codexDesktop` configuration additionally supplies read-only archive admission evidence for its exact host/source namespace. The host inspects at most 10,000 entries under `archived_sessions` within the owner's 200 ms bound, matching regular `rollout-YYYY-MM-DDTHH-MM-SS-<sessionId>.jsonl` filenames. It does not open transcripts, poll archives, follow an archive-directory symlink, or change Codex files. Missing/unreadable evidence allows ordinary admission. A later eligible start after unarchive can create fresh monitoring; retained old-turn/retry/order evidence still rejects recognizable delayed events.
 
 `GET /api/monitor/v1/sessions` keeps snapshot 1.0. Add `?snapshotVersion=1.1` to receive generation metadata; unknown or repeated version parameters reject. The envelope remains 1.0. New records get a different generation, allowing upgraded readers to forget old per-task state without observing every snapshot. Old readers retain their existing wire shape. Feed failures remain unavailable or stale, never healthy empty state.
 
 The owner writes durable 2.0 and imports 1.0 in place with a guarded revision, preserving evidence clocks. Older owner packages cannot open 2.0; installation must back up the store and retain a compatible rollback path. Source tests use disposable stores and do not install this version. Hub #218 retains installed-client and visible-device acceptance.
 
-See the [Desktop retirement compatibility assessment](../../docs/session-retirement-compatibility.md) for consumer versions, durable migration and rollback limits.
+See the [session retirement compatibility assessment](../../docs/session-retirement-compatibility.md) for consumer versions, durable migration, upgrade treatment and rollback limits.

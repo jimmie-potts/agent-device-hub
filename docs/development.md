@@ -678,9 +678,9 @@ commands, unsupported capabilities and partial multi-bulb results. Tests validat
 common receipts/snapshots against controller v1 and never open a native socket.
 Installation and physical acceptance remain separate from these source checks.
 
-## Desktop session retirement checks
+## Session retirement checks
 
-Hub #218 adds focused cases to the existing `test:agent-state`, `test:hub` and their packaged suites. Run their Python snapshot fixtures as well. The existing CI jobs include these paths; no new device job is needed. Cover atomic tree removal, one revision, released capacity, old ends/events across restart and resume, history bounds, legacy import, failed commits, archive admission with unavailable evidence, default snapshot 1.0 and opt-in 1.1. Existing fake-clock retention tests preserve the 24-hour fallback.
+Hub #218 added focused cases to the existing `test:agent-state`, `test:hub` and their packaged suites. Hub #241 parameterizes the owner, Tidbyt and dashboard cases over Codex Desktop, Codex CLI and Claude Code, and adds mixed-path and upgraded-store cases. Run their Python snapshot fixtures as well. The existing CI jobs include these paths; no new device job is needed. Cover atomic tree removal, one revision, released capacity, other paths preserved, old ends/events across restart and resume, history bounds, legacy import, stored accepted ends settled on startup, failed commits, archive admission with unavailable evidence, default snapshot 1.0 and opt-in 1.1. Existing fake-clock retention tests preserve the 24-hour fallback.
 
 Run the focused Nanoleaf companion checks against its owning service, plus Pixoo/Tidbyt current-snapshot, empty-idle, reconnect and dashboard-removal scenarios. A consumer that retains task-specific state needs snapshot 1.1 generations to detect recreation between reads. Source checks do not establish installed-client timing or visible Line release.
 
@@ -690,4 +690,4 @@ The #218 source acceptance harness uses the existing Pixoo source pin and the Na
 node scripts/check-session-retirement.mjs /absolute/pixoo-source /absolute/nanoleaf-source /absolute/retirement-report.json
 ```
 
-It supplies actual owner snapshots to both consumers, checks the shared fixture corpus through Nanoleaf, and distinguishes healthy-empty reconnect from unavailable retained state. It launches no device worker. The existing Tidbyt publisher and dashboard browser jobs also exercise Desktop retirement. Keep the standalone harness receipt alongside required CI; it is source evidence, not installed or physical acceptance.
+Set `RETIREMENT_PATH` to `codex/desktop` (the default), `codex/cli` or `claude/code` and run it once per path. It supplies actual owner snapshots to both consumers, checks the shared fixture corpus through Nanoleaf, and distinguishes healthy-empty reconnect from unavailable retained state. It launches no device worker. The existing Tidbyt publisher and dashboard browser jobs also exercise retirement on every path. Keep the standalone harness receipts alongside required CI; they are source evidence, not installed or physical acceptance.

@@ -18,8 +18,8 @@ The owner SHALL namespace sessions by the complete lifecycle selector and retain
 - **THEN** only that consumer's view of that notice clears, other attention/notices/read evidence remain, and restart preserves the acknowledgment
 
 #### Scenario: Runtime ends after a turn
-- **WHEN** a turn-ended notice exists and runtime-end evidence arrives for a provider/client other than Codex Desktop
-- **THEN** the notice survives without claiming success or readership
+- **WHEN** a turn-ended notice exists and runtime-end evidence arrives for a different identity, or the session is interrupted
+- **THEN** the notice survives without claiming success or readership, and only the session's own accepted end retires its record on any supported path
 
 ### Requirement: Conservative ordering and stable identities
 The owner SHALL deduplicate unchanged retries, reject evidenced prior-turn activity changes, keep ordering uncertainty visible and count only attributable fresh children. Arrival time and opaque IDs MUST NOT be presented as authoritative provider order. When qualified activity ordering is unavailable, the owner SHALL use the best-effort current-turn policy below. Unknown correlation MUST NOT resolve unrelated attention.
@@ -97,9 +97,15 @@ The package SHALL provide ingest, snapshots, subscriptions, labels, acknowledgme
 
 Durable format 2.0 SHALL retain bounded retirement evidence and record generations. Importing format 1.0 SHALL preserve session evidence clocks and current state, assigning legacy generation zero. Snapshot 1.0 SHALL remain available unchanged; opt-in snapshot 1.1 SHALL expose the generation. Unsupported formats SHALL fail closed.
 
+Opening a store written while only Codex Desktop retired SHALL settle it once at startup: every record holding an accepted end as activity `ended`, with its known descendants, SHALL be retired in one durable revision with the same bounded guards, without a journal row, acknowledgment, read evidence, evidence-clock reset or old-effect replay. Records with idle, waiting, interrupted or unknown activity SHALL be retained unchanged with their own expiry; the owner MUST NOT infer an end from idle or unknown activity or from transcripts.
+
 #### Scenario: Consumer misses retirement
 - **WHEN** a consumer last observed a record, misses its retirement, and next observes the same native identity recreated
 - **THEN** snapshot 1.1 exposes a different generation and a generation-aware consumer discards old task-specific state without replaying effects or changing global settings
+
+#### Scenario: Stored accepted end settles on startup
+- **WHEN** the owner opens a format 1.0 or 2.0 store holding a record with activity `ended`, its known child, and idle, waiting and unknown records
+- **THEN** one new revision removes the ended record and child with retirement guards, the other records keep their evidence clocks, notices and attention, a delayed old event for the settled identity is rejected, an eligible new start creates a fresh generation, and a restart keeps the settlement
 
 ### Requirement: Best-effort current-turn selection
 For a session without qualified activity ordering, a valid start with known session and turn identity that has not already been selected, retired or completed within the retained evidence SHALL select that turn and set activity active. A matching stop SHALL set its activity idle and retain a stable completion notice without claiming success or readership. A new selection SHALL clear prior known-turn completion notices only for consumers whose clearOnNewTurn policy enables it. Attention, read evidence, other sessions and explicit consumer-scoped acknowledgment MUST remain independent, except that retiring a turn forgets its approvals without a request ID. Provider ordering MUST remain unknown when it was unknown at ingestion.
@@ -211,17 +217,6 @@ The owner SHALL forget an approval without a request ID once it retires that app
 - **WHEN** the owner starts from a store holding approvals without a request ID on retired turns
 - **THEN** one new revision removes them, and a restart keeps them removed
 
-### Requirement: Codex Desktop end retirement
-A normalized `runtime.ended` for a known Codex Desktop session SHALL remove that record and every descendant connected by known parent selectors in one atomic update and one published revision. Unknown or repeated ends SHALL create nothing. Retirement SHALL free owner capacity and forget monitoring labels, project overrides, attention and notices without acknowledgment, readership, success, cancellation or agent termination. Other provider/client policies, unrelated sessions and global settings SHALL remain unchanged. Ordinary completion, waiting, read/acknowledgment and freshness uncertainty SHALL NOT retire a session; a turn exceeding thirty minutes SHALL remain until independent end or expiry evidence. Each record's existing 24-hour expiry SHALL remain the fallback.
-
-#### Scenario: One end removes a known tree
-- **WHEN** a Desktop parent with known descendants and an unrelated session receives an accepted normalized runtime end
-- **THEN** parent and descendants disappear together, capacity is released in one published revision, and the unrelated session remains intact
-
-#### Scenario: No end inferred from age or completion
-- **WHEN** a turn completes, waits for input, is read or acknowledged, becomes freshness-uncertain or runs beyond thirty minutes
-- **THEN** its record remains until runtime-end evidence or its own 24-hour evidence expiry
-
 ### Requirement: Bounded retirement admission memory
 The owner SHALL persist retirement evidence separately from active records and diagnostic history, bounded to 128 identities for 24 hours with oldest-first eviction. It SHALL retain up to 256 known turn IDs, retry keys and ordering watermarks per identity. Recognizable delayed events and old ends SHALL NOT recreate or retire a fresh record. A retired identity SHALL require an eligible session or turn start to create a fresh record with a new generation and defaults. An event naming a retired absent parent SHALL NOT admit a new child. No relationship or provider order SHALL be guessed from receipt time or opaque IDs. Events without retained identity/order evidence, including evidence lost by eviction, SHALL have explicitly documented best-effort limits.
 
@@ -251,3 +246,18 @@ The owner SHALL expose a listener registration that receives a notification afte
 #### Scenario: Unsubscribing stops notifications
 - **WHEN** a caller invokes the unsubscribe function a listener registration returned
 - **THEN** that listener receives no further notifications from later commits
+
+### Requirement: Runtime-end retirement
+A normalized `runtime.ended` for a known session on any supported provider/client path (Codex Desktop, Codex CLI and Claude Code) SHALL remove that record and every descendant connected by known parent selectors in one atomic update and one published revision. Unknown or repeated ends SHALL create nothing. Retirement SHALL free owner capacity and forget monitoring labels, project overrides, attention and notices, even when notices or attention remain, without acknowledgment, readership, success, cancellation or agent termination. Unrelated sessions and global settings SHALL remain unchanged; ending one path's last session MUST NOT remove another path's session, including a session with the same native session ID under a different selector, and no ended record SHALL survive merely because of its path. Ordinary completion, child turn completion, interruption, waiting, read/acknowledgment and freshness uncertainty SHALL NOT retire a session; a turn exceeding thirty minutes SHALL remain until independent end or expiry evidence. Each record's existing 24-hour expiry SHALL remain the only fallback.
+
+#### Scenario: One end removes a known tree on each path
+- **WHEN** a Codex Desktop, Codex CLI or Claude Code parent with known descendants and unrelated sessions receives an accepted normalized runtime end
+- **THEN** parent and descendants disappear together, capacity is released in one published revision, and the unrelated sessions remain intact
+
+#### Scenario: Mixed paths keep unrelated records
+- **WHEN** sessions with the same native session ID exist on several paths and one path's session receives an accepted end
+- **THEN** only that path's known tree is removed, the other paths' records and notices are unchanged, and an end for an identity never seen on any path creates nothing
+
+#### Scenario: No end inferred from age or completion
+- **WHEN** a turn completes, a child's turn completes, a session is interrupted, waits for input, is read or acknowledged, becomes freshness-uncertain or runs beyond thirty minutes
+- **THEN** its record remains until runtime-end evidence or its own 24-hour evidence expiry

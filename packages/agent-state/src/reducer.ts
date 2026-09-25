@@ -148,7 +148,6 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
       break;
     }
     case 'turn.interrupted':session.activity='interrupted';break;
-    case 'runtime.ended':session.activity='ended';break;
     case 'question.continuing':
     case 'attention.input':
     case 'attention.approval':{

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {mkdir} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
-// Separate empty fixture keeps the existing CLI/other-provider scenarios intact.
+// Separate empty fixture keeps the existing CLI/other-provider scenarios intact. Every supported
+// provider/client path retires through the same owner rule (Hub #241); the dashboard only follows snapshots.
 const retirement=await fixture({empty:true}),retirementBrowser=await chromium.launch({headless:true});
 const retirementPage=await retirementBrowser.newPage();
 const output=process.env.DASHBOARD_RECEIPTS;
@@ -11,12 +12,23 @@ try{
  const identity={...retirement.identity,client:'desktop'};
  await retirement.event('turn.started',{identity,label:{origin:'user',value:'Desktop retirement fixture'}});
  await retirement.event('session.started',{identity:{...identity,sessionId:'desktop-child'},parent:{status:'known',identity},label:{origin:'user',value:'Desktop child fixture'}});
+ const claude={...retirement.identity,provider:'claude',client:'code',sessionId:'claude-task'},cli={...retirement.identity,sessionId:'cli-task'};
+ await retirement.event('turn.started',{identity:claude,label:{origin:'user',value:'Claude retirement fixture'}});
+ await retirement.event('turn.started',{identity:cli,label:{origin:'user',value:'CLI retirement fixture'}});
  await retirementPage.goto(retirement.hub.url);
  await retirementPage.getByText('Use a separately provisioned access token').click();
  await retirementPage.getByLabel('Hub browser access token').fill(retirement.token);
  await retirementPage.getByRole('button',{name:'Connect',exact:true}).click();
  await retirementPage.getByRole('heading',{name:'Desktop retirement fixture',exact:true}).waitFor();
  await retirementPage.getByRole('heading',{name:'Desktop child fixture',exact:true}).waitFor();
+ await retirementPage.getByRole('heading',{name:'Claude retirement fixture',exact:true}).waitFor();
+ await retirementPage.getByRole('heading',{name:'CLI retirement fixture',exact:true}).waitFor();
+ await retirement.event('runtime.ended',{identity:claude});
+ await retirementPage.getByRole('heading',{name:'Claude retirement fixture',exact:true}).waitFor({state:'detached'});
+ assert.equal(await retirementPage.locator('article.session').count(),3,'ending one path keeps the other paths');
+ await retirement.event('runtime.ended',{identity:cli});
+ await retirementPage.getByRole('heading',{name:'CLI retirement fixture',exact:true}).waitFor({state:'detached'});
+ assert.equal(await retirementPage.getByRole('heading',{name:'Desktop retirement fixture',exact:true}).count(),1);
  await retirement.event('runtime.ended',{identity});
  await retirementPage.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
  assert.equal(await retirementPage.locator('article.session').count(),0);
@@ -41,5 +53,5 @@ try{
  assert.equal(await retirementPage.getByLabel('Chosen label').inputValue(),'','a recreated task cannot retain the old draft');
  if(output)await retirementPage.screenshot({path:output+'/retirement-after.png',fullPage:true});
  assert.equal(retirement.writes.length,0,'retirement and reconnect do not command controllers');
- console.log(JSON.stringify({desktopRetirement:true,descendantsRemoved:true,emptyReconnect:true,freshDefaults:true,physical:false}));
+ console.log(JSON.stringify({paths:['codex/desktop','codex/cli','claude/code'],retirement:true,descendantsRemoved:true,otherPathsPreserved:true,emptyReconnect:true,freshDefaults:true,physical:false}));
 }finally{await retirementBrowser.close();await retirement.close();}

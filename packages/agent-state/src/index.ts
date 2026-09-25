@@ -163,9 +163,38 @@ export async function createAgentState(options:Options) {
       const next=structuredClone(session);forgetRetiredApprovals(next);return next;
     }),now());
   }
+  const retirement=(identity:Identity)=>data.retirements?.find(item=>identityKey(item.identity)===identityKey(identity));
+  // Remove the named records and every descendant linked by known parent selectors in one durable
+  // replacement, keeping bounded guards against recognizable delayed events. One rule serves every
+  // supported provider/client path; retirement forgets monitoring state and asserts nothing else.
+  async function retire(roots:string[],at:number,end?:Envelope):Promise<Outcome> {
+    const removed=new Set(roots);
+    let count=0;
+    while(count!==removed.size){
+      count=removed.size;
+      for(const session of data.sessions)if(session.parent.status==='known'&&removed.has(identityKey(session.parent.identity)))
+        removed.add(identityKey(session.identity));
+    }
+    const retirements=(data.retirements??[]).filter(item=>!removed.has(identityKey(item.identity)));
+    for(const session of data.sessions)if(removed.has(identityKey(session.identity)))
+      retirements.push(rememberRetirement(session,retirement(session.identity),at,end));
+    const result=await replaceSessions(data.sessions.filter(session=>!removed.has(identityKey(session.identity))),at,retirements);
+    if(result.ok)for(const key of removed)restarted.delete(key);
+    return result;
+  }
+  // Stores written while only Codex Desktop retired kept a Claude or CLI record after its accepted
+  // end with activity `ended`. Startup retires exactly those records and their known descendants.
+  // Idle, waiting or unknown activity is never treated as an end; those records keep their clocks.
+  const ended=(session:Session)=>session.activity==='ended';
+  async function settleEnded():Promise<Outcome|undefined> {
+    const roots=data.sessions.filter(ended).map(session=>identityKey(session.identity));
+    return roots.length?retire(roots,now()):undefined;
+  }
   async function maintenance():Promise<Outcome> {
     const expiry=await expire();if(expiry&&!expiry.ok)return expiry;
+    const retired=await settleEnded();if(retired&&!retired.ok)return retired;
     const settled=await settleApprovals();if(settled)return settled;
+    if(retired)return retired;
     if(expiry)return expiry;
     return data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)?commit(undefined,'maintenance'):{ok:true,revision:data.revision,outcome:'duplicate'};
   }
@@ -173,10 +202,11 @@ export async function createAgentState(options:Options) {
   function identify(identity:unknown):identity is Identity {
     return validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'}}).ok;
   }
-  if(data.formatVersion==='1.0'||expired(now()).length||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)||
+  if(data.formatVersion==='1.0'||expired(now()).length||data.sessions.some(ended)||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)||
     data.retirements?.some(item=>item.atMs<=now()-LIMITS.sessionAgeMs)){
     const result=await queue(async()=>{
-      if(data.formatVersion==='1.0'){
+      // A settlement replacement also migrates the format, so a legacy store takes one revision.
+      if(data.formatVersion==='1.0'&&!data.sessions.some(ended)){
         const migrated=await replaceSessions(data.sessions,now());if(!migrated.ok)return migrated;
       }
       return maintenance();
@@ -212,30 +242,16 @@ export async function createAgentState(options:Options) {
         // An observation older than the retention window is not new activity. Compare with the
         // wall clock, not the commit-time floor, so a corrected clock jump cannot strand producers.
         if(event.observedAtMs<=wall()-LIMITS.sessionAgeMs)return {ok:true,revision:data.revision,outcome:'stale'};
-        const retirement=(identity:Identity)=>data.retirements?.find(item=>identityKey(item.identity)===identityKey(identity));
-        if(desktop(event.identity)){
-          const old=retirement(event.identity);
-          if(guarded(event,old)||!previous&&old&&!eligibleStart(event)||
-            !previous&&event.parent.status==='known'&&!get(event.parent.identity)&&retirement(event.parent.identity))
-            return {ok:true,revision:data.revision,outcome:'stale'};
-        }
-        if(previous&&event.event.kind==='runtime.ended'&&desktop(event.identity)){
+        const old=retirement(event.identity);
+        if(guarded(event,old)||!previous&&old&&!eligibleStart(event)||
+          !previous&&event.parent.status==='known'&&!get(event.parent.identity)&&retirement(event.parent.identity))
+          return {ok:true,revision:data.revision,outcome:'stale'};
+        if(previous&&event.event.kind==='runtime.ended'){
           if(oldEnd(event,previous))return {ok:true,revision:data.revision,outcome:'stale'};
-          const removed=new Set([identityKey(event.identity)]);
-          let count=0;
-          while(count!==removed.size){
-            count=removed.size;
-            for(const session of data.sessions)if(session.parent.status==='known'&&removed.has(identityKey(session.parent.identity)))
-              removed.add(identityKey(session.identity));
-          }
-          const at=now(),retirements=(data.retirements??[]).filter(item=>!removed.has(identityKey(item.identity)));
-          for(const session of data.sessions)if(removed.has(identityKey(session.identity)))
-            retirements.push(rememberRetirement(session,retirement(session.identity),at,event));
-          const result=await replaceSessions(data.sessions.filter(session=>!removed.has(identityKey(session.identity))),at,retirements);
-          if(result.ok)for(const key of removed)restarted.delete(key);
-          return result;
+          return retire([identityKey(event.identity)],now(),event);
         }
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
+        // Archive admission evidence stays specific to Codex Desktop conversations.
         if(!previous&&desktop(event.identity)&&await archived(event))return {ok:true,revision:data.revision,outcome:'stale'};
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}

@@ -228,8 +228,11 @@ test('activity, correlated attention, notices and consumer acknowledgment stay i
   assert.deepEqual(owner.snapshot().sessions[0].attention.map(a=>a.kind),['question']);
   await owner.ingest(envelope('turn.ended',7));
   const notice=owner.snapshot().sessions[0].notices[0];
-  await owner.ingest(envelope('runtime.ended',8));
+  // Interruption and an end for another identity leave the notice; the session's own end retires the record (Hub #241).
+  await owner.ingest(envelope('turn.interrupted',8));
+  assert.equal((await owner.ingest(envelope('runtime.ended',9,{identity:{...identity,sessionId:'someone-else'}}))).outcome,'stale');
   assert.equal(owner.snapshot().sessions[0].notices.length,1);
+  assert.equal(owner.snapshot().sessions[0].activity,'interrupted');
   assert.equal((await owner.acknowledge(identity,notice.id,'pixoo')).ok,true);
   assert.deepEqual(owner.snapshot().sessions[0].notices[0].acknowledgedBy,['pixoo']);
   assert.equal(owner.snapshot().sessions[0].read,'unknown');
