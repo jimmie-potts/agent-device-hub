@@ -246,8 +246,9 @@ try {
   failing=false;
   // The command is accepted, then the refresh that follows it fails: the receipt stays shown, the control is released and nothing is resent.
   await page.route('**/api/controllers/v1/pixel/commands',async route=>{failing=true;await route.continue();});
-  await enabled('Pause').waitFor();before=f.writes.length;await visible(page,'button','Pause').click();
+  await enabled('Pause').waitFor();before=f.writes.length;expected=guard(f);await visible(page,'button','Pause').click();
   await status.filter({hasText:/^Pause: (Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();assert.equal(f.writes.length,before+1);
+  assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'media.control',action:'pause'}},'the action recovers with current guards after the failed read');
   failing=false;await enabled('Pause').waitFor();
   await brightness.fill('20');await enabled('Apply brightness').waitFor();await visible(page,'button','Apply brightness').click();
   await status.filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();assert.equal(f.writes.length,before+2);

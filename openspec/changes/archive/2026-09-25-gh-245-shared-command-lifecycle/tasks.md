@@ -20,5 +20,5 @@
 ## 3. Qualification and delivery
 
 - [x] 3.1 Update the dashboard README and `docs/development.md`.
-- [x] 3.2 Run `npm run build`, `npm run typecheck`, `npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`, `npm run test:dashboard:browser`, and the shared hub, contract, state, MCP and workflow checks on Node 24. Record the results and the unchanged-UI screenshots in the PR.
+- [x] 3.2 Run `npm run build`, `npm run typecheck`, `npm run build:dashboard`, `npm run typecheck:dashboard`, `npm run test:dashboard`, `npm run test:dashboard:browser`, and the shared hub, contract, state, MCP and workflow checks on Node 24. Record the results and the unchanged-UI comparison in the PR, and show the owner the candidate screenshots for approval.
 - [x] 3.3 Synchronize the `unified-dashboard` delta and archive this change before final review. Independent reviews, current-head CI, human approval of the UI candidate, guarded merge and merged-main readback remain SDLC gates.

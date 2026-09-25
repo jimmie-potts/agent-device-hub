@@ -524,9 +524,12 @@ runs under `npm run test:dashboard` and applies each case to both consumers:
 - uncertain and partial locks with explicit reload;
 - a failed refresh after a result, and a stale read reaching the controller once.
 
-A matrix scenario covers the same failed fresh read and failed refresh on the
-Pixoo brightness form and the Pause action, plus a double activation that sends
-one command. The existing Dashboard CI job runs both; no new job is needed.
+A matrix scenario checks end to end that user-visible behaviour is unchanged on
+the Pixoo brightness form and the Pause action. A failed device read before
+sending sends nothing, recovery sends one command with current guards, a failed
+read after an accepted command keeps its receipt, and a double click sends one
+command. The app's reads resolve with an error record rather than rejecting, so
+the rejected-promise paths are covered by the unit tests. The existing Dashboard CI job runs both; no new job is needed.
 
 ## Shared monitoring setup checks
 

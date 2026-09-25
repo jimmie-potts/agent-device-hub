@@ -17,7 +17,7 @@ See proposal.md for motivation. `useCommand` and `EditForm` each held five piece
 2. **Wording as data.** `actionWording(label)` prefixes the label and adds the retry hint for `stale-generation` and `revision-conflict`. `formWording` appends "Your edit is kept." to rejections. Existing strings are reproduced exactly.
 3. **Ordering.**
    - Start clears any watched ticket.
-   - Preparation runs next: the consumer's fresh read plus, for forms, the draft revision check.
+   - Preparation runs next: for device controls, the consumer's fresh device read plus, for forms, the draft revision check. Session label and acknowledgment forms have no fresh read and build from the snapshot their draft started from, as before.
    - A blocked or throwing preparation ends without sending or refreshing.
    - Otherwise the driver sends once and dispatches the result. It records the ticket only when accepted.
    - Then it awaits the refresh, swallowing a rejection so the result stays shown.

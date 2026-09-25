@@ -174,10 +174,10 @@ uncertain clears the draft once the refreshed snapshot arrives, so the form is
 ready for the next change. A changed revision blocks stale submission, and a
 rejection keeps the edit. An uncertain or partly applied result, including one
 observed later, locks the form or group and is never retried. "Reload current
-values" is the separate explicit action that unlocks it. A failed fresh read
-before sending sends nothing and frees the control. A failed refresh after a
-result keeps that result and resends nothing; the next explicit activation reads
-current guards again. A second activation while a command is running sends
+values" is the separate explicit action that unlocks it. A failed fresh device
+read before sending sends nothing and frees the control. A failed refresh after
+a result keeps that result and resends nothing; the next explicit device command
+reads current guards again. A second activation while a command is running sends
 nothing. Status text says
 whether a command was queued, sent, saved, already in effect, not applied or
 unknown, names the typed code, and never presents transport success or a saved
