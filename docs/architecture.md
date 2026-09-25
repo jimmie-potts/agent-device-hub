@@ -5,7 +5,7 @@ This document records accepted ownership, state and command boundaries. The
 [dashboard](../apps/dashboard/README.md) guides describe their implementations;
 GitHub issues hold current delivery and acceptance status.
 
-The [BUNNY HTML system design](system-design/index.html) preserves a dated
+The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
 September 19, 2026 design snapshot. Its labels and open decisions reflect that
 baseline, not the current implementation.
 

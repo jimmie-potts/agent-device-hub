@@ -48,8 +48,10 @@ Legend used throughout:
 - **Observed.** The dashboard shell currently renders the text `BUNNY` with a
   `◈` glyph and a `LOCAL INTEGRATION` sublabel (`apps/dashboard/src/main.tsx`),
   and status sentences such as "BUNNY can’t see the device" (`client.ts`).
-  Repository documents use both spellings.
-- **Shared rule.** New user-facing copy spells the name **B.U.N.N.Y.** Existing
+  Repository documentation spells the name B.U.N.N.Y.; the dashboard's current
+  strings keep the older spelling until Hub #182 changes them.
+- **Shared rule.** Documentation and new user-facing copy spell the name
+  **B.U.N.N.Y.** Existing
   strings in the dashboard change only in their owning UI issue
   ([Hub #182](https://github.com/jimmie-potts/agent-device-hub/issues/182)),
   with the current candidate's approval. The older `BUNNY` spelling in the

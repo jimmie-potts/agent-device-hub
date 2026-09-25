@@ -41,7 +41,7 @@ shared presets follow the Codex-first milestone and general-control definition.
 
 ## System design documents
 
-Open the [BUNNY system design atlas](docs/system-design/index.html) locally. It
+Open the [B.U.N.N.Y. system design atlas](docs/system-design/index.html) locally. It
 starts with a system map and an agent observation walkthrough pinned to source
 on September 23, 2026, followed by the September 19, 2026 snapshot of 26
 component documents and a combined reading/print view. Implementation labels
@@ -134,7 +134,7 @@ delivery history and architecture guide for Hub, Nanoleaf and Pixoo. Its
 generator and saved inputs live here. Refresh them for an intentional guide
 update or publication; GitHub issues own current status.
 
-## BUNNY frontend
+## B.U.N.N.Y. frontend
 
 The [integration dashboard](apps/dashboard/README.md) implements Hub #6
 for activity, components and connections. It uses the existing protected hub and

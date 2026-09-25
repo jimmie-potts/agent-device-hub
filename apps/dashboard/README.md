@@ -1,4 +1,4 @@
-# BUNNY integration dashboard
+# B.U.N.N.Y. integration dashboard
 
 The React/TypeScript frontend reads the shared hub and submits explicit integration
 commands to its existing services. It creates no collector or device writer.

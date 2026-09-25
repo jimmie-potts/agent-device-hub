@@ -163,7 +163,7 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
    SHA-256 receipts and definitions in `work/architecture_diagrams.py`. Render
    using the centrally installed archify skill; do not install or vendor it.
    Retain implemented/planned labels and each diagram's failure boundaries.
-   The BUNNY atlas under `docs/system-design/` embeds the system map and the
+   The B.U.N.N.Y. atlas under `docs/system-design/` embeds the system map and the
    observation walkthrough from these same definitions; rebuild and check it
    after re-rendering either of them. Those two keep `sourceRevisions`; other
    diagrams may pin newer sources through `viewRevisions` and a `revisions`

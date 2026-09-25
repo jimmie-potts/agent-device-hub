@@ -39,7 +39,7 @@ three existing SQLite schemas. Keep `docs/system-design/reference/` together
 when copying the HTML. Bundled assets allow offline browsing. Request controls
 are disabled here; the owning services retain their origin and credential rules.
 The database reports are generated from fresh empty schema fixtures, never live
-controller files. The proposed BUNNY store still has no delivered table schema.
+controller files. The proposed B.U.N.N.Y. store still has no delivered table schema.
 
 `check.py` also verifies reference generation, the REST/SSE route inventory,
 all 28 table definitions, source pins, local links and bundled asset receipts.
