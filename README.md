@@ -152,3 +152,7 @@ power, brightness and saved-scene controls on the capabilities delivered by
 [Nanoleaf #64](https://github.com/jimmie-potts/codex-nanoleaf/issues/64); physical
 acceptance on the installed wall is
 [#155](https://github.com/jimmie-potts/agent-device-hub/issues/155).
+[ADR 0006](docs/decisions/0006-hub-moments-and-interludes.md) defines hub
+moments and interludes. The hub decides which events play what, where and
+when. Each device controller guarantees safe playback and a return to its
+current presentation.

@@ -2,7 +2,8 @@
 
 Status: Accepted definition under [hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31),
 2026-09-22. Implementation, installation and physical acceptance remain in the
-linked issues.
+linked issues. [ADR 0006](0006-hub-moments-and-interludes.md) revises the
+"nothing restores automatically" rule for time-boxed interludes only.
 
 ## Context
 
