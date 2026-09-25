@@ -218,9 +218,10 @@ dependency records and authoritative source receipts.
 
 The public [agent-device-guide repository](https://github.com/jimmie-potts/agent-device-guide)
 hosts the generated HTML through GitHub Pages from `main`, directory `/`.
-The hub source repository stays private. Pages on the current account plan
-requires a separate public repository. Links to private GitHub issues, PRs and
-source files still require repository access.
+The hub, Nanoleaf and Pixoo source repositories are public (checked September
+25, 2026), so issue, PR and source links open without a GitHub sign-in. The
+separate publication repository keeps the site limited to reviewed exports at
+its existing URLs.
 
 This task's coordinator owns the hub source PR and the linked public publication
 PR. After a guide change merges and all applicable main CI jobs pass, or the
@@ -255,7 +256,7 @@ PR. After a guide change merges and all applicable main CI jobs pass, or the
    result in the delivery receipt. A repository hash, successful Pages response
    or representative page check alone is incomplete acceptance.
 
-Copying from the private hub to the public repository is an explicit publication
+Copying from the hub to the publication repository is an explicit publication
 step. There is no automatic cross-repository sync or new access token. A hub
 merge alone does not update the website. For an authorized publication task,
 report pending publication until the public copy is verified.
