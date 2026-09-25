@@ -1,13 +1,13 @@
 # Controller contract v1
 
-[Hub #4](https://github.com/jimmie-potts/agent-device-hub/issues/4) adds these contract schemas, shared fixtures and pure validators. It does not implement a controller, writer, network listener, MCP endpoint or renderer.
+[Hub #4](https://github.com/jimmie-potts/agent-device-hub/issues/4) adds these contract schemas, shared fixtures and pure validators. It does not implement a controller, writer, network listener, MCP endpoint or renderer. [Hub #292](https://github.com/jimmie-potts/agent-device-hub/issues/292) adds API 1.1, which carries [moments](#moments-api-11) under [ADR 0006](decisions/0006-hub-moments-and-interludes.md). API 1.0 is unchanged.
 
 ## Artifact layout
 
-- packages/contracts/package.json: private versioned source artifact `@jimmie-potts/device-contracts`, version `1.0.0`, publishable through explicit artifact packaging without public registry publication.
-- packages/contracts/schemas/controller-v1.schema.json: strict Draft 2020-12 envelope schemas using `$defs`.
+- packages/contracts/package.json: private versioned source artifact `@jimmie-potts/device-contracts`, version `1.1.0`, publishable through explicit artifact packaging without public registry publication.
+- packages/contracts/schemas/controller-v1.schema.json: strict Draft 2020-12 envelope schemas using `$defs`. API 1.1 adds separate definitions with a `V1_1` suffix, such as `requestV1_1` and `snapshotV1_1`, plus `momentCommand` and `momentState`. The 1.0 definitions are unchanged.
 - packages/contracts/fixtures/controller-v1.json: all language-neutral schema and semantic cases, with inputs and expected results.
-- packages/contracts/src/index.ts: schema loading/export and pure admission, replay, feed and clock interpretation reference functions only.
+- packages/contracts/src/index.ts: schema loading/export and pure admission, replay, feed, clock, moment and 1.0-view reference functions only.
 - packages/contracts/python/agent_device_hub_contracts/: Python consumer of the identical schema/fixtures, with matching pure reference functions.
 - packages/contracts/tests/: TypeScript tests consume the shared JSON cases. Python tests do the same. They must fail when expected outputs differ; merely checking fixture shape does not establish semantics.
 - docs/controller-contract.md: normative behavior, HTTP mapping, privacy, adoption and compatibility.
@@ -17,7 +17,7 @@ Prefer schema definitions and small explicit reference functions over generated 
 
 ## Wire values and identity
 
-All common objects reject unknown fields. Both consumers reject JSON nested more than 32 levels before schema validation, returning invalid-request without reserving a command. Valid v1 envelopes fit well below this bound. API version is literal `"1.0"`; contract artifact is `1.0.0`. IDs are neutral, operator-configured strings, bounded to 128 ASCII letters/digits/underscore/hyphen/dot. Labels are optional, at most 80 Unicode characters, and can originate only from explicit user input. Do not copy media/session titles or paths into labels automatically. Revision and sequence numbers are nonnegative safe integers, at most 9007199254740991, to avoid TypeScript/Python disagreement. Epoch IDs are opaque bounded neutral IDs, never clocks or credentials.
+All common objects reject unknown fields. Both consumers reject JSON nested more than 32 levels before schema validation, returning invalid-request without reserving a command. Valid v1 envelopes fit well below this bound. API versions are the literals `"1.0"` and `"1.1"`; the contract artifact is `1.1.0`. IDs are neutral, operator-configured strings, bounded to 128 ASCII letters/digits/underscore/hyphen/dot. Labels are optional, at most 80 Unicode characters, and can originate only from explicit user input. Do not copy media/session titles or paths into labels automatically. Revision and sequence numbers are nonnegative safe integers, at most 9007199254740991, to avoid TypeScript/Python disagreement. Epoch IDs are opaque bounded neutral IDs, never clocks or credentials.
 
 An identity contains `deviceId`, `controllerId`, `sourceId`, and `controllerEpoch`. Stable configured IDs survive ordinary restarts; the runtime epoch changes whenever replay or clock continuity cannot be preserved. The controller registers device destinations privately. Neither identities nor commands contain destination addresses, credentials, filesystem paths, firmware/reset operations or raw protocol commands. A configuration change that redirects an existing identity requires operator authority; it is not a generic client operation.
 
@@ -35,7 +35,7 @@ Command is a closed discriminated union:
 - `{kind:"media.control", action:"pause"|"resume"|"stop"|"next"|"previous"|"restart-with-changes"|"clear"}`
 - `{kind:"mode.set", mode:device-advertised enum}` requires the optional typed `modes` capability. Preserve Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media; never map them to a common global mode.
 
-Discovery, snapshot and preview retrieval are reads. They cannot advance animation queues, clear notices, allocate zones or issue writes. Optional device profiles may add typed operations through separately versioned schemas and advertised compatibility. V1 has no arbitrary extension-command object or raw renderer command.
+API 1.1 adds a `moment` command and a `moments` capability; see [Moments](#moments-api-11). Discovery, snapshot and preview retrieval are reads. They cannot advance animation queues, clear notices, allocate zones or issue writes. Optional device profiles may add typed operations through separately versioned schemas and advertised compatibility. V1 has no arbitrary extension-command object or raw renderer command.
 
 ## Request, receipt and observations
 
@@ -77,9 +77,95 @@ Renderer metadata contains `profileId`, `profileVersion`, `rendererEpoch`, `gene
 
 Device profiles own Pixoo frame and Nanoleaf zone/timeline payload schemas, bounded payload sizes and compatibility. The common metadata references a concrete immutable profile version; unknown profiles are explicitly unsupported, not interpreted as a generic RGB timeline. Profile metadata is useful without implementing exact previews. Update outcomes distinguish accepted/pending/sent/partial/failed/uncertain/cancelled with the same transmission-only evidence limit. Browsers may draw an estimate but never schedule physical effects. Preserve Nanoleaf task/effect epochs and Pixoo mode generations; this contract does not redefine their timing.
 
+## Moments (API 1.1)
+
+A moment is a short, hub-decided presentation request ([ADR 0006](decisions/0006-hub-moments-and-interludes.md)). One device plays it and then returns to what it shows now. The hub sends a semantic intent. The device owns translation, precedence, timing and the return to its base. Nothing in API 1.1 carries frames, raw protocol, device geometry, titles or other private text.
+
+### Negotiation
+
+API 1.1 is opt-in:
+
+- A client reads the snapshot at the highest version it supports. The controller answers with the highest version it serves that is not above the requested one, and the client validates the answer against that version's schema.
+- A client sends a moment only after it has read a 1.1 snapshot that declares `moments` supported.
+- A 1.1 controller keeps accepting 1.0 requests. Both envelopes share one ticket sequence, and each receipt carries its own request's API version.
+- A 1.0-only controller rejects a 1.1 envelope as `invalid-request` before admission, without reserving a ticket.
+- 1.1 snapshots and feeds use `snapshotV1_1` and `feedV1_1`. A 1.1 controller serving a 1.0 reader uses `downgradeSnapshot`, which omits the `moments` capability, `state.moment` and pending moment entries, and reports a 1.1 `lastOutcome` as `unknown` instead of misrepresenting it. A 1.0 feed carries the downgraded snapshots.
+
+### Command and capability
+
+`{kind:"moment", momentId, mood, palette?, durationMs, priorityClass, coversStatus, start}`:
+
+- `momentId`: a neutral ID derived from the triggering event. The same moment sent to several devices keeps the same ID.
+- `mood`: a neutral ID that the device declares. `palette` is optional: 1 to 8 `#rrggbb` colors that the device may approximate or replace with its own preset for the mood.
+- `durationMs`: an integer from 1,000 to 300,000.
+- `priorityClass`: `event` for a moment that a rule triggers, or `flourish` for one that an agent proposes.
+- `coversStatus`: whether the moment may play over status presentation. It is true only for event kinds in the owner's interrupt set, so a `flourish` must set it to false.
+- `start`: `{domain:"controller-monotonic", epoch, atMs, toleranceMs}`, described below.
+
+The `moments` capability is `{supported:false}` or `{supported:true, moods, maxDurationMs, coversStatus}`:
+
+- `moods` lists 3 to 64 unique IDs and must include the core moods `celebrate` (pull request merged), `setback` (CI failed) and `reminder` (meeting).
+- `maxDurationMs` is the device's own limit, within the contract range.
+- `coversStatus` says whether the device can play a moment over status presentation.
+
+1.1 capabilities always list `moments`. Tidbyt and LIFX declare it unsupported until their own interlude stories.
+
+Admission applies every 1.0 rule first: authentication, schema, target, ticket, capacity, configuration revision and generation. A mood the device does not declare, a duration above `maxDurationMs`, or `coversStatus:true` on a device that cannot cover status fails with `unsupported-capability`. An accepted moment does not advance the configuration revision, because it changes no desired configuration. Concurrent edits therefore do not conflict with it.
+
+### Start time and clock domain
+
+The contract compares times only inside one controller's monotonic clock epoch. `start` is expressed in the receiving controller's clock:
+
+- The hub already reads a snapshot before every command. It computes `atMs` as the snapshot's `sampleClock.sampledAtMs`, plus its own monotonic time elapsed since it received that snapshot, plus any lead it wants. It sets `epoch` to that `sampleClock.epoch`.
+- Choreography gives each device its own `atMs` for the same hub instant. Start times are best effort, and no device synchronization is claimed.
+- When the writer takes the moment, it drops the moment as `moment-missed` if its clock epoch differs from `start.epoch`, if its clock is more than `toleranceMs` past `atMs`, or if `atMs` is more than 60,000 ms ahead. `toleranceMs` is at most 60,000.
+- A moment that misses its window is dropped, not queued. A late delivery after a hub outage therefore never plays.
+
+### Precedence and return to base
+
+The device-neutral presentations are `status` (Nanoleaf Work, Pixoo Monitor), `content` (Nanoleaf Free, Pixoo Media) and `quiet` (Nanoleaf Quiet). The device-neutral alerts are `attention` and `failure`; on Nanoleaf these are yellow and red task alerts. Each device story owns its exact mapping.
+
+The device writer plays at most one moment at a time. For each moment that reaches it, in order:
+
+1. A `momentId` among the device's recent moment IDs is dropped as `moment-duplicate`. The device remembers at least the last 64 IDs of this clock epoch, including dropped ones.
+2. A moment outside its start window is dropped as `moment-missed`.
+3. The moment is dropped as `moment-blocked`, not deferred, when:
+   - the device shows `quiet`;
+   - the device shows `status` and either `coversStatus` is false or an alert is active; or
+   - it is a `flourish` and an `event` moment is scheduled or playing.
+4. Otherwise it replaces any current moment, which ends as `superseded`. It is scheduled until `atMs` and then plays for `durationMs`.
+
+A current moment ends in one of four ways:
+
+- `completed`: its duration has elapsed.
+- `preempted`: an `attention` or `failure` alert while the device shows `status`. Alerts do not pre-empt or override `content`.
+- `superseded`: a newer moment replaced it.
+- `interrupted`: any explicit command, including a mode change.
+
+When a moment ends, the device shows its base as it is *now*, including any status changes made during the moment. It never shows a snapshot saved before the moment. No moment changes the selected mode.
+
+A delivered moment no longer depends on the hub. It ends on the device's own clock, and status presentation continues while the hub is down. A restart starts a new clock epoch: nothing resumes or replays, the moment memory starts empty, and the earlier moment's requests expire with the old ticket epoch.
+
+### Evidence
+
+Receipts keep their transmission-only meaning:
+
+- A moment that fails a check in the list above gets a `failed` receipt with `moment-duplicate`, `moment-missed` or `moment-blocked`. These failure codes exist only in 1.1 receipts.
+- A moment that starts gets `sent` for its start transmission.
+- A scheduled moment that ends before starting gets `cancelled`, with no prior effects.
+
+The 1.1 snapshot adds `state.moment`:
+
+- `current` is `none`, `scheduled` (with `startAt` and `durationMs`) or `playing` (with `endAt`). It carries the moment and request IDs, mood, priority class and `coversStatus`.
+- `last` is `none` or the most recent moment that ended, with its `ending` and `endedAt`.
+
+Instants use `{domain:"controller-monotonic", epoch, atMs}` and follow the same clock rule as the renderer metadata. The hub's moment log reads endings and pre-emption from this state and the feed.
+
+The `moment` reference operation replays one device's writer order: deliveries, ticks, alerts, base changes, mode changes, explicit commands and restarts. For each event it returns what the device shows, any receipt changes and any ending. It assumes each start transmission succeeds; a real device reports its actual transport outcome through the ordinary receipt fields. The reference defines decisions only, not rendering, the device's mood presets or the hub's rules, budgets and quiet hours.
+
 ## Compatibility and distribution
 
-Version `1.0.0` contains the schema, fixture corpus, documentation and consumers in one archive. Its manifest names schema draft, API `1.0`, fixture format `1`, artifact version and file hashes. Record the immutable source commit externally with the archive checksum, avoiding a self-referential committed checksum. Separate repository consumers pin version plus SHA-256 and verify before import. Publish a private release asset or an authenticated immutable artifact from that commit when a dependent deliverable needs it. No worktree-relative dependency, mutable branch fetch, public package publication or private database import is acceptable.
+Version `1.1.0` contains the schema, fixture corpus, documentation and consumers in one archive. Its manifest names the schema draft, the served API versions `1.0` and `1.1`, fixture format `1`, the artifact version and file hashes. The released `1.0.0` archive and its receipt stay unchanged under vendor/. The Device MCP 1.0.0 package keeps bundling it, even though the workspace builds against the 1.1.0 source. Record the immutable source commit externally with the archive checksum, avoiding a self-referential committed checksum. Separate repository consumers pin version plus SHA-256 and verify before import. Publish a private release asset or an authenticated immutable artifact from that commit when a dependent deliverable needs it. No worktree-relative dependency, mutable branch fetch, public package publication or private database import is acceptable.
 
 Before the second repository depends on the artifact, record its actual artifact location/checksum and supported consumer combinations in a compatibility matrix. A plan alone is not a delivered distributable dependency. CI exercises TypeScript on Node 24 and Python on the supported Nanoleaf version, established from its live CI. Unsupported API major/minor/profile versions produce an explicit compatibility error before commands. Because v1 schemas reject unknown fields, even additive wire fields require an explicitly supported new API minor and compatible negotiation. New required fields, changed meanings or removed operations require a new major. Package patch versions may fix documentation/tests without changing accepted wire behavior.
 
@@ -116,14 +202,29 @@ Use one JSON corpus. Each case names a pure operation, input state/request and e
 25. Extra prompt/title/transcript/tool/path/credential fields fail every common envelope.
 26. Identical source fixtures run in both languages and packaged smoke imports succeed outside the checkout.
 
+API 1.1 adds these cases:
+
+27. Moment commands, `moments` capabilities, 1.1 receipts, snapshots and feeds validate. Short or long durations, oversized tolerances, malformed palettes, a flourish that covers status, a missing start, another clock domain, frames, raw commands, titles and text moods fail. 1.0 definitions reject every 1.1 shape.
+28. A 1.1 controller queues a moment without advancing the configuration revision, applies stale revisions and unsupported mood, duration or status cover first, accepts 1.0 and 1.1 envelopes, and replays a reordered moment request. A 1.0-only controller and an unknown 1.2 envelope reject before reservation.
+29. A moment returns to the current base after status changes during it, starts on schedule and expires after its duration.
+30. An alert pre-empts a scheduled or playing moment on status, and an existing alert blocks one. Alerts neither pre-empt nor block over content.
+31. Quiet, and status without `coversStatus`, block a moment.
+32. Late delivery, another clock epoch and an over-long lead are missed; a start within tolerance plays.
+33. A duplicate ID is ignored while playing and after ending, and the device remembers the last 64 IDs.
+34. A newer event supersedes a moment and an event supersedes a flourish, while a flourish during an event is blocked.
+35. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
+36. With the hub down, a playing moment ends on the device clock, and a late delivery after recovery is missed.
+37. A restart replays nothing and forgets the moment memory.
+38. The 1.0 view of a 1.1 snapshot omits moment content, reports a 1.1 outcome as unknown and keeps a 1.0 outcome.
+
 Schema checking proves payload shape. Pure semantic fixtures prove the reference algorithm. Device adoption tests must later run equivalent cases against real owning services/queues and authenticate through their actual HTTP layer. This issue must report that remaining consumer adoption explicitly.
 
 ## Artifact verification matrix
 
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
-| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 220 shared cases, immutable input checks, emitted receipt validation and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 220 cases and archive import |
+| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 309 shared cases (189 schema, 120 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
+| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 309 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
 
@@ -136,4 +237,7 @@ manifest hashes every shipped source, schema, fixture, compiled module and guide
 The archive and SHA-256 sidecar are under artifacts/. The delivery record must
 bind their checksum to the immutable source revision and actual private release
 asset before a dependent repository adopts them. Current reference checks do not
-claim either controller has adopted or enforced the contract.
+claim either controller has adopted or enforced the contract. No controller serves
+API 1.1 yet. Nanoleaf [#158](https://github.com/jimmie-potts/codex-nanoleaf/issues/158)
+and Pixoo [#92](https://github.com/jimmie-potts/divoom-app-upgrade/issues/92) own the
+first moment adoptions.

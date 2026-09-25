@@ -1,4 +1,4 @@
-"""Controller contract 1.0 schemas and pure reference decisions. No device or network I/O."""
+"""Controller contract 1.0 and 1.1 schemas and pure reference decisions. No device or network I/O."""
 from copy import deepcopy
 from functools import lru_cache
 import json
@@ -8,8 +8,16 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-ARTIFACT_VERSION = "1.0.0"
+ARTIFACT_VERSION = "1.1.0"
+# The original wire version. 1.0-only consumers keep using it unchanged.
 API_VERSION = "1.0"
+API_VERSIONS = ("1.0", "1.1")
+# Moods every device with moments supported must declare.
+CORE_MOODS = ("celebrate", "setback", "reminder")
+# A moment may be scheduled at most this far ahead of its delivery.
+MOMENT_MAX_LEAD_MS = 60000
+# A device remembers at least this many recent moment IDs per controller clock epoch.
+MOMENT_MEMORY = 64
 SCHEMA = json.loads((Path(__file__).resolve().parents[2] / "schemas/controller-v1.schema.json").read_text())
 MAX_SAFE_INTEGER = 9007199254740991
 MAX_JSON_DEPTH = 32
@@ -84,6 +92,10 @@ def _supports(capabilities: dict[str, Any], command: dict[str, Any]) -> bool:
     if kind == "mode.set":
         cap = capabilities.get("modes", {"supported": False})
         return cap["supported"] and command["mode"] in cap["values"]
+    if kind == "moment":
+        cap = capabilities.get("moments", {"supported": False})
+        return (cap["supported"] and command["mood"] in cap["moods"] and command["durationMs"] <= cap["maxDurationMs"]
+                and (not command["coversStatus"] or cap["coversStatus"]))
     return False
 
 
@@ -98,7 +110,9 @@ def admit(value: dict[str, Any]) -> dict[str, Any]:
     if auth["decision"] != "allowed":
         return reject(auth["decision"])
     request = value["request"]
-    if not validate("request", request):
+    # A 1.1 envelope is valid only on a controller that serves 1.1; 1.0 requests stay valid everywhere.
+    v1_1 = "1.1" in state.get("apiVersions", ())
+    if not (v1_1 and validate("requestV1_1", request)) and not validate("request", request):
         return reject("invalid-request")
     target_auth = authorize({**value["auth"], "deviceId": request["deviceId"], "scope": "control"})
     if target_auth["decision"] != "allowed":
@@ -135,8 +149,10 @@ def admit(value: dict[str, Any]) -> dict[str, Any]:
         failure = "stale-generation"
     elif not _supports(state["capabilities"], request["command"]):
         failure = "unsupported-capability"
-    receipt = {"apiVersion": "1.0", "controllerId": request["controllerId"], "deviceId": request["deviceId"],
-               "requestId": deepcopy(ticket), "configurationRevision": state["configurationRevision"] + (0 if failure else 1),
+    # A moment is transient: it changes no desired configuration, so it does not advance the revision.
+    advances = not failure and request["command"]["kind"] != "moment"
+    receipt = {"apiVersion": request["apiVersion"], "controllerId": request["controllerId"], "deviceId": request["deviceId"],
+               "requestId": deepcopy(ticket), "configurationRevision": state["configurationRevision"] + (1 if advances else 0),
                "generation": deepcopy(state["generation"]), "outcome": "failed" if failure else "queued",
                "priorEffects": "none", "completedOperations": [], "uncertainOperations": []}
     if failure:
@@ -189,6 +205,121 @@ def _clock(value: dict[str, Any]) -> dict[str, Any]:
     return {"status": "known", "remainingMs": max(0, max(0, renderer["deadlineMs"] - renderer["clock"]["sampledAtMs"]) - (now - received))}
 
 
+def _moment(value: dict[str, Any]) -> dict[str, Any]:
+    """One device's moment precedence, as its single writer applies it. Alerts beat moments only on status
+    presentation; a moment ends by returning to the base the device shows now, never to a saved one."""
+    device = deepcopy(value["device"])
+    steps = []
+    starts = 0
+    for event in value["events"]:
+        receipts: list[dict[str, Any]] = []
+        ended = None
+
+        def at(at_ms: Any) -> dict[str, Any]:
+            return {"domain": "controller-monotonic", "epoch": device["clockEpoch"], "atMs": at_ms}
+
+        def end(ending: str) -> None:
+            nonlocal ended
+            current = device["current"]
+            if current["status"] == "none":
+                return
+            # A moment that never started transmitted nothing; one that started keeps its sent receipt.
+            if current["status"] == "scheduled":
+                receipts.append({"requestId": deepcopy(current["requestId"]), "outcome": "cancelled"})
+            ended = {"momentId": current["momentId"], "requestId": deepcopy(current["requestId"]), "ending": ending}
+            device["last"] = {"status": "known", **deepcopy(ended), "endedAt": at(event["nowMs"])}
+            device["current"] = {"status": "none"}
+
+        def start() -> None:
+            nonlocal starts
+            current = device["current"]
+            if current["status"] != "scheduled":
+                return
+            device["current"] = {"status": "playing", "momentId": current["momentId"], "requestId": current["requestId"],
+                                 "mood": current["mood"], "priorityClass": current["priorityClass"],
+                                 "coversStatus": current["coversStatus"], "endAt": at(event["nowMs"] + current["durationMs"])}
+            receipts.append({"requestId": deepcopy(current["requestId"]), "outcome": "sent"})
+            starts += 1
+
+        kind, now = event["kind"], event["nowMs"]
+        if kind == "deliver":
+            command = event["command"]
+            begin = command["start"]
+            current = device["current"]
+
+            def drop(failure: str) -> None:
+                receipts.append({"requestId": deepcopy(event["requestId"]), "outcome": "failed", "failure": failure})
+
+            if command["momentId"] in device["recentMomentIds"]:
+                drop("moment-duplicate")
+            else:
+                device["recentMomentIds"] = (device["recentMomentIds"] + [command["momentId"]])[-MOMENT_MEMORY:]
+                if (begin["epoch"] != device["clockEpoch"] or now > begin["atMs"] + begin["toleranceMs"]
+                        or begin["atMs"] > now + MOMENT_MAX_LEAD_MS):
+                    drop("moment-missed")
+                elif (device["presentation"] == "quiet"
+                      or (device["presentation"] == "status" and (not command["coversStatus"] or device["alert"] != "none"))
+                      or (current["status"] != "none" and current["priorityClass"] == "event"
+                          and command["priorityClass"] == "flourish")):
+                    drop("moment-blocked")
+                else:
+                    end("superseded")
+                    device["current"] = {"status": "scheduled", "momentId": command["momentId"],
+                                         "requestId": deepcopy(event["requestId"]), "mood": command["mood"],
+                                         "priorityClass": command["priorityClass"], "coversStatus": command["coversStatus"],
+                                         "startAt": at(begin["atMs"]), "durationMs": command["durationMs"]}
+                    if begin["atMs"] <= now:
+                        start()
+        elif kind == "tick":
+            current = device["current"]
+            if current["status"] == "scheduled" and now >= current["startAt"]["atMs"]:
+                start()
+            elif current["status"] == "playing" and now >= current["endAt"]["atMs"]:
+                end("completed")
+        elif kind == "alert":
+            device["alert"] = event["alert"]
+            if device["presentation"] == "status" and device["alert"] != "none":
+                end("preempted")
+        elif kind == "base":
+            device["base"] = event["base"]
+        elif kind == "mode":
+            end("interrupted")
+            device["presentation"], device["base"] = event["presentation"], event["base"]
+        elif kind == "command":
+            end("interrupted")
+        elif kind == "restart":
+            # A new clock epoch has no continuity: nothing resumes, replays or carries over.
+            device.update({"clockEpoch": event["clockEpoch"], "presentation": event["presentation"], "base": event["base"],
+                           "alert": event["alert"], "current": {"status": "none"}, "last": {"status": "none"},
+                           "recentMomentIds": []})
+        else:
+            raise ValueError("Unknown moment event")
+        if device["presentation"] == "status" and device["alert"] != "none":
+            showing = "alert"
+        elif device["current"]["status"] == "playing":
+            showing = "moment"
+        else:
+            showing = "base"
+        steps.append({"showing": showing, "base": device["base"],
+                      "momentId": device["current"]["momentId"] if showing == "moment" else None,
+                      "receipts": receipts, "ended": ended})
+    return {"steps": steps, "device": device, "starts": starts}
+
+
+def downgrade_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """The 1.0 view a 1.1 controller serves to a 1.0 reader: moment content is omitted, never misrepresented."""
+    result = deepcopy(snapshot)
+    result["apiVersion"] = "1.0"
+    del result["capabilities"]["moments"]
+    state = result["state"]
+    del state["moment"]
+    state["pending"] = [entry for entry in state["pending"] if entry["command"]["kind"] != "moment"]
+    outcome = state["lastOutcome"]
+    if outcome["status"] == "known" and outcome["receipt"]["apiVersion"] == "1.1":
+        state["lastOutcome"] = {"status": "unknown"}
+    return result
+
+
 def evaluate(value: dict[str, Any]) -> Any:
     """Owner state is trusted and validated; request, cursor, and renderer are checked here."""
     operation = value["operation"]
@@ -211,6 +342,10 @@ def evaluate(value: dict[str, Any]) -> Any:
         return {"snapshot": deepcopy(event["snapshot"] if replace else snapshot), "effects": 0}
     if operation == "clock":
         return _clock(value)
+    if operation == "moment":
+        return _moment(value)
+    if operation == "downgrade":
+        return {"snapshot": downgrade_snapshot(value["snapshot"]), "effects": 0}
     if operation == "read":
         return {"snapshot": deepcopy(value["snapshot"]), "effects": 0}
     if operation == "sample":

@@ -1,6 +1,6 @@
 {
   "name": "@jimmie-potts/hub",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@jimmie-potts/agent-state": "3.2.0",
-    "@jimmie-potts/device-contracts": "1.0.0",
+    "@jimmie-potts/device-contracts": "1.1.0",
     "@jimmie-potts/device-mcp": "1.0.0"
   }
 }

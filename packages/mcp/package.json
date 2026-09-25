@@ -13,7 +13,7 @@
     }
   },
   "dependencies": {
-    "@jimmie-potts/device-contracts": "1.0.0",
+    "@jimmie-potts/device-contracts": "1.1.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "zod": "4.5.4",
     "ajv": "8.20.0"

@@ -11,6 +11,6 @@
   },
   "dependencies": {
     "@jimmie-potts/agent-state": "3.2.0",
-    "@jimmie-potts/device-contracts": "1.0.0"
+    "@jimmie-potts/device-contracts": "1.1.0"
   }
 }
