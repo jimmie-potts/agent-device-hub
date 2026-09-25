@@ -13,7 +13,7 @@
 
 ## 3. Artifact, consumers and documentation
 
-- [x] 3.1 Bump the artifact to 1.1.0 with served API versions in the manifest. Move the workspace pins and the lockfile, and bump the hub to 0.3.5 because its archive bundles the new contract. Keep the MCP archive bundling 1.0.0 with byte-identical `package.json`. Evidence: `test:package:built`, `test:mcp:package:built`, `test:hub:package:built`.
+- [x] 3.1 Bump the artifact to 1.1.0 with served API versions in the manifest. Move the workspace pins and the lockfile, and bump the hub to 0.3.6 because its archive bundles the new contract (#318 took 0.3.5); the local controller host from #318 moves its pin too. Keep the MCP archive bundling 1.0.0 with byte-identical `package.json`. Evidence: `test:package:built`, `test:mcp:package:built`, `test:hub:package:built`.
 - [x] 3.2 Document API 1.1 in `docs/controller-contract.md`, and update the counts and MCP packaging note in `docs/development.md`. Evidence: review of the rendered sections.
 - [x] 3.3 Run the shared build/type, contract, package, MCP, hub, setup, Tidbyt, LIFX, agent-state, lifecycle, performance, dashboard and workflow checks from the worktree root, and keep the results outside the candidate. Evidence: the PR validation record.
 

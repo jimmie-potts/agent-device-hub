@@ -22,7 +22,7 @@
 - The shared corpus grows from 220 to 326 cases. The 220 existing cases are unchanged.
 - The artifact becomes `@jimmie-potts/device-contracts` 1.1.0:
   - In-repo workspace pins move to 1.1.0 with no behavior change.
-  - The hub moves to 0.3.5 because its archive now bundles contracts 1.1.0.
+  - The hub moves to 0.3.6 (one step above #318's 0.3.5) because its archive now bundles contracts 1.1.0.
   - The Device MCP 1.0.0 archive keeps bundling the released contracts 1.0.0.
 - Nothing is **BREAKING**: the 1.0 definitions, the 1.0 validators and the 1.0 admission behavior are unchanged.
 
@@ -43,7 +43,7 @@ None.
 
 - **Contract package:** schema, fixtures, the TypeScript/Python reference, tests and the package version.
 - **Documentation and planning:** `docs/controller-contract.md`, `docs/development.md` and this change.
-- **Consumer pins and packaging:** the pins in `apps/hub`, `packages/mcp`, `controllers/tidbyt` and `controllers/lifx`, the lockfile, and the contract, MCP and hub packaging scripts.
+- **Consumer pins and packaging:** the pins in `apps/hub`, `apps/local-controllers`, `packages/mcp`, `controllers/tidbyt` and `controllers/lifx`, the lockfile, and the contract, MCP and hub packaging scripts.
 - **Unchanged:** controller behavior, hub routes and MCP tools.
 - **After merge:** the `controller-contracts-v1.1.0` release is published.
 - **Deferred:**
