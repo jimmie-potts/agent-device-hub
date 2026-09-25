@@ -24,7 +24,7 @@ RATING = re.compile(r'\b(Complexity|Uncertainty|Impact)\b[\s:*]*(?:is\s+)?\**\s*
 RATING_BEFORE = re.compile(r'\b' + _LEVEL + r'\s+(complexity|uncertainty|impact)\b', re.I)
 HOSTS = {'claude': 'Claude Code', 'codex': 'Codex'}
 SESSION_TYPES = ('One-shot', 'Pair', 'Orchestrate', 'Investigate first')
-ROWS = ('Model', 'Thinking level', 'Session type', 'Subagents', 'Availability', 'Checkpoints')
+ROWS = ('Model', 'Thinking level', 'Session type', 'Subagents', 'Reviewers', 'Availability', 'Checkpoints')
 REQUIRED_ROWS = ROWS[:-1]
 LABELS = ('Start with', 'Cheaper start', 'Why', 'Reassess when', 'Assessed', 'Status', 'Missing')
 PROMPTS = {f'{prefix} ({name})': (start, host) for start, prefix in (('recommended', 'Prompt'), ('cheaper', 'Cheaper prompt'))
@@ -168,8 +168,11 @@ def _table(rows):
         availability = re.fullmatch(r'(Verified|Provisional)\b[:.]?\s*(.*)', table['Availability'][host])
         if not availability:
             raise Unreadable('availability must start with Verified or Provisional')
+        # Implementing sessions name their two final reviewers; an investigation has none.
+        if (table['Reviewers'][host] == 'None') != (session == 'Investigate first'):
+            raise Unreadable('Reviewers must be None exactly for an Investigate first session')
         hosts[host] = dict(model=name, identifier=identifier, thinking=_plain(table['Thinking level'][host]),
-                           session=session, subagents=table['Subagents'][host],
+                           session=session, subagents=table['Subagents'][host], reviewers=table['Reviewers'][host],
                            verified=availability.group(1) == 'Verified', availability=table['Availability'][host],
                            checkpoints=table.get('Checkpoints', {}).get(host))
     return hosts
@@ -284,10 +287,13 @@ def _parse_section(lines):
         starts[start][host] = prompt
     if set(starts['recommended']) != set(HOSTS):
         raise Unreadable('both hosts need a prompt')
-    if ('Cheaper start' in values) != bool(starts['cheaper']) or (starts['cheaper'] and set(starts['cheaper']) != set(HOSTS)):
-        raise Unreadable('a cheaper start needs one line and both host prompts')
+    # "none recorded" states that no cheaper start exists; anything else needs both prompts.
+    cheaper = values.get('Cheaper start')
+    declined = bool(cheaper) and re.match(r'none recorded\b', cheaper, re.I) is not None
+    if (bool(cheaper) and not declined) != bool(starts['cheaper']) or (starts['cheaper'] and set(starts['cheaper']) != set(HOSTS)):
+        raise Unreadable('a cheaper start needs one line and both host prompts, or "none recorded" and no prompts')
     return dict(result, state='recommended', answer=values['Start with'], hosts=hosts,
-                cheaper=values.get('Cheaper start'), prompts={k: v or None for k, v in starts.items()})
+                cheaper=cheaper, prompts={k: v or None for k, v in starts.items()})
 
 
 def label(result):
@@ -385,14 +391,21 @@ def prompt(entry, host, start, assessed_date):
              else f'Use the deliver-work skill to deliver {scope}{url}.',
              f'I started this session on {model} at {choice["thinking"]} {word}. '
              f'State the model you are running and stop if it is not {model}; {take}.']
+    reviewer = entry['hosts'][host].get('reviewers')
+    if session != 'Investigate first' and not reviewer:
+        raise ValueError('an implementing start needs the two final reviewers of the recommended session')
+    if reviewer:
+        # Reviewers follow the story's impact, so a cheaper start keeps the recommended ones.
+        name = _prompt_model(host, reviewer['model']) + (f" reviewers at {reviewer['level']} {word}" if reviewer.get('level') else ' reviewers')
+        reviews = f"use two fresh read-only {name} for deliver-work's required Standards and Specification reviews"
     if session == 'One-shot':
-        parts.append('Run as a one-shot session: implement directly without subagents.')
+        parts.append(f'Run as a one-shot session: implement it yourself without worker subagents, and {reviews}.')
     elif session == 'Pair':
         parts.append(f'Run as a paired session: delegate the implementation to one {choice["delegate"]} worker, '
-                     'advise it at the approach, blockers and final review, and apply every write yourself.')
+                     f'advise it at the approach, blockers and final review, apply every write yourself, and {reviews}.')
     elif session == 'Orchestrate':
         parts.append(f'Run as an orchestrating session: break the work down, delegate {choice["delegate"]}, '
-                     'and keep every write and review yourself.')
+                     f'keep every write yourself, and {reviews}.')
     else:
         parts.append("Read-only: don't change files, branches or GitHub. "
                      f'Answer this question: {entry["question"]} '
@@ -403,8 +416,8 @@ def prompt(entry, host, start, assessed_date):
         parts.append(entry['cheaper']['limit'])
     parts.append(f"The issue's Execution recommendation (assessed {assessed_date}) is the basis; "
                  'if what you find no longer fits it, say so before changing strategy.')
-    if session != 'Investigate first':
-        parts.append("If deliver-work isn't available here, say so and stop.")
+    parts.append("If deliver-work isn't available here, say so and stop." if session != 'Investigate first'
+                 else "If a skill this investigation needs isn't available here, say so and stop.")
     return _one_line(' '.join(parts))
 
 
@@ -427,7 +440,7 @@ def render(entry, assessed_date, story_fingerprint):
         return '\n'.join(lines)
     hosts = entry['hosts']
     rows = {'Model': 'model', 'Thinking level': 'thinking', 'Session type': 'session',
-            'Subagents': 'subagents', 'Availability': 'availability', 'Checkpoints': 'checkpoints'}
+            'Subagents': 'subagents', 'Reviewers': 'reviewers', 'Availability': 'availability', 'Checkpoints': 'checkpoints'}
     lines = [f'## {HEADING}', '', f"**Start with:** {_one_line(entry['answer'])}", '',
              '| | Claude Code | Codex |', '| --- | --- | --- |']
     for row, field in rows.items():
@@ -436,6 +449,9 @@ def render(entry, assessed_date, story_fingerprint):
             continue
         if field == 'thinking':
             values = [f'`{value}`' for value in values]
+        if field == 'reviewers':
+            values = [f"Two fresh read-only {value['model']} reviewers" + (f" at `{value['level']}`" if value.get('level') else '')
+                      + ', one for Standards and one for Specification' if value else None for value in values]
         lines.append(f'| {row} | ' + ' | '.join(_cell(value or 'None') for value in values) + ' |')
     for host, name in HOSTS.items():
         lines += ['', f'**Prompt ({name}):**', '', *_fenced(prompt(entry, host, 'recommended', assessed_date))]
@@ -450,6 +466,10 @@ def render(entry, assessed_date, story_fingerprint):
         lines += ['', f'**Cheaper start:** {_one_line(line)}']
         for host, name in HOSTS.items():
             lines += ['', f'**Cheaper prompt ({name}):**', '', *_fenced(prompt(entry, host, 'cheaper', assessed_date))]
+    else:
+        if not entry.get('no_cheaper'):
+            raise ValueError('without a cheaper start, the entry must say why none is recorded (no_cheaper)')
+        lines += ['', f"**Cheaper start:** none recorded; {_one_line(entry['no_cheaper'])}"]
     lines += ['', *closing]
     return '\n'.join(lines)
 

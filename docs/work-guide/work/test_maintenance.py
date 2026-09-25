@@ -1,6 +1,7 @@
 """Offline regression check for independent history and architecture updates."""
 from pathlib import Path
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -357,12 +358,15 @@ class GuideMaintenance(unittest.TestCase):
 
 def recommendation_entry(session='Orchestrate', cheaper=True, **changes):
     """A synthetic assessor entry; the assessment content is fixture text only."""
-    host = lambda model, delegate: dict(model=model, thinking='high', session=session,
-                                        subagents='One read-only scout per repository.' if session in ('Orchestrate', 'Pair') else 'None',
-                                        delegate=delegate, availability='Provisional: fixture availability')
+    investigate = session == 'Investigate first'
+    host = lambda model, delegate, reviewers: dict(model=model, thinking='high', session=session,
+                                                   subagents='One read-only scout per repository.' if session in ('Orchestrate', 'Pair') else 'None',
+                                                   reviewers=None if investigate else reviewers,
+                                                   delegate=delegate, availability='Provisional: fixture availability')
     entry = dict(repo='agent-device-hub', number=900, status='recommended', answer='one fixture session.',
-                 hosts=dict(claude=host('Opus (`opus`)', 'read-only `sonnet` scouts'),
-                            codex=host('Sol (`gpt-6-sol`)', 'read-only Luna (`gpt-6-luna`) scouts')),
+                 hosts=dict(claude=host('Opus (`opus`)', 'read-only `sonnet` scouts', dict(model='Sonnet (`sonnet`)')),
+                            codex=host('Sol (`gpt-6-sol`)', 'read-only Luna (`gpt-6-luna`) scouts', dict(model='Luna (`gpt-6-luna`)', level='high'))),
+                 no_cheaper='the fixture has no smaller start.',
                  question='Does the fixture question have an answer?', why='fixture reasons.', reassess='the fixture changes.',
                  assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture evidence'))
     if cheaper:
@@ -377,6 +381,8 @@ STORY = '## Outcome\n\nA fixture story.\n\n## Work assessment\n\n- **Complexity:
 
 
 class Recommendations(unittest.TestCase):
+    maxDiff = None
+
     def setUp(self):
         import recommendations
         self.R = recommendations
@@ -401,8 +407,12 @@ class Recommendations(unittest.TestCase):
         self.assertIn('on Sonnet at medium effort', result['prompts']['cheaper']['claude'])
         without = self.R.read(self.written(recommendation_entry(cheaper=False)))
         self.assertIsNone(without['prompts']['cheaper'], 'A missing cheaper start is absent, never invented')
-        self.assertIsNone(without['cheaper'])
-        self.assertNotIn('cheaper', {k for k, v in self.R.brief(without).items() if v})
+        self.assertEqual(without['cheaper'], 'none recorded; the fixture has no smaller start.')
+        self.assertEqual(result['hosts']['claude']['reviewers'], 'Two fresh read-only Sonnet (`sonnet`) reviewers, one for Standards and one for Specification')
+        self.assertEqual(result['hosts']['codex']['reviewers'], 'Two fresh read-only Luna (`gpt-6-luna`) reviewers at `high`, one for Standards and one for Specification')
+        # A section written before the canonical Reviewers row reads as unavailable, not guessed.
+        self.assertEqual(self.R.read(re.sub(r'\| Reviewers \|[^\n]*\n', '', self.written()))['state'], 'unavailable')
+        self.assertIsNone(self.R.brief(without)['prompts']['cheaper'])
 
     def test_unreadable_sections_render_assessment_unavailable(self):
         body = self.written()
@@ -416,7 +426,10 @@ class Recommendations(unittest.TestCase):
             'unknown row': body.replace('| Thinking level |', '| Temperature |'),
             'unlabeled availability': body.replace('| Availability | Provisional: fixture', '| Availability | fixture'),
             'stray text': body.replace('**Why:**', 'Some prose.\n\n**Why:**'),
-            'cheaper line without prompts': self.written(recommendation_entry(cheaper=False)).replace('**Why:**', '**Cheaper start:** a guess.\n\n**Why:**'),
+            'cheaper line without prompts': self.written(recommendation_entry(cheaper=False)).replace('**Cheaper start:** none recorded;', '**Cheaper start:** a guess;'),
+            'missing reviewers row': re.sub(r'\| Reviewers \|[^\n]*\n', '', body),
+            'reviewers on an investigation': self.written(recommendation_entry('Investigate first', cheaper=False)).replace('| Reviewers | None | None |', '| Reviewers | Two Sonnet | None |'),
+            'no reviewers on an implementation': re.sub(r'\| Reviewers \|[^\n]*\n', '| Reviewers | None | None |\n', body),
         }
         for name, text in cases.items():
             with self.subTest(case=name):
@@ -459,6 +472,16 @@ class Recommendations(unittest.TestCase):
         self.assertEqual(parent['label'], 'Orchestrate · Opus high / Sol high')
         self.assertEqual(child['label'], 'One-shot · Sonnet medium / Luna medium')
         self.assertIn('/issues/901', child['prompts']['recommended']['claude'])
+
+    def test_incomplete_entries_are_refused_with_a_reason(self):
+        no_reviewers = recommendation_entry('One-shot', cheaper=False)
+        no_reviewers['hosts']['codex']['reviewers'] = None
+        with self.assertRaisesRegex(ValueError, 'two final reviewers'):
+            self.R.upsert(STORY, no_reviewers, '2026-09-30')
+        no_reason = recommendation_entry(cheaper=False)
+        del no_reason['no_cheaper']
+        with self.assertRaisesRegex(ValueError, 'why none is recorded'):
+            self.R.upsert(STORY, no_reason, '2026-09-30')
 
     def test_insufficient_story_names_what_is_missing(self):
         entry = dict(repo='agent-device-hub', number=902, status='insufficient', missing='the owner has not chosen the bulbs.',
@@ -526,7 +549,9 @@ class Recommendations(unittest.TestCase):
             self.R.upsert(STORY.replace('## Work assessment', '## Assessment and readiness'), entry, '2026-09-30')
 
     def test_prompts_follow_one_template_per_session_type_and_host(self):
-        expected = {'One-shot': 'Run as a one-shot session: implement directly without subagents.',
+        reviews = {'claude': "use two fresh read-only Sonnet reviewers for deliver-work's required Standards and Specification reviews.",
+                   'codex': "use two fresh read-only gpt-6-luna reviewers at high reasoning for deliver-work's required Standards and Specification reviews."}
+        expected = {'One-shot': 'Run as a one-shot session: implement it yourself without worker subagents, and ',
                     'Pair': 'Run as a paired session: delegate the implementation to one',
                     'Orchestrate': 'Run as an orchestrating session: break the work down, delegate',
                     'Investigate first': "Read-only: don't change files, branches or GitHub. Answer this question: Does the fixture question have an answer?"}
@@ -542,7 +567,10 @@ class Recommendations(unittest.TestCase):
                     self.assertIn(f'take the {word} as stated rather than guessing it', text)
                     self.assertIn("The issue's Execution recommendation (assessed 2026-09-24) is the basis", text)
                     self.assertEqual(text.endswith("If deliver-work isn't available here, say so and stop."), session != 'Investigate first')
+                    self.assertEqual(text.endswith("If a skill this investigation needs isn't available here, say so and stop."), session == 'Investigate first')
                     self.assertEqual(text.startswith('Investigate '), session == 'Investigate first')
+                    self.assertEqual(reviews[host] in text, session != 'Investigate first', 'Implementing prompts authorize the two reviewers')
+                    self.assertNotIn('effort level', text.replace('take the effort as stated', ''))
 
     def test_apply_rereads_writes_changed_sections_and_reads_back(self):
         store = {'body': STORY}

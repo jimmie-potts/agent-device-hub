@@ -476,7 +476,7 @@ JS = '''
  // Starting-session recommendations come from the snapshot. Live reads never add
  // or refresh one: a story absent from the snapshot is not yet assessed.
  const HOSTS = {claude:'Claude Code', codex:'Codex'};
- const ROWS = [['Model',h=>`${h.model} (${h.identifier})`],['Thinking level',h=>h.thinking],['Session type',h=>h.session],['Subagents',h=>h.subagents],['Checkpoints',h=>h.checkpoints]];
+ const ROWS = [['Model',h=>`${h.model} (${h.identifier})`],['Thinking level',h=>h.thinking],['Session type',h=>h.session],['Subagents',h=>h.subagents],['Reviewers',h=>h.reviewers],['Checkpoints',h=>h.checkpoints]];
  const NOTICES = {stale:'The story changed after this recommendation was saved, so Implement uses the generic prompt.',
    insufficient:'Implement uses the generic prompt until the missing input is recorded.',
    unassessed:'No starting session is recorded for this story. Implement uses the generic prompt.',
@@ -521,7 +521,7 @@ JS = '''
    options.hidden = !custom;
    hostButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.host === host)));
    startButtons.forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.start === begin)); if (b.dataset.start === 'cheaper') b.disabled = !cheaper; });
-   optionNote.textContent = cheaper ? (begin === 'cheaper' ? rec.cheaper : '') : 'No cheaper start is recorded for this story.';
+   optionNote.textContent = cheaper ? (begin === 'cheaper' ? rec.cheaper : '') : rec.cheaper ? `Cheaper start: ${rec.cheaper}` : 'No cheaper start is recorded for this story.';
    const [build, text] = ACTIONS[action];
    if (custom) {
      const session = rec.hosts[host].session;

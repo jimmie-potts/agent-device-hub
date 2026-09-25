@@ -26,8 +26,9 @@
 #68 [CLOSED] Align guide-maintenance rules with the current hub procedure
 #72 [CLOSED] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance
 #76 [OPEN] Keep Divoom cloud content off the Pixoo after screen-on and device reboots
-#77 [OPEN] Run the installed Pixoo app as a user service with hub settings
+#77 [CLOSED] Run the installed Pixoo app as a user service with hub settings
 #79 [OPEN] Keep MCP status valid after dashboard uploads with typed display evidence
 #80 [OPEN] Separate typed command observations from replay payloads
 #81 [OPEN] Share SSE client delivery while preserving browser and native feed contracts
 #82 [OPEN] Reconcile product and hub-integration docs with delivered runtime behavior
+#83 [OPEN] Disconnect the Pixoo from Divoom's cloud while keeping local control

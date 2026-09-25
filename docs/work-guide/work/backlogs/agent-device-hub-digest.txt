@@ -63,9 +63,9 @@
 #73 [OPEN] Fix diagram connectors hidden behind boxes in the work guide
 #80 [CLOSED] Publish the cross-project work guide on GitHub Pages
 #83 [CLOSED] Adopt plan-work and deliver-work checkpoints for guide updates and public publication
-#85 [OPEN] Restyle the guide and atlas in the Neon skin
+#85 [CLOSED] Restyle the guide and atlas in the Neon skin
 #86 [CLOSED] Apply the Neon skin to the guide and atlas
-#87 [OPEN] Publish and verify the first mobile guide workspace and atlas
+#87 [CLOSED] Publish and verify the first mobile guide workspace and atlas
 #91 [CLOSED] Reduce CI minutes while preserving all test coverage
 #100 [CLOSED] Skip automatic CI for guide-only changes
 #103 [CLOSED] Document the composable BUNNY system design
@@ -86,7 +86,7 @@
 #175 [CLOSED] Deliver shared Linux playback with a separate Sony HT-A9 source
 #178 [OPEN] Qualify Apple Music catalog search and chosen-item playback requests
 #179 [CLOSED] Open BUNNY through a local owner launcher without manual browser tokens
-#181 [OPEN] Define the B.U.N.N.Y. UI foundation, skin template and adoption plan
+#181 [CLOSED] Define the B.U.N.N.Y. UI foundation, skin template and adoption plan
 #182 [OPEN] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
 #185 [CLOSED] Add explicit recovery for uncertain approval attention
 #186 [CLOSED] Prepare the complete BUNNY atlas for public guide publication
@@ -105,7 +105,7 @@
 #207 [CLOSED] Clean up delivered worktrees and scratch after merge
 #210 [CLOSED] Make the work guide clipboard-fallback check pass in Depot CI
 #212 [CLOSED] Use shared npm and Playwright caches in setup guidance
-#218 [OPEN] Clear Codex Desktop tasks and Line assignments when sessions end
+#218 [CLOSED] Clear Codex Desktop tasks and Line assignments when sessions end
 #220 [CLOSED] Refresh work-guide priorities, new issues and defects, and reorganize topic guides
 #222 [OPEN] Push hub change notifications when state commits
 #225 [CLOSED] Clear no-ID approval markers when their turn is retired
@@ -122,3 +122,12 @@
 #245 [OPEN] Share the dashboard command lifecycle between forms and actions
 #246 [OPEN] Consolidate duplicated Pixoo and Nanoleaf integration-contract definitions
 #247 [OPEN] Prevent dashboard component aliases from colliding with built-in navigation
+#252 [OPEN] Show starting model and thinking-level recommendations for each story in the work guide
+#253 [OPEN] Qualify Codex Desktop idle and shutdown SessionEnd emission and reopen behavior
+#254 [OPEN] Add a trading-card skin to the guide and atlas, with art shared by issue label
+#258 [OPEN] Report documentation drift against pinned sources in CI
+#259 [OPEN] Move guide topic assignments and notes into the stories and read them live
+#262 [OPEN] Evict a task across devices through the shared owner
+#263 [OPEN] Make the slow-device browser isolation check deterministic
+#264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
+#267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub

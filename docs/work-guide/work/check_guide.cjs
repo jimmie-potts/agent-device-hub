@@ -190,7 +190,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const evidenceExpansion=()=>page.locator('.delivery-evidence,.guide-evidence').evaluateAll(es=>es.map(e=>e.open));
     const beforeEvidence=await evidenceExpansion();
     const beforeSearch=await expansion();
-    for(const [query,id] of [['Clear Codex Desktop tasks and Line assignments','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
+    for(const [query,id] of [['Qualify Codex Desktop idle and shutdown SessionEnd','shared-codex'],['Corsair','nanoleaf-devices'],['N30','desktop-controls']]) {
       await page.locator('#search').fill(query); assert.equal(await page.locator('.guide:not([hidden])').count(),1);
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');
@@ -292,8 +292,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.equal(await page.locator('.work-card[data-key="H999"] .rec').first().textContent(),'Start Not yet assessed','A live-only issue is not yet assessed');
      // Recommendations from the saved backlog when present, otherwise labeled fixtures injected into this page only.
      const real=state=>Object.entries(recs).find(([,r])=>r.state===state&&(state!=='recommended'||r.prompts.cheaper));
-     const fixtureHosts={claude:{model:'Opus',identifier:'opus',thinking:'high',session:'Orchestrate',subagents:'<img src=x onerror="window.recInjected=1"> scouts',availability:'Verified: fixture host evidence',verified:true,checkpoints:null},
-                         codex:{model:'Sol',identifier:'gpt-6-sol',thinking:'high',session:'Orchestrate',subagents:'One Luna scout',availability:'Provisional: fixture',verified:false,checkpoints:null}};
+     const fixtureHosts={claude:{model:'Opus',identifier:'opus',thinking:'high',session:'Orchestrate',subagents:'<img src=x onerror="window.recInjected=1"> scouts',reviewers:'Two fresh read-only Sonnet (sonnet) reviewers',availability:'Verified: fixture host evidence',verified:true,checkpoints:null},
+                         codex:{model:'Sol',identifier:'gpt-6-sol',thinking:'high',session:'Orchestrate',subagents:'One Luna scout',reviewers:'Two fresh read-only Luna (gpt-6-luna) reviewers at high',availability:'Provisional: fixture',verified:false,checkpoints:null}};
      const fixture={state:'recommended',label:'Orchestrate · Opus high / Sol high',date:'2026-09-24',policy:'agent-skills@fixture',evidence:'fixture',answer:'<b>fixture</b> answer & "quote"',hosts:fixtureHosts,
        why:'fixture why',reassess:'fixture trigger',cheaper:'Fixture cheaper start.',ratings:{Complexity:'medium',Uncertainty:'medium',Impact:'high'},
        prompts:{recommended:{claude:'FIXTURE claude recommended <b>',codex:'FIXTURE codex recommended'},cheaper:{claude:'FIXTURE claude cheaper',codex:'FIXTURE codex cheaper'}}};
@@ -317,7 +317,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        await open(cases.recommended);
        const text=await start.innerText();
        assert(text.includes(rec.answer),'The answer line is text'); assert(/Claude Code/i.test(text)&&/Codex/i.test(text),'Both hosts are labeled');
-       for(const host of ['claude','codex']){assert(text.includes(rec.hosts[host].session),'Session type as text');assert(text.includes(`${rec.hosts[host].model} (${rec.hosts[host].identifier})`),'Model as text');assert(text.includes(rec.hosts[host].verified?'verified':'provisional'),'Availability label as text');}
+       for(const host of ['claude','codex']){assert(text.includes(rec.hosts[host].session),'Session type as text');assert(text.includes(`${rec.hosts[host].model} (${rec.hosts[host].identifier})`),'Model as text');assert(text.includes(rec.hosts[host].reviewers),'Reviewers as text');assert(text.includes(rec.hosts[host].verified?'verified':'provisional'),'Availability label as text');}
        assert((await start.locator('.brief-rec-state').textContent()).startsWith(`Recommended · assessed ${rec.date}`),'State, date and policy');
        assert(/before pasting/.test(text),'The reader chooses the model and effort in the host');
        assert.equal(await page.evaluate(()=>window.recInjected),undefined,'Recommendation text never executes'); assert.equal(await start.locator('img,b').count(),0,'Recommendation text stays literal');
@@ -335,6 +335,13 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        await open(cases.plain); await dialog.locator('[data-action="implement"]').click();
        assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled without a cheaper start'); assert.equal(await dialog.locator('.brief-option-note').textContent(),'No cheaper start is recorded for this story.');
        assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
+       await page.keyboard.press('Escape');
+       // Most saved recommendations record why no cheaper start exists; the reason replaces the generic note.
+       const declined=Object.entries(recs).find(([,r])=>r.state==='recommended'&&!r.prompts.cheaper&&/^none recorded\b/.test(r.cheaper||''));
+       assert(declined,'The snapshot has a recommendation that records why no cheaper start exists');
+       await open(declined[0]); await dialog.locator('[data-action="implement"]').click();
+       assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled when none is recorded');
+       assert.equal(await dialog.locator('.brief-option-note').textContent(),`Cheaper start: ${declined[1].cheaper}`,'The recorded reason is shown');
        await page.keyboard.press('Escape');
        for(const [name,key,expect] of [['insufficient',cases.insufficient,/^Insufficient information/],['stale',cases.stale,/^Needs reassessment \(story text changed after 2026-09-20\)/],['unavailable',cases.unavailable,/^Assessment unavailable/],['unassessed','H999',/^Not yet assessed/]]){
          await open(key); await dialog.locator('[data-action="implement"]').click();

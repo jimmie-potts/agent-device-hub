@@ -1,6 +1,18 @@
 """Issue-specific reading notes. Refresh against owning issue scopes when editing."""
 
-DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
+DETAILS = {'H267': 'Backlog placeholder: coordinate Work, Free and Quiet colors and scenes across every device from the hub, building on [[H67]].',
+ 'H252': "Show each story's starting session, model and thinking level in the guide from its saved Execution recommendation.",
+ 'H253': 'Qualify when installed Codex Desktop emits SessionEnd for a task that is not archived, and check removal, reopen and new work afterward.',
+ 'H254': 'Add a second, trading-card skin to the guide and atlas, with art shared by issue label and a skin picker.',
+ 'H258': 'Report documentation drift against pinned sources and documented commands in CI, as warnings rather than a merge gate.',
+ 'H259': "Move topic assignments and reading notes into the stories and read them live. Waits for [[H252]]'s parser.",
+ 'H262': 'Evict a task and its descendants on every device through the shared owner. Waits for [[H241]].',
+ 'H263': 'Make the slow-device browser isolation check deterministic without changing production behavior.',
+ 'H264': 'Replace Pause motion with a one-shot circuit trace in the guide and atlas.',
+ 'N139': 'Configure Work-mode light colors so unread tasks stand out from the base.',
+ 'N140': 'Add upgrade and rollback commands for the Linux runtime; the first real upgrade is separately authorized.',
+ 'P83': "Owner network step: block the Pixoo from Divoom's cloud while keeping local control, and record receipts.",
+ 'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H123': 'The owner raised the Linux/WSL service RSS budget from 128 to 256 MiB. Re-evaluate '
          'budgets and reduce measured memory use in this backlog follow-up; it does not block Hub '
          '#5. Original failed measurements remain retained; the budget revision is not an '
@@ -65,8 +77,8 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
  'H240': 'Read-only design: propose enforceable merge gates for one maintainer sharing a GitHub '
          'identity with agents, and compare keeping the guide-only CI exception with a small '
          'hosted guide check. A proposal is not enabled protection.',
- 'H241': 'Apply the same retirement rule to Codex CLI and Claude Code once [[H218]] delivers it '
-         'for Codex Desktop. Turn endings, waiting and freshness uncertainty never count as a '
+ 'H241': 'Apply the retirement rule [[H218]] delivered for Codex Desktop to Codex CLI and '
+         'Claude Code. Turn endings, waiting and freshness uncertainty never count as a '
          'session end; the 24-hour expiry remains the fallback.',
  'H242': 'Deferred. Qualify hub-issued resume of a paused iPhone AirPlay session on the Sony '
          'receiver, then add play/resume only if it works. The installed [[H175]] check confirmed '
@@ -170,7 +182,7 @@ DETAILS = {'H11': 'Deferred Home Assistant and MQTT evaluation.',
          'Waits for [[N111]] and three owner decisions.',
  'N110': 'Nanoleaf only and off by default: enter Work while the shared owner has any monitored '
          'session, and Free when the last one ends or expires. A manual mode choice pauses '
-         'automation until it is re-enabled. Waits for [[H218]] and [[H241]].',
+         'automation until it is re-enabled. Waits for [[H241]].',
  'N111': 'One session from an undeclared source makes Nanoleaf reject the whole hub snapshot, '
          'which freezes the wall. Skip such sessions instead and report them in shared status. '
          'Blocks [[N100]].',
