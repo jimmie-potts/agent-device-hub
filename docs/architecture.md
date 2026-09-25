@@ -14,7 +14,9 @@ baseline, not the current implementation.
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted
 local-first assistant direction. Preserve the Codex-first milestone before
 general device controls and Apple Music integration. Container migration and
-remote voice access remain later work.
+remote voice access remain later work; [ADR 0008](decisions/0008-runtime-hosting.md)
+decides that the runtime stays in WSL, to be started at boot by a keep-alive
+still to be installed, until a triggered server migration.
 
 The shared application's user-facing name is B.U.N.N.Y. The
 [application UI style guide](application-ui-style-guide.md) owns that spelling,
@@ -476,6 +478,12 @@ store never opens a controller database. Source and performance receipts live
 with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
 [#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
 and physical acceptance retain their own owners.
+[ADR 0008](decisions/0008-runtime-hosting.md) records where the six user
+services run: in the Ubuntu WSL distribution, today started only by a user
+session, with linger, an idle timeout and one Windows scheduled task decided
+but not yet installed. A dedicated Linux server (#44, which absorbs #42's
+Docker packaging) follows under the ADR's proposed trigger: the Tronbyt move
+starting, a story needing LAN discovery or events, or a failed keep-alive.
 
 ## Shared playback
 

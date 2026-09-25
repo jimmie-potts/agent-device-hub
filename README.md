@@ -112,6 +112,10 @@ Later source moves into this monorepo have separate deferred issues,
 [Pixoo #25](https://github.com/jimmie-potts/agent-device-hub/issues/25) and
 [Nanoleaf #26](https://github.com/jimmie-potts/agent-device-hub/issues/26).
 Their current repositories retain ownership until those migrations are delivered.
+[ADR 0008](docs/decisions/0008-runtime-hosting.md) decides where the runtime
+runs: in the Ubuntu WSL distribution, with linger, an idle timeout and one
+Windows scheduled task still to be installed, until the dedicated Linux server
+of #44 is triggered.
 
 ## Shared lifecycle metadata
 

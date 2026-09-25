@@ -1,6 +1,9 @@
 # ADR 0004: Local-first personal assistant direction
 
 Status: Accepted direction; implementation and qualification remain separate.
+[ADR 0008](0008-runtime-hosting.md) supersedes the sentence below that names
+Docker on the always-running PC as the initial container-hosting target; the
+eventual Linux server target stands.
 
 ## Decision
 
