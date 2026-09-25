@@ -108,9 +108,9 @@ relay for the Windows-only inputs above.
 
 3. **The server (#44) has a trigger and does not start before it.** The owner
    delegated this choice; the *proposed* trigger is any one of:
-   - the owner picks up the Tronbyt connection (#23) and transition (#24),
-     because they need an always-on host the Tidbyt connects to and the owner
-     wants it off the PC;
+   - the owner decides to start the Tronbyt move, signalled by picking up the
+     connection work (#23); the transition (#24), which #44 blocks, needs an
+     always-on host the Tidbyt connects to, and the owner wants it off the PC;
    - the first story that needs LAN discovery or event subscriptions from the
      runtime, such as LIFX discovery, Sonos UPnP events or mDNS, which the WSL
      NAT does not carry; or
@@ -151,10 +151,11 @@ relay for the Windows-only inputs above.
 - **Availability improves; NAT limits stay.** Discovery, event subscriptions
   and inbound device connections remain unavailable until the server, which is
   why they are triggers.
-- **Relation to Nanoleaf ADR 0011.** This ADR revises ADR 0011's option 1
-  rejection by moving the Windows artifact and the idle timeout into the hub's
-  hosting scope, which is what ADR 0011 declined for the Nanoleaf project. It
-  changes no Nanoleaf source, record or installation. The
+- **Relation to Nanoleaf ADR 0011.** This ADR adopts, in the hub's hosting
+  scope, the launcher and idle-shutdown change that ADR 0011's option 1
+  rejected for the Nanoleaf project, and it ends ADR 0011's expectation that
+  availability follows WSL lifetime until off-WSL hosting. ADR 0011 stays as
+  written, and this ADR changes no Nanoleaf source or installation. The
   reopen condition ADR 0011 set for Nanoleaf #133 is already met by the
   observation above; reopening it with that observation is a Nanoleaf tracker
   action for its owner, linked from the keep-alive story.
