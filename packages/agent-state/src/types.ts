@@ -1,7 +1,7 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '3.0.0';
+export const VERSION = '3.1.0';
 export const FORMAT_VERSION = '2.0';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
   journalEvents:10000, journalAgeMs:86400000, sessionAgeMs:86400000, staleMs:300000, deadlineMs:3000,
