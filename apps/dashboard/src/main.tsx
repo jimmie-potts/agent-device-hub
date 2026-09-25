@@ -1,8 +1,9 @@
-import React, {useEffect,useId,useRef,useState} from 'react';
+import React, {useEffect,useId,useReducer,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
-import {Api,ApiError,failureMessage,resultMessage,type ReceiptEvidence,type Settled,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,type GeneralReasons,type Context,type Component} from './client';
+import {Api,ApiError,type ReceiptEvidence,makeCommand,safeEditorUrl,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,type GeneralReasons,type Context,type Component} from './client';
+import {actionWording,blocked,commandTransition,formWording,initialCommand,runCommand,unreadable,type Attempt,type Prepared,type ResultOptions} from './lifecycle';
 import './style.css';
 
 type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
@@ -11,10 +12,6 @@ type Pixoo={apiVersion:string;identity:{controllerId:string;deviceId:string};con
 type Device={snapshot?:Snapshot;integration?:Nano|Pixoo;error?:string;received?:number;busy?:boolean};
 /** Resolves with the device record from a read that started after the call. */
 type Refresh=()=>Promise<Device|undefined>;
-/** A command built from a fresh read, or the reason nothing was sent. */
-type Prepared<T>=T|{blocked:string};
-const blocked=<T extends object>(value:Prepared<T>):value is {blocked:string}=>'blocked' in value;
-type Tone='pending'|Settled;
 const age=(ms:number)=>ms<1000?'less than 1s':ms<60000?`${Math.floor(ms/1000)}s`:`${Math.floor(ms/60000)}m`;
 const key=(s:SessionSnapshot)=>JSON.stringify([s.identity,s.generation]);
 const text=(value:unknown):string=>value===undefined||value===null?'Unknown':typeof value==='object'&&'status' in value&&(value as {status:string}).status==='unknown'?'Unknown':typeof value==='object'?JSON.stringify(value):String(value);
@@ -23,15 +20,6 @@ const pixoo=(value:Nano|Pixoo|undefined):value is Pixoo=>value?.apiVersion==='pi
 const title=(value:string)=>value.charAt(0).toUpperCase()+value.slice(1);
 /** The Pixoo integration envelope. Mode and view changes share the extension's ticket, revision and generation guards. */
 const pixooRequest=(s:Pixoo,component:Component,action:unknown)=>({apiVersion:s.apiVersion,controllerId:component.controllerId,deviceId:component.deviceId,requestId:s.nextRequestId,expectedConfigurationRevision:s.configurationRevision,expectedGeneration:s.generation,action});
-type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string};
-/** A later snapshot can carry the terminal outcome for a submitted ticket; queued receipts are not terminal. */
-function observedResult(source:unknown,ticket:unknown,options:{device?:boolean;sameMode?:boolean}={}):ReturnType<typeof resultMessage>|undefined{
- if(ticket===undefined||!source||typeof source!=='object')return;
- const observed=source as {outcomes?:ObservedReceipt[];state?:{lastOutcome?:{status:string;receipt?:ObservedReceipt}}};
- const records=[...(observed.outcomes??[]),...(observed.state?.lastOutcome?.status==='known'&&observed.state.lastOutcome.receipt?[observed.state.lastOutcome.receipt]:[])];
- const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
- if(result&&result.outcome!=='queued')return resultMessage(result,options);
-}
 /** Disabling the focused control while a command runs would drop keyboard focus to the document. Once the command settles, focus returns to that control, or to the first enabled control of the same group when it is locked or gone. */
 function useRestoredFocus(active:boolean){
  const saved=useRef<{control:HTMLElement;group:HTMLElement|null}|null>(null);
@@ -44,57 +32,52 @@ function useRestoredFocus(active:boolean){
  },[active]);
  return ()=>{const control=document.activeElement;if(control instanceof HTMLElement&&control!==document.body)saved.current={control,group:control.closest<HTMLElement>('.edit')};};
 }
-const retryable=['stale-generation','revision-conflict'];
-/** One-click commands read the device again just before sending and carry that read's guards. They stay busy until the refreshed snapshot arrives. Only an accepted ticket is watched for its terminal outcome; a rejected ticket may be consumed by another client. A rejection leaves the action available for another explicit press. An uncertain or partial result, including one observed later, locks the group until the user reloads current values. Nothing is resubmitted automatically. */
-function useCommand(api:Api,path:string,refresh:()=>Promise<unknown>,source:unknown,options:{sameMode?:boolean}={}){
- const [status,setStatus]=useState(''),[tone,setTone]=useState<Tone>(),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<{label:string;ticket:unknown}>();
- const keepFocus=useRestoredFocus(busy);
- useEffect(()=>{const result=submitted&&observedResult(source,submitted.ticket,options);if(!result)return;setStatus(`${submitted.label}: ${result.message}`);setTone(result.settled);if(result.locked)setLocked(true);},[source,submitted]);
- async function run(label:string,prepare:()=>Promise<Prepared<{request:unknown}>>){if(busy||locked)return;keepFocus();setBusy(true);setTone('pending');setStatus(`${label}: Sending…`);setSubmitted(undefined);
-  try {
-   const prepared=await prepare();
-   if(blocked(prepared)){setTone('rejected');setStatus(`${label}: Not sent: ${prepared.blocked}. Nothing changed.`);return;}
-   let result:ReturnType<typeof resultMessage>;try{result=resultMessage(await api.request<ReceiptEvidence>(path,prepared.request),options);}catch(error){result=failureMessage(error,options);}
-   setTone(result.settled);setLocked(result.locked);
-   setStatus(`${label}: ${result.message}${result.settled==='rejected'&&result.code&&retryable.includes(result.code)?` Press ${label} to try again with current values.`:''}`);
-   if(result.settled==='accepted')setSubmitted({label,ticket:(prepared.request as {requestId?:unknown}).requestId});
-   await refresh();
-  }finally{setBusy(false);}
+/** The one command lifecycle behind draft forms and one-click actions. Each activation sends at most one request, built by the caller from a fresh read. The control stays busy until the refreshed view arrives. Only an accepted ticket is watched for its terminal outcome. An uncertain or partial result, including one observed later, locks the control until the user reloads current values. Nothing is resubmitted automatically. */
+function useCommandLifecycle(source:unknown,options:ResultOptions){
+ const [state,dispatch]=useReducer(commandTransition,initialCommand);
+ // A second activation can arrive before React re-renders the disabled control.
+ const running=useRef(false);
+ const keepFocus=useRestoredFocus(state.busy);
+ useEffect(()=>dispatch({type:'observed',source,options}),[source,state.watching,options.device,options.sameMode]);
+ async function run(attempt:Omit<Attempt,'options'>){
+  if(running.current||state.locked)return;
+  running.current=true;keepFocus();
+  try{await runCommand({...attempt,options},dispatch);}finally{running.current=false;dispatch({type:'finish'});}
  }
- return {status,tone,busy,locked,run,unlock:()=>{setLocked(false);setStatus('');setTone(undefined);setSubmitted(undefined);void refresh();}};
+ return {...state,run,reload:(refresh:()=>Promise<unknown>)=>{dispatch({type:'reload'});void refresh().catch(()=>{});},dismiss:()=>dispatch({type:'dismiss'})};
+}
+/** One-click commands read the device again just before sending and carry that read's guards. A rejection leaves the action available for another explicit press. */
+function useCommand(api:Api,path:string,refresh:()=>Promise<unknown>,source:unknown,options:{sameMode?:boolean}={}){
+ const command=useCommandLifecycle(source,options);
+ return {status:command.status,tone:command.tone,busy:command.busy,locked:command.locked,
+  run:(label:string,prepare:()=>Promise<Prepared<{request:unknown}>>)=>command.run({wording:actionWording(label),prepare,send:request=>api.request<ReceiptEvidence>(path,request),refresh}),
+  unlock:()=>command.reload(refresh)};
 }
 function Badge({children,warning=false}:{children:React.ReactNode;warning?:boolean}){return <span className={'badge'+(warning?' warning':'')}>{children}</span>;}
 function Facts({items}:{items:[string,React.ReactNode][]}){return <dl>{items.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;}
 
 type FormProps<T>={title:string;source:T;revision:string;initial:Record<string,string>;disabled?:string;api:Api;path:string;build:(source:T,values:Record<string,string>)=>unknown;refresh:()=>Promise<unknown>;prepare?:()=>Promise<Prepared<{source:T;revision:string}>>;device?:boolean;submitLabel?:string;extra?:React.ReactNode;children:(values:Record<string,string>,change:(name:string,value:string)=>void)=>React.ReactNode};
-/** A draft pins the revision it started from. With prepare, the form reads its source again just before sending and uses that read's guards while the revision still matches. An accepted result clears the draft once the refreshed source arrives, so the form is ready for the next change. A rejection keeps the draft editable. An uncertain or partial result, including one observed later, locks the form until the user reloads current values. */
+/** A draft pins the revision it started from. With prepare, the form reads its source again just before sending and uses that read's guards while the revision still matches. An accepted result clears the draft once the refreshed source arrives, so the form is ready for the next change. A rejection keeps the draft editable. Submission, results and locks follow the shared command lifecycle. */
 function EditForm<T>({title,source,revision,initial,disabled,api,path,build,refresh,prepare,device=true,submitLabel,extra,children}:FormProps<T>){
  const heading=useId();
- const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null),[status,setStatus]=useState(''),[tone,setTone]=useState<Tone>(),[busy,setBusy]=useState(false),[locked,setLocked]=useState(false),[submitted,setSubmitted]=useState<unknown>();
- const keepFocus=useRestoredFocus(busy);
+ const [draft,setDraft]=useState<{values:Record<string,string>;source:T;revision:string}|null>(null);
+ const command=useCommandLifecycle(source,{device}),{status,tone,busy,locked}=command;
  const values=draft?.values??initial,dirty=draft!==null;
  const conflict=dirty&&!locked&&draft.revision!==revision;
- useEffect(()=>{const result=observedResult(source,submitted,{device});if(!result)return;setStatus(result.message);setTone(result.settled);if(result.locked)setLocked(true);},[source,submitted,device]);
  function change(name:string,value:string){setDraft(old=>old?{...old,values:{...old.values,[name]:value}}:{source:structuredClone(source),revision,values:{...initial,[name]:value}});}
- function reload(){setDraft(null);setLocked(false);setStatus('');setTone(undefined);setSubmitted(undefined);void refresh();}
- async function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!draft||conflict)return;const pinned=draft,kept=' Your edit is kept.';keepFocus();setBusy(true);setTone('pending');setStatus('Sending…');setSubmitted(undefined);
-  try {
-   let current=pinned.source;
-   if(prepare){
+ function reload(){setDraft(null);command.reload(refresh);}
+ function submit(e:React.FormEvent){e.preventDefault();if(disabled||busy||locked||!draft||conflict)return;const pinned=draft;
+  void command.run({wording:formWording,refresh,send:request=>api.request<ReceiptEvidence>(path,request),
+   prepare:async()=>{
+    if(!prepare)return {request:build(pinned.source,pinned.values)};
     const latest=await prepare();
-    if(blocked(latest)){setTone('rejected');setStatus(`Not sent: ${latest.blocked}. Nothing changed.${kept}`);return;}
-    if(latest.revision!==pinned.revision){setTone('rejected');setStatus(`Not sent: another client changed this setting while you were editing. Nothing changed.${kept}`);return;}
-    current=latest.source;
-   }
-   const request=build(current,pinned.values);
-   let result:ReturnType<typeof resultMessage>;try{result=resultMessage(await api.request<ReceiptEvidence>(path,request),{device});}catch(error){result=failureMessage(error,{device});}
-   setTone(result.settled);setStatus(result.message+(result.settled==='rejected'?kept:''));
-   if(result.locked){setLocked(true);void refresh();return;}
-   await refresh();
-   if(result.settled==='accepted'){setDraft(null);setSubmitted((request as {requestId?:unknown}).requestId);}
-  }finally{setBusy(false);}
+    if(blocked(latest))return latest;
+    if(latest.revision!==pinned.revision)return {blocked:'another client changed this setting while you were editing'};
+    return {request:build(latest.source,pinned.values)};
+   },
+   settled:outcome=>{if(outcome==='accepted')setDraft(null);}});
  }
- return <form className="edit" aria-labelledby={heading} onSubmit={submit}><h3 id={heading}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Another client changed this setting while you were editing. Your edit is kept but won’t be sent. Discard it to see current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">{submitLabel??`Apply ${title.toLowerCase()}`}</button>{locked?<button type="button" className="secondary" disabled={busy} onClick={reload}>Reload current values</button>:dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);setStatus('');setTone(undefined);}}>Discard my edit</button>}</div><p role="status" data-tone={tone}>{status}</p>{extra}</form>;
+ return <form className="edit" aria-labelledby={heading} onSubmit={submit}><h3 id={heading}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(values,change)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{conflict&&<p className="warning">Another client changed this setting while you were editing. Your edit is kept but won’t be sent. Discard it to see current values.</p>}<div className="actions"><button disabled={!!disabled||busy||locked||!dirty||conflict} type="submit">{submitLabel??`Apply ${title.toLowerCase()}`}</button>{locked?<button type="button" className="secondary" disabled={busy} onClick={reload}>Reload current values</button>:dirty&&<button type="button" className="secondary" disabled={busy} onClick={()=>{setDraft(null);command.dismiss();}}>Discard my edit</button>}</div><p role="status" data-tone={tone}>{status}</p>{extra}</form>;
 }
 function Select({label,value,onChange,options}:{label:string;value:string;onChange:(v:string)=>void;options:{value:string;label:string}[]}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;}
 const options=(values:string[])=>values.map(value=>({value,label:value}));
@@ -125,7 +108,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  /** Reads the device again just before a command is sent, so the command carries that read's ticket, revision and generation. A failed read or a control that is no longer available sends nothing. */
  const reread:Reread=async pick=>{
   const latest=await refresh();
-  if(!latest||latest.error)return {blocked:'B.U.N.N.Y. couldn’t read the device’s current state'};
+  if(!latest||latest.error)return {blocked:unreadable};
   const picked=pick(latest,availability(component,latest,context.control));
   return typeof picked==='string'?{blocked:picked}:picked;
  };

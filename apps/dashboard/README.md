@@ -55,6 +55,11 @@ address; the dashboard neither guesses destinations nor proxies these links.
 ## Common component view
 
 `client.ts` defines the component identity and authenticated transport.
+`lifecycle.ts` holds the one command lifecycle that draft forms (`EditForm`) and
+one-click actions (`useCommand`) share: sending, blocked and failed
+preparation, results, the accepted-ticket watch, locks and explicit reload.
+Forms keep their drafts and configuration-revision conflicts; actions and forms
+build their own device requests and apply their own availability rules.
 `ComponentView` in `src/main.tsx` supplies the common navigation target, evidence,
 settings and unavailable-operation explanations. Nanoleaf and Pixoo use typed
 integration views over their delivered versioned extensions. Unknown component
@@ -169,7 +174,11 @@ uncertain clears the draft once the refreshed snapshot arrives, so the form is
 ready for the next change. A changed revision blocks stale submission, and a
 rejection keeps the edit. An uncertain or partly applied result, including one
 observed later, locks the form or group and is never retried. "Reload current
-values" is the separate explicit action that unlocks it. Status text says
+values" is the separate explicit action that unlocks it. A failed fresh device
+read before sending sends nothing and frees the control. A failed refresh after
+a result keeps that result and resends nothing; the next explicit device command
+reads current guards again. A second activation while a command is running sends
+nothing. Status text says
 whether a command was queued, sent, saved, already in effect, not applied or
 unknown, names the typed code, and never presents transport success or a saved
 setting as physical output.
@@ -198,7 +207,8 @@ not copy wall geometry, physical Locate controls or animation rendering. This ne
 candidate requires its own explicit human approval. The Hub #151 and Hub #153
 general-control candidates require renewed approval, recorded in their PRs.
 
-`npm run test:dashboard` checks command guards and links.
+`npm run test:dashboard` checks command guards and links, and every command
+lifecycle transition for both the form and the action wording.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
 expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,

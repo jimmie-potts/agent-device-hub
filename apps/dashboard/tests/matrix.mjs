@@ -230,6 +230,35 @@ try {
   await form(page,'Mode').locator('.switch').waitFor({state:'detached'});assert.equal(f.writes.length,3,'nothing was retried');assert.equal(general(f).length,0,'no media or other command is sent across Start Monitor, the view edit and the uncertain retry check');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
+ await scenario('forms and actions share one lifecycle: a failed fresh read sends nothing, a failed refresh keeps the result, and a double activation sends once',async(f,page)=>{
+  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
+  // While failing, every Pixoo snapshot read answers 503. A poll still in flight when the context closes is abandoned instead of crashing the runner.
+  let failing=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(failing){await route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}});return;}await route.continue();}catch{await route.abort().catch(()=>{});}});
+  const status=page.locator('section:visible [role=status]'),enabled=name=>page.getByRole('button',{name,exact:true,disabled:false}).filter({visible:true});
+  // The fresh read taken just before sending fails: nothing is sent and the draft is kept. Once reads recover, one explicit apply sends with current guards.
+  await brightness.fill('40');let before=f.writes.length;failing=true;await visible(page,'button','Apply brightness').click();
+  await status.filter({hasText:'Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed. Your edit is kept.'}).waitFor();
+  assert.equal(f.writes.length,before,'a failed fresh read sends nothing');assert.equal(await brightness.inputValue(),'40');
+  failing=false;await enabled('Apply brightness').waitFor();let expected=guard(f);await visible(page,'button','Apply brightness').click();await until(()=>f.writes.length===before+1);
+  assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:40}});
+  await enabled('Pause').waitFor();before=f.writes.length;failing=true;await visible(page,'button','Pause').click();
+  await status.filter({hasText:'Pause: Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed.'}).waitFor();assert.equal(f.writes.length,before);
+  failing=false;
+  // The command is accepted, then the refresh that follows it fails: the receipt stays shown, the control is released and nothing is resent.
+  await page.route('**/api/controllers/v1/pixel/commands',async route=>{failing=true;await route.continue();});
+  await enabled('Pause').waitFor();before=f.writes.length;expected=guard(f);await visible(page,'button','Pause').click();
+  await status.filter({hasText:/^Pause: (Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();assert.equal(f.writes.length,before+1);
+  assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'media.control',action:'pause'}},'the action recovers with current guards after the failed read');
+  failing=false;await enabled('Pause').waitFor();
+  await brightness.fill('20');await enabled('Apply brightness').waitFor();await visible(page,'button','Apply brightness').click();
+  await status.filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();assert.equal(f.writes.length,before+2);
+  assert.equal(await status.filter({hasText:/Not applied|Nothing changed|Result unknown/}).count(),0,'a failed refresh never turns an accepted command into a failure');
+  failing=false;await page.unroute('**/api/controllers/v1/pixel/commands');await page.waitForTimeout(5500);assert.equal(f.writes.length,before+2,'nothing is resent after a failed refresh');
+  // A double activation of one action is one deliberate command.
+  await enabled('Next').waitFor();before=f.writes.length;await visible(page,'button','Next').dblclick();await until(()=>f.writes.length>before);await page.waitForTimeout(1000);
+  assert.equal(f.writes.length,before+1,'a double click sends one command');assert.deepEqual(general(f).at(-1).command,{kind:'media.control',action:'next'});
+  await enabled('Next').waitFor();await axe(page);
+ });
  {
   const f=await fixture({empty:true}),context=await browser.newContext(),page=await context.newPage();
   try{
