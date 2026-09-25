@@ -124,8 +124,8 @@ The component view offers power, brightness, saved-playlist selection, the
 declared playback actions and saved-scene activation from the controller v1
 capability object. Every control submits one guarded controller v1 command
 through the existing hub route with the observed request ticket, configuration
-revision and generation. A disabled control names the missing capability, the
-read-only scope, stale or external-control evidence, or the device mode.
+revision and generation. A declared control that is unavailable is disabled and names the read-only
+scope, stale or external-control evidence, or the device mode.
 Only declared capabilities get a form; one line names the undeclared ones, such
 as "Not declared by this controller: media and scenes." A component that declares
 none of them, such as the Tidbyt or the synthetic sensor fixture, shows only "No

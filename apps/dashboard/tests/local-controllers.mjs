@@ -110,7 +110,7 @@ try {
  assert.equal(await lampPower.inputValue(),'');
  await form('Power').getByText(/Current power is unknown/).waitFor();
  assert.equal(await section(page).getByRole('button',{name:'Apply power',exact:true}).isDisabled(),true,'no guessed value is submittable');
- await capture(page,'lifx-unknown-power.png');
+ await axe(page);await capture(page,'lifx-unknown-power.png');
  await lampPower.selectOption('on');await section(page).getByRole('button',{name:'Apply power',exact:true}).click();
  await new Promise(resolve=>{const wait=()=>control.posts.some(p=>p.path==='/api/controllers/v1/lamp/commands')?resolve():setTimeout(wait,25);wait();});
  assert.deepEqual(control.posts.filter(p=>p.path==='/api/controllers/v1/lamp/commands').map(p=>p.body.command),[{kind:'power.set',on:true}]);
