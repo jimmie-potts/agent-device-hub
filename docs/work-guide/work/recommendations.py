@@ -423,7 +423,7 @@ def _describe(new_body):
 
 def apply(entries, today, dry_run, receipt=None, reader=read_issue, writer=write_issue):
     """Re-read each live body, write only a changed section and read it back."""
-    return _story_apply(entries, today, dry_run, upsert, _describe, receipt, reader, writer)
+    return _story_apply(entries, today, dry_run, upsert, _describe, receipt, reader, writer, before=fingerprint)
 
 
 def _saved(root):

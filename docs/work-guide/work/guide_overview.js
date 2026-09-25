@@ -172,7 +172,9 @@
         handled.add(key);
         tr.querySelector('td:last-child').innerHTML = `${guide.note ? escape(guide.note) : ''}<p>${escape(gateOf(key))}</p>${recommendation(key)}`;
       }
-      const known = new Set([...body.querySelectorAll('tbody tr')].map(ownBadge).filter(Boolean).map(link => link.dataset.issue));
+      // Excludes .delivery-evidence: a reopened story previously archived there under this same
+      // topic must still be eligible for the "Newly added" bucket, not silently disappear.
+      const known = new Set([...body.querySelectorAll('tbody tr')].filter(tr => !tr.closest('.delivery-evidence')).map(ownBadge).filter(Boolean).map(link => link.dataset.issue));
       const added = Object.keys(rows).filter(key => refreshed.has(key[0]) && !handled.has(key) && !known.has(key) && guideOf(key).state === 'assigned' && guideOf(key).topic === topicId);
       added.sort();
       let newSection = body.querySelector('.newly-added-since-snapshot');

@@ -84,10 +84,11 @@ def _cells(row):
 
 def blocks(lines, labels, prompt_keys=()):
     """Split section lines into labeled values, an optional table and prompt
-    blocks. `labels` is the complete set of valid `**Key:**` labels,
-    including any in `prompt_keys`; a key in `prompt_keys` must be followed
-    by a blank-line-separated fenced ```text block instead of an inline
-    value. At most one pipe table is allowed; the caller validates its shape."""
+    blocks. `labels` is the set of valid inline `**Key:**` labels; `prompt_keys`
+    is checked first and does not need to also appear in `labels`. A key in
+    `prompt_keys` must be followed by a blank-line-separated fenced ```text
+    block instead of an inline value. At most one pipe table is allowed; the
+    caller validates its shape."""
     values, prompts, table, index = {}, {}, None, 0
     def claim(key, store):
         if key in store:
@@ -202,11 +203,13 @@ def write_issue(repo, number, body):
                payload=json.dumps({'body': body}))
 
 
-def apply(entries, today, dry_run, upsert, describe, receipt=None, reader=read_issue, writer=write_issue):
+def apply(entries, today, dry_run, upsert, describe, receipt=None, reader=read_issue, writer=write_issue, before=None):
     """Re-read each live body, write only a changed section and read it back.
     `upsert(body, entry, today)` returns (new body, outcome); `describe(new
     body)` returns the extra fields a caller wants reported per story (state,
-    label, and so on)."""
+    label, and so on). `before(body)`, if given, returns a value recorded as
+    `row['before']` ahead of any change, for a caller that wants a pre-write
+    marker in the receipt."""
     results = []
     for entry in entries:
         key = f"{entry['repo']}#{entry['number']}"
@@ -221,6 +224,8 @@ def apply(entries, today, dry_run, upsert, describe, receipt=None, reader=read_i
             if outcome != 'unchanged' and entry.get('read_at') and live.get('updated_at', '') > entry['read_at']:
                 raise RuntimeError(f"the story changed at {live['updated_at']}, after it was read at {entry['read_at']}; nothing was written")
             row.update(outcome=outcome)
+            if before:
+                row['before'] = before(body)
             if outcome != 'unchanged':
                 row['diff'] = ''.join(difflib.unified_diff(normalize(body).splitlines(True), normalize(new).splitlines(True), key, key, n=1))
                 if not dry_run:
