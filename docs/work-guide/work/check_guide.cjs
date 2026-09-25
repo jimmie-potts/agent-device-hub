@@ -336,6 +336,13 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled without a cheaper start'); assert.equal(await dialog.locator('.brief-option-note').textContent(),'No cheaper start is recorded for this story.');
        assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
        await page.keyboard.press('Escape');
+       // Most saved recommendations record why no cheaper start exists; the reason replaces the generic note.
+       const declined=Object.entries(recs).find(([,r])=>r.state==='recommended'&&!r.prompts.cheaper&&/^none recorded\b/.test(r.cheaper||''));
+       assert(declined,'The snapshot has a recommendation that records why no cheaper start exists');
+       await open(declined[0]); await dialog.locator('[data-action="implement"]').click();
+       assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled when none is recorded');
+       assert.equal(await dialog.locator('.brief-option-note').textContent(),`Cheaper start: ${declined[1].cheaper}`,'The recorded reason is shown');
+       await page.keyboard.press('Escape');
        for(const [name,key,expect] of [['insufficient',cases.insufficient,/^Insufficient information/],['stale',cases.stale,/^Needs reassessment \(story text changed after 2026-09-20\)/],['unavailable',cases.unavailable,/^Assessment unavailable/],['unassessed','H999',/^Not yet assessed/]]){
          await open(key); await dialog.locator('[data-action="implement"]').click();
          assert.match(await start.locator('.brief-rec-state').textContent(),expect,`${name} state as text`);

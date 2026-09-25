@@ -130,3 +130,4 @@
 #262 [OPEN] Evict a task across devices through the shared owner
 #263 [OPEN] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
+#267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub

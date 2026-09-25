@@ -473,6 +473,16 @@ class Recommendations(unittest.TestCase):
         self.assertEqual(child['label'], 'One-shot · Sonnet medium / Luna medium')
         self.assertIn('/issues/901', child['prompts']['recommended']['claude'])
 
+    def test_incomplete_entries_are_refused_with_a_reason(self):
+        no_reviewers = recommendation_entry('One-shot', cheaper=False)
+        no_reviewers['hosts']['codex']['reviewers'] = None
+        with self.assertRaisesRegex(ValueError, 'two final reviewers'):
+            self.R.upsert(STORY, no_reviewers, '2026-09-30')
+        no_reason = recommendation_entry(cheaper=False)
+        del no_reason['no_cheaper']
+        with self.assertRaisesRegex(ValueError, 'why none is recorded'):
+            self.R.upsert(STORY, no_reason, '2026-09-30')
+
     def test_insufficient_story_names_what_is_missing(self):
         entry = dict(repo='agent-device-hub', number=902, status='insufficient', missing='the owner has not chosen the bulbs.',
                      reassess='the owner records the bulbs.', assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture'))

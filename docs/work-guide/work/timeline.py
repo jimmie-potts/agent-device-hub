@@ -65,6 +65,9 @@ TRACKS = [
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
         dict(id='n-desk-later', x=4, label='Profiles · Music preset', issues=['H70', 'H71'], guide='desktop-controls'),
     ]),
+    ('Cross-device looks', [
+        dict(id='n-desk-looks', x=4, label='Coordinated device looks', issues=['H267'], guide='desktop-controls'),
+    ]),
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=1, label='Panels trial accepted', issues=[], guide='nanoleaf-devices'),
@@ -242,6 +245,7 @@ CROSS = [
     ('n-local', 'n-tl-accept', 'H8'), ('n-local', 'n-pc-accept', 'H8'), ('n-local', 'n-desk-verify', 'H8'),
     ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-local', 'n-host', 'H5'),
     ('n-music', 'n-desk-later', 'H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
+    ('n-desk-presets', 'n-desk-looks', 'H67'),
     # Nanoleaf #121 starts after #118 and after the worker fixes in #111, #112 and #115 merge.
     ('n-nl-config', 'n-nl-context', 'N118'), ('n-map-source', 'n-nl-context', 'N111'),
     ('n-map-inspector', 'n-nl-context', 'N112'), ('n-map-comets', 'n-nl-context', 'N115'),

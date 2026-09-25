@@ -467,6 +467,8 @@ def render(entry, assessed_date, story_fingerprint):
         for host, name in HOSTS.items():
             lines += ['', f'**Cheaper prompt ({name}):**', '', *_fenced(prompt(entry, host, 'cheaper', assessed_date))]
     else:
+        if not entry.get('no_cheaper'):
+            raise ValueError('without a cheaper start, the entry must say why none is recorded (no_cheaper)')
         lines += ['', f"**Cheaper start:** none recorded; {_one_line(entry['no_cheaper'])}"]
     lines += ['', *closing]
     return '\n'.join(lines)

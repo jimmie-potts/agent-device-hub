@@ -1,6 +1,7 @@
 """Issue-specific reading notes. Refresh against owning issue scopes when editing."""
 
-DETAILS = {'H252': "Show each story's starting session, model and thinking level in the guide from its saved Execution recommendation.",
+DETAILS = {'H267': 'Backlog placeholder: coordinate Work, Free and Quiet colors and scenes across every device from the hub, building on [[H67]].',
+ 'H252': "Show each story's starting session, model and thinking level in the guide from its saved Execution recommendation.",
  'H253': 'Qualify when installed Codex Desktop emits SessionEnd for a task that is not archived, and check removal, reopen and new work afterward.',
  'H254': 'Add a second, trading-card skin to the guide and atlas, with art shared by issue label and a skin picker.',
  'H258': 'Report documentation drift against pinned sources and documented commands in CI, as warnings rather than a merge gate.',
