@@ -235,6 +235,13 @@ function moment(input: Extract<ReferenceInput, { operation: 'moment' }>) {
       receipts.push({ requestId: structuredClone(c.requestId), outcome: 'sent' });
       starts += 1;
     };
+    // A writer that reaches a scheduled start too late, for example after a stall, drops the moment before it
+    // handles anything else. It never played, so it records no ending. A restart's time is in a new clock epoch.
+    if (e.kind !== 'restart' && d.current.status === 'scheduled'
+        && e.nowMs > d.current.startAt.atMs + d.current.toleranceMs) {
+      receipts.push({ requestId: structuredClone(d.current.requestId), outcome: 'failed', failure: 'moment-missed' });
+      d.current = { status: 'none' };
+    }
     switch (e.kind) {
       case 'deliver': {
         const m = e.command;
@@ -262,11 +269,7 @@ function moment(input: Extract<ReferenceInput, { operation: 'moment' }>) {
         break;
       }
       case 'tick':
-        if (d.current.status === 'scheduled' && e.nowMs > d.current.startAt.atMs + d.current.toleranceMs) {
-          // The writer reached the start too late: drop it as it would a late delivery. It never played.
-          receipts.push({ requestId: structuredClone(d.current.requestId), outcome: 'failed', failure: 'moment-missed' });
-          d.current = { status: 'none' };
-        } else if (d.current.status === 'scheduled' && e.nowMs >= d.current.startAt.atMs) start();
+        if (d.current.status === 'scheduled' && e.nowMs >= d.current.startAt.atMs) start();
         else if (d.current.status === 'playing' && e.nowMs >= d.current.endAt.atMs) end('completed');
         break;
       case 'alert':

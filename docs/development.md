@@ -288,7 +288,7 @@ Python dependencies in an isolated environment with
 
 Run `npm run build`, `npm run typecheck`, `npm run test:contracts`,
 `npm run test:contracts:python` and `npm run test:package`. Every command must
-exit zero. Both languages execute the same 190 schema and 134 semantic cases,
+exit zero. Both languages execute the same 190 schema and 136 semantic cases,
 including the API 1.1 moment cases from Hub #292.
 The package check installs a newly built archive into a temporary consumer,
 checks every manifest hash, imports the named package, and runs both full corpora.

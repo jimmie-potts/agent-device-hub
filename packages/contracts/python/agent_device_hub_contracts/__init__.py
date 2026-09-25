@@ -258,6 +258,12 @@ def _moment(value: dict[str, Any]) -> dict[str, Any]:
             starts += 1
 
         kind, now = event["kind"], event["nowMs"]
+        # A writer that reaches a scheduled start too late, for example after a stall, drops the moment before it
+        # handles anything else. It never played, so it records no ending. A restart's time is in a new clock epoch.
+        current = device["current"]
+        if kind != "restart" and current["status"] == "scheduled" and now > current["startAt"]["atMs"] + current["toleranceMs"]:
+            receipts.append({"requestId": deepcopy(current["requestId"]), "outcome": "failed", "failure": "moment-missed"})
+            device["current"] = {"status": "none"}
         if kind == "deliver":
             command = event["command"]
             begin = command["start"]
@@ -290,11 +296,7 @@ def _moment(value: dict[str, Any]) -> dict[str, Any]:
                         start()
         elif kind == "tick":
             current = device["current"]
-            if current["status"] == "scheduled" and now > current["startAt"]["atMs"] + current["toleranceMs"]:
-                # The writer reached the start too late: drop it as it would a late delivery. It never played.
-                receipts.append({"requestId": deepcopy(current["requestId"]), "outcome": "failed", "failure": "moment-missed"})
-                device["current"] = {"status": "none"}
-            elif current["status"] == "scheduled" and now >= current["startAt"]["atMs"]:
+            if current["status"] == "scheduled" and now >= current["startAt"]["atMs"]:
                 start()
             elif current["status"] == "playing" and now >= current["endAt"]["atMs"]:
                 end("completed")
@@ -369,7 +371,7 @@ def evaluate(value: dict[str, Any]) -> Any:
     if operation == "downgrade":
         return {"snapshot": downgrade_snapshot(value["snapshot"]), "effects": 0}
     if operation == "negotiate":
-        return negotiate_api_version(value["requested"], value["served"])
+        return negotiate_api_version(value.get("requested"), value["served"])
     if operation == "read":
         return {"snapshot": deepcopy(value["snapshot"]), "effects": 0}
     if operation == "sample":

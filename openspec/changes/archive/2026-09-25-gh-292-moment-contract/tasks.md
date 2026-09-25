@@ -6,9 +6,10 @@
 ## 2. Reference decisions
 
 - [x] 2.1 Add hand-authored semantic cases before the reference code: 21 moment sequences, 11 admission cases and 2 downgrade cases. Evidence: 31 cases failed before implementation. The three already green cases confirmed that 1.0 behavior is unchanged.
-- [x] 2.2 Implement 1.1 admission with 1.0 overloads unchanged, the moment reducer and `downgradeSnapshot` in TypeScript. Evidence: all 324 cases pass; the runner also validates the emitted 1.1 receipts, moment state and 1.0 views; the Tidbyt and LIFX typechecks still pass.
-- [x] 2.3 Mirror the same decisions in Python. Evidence: `test:contracts:python` passes the same 324 cases.
-- [x] 2.4 Apply the first review round: lateness at the scheduled start, `coversStatus` as a writer-applied permission, read negotiation with a 1.0 default (`negotiateApiVersion`), and cases for a flourish superseding a scheduled flourish, the device duration limit, 1.0 `feed` rejection and a mixed batch. Evidence: 11 new or changed semantic cases failed before the fix; all 324 pass after it.
+- [x] 2.2 Implement 1.1 admission with 1.0 overloads unchanged, the moment reducer and `downgradeSnapshot` in TypeScript. Evidence: all 326 cases pass; the runner also validates the emitted 1.1 receipts, moment state and 1.0 views; the Tidbyt and LIFX typechecks still pass.
+- [x] 2.3 Mirror the same decisions in Python. Evidence: `test:contracts:python` passes the same 326 cases.
+- [x] 2.4 Apply the first review round: lateness at the scheduled start, `coversStatus` as a writer-applied permission, read negotiation with a 1.0 default (`negotiateApiVersion`), and cases for a flourish superseding a scheduled flourish, the device duration limit, 1.0 `feed` rejection and a mixed batch. Evidence: 12 new or changed semantic cases failed before the fix, one of them only because its scheduled state gained `toleranceMs`; all 324 pass after it.
+- [x] 2.5 Apply the second review round: drop a stale scheduled moment before handling any later event, document the client fallback for controllers built before 1.1.0, and correct the start-drop evidence text. Evidence: 2 new cases (`moment-stale-schedule-dropped-before-delivery`, `-before-command`) failed before the fix; all 326 pass after it.
 
 ## 3. Artifact, consumers and documentation
 

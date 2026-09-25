@@ -28,6 +28,7 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
   - `negotiateApiVersion` serves a read without a version at 1.0. A named version gets the highest served version of the same major that is not above it, and another major or a malformed value is `invalid-request`.
   - Over HTTP the signal is the `apiVersion` query parameter, matching agent-state's opt-in `snapshotVersion=1.1` style.
   - The default keeps the installed hub's 1.0 snapshot validation working when a device adopts 1.1.
+  - Controllers built before 1.1.0 may reject the parameter; the Nanoleaf controller on `main` (`88831e4`) accepts only its declared read parameters. A client therefore treats `invalid-request` on a versioned read as a 1.0-only controller and reads again without the signal.
 - **Overloaded `admit`.**
   - `admit(Admission)` keeps returning the 1.0 `AdmissionResult` type.
   - A state with `apiVersions` (`AdmissionStateV1_1`) selects the 1.1 overload.
@@ -50,7 +51,7 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
   - A newer accepted moment ends the current one immediately, and the device shows its base until the new start. This keeps one current moment and one clear ending.
   - The alternative was to keep the old moment playing until the new start, which needs a queue of two.
 - **A moment starts at its tick and plays the full duration from the actual start.**
-  - Lateness is judged when the moment is delivered and again at the scheduled start. A writer that reaches the start more than `toleranceMs` late drops the moment as `moment-missed`, so a stall cannot make it play out of step with other devices. The scheduled state carries `toleranceMs` for this.
+  - Lateness is judged when the moment is delivered and again before every later event while it is scheduled. A writer that reaches the start more than `toleranceMs` late drops the moment as `moment-missed`, so a stall cannot make it play out of step with other devices or block a newer moment. The scheduled state carries `toleranceMs` for this. The dropped moment records no ending, because it never played; its receipt carries `moment-missed`.
   - Any later ineligibility ends a scheduled moment immediately: an alert on status is `preempted`, and a mode change or explicit command is `interrupted`. The start therefore needs no second eligibility check.
 - **`coversStatus` is a permission the writer applies.**
   - A device whose capability cannot cover status blocks status-covering moments only while it shows status. It still plays them over content.

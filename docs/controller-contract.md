@@ -87,6 +87,7 @@ API 1.1 is opt-in:
 
 - A snapshot or feed read names the version it wants with `apiVersion`, which is the `apiVersion` query parameter over HTTP. A read without it is served at 1.0, so today's 1.0 readers never receive a 1.1 shape.
 - `negotiateApiVersion` serves the highest version the controller has that has the same major and is not above the request: 1.7 gets 1.1, and 1.1 on a 1.0-only controller gets 1.0. Another major or a malformed value such as `1.01` is `invalid-request`. The client validates the answer against the schema of the version it received.
+- Controllers built on contract 1.1.0 or later accept the signal. A controller built before 1.1.0 may reject any unknown read parameter; the Nanoleaf controller answers `invalid-request` to anything but its declared parameters. A client that gets `invalid-request` for a versioned read therefore treats the controller as 1.0-only and reads again without the signal. It sends no moments to that controller.
 - A client sends a moment only after it has read a 1.1 snapshot that declares `moments` supported.
 - A 1.1 controller keeps accepting 1.0 requests. Both envelopes share one ticket sequence, and each receipt carries its own request's API version.
 - A 1.0-only controller rejects a 1.1 envelope as `invalid-request` before admission, without reserving a ticket.
@@ -120,7 +121,7 @@ The contract compares times only inside one controller's monotonic clock epoch. 
 - The hub already reads a snapshot before every command. It computes `atMs` as the snapshot's `sampleClock.sampledAtMs`, plus its own monotonic time elapsed since it received that snapshot, plus any lead it wants. It sets `epoch` to that `sampleClock.epoch`.
 - Choreography gives each device its own `atMs` for the same hub instant. Start times are best effort, and no device synchronization is claimed.
 - When the writer takes the moment, it drops the moment as `moment-missed` if its clock epoch differs from `start.epoch`, if its clock is more than `toleranceMs` past `atMs`, or if `atMs` is more than 60,000 ms ahead. `toleranceMs` is at most 60,000.
-- The writer checks lateness again at the scheduled start. A moment that the writer reaches more than `toleranceMs` after `atMs`, for example after a stall, is dropped as `moment-missed` instead of playing late.
+- The writer checks lateness again while the moment is scheduled. If its clock is more than `toleranceMs` past `atMs` when it next handles anything, for example after a stall, it drops the moment as `moment-missed` before acting on that event, instead of playing it late.
 - A moment that misses its window is dropped, not queued. A late delivery after a hub outage therefore never plays.
 
 ### Precedence and return to base
@@ -152,7 +153,7 @@ A delivered moment no longer depends on the hub. It ends on the device's own clo
 
 Receipts keep their transmission-only meaning:
 
-- A moment that fails a check in the list above, or reaches its start too late, gets a `failed` receipt with `moment-duplicate`, `moment-missed` or `moment-blocked`. These failure codes exist only in 1.1 receipts. A dropped moment was never current, so it records no ending.
+- A moment that fails a check in the list above, or reaches its start too late, gets a `failed` receipt with `moment-duplicate`, `moment-missed` or `moment-blocked`. These failure codes exist only in 1.1 receipts. A moment dropped at its scheduled start was current but never played; it records no ending, and only its receipt reports `moment-missed`.
 - A moment that starts gets `sent` for its start transmission.
 - A scheduled moment that ends before starting gets `cancelled`, with no prior effects.
 
@@ -212,7 +213,7 @@ API 1.1 adds these cases:
 30. A moment returns to the current base after status changes during it, starts on schedule and expires after its duration.
 31. An alert pre-empts a scheduled or playing moment on status, and an existing alert blocks one. Alerts neither pre-empt nor block over content.
 32. Quiet blocks a moment, and so does status when the moment or the device cannot cover status. A device that cannot cover status still plays the moment over content.
-33. Late delivery, another clock epoch, an over-long lead and a start reached after its tolerance are missed; a start within tolerance plays.
+33. Late delivery, another clock epoch, an over-long lead and a start reached after its tolerance are missed, including when the next event is a delivery or a command; a start within tolerance plays.
 34. A duplicate ID is ignored while playing and after ending, and the device remembers the last 64 IDs.
 35. A newer event supersedes a moment, an event supersedes a flourish, and a flourish supersedes a scheduled flourish, which is then cancelled. A flourish during an event is blocked.
 36. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
@@ -226,8 +227,8 @@ Schema checking proves payload shape. Pure semantic fixtures prove the reference
 
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
-| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 324 shared cases (190 schema, 134 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 324 cases and archive import |
+| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 326 shared cases (190 schema, 136 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
+| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 326 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
 

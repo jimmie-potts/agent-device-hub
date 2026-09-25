@@ -78,7 +78,7 @@ API 1.1 SHALL carry a `moment` command with a neutral moment ID from the trigger
 - **THEN** its receipt keeps the current configuration revision, so another client's pending edit does not conflict
 
 ### Requirement: Compatible API 1.1 negotiation
-API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A snapshot or feed read without a version signal SHALL be served at 1.0. A read that names a version SHALL be served at the highest version the controller has that has the same major and is not above it. Another major or a malformed version MUST be invalid-request. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
+API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A snapshot or feed read without a version signal SHALL be served at 1.0. A read that names a version SHALL be served at the highest version the controller has that has the same major and is not above it. Another major or a malformed version MUST be invalid-request. A controller built before 1.1.0 MAY reject the version signal; a client that receives invalid-request for a versioned read SHALL treat the controller as 1.0-only, read again without the signal and send it no moments. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
 
 #### Scenario: 1.0-only controller
 - **WHEN** a controller without API 1.1 receives a 1.1 moment request
@@ -87,6 +87,10 @@ API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission 
 #### Scenario: Read without a version signal
 - **WHEN** a reader that sends no version reads a controller that serves 1.0 and 1.1
 - **THEN** it receives a 1.0 snapshot, and a reader asking for 1.7 receives 1.1
+
+#### Scenario: Controller built before 1.1
+- **WHEN** a 1.1 client's versioned snapshot read gets invalid-request from a controller built before contract 1.1.0
+- **THEN** the client reads again without the version signal, uses the 1.0 snapshot and sends that controller no moments
 
 #### Scenario: 1.0 reader of a 1.1 controller
 - **WHEN** a 1.1 snapshot with a playing moment, a pending moment and a moment-blocked outcome is served to a 1.0 reader
@@ -97,7 +101,7 @@ API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission 
 - **THEN** every case still produces its original expected result
 
 ### Requirement: Moment start in the controller clock
-A moment's start SHALL use the receiving controller's monotonic clock domain and epoch, with a tolerance of at most 60,000 milliseconds. The hub derives it from the device's snapshot clock sample and its own elapsed time. The device MUST drop a moment as moment-missed when the clock epoch differs, when it would start more than the tolerance late, or when the start is more than 60,000 milliseconds ahead. It SHALL apply the lateness rule both when the writer takes the moment and at the scheduled start. A missed moment MUST NOT be queued or replayed. Source: #292 decision 1; ADR 0006 degradation.
+A moment's start SHALL use the receiving controller's monotonic clock domain and epoch, with a tolerance of at most 60,000 milliseconds. The hub derives it from the device's snapshot clock sample and its own elapsed time. The device MUST drop a moment as moment-missed when the clock epoch differs, when it would start more than the tolerance late, or when the start is more than 60,000 milliseconds ahead. It SHALL apply the lateness rule when the writer takes the moment and again, while the moment is scheduled, before handling any later event. A missed moment MUST NOT be queued or replayed. Source: #292 decision 1; ADR 0006 degradation.
 
 #### Scenario: Late delivery after a hub outage
 - **WHEN** a moment arrives after its start plus tolerance
@@ -135,7 +139,7 @@ A device writer SHALL play at most one moment at a time. It MUST drop a recent m
 - **THEN** it shows its current base, its moment memory is empty, and a redelivery with the old clock epoch is missed
 
 ### Requirement: Moment evidence
-Moment receipts SHALL keep transmission-only meaning. A dropped moment, including one reached too late at its scheduled start, gets a failed receipt with a moment failure code that only 1.1 receipts carry. A started moment gets sent, and a scheduled moment that ends before starting gets cancelled with no prior effects. The 1.1 snapshot SHALL report the current moment as none, scheduled or playing with its instants, and SHALL report the last ended moment with completed, preempted, superseded or interrupted and its end instant. Every instant uses the controller clock. Source: #292 decision 4.
+Moment receipts SHALL keep transmission-only meaning. A dropped moment, including one reached too late at its scheduled start, gets a failed receipt with a moment failure code that only 1.1 receipts carry. A moment dropped at its scheduled start records no ending. A started moment gets sent, and a scheduled moment that ends before starting gets cancelled with no prior effects. The 1.1 snapshot SHALL report the current moment as none, scheduled or playing with its instants, and SHALL report the last ended moment with completed, preempted, superseded or interrupted and its end instant. Every instant uses the controller clock. Source: #292 decision 4.
 
 #### Scenario: Cancelled before start
 - **WHEN** an explicit command arrives while a moment is scheduled
