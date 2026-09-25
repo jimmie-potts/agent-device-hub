@@ -114,6 +114,10 @@ python3 docs/skins/check_tokens.py
 Both browser checks run `docs/skins/check_skin.cjs` for the theme and motion
 controls, reduced motion, print and decoration placement.
 
+The nine Archify viewers and the atlas's API and database reference
+(`docs/system-design/reference/`, with its bundled Scalar and SchemaSpy output)
+keep their own styling and are outside the token check.
+
 ## Intentional guide revisions
 
 The shared checkpoint contract was introduced by

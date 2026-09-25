@@ -25,6 +25,17 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     themePressed: document.querySelector('#theme-toggle').getAttribute('aria-pressed'), motionPressed: document.querySelector('#motion-toggle').getAttribute('aria-pressed'),
     background: getComputedStyle(document.body).backgroundColor}), [THEME_KEY, MOTION_KEY]);
   const running = page => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName).sort());
+  // Chromium commits localStorage to its storage service asynchronously, so a reload right after a toggle can read the
+  // previous value on a busy runner. Reload until a fresh document reads the write and applied it (at most 20 tries,
+  // 100 ms apart); the assertions after each call still check the full state.
+  const reloadUntilStored = async (page, key, attribute, value) => {
+    for (let attempt = 1; ; attempt++) {
+      await page.reload();
+      const settled = await page.evaluate(([key, attribute, value]) => localStorage.getItem(key) === value && (document.documentElement.dataset[attribute] ?? null) === value, [key, attribute, value]);
+      if (settled || attempt >= 20) return;
+      await page.waitForTimeout(100);
+    }
+  };
   try {
     // Motion: the opening and streak run by default, Pause stops every decorative animation and
     // persists, Resume restarts only the streak, and a fresh load replays the opening.
@@ -40,7 +51,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     now = await state(page);
     assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['paused', 'true', 'paused'], 'Pause sets and stores the paused state');
     assert.deepEqual(await running(page), [], 'Pause stops every decorative animation');
-    await page.reload();
+    await reloadUntilStored(page, MOTION_KEY, 'motion', 'paused');
     now = await state(page);
     assert.deepEqual([now.motion, now.motionPressed], ['paused', 'true'], 'A stored pause applies before first paint');
     assert.deepEqual(await running(page), [], 'A paused page starts without motion');
@@ -48,7 +59,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     now = await state(page);
     assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['running', 'false', null], 'Resume clears the stored pause');
     assert.deepEqual(await running(page), [STREAK], 'Resume restarts the streak without replaying the opening');
-    await page.reload();
+    await reloadUntilStored(page, MOTION_KEY, 'motion', null);
     now = await state(page);
     assert.equal(now.motion, null, 'Only the paused state is stored');
     assert((await running(page)).some(name => OPENING.includes(name)), 'A fresh load replays the opening');
@@ -60,9 +71,11 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     assert.deepEqual([now.theme, now.themePressed, now.storedTheme], ['light', 'true', 'light'], 'The theme toggle switches to light and stores it');
     const light = now.background;
     assert.notEqual(light, dark, 'Light mode changes the surface');
-    await page.reload();
-    assert.deepEqual([(await state(page)).theme, (await state(page)).themePressed], ['light', 'true'], 'The theme persists across reload');
-    await page.locator('#theme-toggle').click(); await page.reload();
+    await reloadUntilStored(page, THEME_KEY, 'theme', 'light');
+    now = await state(page);
+    assert.deepEqual([now.theme, now.themePressed, now.storedTheme], ['light', 'true', 'light'], 'The theme persists across reload');
+    await page.locator('#theme-toggle').click();
+    await reloadUntilStored(page, THEME_KEY, 'theme', 'dark');
     now = await state(page);
     assert.deepEqual([now.theme, now.storedTheme, now.background], ['dark', 'dark', dark], 'Dark mode persists across reload');
     await page.evaluate(() => { delete document.documentElement.dataset.theme; });

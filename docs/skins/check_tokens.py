@@ -50,7 +50,8 @@ slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato
 whitesmoke yellow yellowgreen canvas canvastext linktext visitedtext activetext buttonface buttontext buttonborder
 field fieldtext highlight highlighttext selecteditem selecteditemtext mark marktext graytext accentcolor
 accentcolortext'''.split())
-HEX = re.compile(r'(?<![\w&/-])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])')
+# A hash after url(, href= or a selector quote is a fragment id, not a color.
+HEX = re.compile(r'(?<![\w&/-])(?<!url\()(?<!href=")(?<!href=\')(?<!\(\')(?<!\(")#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])')
 FUNCTION = re.compile(r'\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(', re.IGNORECASE)
 # Named colors count only as values of color-bearing properties or SVG color attributes.
 DECLARATION = re.compile(r'(?:(?<=[{;\s"\'(])|^)(--[\w-]+|color|fill|stroke|filter|outline(?:-color)?|box-shadow|text-shadow'

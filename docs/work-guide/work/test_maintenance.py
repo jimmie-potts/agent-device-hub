@@ -38,6 +38,10 @@ class GuideMaintenance(unittest.TestCase):
                   "HTML = '<path stroke=\"red\" fill=\"currentColor\"/><a href=\"#top\">Hub #32</a>'\n")
         self.assertEqual(check.color_literals(source, '.py'), [(2, '#123456'), (2, 'rgba(1,2,3,.5)'), (3, 'red')])
         self.assertEqual(check.color_literals('/* #fff */\n.a{outline:1px solid Black;color:transparent}', '.css'), [(2, 'Black')])
+        # Fragment ids that happen to look like hex are not colors; a hex attribute value still is.
+        self.assertEqual(check.color_literals('.a{fill:url(#fade)}<a href="#dead">x</a><use href=\'#cafe\'/>', '.css'), [])
+        self.assertEqual(check.color_literals("document.querySelector('#face');q(\"#bead\");", '.js'), [])
+        self.assertEqual(check.color_literals('<path fill="#abc" stroke="#face"/>', '.css'), [(1, '#abc'), (1, '#face')])
         with tempfile.TemporaryDirectory(prefix='guide-tokens-') as directory:
             root = Path(directory)
             docs = SKINS.parent
