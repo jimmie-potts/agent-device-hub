@@ -14,6 +14,7 @@ import architecture_diagrams as AD  # noqa: E402  diagram definitions and render
 import guide_status as GS
 import recommendations as REC
 import guide_section as GD
+import guide_direction as GDIR  # noqa: E402  dated direction narrative and computed leverage
 from guide_paths import PATHS, TOPICS, ALIASES, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
 
@@ -33,6 +34,10 @@ for key, (repo, _) in REPOS.items():
         ISSUES[f'{key}{issue["number"]}'] = issue
 
 DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
+# The direction narrative is checked against the snapshot before anything renders, so a stale
+# citation stops the build here rather than publishing text that no longer fits the records.
+GDIR.check(ISSUES)
+LEVERAGE = GS.leverage(ISSUES, DEPENDENCIES)
 # Saved Execution recommendation sections, read strictly from the snapshot bodies.
 RECOMMENDATIONS = {key: REC.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
 
@@ -92,7 +97,8 @@ METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], snapshotDate=REFRESHED.strf
                 architecture=dict(reviewedAt=AD.SOURCES['reviewedAt'], renderedAt=DIAGRAM_RECEIPTS['renderedAt'], sourceRevisions=AD.SOURCES['sourceRevisions'], viewRevisions=AD.VIEW, viewsReviewedAt=AD.SOURCES['viewsReviewedAt'],
                                   diagramCount=len(AD.DIAGRAMS), diagrams=[dict(id=d['id'], kind=d['kind'], status=d['status'], viewer=f"architecture/{d['id']}.html",
                                                                                  viewerSha256=receipt_by_id[d['id']]['artifact']['sha256']) for d in AD.DIAGRAMS],
-                                  countedInIssueTotals=False))
+                                  countedInIssueTotals=False),
+                direction=dict(asOf=GDIR.AS_OF, revision=GDIR.REVISION, countedInIssueTotals=False))
 
 def issue_link(key):
     issue = ISSUES[key]
@@ -260,6 +266,9 @@ timeline_section = f'''<details class="reference timeline" id="timeline">
       </div><div id="timeline-tip" class="timeline-tip" role="status" hidden></div>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
+direction_section = GDIR.render(ISSUES, LEVERAGE, issue_link, lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])),
+                                DECISIONS, OWNER_LATER, REFRESHED.strftime('%-d %B %Y'))
+
 CSS = '''
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--bg);color:var(--text);font:var(--type-body)/1.65 var(--font);background-image:var(--grid-image);background-size:var(--grid-size)}a{color:var(--link);text-underline-offset:4px}button,input{font:inherit}button{cursor:pointer}::selection{background:var(--accent);color:var(--accent-ink)}:focus-visible{outline:2px solid var(--focus);outline-offset:5px}button,a,summary{touch-action:manipulation}button{color:var(--text);border:1px solid var(--edge);background:color-mix(in srgb,var(--accent) 4%,transparent);border-radius:var(--radius);padding:9px 14px;font:var(--type-small) var(--mono);min-height:40px}button:hover{background:var(--raised);border-color:var(--accent)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip{position:fixed;left:12px;top:-100px;z-index:100;padding:12px;background:var(--accent);color:var(--accent-ink)}.skip:focus{top:12px}[hidden]{display:none!important}
 .shell{max-width:1660px;margin:auto;display:grid;grid-template-columns:258px minmax(0,1fr);min-height:100vh}.sidebar{height:100dvh;position:sticky;top:0;padding:35px 20px 22px 26px;border-right:1px solid var(--edge);background:var(--panel-translucent);display:flex;flex-direction:column;overflow:auto}.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);font:600 13px/1.3 var(--mono);letter-spacing:.08em}.brand svg{width:35px;height:38px;color:var(--accent);flex-shrink:0}.brand small{display:block;color:var(--muted);font:10px var(--mono);letter-spacing:.13em;margin-top:5px}.sidebar-rule{height:1px;background:linear-gradient(90deg,var(--accent),transparent);margin:31px 0 28px}.eyebrow{font:11px/1.5 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}.nav-title{margin-bottom:16px;color:var(--accent)}nav{display:grid;gap:5px}nav a{display:grid;grid-template-columns:22px 1fr 20px;gap:8px;align-items:center;padding:11px 8px;border:1px solid transparent;text-decoration:none;color:var(--muted);font-size:12px;line-height:1.45;min-height:46px}nav a:hover,nav a[aria-current="location"]{color:var(--text);background:var(--raised);border-color:var(--edge)}nav a[aria-current="location"]{box-shadow:inset 2px 0 var(--accent)}.nav-number{font:11px var(--mono);color:var(--accent)}.nav-count{font:10px var(--mono);color:var(--muted);opacity:.85;text-align:right}.sidebar-foot{margin-top:auto;padding-top:32px;color:var(--muted);font:10px/1.8 var(--mono)}.sidebar-foot span{display:block}.snapshot-dot{display:inline-block;width:5px;height:5px;background:var(--pending);margin-right:6px}
@@ -337,6 +346,7 @@ CSS = rewrite(CSS, ('.guide summary', '.guide > summary'), ('.reference summary'
 CSS += (ROOT / 'work/guide_reading.css').read_text()
 CSS += (ROOT / 'work/guide_overview.css').read_text()
 CSS += (ROOT / 'work/guide_brief.css').read_text()
+CSS += (ROOT / 'work/guide_direction.css').read_text()
 
 JS = '''
 (() => {
@@ -344,11 +354,12 @@ JS = '''
  // architecture) share expand/collapse, navigation, search and print handling
  // without joining the issue accounting.
  const guides = [...document.querySelectorAll('.guide')];
- const refs = [...document.querySelectorAll('.reference')];
+ const refs = [...document.querySelectorAll('.reference:not(.direction)')];
  const evidence = [...document.querySelectorAll('.delivery-evidence,.guide-evidence,.future-scenarios')];
  const future = document.querySelector('.future-scenarios');
- const archives = [...document.querySelectorAll('.archive')];
- const sections = [...guides, ...refs, ...archives];
+ // Prose sections (the archive and the dated direction) are searched by text and never counted.
+ const prose = [...document.querySelectorAll('.archive,.direction')];
+ const sections = [...guides, ...refs, ...prose];
  const figures = [...document.querySelectorAll('.diagram')];
  const architecture = document.querySelector('#architecture');
  const timeline = document.querySelector('#timeline');
@@ -360,7 +371,7 @@ JS = '''
  const empty = document.querySelector('#empty-state');
  const clear = document.querySelector('#clear-search');
  const normal = value => value.toLocaleLowerCase().replace(/\\s+/g, ' ').trim();
- const haystacks = new Map([...guides, ...figures, ...archives].map(g => [g, normal(g.textContent)]));
+ const haystacks = new Map([...guides, ...figures, ...prose].map(g => [g, normal(g.textContent)]));
  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  const overviewDetails = () => [...document.querySelectorAll('.overview-more')];
  const snapshot = () => ({overview: overviewDetails().map(s => s.open), open: sections.map(s => s.open), evidence: evidence.map(s => s.open), hidden: sections.map(s => s.hidden), figures: figures.map(f => f.hidden), nav: navLinks.map(a => a.hidden)});
@@ -376,7 +387,7 @@ JS = '''
      figures.forEach(f => { const show = haystacks.get(f).includes(query); f.hidden = !show; if (show) diagrams++; });
      future.hidden = !figures.some(f => !f.hidden && future.contains(f));
      architecture.hidden = diagrams === 0; navById.get('architecture').hidden = diagrams === 0; if (diagrams) architecture.open = true;
-     archives.forEach(a => { a.hidden = !haystacks.get(a).includes(query); if (!a.hidden) a.open = true; });
+     prose.forEach(a => { a.hidden = !haystacks.get(a).includes(query); if (!a.hidden) a.open = true; });
      timeline.hidden = true; navById.get('timeline').hidden = true;
    } else {
      if (saved) { restore(saved); saved = null; }
@@ -384,7 +395,7 @@ JS = '''
      count = guides.length; issues = guides.reduce((n, g) => n + Number(g.dataset.count), 0); diagrams = figures.length;
    }
    result.textContent = `${plural(count, 'guide')} · ${plural(issues, 'issue')} in these guides · ${plural(diagrams, 'diagram')}`;
-   clear.hidden = !query; empty.hidden = count > 0 || diagrams > 0 || (query && archives.some(a => !a.hidden));
+   clear.hidden = !query; empty.hidden = count > 0 || diagrams > 0 || (query && prose.some(a => !a.hidden));
  }
  search.addEventListener('input', filter);
  search.addEventListener('keydown', e => { if (e.key === 'Escape') { search.value = ''; filter(); } });
@@ -684,7 +695,7 @@ document = '''<!doctype html>
 <body id="top"><a class="skip" href="#main">Skip to the guides</a>
 <div class="shell"><aside class="sidebar" aria-label="Guide navigation">
 <a class="brand" href="#top" aria-label="Agent device work guides overview"><svg viewBox="0 0 40 44" fill="none" aria-hidden="true"><path d="M20 2 37 12v20L20 42 3 32V12Z" stroke="currentColor" stroke-width="1.5"/><path d="m3 12 17 10 17-10M20 22v20M20 2v12m-7 4 7-4 7 4" stroke="currentColor" stroke-width="1.5"/></svg><span>AGENT DEVICE<small>WORK GUIDES / @@MONTH_CODE@@</small></span></a>
-<div class="sidebar-rule"></div><div class="nav-title eyebrow">Explore the work</div><nav aria-label="@@GUIDE_COUNT@@ work guides, timeline and architecture">''' + ''.join(nav) + '''<div class="nav-rule" role="presentation"></div><a href="#timeline" data-section="timeline"><span class="nav-number">T</span><span>Timeline map</span><span class="nav-count" aria-hidden="true">map</span></a><a href="#architecture" data-section="architecture"><span class="nav-number">A</span><span>Architecture</span><span class="nav-count">''' + f'{len(AD.DIAGRAMS):02}' + '''</span></a><a href="#local-acceptance" data-section="local-acceptance"><span class="nav-number">✓</span><span>Completed milestones</span></a></nav>
+<div class="sidebar-rule"></div><div class="nav-title eyebrow">Explore the work</div><nav aria-label="@@GUIDE_COUNT@@ work guides, timeline, direction and architecture">''' + ''.join(nav) + '''<div class="nav-rule" role="presentation"></div><a href="#timeline" data-section="timeline"><span class="nav-number">T</span><span>Timeline map</span><span class="nav-count" aria-hidden="true">map</span></a><a href="#direction" data-section="direction"><span class="nav-number">D</span><span>Direction</span><span class="nav-count" aria-hidden="true">dated</span></a><a href="#architecture" data-section="architecture"><span class="nav-number">A</span><span>Architecture</span><span class="nav-count">''' + f'{len(AD.DIAGRAMS):02}' + '''</span></a><a href="#local-acceptance" data-section="local-acceptance"><span class="nav-number">✓</span><span>Completed milestones</span></a></nav>
 <a class="atlas-link" href="../../system-design/index.html">Explore the B.U.N.N.Y. system design atlas ↗</a>
 <div class="sidebar-foot"><span><i class="snapshot-dot" aria-hidden="true"></i>BACKLOG SNAPSHOT</span><span>@@DATE@@ / @@PROJECTS_PADDED@@ PROJECTS</span><span>Issue links open task briefs</span></div></aside>
 <main id="main"><header class="topbar"><div class="breadcrumb"><span>PLANNING</span> / CROSS-PROJECT GUIDE</div><div class="topbar-tools"><time class="date" datetime="@@ISO@@">@@DATE@@</time><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button></div></header>
@@ -698,7 +709,7 @@ document = '''<!doctype html>
 <p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. Issue badges refresh from public GitHub when this page loads; topic-guide text, counts and dependency explanations stay on this snapshot. Opening lists use the freshness shown above them.</p>
 <p id="github-status" class="document-note" role="status" aria-live="polite">Loading GitHub issue status. Guide text from the @@SNAPSHOT_DATE@@ snapshot.</p>
 
-<div class="guides references">''' + timeline_section + '''</div>
+<div class="guides references">''' + timeline_section + direction_section + '''</div>
 <div class="toolbar" aria-label="Document controls"><div class="search-wrap"><label class="sr-only" for="search">Search guides by topic, device, or issue</label><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m12 12 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="search" type="search" placeholder="Find a topic, device, or issue…" autocomplete="off"></div><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button><button id="print" type="button">Print / PDF</button></div>
 <div class="search-meta"><span id="result-count" role="status" aria-live="polite">@@GUIDE_COUNT@@ guides · @@TOTAL@@ issues in these guides · @@DIAGRAM_COUNT@@ diagrams</span><button id="clear-search" type="button" hidden>Clear search</button><span>Select an issue for its task brief and GitHub link</span></div>
 <div id="empty-state" class="empty-state" hidden><h2>No matching guides or diagrams</h2><p>Try a device name, topic, or issue such as “Pixoo #37”.</p></div>

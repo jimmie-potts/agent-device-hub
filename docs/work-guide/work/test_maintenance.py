@@ -747,5 +747,140 @@ class Recommendations(unittest.TestCase):
             self.assertEqual(outputs[0], outputs[1])
 
 
+class Direction(unittest.TestCase):
+    """The dated direction narrative and the computed leverage table (#290)."""
+
+    @staticmethod
+    def graph():
+        def issue(state='OPEN', *labels):
+            return {'state': state, 'stateReason': 'completed' if state == 'CLOSED' else None, 'title': 'x',
+                    'labels': [{'name': label} for label in labels]}
+        def record(key, state='OPEN'):
+            repo = {'H': 'jimmie-potts/agent-device-hub', 'N': 'jimmie-potts/codex-nanoleaf', 'P': 'jimmie-potts/divoom-app-upgrade'}[key[0]]
+            return {'number': int(key[1:]), 'state': state, 'repository': {'nameWithOwner': repo}}
+        issues = {'H1': issue(), 'H2': issue(), 'H3': issue(), 'H4': issue('OPEN', 'deferred'), 'H5': issue(),
+                  'N6': issue(), 'H7': issue('CLOSED'), 'P8': issue(), 'H9': issue('OPEN', 'status:review')}
+        dependencies = {
+            'H2': [record('H1')],                          # direct
+            'H3': [record('H2'), record('H9')],            # transitive from H1; also names H9
+            'H4': [record('H1')],                          # a deferred dependent still counts
+            'H5': [record('H4')],                          # reached through the deferred story
+            'N6': [record('H3')],                          # cross-repository chain
+            'H9': [record('H3')],                          # cycle: H3 <-> H9
+            'P8': [record('H7', 'CLOSED'), {'number': 1, 'state': 'OPEN', 'repository': {'nameWithOwner': 'jimmie-potts/agent-skills'}}],
+            'H1': [], 'H7': [record('H1')],                # a closed dependent never counts
+        }
+        return issues, dependencies
+
+    def test_leverage_counts_direct_and_transitive_open_dependents(self):
+        from guide_status import leverage
+        issues, dependencies = self.graph()
+        result = leverage(issues, dependencies)
+        self.assertEqual(set(result), {key for key, issue in issues.items() if issue['state'] == 'OPEN'})
+        self.assertEqual(result['H1']['direct'], ['H2', 'H4'])
+        self.assertEqual(result['H1']['total'], ['H2', 'H3', 'H4', 'H5', 'H9', 'N6'])
+        self.assertEqual(result['H4'], dict(direct=['H5'], total=['H5']))
+        # A cycle counts each story once and never the blocker itself.
+        self.assertEqual(result['H3'], dict(direct=['H9', 'N6'], total=['H9', 'N6']))
+        self.assertEqual(result['H9'], dict(direct=['H3'], total=['H3', 'N6']))
+        # A closed record and an external repository are not counted.
+        self.assertEqual(result['P8'], dict(direct=[], total=[]))
+        self.assertNotIn('H7', result)
+
+    def test_leverage_rows_rank_by_total_and_mark_decisions_and_review(self):
+        import guide_direction as GDIR
+        from guide_status import leverage, scheduling_state
+        issues, dependencies = self.graph()
+        rows = GDIR.leverage_rows(leverage(issues, dependencies), issues,
+                                  lambda key: scheduling_state(issues[key], dependencies.get(key, [])),
+                                  decisions={'H1'}, owner_later={'H4'})
+        self.assertEqual([(row['key'], row['direct'], row['total']) for row in rows],
+                         [('H1', 2, 6), ('H2', 1, 3), ('H3', 2, 2), ('H9', 1, 2), ('H4', 1, 1)])
+        by_key = {row['key']: row for row in rows}
+        self.assertEqual((by_key['H1']['label'], by_key['H1']['marks']), ('Candidate', ['decision, no code']))
+        # The blocked state wins over the review label, as everywhere else; the label still marks the row.
+        self.assertEqual((by_key['H9']['label'], by_key['H9']['marks']), ('Blocked', ['in review']))
+        self.assertEqual((by_key['H4']['label'], by_key['H4']['marks']), ('Later by owner', []))
+        self.assertEqual(by_key['H2']['label'], 'Blocked')
+        self.assertEqual(by_key['H1']['dependents'], ['H2', 'H3', 'H4', 'H5', 'H9', 'N6'])
+
+    def test_check_names_the_stale_key(self):
+        import guide_direction as GDIR
+        from unittest import mock
+        issues = {'H1': {'state': 'OPEN'}, 'H2': {'state': 'CLOSED'}}
+        lists = dict(STANDING=[('s', 't', ['H2'])], BECOMING=[('b', ['H1'])], SEQUENCE=[(['H1'], 'w')], IMPROVEMENTS=[('i', ['H1'])], IDEAS=[('d', ['H2'])], DELIVERED_SINCE=[])
+        with mock.patch.multiple(GDIR, **lists):
+            GDIR.check(issues)
+            with mock.patch.object(GDIR, 'SEQUENCE', [(['H1', 'H2'], 'w')]):
+                with self.assertRaisesRegex(AssertionError, 'SEQUENCE cites H2, which is closed in the snapshot'):
+                    GDIR.check(issues)
+                with mock.patch.object(GDIR, 'DELIVERED_SINCE', [('2026-09-25', ['H2'], 'landed')]):
+                    GDIR.check(issues)
+                with mock.patch.object(GDIR, 'DELIVERED_SINCE', [('2026-09-25', ['H1'], 'not yet')]):
+                    with self.assertRaisesRegex(AssertionError, 'DELIVERED_SINCE lists H1, which is still open'):
+                        GDIR.check(issues)
+            for name in ('STANDING', 'IMPROVEMENTS', 'IDEAS'):
+                with mock.patch.object(GDIR, name, [('a', 'b', ['H404'])] if name == 'STANDING' else [('a', ['H404'])]):
+                    with self.assertRaisesRegex(AssertionError, f'{name} cites H404, which is not in the snapshot'):
+                        GDIR.check(issues)
+
+    def test_an_unknown_cited_key_stops_the_build_before_rendering(self):
+        with tempfile.TemporaryDirectory(prefix='guide-direction-unknown-') as directory:
+            candidate = copy_guide(directory)
+            output = candidate / 'outputs/agent-device-work-guides.html'
+            output.unlink()
+            module = candidate / 'work/guide_direction.py'
+            module.write_text(module.read_text() + "\nSEQUENCE.append((['H99999'], 'fixture'))\n")
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('SEQUENCE cites H99999, which is not in the snapshot', result.stderr)
+            self.assertFalse(output.exists(), 'A stale direction text must stop the build before the guide is written')
+
+    def test_a_closed_sequence_key_fails_the_build_until_recorded_as_delivered(self):
+        with tempfile.TemporaryDirectory(prefix='guide-direction-closed-') as directory:
+            candidate = copy_guide(directory)
+            module = candidate / 'work/guide_direction.py'
+            issues = json.loads((candidate / 'work/backlogs/agent-device-hub-issues.json').read_text())
+            closed = next(row for row in issues if row['number'] == 252)
+            self.assertEqual((closed['state'], closed['stateReason']), ('CLOSED', 'completed'), 'H252 is the closed fixture')
+            original = module.read_text()
+            module.write_text(original + "\nSEQUENCE.append((['H252'], 'fixture'))\n")
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('SEQUENCE cites H252, which is closed in the snapshot; move it to DELIVERED_SINCE', result.stderr)
+            module.write_text(original + "\nSEQUENCE.append((['H252'], 'fixture'))\nDELIVERED_SINCE.append(('2026-09-26', ['H252'], 'Fixture landed.'))\n")
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            section = (candidate / 'outputs/agent-device-work-guides.html').read_text().split('id="direction"', 1)[1].split('</details>', 1)[0]
+            delivered = section.split('direction-delivered', 1)[1]
+            self.assertIn('Fixture landed.', delivered)
+            self.assertIn('data-issue="H252"', delivered)
+            self.assertIn('data-status="completed"', delivered)
+
+    def test_hostile_direction_text_renders_literally(self):
+        hostile = '<img src=x onerror=alert(1)> & "q" [[H241]]'
+        with tempfile.TemporaryDirectory(prefix='guide-direction-hostile-') as directory:
+            candidate = copy_guide(directory)
+            module = candidate / 'work/guide_direction.py'
+            module.write_text(module.read_text() + f"\nSTANDING.append(({hostile!r}, {hostile!r}, ['H241']))\nIDEAS.append(({hostile!r}, []))\nDELIVERED_SINCE.append(({hostile!r}, ['H252'], {hostile!r}))\n")
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            self.assertNotIn(hostile, document)
+            self.assertEqual(document.count('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H241]]'), 5)
+
+    def test_committed_guide_carries_the_direction_section(self):
+        import guide_direction as GDIR
+        document = (Path(__file__).resolve().parent.parent / 'outputs/agent-device-work-guides.html').read_text()
+        self.assertEqual(document.count('<details class="reference direction" id="direction">'), 1)
+        section = document.split('id="direction"', 1)[1].split('</details>', 1)[0]
+        self.assertIn(f'Direction written {GDIR.AS_OF} against hub <code>{GDIR.REVISION}</code>', section)
+        self.assertIn('<table class="leverage">', section)
+        for name, keys in GDIR.cited().items():
+            for key in keys:
+                self.assertIn(f'data-issue="{key}"', section, f'{name} key {key} renders as an issue link')
+        self.assertNotIn('data-count', section.split('<div class="guide-body">', 1)[0], 'The section adds nothing to issue counts')
+
+
 if __name__ == '__main__':
     unittest.main()
