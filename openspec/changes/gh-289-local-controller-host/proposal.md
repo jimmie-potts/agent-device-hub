@@ -2,7 +2,7 @@
 
 [Hub #289](https://github.com/jimmie-potts/agent-device-hub/issues/289) asks for the Tidbyt and the LIFX bulbs to appear in B.U.N.N.Y. the way the wall and the Pixoo do: a component page, generic controls and `hub_devices` over MCP. The hub routes only controllers of kind `pixoo` and `nanoleaf`, each a loopback HTTP service. `controllers/tidbyt` and `controllers/lifx` are in-process libraries with no listener, so no dashboard, MCP or history path can reach them.
 
-The owner decided on 2026-09-25 that LIFX color and white temperature also go through the hub now. They use the LIFX package's existing `lifx-light` 1.0.0 profile, because controller v1 has no color command and this story adds kinds and a service, not contract fields.
+The owner decided on 2026-09-25 that LIFX color and color temperature also go through the hub now. They use the LIFX package's existing `lifx-light` 1.0.0 profile, because controller v1 has no color command and this story adds kinds and a service, not contract fields.
 
 ## What Changes
 
@@ -10,7 +10,7 @@ The owner decided on 2026-09-25 that LIFX color and white temperature also go th
 - The host reads the existing private Tidbyt runner configuration as-is and starts the runner inside it. The runner brings its status and optional now-playing publishers and its cloud-device lease. Every Tidbyt controller v1 command is declared unsupported, so the hub can read Tidbyt status but cannot push frames.
 - The host owns one `LifxController` for the configured bulbs, holds a writer lease per bulb address, and serves the `lifx-light` 1.0.0 profile for color and temperature on a separate profile route. It never polls or paints bulbs by itself.
 - The hub accepts controller kinds `tidbyt` and `lifx`. A `lifx` component also gets a lighting snapshot and command route that forwards only strict `lifx-light` 1.0.0 profile requests. MCP binds only each kind's tools: Tidbyt status; LIFX status, power, brightness, lighting status, color and temperature.
-- The dashboard shows Tidbyt and LIFX components with the generic controls their snapshots declare. LIFX adds color and white-temperature controls and its observed color. Tidbyt says that its tiles are published by the host and no control is supported.
+- The dashboard shows Tidbyt and LIFX components with the generic controls their snapshots declare. LIFX adds color and color-temperature controls and its observed color. Tidbyt says that its tiles are published by the host and no control is supported.
 - Add root build, typecheck and test scripts and a CI step for the host, and document setup and the hub `host.json` entries.
 
 ## Capabilities

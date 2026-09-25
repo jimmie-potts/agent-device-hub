@@ -1,8 +1,11 @@
 # LIFX controller
 
 `@jimmie-potts/lifx-controller` is an in-process TypeScript controller with direct
-UDP transport and fake-tested per-bulb queues. It is not installed or connected
-to the hub dashboard. Source validation sends no bulb traffic.
+UDP transport and fake-tested per-bulb queues. The
+[local controller host](../../apps/local-controllers/README.md) (#289) owns one
+instance, holds a writer lease per bulb address and serves it to the hub: controller
+v1 for power and brightness, and this package's `lifx-light` profile for color and
+color temperature. Neither is installed yet. Source validation sends no bulb traffic.
 
 ## Ownership and configuration
 

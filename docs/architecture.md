@@ -57,7 +57,10 @@ LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
 queues. These new controllers belong in this repository. The Tidbyt cloud
 controller exists as a fake-tested in-process package; its status integration and
 installation remain separate. LIFX provides a fake-tested in-process LAN controller;
-its status integration and installation remain separate. The shared core interprets
+its status integration and installation remain separate. The
+[local controller host](../apps/local-controllers/README.md) (#289) is the single
+process that owns both libraries and serves them to the hub over controller v1.
+It runs the Tidbyt runner in-process and holds a writer lease per bulb. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the
@@ -309,6 +312,14 @@ acceptance; the supplied "A16" name must not be silently treated as A19. Expose
 only supported capabilities. Source development uses fake packets and configured
 neutral identities. No startup discovery or physical writes are implied by setup.
 See the [LIFX guide](../controllers/lifx/README.md).
+
+The hub reaches both through the local controller host, registered as the
+`tidbyt` and `lifx` controller kinds. The host serves each device's controller
+v1 snapshot and commands on one loopback port. The Tidbyt controller declares no
+v1 capability, so the hub can read its status but never pushes frames. LIFX color
+and color temperature use the controller's own `lifx-light` 1.0.0 profile on a
+separate typed route, not a v1 extension. The host never polls or paints bulbs
+on its own; automatic LIFX status stays with #20.
 
 The status issues own the initial display layout, session selection, lighting
 effects, update limits, takeover/manual-control and restoration policies. Resolve

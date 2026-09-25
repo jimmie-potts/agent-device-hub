@@ -14,7 +14,9 @@ adapters have separate owners and acceptance gates.
 New Tidbyt and LIFX controllers live in this monorepo. The
 [Tidbyt](controllers/tidbyt/README.md) directory holds a fake-tested in-process
 cloud controller package; the [LIFX](controllers/lifx/README.md) directory
-holds the fake-tested in-process LAN controller. The first
+holds the fake-tested in-process LAN controller. The
+[local controller host](apps/local-controllers/README.md) serves both to the hub
+over controller v1, so B.U.N.N.Y. and MCP can reach them. The first
 feature priority for these devices is automatic agent status. Tidbyt starts with
 the official cloud and leaves a connection boundary for future Tronbyt support;
 LIFX uses direct LAN control. See [ADR 0003](docs/decisions/0003-device-controller-monorepo.md).
