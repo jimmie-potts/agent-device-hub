@@ -28,4 +28,4 @@
 ## 6. Documentation and delivery
 
 - [x] 6.1 Document the host's configuration, run command, hub `host.json` entries, install and rollback steps in `apps/local-controllers/README.md`, and update `docs/development.md`, `docs/architecture.md`, and the Tidbyt, LIFX, hub and dashboard READMEs. Verify by inspection.
-- [ ] 6.2 Run build, typecheck, contracts (TypeScript and Python), package, Tidbyt (TypeScript and Python), LIFX, local host, hub, hub package, setup, MCP, dashboard and workflow checks. Then synchronize the spec deltas and archive this change.
+- [x] 6.2 Run build, typecheck, contracts (TypeScript and Python), package, Tidbyt (TypeScript and Python), LIFX, local host, hub, hub package, setup, MCP, dashboard and workflow checks. Then synchronize the spec deltas and archive this change.
