@@ -55,7 +55,10 @@ body:
         nanoleaf-presentation, nanoleaf-devices, pixoo-media, controls-music,
         desktop-controls, work-guide, assistant-access, hosting-migrations,
         development-workflow. Optional lines: **Note:** a one-line reading
-        note, and **Highlight:** next step | decision | later, <reason>.
+        note, and **Highlight:** next step | decision | later | idea, <reason>.
+        Mark a new capability, a generalization or a newly cheap win with
+        **Highlight:** idea, <what prompted it>; beside an idea only, add
+        **Extends:** <keys> for the stories it builds on, as H67, N47 or P91.
       value: |
         ## Guide
 

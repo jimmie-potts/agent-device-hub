@@ -2,7 +2,8 @@
 
 Each open story may carry one `## Guide` section naming the topic guide that
 owns it, an optional one-line reading note, an optional defect workaround,
-and an optional next-step/decision/later highlight with its reason. The
+an optional next-step/decision/later/idea highlight with its reason and, beside
+an idea highlight only, the stories it would build on (`**Extends:**`). The
 guide reads this from the saved (or live) story body and never guesses: a
 section that breaks the convention renders as "topic invalid", the same as a
 story that carries no section at all renders as "topic assignment pending".
@@ -22,9 +23,12 @@ from guide_paths import PATHS
 
 HEADING = 'Guide'
 TOPIC_IDS = frozenset(PATHS)
-LABELS = ('Topic', 'Note', 'Workaround', 'Highlight')
-KINDS = ('next step', 'decision', 'later')
+LABELS = ('Topic', 'Note', 'Workaround', 'Highlight', 'Extends')
+KINDS = ('next step', 'decision', 'later', 'idea')
 _HIGHLIGHT = re.compile(r'(' + '|'.join(re.escape(kind) for kind in KINDS) + r')\s*,\s*(.+)', re.I)
+# Guide keys: H (hub), N (Nanoleaf), P (Pixoo) and the issue number, comma separated.
+_KEY = r'[HNP][1-9]\d*'
+_EXTENDS = re.compile(_KEY + r'(?:\s*,\s*' + _KEY + r')*')
 
 
 def without_section(body):
@@ -35,7 +39,7 @@ def _one_line(value):
     return ' '.join(str(value).split())
 
 
-def _parse_section(lines, topics):
+def _parse_section(lines, topics, keys):
     values, prompts, table = _story_blocks(lines, LABELS)
     if prompts:
         raise Unreadable('the Guide section has no prompts')
@@ -50,15 +54,29 @@ def _parse_section(lines, topics):
     if 'Highlight' in values:
         match = _HIGHLIGHT.fullmatch(values['Highlight'])
         if not match:
-            raise Unreadable('"Highlight" must read "next step | decision | later, <reason>"')
+            raise Unreadable('"Highlight" must read "next step | decision | later | idea, <reason>"')
         kind = next(candidate for candidate in KINDS if candidate == match.group(1).lower())
         highlight = dict(kind=kind, reason=match.group(2).strip())
-    return dict(topic=topic, note=values.get('Note'), workaround=values.get('Workaround'), highlight=highlight)
+    extends = []
+    if 'Extends' in values:
+        if not highlight or highlight['kind'] != 'idea':
+            raise Unreadable('"Extends" is valid only beside an idea highlight')
+        if not _EXTENDS.fullmatch(values['Extends']):
+            raise Unreadable('"Extends" must list guide keys such as "H67, N47"')
+        extends = [key.strip() for key in values['Extends'].split(',')]
+        if len(set(extends)) != len(extends):
+            raise Unreadable('"Extends" names a story twice')
+        unknown = [key for key in extends if keys is not None and key not in keys]
+        if unknown:
+            raise Unreadable(f'"Extends" names {", ".join(unknown)}, which is not in the snapshot')
+    return dict(topic=topic, note=values.get('Note'), workaround=values.get('Workaround'), highlight=highlight, extends=extends)
 
 
-def read(body, topics=None):
+def read(body, topics=None, keys=None):
     """The story's guide placement; never a guessed default. `topics` is the
-    set of valid topic ids; defaults to `guide_paths.PATHS`."""
+    set of valid topic ids; defaults to `guide_paths.PATHS`. `keys`, when
+    given, is the set of guide keys an `Extends` line may name (the snapshot's
+    issues); without it only the key form is checked."""
     topics = TOPIC_IDS if topics is None else topics
     lines = (body or '').split('\n')
     ranges = _sections(lines, (HEADING,))
@@ -68,13 +86,13 @@ def read(body, topics=None):
         return dict(state='invalid', reason='the story has more than one Guide section')
     start, end = ranges[0]
     try:
-        parsed = _parse_section(lines[start + 1:end], topics)
+        parsed = _parse_section(lines[start + 1:end], topics, keys)
     except (Unreadable, ValueError) as error:
         return dict(state='invalid', reason=str(error))
     return dict(parsed, state='assigned')
 
 
-def render(topic, note=None, workaround=None, highlight=None):
+def render(topic, note=None, workaround=None, highlight=None, extends=None):
     """The canonical section text for one placement."""
     lines = [f'## {HEADING}', '', f'**Topic:** {topic}']
     if note:
@@ -83,17 +101,21 @@ def render(topic, note=None, workaround=None, highlight=None):
         lines.append(f'**Workaround:** {_one_line(workaround)}')
     if highlight:
         lines.append(f'**Highlight:** {highlight["kind"]}, {_one_line(highlight["reason"])}')
+    if extends:
+        lines.append(f'**Extends:** {", ".join(extends)}')
     return '\n'.join(lines)
 
 
 def upsert(body, entry, today=None, topics=None):
     """Return (new body, outcome). Replaces only this section. `entry` needs
-    `topic` and may carry `note`, `workaround` and `highlight`
-    (`{'kind': ..., 'reason': ...}`). `topics` is the set of valid topic ids
-    used to validate the round trip; defaults to `guide_paths.PATHS`."""
-    new, outcome = replace_section(body, HEADING, lambda: render(entry['topic'], entry.get('note'), entry.get('workaround'), entry.get('highlight')))
+    `topic` and may carry `note`, `workaround`, `highlight`
+    (`{'kind': ..., 'reason': ...}`) and, beside an idea highlight, `extends`
+    (a list of guide keys). `topics` is the set of valid topic ids used to
+    validate the round trip; defaults to `guide_paths.PATHS`."""
+    new, outcome = replace_section(body, HEADING, lambda: render(entry['topic'], entry.get('note'), entry.get('workaround'),
+                                                                 entry.get('highlight'), entry.get('extends')))
     check = read(new, topics)
-    if check['state'] != 'assigned' or check['topic'] != entry['topic']:
+    if check['state'] != 'assigned' or check['topic'] != entry['topic'] or check['extends'] != list(entry.get('extends') or []):
         raise ValueError(f"rendered section does not read back: {check.get('reason', check['state'])}")
     return new, outcome
 

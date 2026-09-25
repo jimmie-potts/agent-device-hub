@@ -2,12 +2,12 @@
 // repository. Other repositories retain their complete snapshot, including
 // membership, counts and status. Topic outcome/next-step prose, history and
 // the roadmap stay on the dated snapshot; only per-story placement, notes,
-// workarounds and highlights read live bodies.
+// workarounds, highlights and idea marks read live bodies.
 (() => {
   const data = JSON.parse(document.querySelector('#overview-data').textContent);
   const repos = {H:['agent-device-hub','Hub'],N:['codex-nanoleaf','Nanoleaf'],P:['divoom-app-upgrade','Pixoo']};
   const rows = {...data.issues}, refreshed = new Set();
-  const guideState = {}; // key -> {state:'assigned',topic,note,workaround,highlight} | {state:'unassigned'|'invalid'}, live only
+  const guideState = {}; // key -> {state:'assigned',topic,note,workaround,highlight,extends} | {state:'unassigned'|'invalid'}, live only
   const topicIds = new Set([...document.querySelectorAll('.guide[id]')].map(el => el.id));
   const labels = row => row.labels.map(label => typeof label === 'string' ? label : label.name);
   const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
@@ -53,7 +53,7 @@
       const match = line.match(/^\*\*([^*]+?):\*\*(?:[ \t]+(.*))?$/);
       if (!match) return {state:'invalid'};
       const key = match[1];
-      if (!['Topic','Note','Workaround','Highlight'].includes(key) || key in values) return {state:'invalid'};
+      if (!['Topic','Note','Workaround','Highlight','Extends'].includes(key) || key in values) return {state:'invalid'};
       let value = (match[2] || '').trim();
       index++;
       while (index < end) {
@@ -68,11 +68,19 @@
     if (!('Topic' in values) || !topicIds.has(values.Topic)) return {state:'invalid'};
     let highlight = null;
     if ('Highlight' in values) {
-      const match = values.Highlight.match(/^(next step|decision|later)\s*,\s*(.+)$/i);
+      const match = values.Highlight.match(/^(next step|decision|later|idea)\s*,\s*(.+)$/i);
       if (!match) return {state:'invalid'};
       highlight = {kind:match[1].toLowerCase(), reason:match[2].trim()};
     }
-    return {state:'assigned', topic:values.Topic, note:values.Note || null, workaround:values.Workaround || null, highlight};
+    // Extends: guide keys beside an idea highlight only. The live read holds open stories alone,
+    // so only the key form is checked here; the snapshot build also checks that each key exists.
+    let extendsKeys = [];
+    if ('Extends' in values) {
+      if (highlight?.kind !== 'idea' || !/^[HNP][1-9]\d*(?:\s*,\s*[HNP][1-9]\d*)*$/.test(values.Extends)) return {state:'invalid'};
+      extendsKeys = values.Extends.split(',').map(key => key.trim());
+      if (new Set(extendsKeys).size !== extendsKeys.length) return {state:'invalid'};
+    }
+    return {state:'assigned', topic:values.Topic, note:values.Note || null, workaround:values.Workaround || null, highlight, extends:extendsKeys};
   }
   // Unifies the dated snapshot and a live-refreshed repository behind one shape.
   function guideOf(key) {
@@ -209,6 +217,80 @@
     }
   }
 
+  // --- Ideas section: snapshot rows patch their reason, Extends and state in place; a story
+  // newly marked, or moved to another topic, since the snapshot lands in a "Newly added since the
+  // snapshot" block inside its topic group; a story that closes or loses its mark is removed.
+  // Repositories whose read failed keep their snapshot rows. Direction's Later ideas follows. ------
+  const sortKey = (a, b) => a[0].localeCompare(b[0]) || Number(a.slice(1)) - Number(b.slice(1));
+  const schedulingLabels = {candidate:'Candidate', active:'Active', blocked:'Blocked', deferred:'Deferred'};
+  const liveScheduling = key => rows[key].blocked ? 'blocked' : labels(rows[key]).includes('deferred') ? 'deferred' : active(key) ? 'active' : 'candidate';
+  // An Extends key keeps an existing page badge (with its live relabel); an open live story gets a
+  // live badge; anything else links to GitHub without a status claim.
+  function extendsLink(key) {
+    const existing = document.querySelector(`a.issue[data-issue="${key}"]`);
+    if (existing) return existing.outerHTML;
+    if (rows[key]) return badge(key);
+    const [repo, name] = repos[key[0]], label = `${name} #${key.slice(1)}`;
+    return `<a class="issue repo-${key[0]}" data-issue="${key}" data-status="unknown" href="https://github.com/jimmie-potts/${repo}/issues/${key.slice(1)}" target="_blank" rel="noopener noreferrer" title="${escape(label)} (status not in this read)" aria-label="${escape(label)} (status not in this read)"><span class="status-symbol" aria-hidden="true">·</span><span class="issue-id">${label}</span><span class="issue-status">See GitHub</span></a>`;
+  }
+  function ideaMeta(key, guide) {
+    const status = liveScheduling(key), extendsHtml = guide.extends.map(extendsLink).join('');
+    return `<span class="idea-state" data-state="${status}">${schedulingLabels[status]}</span><span class="idea-extends"${extendsHtml ? '' : ' hidden'}><span class="idea-label">Extends</span>${extendsHtml}</span>`;
+  }
+  const ideaRow = (key, guide) => `<li class="idea" data-key="${key}" data-topic="${escape(guide.topic)}"><p class="idea-head">${badge(key)}<span class="idea-title">${escape(rows[key].title)}</span></p><p class="idea-reason">${escape(guide.highlight.reason)}</p><p class="idea-meta">${ideaMeta(key, guide)}</p></li>`;
+  const liveIdea = key => { const guide = guideOf(key); return rows[key] && guide.state === 'assigned' && guide.highlight?.kind === 'idea' ? guide : null; };
+  function renderIdeas() {
+    const section = document.getElementById('ideas');
+    if (!section) return;
+    const groups = section.querySelector('.ideas-groups');
+    const topicOrder = [...topicIds];
+    const group = topicId => {
+      let element = groups.querySelector(`.ideas-topic[data-topic="${topicId}"]`);
+      if (element) return element;
+      element = document.createElement('section');
+      element.className = 'ideas-topic'; element.dataset.topic = topicId; element.setAttribute('aria-labelledby', `ideas-${topicId}`);
+      element.innerHTML = `<h3 id="ideas-${escape(topicId)}"><a href="#${escape(topicId)}">${escape(data.titles[topicId])}</a></h3><ul class="ideas-list"></ul>`;
+      const later = [...groups.querySelectorAll('.ideas-topic')].find(other => topicOrder.indexOf(other.dataset.topic) > topicOrder.indexOf(topicId));
+      groups.insertBefore(element, later || null);
+      return element;
+    };
+    const regular = new Set();
+    for (const li of [...groups.querySelectorAll('li.idea')]) {
+      const key = li.dataset.key;
+      if (!refreshed.has(key[0])) continue; // a failed read keeps the snapshot row untouched
+      const guide = liveIdea(key);
+      if (li.closest('.newly-added-since-snapshot') || !guide || guide.topic !== li.dataset.topic) { li.remove(); continue; }
+      regular.add(key);
+      li.querySelector('.idea-reason').textContent = guide.highlight.reason;
+      li.querySelector('.idea-meta').innerHTML = ideaMeta(key, guide);
+    }
+    const added = Object.keys(rows).filter(key => refreshed.has(key[0]) && !regular.has(key) && liveIdea(key)).sort(sortKey);
+    for (const key of added) {
+      const guide = liveIdea(key), topic = group(guide.topic);
+      let block = topic.querySelector('.newly-added-since-snapshot');
+      if (!block) {
+        block = document.createElement('div');
+        block.className = 'newly-added-since-snapshot';
+        block.innerHTML = '<h4 class="work-heading">Newly added since the snapshot</h4><ul class="ideas-list"></ul>';
+        topic.append(block);
+      }
+      block.querySelector('ul').insertAdjacentHTML('beforeend', ideaRow(key, guide));
+    }
+    groups.querySelectorAll('.newly-added-since-snapshot').forEach(block => { if (!block.querySelector('li')) block.remove(); });
+    groups.querySelectorAll('.ideas-topic').forEach(topic => { if (!topic.querySelector('li')) topic.remove(); });
+    const ideas = [...groups.querySelectorAll('li.idea')];
+    section.querySelector('.ideas-empty').hidden = ideas.length > 0;
+    section.querySelector('summary [data-ideas-count]').textContent = `${ideas.length} marked`;
+    const navCount = document.querySelector('nav a[data-section="ideas"] [data-ideas-count]');
+    if (navCount) { navCount.textContent = String(ideas.length).padStart(2, '0'); navCount.setAttribute('aria-label', `${ideas.length} marked ideas`); }
+    // Direction's Later ideas: the same stories, compact, in the same order.
+    const later = document.querySelector('#direction .direction-ideas');
+    if (later) {
+      later.innerHTML = ideas.map(li => `<li data-key="${escape(li.dataset.key)}">${li.querySelector('.idea-head a.issue').outerHTML}<span class="direction-idea-title">${escape(li.querySelector('.idea-title').textContent)}</span></li>`).join('');
+      document.querySelector('#direction .direction-ideas-empty').hidden = ideas.length > 0;
+    }
+  }
+
   window.updateWorkOverview = (prefix, open) => {
     const normalized = {};
     Object.keys(guideState).filter(key=>key.startsWith(prefix)).forEach(key=>delete guideState[key]);
@@ -227,10 +309,11 @@
     briefsElement.textContent = JSON.stringify(briefs);
     render();
     renderGuides();
+    renderIdeas();
   };
   window.finishWorkOverview = () => {
     const current = [...refreshed].map(prefix=>repos[prefix][1]);
     const fallback = Object.keys(repos).filter(prefix=>!refreshed.has(prefix)).map(prefix=>repos[prefix][1]);
-    document.querySelector('#overview-freshness').textContent = `${current.length ? `Opening lists, topic placement and counts read from GitHub at ${new Date().toLocaleTimeString()} for ${current.join(', ')}. ` : ''}${fallback.length ? `GitHub unavailable for ${fallback.join(', ')}; those lists and topic counts retain the ${data.asOf} snapshot. ` : ''}Topic outcomes, next-step boxes, history and the roadmap remain on the dated snapshot. Newly discovered issues link directly to GitHub until assigned a topic.`;
+    document.querySelector('#overview-freshness').textContent = `${current.length ? `Opening lists, topic placement, ideas and counts read from GitHub at ${new Date().toLocaleTimeString()} for ${current.join(', ')}. ` : ''}${fallback.length ? `GitHub unavailable for ${fallback.join(', ')}; those lists, topic counts and ideas retain the ${data.asOf} snapshot. ` : ''}Topic outcomes, next-step boxes, history and the roadmap remain on the dated snapshot. Newly discovered issues link directly to GitHub until assigned a topic.`;
   };
 })();

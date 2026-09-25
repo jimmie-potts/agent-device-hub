@@ -454,7 +454,7 @@ class GuideSections(unittest.TestCase):
         self.assertTrue(new.startswith(body.rstrip('\n')), 'Other story text is byte-identical')
         result = self.G.read(new, self.topics)
         self.assertEqual(result, dict(state='assigned', topic='work-guide', note='A one-line note with [[H1]] link.',
-                                      workaround='Restart the service.', highlight=dict(kind='next step', reason='Do this next.')))
+                                      workaround='Restart the service.', highlight=dict(kind='next step', reason='Do this next.'), extends=[]))
         # Idempotent: rerunning the same entry writes nothing.
         again, outcome = self.G.upsert(new, dict(topic='work-guide', note='A one-line note with [[H1]] link.',
                                                  workaround='Restart the service.',
@@ -810,7 +810,7 @@ class Direction(unittest.TestCase):
         import guide_direction as GDIR
         from unittest import mock
         issues = {'H1': {'state': 'OPEN'}, 'H2': {'state': 'CLOSED'}}
-        lists = dict(STANDING=[('s', 't', ['H2'])], BECOMING=[('b', ['H1'])], SEQUENCE=[(['H1'], 'w')], IMPROVEMENTS=[('i', ['H1'])], IDEAS=[('d', ['H2'])], DELIVERED_SINCE=[])
+        lists = dict(STANDING=[('s', 't', ['H2'])], BECOMING=[('b', ['H1'])], SEQUENCE=[(['H1'], 'w')], IMPROVEMENTS=[('i', ['H1'])], DELIVERED_SINCE=[])
         with mock.patch.multiple(GDIR, **lists):
             GDIR.check(issues)
             with mock.patch.object(GDIR, 'SEQUENCE', [(['H1', 'H2'], 'w')]):
@@ -821,7 +821,7 @@ class Direction(unittest.TestCase):
                 with mock.patch.object(GDIR, 'DELIVERED_SINCE', [('2026-09-25', ['H1'], 'not yet')]):
                     with self.assertRaisesRegex(AssertionError, 'DELIVERED_SINCE lists H1, which is still open'):
                         GDIR.check(issues)
-            for name in ('STANDING', 'IMPROVEMENTS', 'IDEAS'):
+            for name in ('STANDING', 'IMPROVEMENTS'):
                 with mock.patch.object(GDIR, name, [('a', 'b', ['H404'])] if name == 'STANDING' else [('a', ['H404'])]):
                     with self.assertRaisesRegex(AssertionError, f'{name} cites H404, which is not in the snapshot'):
                         GDIR.check(issues)
@@ -864,12 +864,12 @@ class Direction(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='guide-direction-hostile-') as directory:
             candidate = copy_guide(directory)
             module = candidate / 'work/guide_direction.py'
-            module.write_text(module.read_text() + f"\nSTANDING.append(({hostile!r}, {hostile!r}, ['H241']))\nBECOMING.append(({hostile!r}, []))\nSEQUENCE.append((['H20'], {hostile!r}))\nIMPROVEMENTS.append(({hostile!r}, []))\nIDEAS.append(({hostile!r}, []))\nDELIVERED_SINCE.append(({hostile!r}, ['H252'], {hostile!r}))\n")
+            module.write_text(module.read_text() + f"\nSTANDING.append(({hostile!r}, {hostile!r}, ['H241']))\nBECOMING.append(({hostile!r}, []))\nSEQUENCE.append((['H20'], {hostile!r}))\nIMPROVEMENTS.append(({hostile!r}, []))\nDELIVERED_SINCE.append(({hostile!r}, ['H252'], {hostile!r}))\n")
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             self.assertNotIn(hostile, document)
-            self.assertEqual(document.count('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H241]]'), 8, 'every prose field of every list is escaped')
+            self.assertEqual(document.count('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H241]]'), 7, 'every prose field of every list is escaped')
 
     def test_committed_guide_carries_the_direction_section(self):
         import guide_direction as GDIR
@@ -882,6 +882,161 @@ class Direction(unittest.TestCase):
             for key in keys:
                 self.assertIn(f'data-issue="{key}"', section, f'{name} key {key} renders as an issue link')
         self.assertNotIn('data-count', section.split('<div class="guide-body">', 1)[0], 'The section adds nothing to issue counts')
+
+
+def mark_ideas(candidate, picks):
+    """Mark saved open stories as ideas in a guide copy. `picks` maps a key to
+    (reason, extends); the story keeps its own topic. Returns the saved topics."""
+    import guide_section as GD
+    topics = {}
+    for prefix, repo in (('H', 'agent-device-hub'), ('N', 'codex-nanoleaf'), ('P', 'divoom-app-upgrade')):
+        path = candidate / f'work/backlogs/{repo}-issues.json'
+        rows = json.loads(path.read_text())
+        for row in rows:
+            key = f'{prefix}{row["number"]}'
+            if key in picks:
+                state = GD.read(row['body'])
+                reason, extends = picks[key]
+                row['body'], _ = GD.upsert(row['body'], dict(topic=state['topic'], note=state['note'], workaround=state['workaround'],
+                                                             highlight=dict(kind='idea', reason=reason), extends=extends))
+                topics[key] = state['topic']
+        path.write_text(json.dumps(rows))
+    return topics
+
+
+def build(candidate):
+    return subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+
+
+class Ideas(unittest.TestCase):
+    """The idea highlight, its Extends keys, the Ideas section and the derived Later ideas (#308)."""
+
+    def setUp(self):
+        import guide_section
+        self.G = guide_section
+        self.topics = frozenset({'work-guide', 'shared-codex'})
+
+    def test_an_idea_highlight_with_extends_parses_and_renders(self):
+        entry = dict(topic='work-guide', highlight=dict(kind='idea', reason='Recent work made this cheap.'), extends=['H67', 'N47'])
+        new, outcome = self.G.upsert('## Outcome\n\nFixture.\n', entry, topics=self.topics)
+        self.assertEqual(outcome, 'created')
+        self.assertIn('**Highlight:** idea, Recent work made this cheap.\n**Extends:** H67, N47', new)
+        self.assertEqual(self.G.read(new, self.topics, keys={'H67', 'N47'}),
+                         dict(state='assigned', topic='work-guide', note=None, workaround=None,
+                              highlight=dict(kind='idea', reason='Recent work made this cheap.'), extends=['H67', 'N47']))
+        self.assertEqual(self.G.upsert(new, entry, topics=self.topics), (new, 'unchanged'))
+        # Spacing around the commas is free; the key form is not.
+        spaced = self.G.read('## Guide\n\n**Topic:** work-guide\n**Highlight:** idea, r\n**Extends:** H67 ,N47\n', self.topics)
+        self.assertEqual(spaced['extends'], ['H67', 'N47'])
+
+    def test_extends_without_an_idea_unknown_or_malformed_is_unreadable(self):
+        base = '## Guide\n\n**Topic:** work-guide\n'
+        cases = {
+            'without a highlight': base + '**Extends:** H67\n',
+            'beside next step': base + '**Highlight:** next step, r\n**Extends:** H67\n',
+            'lowercase key': base + '**Highlight:** idea, r\n**Extends:** h67\n',
+            'unknown prefix': base + '**Highlight:** idea, r\n**Extends:** X67\n',
+            'number zero': base + '**Highlight:** idea, r\n**Extends:** H0\n',
+            'semicolon': base + '**Highlight:** idea, r\n**Extends:** H67; N47\n',
+            'issue URL': base + '**Highlight:** idea, r\n**Extends:** #67\n',
+            'trailing comma': base + '**Highlight:** idea, r\n**Extends:** H67,\n',
+            'duplicate': base + '**Highlight:** idea, r\n**Extends:** H67, H67\n',
+            'idea without reason': base + '**Highlight:** idea\n',
+        }
+        for name, body in cases.items():
+            with self.subTest(name):
+                self.assertEqual(self.G.read(body, self.topics)['state'], 'invalid')
+        unknown = self.G.read(base + '**Highlight:** idea, r\n**Extends:** H67, H99999\n', self.topics, keys={'H67'})
+        self.assertEqual(unknown['state'], 'invalid')
+        self.assertIn('H99999', unknown['reason'])
+        with self.assertRaises(ValueError):
+            self.G.upsert('## Outcome\n\nFixture.\n', dict(topic='work-guide', highlight=dict(kind='later', reason='r'), extends=['H67']), topics=self.topics)
+
+    def test_the_build_fails_naming_a_story_with_an_unreadable_idea(self):
+        cases = {'extends without idea': ('**Extends:** H67', None), 'unknown key': ('**Highlight:** idea, r\n**Extends:** H99999', 'H99999'),
+                 'malformed line': ('**Highlight:** idea, r\n**Extends:** H67 and N47', None)}
+        for name, (lines, named) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory(prefix='guide-idea-invalid-') as directory:
+                candidate = copy_guide(directory)
+                path = candidate / 'work/backlogs/agent-device-hub-issues.json'
+                rows = json.loads(path.read_text())
+                row = next(row for row in rows if row['number'] == 25)
+                self.assertEqual(row['state'], 'OPEN')
+                row['body'] = re.sub(r'(\n## Guide\n\n\*\*Topic:\*\* [^\n]+)', lambda match: match.group(1) + '\n' + lines, row['body'])
+                path.write_text(json.dumps(rows))
+                result = build(candidate)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('H25 (', result.stderr)
+                if named:
+                    self.assertIn(named, result.stderr)
+
+    def test_a_sequence_story_marked_as_an_idea_fails_the_direction_check(self):
+        import guide_direction as GDIR
+        from unittest import mock
+        issues = {'H1': {'state': 'OPEN'}, 'H2': {'state': 'OPEN'}}
+        lists = dict(STANDING=[], BECOMING=[], SEQUENCE=[(['H1'], 'w')], IMPROVEMENTS=[], DELIVERED_SINCE=[])
+        with mock.patch.multiple(GDIR, **lists):
+            GDIR.check(issues, {'H2'})
+            with self.assertRaisesRegex(AssertionError, 'SEQUENCE cites H1, whose story carries an idea highlight'):
+                GDIR.check(issues, {'H1', 'H2'})
+        key = GDIR.cited()['SEQUENCE'][2]
+        with tempfile.TemporaryDirectory(prefix='guide-idea-sequence-') as directory:
+            candidate = copy_guide(directory)
+            output = candidate / 'outputs/agent-device-work-guides.html'
+            output.unlink()
+            mark_ideas(candidate, {key: ('Fixture.', [])})
+            result = build(candidate)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f'SEQUENCE cites {key}, whose story carries an idea highlight', result.stderr)
+            self.assertFalse(output.exists(), 'The check stops the build before the guide is written')
+
+    def test_the_section_groups_ideas_by_topic_and_direction_derives_later_ideas(self):
+        import guide_direction as GDIR
+        from guide_paths import TOPICS
+        sequence = set(GDIR.cited()['SEQUENCE'])
+        hostile = '<img src=x onerror=alert(1)> & "q" [[H1]]'
+        picks = {'N47': ('Combined layout as the first shared pool.', []), 'H11': (hostile, ['N47', 'H252']),
+                 'H39': ('Song-change lighting.', ['H175']), 'P11': ('A Pixoo idea.', []), 'H254': ('A second skin.', ['H85'])}
+        self.assertFalse(sequence & set(picks))
+        with tempfile.TemporaryDirectory(prefix='guide-ideas-') as directory:
+            candidate = copy_guide(directory)
+            topics = mark_ideas(candidate, picks)
+            self.assertEqual(set(topics), set(picks))
+            outputs = []
+            for _ in range(2):
+                result = build(candidate)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs.append((candidate / 'outputs/agent-device-work-guides.html').read_text())
+            self.assertEqual(outputs[0], outputs[1], 'Two consecutive builds are identical')
+            document = outputs[0]
+        rank = {topic: index for index, (topic, *_) in enumerate(TOPICS)}
+        expected = sorted(picks, key=lambda key: (rank[topics[key]], key[0], int(key[1:])))
+        section = document.split('<details class="reference ideas" id="ideas">', 1)[1].split('</details>', 1)[0]
+        self.assertEqual(re.findall(r'<li class="idea" data-key="([HNP]\d+)"', section), expected)
+        self.assertEqual(re.findall(r'<section class="ideas-topic" data-topic="([^"]+)"', section),
+                         sorted(set(topics.values()), key=rank.get), 'One group per topic, in guide order')
+        self.assertIn(f'{len(picks)} marked', section)
+        self.assertIn('ideas-empty" hidden', section)
+        row = section.split('data-key="H11"', 1)[1].split('</li>', 1)[0]
+        self.assertIn('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H1]]', row)
+        self.assertNotIn(hostile, document)
+        self.assertEqual(re.findall(r'data-issue="([HNP]\d+)"', row.split('idea-extends', 1)[1]), ['N47', 'H252'], 'Extends keys render as issue links')
+        self.assertIn('data-status="completed"', row.split('idea-extends', 1)[1], 'A closed Extends key keeps its status')
+        self.assertIn('data-state="deferred">Deferred<', row, 'The scheduling state is shown, never promoted')
+        later = document.split('id="direction-ideas"', 1)[1].split('</section>', 1)[0]
+        self.assertEqual(re.findall(r'<li data-key="([HNP]\d+)"', later), expected, 'Later ideas equals the marked set, in the same order')
+        self.assertIn('href="#ideas"', later)
+        self.assertIn(f'<a href="#ideas" data-section="ideas"><span class="nav-number">I</span><span>Ideas</span><span class="nav-count" data-ideas-count aria-label="{len(picks)} marked ideas">{len(picks):02}</span></a>', document)
+        meta = json.loads(document.split('<script id="snapshot-data" type="application/json">', 1)[1].split('</script>', 1)[0])
+        self.assertEqual(meta['ideas'], dict(count=len(picks), keys=expected, countedInIssueTotals=False))
+        self.assertNotIn('data-count', section.split('<div class="guide-body">', 1)[0], 'The section adds nothing to issue counts')
+
+    def test_the_committed_guide_has_the_section_and_no_curated_ideas(self):
+        import guide_direction as GDIR
+        self.assertFalse(hasattr(GDIR, 'IDEAS'), 'The hand-written Later ideas list is retired')
+        document = (Path(__file__).resolve().parent.parent / 'outputs/agent-device-work-guides.html').read_text()
+        self.assertEqual(document.count('<details class="reference ideas" id="ideas">'), 1)
+        self.assertLess(document.index('id="direction"'), document.index('id="ideas"'), 'Ideas follows Direction')
 
 
 if __name__ == '__main__':

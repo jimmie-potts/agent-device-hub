@@ -52,8 +52,8 @@ roadmap and architecture links do not add to those totals. Completed milestones
 and retained evidence live in a separate expandable archive. Adding devices has
 separate Panels, Tidbyt, LIFX and PC-lighting tracks; deferred PC lighting starts
 collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. Earlier guide anchors remain reachable. Search, Expand all and print
-include archived evidence and the Direction section; printing restores the reader's
-prior expansion state.
+include archived evidence and the Direction and Ideas sections; printing restores
+the reader's prior expansion state.
 
 `work/guide_paths.py` owns the eleven topic names, their outcome and next-step
 prose, aliases and track groupings; these are the guide's structure, not story
@@ -70,15 +70,21 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
 one of the eleven ids `guide_paths.py` defines), `**Note:** ...` (optional,
 one-line reading note), `**Workaround:** ...` (optional; shown only where a
-workaround is displayed, currently Open Defects cards) and `**Highlight:**
-next step | decision | later, <reason>` (optional; replaces a curated
-next-step, decision or later pick). `work/guide_section.py` parses and renders
+workaround is displayed, currently Open Defects cards), `**Highlight:**
+next step | decision | later | idea, <reason>` (optional; replaces a curated
+next-step, decision or later pick, or marks an idea for the Ideas section) and
+`**Extends:** <keys>` (optional, beside an `idea` highlight only; the stories
+the idea would build on, as comma-separated guide keys such as `H67, N47`).
+`work/guide_section.py` parses and renders
 the section, sharing its markdown-section engine (`work/story_sections.py`)
 with `work/recommendations.py`'s `## Execution recommendation` parser.
 
-- A missing or unknown `Topic`, an unrecognized key, more than one section, or
-  a `Highlight` that does not read `next step | decision | later, <reason>`
-  makes the section unreadable: the snapshot build fails, naming the story,
+- A missing or unknown `Topic`, an unrecognized key, more than one section, a
+  `Highlight` that does not read `next step | decision | later | idea,
+  <reason>`, or an `Extends` line that sits beside no `idea` highlight, is not
+  a comma-separated list of distinct `H<n>`, `N<n>` or `P<n>` keys, or names a
+  story the snapshot does not hold makes the section unreadable: the snapshot
+  build fails, naming the story,
   because every open story must carry a valid topic. There is no guessed
   default and no "assessment unavailable" fallback for the snapshot build.
 - A story without a section is excluded from the snapshot's topic tables; the
@@ -86,15 +92,17 @@ with `work/recommendations.py`'s `## Execution recommendation` parser.
 
 `build_guide.py` derives topic-table coverage, notes, workarounds and
 highlights entirely from these sections; it no longer reads a separate
-coverage file or curated per-issue tables. A story's `Highlight` populates
-exactly one of the opening's Useful next steps, Blockers and decisions, or
-Later sections, replacing what a curated dict used to supply.
+coverage file or curated per-issue tables. A `next step`, `decision` or
+`later` highlight populates exactly one of the opening's Useful next steps,
+Blockers and decisions, or Later sections, replacing what a curated dict used
+to supply. An `idea` highlight populates the Ideas section instead.
 
 The live path (`work/guide_overview.js`) re-parses each successfully read
 repository's open story bodies with the same grammar. A story unknown to the
 snapshot, or reassigned since it, is placed in its live topic with its note
 and gate; a story that closes live is removed from its topic, never moved
-into the dated closed-evidence block. Existing known rows patch their note,
+into the dated closed-evidence block. The Ideas section follows the same rules
+(see below). Existing known rows patch their note,
 gate and highlight-derived card in place; a genuinely new or moved-in row
 lands in a "Newly added since the snapshot" block within its topic, so a
 tracked topic (Adding devices, Engineering maintenance) never needs a live
@@ -102,9 +110,9 @@ guess at which curated track a story belongs to. Each topic's `N open` badge
 and the matching sidebar count update to match, per successfully read
 repository; a repository whose read fails keeps its topic placement, notes
 and counts on the dated snapshot, same as its opening lists and badges. The
-freshness line under the opening names which parts are live for which
-repositories and which parts (topic outcomes, next-step boxes, history and
-the roadmap) stay dated regardless.
+freshness line under the opening names which parts, including the ideas, are
+live for which repositories and which parts (topic outcomes, next-step boxes,
+history and the roadmap) stay dated regardless.
 
 ## Direction section
 
@@ -121,8 +129,10 @@ counts, and it joins search, Expand all and print.
 `guide_paths.py`: `AS_OF` and `REVISION` (the hub commit the text was written
 against), `STANDING` (one entry per surface with its evidence keys),
 `BECOMING`, `SEQUENCE` (ordered `(keys, why)` for what to build next),
-`IMPROVEMENTS`, `IDEAS` and `DELIVERED_SINCE` (keys moved out of `SEQUENCE` at
-a refresh, with the date). Text renders literally; keys render through
+`IMPROVEMENTS` and `DELIVERED_SINCE` (keys moved out of `SEQUENCE` at a
+refresh, with the date). Its "Later ideas" list has no saved input: it lists
+the stories marked `idea`, in Ideas-section order, and links to that section.
+Text renders literally; keys render through
 `issue_link`, so they carry the same status icon and live GitHub relabel as
 every other link. The narrative is dated editorial prose and never claims live
 state.
@@ -144,10 +154,44 @@ story.
 `build_guide.py` runs `guide_direction.check()` against the saved snapshot
 before anything renders. Every cited key must exist in the snapshot, every
 `SEQUENCE` key must be open unless it is listed in `DELIVERED_SINCE`, and every
-`DELIVERED_SINCE` key must be closed; a violation fails the build naming the
-key and the list. The check is what keeps the text from going stale the way
+`DELIVERED_SINCE` key must be closed, and no `SEQUENCE` story may carry an
+`idea` highlight, because "build next" and "later idea" are exclusive; a
+violation fails the build naming the key and the list. To promote an idea,
+replace its `idea` highlight before adding the story to the sequence. The check is what keeps the text from going stale the way
 `docs/roadmap.md` did before #170: a refresh that finds a closed story moves it
 to `DELIVERED_SINCE` and rewrites the sequence.
+
+## Ideas section
+
+After Direction, one Ideas reference section (sidebar "I · Ideas") lists every
+open story whose own Guide section carries `**Highlight:** idea, <reason>`: a
+new capability, a generalization across devices or repositories, or a
+user-visible win that recent work made cheap. The mark is a placement, not a
+status, label or priority. It never promotes a blocked, deferred or
+owner-later story. Ideas are counted in their topics, not here; the sidebar
+count is informational.
+
+`work/guide_ideas.py` renders the section. Entries group by topic in
+`guide_paths.TOPICS` order and, within a topic, by story key. Each entry shows
+the story through `issue_link`, its reason as literal text, its `Extends` keys
+through `issue_link`, and its scheduling state from
+`guide_status.scheduling_state` (candidate, active, blocked or deferred). The
+section joins search, Expand all and print, and uses role tokens only
+(`work/guide_ideas.css`). Direction's "Later ideas" lists the same stories in
+compact form.
+
+The live path re-parses each successfully read repository's open bodies with
+the same grammar. A story newly marked, or moved to another topic, since the
+snapshot lands in a "Newly added since the snapshot" block inside its topic
+group; a story that closes live or loses its mark is removed; existing rows
+patch their reason, `Extends` and state in place. A repository whose read
+fails keeps the snapshot's rows. Direction's "Later ideas" follows. The live
+path checks only the form of `Extends` keys, because it reads open stories
+alone; the snapshot build also checks that each key exists. A key the live read
+cannot place links to GitHub without a status claim.
+
+Marks reach the saved snapshot only at a backlog refresh. Until then, readers
+without scripts, or whose GitHub read fails, see the snapshot's marks.
 
 ## Execution recommendations
 

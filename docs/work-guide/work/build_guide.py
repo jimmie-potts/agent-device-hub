@@ -15,6 +15,7 @@ import guide_status as GS
 import recommendations as REC
 import guide_section as GD
 import guide_direction as GDIR  # noqa: E402  dated direction narrative and computed leverage
+import guide_ideas as GI  # noqa: E402  idea-marked stories, derived from their Guide sections
 from guide_paths import PATHS, TOPICS, ALIASES, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
 
@@ -34,18 +35,21 @@ for key, (repo, _) in REPOS.items():
         ISSUES[f'{key}{issue["number"]}'] = issue
 
 DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
-# The direction narrative is checked against the snapshot before anything renders, so a stale
-# citation stops the build here rather than publishing text that no longer fits the records.
-GDIR.check(ISSUES)
 LEVERAGE = GS.leverage(ISSUES, DEPENDENCIES)
 # Saved Execution recommendation sections, read strictly from the snapshot bodies.
 RECOMMENDATIONS = {key: REC.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
 
 # The catalog holds reading paths; each open story's own Guide section owns its topic.
-GUIDE_STATE = {key: GD.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
+# An Extends line may name only stories this snapshot holds.
+GUIDE_STATE = {key: GD.read(issue['body'], keys=set(ISSUES)) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
 invalid = [(key, state) for key, state in GUIDE_STATE.items() if state['state'] != 'assigned']
 assert not invalid, 'Stories without a valid Guide topic: ' + '; '.join(
     f"{key} ({state.get('reason', state['state'])})" for key, state in invalid)
+IDEAS = GI.marked(GUIDE_STATE)
+IDEA_KEYS = GI.ordered(IDEAS, list(PATHS))
+# The direction narrative is checked against the snapshot before anything renders, so a stale
+# citation, or a story both in the build-next sequence and marked as an idea, stops the build here.
+GDIR.check(ISSUES, set(IDEAS))
 coverage = {topic_id: [] for topic_id in PATHS}
 for key in sorted(GUIDE_STATE, key=lambda k: (k[0], int(k[1:]))):
     coverage[GUIDE_STATE[key]['topic']].append(key)
@@ -98,7 +102,8 @@ METADATA = dict(refreshedAt=SNAPSHOT['refreshedAt'], snapshotDate=REFRESHED.strf
                                   diagramCount=len(AD.DIAGRAMS), diagrams=[dict(id=d['id'], kind=d['kind'], status=d['status'], viewer=f"architecture/{d['id']}.html",
                                                                                  viewerSha256=receipt_by_id[d['id']]['artifact']['sha256']) for d in AD.DIAGRAMS],
                                   countedInIssueTotals=False),
-                direction=dict(asOf=GDIR.AS_OF, revision=GDIR.REVISION, countedInIssueTotals=False))
+                direction=dict(asOf=GDIR.AS_OF, revision=GDIR.REVISION, countedInIssueTotals=False),
+                ideas=dict(count=len(IDEA_KEYS), keys=IDEA_KEYS, countedInIssueTotals=False))
 
 def issue_link(key):
     issue = ISSUES[key]
@@ -267,7 +272,9 @@ timeline_section = f'''<details class="reference timeline" id="timeline">
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
 direction_section = GDIR.render(ISSUES, LEVERAGE, issue_link, lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])),
-                                DECISIONS, OWNER_LATER, REFRESHED.strftime('%-d %B %Y'))
+                                DECISIONS, OWNER_LATER, REFRESHED.strftime('%-d %B %Y'), IDEA_KEYS)
+ideas_section = GI.render(IDEAS, ISSUES, [(topic, title) for topic, title, *_ in TOPICS], issue_link,
+                          lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])), REFRESHED.strftime('%-d %B %Y'))
 
 CSS = '''
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--bg);color:var(--text);font:var(--type-body)/1.65 var(--font);background-image:var(--grid-image);background-size:var(--grid-size)}a{color:var(--link);text-underline-offset:4px}button,input{font:inherit}button{cursor:pointer}::selection{background:var(--accent);color:var(--accent-ink)}:focus-visible{outline:2px solid var(--focus);outline-offset:5px}button,a,summary{touch-action:manipulation}button{color:var(--text);border:1px solid var(--edge);background:color-mix(in srgb,var(--accent) 4%,transparent);border-radius:var(--radius);padding:9px 14px;font:var(--type-small) var(--mono);min-height:40px}button:hover{background:var(--raised);border-color:var(--accent)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.skip{position:fixed;left:12px;top:-100px;z-index:100;padding:12px;background:var(--accent);color:var(--accent-ink)}.skip:focus{top:12px}[hidden]{display:none!important}
@@ -347,6 +354,7 @@ CSS += (ROOT / 'work/guide_reading.css').read_text()
 CSS += (ROOT / 'work/guide_overview.css').read_text()
 CSS += (ROOT / 'work/guide_brief.css').read_text()
 CSS += (ROOT / 'work/guide_direction.css').read_text()
+CSS += (ROOT / 'work/guide_ideas.css').read_text()
 
 JS = '''
 (() => {
@@ -354,11 +362,11 @@ JS = '''
  // architecture) share expand/collapse, navigation, search and print handling
  // without joining the issue accounting.
  const guides = [...document.querySelectorAll('.guide')];
- const refs = [...document.querySelectorAll('.reference:not(.direction)')];
+ const refs = [...document.querySelectorAll('.reference:not(.direction):not(.ideas)')];
  const evidence = [...document.querySelectorAll('.delivery-evidence,.guide-evidence,.future-scenarios')];
  const future = document.querySelector('.future-scenarios');
- // Prose sections (the archive and the dated direction) are searched by text and never counted.
- const prose = [...document.querySelectorAll('.archive,.direction')];
+ // Prose sections (the archive, the dated direction and the ideas) are searched by text and never counted.
+ const prose = [...document.querySelectorAll('.archive,.direction,.ideas')];
  const sections = [...guides, ...refs, ...prose];
  const figures = [...document.querySelectorAll('.diagram')];
  const architecture = document.querySelector('#architecture');
@@ -387,7 +395,8 @@ JS = '''
      figures.forEach(f => { const show = haystacks.get(f).includes(query); f.hidden = !show; if (show) diagrams++; });
      future.hidden = !figures.some(f => !f.hidden && future.contains(f));
      architecture.hidden = diagrams === 0; navById.get('architecture').hidden = diagrams === 0; if (diagrams) architecture.open = true;
-     prose.forEach(a => { a.hidden = !haystacks.get(a).includes(query); if (!a.hidden) a.open = true; });
+     // Prose is read at search time: the ideas section gains and loses live rows after load.
+     prose.forEach(a => { a.hidden = !normal(a.textContent).includes(query); if (!a.hidden) a.open = true; });
      timeline.hidden = true; navById.get('timeline').hidden = true;
    } else {
      if (saved) { restore(saved); saved = null; }
@@ -695,7 +704,7 @@ document = '''<!doctype html>
 <body id="top"><a class="skip" href="#main">Skip to the guides</a>
 <div class="shell"><aside class="sidebar" aria-label="Guide navigation">
 <a class="brand" href="#top" aria-label="Agent device work guides overview"><svg viewBox="0 0 40 44" fill="none" aria-hidden="true"><path d="M20 2 37 12v20L20 42 3 32V12Z" stroke="currentColor" stroke-width="1.5"/><path d="m3 12 17 10 17-10M20 22v20M20 2v12m-7 4 7-4 7 4" stroke="currentColor" stroke-width="1.5"/></svg><span>AGENT DEVICE<small>WORK GUIDES / @@MONTH_CODE@@</small></span></a>
-<div class="sidebar-rule"></div><div class="nav-title eyebrow">Explore the work</div><nav aria-label="@@GUIDE_COUNT@@ work guides, timeline, direction and architecture">''' + ''.join(nav) + '''<div class="nav-rule" role="presentation"></div><a href="#timeline" data-section="timeline"><span class="nav-number">T</span><span>Timeline map</span><span class="nav-count" aria-hidden="true">map</span></a><a href="#direction" data-section="direction"><span class="nav-number">D</span><span>Direction</span><span class="nav-count" aria-hidden="true">dated</span></a><a href="#architecture" data-section="architecture"><span class="nav-number">A</span><span>Architecture</span><span class="nav-count">''' + f'{len(AD.DIAGRAMS):02}' + '''</span></a><a href="#local-acceptance" data-section="local-acceptance"><span class="nav-number">✓</span><span>Completed milestones</span></a></nav>
+<div class="sidebar-rule"></div><div class="nav-title eyebrow">Explore the work</div><nav aria-label="@@GUIDE_COUNT@@ work guides, timeline, direction, ideas and architecture">''' + ''.join(nav) + '''<div class="nav-rule" role="presentation"></div><a href="#timeline" data-section="timeline"><span class="nav-number">T</span><span>Timeline map</span><span class="nav-count" aria-hidden="true">map</span></a><a href="#direction" data-section="direction"><span class="nav-number">D</span><span>Direction</span><span class="nav-count" aria-hidden="true">dated</span></a>''' + GI.nav_entry(len(IDEA_KEYS)) + '''<a href="#architecture" data-section="architecture"><span class="nav-number">A</span><span>Architecture</span><span class="nav-count">''' + f'{len(AD.DIAGRAMS):02}' + '''</span></a><a href="#local-acceptance" data-section="local-acceptance"><span class="nav-number">✓</span><span>Completed milestones</span></a></nav>
 <a class="atlas-link" href="../../system-design/index.html">Explore the B.U.N.N.Y. system design atlas ↗</a>
 <div class="sidebar-foot"><span><i class="snapshot-dot" aria-hidden="true"></i>BACKLOG SNAPSHOT</span><span>@@DATE@@ / @@PROJECTS_PADDED@@ PROJECTS</span><span>Issue links open task briefs</span></div></aside>
 <main id="main"><header class="topbar"><div class="breadcrumb"><span>PLANNING</span> / CROSS-PROJECT GUIDE</div><div class="topbar-tools"><time class="date" datetime="@@ISO@@">@@DATE@@</time><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button></div></header>
@@ -709,7 +718,7 @@ document = '''<!doctype html>
 <p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. Issue badges refresh from public GitHub when this page loads; topic-guide text, counts and dependency explanations stay on this snapshot. Opening lists use the freshness shown above them.</p>
 <p id="github-status" class="document-note" role="status" aria-live="polite">Loading GitHub issue status. Guide text from the @@SNAPSHOT_DATE@@ snapshot.</p>
 
-<div class="guides references">''' + timeline_section + direction_section + '''</div>
+<div class="guides references">''' + timeline_section + direction_section + ideas_section + '''</div>
 <div class="toolbar" aria-label="Document controls"><div class="search-wrap"><label class="sr-only" for="search">Search guides by topic, device, or issue</label><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m12 12 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="search" type="search" placeholder="Find a topic, device, or issue…" autocomplete="off"></div><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button><button id="print" type="button">Print / PDF</button></div>
 <div class="search-meta"><span id="result-count" role="status" aria-live="polite">@@GUIDE_COUNT@@ guides · @@TOTAL@@ issues in these guides · @@DIAGRAM_COUNT@@ diagrams</span><button id="clear-search" type="button" hidden>Clear search</button><span>Select an issue for its task brief and GitHub link</span></div>
 <div id="empty-state" class="empty-state" hidden><h2>No matching guides or diagrams</h2><p>Try a device name, topic, or issue such as “Pixoo #37”.</p></div>
