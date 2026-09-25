@@ -172,7 +172,7 @@ then retires.
   is the editor's device switch and informs the two device pages.
 - **Human UI approval** applies to every shell change as before; nothing here
   changes that gate.
-- **Follow-ups.** After this decision is accepted, the Direction section's
+- **Follow-ups.** After this ADR merges, the Direction section's
   "what it is becoming" text is updated through the guide maintenance
   procedure, and #271's first open question and #286's second phase are
   updated to match. Issues to file: extract the shared device art in the hub;
