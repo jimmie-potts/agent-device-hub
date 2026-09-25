@@ -242,7 +242,7 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-The shared frontend in apps/dashboard is BUNNY's central interface. It uses
+The shared frontend in apps/dashboard is B.U.N.N.Y.'s central interface. It uses
 the approved Nanoleaf visual language and interaction patterns. Each current
 and future user-facing component joins the same navigation and reusable views
 for its available status, settings and supported controls, with specialized
@@ -486,7 +486,7 @@ and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
 
-## BUNNY frontend, Hub #6
+## B.U.N.N.Y. frontend, Hub #6
 
 The implementation in `apps/dashboard` provides React/TypeScript activity, component
 and connection views served by `apps/hub` at the same origin. A dedicated scoped
