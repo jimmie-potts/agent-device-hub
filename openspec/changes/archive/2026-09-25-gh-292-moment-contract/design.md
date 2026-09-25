@@ -28,7 +28,7 @@ See proposal.md for motivation. Contract 1.0 rejects unknown fields everywhere, 
   - `negotiateApiVersion` serves a read without a version at 1.0. A named version gets the highest served version of the same major that is not above it, and another major or a malformed value is `invalid-request`.
   - Over HTTP the signal is the `apiVersion` query parameter, matching agent-state's opt-in `snapshotVersion=1.1` style.
   - The default keeps the installed hub's 1.0 snapshot validation working when a device adopts 1.1.
-  - Controllers built before 1.1.0 may reject the parameter; the Nanoleaf controller on `main` (`88831e4`) accepts only its declared read parameters. A client therefore treats `invalid-request` on a versioned read as a 1.0-only controller and reads again without the signal.
+  - A controller that serves only 1.0 may reject the parameter, whatever contract package it is built with. The Nanoleaf controller on `main` (`88831e4`) and #318's local controller host accept only their declared read parameters. A client therefore treats `invalid-request` on a versioned read as a 1.0-only controller and reads again without the signal. When to probe such a controller again (for example after its epoch changes) is left to the hub stories #293-#298.
 - **Overloaded `admit`.**
   - `admit(Admission)` keeps returning the 1.0 `AdmissionResult` type.
   - A state with `apiVersions` (`AdmissionStateV1_1`) selects the 1.1 overload.

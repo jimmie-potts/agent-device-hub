@@ -86,8 +86,8 @@ A moment is a short, hub-decided presentation request ([ADR 0006](decisions/0006
 API 1.1 is opt-in:
 
 - A snapshot or feed read names the version it wants with `apiVersion`, which is the `apiVersion` query parameter over HTTP. A read without it is served at 1.0, so today's 1.0 readers never receive a 1.1 shape.
-- `negotiateApiVersion` serves the highest version the controller has that has the same major and is not above the request: 1.7 gets 1.1, and 1.1 on a 1.0-only controller gets 1.0. Another major or a malformed value such as `1.01` is `invalid-request`. The client validates the answer against the schema of the version it received.
-- Controllers built on contract 1.1.0 or later accept the signal. A controller built before 1.1.0 may reject any unknown read parameter; the Nanoleaf controller answers `invalid-request` to anything but its declared parameters. A client that gets `invalid-request` for a versioned read therefore treats the controller as 1.0-only and reads again without the signal. It sends no moments to that controller.
+- `negotiateApiVersion` serves the highest version the controller has that has the same major and is not above the request: 1.7 gets 1.1, and 1.1 gets 1.0 from a controller that negotiates but serves only 1.0. Another major or a malformed value such as `1.01` is `invalid-request`. The client validates the answer against the schema of the version it received.
+- A controller that serves 1.1 accepts the signal. A controller that serves only 1.0 may reject it as an unknown read parameter, whatever contract package it is built with: the Nanoleaf controller and the local controller host both answer `invalid-request` to anything but their declared parameters. A client that gets `invalid-request` for a versioned read therefore treats the controller as 1.0-only and reads again without the signal. It sends no moments to that controller.
 - A client sends a moment only after it has read a 1.1 snapshot that declares `moments` supported.
 - A 1.1 controller keeps accepting 1.0 requests. Both envelopes share one ticket sequence, and each receipt carries its own request's API version.
 - A 1.0-only controller rejects a 1.1 envelope as `invalid-request` before admission, without reserving a ticket.
@@ -218,7 +218,7 @@ API 1.1 adds these cases:
 35. A newer event supersedes a moment, an event supersedes a flourish, and a flourish supersedes a scheduled flourish, which is then cancelled. A flourish during an event is blocked.
 36. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
 37. With the hub down, a playing moment ends on the device clock, and a late delivery after recovery is missed.
-38. A restart replays nothing and forgets the moment memory.
+38. A restart replays nothing, drops a scheduled or playing moment without a receipt, and forgets the moment memory.
 39. The 1.0 view of a 1.1 snapshot omits moment content, reports a 1.1 outcome as unknown and keeps a 1.0 outcome.
 
 Schema checking proves payload shape. Pure semantic fixtures prove the reference algorithm. Device adoption tests must later run equivalent cases against real owning services/queues and authenticate through their actual HTTP layer. This issue must report that remaining consumer adoption explicitly.
@@ -227,8 +227,8 @@ Schema checking proves payload shape. Pure semantic fixtures prove the reference
 
 | Consumer | Runtime | Verification |
 | --- | --- | --- |
-| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 326 shared cases (190 schema, 136 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
-| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 326 cases and archive import |
+| TypeScript reference | Node 24, Ubuntu | Strict Ajv schema validation, 327 shared cases (190 schema, 137 semantic), immutable input checks, emitted receipt, moment-state and 1.0-view validation, and archive import |
+| Python reference | Python 3.12 and 3.14, Ubuntu | jsonschema 4.19.2, the same 327 cases and archive import |
 | Nanoleaf controller | Adoption belongs to codex-nanoleaf #28 | Pin a published archive and checksum; run owning API/queue tests |
 | Pixoo controller and MCP | Adoption belongs to the linked integration work | Pin a published archive and checksum; run owning API/queue tests |
 

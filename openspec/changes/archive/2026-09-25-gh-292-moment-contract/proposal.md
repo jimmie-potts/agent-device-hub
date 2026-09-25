@@ -19,7 +19,7 @@
   - the 1.0 view of a 1.1 snapshot;
   - read version negotiation with a 1.0 default;
   - 1.1 admission.
-- The shared corpus grows from 220 to 326 cases. The 220 existing cases are unchanged.
+- The shared corpus grows from 220 to 327 cases. The 220 existing cases are unchanged.
 - The artifact becomes `@jimmie-potts/device-contracts` 1.1.0:
   - In-repo workspace pins move to 1.1.0 with no behavior change.
   - The hub moves to 0.3.6 (one step above #318's 0.3.5) because its archive now bundles contracts 1.1.0.

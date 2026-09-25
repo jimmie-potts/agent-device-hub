@@ -29237,6 +29237,102 @@
         },
         "starts": 0
       }
+    },
+    {
+      "id": "moment-restart-while-scheduled",
+      "input": {
+        "operation": "moment",
+        "device": {
+          "clockEpoch": "clock-1",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-idle",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "events": [
+          {
+            "kind": "deliver",
+            "nowMs": 1000,
+            "requestId": {
+              "epoch": "requests-1",
+              "sequence": 1
+            },
+            "command": {
+              "kind": "moment",
+              "momentId": "evt-merge",
+              "mood": "celebrate",
+              "durationMs": 20000,
+              "priorityClass": "event",
+              "coversStatus": true,
+              "start": {
+                "domain": "controller-monotonic",
+                "epoch": "clock-1",
+                "atMs": 5000,
+                "toleranceMs": 2000
+              }
+            }
+          },
+          {
+            "kind": "restart",
+            "nowMs": 90000,
+            "clockEpoch": "clock-2",
+            "presentation": "status",
+            "base": "work-busy",
+            "alert": "none"
+          },
+          {
+            "kind": "tick",
+            "nowMs": 95000
+          }
+        ]
+      },
+      "expected": {
+        "steps": [
+          {
+            "showing": "base",
+            "base": "work-idle",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          },
+          {
+            "showing": "base",
+            "base": "work-busy",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          },
+          {
+            "showing": "base",
+            "base": "work-busy",
+            "momentId": null,
+            "receipts": [],
+            "ended": null
+          }
+        ],
+        "device": {
+          "clockEpoch": "clock-2",
+          "presentation": "status",
+          "canCoverStatus": true,
+          "base": "work-busy",
+          "alert": "none",
+          "current": {
+            "status": "none"
+          },
+          "last": {
+            "status": "none"
+          },
+          "recentMomentIds": []
+        },
+        "starts": 0
+      }
     }
   ]
 }

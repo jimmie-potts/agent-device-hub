@@ -16,7 +16,7 @@ API 1.1 SHALL carry a `moment` command with a neutral moment ID from the trigger
 - **THEN** its receipt keeps the current configuration revision, so another client's pending edit does not conflict
 
 ### Requirement: Compatible API 1.1 negotiation
-API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A snapshot or feed read without a version signal SHALL be served at 1.0. A read that names a version SHALL be served at the highest version the controller has that has the same major and is not above it. Another major or a malformed version MUST be invalid-request. A controller built before 1.1.0 MAY reject the version signal; a client that receives invalid-request for a versioned read SHALL treat the controller as 1.0-only, read again without the signal and send it no moments. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
+API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission decision unchanged. A 1.1 controller SHALL accept 1.0 and 1.1 envelopes on one ticket sequence, and each receipt SHALL carry its request's API version. A 1.0-only controller, or any unknown version, MUST reject a 1.1 envelope as invalid-request without reserving a ticket. A snapshot or feed read without a version signal SHALL be served at 1.0. A read that names a version SHALL be served at the highest version the controller has that has the same major and is not above it. Another major or a malformed version MUST be invalid-request. A controller that serves only 1.0 MAY reject the version signal, whatever contract package it is built with; a client that receives invalid-request for a versioned read SHALL treat the controller as 1.0-only, read again without the signal and send it no moments. A 1.1 controller serving a 1.0 reader SHALL omit the moments capability, the moment state and pending moment entries, and SHALL report a 1.1 last outcome as unknown. Source: #292 decision 6 and assumptions.
 
 #### Scenario: 1.0-only controller
 - **WHEN** a controller without API 1.1 receives a 1.1 moment request
@@ -26,8 +26,8 @@ API 1.1 SHALL be opt-in and leave every 1.0 definition, validator and admission 
 - **WHEN** a reader that sends no version reads a controller that serves 1.0 and 1.1
 - **THEN** it receives a 1.0 snapshot, and a reader asking for 1.7 receives 1.1
 
-#### Scenario: Controller built before 1.1
-- **WHEN** a 1.1 client's versioned snapshot read gets invalid-request from a controller built before contract 1.1.0
+#### Scenario: Controller that serves only 1.0
+- **WHEN** a 1.1 client's versioned snapshot read gets invalid-request from a controller that serves only 1.0
 - **THEN** the client reads again without the version signal, uses the 1.0 snapshot and sends that controller no moments
 
 #### Scenario: 1.0 reader of a 1.1 controller
