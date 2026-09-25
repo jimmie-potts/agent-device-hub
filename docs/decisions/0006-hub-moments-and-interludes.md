@@ -7,8 +7,8 @@ linked issues.
 ## Context
 
 Provider hooks and the shared monitor already feed the hub. Each device still
-renders its own status presentation from the shared feed: the Nanoleaf worker
-draws Work and the Pixoo shows Monitor. Tidbyt and LIFX will connect through
+renders its own status presentation, from the shared feed or its own selected
+input: the Nanoleaf worker draws Work and the Pixoo shows Monitor. Tidbyt and LIFX will connect through
 [#289](https://github.com/jimmie-potts/agent-device-hub/issues/289).
 
 The owner wants events to trigger coordinated animations across devices, for
@@ -51,7 +51,7 @@ safety and returning to the base presentation live in each device controller.
     Webhooks would need inbound access, and the architecture keeps services on
     loopback unless reachability is made explicit
     ([architecture](../architecture.md#controller-boundary),
-    [SDLC scope defaults](../sdlc.md)).
+    [SDLC scope defaults](../sdlc.md#scope-defaults)).
   - Meeting reminders come from a calendar source
     ([#298](https://github.com/jimmie-potts/agent-device-hub/issues/298)).
 - **Rules.** Owner-approved rules map events to moments. The owner can edit
@@ -80,18 +80,21 @@ device-specific geometry.
   duration.
 - **Safety.** One writer per device. Bounds and validation happen at the
   device. Credentials never leave the controller.
-- **Precedence.** The device makes the final call when it executes. While it
-  presents status, a red or yellow alert pre-empts a moment, whether the alert
-  existed before the moment or arrives during it. A stale hub decision loses
-  safely through the existing generation guards.
+- **Precedence.** The device makes the final call when it executes. The order
+  is: attention and failure alerts first, then moments, then the base
+  presentation. While the device presents status, an attention or failure
+  alert (Nanoleaf red or yellow) pre-empts a moment, whether the alert existed
+  before the moment or arrives during it. A stale hub decision loses safely
+  through the existing generation guards.
 - **Return to base.** The device plays at most one moment at a time. When the
   moment ends, it returns to its *current* base presentation, never to a
   snapshot taken before the moment. It never replays a moment after a restart.
 - **Evidence.** Receipts stay truthful, and the device reports external control
   when a change happens outside the controller.
-- **Degradation.** If the hub is unavailable, status presentation keeps its
-  last state, visibly marked stale as it is today, and no moments play. A
-  moment that misses its window is dropped, not queued.
+- **Degradation.** If the hub is unavailable, the device keeps presenting
+  status. A device that consumes the shared feed shows that status as visibly
+  stale, as it does today, and no moments play. A moment that misses its
+  window is dropped, not queued.
 
 ### Contract
 
@@ -127,8 +130,8 @@ together with conformance fixtures.
 - **Content modes.** Any approved moment may play as an interlude over Free or
   Media content, whether or not its event kind is in the interrupt set. At the
   end, the device returns to the scene or playlist it is showing now.
-- **Ending early.** A red or yellow alert on status presentation pre-empts an
-  interlude, and any explicit command ends it.
+- **Ending early.** An attention or failure alert on status presentation
+  pre-empts an interlude, and any explicit command ends it.
 - **Skipped states.** No interlude plays while a device shows a quiet
   presentation, such as Nanoleaf Quiet, or during quiet hours. Quiet hours are
   the owner's do-not-disturb control.
@@ -192,7 +195,7 @@ and the issues listed own the exact values.
 
 - **Device logic stays deliberate.** Translation, precedence, returning to base
   and evidence stay in each device. The hub stays device-agnostic, and a hub
-  outage leaves status stale but never blank.
+  outage never blanks a status display.
 - **Contract work first.** Devices need the new contract minor version,
   negotiation and conformance before they can play moments. Explicit Free-mode
   requests keep working today.
