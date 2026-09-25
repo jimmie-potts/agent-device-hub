@@ -266,10 +266,10 @@ issues.
 [ADR 0006](decisions/0006-hub-moments-and-interludes.md) adds event-driven
 moments. The hub decides: event sources, rules, agent personas, arbitration,
 choreography and the moment log. Each device guarantees: translation, one
-writer, precedence at execution, restoring the current base, and evidence. A
-moment may briefly take over status presentation only as a time-boxed
-interlude for owner-approved event kinds, which revises ADR 0005's restoration
-rule for interludes only.
+writer, precedence at execution, returning to its current base, and evidence.
+Every moment is a time-boxed interlude, and only owner-approved event kinds
+may cover status presentation. No moment changes a mode. ADR 0005's explicit
+restoration stays, except that an interlude ends automatically.
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.
