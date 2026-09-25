@@ -389,8 +389,10 @@ finished logo exists.
 **Shared rule.** The text wordmark and glyph are the interim mark of the
 shared shell; a dedicated logo needs its own asset and design decision. Identify
 Nanoleaf inside its component view or advanced editor, and keep the wall map's
-own title while it remains a separate application. Do not copy the `◈` glyph
-onto every device screen.
+own title while it exists as Nanoleaf's specialized editor
+([ADR 0007](decisions/0007-bunny-shell.md)); the shell's device pages and
+widgets use the shared device art under the shell's identity. Do not copy the
+`◈` glyph onto every device screen.
 
 ## 11. Component glossary
 
