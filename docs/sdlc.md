@@ -146,7 +146,9 @@ as incidental cleanup.
 ## Work guide updates
 
 The [cross-project work guide](work-guide/README.md) is a dated publication, not
-a live delivery ledger. Refresh its saved inputs and generated output when the
+a live delivery ledger; a successful browser read of GitHub can show a story's
+current topic placement, note and highlight for that repository, but topic
+prose, history and the roadmap stay dated regardless. Refresh its saved inputs and generated output when the
 authorized task intentionally updates or publishes it. An unrelated planning,
 source or acceptance task does not require a guide refresh, no-impact entry,
 companion PR or public-currency check. Closing such a task does not claim that

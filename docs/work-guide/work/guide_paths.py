@@ -38,20 +38,6 @@ TOPICS = [
 ]
 PATHS = {key: (outcome, action, selected) for key, _, outcome, action, selected in TOPICS}
 ALIASES = {'tidbyt-lifx': 'nanoleaf-devices', 'pc-lighting': 'nanoleaf-devices'}
-OWNER_LATER = {'P61': 'Later by owner choice; keep the recorded performance scope and failed measurements.'}
-NEXT_STEPS = {
-    'N111': 'Keep the wall following the hub feed when a session comes from an undeclared source, so the first Claude Code session cannot stop it.',
-    'H244': 'Release each retired B.U.N.N.Y. browser session’s resources through one cleanup path.',
-    'H222': 'Announce each hub commit to change-stream readers at once; Nanoleaf can then stop polling every second.',
-    'H182': 'Apply the delivered B.U.N.N.Y. UI foundation to the dashboard; its UI candidate needs owner approval.',
-}
-DECISIONS = {
-    'H20': 'Choose status bulbs, colors/effects, brightness cap, quiet behavior and the manual-change policy.',
-    'H227': 'Record the intended night-mode settings, then decide whether stale Tidbyt rows need a renderer change.',
-    'N100': 'Choose which Claude Code home to read, which working folder counts when a session moves, and the fallback when a session has no title.',
-}
-# Only source-backed, deliberately recorded workaround text belongs here.
-WORKAROUNDS = {}
 
 DEVICE_TRACKS = {
     'Panels': ['N44', 'N47', 'N113', 'N114'],
@@ -63,7 +49,7 @@ DEVICE_TRACKS = {
 MAINTENANCE_TRACKS = {
     'Hub': ['H240', 'H246', 'H123', 'H258', 'H263'],
     'Nanoleaf': ['N118', 'N127', 'N120', 'N121', 'N119', 'N122', 'N128', 'N129', 'N130'],
-    'Pixoo': ['P80', 'P81', 'P82', 'P61'],
+    'Pixoo': ['P80', 'P81', 'P82', 'P61', 'P86'],
 }
 # Guides whose remaining work is split under track headings; tracks cover each guide exactly.
 GUIDE_TRACKS = {'nanoleaf-devices': DEVICE_TRACKS, 'development-workflow': MAINTENANCE_TRACKS}

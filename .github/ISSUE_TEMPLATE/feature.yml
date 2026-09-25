@@ -45,3 +45,20 @@ body:
       value: None
     validations:
       required: true
+  - type: textarea
+    id: guide
+    attributes:
+      label: Guide placement
+      description: >-
+        The work guide's ## Guide convention (docs/work-guide/README.md).
+        Replace <topic id> with one of shared-codex, bunny-controls,
+        nanoleaf-presentation, nanoleaf-devices, pixoo-media, controls-music,
+        desktop-controls, work-guide, assistant-access, hosting-migrations,
+        development-workflow. Optional lines: **Note:** a one-line reading
+        note, and **Highlight:** next step | decision | later, <reason>.
+      value: |
+        ## Guide
+
+        **Topic:** <topic id>
+    validations:
+      required: true

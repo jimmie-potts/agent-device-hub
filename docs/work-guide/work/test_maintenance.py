@@ -148,9 +148,9 @@ class GuideMaintenance(unittest.TestCase):
         source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:
             candidate = copy_guide(directory)
-            path = candidate / 'work/backlogs/hub-native-deps.json'
+            path = candidate / 'work/backlogs/device-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 222)
+            issue = next(row for row in native['data']['n']['issues']['nodes'] if row['number'] == 111)
             issue['blockedBy']['nodes'].append({
                 'number': 11, 'state': 'OPEN',
                 'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
@@ -161,12 +161,12 @@ class GuideMaintenance(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             baseline = (source / 'outputs/agent-device-work-guides.html').read_text()
-            self.assertIn('data-key="H222"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
+            self.assertIn('data-key="N111"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
             next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
-            self.assertNotIn('data-key="H222"', next_section)
+            self.assertNotIn('data-key="N111"', next_section)
             self.assertNotIn('data-key="P61"', next_section)
             blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
-            self.assertIn('data-key="H222"', blockers)
+            self.assertIn('data-key="N111"', blockers)
             self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
@@ -210,15 +210,16 @@ class GuideMaintenance(unittest.TestCase):
             self.assertNotIn('blocked', text)
 
     def test_checkpoint_dependency_is_external_to_primary_coverage(self):
+        import guide_section as GD
         source = Path(__file__).resolve().parent.parent
         backlogs = source / 'work/backlogs'
-        coverage = json.loads((backlogs / 'guide-coverage.json').read_text())
-        primary = [key for keys in coverage.values() for key in keys]
         issue_rows = json.loads((backlogs / 'agent-device-hub-issues.json').read_text())
-        is_open = any(i['number'] == 83 and i['state'] == 'OPEN' for i in issue_rows)
-        self.assertEqual(primary.count('H83'), int(is_open))
+        row83 = next((row for row in issue_rows if row['number'] == 83), None)
+        is_open = bool(row83 and row83['state'] == 'OPEN')
         if is_open:
-            self.assertIn('H83', coverage['development-workflow'])
+            state = GD.read(row83['body'])
+            self.assertEqual(state['state'], 'assigned')
+            self.assertEqual(state['topic'], 'development-workflow')
         native = json.loads((backlogs / 'hub-native-deps.json').read_text())
         for issue in native['data']['repository']['issues']['nodes']:
             if issue['number'] == 83:
@@ -229,13 +230,18 @@ class GuideMaintenance(unittest.TestCase):
         self.assertIn('https://github.com/jimmie-potts/agent-skills/issues/33', html)
         with tempfile.TemporaryDirectory(prefix='guide-external-') as directory:
             candidate = copy_guide(directory)
-            # An external reference must not inflate the three-repository totals.
-            coverage['development-workflow'].append('X33')
-            (candidate / 'work/backlogs/guide-coverage.json').write_text(json.dumps(coverage))
+            # An open story with no valid Guide topic must fail the build, naming the story.
+            path = candidate / 'work/backlogs/agent-device-hub-issues.json'
+            rows = json.loads(path.read_text())
+            row = next(row for row in rows if row['state'] == 'OPEN')
+            self.assertIn('**Topic:**', row['body'])
+            row['body'] = re.sub(r'\*\*Topic:\*\* [^\n]+', '**Topic:** not-a-real-topic', row['body'], count=1)
+            path.write_text(json.dumps(rows))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('Coverage mismatch', result.stderr)
+            self.assertIn(f'H{row["number"]}', result.stderr)
+            self.assertIn('unknown topic', result.stderr)
 
     def test_guide_tracks_must_cover_their_guide(self):
         with tempfile.TemporaryDirectory(prefix='guide-tracks-') as directory:
@@ -243,8 +249,8 @@ class GuideMaintenance(unittest.TestCase):
             # A row left out of every track would otherwise vanish from its guide.
             paths = candidate / 'work/guide_paths.py'
             text = paths.read_text()
-            self.assertEqual(text.count("'P61']"), 1)
-            paths.write_text(text.replace("'P61']", ']'))
+            self.assertEqual(text.count("'P86']"), 1)
+            paths.write_text(text.replace("'P86']", ']'))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
@@ -354,6 +360,145 @@ class GuideMaintenance(unittest.TestCase):
             sources = json.loads((candidate / 'work/architecture/source-receipts.json').read_text())
             for revision in sources['sourceRevisions'].values():
                 self.assertIn(revision, html)
+
+    def test_open_story_without_a_guide_section_fails_the_build_naming_it(self):
+        with tempfile.TemporaryDirectory(prefix='guide-missing-topic-') as directory:
+            candidate = copy_guide(directory)
+            path = candidate / 'work/backlogs/agent-device-hub-issues.json'
+            rows = json.loads(path.read_text())
+            row = next(row for row in rows if row['state'] == 'OPEN')
+            row['body'] = re.sub(r'\n## Guide\n.*', '', row['body'] or '', flags=re.S)
+            self.assertNotIn('## Guide', row['body'])
+            path.write_text(json.dumps(rows))
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(f'H{row["number"]}', result.stderr)
+            self.assertIn('unassigned', result.stderr)
+
+    def test_hostile_guide_text_renders_literally_in_the_build(self):
+        import guide_section as GD
+        hostile = '<img src=x onerror=alert(1)> & "q" [[not-a-link]]'
+        with tempfile.TemporaryDirectory(prefix='guide-hostile-') as directory:
+            candidate = copy_guide(directory)
+            path = candidate / 'work/backlogs/agent-device-hub-issues.json'
+            rows = json.loads(path.read_text())
+            row = next(row for row in rows if row['state'] == 'OPEN')
+            state = GD.read(row['body'])
+            new, outcome = GD.upsert(row['body'], dict(topic=state['topic'], note=hostile,
+                                                        highlight=dict(kind='decision', reason=hostile)))
+            self.assertEqual(outcome, 'updated')
+            row['body'] = new
+            path.write_text(json.dumps(rows))
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            self.assertNotIn(hostile, document, 'Hostile text must be escaped, not passed through raw')
+            self.assertIn('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot;', document)
+
+    def test_each_highlight_kind_renders_in_its_opening_list(self):
+        import guide_section as GD
+        import guide_status as GS
+        with tempfile.TemporaryDirectory(prefix='guide-highlight-') as directory:
+            candidate = copy_guide(directory)
+            issues = {}
+            for prefix, repo in (('H', 'agent-device-hub'), ('N', 'codex-nanoleaf'), ('P', 'divoom-app-upgrade')):
+                for r in json.loads((candidate / f'work/backlogs/{repo}-issues.json').read_text()):
+                    issues[f'{prefix}{r["number"]}'] = r
+            dependencies = GS.load_dependencies(candidate / 'work/backlogs', issues)
+            path = candidate / 'work/backlogs/agent-device-hub-issues.json'
+            rows = json.loads(path.read_text())
+            targets = {'next step': None, 'decision': None, 'later': None}
+            for row in rows:
+                key = f'H{row["number"]}'
+                if row['state'] != 'OPEN' or GS.scheduling_state(row, dependencies.get(key, [])) != 'candidate':
+                    continue
+                state = GD.read(row['body'])
+                if state['state'] == 'assigned' and not state['highlight']:
+                    for kind in targets:
+                        if targets[kind] is None:
+                            targets[kind] = row
+                            break
+            self.assertTrue(all(targets.values()), 'Need three unhighlighted open candidate stories as fixtures')
+            for kind, row in targets.items():
+                new, outcome = GD.upsert(row['body'], dict(topic=GD.read(row['body'])['topic'],
+                                                           highlight=dict(kind=kind, reason=f'Fixture {kind} reason.')))
+                self.assertEqual(outcome, 'updated')
+                row['body'] = new
+            path.write_text(json.dumps(rows))
+            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            sections = {'next step': 'next-steps', 'decision': 'work-blockers', 'later': 'later-work'}
+            for kind, row in targets.items():
+                section = document.split(f'id="{sections[kind]}"', 1)[1].split('</section>', 1)[0]
+                self.assertIn(f'data-key="H{row["number"]}"', section, kind)
+                self.assertIn(f'Fixture {kind} reason.', section)
+
+
+class GuideSections(unittest.TestCase):
+    def setUp(self):
+        import guide_section
+        self.G = guide_section
+        self.topics = frozenset({'work-guide', 'shared-codex'})
+
+    def test_each_key_parses_from_a_fixture(self):
+        body = '## Outcome\n\nA fixture story.\n'
+        new, outcome = self.G.upsert(body, dict(topic='work-guide', note='A one-line note with [[H1]] link.',
+                                                workaround='Restart the service.',
+                                                highlight=dict(kind='next step', reason='Do this next.')),
+                                     topics=self.topics)
+        self.assertEqual(outcome, 'created')
+        self.assertTrue(new.startswith(body.rstrip('\n')), 'Other story text is byte-identical')
+        result = self.G.read(new, self.topics)
+        self.assertEqual(result, dict(state='assigned', topic='work-guide', note='A one-line note with [[H1]] link.',
+                                      workaround='Restart the service.', highlight=dict(kind='next step', reason='Do this next.')))
+        # Idempotent: rerunning the same entry writes nothing.
+        again, outcome = self.G.upsert(new, dict(topic='work-guide', note='A one-line note with [[H1]] link.',
+                                                 workaround='Restart the service.',
+                                                 highlight=dict(kind='next step', reason='Do this next.')), topics=self.topics)
+        self.assertEqual((again, outcome), (new, 'unchanged'))
+
+    def test_missing_or_unknown_topic_is_invalid(self):
+        self.assertEqual(self.G.read('## Guide\n\n**Note:** hi\n', self.topics)['state'], 'invalid')
+        self.assertEqual(self.G.read('## Guide\n\n**Topic:** not-a-real-topic\n', self.topics)['state'], 'invalid')
+        with self.assertRaises(ValueError):
+            self.G.upsert('## Outcome\n\nFixture.\n', dict(topic='not-a-real-topic'), topics=self.topics)
+
+    def test_story_without_a_section_is_unassigned(self):
+        result = self.G.read('## Outcome\n\nNo Guide section here.\n', self.topics)
+        self.assertEqual(result, dict(state='unassigned'))
+
+    def test_bad_highlight_syntax_is_invalid(self):
+        for bad in ('whatever', 'next step', 'nextstep, reason', 'next step reason'):
+            with self.subTest(bad=bad):
+                result = self.G.read(f'## Guide\n\n**Topic:** work-guide\n**Highlight:** {bad}\n', self.topics)
+                self.assertEqual(result['state'], 'invalid')
+
+    def test_hostile_text_is_literal(self):
+        hostile = '<img src=x onerror=alert(1)> & "q" [[H1]] | `tick`'
+        new, _ = self.G.upsert('## Outcome\n\nFixture.\n', dict(topic='work-guide', note=hostile, workaround=hostile,
+                                                                 highlight=dict(kind='decision', reason=hostile)), topics=self.topics)
+        result = self.G.read(new, self.topics)
+        self.assertEqual(result['note'], hostile)
+        self.assertEqual(result['workaround'], hostile)
+        self.assertEqual(result['highlight']['reason'], hostile)
+        # The section itself carries the raw text; HTML embedding escapes it (see build_guide.py).
+        self.assertIn(hostile, new)
+
+    def test_only_one_section_is_allowed(self):
+        body = '## Guide\n\n**Topic:** work-guide\n\n## Guide\n\n**Topic:** shared-codex\n'
+        self.assertEqual(self.G.read(body, self.topics)['state'], 'invalid')
+
+    def test_retired_inputs_are_gone(self):
+        root = Path(__file__).resolve().parent
+        self.assertFalse((root / 'guide_details.py').exists())
+        self.assertFalse((root / 'backlogs' / 'guide-coverage.json').exists())
+        import guide_paths
+        for name in ('DETAILS', 'NEXT_STEPS', 'DECISIONS', 'OWNER_LATER', 'WORKAROUNDS'):
+            self.assertFalse(hasattr(guide_paths, name), f'guide_paths.{name} should be retired')
 
 
 def recommendation_entry(session='Orchestrate', cheaper=True, **changes):
