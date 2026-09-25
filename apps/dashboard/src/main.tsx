@@ -201,6 +201,8 @@ function NanoMappings({integration:s,disabled,api,path,refresh,reread}:{integrat
 }
 type PlaybackRead={snapshot?:PlaybackSnapshot;error?:string;received?:number};
 const playbackPoll=2000;
+// Results name no device check: the view itself shows the receiver's next report.
+const playbackOptions={device:false,unreadable:'B.U.N.N.Y. couldn’t read the playback source'};
 /** Text-only now playing for the one granted source. It polls the hub's snapshot at the source's read cadence. Buttons appear only for actions the source declares now, for a control-scoped caller while the source is available; each press reads again and sends one command bound to this source. */
 function PlaybackView({api,sourceId,control,now}:{api:Api;sourceId:string;control:boolean;now:number}){
  const heading=useId();
@@ -220,7 +222,7 @@ function PlaybackView({api,sourceId,control,now}:{api:Api;sourceId:string;contro
   void refresh.current();const timer=setInterval(()=>void refresh.current(),playbackPoll);
   return ()=>{abort.abort();clearInterval(timer);};
  },[api,sourceId]);
- const command=useCommandLifecycle(read.snapshot,{device:false});
+ const command=useCommandLifecycle(read.snapshot,playbackOptions);
  const {snapshot,error}=read,playback=snapshot?.playback??null,available=playbackControls(error?undefined:snapshot,control);
  const labels:Record<PlaybackAction,string>={play:'Play',pause:'Pause',next:'Next',previous:'Previous'};
  const send=(request:unknown)=>api.request<PlaybackReceipt>('/api/playback/v1/commands',request).then(playbackEvidence,(e:unknown)=>{if(e instanceof ApiError&&isPlaybackReceipt(e.detail))return playbackEvidence(e.detail);throw e;});

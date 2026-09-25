@@ -554,9 +554,11 @@ covers the launcher session's playback grant, the context field and the paused
 Sony declaration. `mcp.test.mjs` covers the source-bound playback tools:
 discovery by scope and grant, `hub_devices`, duplicate request IDs, typed
 rejections, uncertain results, credential changes and a staged hub. The existing
-Hub, MCP and Dashboard jobs run all of them. None contacts a receiver; the
-2026-09-25 paused-state live check and installed acceptance are recorded on the
-issue. Human UI approval of the candidate is recorded in its PR.
+Hub, MCP and Dashboard jobs run all of them. None contacts a receiver. The
+owner's 2026-09-25 paused-state live check is recorded in the issue's refined
+acceptance and in PR #275. Installed browser and Codex MCP acceptance come after
+merge, need separate authorization and are recorded on the issue. Human UI
+approval of the candidate is required before merge and is recorded in the PR.
 
 ## Shared monitoring setup checks
 
