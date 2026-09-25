@@ -9,9 +9,12 @@ const OPENING = ['ngw-draw', 'ngw-bracket', 'ngw-fade', 'ngw-trace'], STREAK = '
 // that decoration must never cover. allowRequest: approved remote reads. shot(page, name): saves a screenshot.
 async function check(browser, {url, decorated, controls, allowRequest = () => false, shot}) {
   const contexts = [];
-  const open = async options => {
+  const open = async (options, seed = {}) => {
     const context = await browser.newContext({viewport: {width: 1440, height: 1000}, colorScheme: 'dark', ...options});
     contexts.push(context);
+    // A seeded choice reaches the head script from inside the same document, so the check never
+    // depends on Chromium keeping file:// storage across a reload, which a hosted runner did not do.
+    if (Object.keys(seed).length) await context.addInitScript(entries => { for (const [key, value] of entries) localStorage.setItem(key, value); }, Object.entries(seed));
     const page = await context.newPage(), requests = [], errors = [];
     page.on('request', request => { if (/^https?:/.test(request.url())) requests.push(request.url()); });
     page.on('pageerror', error => errors.push(error.message));
@@ -25,23 +28,9 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     themePressed: document.querySelector('#theme-toggle').getAttribute('aria-pressed'), motionPressed: document.querySelector('#motion-toggle').getAttribute('aria-pressed'),
     background: getComputedStyle(document.body).backgroundColor}), [THEME_KEY, MOTION_KEY]);
   const running = page => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName).sort());
-  // Chromium commits localStorage to its storage service asynchronously, so a reload right after a toggle can read the
-  // previous value on a busy runner. Reload until a fresh document reads the write and applied it (at most 20 tries,
-  // 100 ms apart); the assertions after each call still check the full state.
-  const reloadUntilStored = async (page, key, attribute, value) => {
-    for (let attempt = 1; ; attempt++) {
-      await page.reload();
-      const settled = await page.evaluate(([key, attribute, value]) => localStorage.getItem(key) === value && (document.documentElement.dataset[attribute] ?? null) === value, [key, attribute, value]);
-      if (settled) return;
-      // Diagnostics for a hosted runner: what the fresh document actually sees on each retry.
-      console.log(JSON.stringify({retry: attempt, key, value, url: page.url(), storage: await page.evaluate(() => Object.entries(localStorage)), attribute: await page.evaluate(a => document.documentElement.dataset[a] ?? null, attribute)}));
-      if (attempt >= 20) return;
-      await page.waitForTimeout(100);
-    }
-  };
   try {
     // Motion: the opening and streak run by default, Pause stops every decorative animation and
-    // persists, Resume restarts only the streak, and a fresh load replays the opening.
+    // stores that choice, Resume restarts only the streak, and a fresh load replays the opening.
     const {page, requests, errors} = await open({reducedMotion: 'no-preference'});
     let now = await state(page);
     assert.equal(now.skin, SKIN, 'The page names its skin');
@@ -54,19 +43,21 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     now = await state(page);
     assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['paused', 'true', 'paused'], 'Pause sets and stores the paused state');
     assert.deepEqual(await running(page), [], 'Pause stops every decorative animation');
-    await reloadUntilStored(page, MOTION_KEY, 'motion', 'paused');
-    now = await state(page);
+    const paused = await open({reducedMotion: 'no-preference'}, {[MOTION_KEY]: 'paused'});
+    now = await state(paused.page);
     assert.deepEqual([now.motion, now.motionPressed], ['paused', 'true'], 'A stored pause applies before first paint');
-    assert.deepEqual(await running(page), [], 'A paused page starts without motion');
-    await page.locator('#motion-toggle').click();
-    now = await state(page);
+    assert.deepEqual(await running(paused.page), [], 'A paused page starts without motion');
+    await paused.page.locator('#motion-toggle').click();
+    now = await state(paused.page);
     assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['running', 'false', null], 'Resume clears the stored pause');
-    assert.deepEqual(await running(page), [STREAK], 'Resume restarts the streak without replaying the opening');
-    await reloadUntilStored(page, MOTION_KEY, 'motion', null);
+    assert.deepEqual(await running(paused.page), [STREAK], 'Resume restarts the streak without replaying the opening');
+    const fresh = await open({reducedMotion: 'no-preference'});
+    now = await state(fresh.page);
+    assert.deepEqual([now.motion, now.storedMotion], [null, null], 'Only the paused state is stored');
+    assert((await running(fresh.page)).some(name => OPENING.includes(name)), 'A fresh load replays the opening');
+    // Theme: the toggle switches and stores the choice, a stored choice applies before first paint
+    // over the system preference, and without a stored or scripted choice CSS follows the system.
     now = await state(page);
-    assert.equal(now.motion, null, 'Only the paused state is stored');
-    assert((await running(page)).some(name => OPENING.includes(name)), 'A fresh load replays the opening');
-    // Theme: the toggle switches and persists; without a stored or scripted choice, CSS follows the system.
     assert.deepEqual([now.theme, now.themePressed, now.storedTheme], ['dark', 'false', null], 'A dark system preference starts dark');
     const dark = now.background;
     await page.locator('#theme-toggle').click();
@@ -74,18 +65,24 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     assert.deepEqual([now.theme, now.themePressed, now.storedTheme], ['light', 'true', 'light'], 'The theme toggle switches to light and stores it');
     const light = now.background;
     assert.notEqual(light, dark, 'Light mode changes the surface');
-    await reloadUntilStored(page, THEME_KEY, 'theme', 'light');
-    now = await state(page);
-    assert.deepEqual([now.theme, now.themePressed, now.storedTheme], ['light', 'true', 'light'], 'The theme persists across reload');
     await page.locator('#theme-toggle').click();
-    await reloadUntilStored(page, THEME_KEY, 'theme', 'dark');
     now = await state(page);
-    assert.deepEqual([now.theme, now.storedTheme, now.background], ['dark', 'dark', dark], 'Dark mode persists across reload');
+    assert.deepEqual([now.theme, now.themePressed, now.storedTheme, now.background], ['dark', 'false', 'dark', dark], 'The theme toggle switches back to dark and stores it');
+    const storedLight = await open({reducedMotion: 'no-preference'}, {[THEME_KEY]: 'light'});
+    now = await state(storedLight.page);
+    assert.deepEqual([now.theme, now.themePressed, now.background], ['light', 'true', light], 'A stored light theme applies before first paint over a dark system preference');
+    const storedDark = await open({reducedMotion: 'no-preference', colorScheme: 'light'}, {[THEME_KEY]: 'dark'});
+    now = await state(storedDark.page);
+    assert.deepEqual([now.theme, now.themePressed, now.background], ['dark', 'false', dark], 'A stored dark theme applies before first paint over a light system preference');
+    const system = await open({reducedMotion: 'no-preference', colorScheme: 'light'});
+    now = await state(system.page);
+    assert.deepEqual([now.theme, now.storedTheme, now.background], ['light', null, light], 'Without a stored choice the head script follows a light system preference');
     await page.evaluate(() => { delete document.documentElement.dataset.theme; });
     await page.emulateMedia({colorScheme: 'light'});
     assert.equal((await state(page)).background, light, 'Without a theme attribute, CSS follows a light system preference');
     await page.emulateMedia({colorScheme: 'dark'});
     assert.equal((await state(page)).background, dark, 'Without a theme attribute, CSS follows a dark system preference');
+    for (const extra of [paused, fresh, storedLight, storedDark, system]) { assert.deepEqual(extra.errors, []); assert(extra.requests.every(allowRequest), 'Seeded pages make only approved requests'); }
     // Print shows no decoration, grid or glow.
     await page.emulateMedia({media: 'print'});
     const printed = await page.evaluate(hosts => ({grid: getComputedStyle(document.body).backgroundImage,
@@ -137,10 +134,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     return {skin: SKIN, themeToggleAndPersistence: 'passed', systemPreferenceFallback: 'passed', pauseAndResume: 'passed',
             reducedMotion: 'passed', decorationOutOfTheWay: 'passed', printWithoutDecoration: 'passed', layouts};
   } finally {
-    // The contexts stay open until the caller closes the browser. Chromium keeps file:// storage in
-    // one shared area, and closing a context can purge it while a later context on the same browser
-    // is still writing, which lost a stored theme on a hosted runner.
-    void contexts;
+    for (const context of contexts) await context.close();
   }
 }
 
