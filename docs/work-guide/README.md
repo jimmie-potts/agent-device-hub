@@ -221,12 +221,14 @@ fingerprint this repository puts in the policy's fingerprint slot.
   and the missing input. That form carries no answer, table or prompts.
 - A story without a section shows "Not yet assessed".
 - The `**Assessed:**` line ends with a `fingerprint:` code span holding the first
-  12 hex characters of the SHA-256 of the story body with this section removed, after
-  normalizing line endings, trailing spaces and blank-line runs. The build
-  recomputes it from the saved body. A different value shows "Needs reassessment
-  (story text changed after <date>)". Labels, state and dependencies are not in
-  the body, so a status refresh neither confirms nor stales a recommendation.
-  Prompt blocks sit inside the section, so editing a prompt does not stale it.
+  12 hex characters of the SHA-256 of the story body with this section and the
+  `## Guide` section removed, after normalizing line endings, trailing spaces and
+  blank-line runs. The build recomputes it from the saved body. A different value
+  shows "Needs reassessment (story text changed after <date>)". Labels, state and
+  dependencies are not in the body, so a status refresh neither confirms nor
+  stales a recommendation. Prompt blocks sit inside the section, so editing a
+  prompt does not stale it. The Guide section is placement metadata, so adding,
+  moving or rewording it does not stale it either; keep scope out of its notes.
 
 Topic rows and opening cards show one text label per story, session type first,
 for example "Start One-shot · Sonnet medium / Luna medium". Live GitHub reads keep

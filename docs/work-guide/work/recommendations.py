@@ -20,6 +20,7 @@ from story_sections import (  # noqa: F401  re-exported for callers and tests
     blocks as _story_blocks, without_section as _without_section,
     read_issue, write_issue, apply as _story_apply,
 )
+from guide_section import HEADING as GUIDE_HEADING
 
 HEADING = 'Execution recommendation'
 DIMENSIONS = ('Complexity', 'Uncertainty', 'Impact')
@@ -62,8 +63,9 @@ def without_section(body):
 
 
 def fingerprint(body):
-    """Short SHA-256 of the normalized story body with this section removed."""
-    return hashlib.sha256(normalize(without_section(body)).encode()).hexdigest()[:12]
+    """Short SHA-256 of the normalized story body with this section and the
+    Guide section removed; guide placement is not story scope."""
+    return hashlib.sha256(normalize(_without_section(without_section(body), GUIDE_HEADING)).encode()).hexdigest()[:12]
 
 
 # --- Parsing ----------------------------------------------------------------

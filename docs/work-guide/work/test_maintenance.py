@@ -598,6 +598,26 @@ class Recommendations(unittest.TestCase):
         self.assertEqual(self.R.read(hand_edit)['state'], 'recommended')
         self.assertIn('please', self.R.read(hand_edit)['prompts']['cheaper']['claude'])
 
+    def test_guide_placement_does_not_stale_a_recommendation(self):
+        import guide_section as GD
+        topics = {'work-guide', 'devices'}
+        body = self.written()
+        # A Guide section added or edited after assessment is placement metadata, not scope.
+        placed = GD.upsert(body, dict(topic='work-guide', note='Read this first.'), topics=topics)[0]
+        moved = GD.upsert(placed, dict(topic='devices', note='Now read this elsewhere.'), topics=topics)[0]
+        ahead = body.replace('## Execution recommendation', '## Guide\n\n**Topic:** devices\n\n## Execution recommendation')
+        for name, text in (('added', placed), ('edited', moved), ('ahead of the section', ahead)):
+            with self.subTest(case=name):
+                result = self.R.read(text)
+                self.assertEqual((result['state'], result['date']), ('recommended', '2026-09-24'))
+        # A scope edit still stales it, with or without a Guide section.
+        self.assertEqual(self.R.read(moved.replace('A fixture story.', 'A changed story.'))['state'], 'stale')
+        self.assertEqual(self.R.read(moved.replace('**Complexity: medium.**', '**Complexity: high.**'))['state'], 'stale')
+        # A revised assessment after a placement change keeps the recorded date.
+        kept, outcome = self.R.upsert(placed, recommendation_entry(why='revised reasons.', assessed=dict(date='2026-10-01', policy='agent-skills@3e009e6', evidence='fixture evidence')), '2026-10-05')
+        self.assertEqual(outcome, 'updated')
+        self.assertEqual((self.R.read(kept)['state'], self.R.read(kept)['date']), ('recommended', '2026-09-24'))
+
     def test_provisional_availability_and_unchanged_ratings(self):
         entry = recommendation_entry()
         entry['hosts']['claude']['availability'] = 'Verified: fixture host evidence'
