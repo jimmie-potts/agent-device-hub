@@ -1,9 +1,11 @@
 // Browser checks for the skin contract shared by the work guide and the B.U.N.N.Y. atlas:
-// theme and motion controls, decoration that never gets in the way, and both themes
+// the theme control, one-shot motion, decoration that never gets in the way, and both themes
 // at phone and desktop widths. Called by each page's own browser check.
 const assert = require('assert/strict');
-const SKIN = 'neon-geometry-wars', THEME_KEY = 'bunny-design-theme', MOTION_KEY = 'bunny-design-motion';
-const OPENING = ['ngw-draw', 'ngw-bracket', 'ngw-fade', 'ngw-trace'], STREAK = 'ngw-streak';
+const SKIN = 'neon-geometry-wars', THEME_KEY = 'bunny-design-theme', RETIRED_MOTION_KEY = 'bunny-design-motion';
+const OPENING = ['ngw-draw', 'ngw-bracket', 'ngw-fade', 'ngw-trace'], CIRCUIT = 'ngw-circuit';
+// WCAG 2.2.2: motion that starts on load and ends within 5 s needs no pause control.
+const MOTION_LIMIT_MS = 5000;
 
 // url: file URL of the page. decorated: hosts of decorative ::before/::after. controls: selectors
 // that decoration must never cover. allowRequest: approved remote reads. shot(page, name): saves a screenshot.
@@ -22,39 +24,37 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     await page.goto(url);
     return {page, requests, errors};
   };
-  const state = page => page.evaluate(([themeKey, motionKey]) => ({
+  const state = page => page.evaluate(([themeKey, retiredKey]) => ({
     skin: document.documentElement.dataset.skin, theme: document.documentElement.dataset.theme ?? null, motion: document.documentElement.dataset.motion ?? null,
-    storedTheme: localStorage.getItem(themeKey), storedMotion: localStorage.getItem(motionKey),
-    themePressed: document.querySelector('#theme-toggle').getAttribute('aria-pressed'), motionPressed: document.querySelector('#motion-toggle').getAttribute('aria-pressed'),
-    background: getComputedStyle(document.body).backgroundColor}), [THEME_KEY, MOTION_KEY]);
+    storedTheme: localStorage.getItem(themeKey), storedMotion: localStorage.getItem(retiredKey),
+    themePressed: document.querySelector('#theme-toggle').getAttribute('aria-pressed'), motionControl: Boolean(document.querySelector('#motion-toggle')),
+    background: getComputedStyle(document.body).backgroundColor}), [THEME_KEY, RETIRED_MOTION_KEY]);
   const running = page => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').map(a => a.animationName).sort());
   try {
-    // Motion: the opening and streak run by default, Pause stops every decorative animation and
-    // stores that choice, Resume restarts only the streak, and a fresh load replays the opening.
+    // Motion: every decorative animation plays once on load and ends within 5 s, so the page
+    // offers no pause control. The circuit trace runs down the background and rests invisible.
     const {page, requests, errors} = await open({reducedMotion: 'no-preference'});
     let now = await state(page);
     assert.equal(now.skin, SKIN, 'The page names its skin');
-    assert.equal(now.motion, null); assert.equal(now.motionPressed, 'false');
-    let names = await running(page);
-    assert(names.includes(STREAK) && OPENING.some(name => names.includes(name)), `Opening and streak run on a fresh load: ${names}`);
-    const targets = await page.evaluate(() => document.getAnimations().map(a => ({pseudo: a.effect.pseudoElement || '', artwork: Boolean(a.effect.target.closest('.hero-art')), rule: a.effect.target.matches('.sidebar-rule')})));
-    assert(targets.every(t => t.pseudo || t.artwork || t.rule), 'Animations run only on decorative pseudo-elements, rules and artwork, never on text, badges or edges');
-    await page.locator('#motion-toggle').click();
-    now = await state(page);
-    assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['paused', 'true', 'paused'], 'Pause sets and stores the paused state');
-    assert.deepEqual(await running(page), [], 'Pause stops every decorative animation');
-    const paused = await open({reducedMotion: 'no-preference'}, {[MOTION_KEY]: 'paused'});
-    now = await state(paused.page);
-    assert.deepEqual([now.motion, now.motionPressed], ['paused', 'true'], 'A stored pause applies before first paint');
-    assert.deepEqual(await running(paused.page), [], 'A paused page starts without motion');
-    await paused.page.locator('#motion-toggle').click();
-    now = await state(paused.page);
-    assert.deepEqual([now.motion, now.motionPressed, now.storedMotion], ['running', 'false', null], 'Resume clears the stored pause');
-    assert.deepEqual(await running(paused.page), [STREAK], 'Resume restarts the streak without replaying the opening');
-    const fresh = await open({reducedMotion: 'no-preference'});
-    now = await state(fresh.page);
-    assert.deepEqual([now.motion, now.storedMotion], [null, null], 'Only the paused state is stored');
-    assert((await running(fresh.page)).some(name => OPENING.includes(name)), 'A fresh load replays the opening');
+    assert.deepEqual([now.motion, now.motionControl], [null, false], 'No pause control and no motion state');
+    const names = await running(page);
+    assert(names.includes(CIRCUIT) && OPENING.some(name => names.includes(name)), `Opening and circuit trace run on a fresh load: ${names}`);
+    const animations = await page.evaluate(() => document.getAnimations().map(a => {
+      const t = a.effect.getComputedTiming(), target = a.effect.target;
+      return {name: a.animationName, iterations: t.iterations, end: t.endTime, pseudo: a.effect.pseudoElement || '',
+              body: target === document.body, artwork: Boolean(target.closest('.hero-art')), rule: target.matches('.sidebar-rule')};
+    }));
+    assert(animations.every(a => a.pseudo || a.artwork || a.rule), 'Animations run only on decorative pseudo-elements, rules and artwork, never on text, badges or edges');
+    const late = animations.filter(a => !Number.isFinite(a.iterations) || !(a.end <= MOTION_LIMIT_MS));
+    assert.deepEqual(late, [], `Every animation is finite and ends within ${MOTION_LIMIT_MS} ms`);
+    assert(animations.some(a => a.name === CIRCUIT && a.body && a.pseudo === '::after'), 'The circuit trace runs on the body background layer');
+    await page.evaluate(() => document.getAnimations().forEach(a => a.finish()));
+    assert.deepEqual(await running(page), [], 'Nothing runs after the opening and the trace');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body, '::after').opacity), '0', 'The circuit layer rests invisible');
+    const retired = await open({reducedMotion: 'no-preference'}, {[RETIRED_MOTION_KEY]: 'paused'});
+    now = await state(retired.page);
+    assert.deepEqual([now.motion, now.storedMotion], [null, null], 'A pause stored by the retired control is removed and ignored');
+    assert((await running(retired.page)).includes(CIRCUIT), 'The trace plays despite a retired stored pause');
     // Theme: the toggle switches and stores the choice, a stored choice applies before first paint
     // over the system preference, and without a stored or scripted choice CSS follows the system.
     now = await state(page);
@@ -82,7 +82,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     assert.equal((await state(page)).background, light, 'Without a theme attribute, CSS follows a light system preference');
     await page.emulateMedia({colorScheme: 'dark'});
     assert.equal((await state(page)).background, dark, 'Without a theme attribute, CSS follows a dark system preference');
-    for (const extra of [paused, fresh, storedLight, storedDark, system]) { assert.deepEqual(extra.errors, []); assert(extra.requests.every(allowRequest), 'Seeded pages make only approved requests'); }
+    for (const extra of [retired, storedLight, storedDark, system]) { assert.deepEqual(extra.errors, []); assert(extra.requests.every(allowRequest), 'Seeded pages make only approved requests'); }
     // Print shows no decoration, grid or glow.
     await page.emulateMedia({media: 'print'});
     const printed = await page.evaluate(hosts => ({grid: getComputedStyle(document.body).backgroundImage,
@@ -131,11 +131,11 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
       await reduced.page.setViewportSize({width: 1440, height: 1000});
     }
     assert.deepEqual(reduced.errors, []);
-    return {skin: SKIN, themeToggleAndPersistence: 'passed', systemPreferenceFallback: 'passed', pauseAndResume: 'passed',
+    return {skin: SKIN, themeToggleAndPersistence: 'passed', systemPreferenceFallback: 'passed', oneShotMotion: 'passed',
             reducedMotion: 'passed', decorationOutOfTheWay: 'passed', printWithoutDecoration: 'passed', layouts};
   } finally {
     for (const context of contexts) await context.close();
   }
 }
 
-module.exports = {check, SKIN, THEME_KEY, MOTION_KEY};
+module.exports = {check, SKIN, THEME_KEY};

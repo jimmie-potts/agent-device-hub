@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skins'))
-import skin as SKIN  # noqa: E402  shared token files, theme and motion controls
+import skin as SKIN  # noqa: E402  shared token files and theme control
 import architecture_diagrams as AD  # noqa: E402  diagram definitions and rendered-file layout
 import guide_status as GS
 import recommendations as REC
@@ -673,7 +673,7 @@ document = '''<!doctype html>
 <div class="sidebar-rule"></div><div class="nav-title eyebrow">Explore the work</div><nav aria-label="@@GUIDE_COUNT@@ work guides, timeline and architecture">''' + ''.join(nav) + '''<div class="nav-rule" role="presentation"></div><a href="#timeline" data-section="timeline"><span class="nav-number">T</span><span>Timeline map</span><span class="nav-count" aria-hidden="true">map</span></a><a href="#architecture" data-section="architecture"><span class="nav-number">A</span><span>Architecture</span><span class="nav-count">''' + f'{len(AD.DIAGRAMS):02}' + '''</span></a><a href="#local-acceptance" data-section="local-acceptance"><span class="nav-number">✓</span><span>Completed milestones</span></a></nav>
 <a class="atlas-link" href="../../system-design/index.html">Explore the B.U.N.N.Y. system design atlas ↗</a>
 <div class="sidebar-foot"><span><i class="snapshot-dot" aria-hidden="true"></i>BACKLOG SNAPSHOT</span><span>@@DATE@@ / @@PROJECTS_PADDED@@ PROJECTS</span><span>Issue links open task briefs</span></div></aside>
-<main id="main"><header class="topbar"><div class="breadcrumb"><span>PLANNING</span> / CROSS-PROJECT GUIDE</div><div class="topbar-tools"><time class="date" datetime="@@ISO@@">@@DATE@@</time><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button><button id="motion-toggle" type="button" aria-pressed="false">Pause motion</button></div></header>
+<main id="main"><header class="topbar"><div class="breadcrumb"><span>PLANNING</span> / CROSS-PROJECT GUIDE</div><div class="topbar-tools"><time class="date" datetime="@@ISO@@">@@DATE@@</time><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button></div></header>
 <section class="hero" aria-labelledby="document-title"><div class="eyebrow">One shared system · @@GUIDE_COUNT@@ work guides</div><h1 id="document-title">Agent device<br><span>work guides.</span></h1>
 <p class="hero-copy">See what is complete, what needs attention, and which useful next steps are available across the hub, Nanoleaf and Pixoo.</p>
 <svg class="hero-art" viewBox="0 0 250 220" fill="none" aria-hidden="true" focusable="false"><g class="art-halo" stroke-width="10"><path d="m125 20 70 40v80l-70 40-70-40V60Z"/><path d="m55 60 70 40 70-40m-70 40v80"/></g><g class="art-line" stroke-width="1.4"><path pathLength="1" d="m125 20 70 40v80l-70 40-70-40V60Z"/><path pathLength="1" d="m55 60 70 40 70-40m-70 40v80"/><path pathLength="1" d="M125 20v-9M195 140l20 12M55 140l-20 12"/></g><path class="art-pending" d="m125 43 50 29v56l-50 29-50-29V72Z"/><g class="art-node"><circle cx="125" cy="20" r="3"/><circle cx="195" cy="140" r="3"/><circle cx="55" cy="140" r="3"/><circle cx="125" cy="100" r="4"/></g><path class="art-base" d="M23 191h60m23 0h73m10 0h33M23 198h25m8 0h111"/></svg>
