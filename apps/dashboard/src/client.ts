@@ -113,7 +113,7 @@ const unknown=(code:string)=>`Result unknown: this may have reached the device (
 export type ResultMessage={message:string;locked:boolean;settled:Settled;code?:string};
 /** sameMode marks a command that sends the active mode again; only then does a cancel with no code and no effects mean nothing needed reapplying. */
 export function resultMessage(receipt:ReceiptEvidence|undefined,{device=true,sameMode=false}:{device?:boolean;sameMode?:boolean}={}):ResultMessage{
- const check=device?' BUNNY can’t see the device, so check it to confirm.':'';
+ const check=device?' B.U.N.N.Y. can’t see the device, so check it to confirm.':'';
  const outcome=receipt?.outcome,code=receipt?.failure?.code,named=code?{code}:{};
  const accepted=(message:string):ResultMessage=>({message,locked:false,settled:'accepted'}),locked=(message:string):ResultMessage=>({message,locked:true,settled:'locked',...named});
  if(outcome===undefined||outcome==='applied')return accepted('Saved.'+check);

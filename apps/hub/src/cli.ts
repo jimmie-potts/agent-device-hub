@@ -32,7 +32,7 @@ try {
     const command=process.env.WSL_DISTRO_NAME?'cmd.exe':'xdg-open';
     const args=process.env.WSL_DISTRO_NAME?['/c','start','',url]:[url];
     await promisify(execFile)(command,args,{timeout:5000,windowsHide:true});
-    process.stdout.write('BUNNY opened in the browser.\n');
+    process.stdout.write('B.U.N.N.Y. opened in the browser.\n');
   } else {
   const hub = await startHub(configuration,process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
   process.stdout.write(JSON.stringify({ready:true,url:hub.url}) + '\n');
