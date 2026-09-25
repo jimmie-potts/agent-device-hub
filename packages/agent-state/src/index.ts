@@ -5,8 +5,9 @@ import {Feeds} from './subscriptions.js';
 import {validateExport} from './validation.js';
 import {identityKey} from './memory-storage.js';
 import {childCounts} from './children.js';
+import {desktop,eligibleStart,guarded,oldEnd,rememberRetirement} from './retirement.js';
 import {LIMITS, type Consumer, type DurableState, type Envelope, type Identity, type Outcome,
-  type Session, type Snapshot, type Storage, type StorageLease, type Commit} from './types.js';
+  type Retirement,type Session, type Snapshot, type Storage, type StorageLease, type Commit} from './types.js';
 export * from './types.js';
 export {MemoryStorage} from './memory-storage.js';
 export {validateSnapshot,validateExport,migrateExport} from './validation.js';
@@ -18,16 +19,35 @@ function freeze<T>(value:T):T {
   if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}
   return value;
 }
-export type Options = {storage:Storage; ownerId:string; consumers:Consumer[]; clock?:()=>number; storageTimeoutMs?:number; importState?:unknown};
+export type Options = {storage:Storage; ownerId:string; consumers:Consumer[]; clock?:()=>number; storageTimeoutMs?:number; importState?:unknown;
+  isArchived?:(identity:Identity,signal:AbortSignal,ancestors:readonly Identity[])=>Promise<boolean>};
 
 export async function createAgentState(options:Options) {
   if(!id(options.ownerId)||!Array.isArray(options.consumers)||options.consumers.length>LIMITS.consumers||
     options.consumers.some(c=>!id(c.id)||typeof c.clearOnNewTurn!=='boolean')||
-    new Set(options.consumers.map(c=>c.id)).size!==options.consumers.length)throw new Error('invalid-options');
+    new Set(options.consumers.map(c=>c.id)).size!==options.consumers.length||
+    options.isArchived!==undefined&&typeof options.isArchived!=='function')throw new Error('invalid-options');
   const timeout=options.storageTimeoutMs??LIMITS.deadlineMs;
   if(!Number.isSafeInteger(timeout)||timeout<1||timeout>LIMITS.deadlineMs)throw new Error('invalid-options');
   const clock=options.clock??Date.now;
   const consumers=structuredClone(options.consumers);
+  let archiveProbe:Promise<boolean>|undefined;
+  async function archived(event:Envelope):Promise<boolean> {
+    if(!options.isArchived||archiveProbe)return false;
+    // Include the missing topmost parent: Desktop archive names identify the
+    // conversation, while delayed child hooks identify an agent within it.
+    const ancestors:Identity[]=[],seen=new Set([identityKey(event.identity)]);
+    let parent=event.parent;
+    while(parent.status==='known'&&!seen.has(identityKey(parent.identity))){
+      seen.add(identityKey(parent.identity));ancestors.push(parent.identity);
+      parent=get(parent.identity)?.parent??{status:'unknown'};
+    }
+    const abort=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
+    const probe=Promise.resolve().then(()=>options.isArchived!(freeze(structuredClone(event.identity)),abort.signal,freeze(structuredClone(ancestors)))).then(value=>value===true,()=>false);
+    archiveProbe=probe;void probe.finally(()=>{if(archiveProbe===probe)archiveProbe=undefined;});
+    try{return await Promise.race([probe,new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),200);})]);}
+    finally{clearTimeout(timer);abort.abort();}
+  }
   let collector:Snapshot['collector']='running',lossCount=0, pending=0;
   let tail:Promise<unknown>=Promise.resolve(),inFlight:Promise<unknown>|null=null;
   let activeAbort:AbortController|null=null;
@@ -53,14 +73,14 @@ export async function createAgentState(options:Options) {
     if(stored===null){
       const at=clock();
       if(!Number.isSafeInteger(at)||at<0)throw new Error('invalid-clock');
-      if(options.importState===undefined)data={formatVersion:'1.0',ownerId:options.ownerId,revision:0,lastCommitAtMs:at,consumers,sessions:[],journal:[]};
+      if(options.importState===undefined)data={formatVersion:'2.0',ownerId:options.ownerId,revision:0,lastCommitAtMs:at,consumers,sessions:[],journal:[],retirements:[]};
       else{const imported=validateExport(options.importState);if(!imported.ok)throw new Error('invalid-import');data=imported.value;}
       if(data.ownerId!==options.ownerId||JSON.stringify(data.consumers)!==JSON.stringify(consumers))throw new Error('incompatible-state');
       data.journal=data.journal.filter(row=>row.atMs>at-LIMITS.journalAgeMs);
       await io(signal=>lease.commit({expectedRevision:null,revision:data.revision,atMs:data.lastCommitAtMs,pruneBeforeMs:at-LIMITS.journalAgeMs,replace:data},signal));
     }else{
       const checked=validateExport(stored);if(!checked.ok)throw new Error('invalid-state');data=checked.value;
-      if(data.formatVersion!=='1.0'||data.ownerId!==options.ownerId||JSON.stringify(data.consumers)!==JSON.stringify(consumers))throw new Error('incompatible-state');
+      if(data.ownerId!==options.ownerId||JSON.stringify(data.consumers)!==JSON.stringify(consumers))throw new Error('incompatible-state');
     }
   }catch{
     // A timed-out write may still settle. Keep its lease until then, including
@@ -84,6 +104,7 @@ export async function createAgentState(options:Options) {
   function scheduleMaintenance(retry=false){
     clearTimeout(maintenanceTimer);
     const due=Math.min(...data.journal.slice(0,1).map(row=>row.atMs+LIMITS.journalAgeMs),
+      ...(data.retirements??[]).slice(0,1).map(item=>item.atMs+LIMITS.sessionAgeMs),
       ...data.sessions.map(session=>session.lastEvidenceAtMs+LIMITS.sessionAgeMs));
     if(collector!=='running'||due===Infinity)return;
     const delay=Math.max(retry?50:1,due-now());
@@ -116,10 +137,11 @@ export async function createAgentState(options:Options) {
   // Retention forgets monitoring state after a day without lifecycle evidence. It is not
   // acknowledgment, readership, success or cancellation, and it records no journal entry.
   const expired=(at:number)=>data.sessions.filter(session=>session.lastEvidenceAtMs<=at-LIMITS.sessionAgeMs);
-  async function replaceSessions(sessions:Session[],at:number):Promise<Outcome> {
+  async function replaceSessions(sessions:Session[],at:number,retirements:Retirement[]=data.retirements??[]):Promise<Outcome> {
     if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
     const revision=data.revision+1,pruneBeforeMs=at-LIMITS.journalAgeMs;
-    const next:DurableState={...data,revision,lastCommitAtMs:at,sessions,
+    const next:DurableState={...data,formatVersion:'2.0',revision,lastCommitAtMs:at,sessions:sessions.map(session=>({...session,generation:session.generation??0})),
+      retirements:retirements.filter(item=>item.atMs>at-LIMITS.sessionAgeMs).slice(-LIMITS.retirements),
       journal:data.journal.filter(row=>row.atMs>pruneBeforeMs).slice(-LIMITS.journalEvents)};
     await io(signal=>lease.commit(freeze(structuredClone({expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs,replace:next})),signal));
     data=next;feeds.publish(revision);scheduleMaintenance();
@@ -127,7 +149,7 @@ export async function createAgentState(options:Options) {
   }
   async function expire():Promise<Outcome|undefined> {
     const at=now(),gone=expired(at);
-    if(!gone.length)return undefined;
+    if(!gone.length&&!data.retirements?.some(item=>item.atMs<=at-LIMITS.sessionAgeMs))return undefined;
     const result=await replaceSessions(data.sessions.filter(session=>!gone.includes(session)),at);
     if(result.ok)for(const session of gone)restarted.delete(identityKey(session.identity));
     return result;
@@ -151,8 +173,14 @@ export async function createAgentState(options:Options) {
   function identify(identity:unknown):identity is Identity {
     return validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'}}).ok;
   }
-  if(expired(now()).length||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)){
-    const result=await queue(maintenance);
+  if(data.formatVersion==='1.0'||expired(now()).length||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)||
+    data.retirements?.some(item=>item.atMs<=now()-LIMITS.sessionAgeMs)){
+    const result=await queue(async()=>{
+      if(data.formatVersion==='1.0'){
+        const migrated=await replaceSessions(data.sessions,now());if(!migrated.ok)return migrated;
+      }
+      return maintenance();
+    });
     if(!result.ok){
       const outstanding=inFlight as Promise<unknown>|null;
       if(outstanding)void outstanding.then(()=>lease.release(),()=>lease.release()).catch(()=>{});
@@ -180,10 +208,35 @@ export async function createAgentState(options:Options) {
         // An observation older than the retention window is not new activity. Compare with the
         // wall clock, not the commit-time floor, so a corrected clock jump cannot strand producers.
         if(event.observedAtMs<=wall()-LIMITS.sessionAgeMs)return {ok:true,revision:data.revision,outcome:'stale'};
+        const retirement=(identity:Identity)=>data.retirements?.find(item=>identityKey(item.identity)===identityKey(identity));
+        if(desktop(event.identity)){
+          const old=retirement(event.identity);
+          if(guarded(event,old)||!previous&&old&&!eligibleStart(event)||
+            !previous&&event.parent.status==='known'&&!get(event.parent.identity)&&retirement(event.parent.identity))
+            return {ok:true,revision:data.revision,outcome:'stale'};
+        }
+        if(previous&&event.event.kind==='runtime.ended'&&desktop(event.identity)){
+          if(oldEnd(event,previous))return {ok:true,revision:data.revision,outcome:'stale'};
+          const removed=new Set([identityKey(event.identity)]);
+          let count=0;
+          while(count!==removed.size){
+            count=removed.size;
+            for(const session of data.sessions)if(session.parent.status==='known'&&removed.has(identityKey(session.parent.identity)))
+              removed.add(identityKey(session.identity));
+          }
+          const at=now(),retirements=(data.retirements??[]).filter(item=>!removed.has(identityKey(item.identity)));
+          for(const session of data.sessions)if(removed.has(identityKey(session.identity)))
+            retirements.push(rememberRetirement(session,retirement(session.identity),at,event));
+          const result=await replaceSessions(data.sessions.filter(session=>!removed.has(identityKey(session.identity))),at,retirements);
+          if(result.ok)for(const key of removed)restarted.delete(key);
+          return result;
+        }
         if(!previous&&data.sessions.length>=LIMITS.sessions){loss();return {ok:false,code:'capacity'};}
+        if(!previous&&desktop(event.identity)&&await archived(event))return {ok:true,revision:data.revision,outcome:'stale'};
         const reduced=reduceSession(previous,event,now(),consumers);
         if(reduced.capacity){loss();return {ok:false,code:'capacity'};}
         if(!reduced.session)return {ok:true,revision:data.revision,outcome:reduced.outcome};
+        if(!previous)reduced.session.generation=data.revision+1;
         const result=await commit(reduced.session,event.event.kind,reduced.outcome==='ambiguous'?'ambiguous':'applied');
         if(result.ok&&reduced.fresh)restarted.delete(identityKey(event.identity));return result;
       });
@@ -225,15 +278,16 @@ export async function createAgentState(options:Options) {
         return commit(next,'attention.resolved','ambiguous',recoveryJournalKey(selected,turnId));
       });
     },
-    snapshot():Snapshot{
+    snapshot(version:'1.0'|'1.1'='1.0'):Snapshot{
+      if(version!=='1.0'&&version!=='1.1')throw new Error('unsupported-version');
       const at=now();
       const sessions:Snapshot['sessions']=data.sessions.map(session=>{
-        const {seen,watermarks,retiredTurns,...visible}=structuredClone(session);
+        const {seen,watermarks,retiredTurns,generation,...visible}=structuredClone(session);
         const age=Math.max(0,at-session.lastEvidenceAtMs),restartUncertain=restarted.has(identityKey(session.identity));
-        return {...visible,observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
+        return {...visible,...(version==='1.1'?{generation:generation??0}:{}),observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
       });
       for(const session of sessions)session.children=childCounts(sessions,session.identity);
-      return freeze({apiVersion:'1.0',revision:data.revision,asOfMs:at,collector,lossCount,sessions});
+      return freeze({apiVersion:version,revision:data.revision,asOfMs:at,collector,lossCount,sessions});
     },
     journal(){const at=now();return freeze(structuredClone(data.journal.filter(row=>row.atMs>at-LIMITS.journalAgeMs).slice(-LIMITS.journalEvents)));},
     maintain(){return queue(maintenance);},

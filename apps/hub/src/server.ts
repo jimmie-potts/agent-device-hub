@@ -10,7 +10,7 @@ import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
 import {startBrowserLaunch} from './browser-launch.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
-import {codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
+import {archivedSession,codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
 import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
 
@@ -85,7 +85,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
   let lease: HubLease | undefined;
   const storage = new HubStorage(options.directory);
-  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,...(options.clock ? {clock:options.clock} : {}),...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
+  const owner = await createAgentState({ownerId:options.ownerId,consumers:options.consumers,
+    ...(codexDesktop?{isArchived:(identity:Identity,signal:AbortSignal,ancestors:readonly Identity[])=>archivedSession(codexDesktop,identity,signal,ancestors)}:{}),
+    ...(options.clock ? {clock:options.clock} : {}),...(imported === undefined ? {} : {importState:imported}),storage:{acquire:async (ownerId,signal) => {
     lease = await storage.acquire(ownerId,signal) as HubLease;
     if (lease.fenced() && !staged) { await lease.release(); throw new Error('owner-quiesced'); }
     if (staged) lease.setFence(true);
@@ -96,7 +98,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
-  const snapshot = () => {const value=owner.snapshot();return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
+  const snapshot = (version:'1.0'|'1.1'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const ledgers = new Map<string,Ledger>();
   const retained: {ledger:Ledger; key:string; replay:Replay}[] = [];
   let replayBytes = 0;
@@ -188,8 +190,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     void result.then(() => {replay.pending = false;},() => {replay.pending = false;});
     return result;
   }
-  const sessions = (principal:Credential, query='', provider?:string) => {
-    const current = snapshot();
+  const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'='1.0') => {
+    const current = snapshot(version);
     return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id)),
       matches:current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query.toLowerCase())).map(s=>s.identity)};
   };
@@ -241,9 +243,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
-          if ([...url.searchParams.keys()].some(k => !['q','provider'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
+          const version=url.searchParams.get('snapshotVersion')??'1.0';
+          if (!['1.0','1.1'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
+              [...url.searchParams.keys()].some(k => !['q','provider','snapshotVersion'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
               (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
-          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined);
+          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1');
           if(url.searchParams.has('q')||url.searchParams.has('provider'))json(res,200,view);
           else {const {matches,...envelope}=view;json(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {

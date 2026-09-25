@@ -16,7 +16,7 @@ type Prepared<T>=T|{blocked:string};
 const blocked=<T extends object>(value:Prepared<T>):value is {blocked:string}=>'blocked' in value;
 type Tone='pending'|Settled;
 const age=(ms:number)=>ms<1000?'less than 1s':ms<60000?`${Math.floor(ms/1000)}s`:`${Math.floor(ms/60000)}m`;
-const key=(s:SessionSnapshot)=>JSON.stringify(s.identity);
+const key=(s:SessionSnapshot)=>JSON.stringify([s.identity,s.generation]);
 const text=(value:unknown):string=>value===undefined||value===null?'Unknown':typeof value==='object'&&'status' in value&&(value as {status:string}).status==='unknown'?'Unknown':typeof value==='object'?JSON.stringify(value):String(value);
 const nano=(value:Nano|Pixoo|undefined):value is Nano=>value?.apiVersion==='nanoleaf.integration/1.0';
 const pixoo=(value:Nano|Pixoo|undefined):value is Pixoo=>value?.apiVersion==='pixoo-integration/1.0';
@@ -242,7 +242,7 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
   }
   // Resolves after a read that started after this call, so a settled form starts again from current values.
   async function refresh():Promise<void>{if(busy){again=true;return new Promise<void>(resolve=>waiters.push(resolve));}busy=true;
-   try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);if(latestMonitor&&latestMonitor.ownerId===next.ownerId&&latestMonitor.snapshot.revision>next.snapshot.revision){setError('stale-snapshot');return;}latestMonitor=next;setMonitor(next);setReceived(Date.now());setError('');}
+   try {const ctx=await api.request<Context>('/api/dashboard/v1/context',undefined,stop.signal);const next=await api.request<Monitor>('/api/monitor/v1/sessions?snapshotVersion=1.1',undefined,stop.signal);if(stop.signal.aborted)return;current=ctx;setContext(ctx);if(latestMonitor&&latestMonitor.ownerId===next.ownerId&&latestMonitor.snapshot.revision>next.snapshot.revision){setError('stale-snapshot');return;}if(next.snapshot.apiVersion!=='1.1'||next.snapshot.sessions.some(s=>typeof s.generation!=='number'||!Number.isSafeInteger(s.generation)||s.generation<0||s.generation>next.snapshot.revision))throw new ApiError('unsupported-snapshot');latestMonitor=next;setMonitor(next);setReceived(Date.now());setError('');}
    catch(e){if(!stop.signal.aborted)setError(e instanceof ApiError?e.code:'unavailable');}finally{busy=false;if(again&&!stop.signal.aborted){again=false;void refresh();}else{const waiting=waiters;waiters=[];waiting.forEach(resolve=>resolve());}}
   }
   refreshRef.current=refresh;deviceRefresh.current=id=>{const c=current?.components.find(c=>c.id===id);return c?refreshDevice(c):Promise.resolve(undefined);};

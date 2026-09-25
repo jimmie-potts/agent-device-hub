@@ -620,3 +620,17 @@ reply correlation, deadlines, bounded retry, replay, cancellation, overlapping
 commands, unsupported capabilities and partial multi-bulb results. Tests validate
 common receipts/snapshots against controller v1 and never open a native socket.
 Installation and physical acceptance remain separate from these source checks.
+
+## Desktop session retirement checks
+
+Hub #218 adds focused cases to the existing `test:agent-state`, `test:hub` and their packaged suites. Run their Python snapshot fixtures as well. The existing CI jobs include these paths; no new device job is needed. Cover atomic tree removal, one revision, released capacity, old ends/events across restart and resume, history bounds, legacy import, failed commits, archive admission with unavailable evidence, default snapshot 1.0 and opt-in 1.1. Existing fake-clock retention tests preserve the 24-hour fallback.
+
+Run the focused Nanoleaf companion checks against its owning service, plus Pixoo/Tidbyt current-snapshot, empty-idle, reconnect and dashboard-removal scenarios. A consumer that retains task-specific state needs snapshot 1.1 generations to detect recreation between reads. Source checks do not establish installed-client timing or visible Line release.
+
+The #218 source acceptance harness uses the existing Pixoo source pin and the Nanoleaf candidate pin in `apps/hub/fixtures/retirement-nanoleaf-source.json`. Prepare those exact sources on disk, install their declared dependencies, and build Pixoo. Then run:
+
+```bash
+node scripts/check-session-retirement.mjs /absolute/pixoo-source /absolute/nanoleaf-source /absolute/retirement-report.json
+```
+
+It supplies actual owner snapshots to both consumers, checks the shared fixture corpus through Nanoleaf, and distinguishes healthy-empty reconnect from unavailable retained state. It launches no device worker. The existing Tidbyt publisher and dashboard browser jobs also exercise Desktop retirement. Keep the standalone harness receipt alongside required CI; it is source evidence, not installed or physical acceptance.
