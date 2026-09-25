@@ -160,7 +160,7 @@ if __name__ == '__main__':
     aliases = {'h':'agent-device-hub', 'n':'codex-nanoleaf', 'p':'divoom-app-upgrade'}
     def open_issue_inventory(repo):
         nodes, cursor, total = [], None, None
-        while True:
+        for _ in range(100):
             after = f', after:"{cursor}"' if cursor else ''
             fields = f'issues(first:100, states:OPEN{after}) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ number blockedBy(first:100) {{ totalCount pageInfo {{ hasNextPage }} nodes {{ number state repository {{ nameWithOwner }} }} }} }} }}'
             query = f'{{ repository(owner:"jimmie-potts",name:"{repo}") {{ {fields} }} }}'
@@ -169,7 +169,10 @@ if __name__ == '__main__':
             inventory = page['data']['repository']['issues']
             total = inventory['totalCount']; nodes.extend(inventory['nodes'])
             if not inventory['pageInfo']['hasNextPage']: break
+            assert inventory['pageInfo']['endCursor'] and inventory['pageInfo']['endCursor'] != cursor, 'Open-issue pagination did not advance'
             cursor = inventory['pageInfo']['endCursor']
+        else:
+            raise RuntimeError('Open-issue pagination did not terminate')
         return {'totalCount': total, 'pageInfo': {'hasNextPage': False}, 'nodes': nodes}
     native = {'data': {key: {'issues': open_issue_inventory(repo)} for key, repo in aliases.items()}}
     for key, repo in aliases.items():
