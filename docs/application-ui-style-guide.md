@@ -1,10 +1,11 @@
 # B.U.N.N.Y. application UI style guide
 
-Status: candidate for the owner's decision under
+Status: accepted. The owner accepted the shared rules (AC2) and the component
+glossary (AC8) on 2026-09-25 on the delivery pull request for
 [Hub #181](https://github.com/jimmie-potts/agent-device-hub/issues/181).
-The observed values below are source facts. The shared rules become binding
-only when the owner accepts the revision that carries them; until then they are
-proposals. Device exceptions stay with their owning repository either way.
+The observed values below are source facts, the shared rules bind every
+B.U.N.N.Y. application page, and device exceptions stay with their owning
+repository.
 
 Scope: the shared B.U.N.N.Y. application (the dashboard in `apps/dashboard`)
 and the reusable UI foundation that future application pages adopt. The
@@ -22,10 +23,10 @@ Verified source revisions for this revision of the guide:
 | Nanoleaf `main` | `9e2c41313de3c69c32b8ddf5259b30517c14588f` | `bridge/wall.html`, `docs/decisions/0004-wall-map-visual-direction.md` |
 
 The documentation skin files `docs/skins/fixed.css` and
-`docs/skins/neon-geometry-wars.css` are being delivered by Hub #85 and are not
-on `main` at the revision above. Where this guide names them, it records the
-agreed vocabulary and the current source values those files will carry, not an
-existing file. Read the #85 delivery for their state.
+`docs/skins/neon-geometry-wars.css` were delivered by Hub #85
+([PR #251](https://github.com/jimmie-potts/agent-device-hub/pull/251)) after
+the revision above; where this guide quotes the fixed-meaning token values,
+those files now hold them.
 
 The owner's draft of 2026-09-23 cited Hub `a76b22d` and Nanoleaf `2558df5`.
 Those snapshots were inputs to this guide, not a claim about current source.
@@ -65,7 +66,7 @@ Legend used throughout:
 | Shared application shell and component pages | `apps/dashboard/src/main.tsx`, `style.css`, `README.md` | Extend the existing navigation and component views. Keep one shell across pages. |
 | Application token layer | `apps/dashboard/src/style.css` `:root` custom properties | The future shared application seam (section 4). Today it holds `--muted`, `--edge`, `--panel` and `--accent`; Hub #182 widens it to the role names in section 4. |
 | Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. Wall-rendering tokens stay there. |
-| Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css`, in delivery under Hub #85; today the values sit in `docs/work-guide/work/build_guide.py`, `work/guide_*.css` and `docs/system-design/assets/style.css` | The guide and atlas token files once #85 merges. Same role names, separate consumers. |
+| Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css` (Hub #85, PR #251) | The guide and atlas token files. Same role names, separate consumers. |
 | Cross-project UI ownership | `docs/architecture.md`, "Unified UI and additional devices" | The shared frontend uses the approved Nanoleaf visual language; declared capability and permission decide which controls exist. |
 | Behavior and validation | Each repository's `AGENTS.md`, app README and `docs/development.md` | Follow the owning repository's rules and checks for the page being changed. |
 
@@ -115,8 +116,8 @@ The template has three layers. Skins change only the third.
 
 ### 4.1 Semantic roles
 
-Role names are shared with the documentation skin file that Hub #85 delivers
-as `docs/skins/neon-geometry-wars.css`. Application code uses the same names, held in the application's own token
+Role names are shared with the documentation skin file
+`docs/skins/neon-geometry-wars.css` (Hub #85). Application code uses the same names, held in the application's own token
 layer; there is no cross-repository CSS package.
 
 | Role | Meaning | Neon Geometry Wars value (dark) | Dashboard today (`style.css`) |
@@ -144,9 +145,10 @@ layer; there is no cross-repository CSS package.
 | `--space-xs` to `--space-xl` | Spacing steps | skin-defined | raw pixel values |
 
 The Neon column lists the application reference values, taken from the wall
-map. The documentation skin file keeps its own dark values where long reading
-text needs them (for example the guide's muted text `#93a6cc`); the role names
-and meanings are the same.
+map. The documentation skin file keeps its own dark values for reading
+surfaces: `--muted` `#93a6cc`, `--inset` `#060a14`, `--panel-translucent`
+`rgba(8,12,22,.9)`, `--edge-strong` `rgba(34,211,238,.45)` and `--edge-faint`
+`rgba(34,211,238,.09)`. The role names and meanings are the same.
 
 **Dense-page variants.** The dashboard's lighter muted text (`#a6b4ca`) and
 slate borders (`#34415a`) are deliberate variants for dense information and
@@ -160,8 +162,8 @@ approved screen without a reviewed candidate.
 | Token | Meaning | Value |
 | --- | --- | --- |
 | `--repo-hub`, `--repo-nanoleaf`, `--repo-pixoo` | Repository identity in documentation | cyan `#22d3ee`, magenta `#e879f9`, lime `#b5ed86` |
-| `--status-open`, `--status-active`, `--status-blocked`, `--status-completed`, `--status-closed` | Issue status in documentation | `#a8bbd5`, `#f5ce83`, `#ffa3a6`, `#8ee0b6`, `#b9afce` today in `docs/work-guide/work/guide_reading.css`; #85 moves them to `docs/skins/fixed.css` |
-| `--edge-observe`, `--edge-feed`, `--edge-command`, `--edge-other` | Diagram edge meaning | `#34d399`, `#a78bfa`, `#fb7185`, `#94a3b8` today in `docs/system-design/assets/style.css` (`.map-key`); #85 moves them to `docs/skins/fixed.css` |
+| `--status-open`, `--status-active`, `--status-blocked`, `--status-completed`, `--status-closed` | Issue status in documentation | `#a8bbd5`, `#f5ce83`, `#ffa3a6`, `#8ee0b6`, `#b9afce` in `docs/skins/fixed.css` |
+| `--edge-observe`, `--edge-feed`, `--edge-command`, `--edge-other` | Diagram edge meaning | `#34d399`, `#a78bfa`, `#fb7185`, `#94a3b8` in `docs/skins/fixed.css` |
 | Nanoleaf `--wall-*` and `--chip-*` | Task status on the physical wall and its chips | working `#00ff00` / chip `#2bff63`, question `#ffff00` / `#ffe600`, blocked `#ff0000` / `#ff4a4a`, unread `#193cff` / `#5b9bff` (device exception, owned by `wall.html`) |
 
 A fixed-meaning token may take a different shade per color scheme so it stays
@@ -177,9 +179,9 @@ semantics, keyboard order, text cues, or which control is primary.
 
 ### 4.4 Adding a skin
 
-1. Copy the skin file (`docs/skins/neon-geometry-wars.css` for documentation
-   once Hub #85 delivers it; the application skin file that #182 introduces
-   for the dashboard) to a new name and change values only. Every role in 4.1 needs a dark and a light
+1. Copy the skin file (`docs/skins/neon-geometry-wars.css` for documentation;
+   the application skin file that #182 introduces for the dashboard) to a new
+   name and change values only. Every role in 4.1 needs a dark and a light
    value; the fixed set in 4.2 is not copied.
 2. Scope decorative rules under the new `data-skin` value. Decoration is CSS
    only, sits on borders and artwork, never on text or meaning-carrying edges,
@@ -197,8 +199,8 @@ semantics, keyboard order, text cues, or which control is primary.
   none of their own raw colors.
 - Wall-rendering and device-specific tokens stay in the Nanoleaf domain
   (`wall.html` `@layer tokens`: canvas, halo, connector, pulse and chip values).
-- Documentation tokens belong in `docs/skins/`, which Hub #85 delivers, and
-  are consumed by the guide and the atlas generators.
+- Documentation tokens live in `docs/skins/` and are consumed by the guide
+  and the atlas generators.
 - Pixoo keeps its media, player and display rendering.
 
 ## 5. Color
@@ -347,7 +349,7 @@ Rendered examples of these states at 1440 px and 390 px were captured for the
 Hub #181 delivery from the fake-controller fixture, so they show no physical
 result. They are kept outside Git under `.local/evidence/gh-181-ui-foundation/`
 in the owner's checkout; the delivery PR lists the frames, and the owner
-reviews them directly.
+reviewed them for the AC2 decision.
 
 ## 9. Accessibility, motion and responsiveness
 
@@ -389,13 +391,13 @@ onto every device screen.
 ## 11. Component glossary
 
 The 2026-09-24 architecture discussion proposed animal-body terms for the parts
-of B.U.N.N.Y. The dispositions below are the coordinator's proposal for the
-owner's decision; the owner's answer on the delivery PR is the record. Every
+of B.U.N.N.Y. The owner accepted the dispositions below on 2026-09-25,
+recorded on the delivery pull request. Every
 term maps to an existing responsibility in `docs/architecture.md`; none changes
 ownership, renames a package, path or API identifier, or adds a UI label. Using
 an accepted term in UI copy belongs to the owning UI issue.
 
-| Term | Proposed disposition | Plain meaning | Technical responsibility | Owner | Intended use |
+| Term | Disposition | Plain meaning | Technical responsibility | Owner | Intended use |
 | --- | --- | --- | --- | --- | --- |
 | Brain | Accept | What B.U.N.N.Y. knows: the one place that decides what each agent session is doing | The shared agent-state core: reducer, immutable snapshots, consumer queues, export and import | `packages/agent-state`, hosted by `apps/hub` (standalone) or by Pixoo's embedded owner during migration | Documentation and atlas labels for the state owner; a future dashboard label for the active owner |
 | Ears | Accept | What B.U.N.N.Y. hears from agents | Provider observation: the fail-open lifecycle hooks and emitters, and the Codex Desktop read-state reader | `packages/agent-state/src/providers.ts`, `packages/agent-state/bin/hook.mjs`, the hub's Desktop reader | Documentation; provider qualification records |
@@ -469,7 +471,7 @@ Draft claims that current source contradicts:
 | Inspector moves "below about 1050 px" | `@media (max-width: 1049.98px)`; a separate `1050px` to `1499.98px` rule hides toolbar captions | Exact breakpoints recorded in section 7 |
 | "Local Prism SVG assets" are the Nanoleaf imagery | The wall is drawn as inline SVG by `bridge/prism.js`; `bridge/assets/prism/*.svg` are reference exports, not a served route | Section 10 names the inline material and its reference exports |
 | ADR 0004 records the name as undecided | True at the draft's snapshot; this delivery amends the ADR | Section 1 and the amended ADR |
-| Token starter uses `--ui-` prefixed names | The wall map uses unprefixed role names, and Hub #85 adopts the same for `docs/skins/` | Section 4 adopts the unprefixed names so all three consumers match |
+| Token starter uses `--ui-` prefixed names | The wall map and `docs/skins/` use unprefixed role names | Section 4 adopts the unprefixed names so all three consumers match |
 | Snapshots Hub `a76b22d` and Nanoleaf `2558df5` | Hub gained the accepted-tone status color rule (`data-tone="accepted"`); Nanoleaf reduced the default wall map controls and repeated status text (commit `49f0425`) | Every other cited value reproduces at the verified revisions |
 
 Change triggers:

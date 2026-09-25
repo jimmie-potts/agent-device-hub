@@ -16,7 +16,7 @@ keep their unpunctuated forms; only user-facing spelling is decided. The
 [application UI style guide](../application-ui-style-guide.md) owns that
 spelling, the shared visual foundation and skin template, and the component
 vocabulary (Brain, Ears, Eyes, Nerves, Paws, Face, Burrow, with Glow deferred)
-whose dispositions the owner records on the #181 delivery. Those terms describe
+which the owner accepted on 2026-09-25 with the guide. Those terms describe
 existing responsibilities in the [shared architecture](../architecture.md); they
 change no ownership, package, path or API identifier.
 
