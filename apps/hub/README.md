@@ -92,7 +92,7 @@ There are no playback MCP tools yet; [#37](https://github.com/jimmie-potts/agent
 
 ### Browser sessions
 
-The BUNNY launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias for up to eight hours. That session has no `ingest`, `admin` or playback grant, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
+The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias for up to eight hours. That session has no `ingest`, `admin` or playback grant, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
 
 ## HTTP boundary
 
@@ -224,13 +224,13 @@ The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-pott
 
 ## Browser frontend
 
-The packaged hub serves BUNNY at `/`, with fixed `/dashboard.js` and
+The packaged hub serves B.U.N.N.Y. at `/`, with fixed `/dashboard.js` and
 `/dashboard.css` assets and a restrictive same-origin content security policy.
 `GET /api/dashboard/v1/context` authenticates with read scope and exposes only
 that principal's registered component aliases, control permission and configured
 monitor consumers. Native controller credentials and endpoint URLs are excluded.
 
-### Open BUNNY without typing a token
+### Open B.U.N.N.Y. without typing a token
 
 Run `node apps/hub/dist/cli.js open /absolute/private/config.json` as the Linux
 user that owns the running Hub. The command reads the same owner-only

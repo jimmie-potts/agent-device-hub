@@ -1,4 +1,4 @@
-# ADR 0005: General device controls in the central BUNNY application
+# ADR 0005: General device controls in the central B.U.N.N.Y. application
 
 Status: Accepted definition under [hub #31](https://github.com/jimmie-potts/agent-device-hub/issues/31),
 2026-09-22. Implementation, installation and physical acceptance remain in the

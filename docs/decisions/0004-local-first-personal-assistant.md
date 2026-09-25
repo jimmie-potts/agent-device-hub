@@ -5,8 +5,20 @@ Status: Accepted direction; implementation and qualification remain separate.
 ## Decision
 
 The long-term product is a personal assistant with automated alerts, device
-control and voice access across the user's devices. Its name is undecided.
+control and voice access across the user's devices. Its user-facing name is
+**B.U.N.N.Y.**, selected by the owner on 2026-09-23 and recorded through
+[hub #181](https://github.com/jimmie-potts/agent-device-hub/issues/181).
 "Jarvis" was an illustrative reference, not the product name.
+
+Amended September 24, 2026 (naming): the initials have no approved expansion and
+there is no logo. Package names, paths, service names and machine identifiers
+keep their unpunctuated forms; only user-facing spelling is decided. The
+[application UI style guide](../application-ui-style-guide.md) owns that
+spelling, the shared visual foundation and skin template, and the component
+vocabulary (Brain, Ears, Eyes, Nerves, Paws, Face, Burrow, with Glow deferred)
+which the owner accepted on 2026-09-25 with the guide. Those terms describe
+existing responsibilities in the [shared architecture](../architecture.md); they
+change no ownership, package, path or API identifier.
 
 Preserve the existing Codex-first milestone in
 [hub #32](https://github.com/jimmie-potts/agent-device-hub/issues/32).
@@ -59,8 +71,7 @@ controls should remain usable when the model is unavailable. Cloud-dependent
 devices and services retain their own connectivity requirements.
 
 Phone access, initially using tap-to-talk, follows local delivery.
-Ambient listening, broader personal-service integrations and assistant naming
-remain future work.
+Ambient listening and broader personal-service integrations remain future work.
 
 ## Consequences and qualification
 

@@ -5,7 +5,7 @@ This document records accepted ownership, state and command boundaries. The
 [dashboard](../apps/dashboard/README.md) guides describe their implementations;
 GitHub issues hold current delivery and acceptance status.
 
-The [BUNNY HTML system design](system-design/index.html) preserves a dated
+The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
 September 19, 2026 design snapshot. Its labels and open decisions reflect that
 baseline, not the current implementation.
 
@@ -15,6 +15,12 @@ baseline, not the current implementation.
 local-first assistant direction. Preserve the Codex-first milestone before
 general device controls and Apple Music integration. Container migration and
 remote voice access remain later work.
+
+The shared application's user-facing name is B.U.N.N.Y. The
+[application UI style guide](application-ui-style-guide.md) owns that spelling,
+the visual foundation and skin template, and the component vocabulary (Brain,
+Ears, Eyes, Nerves, Paws, Face, Burrow) that names the responsibilities below
+without changing any owner, package, path or identifier.
 
 The assistant is the conversational client of available services and tools.
 An automation rule is an explicitly accepted event-to-action policy that can
@@ -236,7 +242,7 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-The shared frontend in apps/dashboard is BUNNY's central interface. It uses
+The shared frontend in apps/dashboard is B.U.N.N.Y.'s central interface. It uses
 the approved Nanoleaf visual language and interaction patterns. Each current
 and future user-facing component joins the same navigation and reusable views
 for its available status, settings and supported controls, with specialized
@@ -480,7 +486,7 @@ and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
 
-## BUNNY frontend, Hub #6
+## B.U.N.N.Y. frontend, Hub #6
 
 The implementation in `apps/dashboard` provides React/TypeScript activity, component
 and connection views served by `apps/hub` at the same origin. A dedicated scoped
