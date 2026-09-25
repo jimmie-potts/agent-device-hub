@@ -4,15 +4,15 @@ import { request as httpRequest } from 'node:http';
 import { validate } from '@jimmie-potts/device-contracts';
 import { acquireWriterLease } from '@jimmie-potts/tidbyt-controller/runner';
 import { loadHostConfig, startLocalControllers } from '@jimmie-potts/local-controllers';
-import { TOKENS, fakeHub, fakeLifx, fakeTidbyt, privateFiles } from './helpers.mjs';
+import { TOKENS, fakeHub, fakeLifx, fakeTidbyt, privateFiles, reads, settle, until, writes } from './helpers.mjs';
 
-async function start(t, { host: change = h => h, settleMs } = {}) {
+async function start(t, { host: change = h => h, settleMs, now } = {}) {
   const s = privateFiles(t, await fakeHub(t));
   const lifx = fakeLifx(), tidbyt = fakeTidbyt();
   const config = loadHostConfig(s.write('host.json', change(s.host)));
   const host = await startLocalControllers(config, {
     tidbyt: { connection: tidbyt.connection, leaseRoot: s.locks },
-    lifx: { transportFactory: lifx.transportFactory, leaseRoot: s.locks },
+    lifx: { transportFactory: lifx.transportFactory, leaseRoot: s.locks, ...(now ? { now } : {}) },
     ...(settleMs === undefined ? {} : { settleMs }),
   });
   t.after(() => host.close());
@@ -58,8 +58,10 @@ test('each configured device serves a valid v1 snapshot without private values',
   assert.deepEqual(light.lighting.capabilities, { color: true, temperature: { minimum: 1500, maximum: 9000 }, effects: false });
   const everything = JSON.stringify([tidbytSnapshot, desk, light]);
   assert.doesNotMatch(everything, /192\.0\.2|sentinel|local-controllers-|"device"/);
-  // Reads send nothing to any bulb.
-  assert.deepEqual(lifx.log, []);
+  // Reads never write; each qualified bulb gets at most one on-demand read.
+  await settle();
+  assert.deepEqual(writes(lifx.log), []);
+  assert.deepEqual([reads(lifx.log, 'desk').length, reads(lifx.log, 'shelf').length], [1, 1]);
   assert.ok(!tidbyt.calls.includes('push'));
 });
 
@@ -85,7 +87,8 @@ test('authentication, scope, device and browser checks reject before anything is
   assert.equal((await call(host, '/controller/v1/snapshot?deviceId=desk', { headers: { origin: 'http://evil.example' } })).status, 403);
   assert.equal((await call(host, '/controller/v1/snapshot?deviceId=desk', { token: TOKENS.reader })).status, 200);
   assert.deepEqual((await snapshot(host, 'desk')).nextRequestId, before.nextRequestId);
-  assert.deepEqual(lifx.log, []);
+  await settle();
+  assert.deepEqual(lifx.log, [['desk', 101]], 'only the on-demand read of the first snapshot');
 });
 
 test('bounds, malformed requests and unknown routes are rejected before admission', async t => {
@@ -127,7 +130,8 @@ test('bounds, malformed requests and unknown routes are rejected before admissio
   });
   assert.deepEqual(chunked, [429, { failure: { code: 'capacity' } }]);
   assert.deepEqual((await snapshot(host, 'desk')).nextRequestId, s.nextRequestId);
-  assert.deepEqual(lifx.log, []);
+  await settle();
+  assert.deepEqual(lifx.log, [['desk', 101]], 'only the on-demand read of the first snapshot');
 });
 
 test('Tidbyt is status only: v1 commands are retained as unsupported and frames are refused', async t => {
@@ -157,11 +161,13 @@ test('LIFX v1 commands keep request tickets, guards and replay', async t => {
   assert.equal(sent.status, 200);
   assert.equal(validate('receipt', sent.body), true);
   assert.deepEqual([sent.body.outcome, sent.body.priorEffects], ['sent', 'confirmed-transmission']);
-  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 102]]);
+  // The snapshot's on-demand read, then the command's own read-modify-write.
+  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 101], ['desk', 102]]);
+  const traffic = lifx.log.length;
   // Object key order is immaterial for a replay.
   const reordered = Object.fromEntries(Object.entries(brightness).reverse());
   assert.deepEqual(await post(host, reordered).then(r => [r.status, r.body]), [200, sent.body]);
-  assert.equal(lifx.log.length, 2);
+  assert.equal(lifx.log.length, traffic);
   assert.deepEqual((await post(host, { ...brightness, command: { kind: 'brightness.set', percent: 41 } })).body, { failure: { code: 'request-conflict' } });
   const after = await snapshot(host, 'desk');
   assert.equal(after.state.observation.status, 'known');
@@ -173,11 +179,11 @@ test('LIFX v1 commands keep request tickets, guards and replay', async t => {
   assert.deepEqual((await post(host, command({ ...latest, nextRequestId: s.nextRequestId }, 'desk', 'power.set', { on: true }))).status, 409);
   assert.deepEqual((await post(host, command({ ...latest, nextRequestId: { ...latest.nextRequestId, sequence: 99 } }, 'desk', 'power.set', { on: true }))).body, { failure: { code: 'request-order' } });
   assert.deepEqual((await post(host, command({ ...latest, nextRequestId: { epoch: 'old-epoch', sequence: latest.nextRequestId.sequence } }, 'desk', 'power.set', { on: true }))).status, 410);
-  assert.equal(lifx.log.length, 2);
+  assert.equal(lifx.log.length, traffic, 'rejections and fresh-observation snapshots send nothing');
   // The other bulb has its own queue and identities.
   const shelf = await snapshot(host, 'shelf');
   assert.equal((await post(host, command(shelf, 'shelf', 'power.set', { on: false }))).body.outcome, 'sent');
-  assert.deepEqual(lifx.log.slice(2), [['shelf', 21]]);
+  assert.deepEqual(lifx.log.slice(traffic), [['shelf', 101], ['shelf', 21]]);
 });
 
 test('a command that does not settle in time answers its queued receipt', async t => {
@@ -212,7 +218,7 @@ test('LIFX color and temperature use the lighting profile route and the same que
   assert.equal(response.status, 200);
   assert.equal(validate('receipt', response.body), true);
   assert.equal(response.body.outcome, 'sent');
-  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 102]]);
+  assert.deepEqual(lifx.log, [['desk', 101], ['desk', 101], ['desk', 102]]);
   const next = await lighting(host, 'desk');
   assert.deepEqual(next.lighting.pending, []);
   assert.equal(next.lighting.observation.status, 'known');
@@ -232,7 +238,8 @@ test('LIFX color and temperature use the lighting profile route and the same que
   // A profile request is not a v1 command.
   assert.deepEqual((await post(host, { ...command(latest, 'desk', 'lifx.color.set', { hue: 1, saturation: 1 }), profile })).body, { failure: { code: 'invalid-request' } });
   assert.deepEqual((await lighting(host, 'desk')).controller.nextRequestId, latest.nextRequestId);
-  assert.equal(lifx.log.length, 4);
+  assert.deepEqual(writes(lifx.log), [['desk', 102], ['desk', 102]]);
+  assert.equal(lifx.log.length, 5, 'one on-demand read and two read-modify-writes; invalid requests send nothing');
 });
 
 test('a second writer for any configured device fails before any request and releases what it took', async t => {
@@ -271,5 +278,50 @@ test('shutdown releases every lease and a restart replays nothing', async t => {
   assert.notEqual(second.identity.controllerEpoch, first.identity.controllerEpoch);
   assert.deepEqual(second.nextRequestId.sequence, 0);
   assert.equal(second.state.lastOutcome.status, 'unknown');
-  assert.equal(lifx.log.length, 1);
+  await settle();
+  assert.deepEqual(writes(lifx.log), [['desk', 21]], 'the restart replays no write');
+});
+
+test('a qualified bulb is read on demand, at most once per 30 seconds and only while something reads', async t => {
+  let clock = 1000;
+  const unqualified = h => ({ ...h, lifx: { ...h.lifx, bulbs: [h.lifx.bulbs[0], { deviceId: 'shelf', address: '192.0.2.11' }] } });
+  const { host, lifx } = await start(t, { now: () => clock, host: unqualified });
+  await settle();
+  assert.deepEqual(lifx.log, [], 'nothing is read while nothing reads');
+  const first = await snapshot(host, 'desk');
+  assert.equal(first.state.observation.status, 'unknown', 'the snapshot answers from memory at once');
+  await until(() => lifx.log.length === 1);
+  assert.deepEqual(lifx.log, [['desk', 101]]);
+  const read = await snapshot(host, 'desk');
+  assert.equal(validate('snapshot', read), true);
+  assert.deepEqual([read.state.observation.status, read.state.observation.power], ['known', { status: 'known', value: true }]);
+  assert.deepEqual([read.nextRequestId, read.configurationRevision, read.generation], [first.nextRequestId, first.configurationRevision, first.generation], 'a read reserves nothing');
+  clock += 29_999;
+  await snapshot(host, 'desk'); await lighting(host, 'desk'); await settle();
+  assert.equal(lifx.log.length, 1, 'no second read within 30 s, on either route');
+  clock += 1;
+  await lighting(host, 'desk');
+  await until(() => lifx.log.length === 2);
+  for (let i = 0; i < 3; i++) { await snapshot(host, 'shelf'); await lighting(host, 'shelf'); clock += 60_000; }
+  await settle();
+  assert.deepEqual(reads(lifx.log, 'shelf'), [], 'an unqualified bulb is never read');
+  assert.deepEqual(writes(lifx.log), [], 'reads never write');
+});
+
+test('a failed read keeps the previous observation and is not retried within 30 seconds', async t => {
+  let clock = 1000;
+  const { host, lifx } = await start(t, { now: () => clock });
+  await snapshot(host, 'desk');
+  await until(() => lifx.log.length === 1);
+  const observed = (await snapshot(host, 'desk')).state.observation;
+  assert.equal(observed.status, 'known');
+  clock += 30_000;
+  lifx.mode.fail = true;
+  await snapshot(host, 'desk');
+  await until(() => lifx.log.length === 2);
+  await settle();
+  const after = (await snapshot(host, 'desk')).state.observation;
+  assert.deepEqual([after.status, after.power, after.clock.sampledAtMs], ['known', observed.power, observed.clock.sampledAtMs]);
+  await snapshot(host, 'desk'); await settle();
+  assert.equal(lifx.log.length, 2, 'a failed read still waits 30 s');
 });

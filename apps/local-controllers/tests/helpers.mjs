@@ -19,14 +19,15 @@ export function lightState() {
   return b;
 }
 
-/** Fake LIFX transports: every exchange is logged per bulb; `hang` never answers until aborted. */
+/** Fake LIFX transports: every exchange is logged per bulb; `hang` never answers until aborted, `fail` rejects at once. */
 export function fakeLifx() {
   const log = [];
-  const mode = { hang: false };
+  const mode = { hang: false, fail: false };
   const transportFactory = bulb => ({
     exchange(type, _payload, _expected, signal) {
       log.push([bulb.deviceId, type]);
       if (mode.hang) return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+      if (mode.fail) return Promise.reject(new Error('unreachable'));
       return Promise.resolve(type === 101 ? lightState() : Buffer.alloc(0));
     },
     close() {},
@@ -78,3 +79,12 @@ export function privateFiles(t, hubUrl = 'http://127.0.0.1:9') {
   };
   return { dir, write, runnerConfig, host, locks: join(dir, 'locks') };
 }
+
+/** LightSetColor (102) and DeviceSetPower (21) change a bulb; LightGet (101) only reads it. */
+export const writes = log => log.filter(([, type]) => type !== 101);
+export const reads = (log, deviceId) => log.filter(([id, type]) => type === 101 && (deviceId === undefined || id === deviceId));
+export async function until(condition, ms = 3000) {
+  const deadline = Date.now() + ms;
+  while (!condition()) { if (Date.now() > deadline) throw new Error('condition-timeout'); await new Promise(r => setTimeout(r, 5)); }
+}
+export const settle = () => new Promise(r => setTimeout(r, 60));

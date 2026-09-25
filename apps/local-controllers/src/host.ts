@@ -13,6 +13,8 @@ export const MAX_IN_FLIGHT = 32;
 export const MAX_JSON_DEPTH = 32;
 /** How long a command waits for its terminal receipt before answering `queued`; below the hub client's 2 s timeout. */
 export const SETTLE_MS = 1000;
+/** A qualified bulb is read on demand when its observation is missing or this old, at most once per this interval. */
+export const READ_INTERVAL_MS = 30_000;
 const DEFAULT_LIFX_LEASE_ROOT = join(homedir(), '.local/state/agent-device-hub/lifx');
 
 export type HostOptions = {
@@ -86,6 +88,26 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
     throw new Error('local-controllers-start-failed');
   }
   const kind = (deviceId: string) => deviceId === TIDBYT_DEVICE_ID && runner ? 'tidbyt' : lifx && config.lifx!.bulbs.some(b => b.deviceId === deviceId) ? 'lifx' : undefined;
+  const now = options.lifx?.now ?? (() => performance.now());
+  const lastRead = new Map<string, number>();
+
+  /**
+   * A snapshot read of a qualified bulb whose observation is missing or stale queues one read-only LightGet through the bulb's queue.
+   * The snapshot answers from memory; the read reserves no request identity. At most one read starts per bulb per interval,
+   * and only while something reads, so a closed dashboard sends nothing. Unqualified bulbs are never read.
+   */
+  function lifxSnapshot(deviceId: string) {
+    const snapshot = lifx!.snapshot(deviceId);
+    const { observation } = snapshot.controller.state;
+    const started = lastRead.get(deviceId);
+    if (snapshot.controller.capabilities.power.supported
+        && (observation.status !== 'known' || observation.evidenceAgeMs >= READ_INTERVAL_MS)
+        && (started === undefined || now() - started >= READ_INTERVAL_MS)) {
+      lastRead.set(deviceId, now());
+      void lifx!.refresh(deviceId).catch(() => {});
+    }
+    return snapshot;
+  }
 
   let origin = '';
   let active = 0;
@@ -138,7 +160,7 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
       if (!allowed(req, credential, deviceId!, 'read')) return failure('forbidden');
       const device = kind(deviceId!);
       if (device === 'tidbyt' && !lighting) return { status: 200, body: runner!.controller.snapshot().controller };
-      if (device === 'lifx') return { status: 200, body: lighting ? lifx!.snapshot(deviceId!) : lifx!.snapshot(deviceId!).controller };
+      if (device === 'lifx') { const snapshot = lifxSnapshot(deviceId!); return { status: 200, body: lighting ? snapshot : snapshot.controller }; }
       return failure('unknown-device');
     }
     if (req.method !== 'POST' || operation !== 'commands' || url.search) return failure('invalid-request');
