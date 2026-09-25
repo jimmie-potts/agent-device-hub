@@ -470,7 +470,7 @@
       "type": "Host adapter",
       "status": "qualification",
       "status_label": "Qualification required",
-      "summary": "Keeps Windows player access beside Apple Music while presenting a portable boundary to B.U.N.N.Y..",
+      "summary": "Keeps Windows player access beside Apple Music while presenting a portable boundary to B.U.N.N.Y.",
       "depends_on": [
         "EVT-playback"
       ],

@@ -59,7 +59,7 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 
 ## Skin and tokens
 
-The guide and the BUNNY atlas share one skin, Neon Geometry Wars. Both
+The guide and the B.U.N.N.Y. atlas share one skin, Neon Geometry Wars. Both
 generators inline `docs/skins/fixed.css` and then
 `docs/skins/neon-geometry-wars.css` ahead of their own CSS. Guide and atlas
 styles use token names only; color values live in those two files.
@@ -224,7 +224,7 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
    SHA-256 receipts and definitions in `work/architecture_diagrams.py`. Render
    using the centrally installed archify skill; do not install or vendor it.
    Retain implemented/planned labels and each diagram's failure boundaries.
-   The BUNNY atlas under `docs/system-design/` embeds the system map and the
+   The B.U.N.N.Y. atlas under `docs/system-design/` embeds the system map and the
    observation walkthrough from these same definitions; rebuild and check it
    after re-rendering either of them. Those two keep `sourceRevisions`; other
    diagrams may pin newer sources through `viewRevisions` and a `revisions`
