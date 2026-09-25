@@ -26,7 +26,7 @@ Retirement, safeguards and a fresh generation form one owner transition. Keep na
 
 Expand source support for both snapshot versions and legacy durable imports, then validate the Nanoleaf companion against the new source artifact. New stores use format 2.0; opening 1.0 performs a guarded replacement preserving evidence clocks and state while adding generations. No installed store is opened by source tests. Older owners cannot read format 2.0. A separately authorized installation backs up the old store and qualifies consumers; rollback after new writes requires a compatible owner or an explicitly reconciled export, never silently restoring an older database. Keep immutable previous artifacts.
 
-Installation/client/visible-device checks remain pending under the exact issue. The source proposal does not authorize them. Timing evidence must distinguish accepted owner retirement from display polling and transport cadence.
+The separately authorized installed archive-end and Nanoleaf presentation trials supplied owner, dashboard and visible-Line evidence. The user moved remaining native idle/shutdown emission, reopen-without-prompt and live-resume qualification to [Hub #253](https://github.com/jimmie-potts/agent-device-hub/issues/253). No reliable idle/shutdown trigger is claimed; owner retirement remains conditional on receiving an end. Timing evidence distinguishes accepted owner retirement from display polling and transport cadence. Source delivery does not authorize additional installation or device operations.
 
 ## Dashboard reconciliation
 

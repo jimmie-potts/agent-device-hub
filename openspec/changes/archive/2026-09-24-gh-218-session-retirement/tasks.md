@@ -12,11 +12,13 @@
 
 ## 3. Documentation and source validation
 
-- [x] 3.1 Update affected lifecycle/state/host guides, compatibility assessment and required development/CI checks; refresh the work guide through its maintenance procedure and verify generated output/browser checks.
+- [x] 3.1 Update affected lifecycle/state/host guides, compatibility assessment and required development/CI checks; reconcile the work guide with concurrently maintained main and preserve that guide tree without a separate publication.
 - [x] 3.2 Run all applicable build/type, controller/lifecycle/state, MCP, Hub/setup, Tidbyt, dashboard, workflow and package checks from this worktree; retain commands/results and actual OpenSpec inventory outside the candidate.
 
 ## 4. Acceptance and delivery gates
 
-- [ ] 4.1 After separate installation and named-device authorization, qualify throwaway archive and non-archive ends plus resume; record installed-client timing, dashboard removal, visible Nanoleaf Line release and fresh monitoring separately from source tests.
-- [ ] 4.2 After complete applicable acceptance and successful current lookups, synchronize affected specifications and archive before final independent Standards/Specification review. Current-head CI, guarded merge, merged-main checks and issue readback remain the subsequent SDLC gates.
-- [ ] 4.3 Verify the Nanoleaf companion's accepted read/idle retention and device-local Evict behavior through focused source and browser checks, renewed UI approval and separately authorized installed verification. Preserve owner presence and the original live gates; document the deferred cross-device command.
+- [x] 4.1 Qualify the separately authorized installed archive-end path, recording owner timing, dashboard removal and visible Nanoleaf Line release. Record the approved native non-archive/reopen/live-resume qualification follow-up in [Hub #253](https://github.com/jimmie-potts/agent-device-hub/issues/253); source fresh-resume checks remain in this change.
+- [x] 4.2 Reconcile the approved qualification boundary with the issue, obtain successful current specification/archive lookups, and verify every affected delta against its main specification before synchronization.
+- [x] 4.3 Verify the Nanoleaf companion's accepted read/idle retention and device-local Evict behavior through focused source and browser checks, renewed UI approval and separately authorized installed verification. Preserve owner presence and the approved qualification boundary; document the deferred cross-device command.
+
+After these acceptance tasks are complete, synchronize every affected specification and archive this change before final independent Standards/Specification review. Current-head CI, guarded merge, merged-main checks and issue readback remain mandatory SDLC gates. Native non-archive/reopen/live-resume qualification is deferred only as approved in Hub #253.

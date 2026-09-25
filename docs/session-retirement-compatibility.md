@@ -47,11 +47,18 @@ older binary at the newer store or silently discard retirement evidence.
 ## Acceptance boundary
 
 Source work changes no installed owner, hook, Codex state or physical device.
-The issue retains separate authorization and acceptance for a throwaway archive
-end, a non-archive end and resume, including dashboard removal, visible Nanoleaf
-Line release, fresh monitoring and measured timing. Displays retain their
-existing polling and write cadence. The dashboard draft reset also requires
-human approval of the current candidate. Native mode automation remains owned
-by Nanoleaf #110.
+The separately authorized archive trial established owner retirement, dashboard
+removal and visible Nanoleaf Line release. Installed read-task retention and
+device-local eviction were also observed. Displays retain their existing polling
+and write cadence; current-candidate UI approval remains a separate delivery gate.
+
+The selected task did not reliably emit a non-archive end during the installed
+idle/shutdown trials. [Hub #253](https://github.com/jimmie-potts/agent-device-hub/issues/253)
+owns that native emission investigation and subsequent reopen-without-prompt and
+live-resume qualification, under the user-approved scope split. An accepted end
+retires its known session tree; quitting Codex does not establish that every
+record received an end. No new thirty-minute timer or global clear is provided.
+The existing twenty-four-hour evidence expiry remains the fallback. Native mode
+automation remains owned by Nanoleaf #110.
 
 Nanoleaf's existing policy suppresses completion comets and waves whenever its poll skips owner revisions. [Nanoleaf #115](https://github.com/jimmie-potts/codex-nanoleaf/issues/115) owns that limitation. This companion preserves that policy while preventing a retired task's effects from returning.
