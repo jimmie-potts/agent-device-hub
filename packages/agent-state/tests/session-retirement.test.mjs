@@ -196,6 +196,19 @@ test('retirement guards are count-bounded, durable and expire independently of a
   }finally{await owner.shutdown();}
 });
 
+// Older validators reject Claude/CLI guards regardless of age, so rollback depends on this pruning.
+test('an expired guard leaves the store only when a running or reopened owner prunes it',async()=>{
+  const f=fixture('claude','code');let owner=await f.open();
+  await owner.ingest(f.event('gone','turn.started'));
+  await owner.ingest(f.event('gone','runtime.ended'));
+  await owner.shutdown();
+  f.advance(25*60*60*1000);
+  const stored=async()=>{const signal=new AbortController().signal,lease=await f.storage.acquire('owner',signal);try{return (await lease.load(signal)).retirements;}finally{await lease.release();}};
+  assert.equal((await stored()).length,1,'a stopped store keeps the guard past its expiry');
+  owner=await f.open();await owner.shutdown();
+  assert.deepEqual(await stored(),[],'reopening prunes the expired guard');
+});
+
 test('failed retirement publishes no partial removal and restart recovers the committed tree',async()=>{
   const f=fixture('claude','code');let reject=false;
   const storage={async acquire(...args){const lease=await f.storage.acquire(...args);return {...lease,

@@ -243,7 +243,7 @@ Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
 Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
 Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
-Package 3.2.0 retires accepted ends on every supported path and settles stored `ended` records at startup without changing the schemas. Its Claude Code and Codex CLI retirement guards are rejected by the 3.0 and 3.1 validators, so those owners cannot open or import a store holding one until it expires, 24 hours after that retirement.
+Package 3.2.0 retires accepted ends on every supported path and settles stored `ended` records at startup without changing the schemas. Its Claude Code and Codex CLI retirement guards are rejected by the 3.0 and 3.1 validators regardless of age, so those owners fail closed (`invalid-storage`) on a store or export holding one. A guard expires 24 hours after its retirement, but only a running or reopened 3.2.0 owner prunes it; run or reopen 3.2.0 after that point before rolling back, or use an explicitly reconciled export.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. Older packages can read the legacy 1.0 shape, but cannot read durable 2.0. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)

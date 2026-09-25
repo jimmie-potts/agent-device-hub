@@ -45,14 +45,17 @@ Install the compatible Hub before activating the upgraded Nanoleaf reader. A
 can still read the default 1.0 endpoint but cannot detect missed retirement from
 generation metadata. Owners before 3.0.0 cannot read format 2.0. Agent State
 3.2.0 keeps format 2.0 but writes Claude Code and Codex CLI retirement guards,
-which the 3.0 and 3.1 validators reject: those owners fail closed
-(`invalid-state` on open, `invalid-import` on import) on any store or export
-holding such a guard, for up to 24 hours after the last Claude or CLI
-retirement. Rolling back an owner therefore requires a compatible owner and
-reconciled handoff, after those guards expire or through an explicitly
-reconciled export; an older owner would again retain Claude and CLI ends until
-expiry. Do not point an older binary at the newer store or silently discard
-retirement evidence.
+which the 3.0 and 3.1 validators reject regardless of age: those owners fail
+closed with `invalid-storage` (internally `invalid-state` on open or
+`invalid-import` on import) on any store or export holding such a guard. A
+guard expires 24 hours after its retirement, but only a running or reopened
+3.2.0 owner prunes it from the store; a stopped store keeps it indefinitely.
+To roll back to 3.0 or 3.1, keep the 3.2.0 owner running, or reopen it once,
+at least 24 hours after the last Claude or CLI retirement so that it prunes
+the guards, and only then stop it and hand off. Otherwise export through the
+3.2.0 owner after that point and use an explicitly reconciled export. An older
+owner would again retain Claude and CLI ends until expiry. Do not point an
+older binary at the newer store or silently discard retirement evidence.
 
 ## Upgrade treatment of retained records
 

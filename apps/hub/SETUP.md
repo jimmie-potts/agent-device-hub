@@ -112,9 +112,11 @@ For an authorized program rollback, stop the new owner first, retain the latest
 store and reinstall the prior verified program artifact. It can read format 1.0
 but restores the older conservative status behavior. A program before Hub 0.3.4
 fails closed on a store holding a Claude Code or Codex CLI retirement guard
-written by 0.3.4; wait until those guards expire, 24 hours after the last such
-retirement, or use the export/import handoff with an explicitly reconciled
-export. Do not overwrite new notices or acknowledgments with the pre-update
+written by 0.3.4, however old that guard is. A guard expires 24 hours after its
+retirement, but only a running or reopened 0.3.4 owner prunes it. Before such a
+rollback, keep 0.3.4 running, or reopen it once, at least 24 hours after the
+last Claude or CLI retirement, then stop it; otherwise use the export/import
+handoff with an explicitly reconciled export. Do not overwrite new notices or acknowledgments with the pre-update
 database backup. A failed reopen requires inspection by the installation owner,
 not a live database reset.
 
