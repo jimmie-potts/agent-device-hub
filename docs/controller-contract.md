@@ -218,7 +218,7 @@ API 1.1 adds these cases:
 35. A newer event supersedes a moment, an event supersedes a flourish, and a flourish supersedes a scheduled flourish, which is then cancelled. A flourish during an event is blocked.
 36. A mode change or an explicit command interrupts a moment; a scheduled moment is then cancelled.
 37. With the hub down, a playing moment ends on the device clock, and a late delivery after recovery is missed.
-38. A restart replays nothing, drops a scheduled or playing moment without a receipt, and forgets the moment memory.
+38. A restart replays nothing, drops a scheduled or playing moment without a new receipt or ending, and forgets the moment memory.
 39. The 1.0 view of a 1.1 snapshot omits moment content, reports a 1.1 outcome as unknown and keeps a 1.0 outcome.
 
 Schema checking proves payload shape. Pure semantic fixtures prove the reference algorithm. Device adoption tests must later run equivalent cases against real owning services/queues and authenticate through their actual HTTP layer. This issue must report that remaining consumer adoption explicitly.
