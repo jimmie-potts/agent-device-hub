@@ -82,7 +82,7 @@ The host SHALL provide reproducible packaging, isolated runtime configuration, r
 ### Requirement: Private bounded browser handoff
 The host SHALL issue browser launch codes only through an owner-only local channel. It SHALL accept each code once within a bounded lifetime and issue a time-limited bearer restricted to read/control on configured aliases. The bearer MUST NOT grant ingest, admin or MCP access. Missing, invalid, replayed and expired codes, and disallowed origins MUST fail without state or device effects. Closing or replacing host authority SHALL revoke ephemeral sessions.
 
-Disconnect, expiry, oldest-session eviction, credential replacement and host shutdown SHALL retire a browser session through one idempotent path. Retirement SHALL refuse the session's bearer and its cached requests, close its change streams and release its command tickets and settled replay entries. A retired session MUST NOT admit new work, including a request authorized before retirement whose body arrives afterwards. Work the session already admitted SHALL NOT be cancelled or executed again. Its replay accounting SHALL remain charged, and not evictable, until that work settles, and SHALL then be released exactly once. After every browser session retires, the host SHALL retain no browser ticket ledger, stream or replay entry. Disconnecting a dashboard that used a configured credential MUST NOT revoke that credential, close its streams or reset its tickets.
+Disconnect, expiry, oldest-session eviction, credential replacement and host shutdown SHALL retire a browser session through one idempotent path. Retirement SHALL refuse the session's bearer and its cached requests, close its change streams and release its command tickets and settled replay entries. A retired session MUST NOT admit new work, including a monitor, controller, integration or playback write authorized before retirement whose body arrives afterwards. Work the session already admitted SHALL NOT be cancelled or executed again. Its replay accounting SHALL remain charged, and not evictable, until that work settles, and SHALL then be released exactly once. After every browser session retires and its admitted work settles, the host SHALL retain no browser ticket ledger, stream or replay entry. Disconnecting a dashboard that used a configured credential MUST NOT revoke that credential, close its streams or reset its tickets.
 
 #### Scenario: Scoped exchange
 - **WHEN** the installed owner requests a launch and exchanges its code from the same-origin page
@@ -105,8 +105,8 @@ Disconnect, expiry, oldest-session eviction, credential replacement and host shu
 - **THEN** the command runs once, is not reported as cancelled, keeps its replay accounting charged until it settles, and is released once however often retirement repeats
 
 #### Scenario: Late request after retirement
-- **WHEN** a command's headers were authorized before its browser session retired and its body arrives afterwards
-- **THEN** the host refuses it as unauthenticated and creates no ticket ledger or replay entry
+- **WHEN** a monitor, controller or integration write's headers were authorized before its browser session retired and its body arrives afterwards
+- **THEN** the host refuses it as unauthenticated, contacts no controller and creates no ticket ledger or replay entry
 
 #### Scenario: Configured credential disconnect
 - **WHEN** a dashboard opened with a configured credential disconnects while that credential and another browser session have open streams

@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {request} from 'node:http';
+import {createServer,request} from 'node:http';
 import {startHub} from '../dist/server.js';
 import {requestBrowserLaunch} from '../dist/browser-launch.js';
 
@@ -14,7 +14,7 @@ const configured={authorization:`Bearer ${configuredToken}`};
 const identity={provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:'one'};
 const post=(url,body,headers={})=>fetch(url,{method:'POST',headers:{'content-type':'application/json','x-pixoo-request':'1',...headers},body:JSON.stringify(body)});
 // The documented bound once every browser session has retired: the configured reader's own ticket ledger and nothing else.
-const settled={browserSessions:0,launchCodes:0,streams:0,ledgers:1,replayEntries:1,pendingReplays:0};
+const settled={requests:0,browserSessions:0,launchCodes:0,streams:0,ledgers:1,replayEntries:1,pendingReplays:0};
 
 async function fixture(t,options={}){
  const directory=await mkdtemp(join(tmpdir(),'hub-browser-sessions-'));let hub;
@@ -64,12 +64,26 @@ test('logout, expiry and eviction retire each browser session with its tickets, 
  }finally{Date.now=now;}
  assert.deepEqual(counts(hub),settled);
 
- const sessions=[];
- for(let index=0;index<17;index++){const headers=await launch();await read(headers);assert.equal((await label(headers,await read(headers))).status,200);sessions.push(headers);}
+ const sessions=[],cached=[];let oldestStream;
+ for(let index=0;index<17;index++){
+  const headers=await launch(),requestId=await read(headers);assert.equal((await label(headers,requestId)).status,200);sessions.push(headers);cached.push(requestId);
+  if(index===0)oldestStream=await stream(headers);
+ }
  assert.equal((await fetch(hub.url+'/api/monitor/v1/sessions',{headers:sessions[0]})).status,401,'the oldest session was evicted');
+ assert.equal(await ends(oldestStream),true,'eviction closes the evicted session’s stream');
+ assert.equal((await label(sessions[0],cached[0])).status,401,'the evicted session’s cached request is refused');
  assert.deepEqual({browserSessions:hub.resources().browserSessions,ledgers:hub.resources().ledgers,replayEntries:hub.resources().replayEntries},{browserSessions:16,ledgers:17,replayEntries:17});
  for(const headers of sessions.slice(1))assert.equal((await logout(headers)).status,200);
  assert.deepEqual(counts(hub),settled);assert.equal(hub.resources().replayBytes,baseline.replayBytes);
+
+ // Credential replacement and shutdown retire every remaining browser session the same way.
+ const replaced=await launch();assert.equal((await label(replaced,await read(replaced))).status,200);
+ hub.replaceCredentials([{id:'reader',digest:digest(configuredToken),scopes:['read','control'],devices:[]}]);
+ assert.equal((await fetch(hub.url+'/api/monitor/v1/sessions',{headers:replaced})).status,401);
+ assert.deepEqual(counts(hub),settled,'replacement keeps the unchanged configured credential’s ledger only');
+ const closing=await launch();assert.equal((await label(closing,await read(closing))).status,200);
+ await hub.close();
+ assert.deepEqual({browserSessions:hub.resources().browserSessions,ledgers:hub.resources().ledgers,replayEntries:hub.resources().replayEntries},{browserSessions:0,ledgers:1,replayEntries:1},'shutdown retires the last browser session');
 });
 
 test('logging out never revokes a configured credential, its tickets or another principal',async t=>{
@@ -91,17 +105,42 @@ test('logging out never revokes a configured credential, its tickets or another 
  assert.equal(hub.resources().browserSessions,1);assert.equal(hub.resources().ledgers,2);
 });
 
-test('a command admitted before logout but delivered after it creates no ticket ledger',async t=>{
- const {hub,launch,read,logout}=await fixture(t);
- const headers=await launch(),requestId=await read(headers);
- const origin=new URL(hub.url),body=JSON.stringify({operation:'label',requestId,identity,label:'Late'});
- // Headers are authorized first; the body arrives only after the session has retired.
- const pending=new Promise((resolve,reject)=>{
-  const req=request({host:origin.hostname,port:origin.port,path:'/api/monitor/v1/commands',method:'POST',headers:{...headers,'content-type':'application/json','x-pixoo-request':'1','content-length':Buffer.byteLength(body)}},res=>{let text='';res.setEncoding('utf8');res.on('data',chunk=>text+=chunk);res.on('end',()=>resolve({status:res.statusCode,text}));});
+/** Sends a POST whose headers are authorized before `between` runs and whose body arrives after it. */
+async function lateBody(hub,path,headers,value,between){
+ const origin=new URL(hub.url),body=JSON.stringify(value);
+ return new Promise((resolve,reject)=>{
+  const req=request({host:origin.hostname,port:origin.port,path,method:'POST',headers:{...headers,'content-type':'application/json','x-pixoo-request':'1','content-length':Buffer.byteLength(body)}},res=>{let text='';res.setEncoding('utf8');res.on('data',chunk=>text+=chunk);res.on('end',()=>resolve({status:res.statusCode,text}));});
   req.on('error',reject);req.flushHeaders();
-  setTimeout(async()=>{try{assert.equal((await logout(headers)).status,200);req.end(body);}catch(error){reject(error);}},100);
+  // The handler authorizes synchronously on arrival and then waits for the body, so one active request means authorization has run.
+  (async()=>{const deadline=Date.now()+5000;while(hub.resources().requests<1){if(Date.now()>deadline)throw new Error('request-not-admitted');await new Promise(r=>setTimeout(r,5));}await between();req.end(body);})().catch(reject);
  });
- const response=await pending;
- assert.equal(response.status,401);
+}
+
+test('a write admitted before logout but delivered after it reaches neither the owner nor a controller',async t=>{
+ // A schema-valid controller v1 request, so the late write would otherwise be forwarded to the controller.
+ const corpus=JSON.parse(await readFile(new URL('../fixtures/controller-v1.json',import.meta.resolve('@jimmie-potts/device-contracts')),'utf8'));
+ const valid=structuredClone(corpus.schemaCases.find(c=>c.definition==='request'&&c.valid).value);
+ let controllerCalls=0;const controller=createServer((req,res)=>{controllerCalls++;res.writeHead(500);res.end();});
+ await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{controller.close(resolve);controller.closeAllConnections();}));
+ const {hub,launch,read,logout}=await fixture(t,{controllers:[{id:'wall',kind:'nanoleaf',controllerId:valid.controllerId,deviceId:valid.deviceId,token:'c'.repeat(43),endpoint:`http://127.0.0.1:${controller.address().port}/controller/v1`}]});
+ const monitor=await launch(),requestId=await read(monitor);
+ const late=await lateBody(hub,'/api/monitor/v1/commands',monitor,{operation:'label',requestId,identity,label:'Late'},async()=>assert.equal((await logout(monitor)).status,200));
+ assert.equal(late.status,401);
  assert.deepEqual({browserSessions:hub.resources().browserSessions,ledgers:hub.resources().ledgers,replayEntries:hub.resources().replayEntries},{browserSessions:0,ledgers:0,replayEntries:0});
+ for(const [path,value] of [['/api/controllers/v1/wall/commands',valid],['/api/controllers/v1/wall/integration/commands',{apiVersion:'1.0'}],['/api/controllers/v1/wall/integration/cancel',{apiVersion:'1.0'}]]){
+  const device=await launch();
+  const response=await lateBody(hub,path,device,value,async()=>assert.equal((await logout(device)).status,200));
+  assert.equal(response.status,401,path);
+ }
+ assert.equal(controllerCalls,0,'no controller request was sent for a retired session');
+});
+
+test('a configured credential rotated while its request body is in flight sends nothing',async t=>{
+ const {hub,read}=await fixture(t),requestId=await read(configured);
+ const late=await lateBody(hub,'/api/monitor/v1/commands',configured,{operation:'label',requestId,identity,label:'Late'},async()=>{
+  // The same ID now carries only read scope.
+  hub.replaceCredentials([{id:'reader',digest:digest(configuredToken),scopes:['read'],devices:[]}]);
+ });
+ assert.equal(late.status,401);
+ assert.equal(await read(configured),requestId,'the rotated credential keeps its ticket and nothing was admitted');
 });

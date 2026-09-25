@@ -31,11 +31,11 @@ for(const [name,settle,check] of [
  });
 }
 
-test('a pending command whose caller stopped waiting stays charged until it settles',async()=>{
+test('a pending command stays charged after its caller stops waiting, until it settles',async()=>{
  const ledgers=createReplayLedgers(),operation=deferred();
  const ticket=ledgers.ticket('browser-a'),body='{"operation":"acknowledge"}';
  const result=ledgers.submit('browser-a',ticket,body,operation.run);
- // The HTTP handler's response timeout abandons only the response; the owner operation keeps running.
+ // Models the HTTP handler's three-second response timeout, which abandons only the response: the operation keeps running.
  const abandoned=await Promise.race([result.then(()=>'settled'),new Promise(resolve=>setTimeout(()=>resolve('timed-out'),20))]);
  assert.equal(abandoned,'timed-out');
  assert.equal(ledgers.submit('browser-a',ticket,body,operation.run),result,'a repeat before retirement reuses the running operation');

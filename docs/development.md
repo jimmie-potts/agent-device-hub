@@ -477,7 +477,9 @@ Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
 tests. They repeat launch, monitor read, command and logout, then cover expiry
 and oldest-session eviction. Session, ledger, stream and replay counts must
 return to the configured-credential bound. A configured credential's logout
-keeps its tickets and streams. A command body arriving after logout is refused.
+keeps its tickets and streams. A monitor, controller or integration write whose
+body arrives after logout is refused before any controller call, as is a late
+write from a configured credential rotated in the meantime.
 Deferred fake operations cover a pending command that resolves, rejects or
 outlives its caller after retirement. The existing Hub jobs run them; no new CI
 job is needed.

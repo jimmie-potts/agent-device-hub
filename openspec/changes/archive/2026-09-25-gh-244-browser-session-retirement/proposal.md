@@ -5,7 +5,7 @@
 ## What Changes
 
 - Give browser-session resources one hub-local owner and one idempotent retirement path. Logout, the eight-hour expiry, eviction at the 16-session limit, credential replacement and shutdown all use it for the credential, its change streams, its ticket ledger and its replay accounting.
-- A retired session admits no new work. That includes a command whose headers were authorized before logout but whose body arrived after it. A command the session had already admitted keeps running and is not cancelled or sent again. Its replay entry stays charged until the command settles and is then released once.
+- A retired session admits no new work. That includes a monitor, controller, integration or playback write whose headers were authorized before logout but whose body arrived after it. The same re-check refuses late work from a configured credential that was rotated or narrowed while its body was in flight. A command the session had already admitted keeps running and is not cancelled or sent again. Its replay entry stays charged until the command settles and is then released once.
 - Logging out of a dashboard opened with a configured credential ends no session. That credential keeps its streams, ticket sequence and retained results. Previously, such a logout closed every change stream of that configured principal, including other consumers' streams.
 - Expired browser sessions are pruned on every authentication, not only on browser-token authentication.
 - The host handle gains in-process resource counts for tests. There is no HTTP diagnostics route.

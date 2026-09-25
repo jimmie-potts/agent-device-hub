@@ -179,11 +179,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if(!/^[A-Za-z0-9_-]{43}$/.test(token))return null;
     return browserSessions.get(createHash('sha256').update(token).digest('hex'))?.credential??null;
   };
-  // Authorization can precede a request body or an MCP call by an await. Ticket use re-checks that the principal was not retired meanwhile.
+  // Authorization can precede a request body or an MCP call by an await. Before any effect, re-check that the principal is still
+  // the current configured credential or a live browser session, so retirement, rotation or a scope change applies to late work.
   const live = (principal:Credential) => {
     pruneBrowser();
-    if (browserSessions.get(principal.digest)?.credential.id === principal.id) return true;
-    if (currentCredentials.some(c => c.id === principal.id)) return true;
+    if (browserSessions.get(principal.digest)?.credential === principal || currentCredentials.includes(principal)) return;
     throw new HttpError('unauthenticated',401);
   };
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
@@ -261,6 +261,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
+        // Every write reads its body after authorization; a principal retired meanwhile sends nothing.
+        const admitted = async (maximum:number) => {const value = await body(req,maximum);live(principal);return value;};
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
           // A configured credential has no browser session to end: its tickets, retained results and streams stay.
@@ -283,10 +285,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
           if (staged) throw new HttpError('owner-quiesced',503);
-          const result = await owner.ingest(await body(req,2048));
+          const result = await owner.ingest(await admitted(2048));
           json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
         } else if (req.method === 'POST' && path === '/api/monitor/v1/commands' && !url.search) {
-          json(res,200,await command(principal,await body(req,65536)));
+          json(res,200,await command(principal,await admitted(65536)));
         } else if (req.method === 'GET' && path === '/api/monitor/v1/changes' && !url.search) {
           if (streams.size >= 16) throw new HttpError('capacity',429);
           streaming = true;clearTimeout(timer); streams.add(res);streamOwners.set(res,principal.id);
@@ -299,20 +301,20 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (playback && req.method === 'POST' && path === '/api/playback/v1/commands' && !url.search) {
           // A staged migration destination must not become a second playback writer.
           if (staged) throw new HttpError('owner-quiesced',503);
-          const response = await playback.command(await body(req,1024),principal);json(res,response.status,response.body);
+          const response = await playback.command(await admitted(1024),principal);json(res,response.status,response.body);
         } else if (integrationRoute) {
           const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           const operation = integrationRoute[2];
           if (req.method === 'GET' && operation === 'snapshot' && !url.search) json(res,200,await client.integrationSnapshot());
           else if (req.method === 'GET' && operation === 'receipt' && [...url.searchParams.keys()].length === 2 && url.searchParams.has('epoch') && /^[0-9]+$/.test(url.searchParams.get('sequence') ?? ''))
             {const response = await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))});json(res,response.status,response.body);}
-          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await body(req,65536));json(res,receipt.status,receipt.body);}
-          else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await body(req,65536));json(res,response.status,response.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await admitted(65536));json(res,receipt.status,receipt.body);}
+          else if (req.method === 'POST' && !url.search && operation === 'cancel') {const response = await client.integrationCancel(await admitted(65536));json(res,response.status,response.body);}
           else throw new HttpError('invalid-input',400);
         } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           if (route[2] === 'snapshot') json(res,200,await client.snapshot());
-          else {const response = await client.command(await body(req,65536));json(res,response.status,response.body);}
+          else {const response = await client.command(await admitted(65536));json(res,response.status,response.body);}
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);
@@ -347,7 +349,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     validateCredentials(input:Credential[]) { credentials(input); },
     staged:() => staged,
     /** In-process counts for lifecycle tests. There is no HTTP route, and no credential or session content is included. */
-    resources:() => ({browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
+    resources:() => ({requests:active,browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
     prepareConsumers() {
       if(!staged||!activationAllowed||activating||closing||exported)throw new Error('activation-unavailable');
       preparingConsumers=true;
