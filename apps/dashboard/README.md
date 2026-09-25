@@ -7,6 +7,16 @@ Hub #151 adds Pixoo general controls and Hub #153 adds Nanoleaf general
 controls to the same component view. Exact previews and full editor migration
 remain separate work.
 
+## Visual foundation
+
+The [application UI style guide](../../docs/application-ui-style-guide.md)
+records the shared visual direction (Neon Geometry Wars), the skin template and
+semantic role names, the component and state rules, the B.U.N.N.Y. spelling and
+the component vocabulary. This dashboard's `src/style.css` `:root` block is the
+application token layer that future pages extend. Applying the guide to the
+current screens is [Hub #182](https://github.com/jimmie-potts/agent-device-hub/issues/182);
+until then the rendered UI keeps its approved candidate.
+
 ## Build and access
 
 Use Node 24 at the repository root. `npm ci` and `npm run build` produce the fixed

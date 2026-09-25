@@ -16,6 +16,12 @@ local-first assistant direction. Preserve the Codex-first milestone before
 general device controls and Apple Music integration. Container migration and
 remote voice access remain later work.
 
+The shared application's user-facing name is B.U.N.N.Y. The
+[application UI style guide](application-ui-style-guide.md) owns that spelling,
+the visual foundation and skin template, and the component vocabulary (Brain,
+Ears, Eyes, Nerves, Paws, Face, Burrow) that names the responsibilities below
+without changing any owner, package, path or identifier.
+
 The assistant is the conversational client of available services and tools.
 An automation rule is an explicitly accepted event-to-action policy that can
 run without an open conversation.
