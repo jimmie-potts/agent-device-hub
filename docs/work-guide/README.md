@@ -20,8 +20,10 @@ Hub, Nanoleaf and Pixoo. Counts include only open issues.
 Selecting an issue link opens its task brief: the repository, number, title, a
 GitHub link and copyable Explain, Plan, Implement and Review prompts for an
 existing Codex or Claude session. Plan starts `plan-work` and Implement starts
-`deliver-work`. The prompts reference the live issue URL and embed no snapshot
-context. A modified click, or a browser without scripts, opens GitHub instead.
+`deliver-work`. Every prompt names the live issue URL. Only a current Execution
+recommendation adds snapshot context: Implement then copies the story's saved
+prompt, as described in the next section. A modified click, or a browser without
+scripts, opens GitHub instead.
 Other guide views open the same dialog with `openBrief(key)`.
 `work/guide_brief.css` styles it.
 
@@ -56,6 +58,67 @@ render snapshot lists; `work/guide_overview.js` applies complete public GitHub
 reads. Preserve the matching selection rules when changing either implementation.
 Pixoo embedded-host performance remains later by the owner's explicit choice,
 even without a tracker `deferred` label. Its issue scope and acceptance stay intact.
+
+## Execution recommendations
+
+A story may carry one `## Execution recommendation` section that names the
+session to start in Claude Code and in Codex: model, thinking level, session type
+(`One-shot`, `Pair`, `Orchestrate` or `Investigate first`), subagents, availability
+and the prompts to paste. The installed `plan-work` policy defines that shape once
+[agent-skills#58](https://github.com/jimmie-potts/agent-skills/issues/58) lands.
+Until then, the section in
+[#252](https://github.com/jimmie-potts/agent-device-hub/issues/252) is the interim
+reference. This README covers only how the guide reads and shows the section.
+
+`work/recommendations.py` parses the section from the saved story bodies in
+`work/backlogs/*-issues.json`. The parser is strict and never fills a gap:
+
+- A missing host value, table row or prompt, an unknown key, table row or session
+  type, a duplicate section, stray text, or availability that does not start with
+  `Verified` or `Provisional` makes the story "Assessment unavailable".
+- `**Status:** insufficient` with `**Missing:**` shows "Insufficient information"
+  and the missing input. That form carries no answer, table or prompts.
+- A story without a section shows "Not yet assessed".
+- The `**Assessed:**` line ends with a `fingerprint:` code span holding the first
+  12 hex characters of the SHA-256 of the story body with this section removed, after
+  normalizing line endings, trailing spaces and blank-line runs. The build
+  recomputes it from the saved body. A different value shows "Needs reassessment
+  (story text changed after <date>)". Labels, state and dependencies are not in
+  the body, so a status refresh neither confirms nor stales a recommendation.
+  Prompt blocks sit inside the section, so editing a prompt does not stale it.
+
+Topic rows and opening cards show one text label per story, session type first,
+for example "Start One-shot · Sonnet medium / Luna medium". Live GitHub reads keep
+each story's snapshot label; a story missing from the snapshot shows "Not yet
+assessed". The fingerprint is not rechecked in the browser, so a story edited
+after the snapshot keeps its dated label until the next guide refresh.
+
+The task brief shows a "Start with" block above the actions: the state, assessment
+date and policy revision, the story's recorded complexity, uncertainty and impact,
+the answer line, a two-host table with a verified or provisional label per host,
+and a details element with the reasons, availability and reassessment trigger.
+While the recommendation is current, Implement offers a host toggle (Claude Code
+or Codex, remembered in browser storage when available) and a start toggle
+(Recommended or Cheaper; Cheaper is disabled when none is recorded), and copies
+the saved prompt verbatim. Every other state uses the generic Implement prompt and
+says why. Explain, Plan and Review never change. Printing an open brief prints it
+with its details expanded.
+
+`recommendations.py upsert` writes sections from assessor input, a JSON list kept
+outside Git in the main checkout's `.local/evidence/`. It does not assess. For each
+story it re-reads the live body and replaces only this section, adding a `## Work
+assessment` section only for ratings the story does not already record. It renders
+the prompts from one template per session type and host. It keeps the recorded
+date when the fingerprint is unchanged, writes nothing when the section is
+unchanged, refuses a story edited after the input's `read_at` time or while it is
+being written, and reads the result back. Run it with `--dry-run` first;
+`--receipt` appends one JSON line per story. `recommendations.py report` lists
+the saved state of every open story.
+
+```bash
+python3 docs/work-guide/work/recommendations.py upsert --input <entries.json> --dry-run
+python3 docs/work-guide/work/recommendations.py report
+```
 
 ## Skin and tokens
 

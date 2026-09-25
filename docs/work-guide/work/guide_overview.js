@@ -7,6 +7,9 @@
   const labels = row => row.labels.map(label => typeof label === 'string' ? label : label.name);
   const deferred = key => labels(rows[key]).includes('deferred') || key in data.later;
   const active = key => labels(rows[key]).some(label => ['status:in-progress','status:review'].includes(label));
+  // Recommendation labels stay on the snapshot; a live-only issue is not yet assessed.
+  const recommendations = JSON.parse(document.querySelector('#issue-recommendations').textContent);
+  const recommendation = key => { const rec = recommendations[key] || {state:'unassessed',label:'Not yet assessed'}; return `<p class="rec" data-key="${escape(key)}" data-rec="${escape(rec.state)}"><span class="rec-key">Start</span> ${escape(rec.label)}</p>`; };
   const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
   function badge(key) {
     const row = rows[key], names = labels(row);
@@ -21,7 +24,7 @@
     const priority = labels(row).filter(label => /^priority:|^p[0-4]$/i.test(label));
     const qualifiers = [...(deferred(key) ? [key in data.later ? 'Later by owner choice' : 'Deferred'] : []), ...priority];
     const gate = data.later[key] || (refreshed.has(key[0]) ? row.blocked ? 'Blocked in the current GitHub record. Read the issue for the prerequisite or decision.' : deferred(key) ? 'Deferred. Select and refine its scope before scheduling.' : active(key) ? 'Work is underway. Coordinate with the current owner.' : 'No recorded open prerequisite. Confirm the scope and owner before starting.' : row.gate);
-    return `<article class="work-card" data-key="${key}"><h3>${escape(row.title)}</h3>${badge(key)}<p class="work-meta">Created <time datetime="${escape(row.createdAt)}">${escape(row.createdAt.slice(0,10))}</time> UTC${qualifiers.length ? ' · '+escape(qualifiers.join(' · ')) : ''}</p>${description ? `<p>${escape(description)}</p>` : ''}<p class="work-gate">${escape(gate)}</p>${data.workarounds[key] ? `<p>Workaround: ${escape(data.workarounds[key])}</p>` : ''}${owner ? `<a href="#${owner}">${escape(data.titles[owner])} →</a>` : `<p>Added since this guide snapshot; topic assignment pending.</p><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer">Read the issue →</a>`}</article>`;
+    return `<article class="work-card" data-key="${key}"><h3>${escape(row.title)}</h3>${badge(key)}${recommendation(key)}<p class="work-meta">Created <time datetime="${escape(row.createdAt)}">${escape(row.createdAt.slice(0,10))}</time> UTC${qualifiers.length ? ' · '+escape(qualifiers.join(' · ')) : ''}</p>${description ? `<p>${escape(description)}</p>` : ''}<p class="work-gate">${escape(gate)}</p>${data.workarounds[key] ? `<p>Workaround: ${escape(data.workarounds[key])}</p>` : ''}${owner ? `<a href="#${owner}">${escape(data.titles[owner])} →</a>` : `<p>Added since this guide snapshot; topic assignment pending.</p><a href="${escape(row.url)}" target="_blank" rel="noopener noreferrer">Read the issue →</a>`}</article>`;
   }
   const cards = (keys, descriptions={}) => keys.length ? `<div class="work-grid">${keys.map(key=>card(key,descriptions[key])).join('')}</div>` : '<p class="work-empty">None in this view.</p>';
   function render() {

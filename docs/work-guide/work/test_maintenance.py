@@ -355,5 +355,224 @@ class GuideMaintenance(unittest.TestCase):
                 self.assertIn(revision, html)
 
 
+def recommendation_entry(session='Orchestrate', cheaper=True, **changes):
+    """A synthetic assessor entry; the assessment content is fixture text only."""
+    host = lambda model, delegate: dict(model=model, thinking='high', session=session,
+                                        subagents='One read-only scout per repository.' if session in ('Orchestrate', 'Pair') else 'None',
+                                        delegate=delegate, availability='Provisional: fixture availability')
+    entry = dict(repo='agent-device-hub', number=900, status='recommended', answer='one fixture session.',
+                 hosts=dict(claude=host('Opus (`opus`)', 'read-only `sonnet` scouts'),
+                            codex=host('Sol (`gpt-6-sol`)', 'read-only Luna (`gpt-6-luna`) scouts')),
+                 question='Does the fixture question have an answer?', why='fixture reasons.', reassess='the fixture changes.',
+                 assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture evidence'))
+    if cheaper:
+        entry['cheaper'] = dict(covers='the fixture part A', limit='Open the PR for part A only.',
+                                hosts=dict(claude=dict(model='Sonnet (`sonnet`)', thinking='medium', session='One-shot'),
+                                           codex=dict(model='Luna (`gpt-6-luna`)', thinking='medium', session='One-shot')))
+    entry.update(changes)
+    return entry
+
+
+STORY = '## Outcome\n\nA fixture story.\n\n## Work assessment\n\n- **Complexity: medium.** Fixture.\n- **Uncertainty: low.** Fixture.\n- **Impact: high.** Fixture.\n'
+
+
+class Recommendations(unittest.TestCase):
+    def setUp(self):
+        import recommendations
+        self.R = recommendations
+
+    def written(self, entry=None, body=STORY):
+        return self.R.upsert(body, entry or recommendation_entry(), '2026-09-30')[0]
+
+    def section(self, body):
+        return body[body.index('## Execution recommendation'):]
+
+    def test_both_hosts_prompts_and_starts_are_extracted(self):
+        result = self.R.read(self.written())
+        self.assertEqual(result['state'], 'recommended')
+        self.assertEqual(result['label'], 'Orchestrate · Opus high / Sol high')
+        self.assertEqual((result['hosts']['claude']['identifier'], result['hosts']['codex']['identifier']), ('opus', 'gpt-6-sol'))
+        self.assertEqual(result['date'], '2026-09-24')
+        for start in ('recommended', 'cheaper'):
+            for host in ('claude', 'codex'):
+                self.assertIn('https://github.com/jimmie-potts/agent-device-hub/issues/900', result['prompts'][start][host])
+        self.assertIn('I started this session on Opus at high effort', result['prompts']['recommended']['claude'])
+        self.assertIn('on gpt-6-sol at high reasoning', result['prompts']['recommended']['codex'])
+        self.assertIn('on Sonnet at medium effort', result['prompts']['cheaper']['claude'])
+        without = self.R.read(self.written(recommendation_entry(cheaper=False)))
+        self.assertIsNone(without['prompts']['cheaper'], 'A missing cheaper start is absent, never invented')
+        self.assertIsNone(without['cheaper'])
+        self.assertNotIn('cheaper', {k for k, v in self.R.brief(without).items() if v})
+
+    def test_unreadable_sections_render_assessment_unavailable(self):
+        body = self.written()
+        section = self.section(body)
+        cases = {
+            'missing host': body.replace('| Model | Opus (`opus`) | Sol (`gpt-6-sol`) |', '| Model | Opus (`opus`) | |'),
+            'missing Codex prompt': body.replace('**Prompt (Codex):**', '**Unknown (Codex):**'),
+            'duplicate section': body + '\n' + section,
+            'unknown key': body.replace('**Why:**', '**Rationale:**'),
+            'unknown session type': body.replace('| Session type | Orchestrate |', '| Session type | Swarm |'),
+            'unknown row': body.replace('| Thinking level |', '| Temperature |'),
+            'unlabeled availability': body.replace('| Availability | Provisional: fixture', '| Availability | fixture'),
+            'stray text': body.replace('**Why:**', 'Some prose.\n\n**Why:**'),
+            'cheaper line without prompts': self.written(recommendation_entry(cheaper=False)).replace('**Why:**', '**Cheaper start:** a guess.\n\n**Why:**'),
+        }
+        for name, text in cases.items():
+            with self.subTest(case=name):
+                result = self.R.read(text)
+                self.assertEqual(result['state'], 'unavailable', result)
+                self.assertEqual(result['label'], 'Assessment unavailable')
+                self.assertEqual(set(self.R.brief(result)), {'state', 'label', 'ratings', 'reason'})
+
+    def test_freshness_and_missing_sections(self):
+        body = self.written()
+        self.assertEqual(self.R.read(STORY)['state'], 'unassessed')
+        self.assertEqual(self.R.read(STORY)['label'], 'Not yet assessed')
+        # Whitespace and line endings are normalized; story text is not.
+        self.assertEqual(self.R.read(body.replace('\n', '\r\n') + '\n\n')['state'], 'recommended')
+        edited = self.R.read(body.replace('A fixture story.', 'A changed story.'))
+        self.assertEqual(edited['state'], 'stale')
+        self.assertEqual(edited['label'], 'Needs reassessment (story text changed after 2026-09-24)')
+        self.assertNotIn('prompts', self.R.brief(edited), 'A stale story never supplies a custom prompt')
+        # Prompt text sits inside the section and outside the fingerprint.
+        hand_edit = body.replace('Open the PR for part A only.', 'Open the PR for part A only, please.')
+        self.assertEqual(self.R.read(hand_edit)['state'], 'recommended')
+        self.assertIn('please', self.R.read(hand_edit)['prompts']['cheaper']['claude'])
+
+    def test_provisional_availability_and_unchanged_ratings(self):
+        entry = recommendation_entry()
+        entry['hosts']['claude']['availability'] = 'Verified: fixture host evidence'
+        result = self.R.read(self.written(entry))
+        self.assertTrue(result['hosts']['claude']['verified'])
+        self.assertFalse(result['hosts']['codex']['verified'], 'Provisional availability stays unverified')
+        self.assertEqual(result['ratings'], {'Complexity': 'medium', 'Uncertainty': 'low', 'Impact': 'high'})
+        self.assertIn('**Impact: high.** Fixture.', self.written(entry), 'The high-impact rating text is untouched')
+
+    def test_parent_and_child_are_assessed_independently(self):
+        parent = self.R.read(self.written(recommendation_entry('Orchestrate')))
+        child_entry = recommendation_entry('One-shot', number=901)
+        for host in child_entry['hosts'].values():
+            host['model'] = 'Sonnet (`sonnet`)' if 'opus' in host['model'] else 'Luna (`gpt-6-luna`)'
+            host['thinking'] = 'medium'
+        child = self.R.read(self.written(child_entry, STORY.replace('A fixture story.', 'A child story of #900.')))
+        self.assertEqual(parent['label'], 'Orchestrate · Opus high / Sol high')
+        self.assertEqual(child['label'], 'One-shot · Sonnet medium / Luna medium')
+        self.assertIn('/issues/901', child['prompts']['recommended']['claude'])
+
+    def test_insufficient_story_names_what_is_missing(self):
+        entry = dict(repo='agent-device-hub', number=902, status='insufficient', missing='the owner has not chosen the bulbs.',
+                     reassess='the owner records the bulbs.', assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture'))
+        result = self.R.read(self.written(entry))
+        self.assertEqual((result['state'], result['label']), ('insufficient', 'Insufficient information'))
+        self.assertEqual(result['missing'], 'the owner has not chosen the bulbs.')
+        self.assertNotIn('prompts', self.R.brief(result))
+        with_table = self.written(entry).replace('**Missing:**', '| | Claude Code | Codex |\n| --- | --- | --- |\n\n**Missing:**')
+        self.assertEqual(self.R.read(with_table)['state'], 'unavailable')
+
+    def test_hostile_text_is_literal_everywhere(self):
+        hostile = '<img src=x onerror=alert(1)> & "q" [[H1]] | `tick` ```'
+        entry = recommendation_entry(answer=hostile, why=hostile, reassess=hostile, question=hostile)
+        entry['hosts']['claude'].update(model=f'{hostile} (`opus`)', subagents=hostile, availability='Provisional: ' + hostile, delegate=hostile)
+        entry['assessed']['evidence'] = hostile
+        body = self.written(entry)
+        result = self.R.read(body)
+        self.assertEqual(result['state'], 'recommended', result.get('reason'))
+        self.assertEqual(result['answer'], hostile)
+        self.assertEqual(result['hosts']['claude']['subagents'], hostile)
+        self.assertEqual(result['hosts']['claude']['model'], hostile)
+        self.assertIn(hostile, result['prompts']['recommended']['claude'], 'A prompt containing fences survives its block')
+        shown = self.R.brief(result)
+        self.assertEqual(shown['prompts'], result['prompts'], 'Prompts reach the page verbatim')
+        self.assertIn('<img src=x onerror=alert(1)>', shown['answer'], 'Display text stays literal; the page sets it as text')
+        self.assertEqual(self.R.display('Sonnet (`sonnet`) [#252](https://example.test/252)'), 'Sonnet (sonnet) #252')
+        label = self.R.label_html('H900', result)
+        self.assertNotIn('<img', label)
+        self.assertIn('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H1]]', label)
+
+    def test_upsert_is_idempotent_and_touches_only_its_section(self):
+        first, outcome = self.R.upsert(STORY, recommendation_entry(), '2026-09-30')
+        self.assertEqual(outcome, 'created')
+        self.assertEqual(first.count('## Execution recommendation'), 1)
+        self.assertTrue(first.startswith(STORY.rstrip('\n')), 'Other story text is byte-identical')
+        again, outcome = self.R.upsert(first, recommendation_entry(), '2026-10-05')
+        self.assertEqual((again, outcome), (first, 'unchanged'))
+        # A new assessment of unchanged story text keeps the recorded date.
+        revised, outcome = self.R.upsert(first, recommendation_entry(why='revised reasons.', assessed=dict(date='2026-10-01', policy='agent-skills@3e009e6', evidence='fixture evidence')), '2026-10-05')
+        self.assertEqual(outcome, 'updated')
+        self.assertEqual(self.R.read(revised)['date'], '2026-09-24')
+        self.assertEqual(revised.replace('revised reasons.', 'fixture reasons.'), first)
+        # Changed story text takes the new assessment date and replaces only the section.
+        story = first.replace('A fixture story.', 'A changed story.')
+        replaced, outcome = self.R.upsert(story, recommendation_entry(assessed=dict(date='2026-10-01', policy='agent-skills@3e009e6', evidence='fixture evidence')), '2026-10-05')
+        self.assertEqual(outcome, 'updated')
+        self.assertEqual(self.R.read(replaced)['date'], '2026-10-01')
+        self.assertEqual(self.R.without_section(replaced), self.R.without_section(story))
+        # Sections that follow keep their place.
+        middle = STORY + '\n## Execution recommendation\n\nold text\n\n## Later\n\nKeep me.\n'
+        updated, outcome = self.R.upsert(middle, recommendation_entry(), '2026-09-30')
+        self.assertTrue(updated.endswith('\n## Later\n\nKeep me.\n'))
+        self.assertEqual(self.R.read(updated)['state'], 'recommended')
+
+    def test_derived_assessment_is_added_once_and_existing_ratings_win(self):
+        story = '## Outcome\n\nNo ratings yet.\n'
+        assessment = '## Work assessment\n\nDelivery-pass assessment, 2026-09-24.\n\n- **Complexity: low.** Fixture.'
+        entry = recommendation_entry(assessment=assessment)
+        body, outcome = self.R.upsert(story, entry, '2026-09-30')
+        self.assertEqual(outcome, 'created')
+        self.assertLess(body.index('## Work assessment'), body.index('## Execution recommendation'))
+        self.assertEqual(self.R.upsert(body, entry, '2026-09-30'), (body, 'unchanged'))
+        with self.assertRaises(ValueError):
+            self.R.upsert(STORY.replace('## Work assessment', '## Assessment and readiness'), entry, '2026-09-30')
+
+    def test_prompts_follow_one_template_per_session_type_and_host(self):
+        expected = {'One-shot': 'Run as a one-shot session: implement directly without subagents.',
+                    'Pair': 'Run as a paired session: delegate the implementation to one',
+                    'Orchestrate': 'Run as an orchestrating session: break the work down, delegate',
+                    'Investigate first': "Read-only: don't change files, branches or GitHub. Answer this question: Does the fixture question have an answer?"}
+        for session, phrase in expected.items():
+            entry = recommendation_entry(session, cheaper=False)
+            result = self.R.read(self.written(entry))
+            self.assertEqual(result['state'], 'recommended', result.get('reason'))
+            for host, word in (('claude', 'effort'), ('codex', 'reasoning level')):
+                with self.subTest(session=session, host=host):
+                    text = result['prompts']['recommended'][host]
+                    self.assertEqual(text, self.R.prompt(entry, host, 'recommended', '2026-09-24'), 'The saved prompt round-trips')
+                    self.assertIn(phrase, text)
+                    self.assertIn(f'take the {word} as stated rather than guessing it', text)
+                    self.assertIn("The issue's Execution recommendation (assessed 2026-09-24) is the basis", text)
+                    self.assertEqual(text.endswith("If deliver-work isn't available here, say so and stop."), session != 'Investigate first')
+                    self.assertEqual(text.startswith('Investigate '), session == 'Investigate first')
+
+    def test_apply_rereads_writes_changed_sections_and_reads_back(self):
+        store = {'body': STORY}
+        writes = []
+        reader = lambda repo, number: dict(state='open', body=store['body'])
+        def writer(repo, number, body):
+            writes.append(body)
+            store['body'] = body
+        entry = recommendation_entry()
+        first = self.R.apply([entry], '2026-09-30', False, reader=reader, writer=writer)
+        self.assertEqual((first[0]['outcome'], first[0]['readback'], len(writes)), ('created', 'recommended', 1))
+        second = self.R.apply([entry], '2026-09-30', False, reader=reader, writer=writer)
+        self.assertEqual((second[0]['outcome'], len(writes)), ('unchanged', 1), 'Unchanged content writes nothing')
+        dry = self.R.apply([recommendation_entry(why='new')], '2026-09-30', True, reader=reader, writer=writer)
+        self.assertEqual((dry[0]['outcome'], len(writes)), ('updated', 1), 'A dry run writes nothing')
+        # A story edited between the read and the write is left alone.
+        reads = iter([dict(state='open', body=store['body']), dict(state='open', body=store['body'] + '\nNew owner text.')])
+        raced = self.R.apply([recommendation_entry(why='newer')], '2026-09-30', False, reader=lambda *a: next(reads), writer=writer)
+        self.assertEqual((raced[0]['outcome'], len(writes)), ('error', 1))
+
+    def test_two_consecutive_builds_produce_identical_html(self):
+        with tempfile.TemporaryDirectory(prefix='guide-repeat-') as directory:
+            candidate = copy_guide(directory)
+            outputs = []
+            for _ in range(2):
+                result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                outputs.append((candidate / 'outputs/agent-device-work-guides.html').read_bytes())
+            self.assertEqual(outputs[0], outputs[1])
+
+
 if __name__ == '__main__':
     unittest.main()
