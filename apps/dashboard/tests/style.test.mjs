@@ -15,9 +15,16 @@ const DECLARATION = /(?:(?<=[{;\s])|^)(color|fill|stroke|outline(?:-color)?|box-
 const WORD = /(?<![\w-])[A-Za-z]+(?![\w-])/g;
 const NAMED = new Set(['white', 'black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'gray', 'grey',
  'cyan', 'magenta', 'lime', 'navy', 'teal', 'maroon', 'olive', 'silver', 'fuchsia', 'aqua', 'transparent'].filter(w => w !== 'transparent'));
+const TOKEN = /var\(\s*(--[\w-]+)/g;
+
+/** Blanks /* *\/ comments to spaces so a literal mentioned in prose is never flagged, keeping line numbers stable. */
+function stripComments(text) {
+ return text.replace(/\/\*.*?\*\//gs, m => m.replace(/[^\n]/g, ' '));
+}
 
 /** Sorted (line, literal) pairs for every color literal in the given CSS text. */
-export function colorLiterals(text) {
+export function colorLiterals(rawText) {
+ const text = stripComments(rawText);
  const found = [];
  for (const m of text.matchAll(HEX)) found.push([m.index, m[0]]);
  for (const m of text.matchAll(FUNCTION)) found.push([m.index, text.slice(m.index, text.indexOf(')', m.index) + 1)]);
@@ -45,9 +52,24 @@ export async function scanCssFiles(root = SRC) {
  return problems;
 }
 
+/** Every custom property `var(--x)` names in `consumerText`, that no rule in `tokenText` defines. */
+export function undefinedTokens(consumerText, tokenText) {
+ const defined = new Set(stripComments(tokenText).matchAll(/(--[\w-]+)\s*:/g).map(m => m[1]));
+ const used = new Set(stripComments(consumerText).matchAll(TOKEN).map(m => m[1]));
+ return [...used].filter(name => !defined.has(name)).sort();
+}
+
 test('dashboard CSS outside the skin file uses only role and private tokens', async () => {
  const problems = await scanCssFiles();
  assert.deepEqual(problems, [], problems.join('\n'));
+});
+
+test('every token style.css consumes is defined in the skin file', async () => {
+ const [style, skin] = await Promise.all([
+  readFile(join(SRC, 'style.css'), 'utf8'),
+  readFile(join(SKINS, 'neon-geometry-wars.css'), 'utf8'),
+ ]);
+ assert.deepEqual(undefinedTokens(style, skin), []);
 });
 
 test('the check fails on a raw color added to style.css', () => {
@@ -55,4 +77,13 @@ test('the check fails on a raw color added to style.css', () => {
  assert.deepEqual(colorLiterals('.example{background:rgba(255,0,0,.5)}'), [[1, 'rgba(255,0,0,.5)']]);
  assert.deepEqual(colorLiterals('.example{border-color:red}'), [[1, 'red']]);
  assert.deepEqual(colorLiterals('.example{background:var(--accent)}'), [], 'a token reference is not a color literal');
+});
+
+test('a color literal mentioned only in a comment is not flagged', () => {
+ assert.deepEqual(colorLiterals('/* was #ff00aa, now a token */.example{color:var(--text)}'), []);
+});
+
+test('a typo’d token name is caught even though it is valid, silent CSS', () => {
+ assert.deepEqual(undefinedTokens('.example{color:var(--acent)}', ':root{--accent:#22d3ee}'), ['--acent']);
+ assert.deepEqual(undefinedTokens('.example{color:var(--accent)}', ':root{--accent:#22d3ee}'), []);
 });
