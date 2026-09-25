@@ -42,3 +42,20 @@ test('an invalid configuration fails with a generic message', async t => {
   assert.equal(code, 1);
   assert.deepEqual(output(), { stdout: '', stderr: 'local-controllers-start-failed\n' });
 });
+
+test('a stop signal the instant the host announces startup still stops it cleanly', async t => {
+  const s = privateFiles(t);
+  const path = s.write('host.json', { port: 0, credentials: [{ ...s.host.credentials[0], devices: ['desk', 'shelf'] }], lifx: s.host.lifx });
+  const home = join(s.dir, 'home');
+  mkdirSync(home, { mode: 0o700 });
+  // Without a handler installed before the started line, most of these exits were a bare SIGTERM with no lease release.
+  for (let i = 0; i < 10; i++) {
+    const child = spawn(process.execPath, [cli, path], { env: { PATH: process.env.PATH, HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => child.kill('SIGKILL'));
+    let stdout = '', signalled = false;
+    child.stdout.on('data', d => { stdout += d; if (!signalled && stdout.includes('local-controllers-started')) { signalled = true; child.kill('SIGTERM'); } });
+    // `close` waits for the output streams too, so the stopped line is never missed.
+    const [code, signal] = await once(child, 'close');
+    assert.deepEqual([code, signal, stdout], [0, null, 'local-controllers-started\nlocal-controllers-stopped\n'], `run ${i}`);
+  }
+});
