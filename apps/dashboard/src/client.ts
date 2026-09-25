@@ -1,7 +1,37 @@
 import type {Snapshot, Request, Command} from '../../../packages/contracts/src/types';
 export type {Snapshot, Command};
 export type Component = {id:string;kind:string;controllerId:string;deviceId:string;health:string;pending:number;editorUrl?:string};
-export type Context = {apiVersion:'1.0';control:boolean;consumers:string[];components:Component[]};
+/** playback names the configured source only when the caller's credential grants it. */
+export type Context = {apiVersion:'1.0';control:boolean;consumers:string[];components:Component[];playback?:{sourceId:string}};
+export type PlaybackAction='play'|'pause'|'next'|'previous';
+export type PlaybackSnapshot={apiVersion:'1.0';sourceId:string;availability:'available'|'stale'|'unavailable';observedAtMs:number|null;ageMs:number|null;
+ playback:null|{status:'playing'|'paused'|'stopped'|'inactive'|'unknown';title?:string;artist?:string;album?:string;controls:PlaybackAction[]}};
+export type PlaybackReceipt={requestId:string;sourceId:string;action:PlaybackAction;outcome:'sent'|'failed'|'uncertain'};
+const PLAYBACK_ACTIONS:PlaybackAction[]=['play','pause','next','previous'];
+/** Buttons appear only for declared actions that a control-scoped caller can send to an available source. Otherwise one reason says why none appear; undeclared names the actions the source does not offer now. */
+export function playbackControls(snapshot:PlaybackSnapshot|undefined,control:boolean):{actions:PlaybackAction[];reason?:string;undeclared?:PlaybackAction[]} {
+ const none=(reason:string)=>({actions:[],reason});
+ if(!snapshot)return none('B.U.N.N.Y. couldn’t read the playback source');
+ if(!control)return none('Your credential is read-only');
+ if(snapshot.availability==='unavailable'||!snapshot.playback)return none('The source is unavailable');
+ if(snapshot.availability==='stale')return none('The source’s last read is stale; controls return when it answers again');
+ const {status,controls}=snapshot.playback;
+ if(!controls.length)return none(status==='inactive'?'AirPlay isn’t the receiver’s current input':`The source declares no controls while ${status}`);
+ return {actions:PLAYBACK_ACTIONS.filter(a=>controls.includes(a)),undeclared:PLAYBACK_ACTIONS.filter(a=>!controls.includes(a))};
+}
+/** The hub's playback receipt in the shared lifecycle's terms: sent was transmitted, a refusal changed nothing, and an unanswered call may have taken effect. */
+export function playbackEvidence(receipt:PlaybackReceipt):ReceiptEvidence {
+ return receipt.outcome==='sent'?{outcome:'sent'}:receipt.outcome==='failed'?{outcome:'failed',priorEffects:'none',failure:{code:'receiver-refused'}}:{outcome:'uncertain',failure:{code:'uncertain-result'}};
+}
+/** Builds one command bound to the displayed source from a read taken just before sending, or names why nothing is sent. A failed read keeps its last snapshot for display but never authorizes a command. */
+export function playbackRequest(read:{snapshot?:PlaybackSnapshot;error?:string},{sourceId,action,control,requestId}:{sourceId:string;action:PlaybackAction;control:boolean;requestId:string}):{request:{requestId:string;sourceId:string;action:PlaybackAction}}|{blocked:string} {
+ if(read.error||!read.snapshot)return {blocked:'B.U.N.N.Y. couldn’t read the playback source'};
+ if(read.snapshot.sourceId!==sourceId)return {blocked:'the hub now reports a different playback source'};
+ const available=playbackControls(read.snapshot,control);
+ if(available.reason)return {blocked:available.reason};
+ return available.actions.includes(action)?{request:{requestId,sourceId,action}}:{blocked:`this source no longer offers ${action}`};
+}
+export const isPlaybackReceipt=(value:unknown):value is PlaybackReceipt=>!!value&&typeof value==='object'&&['sent','failed','uncertain'].includes((value as PlaybackReceipt).outcome)&&typeof (value as PlaybackReceipt).sourceId==='string';
 export function safeEditorUrl(value:unknown):string|undefined {
  try {if(typeof value!=='string')return;const u=new URL(value);if(u.protocol==='http:'&&u.hostname==='127.0.0.1'&&!u.username&&!u.password&&!u.search&&!u.hash)return u.href;}catch{}
 }
@@ -64,7 +94,8 @@ export class Api {
  constructor(private token:string){}
  request<T>(path:string,body?:unknown,signal?:AbortSignal):Promise<T> {
   const device=/^\/api\/controllers\/v1\/([^/]+)\//.exec(path)?.[1];
-  return device?this.schedule(device,body!==undefined,()=>this.perform<T>(path,body,signal,device),signal):this.perform<T>(path,body,signal,'monitor');
+  // Playback has its own channel, so a playback command never supersedes an in-flight monitor read.
+  return device?this.schedule(device,body!==undefined,()=>this.perform<T>(path,body,signal,device),signal):this.perform<T>(path,body,signal,path.startsWith('/api/playback/')?'playback':'monitor');
  }
  private async perform<T>(path:string,body:unknown,signal:AbortSignal|undefined,channel:string):Promise<T> {
   if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);const generation=this.mutations.get(channel)??0;
@@ -105,7 +136,7 @@ const reasons:Record<string,string>={
  capacity:'too many commands are waiting','external-control':'the device is controlled elsewhere','transport-failure':'the controller couldn’t reach the device',
  'request-conflict':'this request was already used','request-expired':'this request expired','request-order':'this request arrived out of order',
  forbidden:'your credential doesn’t allow this',unauthenticated:'your sign-in is no longer valid','invalid-request':'the request wasn’t valid','invalid-input':'the request wasn’t valid',
- cancelled:'it was cancelled before it ran','unknown-device':'the hub doesn’t know this device','controller-unavailable':'the controller isn’t responding','monitor-unavailable':'the controller isn’t responding',
+ cancelled:'it was cancelled before it ran','receiver-refused':'the receiver refused it','unsupported-control':'the source doesn’t offer this right now','source-unavailable':'the source isn’t answering','unknown-source':'the hub doesn’t know this source','owner-quiesced':'the hub is paused for a migration','unknown-device':'the hub doesn’t know this device','controller-unavailable':'the controller isn’t responding','monitor-unavailable':'the controller isn’t responding',
 };
 const reason=(code:string)=>`${reasons[code]??'the controller refused it'} (${code})`;
 const unknown=(code:string)=>`Result unknown: this may have reached the device (${code}). Check the device, then reload current values before trying again.`;

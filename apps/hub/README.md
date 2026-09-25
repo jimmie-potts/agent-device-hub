@@ -65,18 +65,18 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
 
-`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
+`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
 
 When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. A missing or unknown token gets HTTP 401. A tool the token's scopes or `devices` do not cover is left out of the tool list, and calling it anyway returns a tool error with code `forbidden` rather than HTTP 403. `<prefix>` is the per-device value that `hub_devices` returns.
 
 | MCP tools | Scope | `devices` entry |
 | --- | --- | --- |
-| `hub_sessions`, `hub_devices` | `read` | none; `hub_devices` lists only the caller's controllers |
+| `hub_sessions`, `hub_devices` | `read` | none; `hub_devices` lists only the caller's controllers and playback source |
 | `hub_label`, `hub_acknowledge`, `hub_recover_approval` | `control` | none |
 | `<prefix>_status`, `<prefix>_integration_status`, and `<prefix>_integration_receipt` for Nanoleaf only | `read` | that controller's alias |
 | `<prefix>_power_set`, `_brightness_set`, `_mode_set`, `_media_start`, `_media_control`, `_integration_set`, and `_integration_cancel` for Nanoleaf only | `control` | that controller's alias |
-
-There are no playback MCP tools yet; [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37) owns them.
+| `<prefix>_playback_status` | `read` | the playback source ID |
+| `<prefix>_playback_command` | `control` | the playback source ID |
 
 ### Typical clients
 
@@ -92,7 +92,7 @@ There are no playback MCP tools yet; [#37](https://github.com/jimmie-potts/agent
 
 ### Browser sessions
 
-The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias for up to eight hours. That session has no `ingest`, `admin` or playback grant, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
+The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias and on the configured playback source for up to eight hours. That session has no `ingest` or `admin` scope, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
 
 Each browser session owns its command tickets, its change streams and its retained replay results. Logout, the eight-hour expiry, eviction at the 16-session limit, credential replacement and shutdown all retire a session the same way. Its token and cached requests are refused, its streams close, and its ticket ledger and settled replay results are released. A command the session already submitted keeps running. It is not cancelled or sent again, and its replay entry stays charged until the command settles, then is released once. A retired session's late write, whose body arrives after retirement, is refused before it reaches the owner or a controller. After every browser session retires and its submitted commands settle, the host holds no browser ledger, stream or replay entry. Tickets for configured credentials are unaffected. Disconnecting a dashboard that was opened with a configured token ends no session: that credential keeps its streams, its ticket sequence and its retained results.
 
@@ -133,7 +133,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 `sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
 
-Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37). The Tidbyt runner's optional now-playing tile ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) is a read-only consumer of the snapshot; see the [Tidbyt guide](../../controllers/tidbyt/README.md#now-playing-decisions).
+Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Launcher browser sessions receive both on the configured source, and B.U.N.N.Y. shows it under Music ([#37](https://github.com/jimmie-potts/agent-device-hub/issues/37)). The MCP playback tools are described under [Optional local MCP](#optional-local-mcp). The Tidbyt runner's optional now-playing tile ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) is a read-only consumer of the snapshot; see the [Tidbyt guide](../../controllers/tidbyt/README.md#now-playing-decisions).
 
 ### Snapshot
 
@@ -156,7 +156,7 @@ The hub starts `unavailable`. A receiver that stops answering never turns into `
 
 ### Commands
 
-`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The Sony source lists pause, next and previous only while AirPlay is playing and never lists play, because play/resume was not qualified. On this receiver, previous restarts the current song.
+`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The Sony source lists pause, next and previous while AirPlay is playing, only next and previous while it is paused, and never lists play, because play/resume was not qualified ([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)). While playing, previous restarts the current song on this receiver. The owner's 2026-09-25 live check for #37 showed that next and previous change the phone's track while paused without resuming, but the receiver kept reporting the old title, so a paused snapshot's title can lag until playback resumes.
 
 | Result | Meaning |
 | --- | --- |
@@ -246,7 +246,7 @@ to `/` still offers the separately provisioned token form for older workflows.
 
 The page removes the fragment from history before exchanging the code. The
 resulting bearer stays in page memory for up to eight hours, with `read` and
-`control` on the host's configured aliases and no `ingest` or `admin`. The
+`control` on the host's configured aliases and playback source, and no `ingest` or `admin`. The
 browser bearer cannot authenticate MCP. Disconnect revokes it; reload discards
 it, so use the launcher again. At the 16-session limit, a new launch revokes
 the oldest browser session. Existing machine and manual browser credentials
@@ -292,6 +292,8 @@ or action advertised by the owner's media capability. Controller v1 actions are
 each owner may support a subset. The owner returns typed rejections for
 unsupported operations. Both tools require current control scope and permission
 for the configured alias.
+
+When playback is configured, `hub_devices` also returns `playback: {sourceId, toolPrefix}` for a caller whose `devices` include the source. `<prefix>_playback_status` returns the [playback snapshot](#snapshot). `<prefix>_playback_command` takes only `requestId` and `action`; the tool supplies its bound source ID, so a caller cannot name another source or address. Use a new `requestId` for each intended action; repeating one returns the original receipt without contacting the receiver. `data.result` is the receipt plus `priorEffects`: `confirmed-transmission` for `sent`, `none` for a receiver refusal (`failed`) and `possible` for `uncertain`. `failed` and `uncertain` are tool errors. `unsupported-control`, `source-unavailable`, `capacity`, `request-conflict` and `owner-quiesced` return `data.code` with `priorEffects: none`, and nothing retries automatically. A staged hub refuses playback commands, as its HTTP route does.
 
 For Pixoo, first read `_integration_status` and explicitly select Media through
 `_integration_set` if necessary; wait for the observed Media mode, then obtain

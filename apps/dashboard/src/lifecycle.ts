@@ -2,12 +2,13 @@ import {failureMessage,resultMessage,type ReceiptEvidence,type ResultMessage,typ
 
 /** One explicit command's lifecycle, shared by draft forms and one-click actions. It has no React or device knowledge: callers build requests and decide availability. */
 export type Tone='pending'|Settled;
-export type ResultOptions={device?:boolean;sameMode?:boolean};
+/** unreadable names what a failed preparation could not read, for a consumer that is neither a device nor the session monitor. */
+export type ResultOptions={device?:boolean;sameMode?:boolean;unreadable?:string};
 /** A command built from a fresh read, or the reason nothing was sent. */
 export type Prepared<T>=T|{blocked:string};
 export const blocked=<T extends object>(value:Prepared<T>):value is {blocked:string}=>'blocked' in value;
 export const unreadable='B.U.N.N.Y. couldn’t read the device’s current state';
-const unprepared=(options:ResultOptions)=>options.device===false?'B.U.N.N.Y. couldn’t read the current sessions':unreadable;
+const unprepared=(options:ResultOptions)=>options.unreadable??(options.device===false?'B.U.N.N.Y. couldn’t read the current sessions':unreadable);
 
 type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string};
 /** A later snapshot can carry the terminal outcome for a submitted ticket; queued receipts are not terminal. */

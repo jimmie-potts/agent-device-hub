@@ -9,6 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createPlayback} from '../dist/playback.js';
 import {createSonySource,sonyConfiguration} from '../dist/sony.js';
 import {startHub} from '../dist/server.js';
+import {requestBrowserLaunch} from '../dist/browser-launch.js';
 
 const principal={id:'phone',devices:['kitchen']};
 const playing={status:'playing',title:'Song',artist:'Artist',controls:['pause','next']};
@@ -68,7 +69,7 @@ test('Sony AirPlay observations normalize metadata, status and controls',async()
     assert.deepEqual(view(),{status:'playing',title:'Song',artist:'Artist',album:'Album',controls:['pause','next','previous']});
     assert.deepEqual(sony.calls[0],{path:'/sony/avContent',method:'getPlayingContentInfo',id:sony.calls[0].id,params:[{output:''}],version:'1.2'});
     sony.set(()=>playingInfo([airplay({stateInfo:{state:'PAUSED'},albumName:'',title:'  Padded  '})]));await source.refresh();
-    assert.deepEqual(view(),{status:'paused',title:'Padded',artist:'Artist',controls:[]});
+    assert.deepEqual(view(),{status:'paused',title:'Padded',artist:'Artist',controls:['next','previous']},'the owner live check of 2026-09-25 qualified next and previous while paused');
     sony.set(()=>playingInfo([airplay({stateInfo:{state:'STOPPED'},title:undefined,artist:undefined,albumName:undefined,content:undefined})]));await source.refresh();
     assert.deepEqual(view(),{status:'stopped',controls:[]});
     sony.set(()=>({result:[airplay({stateInfo:{state:'BUFFERING'},title:'x'.repeat(300)})]}));await source.refresh();
@@ -134,7 +135,7 @@ async function hubFixture(migration){
   const snapshot=async()=>(await call('/api/playback/v1/snapshot')).json();
   const until=async predicate=>{for(let i=0;i<120;i++){if(predicate(await snapshot()))return;await delay(50);}throw new Error('timed out');};
   const command=(requestId,action,options)=>call('/api/playback/v1/commands',{requestId,sourceId:'living-room',action},options);
-  return {sony,hub,call,snapshot,until,command,advance:ms=>{clock+=ms;},
+  return {sony,hub,directory,call,snapshot,until,command,advance:ms=>{clock+=ms;},
     close:async()=>{await hub.close();await sony.close();await rm(directory,{recursive:true,force:true});}};
 }
 
@@ -174,12 +175,42 @@ test('playback commands go only to the configured source and only for declared c
     await until(value=>value.playback?.status==='paused');
     const paused=await command('r1','pause');
     assert.deepEqual([paused.status,(await paused.json()).error.code],[422,'unsupported-control']);
+    const pausedNext=await command('r-paused-next','next');
+    assert.deepEqual([pausedNext.status,(await pausedNext.json()).outcome],[200,'sent'],'next stays available while paused');
     sony.set(()=>playingInfo([airplay()]));await until(value=>value.playback?.status==='playing');
     advance(5000);
     const stale=await command('r1','pause');
     assert.deepEqual([stale.status,(await stale.json()).error.code],[503,'source-unavailable']);
-    assert.deepEqual(commandCalls(sony),[]);
+    assert.deepEqual(commandCalls(sony).map(item=>item.method),['setPlayNextContent']);
     assert.ok(sony.calls.every(item=>item.path==='/sony/avContent'));
+  }finally{await close();}
+});
+
+test('a launcher browser session reads and commands the configured playback source',async()=>{
+  const {sony,hub,directory,call,until,close}=await hubFixture();
+  try{
+    await until(value=>value.availability==='available');
+    const launch=await requestBrowserLaunch(directory);
+    const issued=await fetch(hub.url+'/api/dashboard/v1/launch',{method:'POST',headers:{'content-type':'application/json','x-pixoo-request':'1',origin:hub.url},body:JSON.stringify({code:launch.code})});
+    const {token}=await issued.json();
+    const context=await call('/api/dashboard/v1/context',undefined,{token});
+    assert.deepEqual((await context.json()).playback,{sourceId:'living-room'});
+    const read=await call('/api/playback/v1/snapshot',undefined,{token});
+    assert.deepEqual([read.status,(await read.json()).sourceId],[200,'living-room']);
+    const sent=await call('/api/playback/v1/commands',{requestId:'browser-1',sourceId:'living-room',action:'next'},{token});
+    assert.deepEqual([sent.status,(await sent.json()).outcome],[200,'sent']);
+    assert.deepEqual(commandCalls(sony).map(item=>item.method),['setPlayNextContent']);
+    assert.equal((await call('/api/monitor/v1/events',{},{token})).status,403,'the playback grant adds no ingest scope');
+  }finally{await close();}
+});
+
+test('the dashboard context names the playback source only for credentials that grant it',async()=>{
+  const {until,call,close}=await hubFixture();
+  try{
+    await until(value=>value.availability==='available');
+    const view=async token=>(await call('/api/dashboard/v1/context',undefined,{token})).json();
+    assert.deepEqual((await view(tokens.reader)).playback,{sourceId:'living-room'});
+    assert.equal('playback' in await view(tokens.other),false);
   }finally{await close();}
 });
 

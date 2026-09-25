@@ -80,13 +80,13 @@ The host SHALL provide reproducible packaging, isolated runtime configuration, r
 - **THEN** the report distinguishes them from numeric qualification, installed WSL/client acceptance, physical accuracy and public guide publication
 
 ### Requirement: Private bounded browser handoff
-The host SHALL issue browser launch codes only through an owner-only local channel. It SHALL accept each code once within a bounded lifetime and issue a time-limited bearer restricted to read/control on configured aliases. The bearer MUST NOT grant ingest, admin or MCP access. Missing, invalid, replayed and expired codes, and disallowed origins MUST fail without state or device effects. Closing or replacing host authority SHALL revoke ephemeral sessions.
+The host SHALL issue browser launch codes only through an owner-only local channel. It SHALL accept each code once within a bounded lifetime and issue a time-limited bearer restricted to read/control on configured aliases and the configured playback source ID. The bearer MUST NOT grant ingest, admin or MCP access. Missing, invalid, replayed and expired codes, and disallowed origins MUST fail without state or device effects. Closing or replacing host authority SHALL revoke ephemeral sessions.
 
 Disconnect, expiry, oldest-session eviction, credential replacement and host shutdown SHALL retire a browser session through one idempotent path. Retirement SHALL refuse the session's bearer and its cached requests, close its change streams and release its command tickets and settled replay entries. A retired session MUST NOT admit new work, including a monitor, controller, integration or playback write authorized before retirement whose body arrives afterwards. Work the session already admitted SHALL NOT be cancelled or executed again. Its replay accounting SHALL remain charged, and not evictable, until that work settles, and SHALL then be released exactly once. After every browser session retires and its admitted work settles, the host SHALL retain no browser ticket ledger, stream or replay entry. Disconnecting a dashboard that used a configured credential MUST NOT revoke that credential, close its streams or reset its tickets.
 
 #### Scenario: Scoped exchange
 - **WHEN** the installed owner requests a launch and exchanges its code from the same-origin page
-- **THEN** only that exchange receives a bounded browser session with configured alias read/control permission
+- **THEN** only that exchange receives a bounded browser session with read/control permission on the configured aliases and the configured playback source
 
 #### Scenario: Unauthorized exchange
 - **WHEN** a network caller lacks a current launch code or supplies a disallowed origin
@@ -111,6 +111,10 @@ Disconnect, expiry, oldest-session eviction, credential replacement and host shu
 #### Scenario: Configured credential disconnect
 - **WHEN** a dashboard opened with a configured credential disconnects while that credential and another browser session have open streams
 - **THEN** both remain usable, their streams stay open, and the configured credential keeps its ticket sequence so an old request returns its retained result and never executes again
+
+#### Scenario: Playback through a browser session
+- **WHEN** a launcher-issued browser session reads the playback snapshot, sends a declared playback command or reads the dashboard context on a hub with a configured playback source
+- **THEN** the snapshot and command are admitted for that source, the context names the source, and the session still cannot ingest, administer or use MCP
 
 ### Requirement: Authorized monitor approval recovery
 The host SHALL expose explicit approval recovery only to a control credential. It SHALL validate the full session identity, known turn and expected owner revision, retain command request replay behavior and return a fixed failure when the owner rejects recovery. It SHALL NOT contact a device or provider permission service.

@@ -39,6 +39,9 @@ try {
    assert.equal(failed.state.busy,false);assert.equal(failed.state.locked,false);assert.equal(failed.sent.length,0);
    const sessions=harness(consumer,{prepare:()=>Promise.reject(new Error('build failed')),options:{device:false}});await sessions.run();
    assert.equal(sessions.state.status,`${consumer.prefix}Not sent: B.U.N.N.Y. couldn’t read the current sessions. Nothing changed.${consumer.kept}`);
+   // A consumer that is neither a device nor the session monitor, such as playback, names what it could not read.
+   const named=harness(consumer,{prepare:()=>Promise.reject(new Error('read failed')),options:{device:false,unreadable:'B.U.N.N.Y. couldn’t read the playback source'}});await named.run();
+   assert.equal(named.state.status,`${consumer.prefix}Not sent: B.U.N.N.Y. couldn’t read the playback source. Nothing changed.${consumer.kept}`);
   });
 
   test(`${consumer.name}: an accepted ticket is watched until its terminal receipt`,async()=>{
