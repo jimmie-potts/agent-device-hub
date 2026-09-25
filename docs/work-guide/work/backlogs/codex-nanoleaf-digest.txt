@@ -14,7 +14,7 @@
 #41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
 #42 [CLOSED] Run independent Lines and Light Panels projections in the Nanoleaf runtime
 #43 [CLOSED] Run Lines and NL22 Light Panels as independent devices in the Nanoleaf worker
-#44 [OPEN] Switch the wall map between Lines and Light Panels
+#44 [CLOSED] Switch the wall map between Lines and Light Panels
 #45 [CLOSED] Enroll a second Nanoleaf device on the Linux runtime
 #46 [CLOSED] Verify Lines and NL22 Panels together on the installed Linux runtime
 #47 [OPEN] Combine Lines and Light Panels into one layout and allocation pool
@@ -34,14 +34,14 @@
 #89 [CLOSED] Remove the legacy Codex hooks after the shared-input cutover
 #90 [OPEN] Wake the worker from the hub's change stream instead of polling each second
 #91 [CLOSED] Let Codex play saved Nanoleaf scenes through the local MCP server
-#92 [OPEN] Play custom animations on the Lines when Codex asks for them
+#92 [CLOSED] Play custom animations on the Lines when Codex asks for them
 #100 [OPEN] Show Claude Code titles and projects for shared tasks
 #108 [CLOSED] Open a wall task's thread in Codex Desktop
 #110 [OPEN] Switch Nanoleaf between Work and Free based on monitored session presence
-#111 [OPEN] Keep following the hub feed when it contains an undeclared source
+#111 [CLOSED] Keep following the hub feed when it contains an undeclared source
 #112 [OPEN] Show when the Lines are on hold and how to resume them
-#113 [OPEN] Control the NL22 Panels through the controller and local MCP server
-#114 [OPEN] Change a registered Nanoleaf device's address without re-enrolling
+#113 [CLOSED] Control the NL22 Panels through the controller and local MCP server
+#114 [CLOSED] Change a registered Nanoleaf device's address without re-enrolling
 #115 [OPEN] Keep completion comets and waves when the worker skips owner revisions
 #117 [CLOSED] Preserve Open in Codex keyboard focus through unchanged polling
 #118 [OPEN] Separate shared configuration operations, runtime primitives and hook management
@@ -62,3 +62,30 @@
 #135 [CLOSED] Merge the wall map inspector cards and rethink reservation and override controls
 #139 [CLOSED] Customize Work-mode light colors so unread tasks stand out from the base
 #140 [OPEN] Add an upgrade and rollback command for the Linux runtime
+#142 [CLOSED] Add MCP tools to list and play saved Nanoleaf scenes
+#143 [CLOSED] Play custom animations on the Lines when Codex asks for them
+#144 [CLOSED] Switch the wall map between Lines and Light Panels
+#146 [OPEN] Play custom animations for different events
+#147 [CLOSED] Change a registered Panels device's address without re-enrolling
+#148 [CLOSED] Keep following the hub feed when it contains an undeclared source
+#149 [OPEN] Cap how fast animations can flash
+#150 [OPEN] Stop an animation and restore the remembered scene through MCP
+#151 [OPEN] Add a rotating spin direction and a faster speed for animations
+#152 [OPEN] Add a chase pattern that runs along connected Lines
+#153 [OPEN] Offer a mood library of named animation presets
+#154 [OPEN] Save and replay favorite animations by name
+#155 [OPEN] Save a requested animation as a Nanoleaf scene
+#156 [OPEN] Preview a requested animation on the wall map before playing it
+#157 [OPEN] Play requested animations on the NL22 Light Panels
+#158 [OPEN] Play hub moments as interludes on the Lines, then restore the current presentation
+#159 [OPEN] Register the Nanoleaf MCP server with the Codex clients
+#160 [OPEN] Investigate Codex sessions left blocked by MCP tool approvals
+#161 [OPEN] Report when someone changes the Lines outside the bridge
+#162 [OPEN] Document the in-place runtime upgrade, the codex exec MCP override and the hand-listed bridge modules
+#163 [OPEN] Define the project's domain glossary
+#164 [CLOSED] Control the NL22 Panels through the controller and local MCP server
+#167 [OPEN] Add the NL22 Panels to the installed controller, MCP host and hub
+#168 [OPEN] Pick and play a device's saved scene from its wall map page
+#169 [OPEN] Expose element geometry read-only on the integration route for the Lines and Panels
+#170 [OPEN] Carry orientation, palette, Locate, eviction and Panels configuration through the integration extension
+#171 [OPEN] Retire the wall map once every operation has a home in the B.U.N.N.Y. shell

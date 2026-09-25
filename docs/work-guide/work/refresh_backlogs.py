@@ -13,9 +13,9 @@ PREFIXES = {'agent-device-hub': 'H', 'codex-nanoleaf': 'N', 'divoom-app-upgrade'
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
-    'agent-device-hub': [10, 21, 85, 86, 87, 152, 154, 155, 175, 181, 182, 191, 195, 196, 197, 200, 207, 210, 212, 218, 220, 222, 225, 231, 237, 244, 245, 252, 264],
-    'codex-nanoleaf': [15, 31, 46, 75, 78, 84, 89, 91, 108, 117, 131, 132, 135, 139],
-    'divoom-app-upgrade': [38, 47, 68, 72, 77],
+    'agent-device-hub': [5, 10, 18, 21, 37, 38, 42, 85, 86, 87, 152, 154, 155, 175, 181, 182, 191, 195, 196, 197, 200, 207, 210, 212, 218, 220, 222, 225, 231, 237, 241, 242, 244, 245, 252, 259, 264, 268, 269, 270, 273, 289, 290, 291, 292, 299, 308, 330],
+    'codex-nanoleaf': [15, 31, 44, 46, 75, 78, 84, 89, 91, 92, 108, 111, 113, 114, 117, 131, 132, 133, 135, 139, 142, 143, 144, 147, 148, 164],
+    'divoom-app-upgrade': [38, 47, 67, 68, 72, 77, 89],
 }
 
 
@@ -155,15 +155,29 @@ if __name__ == '__main__':
         evidence['annotations'] = list(pool.map(annotations, check_runs['check_runs']))
     (DEST/'pc-lighting-pr-59.json').write_text(json.dumps(evidence,indent=2)+'\n')
     # GraphQL provides a second explicit open-issue enumeration plus native prerequisites.
-    fields = 'issues(first:100, states:OPEN) { totalCount pageInfo { hasNextPage } nodes { number blockedBy(first:100) { totalCount pageInfo { hasNextPage } nodes { number state repository { nameWithOwner } } } } }'
+    # Each repository's open issues are read one page at a time and merged into one inventory whose
+    # pageInfo reports no next page, so consumers keep reading a single complete connection.
     aliases = {'h':'agent-device-hub', 'n':'codex-nanoleaf', 'p':'divoom-app-upgrade'}
-    query = '{' + ' '.join(f'{key}:repository(owner:"jimmie-potts",name:"{repo}"){{{fields}}}' for key,repo in aliases.items()) + '}'
-    native = json.loads(subprocess.run(['gh','api','graphql','-f',f'query={query}'],check=True,capture_output=True,text=True).stdout)
-    assert not native.get('errors'), native
+    def open_issue_inventory(repo):
+        nodes, cursor, total = [], None, None
+        for _ in range(100):
+            after = f', after:"{cursor}"' if cursor else ''
+            fields = f'issues(first:100, states:OPEN{after}) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ number blockedBy(first:100) {{ totalCount pageInfo {{ hasNextPage }} nodes {{ number state repository {{ nameWithOwner }} }} }} }} }}'
+            query = f'{{ repository(owner:"jimmie-potts",name:"{repo}") {{ {fields} }} }}'
+            page = json.loads(subprocess.run(['gh','api','graphql','-f',f'query={query}'],check=True,capture_output=True,text=True).stdout)
+            assert not page.get('errors'), page
+            inventory = page['data']['repository']['issues']
+            total = inventory['totalCount']; nodes.extend(inventory['nodes'])
+            if not inventory['pageInfo']['hasNextPage']: break
+            assert inventory['pageInfo']['endCursor'] and inventory['pageInfo']['endCursor'] != cursor, 'Open-issue pagination did not advance'
+            cursor = inventory['pageInfo']['endCursor']
+        else:
+            raise RuntimeError('Open-issue pagination did not terminate')
+        return {'totalCount': total, 'pageInfo': {'hasNextPage': False}, 'nodes': nodes}
+    native = {'data': {key: {'issues': open_issue_inventory(repo)} for key, repo in aliases.items()}}
     for key, repo in aliases.items():
         inventory = native['data'][key]['issues']
-        assert not inventory['pageInfo']['hasNextPage'], 'Paginate before accepting a larger inventory'
-        assert inventory['totalCount'] == len(inventory['nodes']) == repos[repo]['openIssues']
+        assert inventory['totalCount'] == len(inventory['nodes']) == repos[repo]['openIssues'], (repo, inventory['totalCount'], len(inventory['nodes']), repos[repo]['openIssues'])
         cached = json.loads((DEST/f'{repo}-issues.json').read_text())
         assert {i['number'] for i in inventory['nodes']} == {i['number'] for i in cached if i['state']=='OPEN'}
         for issue in inventory['nodes']:

@@ -1,15 +1,160 @@
 {
-  "fetchedAt": "2026-09-24T23:42:56.495786+00:00",
+  "fetchedAt": "2026-09-25T23:04:32.554766+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-24T23:36:49Z",
+      "pushedAt": "2026-09-25T22:56:50Z",
       "defaultBranch": "main",
-      "headSha": "f89d42ae4bb6e28ad0c86e45be3664ca3fbb1f8a",
-      "mainCommitCount": 115,
+      "headSha": "c851541fd23a54a2474570ad1eca7505ec0daaab",
+      "mainCommitCount": 144,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "c851541fd23a54a2474570ad1eca7505ec0daaab",
+          "date": "2026-09-25T22:55:32Z",
+          "message": "Record ADR 0008: keep the runtime in WSL, start it at boot, target a Linux server (#339)"
+        },
+        {
+          "sha": "68c933342e15da9a68d537c5ba5f2c84d50f3e4b",
+          "date": "2026-09-25T22:45:44Z",
+          "message": "Handle a stop signal from the start of the local controller host (#351)"
+        },
+        {
+          "sha": "b5199f365d29407af57797744268b5a1a6e9b39f",
+          "date": "2026-09-25T22:26:06Z",
+          "message": "Show real LIFX power and stop presenting controls a device cannot use (#340)"
+        },
+        {
+          "sha": "2a5e23db24a14645089f68a03b7c8e3008713d35",
+          "date": "2026-09-25T21:52:28Z",
+          "message": "Record ADR 0007: B.U.N.N.Y. is the shell and the wall map is Nanoleaf's editor (#326)"
+        },
+        {
+          "sha": "4df92c5173a48473c53ac3716a7efed94115805d",
+          "date": "2026-09-25T21:50:04Z",
+          "message": "Keep a story's recommendation current when only its Guide section changes (#338)"
+        },
+        {
+          "sha": "9f13c08906d7ca3a77f3bd5590a0b2dee632c3be",
+          "date": "2026-09-25T21:31:03Z",
+          "message": "Release controller contract 1.1 with a shared moment command (#321)"
+        },
+        {
+          "sha": "b944b73225f8dd41ee50a797e943b589397aa2be",
+          "date": "2026-09-25T21:06:28Z",
+          "message": "Connect Tidbyt and LIFX to the hub through one local controller host (#318)"
+        },
+        {
+          "sha": "080e0340c577485e8e92e9a307efc8e0057db34a",
+          "date": "2026-09-25T20:56:37Z",
+          "message": "Show idea-marked stories in a guide Ideas section (#322)"
+        },
+        {
+          "sha": "b15890baf2af18dfb7e987572deb8ba2a5681a33",
+          "date": "2026-09-25T19:19:27Z",
+          "message": "Record the HT-A9 and Sonos Move play/resume qualification (#302)"
+        },
+        {
+          "sha": "47210ddfe69ae961561aa2e5f7b8ca8d513a8123",
+          "date": "2026-09-25T18:43:30Z",
+          "message": "Record the product direction and highest-leverage next work in the work guide (#300)"
+        },
+        {
+          "sha": "5cdc7fde6898fb412a5a3c1a9a53fa072422ce5b",
+          "date": "2026-09-25T18:07:45Z",
+          "message": "Record ADR 0006: hub moments and interludes across devices (#299)"
+        },
+        {
+          "sha": "f94e1f4138c8323b94eb7616b9a48145bfe9e24f",
+          "date": "2026-09-25T08:45:37Z",
+          "message": "Retire ended monitoring sessions consistently across Codex and Claude (#284)"
+        },
+        {
+          "sha": "45711aa1ba519d70eb1d82a900a139ba26c0762f",
+          "date": "2026-09-25T07:47:11Z",
+          "message": "Move guide topic assignments and notes into the stories and read them live (#281)"
+        },
+        {
+          "sha": "e4135fb315adadb2ff1938a48adecf8a31d84443",
+          "date": "2026-09-25T07:35:23Z",
+          "message": "Show a now-playing tile on the Tidbyt (#280)"
+        },
+        {
+          "sha": "9da1bc3fed9873c53ae23b61262df710dc52b0a5",
+          "date": "2026-09-25T07:26:12Z",
+          "message": "Add now-playing and Sony-qualified music controls to B.U.N.N.Y. and Codex tools (#275)"
+        },
+        {
+          "sha": "15c9c2ab879b4c73c4541cc245381385222a7a70",
+          "date": "2026-09-25T06:40:45Z",
+          "message": "Share one command lifecycle between dashboard forms and actions (#273)"
+        },
+        {
+          "sha": "4af4de5b7b487229bafe144f52c3c826a84d19f8",
+          "date": "2026-09-25T06:29:13Z",
+          "message": "Point the style guide's token-layer references at the new skin file (#274)"
+        },
+        {
+          "sha": "e6de7c6364378f92e47588f755eefad392c084f8",
+          "date": "2026-09-25T06:15:09Z",
+          "message": "Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard (#269)"
+        },
+        {
+          "sha": "7d9251a24adf6c831dfeab890ff175d6dc55ec4d",
+          "date": "2026-09-25T06:14:21Z",
+          "message": "Retire browser sessions with their tickets, streams and replay entries (#270)"
+        },
+        {
+          "sha": "9009ce3e3164e8470c05e7d5417866186cdc6452",
+          "date": "2026-09-25T05:50:10Z",
+          "message": "Record starting-session recommendations for every open story (#252 parts B and C) (#266)"
+        },
+        {
+          "sha": "2145747b1c5e91c9c3c9def23896292657490a3f",
+          "date": "2026-09-25T05:43:30Z",
+          "message": "Push hub change notifications on commit (#222) (#268)"
+        },
+        {
+          "sha": "d85b8b3381f4e9a7e2e0b410d3f4ab9be74e5793",
+          "date": "2026-09-25T05:04:57Z",
+          "message": "Replace Pause motion with a one-shot circuit trace (#265)"
+        },
+        {
+          "sha": "d4657fa9f4614e2a933e0afe365ea4ed8e10aded",
+          "date": "2026-09-25T04:18:42Z",
+          "message": "State that the source repositories are public in the guide procedure (#261)"
+        },
+        {
+          "sha": "b5dbd7a8ed29018009173ee4fb3f9f242a98717a",
+          "date": "2026-09-25T03:47:12Z",
+          "message": "Show starting-session recommendations in the work guide (#252 part A) (#260)"
+        },
+        {
+          "sha": "873041a0b4c356db88153854e1dbc62d2e3d7480",
+          "date": "2026-09-25T03:29:23Z",
+          "message": "Define the B.U.N.N.Y. UI foundation, skin template and component glossary (#250)"
+        },
+        {
+          "sha": "49b29d06caee71be61dd8cee93bbca0c746ca7e7",
+          "date": "2026-09-25T03:28:48Z",
+          "message": "Wait for screen-off evidence before checking Start Monitor (#257)"
+        },
+        {
+          "sha": "5c7c0e369a9dc1a0a60a534175d5711281d22636",
+          "date": "2026-09-25T03:21:58Z",
+          "message": "Restyle the work guide and the BUNNY atlas in the Neon Geometry Wars skin (#251)"
+        },
+        {
+          "sha": "03c488263a25643dd93d59cd935768040e12d6a2",
+          "date": "2026-09-25T03:07:31Z",
+          "message": "Retire ended Codex Desktop tasks and reset resumed monitoring (#238)"
+        },
+        {
+          "sha": "73166b2c6bc9b69a43650798684d73228483474d",
+          "date": "2026-09-24T23:45:30Z",
+          "message": "Refresh the work guide to current GitHub status (#249)"
+        },
         {
           "sha": "f89d42ae4bb6e28ad0c86e45be3664ca3fbb1f8a",
           "date": "2026-09-24T23:23:56Z",
@@ -1460,6 +1605,14 @@
           "mergedAt": "2026-09-24T09:42:04Z"
         },
         {
+          "number": 238,
+          "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
+          "createdAt": "2026-09-24T20:23:18Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:07:32Z"
+        },
+        {
           "number": 239,
           "title": "Make BUNNY device settings apply in one step and simplify command status",
           "createdAt": "2026-09-24T20:40:13Z",
@@ -1482,21 +1635,238 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/248",
           "base": "main",
           "mergedAt": "2026-09-24T23:23:56Z"
-        }
-      ],
-      "openPRs": [
-        {
-          "number": 238,
-          "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
-          "createdAt": "2026-09-24T20:23:18Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
-          "base": "main"
         },
         {
           "number": 249,
           "title": "Refresh the work guide to current GitHub status",
           "createdAt": "2026-09-24T23:22:16Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/249",
+          "base": "main",
+          "mergedAt": "2026-09-24T23:45:30Z"
+        },
+        {
+          "number": 250,
+          "title": "Define the B.U.N.N.Y. UI foundation, skin template and component glossary",
+          "createdAt": "2026-09-25T00:02:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/250",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:29:23Z"
+        },
+        {
+          "number": 251,
+          "title": "Restyle the work guide and the BUNNY atlas in the Neon Geometry Wars skin",
+          "createdAt": "2026-09-25T00:26:10Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/251",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:21:58Z"
+        },
+        {
+          "number": 257,
+          "title": "Wait for screen-off evidence in the Start Monitor browser test",
+          "createdAt": "2026-09-25T03:17:41Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/257",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:28:48Z"
+        },
+        {
+          "number": 260,
+          "title": "Show starting-session recommendations in the work guide (#252 part A)",
+          "createdAt": "2026-09-25T03:38:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/260",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:47:13Z"
+        },
+        {
+          "number": 261,
+          "title": "State that the source repositories are public in the guide procedure",
+          "createdAt": "2026-09-25T04:16:56Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/261",
+          "base": "main",
+          "mergedAt": "2026-09-25T04:18:42Z"
+        },
+        {
+          "number": 265,
+          "title": "Replace Pause motion with a one-shot circuit trace",
+          "createdAt": "2026-09-25T04:54:10Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/265",
+          "base": "main",
+          "mergedAt": "2026-09-25T05:04:58Z"
+        },
+        {
+          "number": 266,
+          "title": "Record starting-session recommendations for every open story (#252 parts B and C)",
+          "createdAt": "2026-09-25T05:21:14Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/266",
+          "base": "main",
+          "mergedAt": "2026-09-25T05:50:10Z"
+        },
+        {
+          "number": 268,
+          "title": "Push hub change notifications when state commits (#222)",
+          "createdAt": "2026-09-25T05:38:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/268",
+          "base": "main",
+          "mergedAt": "2026-09-25T05:43:30Z"
+        },
+        {
+          "number": 269,
+          "title": "Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard",
+          "createdAt": "2026-09-25T05:42:06Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/269",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:15:09Z"
+        },
+        {
+          "number": 270,
+          "title": "Retire browser sessions with their tickets, streams and replay entries",
+          "createdAt": "2026-09-25T05:54:20Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/270",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:14:22Z"
+        },
+        {
+          "number": 273,
+          "title": "Share one command lifecycle between dashboard forms and actions",
+          "createdAt": "2026-09-25T06:08:59Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/273",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:40:46Z"
+        },
+        {
+          "number": 274,
+          "title": "Point the style guide's token-layer references at the new skin file",
+          "createdAt": "2026-09-25T06:22:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/274",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:29:13Z"
+        },
+        {
+          "number": 275,
+          "title": "Add now-playing and Sony-qualified music controls to B.U.N.N.Y. and Codex tools",
+          "createdAt": "2026-09-25T07:11:55Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/275",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:26:12Z"
+        },
+        {
+          "number": 280,
+          "title": "Show a now-playing tile on the Tidbyt (#38, part 1)",
+          "createdAt": "2026-09-25T07:26:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/280",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:35:23Z"
+        },
+        {
+          "number": 281,
+          "title": "Move guide topic assignments and notes into the stories and read them live",
+          "createdAt": "2026-09-25T07:26:42Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/281",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:47:12Z"
+        },
+        {
+          "number": 284,
+          "title": "Retire ended monitoring sessions consistently across Codex and Claude",
+          "createdAt": "2026-09-25T08:16:11Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/284",
+          "base": "main",
+          "mergedAt": "2026-09-25T08:45:38Z"
+        },
+        {
+          "number": 299,
+          "title": "Record ADR 0006: hub moments and interludes across devices",
+          "createdAt": "2026-09-25T17:54:35Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/299",
+          "base": "main",
+          "mergedAt": "2026-09-25T18:07:46Z"
+        },
+        {
+          "number": 300,
+          "title": "Record the product direction and highest-leverage next work in the work guide",
+          "createdAt": "2026-09-25T18:29:03Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/300",
+          "base": "main",
+          "mergedAt": "2026-09-25T18:43:30Z"
+        },
+        {
+          "number": 302,
+          "title": "Record the HT-A9 and Sonos Move play/resume qualification",
+          "createdAt": "2026-09-25T19:04:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/302",
+          "base": "main",
+          "mergedAt": "2026-09-25T19:19:27Z"
+        },
+        {
+          "number": 318,
+          "title": "Connect Tidbyt and LIFX to the hub through one local controller host",
+          "createdAt": "2026-09-25T20:35:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/318",
+          "base": "main",
+          "mergedAt": "2026-09-25T21:06:28Z"
+        },
+        {
+          "number": 321,
+          "title": "Release controller contract 1.1 with a shared moment command",
+          "createdAt": "2026-09-25T20:37:21Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/321",
+          "base": "main",
+          "mergedAt": "2026-09-25T21:31:03Z"
+        },
+        {
+          "number": 322,
+          "title": "Show idea-marked stories in a guide Ideas section",
+          "createdAt": "2026-09-25T20:39:18Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/322",
+          "base": "main",
+          "mergedAt": "2026-09-25T20:56:38Z"
+        },
+        {
+          "number": 326,
+          "title": "Record ADR 0007: B.U.N.N.Y. is the shell and the wall map is Nanoleaf's editor",
+          "createdAt": "2026-09-25T21:20:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/326",
+          "base": "main",
+          "mergedAt": "2026-09-25T21:52:28Z"
+        },
+        {
+          "number": 338,
+          "title": "Keep a story's recommendation current when only its Guide section changes",
+          "createdAt": "2026-09-25T21:44:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/338",
+          "base": "main",
+          "mergedAt": "2026-09-25T21:50:05Z"
+        },
+        {
+          "number": 339,
+          "title": "Record ADR 0008: keep the runtime in WSL, start it at boot, target a Linux server",
+          "createdAt": "2026-09-25T21:49:42Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/339",
+          "base": "main",
+          "mergedAt": "2026-09-25T22:55:32Z"
+        },
+        {
+          "number": 340,
+          "title": "Show real LIFX power and stop presenting controls a device cannot use",
+          "createdAt": "2026-09-25T21:51:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/340",
+          "base": "main",
+          "mergedAt": "2026-09-25T22:26:07Z"
+        },
+        {
+          "number": 351,
+          "title": "Handle a stop signal from the start of the local controller host",
+          "createdAt": "2026-09-25T22:36:06Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/351",
+          "base": "main",
+          "mergedAt": "2026-09-25T22:45:44Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 354,
+          "title": "Retry the direct wall read when it collides with the page's own poll",
+          "createdAt": "2026-09-25T22:57:35Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/354",
           "base": "main"
         }
       ],
@@ -1678,6 +2048,30 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/33"
         },
         {
+          "number": 37,
+          "title": "Add now-playing and music controls to the shared UI and Codex tools",
+          "closedAt": "2026-09-25T22:18:02Z",
+          "createdAt": "2026-09-07T21:58:13Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/37"
+        },
+        {
+          "number": 38,
+          "title": "Show Apple Music now-playing cards on Pixoo and Tidbyt",
+          "closedAt": "2026-09-25T16:06:38Z",
+          "createdAt": "2026-09-07T21:58:14Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/38"
+        },
+        {
+          "number": 42,
+          "title": "Package and qualify the hub for always-on Docker hosting on the PC",
+          "closedAt": "2026-09-25T22:55:33Z",
+          "createdAt": "2026-09-07T21:58:19Z",
+          "stateReason": "duplicate",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/42"
+        },
+        {
           "number": 43,
           "title": "Adopt the Nanoleaf Linux runtime and update architecture documentation",
           "closedAt": "2026-09-22T05:42:00Z",
@@ -1742,12 +2136,28 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/83"
         },
         {
+          "number": 85,
+          "title": "Restyle the guide and atlas in the Neon skin",
+          "closedAt": "2026-09-25T03:26:41Z",
+          "createdAt": "2026-09-10T00:34:26Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/85"
+        },
+        {
           "number": 86,
           "title": "Apply the Neon skin to the guide and atlas",
           "closedAt": "2026-09-23T23:10:02Z",
           "createdAt": "2026-09-10T00:34:38Z",
           "stateReason": "not_planned",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/86"
+        },
+        {
+          "number": 87,
+          "title": "Publish and verify the first mobile guide workspace and atlas",
+          "closedAt": "2026-09-25T04:18:44Z",
+          "createdAt": "2026-09-10T00:35:07Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/87"
         },
         {
           "number": 91,
@@ -1902,6 +2312,22 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/179"
         },
         {
+          "number": 181,
+          "title": "Define the B.U.N.N.Y. UI foundation, skin template and adoption plan",
+          "closedAt": "2026-09-25T03:33:47Z",
+          "createdAt": "2026-09-23T07:02:58Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/181"
+        },
+        {
+          "number": 182,
+          "title": "Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard",
+          "closedAt": "2026-09-25T06:15:11Z",
+          "createdAt": "2026-09-23T07:06:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/182"
+        },
+        {
           "number": 185,
           "title": "Add explicit recovery for uncertain approval attention",
           "closedAt": "2026-09-23T08:22:06Z",
@@ -1990,12 +2416,28 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/216"
         },
         {
+          "number": 218,
+          "title": "Clear Codex Desktop tasks and Line assignments when sessions end",
+          "closedAt": "2026-09-25T03:07:33Z",
+          "createdAt": "2026-09-24T01:03:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/218"
+        },
+        {
           "number": 220,
           "title": "Refresh work-guide priorities, new issues and defects, and reorganize topic guides",
           "closedAt": "2026-09-24T02:11:06Z",
           "createdAt": "2026-09-24T01:46:04Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/220"
+        },
+        {
+          "number": 222,
+          "title": "Push hub change notifications when state commits",
+          "closedAt": "2026-09-25T06:20:52Z",
+          "createdAt": "2026-09-24T02:02:43Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/222"
         },
         {
           "number": 225,
@@ -2036,12 +2478,148 @@
           "createdAt": "2026-09-24T19:31:34Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/237"
+        },
+        {
+          "number": 241,
+          "title": "Retire ended monitoring sessions consistently across Codex and Claude",
+          "closedAt": "2026-09-25T08:50:37Z",
+          "createdAt": "2026-09-24T21:00:32Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/241"
+        },
+        {
+          "number": 242,
+          "title": "Qualify and add Sony HT-A9 play/resume when supported",
+          "closedAt": "2026-09-25T19:24:08Z",
+          "createdAt": "2026-09-24T21:03:33Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/242"
+        },
+        {
+          "number": 244,
+          "title": "Bound browser-session resources and centralize retirement cleanup",
+          "closedAt": "2026-09-25T06:20:05Z",
+          "createdAt": "2026-09-24T22:46:15Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/244"
+        },
+        {
+          "number": 245,
+          "title": "Share the dashboard command lifecycle between forms and actions",
+          "closedAt": "2026-09-25T06:44:50Z",
+          "createdAt": "2026-09-24T22:46:29Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/245"
+        },
+        {
+          "number": 252,
+          "title": "Show starting model and thinking-level recommendations for each story in the work guide",
+          "closedAt": "2026-09-25T05:50:12Z",
+          "createdAt": "2026-09-25T02:10:02Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/252"
+        },
+        {
+          "number": 255,
+          "title": "Retain the Tidbyt test lease until the subprocess exits",
+          "closedAt": "2026-09-25T03:34:39Z",
+          "createdAt": "2026-09-25T03:00:17Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/255"
+        },
+        {
+          "number": 256,
+          "title": "Wait for observed screen-off state in the Start Monitor browser test",
+          "closedAt": "2026-09-25T03:34:41Z",
+          "createdAt": "2026-09-25T03:15:05Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/256"
+        },
+        {
+          "number": 259,
+          "title": "Move guide topic assignments and notes into the stories and read them live",
+          "closedAt": "2026-09-25T07:47:13Z",
+          "createdAt": "2026-09-25T03:20:54Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/259"
+        },
+        {
+          "number": 264,
+          "title": "Replace Pause motion with a one-shot circuit trace in the guide and atlas",
+          "closedAt": "2026-09-25T05:13:01Z",
+          "createdAt": "2026-09-25T04:46:43Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/264"
+        },
+        {
+          "number": 289,
+          "title": "Connect Tidbyt and LIFX to the hub through one local controller host",
+          "closedAt": "2026-09-25T21:36:17Z",
+          "createdAt": "2026-09-25T16:42:31Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/289"
+        },
+        {
+          "number": 290,
+          "title": "Record the product direction and highest-leverage next work in the work guide",
+          "closedAt": "2026-09-25T18:48:02Z",
+          "createdAt": "2026-09-25T17:09:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/290"
+        },
+        {
+          "number": 291,
+          "title": "Decide how hub moments and interludes work across devices",
+          "closedAt": "2026-09-25T18:16:37Z",
+          "createdAt": "2026-09-25T17:39:59Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/291"
+        },
+        {
+          "number": 292,
+          "title": "Release a controller contract version with a moment command and conformance cases",
+          "closedAt": "2026-09-25T21:36:28Z",
+          "createdAt": "2026-09-25T17:40:00Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/292"
+        },
+        {
+          "number": 301,
+          "title": "Add the Sonos Move as a selectable playback source with AirPlay play",
+          "closedAt": "2026-09-25T22:02:33Z",
+          "createdAt": "2026-09-25T19:03:42Z",
+          "stateReason": "duplicate",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/301"
+        },
+        {
+          "number": 304,
+          "title": "Keep a story's recommendation current when only its Guide section changes",
+          "closedAt": "2026-09-25T21:50:59Z",
+          "createdAt": "2026-09-25T19:31:50Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/304"
+        },
+        {
+          "number": 308,
+          "title": "Show recommended creative and expansion stories in a guide Ideas section",
+          "closedAt": "2026-09-25T21:05:23Z",
+          "createdAt": "2026-09-25T19:43:38Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/308"
+        },
+        {
+          "number": 330,
+          "title": "Show real LIFX power in B.U.N.N.Y. and stop presenting controls a device cannot use",
+          "closedAt": "2026-09-25T23:03:39Z",
+          "createdAt": "2026-09-25T21:37:00Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/330"
         }
       ],
-      "openIssueCount": 66,
+      "openIssueCount": 120,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-24T23:08:23Z"
+        "2026-09-25T23:04:14Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -2053,17 +2631,78 @@
         "2026-09-21": 1,
         "2026-09-22": 10,
         "2026-09-23": 27,
-        "2026-09-24": 20
+        "2026-09-24": 20,
+        "2026-09-25": 80
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-24T23:39:10Z",
+      "pushedAt": "2026-09-25T20:57:12Z",
       "defaultBranch": "main",
-      "headSha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
-      "mainCommitCount": 54,
+      "headSha": "88831e48ab06a3ebf7bc4403466efd2e353e6c05",
+      "mainCommitCount": 66,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "88831e48ab06a3ebf7bc4403466efd2e353e6c05",
+          "date": "2026-09-25T20:57:12Z",
+          "message": "Name the idea highlight and Extends in the feature template's Guide placement (#165)"
+        },
+        {
+          "sha": "125e8ad57458e69d787f6df3aa54237147bd0647",
+          "date": "2026-09-25T20:56:07Z",
+          "message": "Control the NL22 Panels through the controller and local MCP server (#164)"
+        },
+        {
+          "sha": "6cbb62918aad7564f02888fd79161a88705475b2",
+          "date": "2026-09-25T08:12:17Z",
+          "message": "Keep following the hub feed when it contains an undeclared source (#148)"
+        },
+        {
+          "sha": "717d2b05f2df5c9e1639a69927e6c4c8bccc6b5d",
+          "date": "2026-09-25T08:06:15Z",
+          "message": "Change a registered Panels device's address without re-enrolling (#147)"
+        },
+        {
+          "sha": "16ec5546bf8fb83bde31000cd58b595f2d7d860d",
+          "date": "2026-09-25T07:36:33Z",
+          "message": "Switch the wall map between Lines and Light Panels (#144)"
+        },
+        {
+          "sha": "0037261685571e97b8fe896d4ffee123e829254e",
+          "date": "2026-09-25T07:35:38Z",
+          "message": "Add Guide placement to the feature and bug issue templates (#145)"
+        },
+        {
+          "sha": "ba9ed8ca3967956f0607c7f9059b5dabac2580a2",
+          "date": "2026-09-25T07:08:06Z",
+          "message": "Play custom animations on the Lines when Codex asks for them (#143)"
+        },
+        {
+          "sha": "c6275c1bf6475af15f33d7850c954cf5019fcd47",
+          "date": "2026-09-25T06:02:32Z",
+          "message": "Add MCP tools to list and play saved Nanoleaf scenes (#142)"
+        },
+        {
+          "sha": "31b6ef5c3ccd80f1d138cd4428cc18563d28ac35",
+          "date": "2026-09-25T05:09:13Z",
+          "message": "Customize Work-mode light colors so unread tasks stand out (#141)"
+        },
+        {
+          "sha": "7a030aca690f7d73dfe9960ccadd17599cbe0fd3",
+          "date": "2026-09-25T03:08:18Z",
+          "message": "Retain shared tasks until removal and add local eviction (#116)"
+        },
+        {
+          "sha": "28bc133a6a2cab25faafa12fca3fb53269607e32",
+          "date": "2026-09-25T01:51:42Z",
+          "message": "Show status first in the wall map with one context card (#137)"
+        },
+        {
+          "sha": "39e634493f3211c6ecc1408dd8a8aa464889df3b",
+          "date": "2026-09-25T00:11:04Z",
+          "message": "Retire the Windows runtime from source (#138)"
+        },
         {
           "sha": "9e2c41313de3c69c32b8ddf5259b30517c14588f",
           "date": "2026-09-24T23:07:28Z",
@@ -2705,6 +3344,14 @@
           "mergedAt": "2026-09-24T20:10:26Z"
         },
         {
+          "number": 116,
+          "title": "Retain shared tasks until removal and add local eviction",
+          "createdAt": "2026-09-24T20:18:55Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:08:19Z"
+        },
+        {
           "number": 125,
           "title": "Reduce default wall map controls and repeated status text",
           "createdAt": "2026-09-24T22:01:11Z",
@@ -2727,24 +3374,97 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/136",
           "base": "main",
           "mergedAt": "2026-09-24T23:07:28Z"
-        }
-      ],
-      "openPRs": [
-        {
-          "number": 116,
-          "title": "Reset recreated shared tasks and preserve Codex link focus",
-          "createdAt": "2026-09-24T20:18:55Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
-          "base": "main"
         },
         {
           "number": 137,
           "title": "Show status first in the wall map with one context card",
           "createdAt": "2026-09-24T23:39:25Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/137",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-25T01:51:43Z"
+        },
+        {
+          "number": 138,
+          "title": "Retire the Windows runtime from source",
+          "createdAt": "2026-09-24T23:53:04Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/138",
+          "base": "main",
+          "mergedAt": "2026-09-25T00:11:05Z"
+        },
+        {
+          "number": 141,
+          "title": "Customize Work-mode light colors so unread tasks stand out",
+          "createdAt": "2026-09-25T04:55:34Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/141",
+          "base": "main",
+          "mergedAt": "2026-09-25T05:09:14Z"
+        },
+        {
+          "number": 142,
+          "title": "Add MCP tools to list and play saved Nanoleaf scenes",
+          "createdAt": "2026-09-25T05:51:24Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/142",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:02:32Z"
+        },
+        {
+          "number": 143,
+          "title": "Play custom animations on the Lines when Codex asks for them",
+          "createdAt": "2026-09-25T06:42:34Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/143",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:08:06Z"
+        },
+        {
+          "number": 144,
+          "title": "Switch the wall map between Lines and Light Panels",
+          "createdAt": "2026-09-25T07:18:23Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/144",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:36:33Z"
+        },
+        {
+          "number": 145,
+          "title": "Add Guide placement to the feature and bug issue templates",
+          "createdAt": "2026-09-25T07:24:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/145",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:35:38Z"
+        },
+        {
+          "number": 147,
+          "title": "Change a registered Panels device's address without re-enrolling",
+          "createdAt": "2026-09-25T07:57:52Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/147",
+          "base": "main",
+          "mergedAt": "2026-09-25T08:06:16Z"
+        },
+        {
+          "number": 148,
+          "title": "Keep following the hub feed when it contains an undeclared source",
+          "createdAt": "2026-09-25T08:00:16Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/148",
+          "base": "main",
+          "mergedAt": "2026-09-25T08:12:17Z"
+        },
+        {
+          "number": 164,
+          "title": "Control the NL22 Panels through the controller and local MCP server",
+          "createdAt": "2026-09-25T20:23:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/164",
+          "base": "main",
+          "mergedAt": "2026-09-25T20:56:07Z"
+        },
+        {
+          "number": 165,
+          "title": "Name the idea highlight and Extends in the feature template",
+          "createdAt": "2026-09-25T20:39:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/165",
+          "base": "main",
+          "mergedAt": "2026-09-25T20:57:12Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 2,
@@ -2955,6 +3675,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/43"
         },
         {
+          "number": 44,
+          "title": "Switch the wall map between Lines and Light Panels",
+          "closedAt": "2026-09-25T07:40:37Z",
+          "createdAt": "2026-09-07T18:43:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/44"
+        },
+        {
           "number": 45,
           "title": "Enroll a second Nanoleaf device on the Linux runtime",
           "closedAt": "2026-09-23T08:58:00Z",
@@ -3123,6 +3851,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/89"
         },
         {
+          "number": 91,
+          "title": "Let Codex play saved Nanoleaf scenes through the local MCP server",
+          "closedAt": "2026-09-25T06:02:33Z",
+          "createdAt": "2026-09-24T02:37:55Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/91"
+        },
+        {
+          "number": 92,
+          "title": "Play custom animations on the Lines when Codex asks for them",
+          "closedAt": "2026-09-25T07:11:24Z",
+          "createdAt": "2026-09-24T02:38:02Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/92"
+        },
+        {
           "number": 98,
           "title": "Restore legacy unread tracking for the current Codex Desktop state format",
           "closedAt": "2026-09-24T07:11:52Z",
@@ -3155,6 +3899,54 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/108"
         },
         {
+          "number": 111,
+          "title": "Keep following the hub feed when it contains an undeclared source",
+          "closedAt": "2026-09-25T08:15:57Z",
+          "createdAt": "2026-09-24T20:00:07Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/111"
+        },
+        {
+          "number": 113,
+          "title": "Control the NL22 Panels through the controller and local MCP server",
+          "closedAt": "2026-09-25T21:00:03Z",
+          "createdAt": "2026-09-24T20:00:10Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/113"
+        },
+        {
+          "number": 114,
+          "title": "Change a registered Nanoleaf device's address without re-enrolling",
+          "closedAt": "2026-09-25T08:09:30Z",
+          "createdAt": "2026-09-24T20:14:37Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/114"
+        },
+        {
+          "number": 117,
+          "title": "Preserve Open in Codex keyboard focus through unchanged polling",
+          "closedAt": "2026-09-25T03:34:43Z",
+          "createdAt": "2026-09-24T20:34:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/117"
+        },
+        {
+          "number": 131,
+          "title": "Retire the legacy Windows runtime from source",
+          "closedAt": "2026-09-25T00:15:04Z",
+          "createdAt": "2026-09-24T22:40:26Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/131"
+        },
+        {
+          "number": 132,
+          "title": "Decommission the retired Windows installation on the PC",
+          "closedAt": "2026-09-25T00:49:19Z",
+          "createdAt": "2026-09-24T22:41:40Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/132"
+        },
+        {
           "number": 133,
           "title": "Decide how the Linux runtime becomes available at Windows sign-in",
           "closedAt": "2026-09-24T23:11:08Z",
@@ -3169,12 +3961,36 @@
           "createdAt": "2026-09-24T22:41:42Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/134"
+        },
+        {
+          "number": 135,
+          "title": "Merge the wall map inspector cards and rethink reservation and override controls",
+          "closedAt": "2026-09-25T01:55:38Z",
+          "createdAt": "2026-09-24T22:43:01Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/135"
+        },
+        {
+          "number": 139,
+          "title": "Customize Work-mode light colors so unread tasks stand out from the base",
+          "closedAt": "2026-09-25T05:12:20Z",
+          "createdAt": "2026-09-25T03:47:34Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/139"
+        },
+        {
+          "number": 166,
+          "title": "Upgrade the installed Nanoleaf runtime to include the #44 device selector",
+          "closedAt": "2026-09-25T22:54:32Z",
+          "createdAt": "2026-09-25T21:03:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/166"
         }
       ],
-      "openIssueCount": 33,
+      "openIssueCount": 45,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-24T22:43:01Z"
+        "2026-09-25T23:00:34Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -3183,17 +3999,43 @@
         "2026-09-09": 4,
         "2026-09-22": 1,
         "2026-09-23": 11,
-        "2026-09-24": 34
+        "2026-09-24": 34,
+        "2026-09-25": 24
       }
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-24T22:19:55Z",
+      "pushedAt": "2026-09-25T20:57:15Z",
       "defaultBranch": "main",
-      "headSha": "0ca009c828fb90f278469302d367f1ac9f9ab4bf",
-      "mainCommitCount": 34,
+      "headSha": "2d7e954b23859695088afa97cb6e5dd8c89c59c9",
+      "mainCommitCount": 39,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "2d7e954b23859695088afa97cb6e5dd8c89c59c9",
+          "date": "2026-09-25T20:57:15Z",
+          "message": "Name the idea highlight and Extends in the feature template's Guide placement (#95)"
+        },
+        {
+          "sha": "bf326542eff566b477a0233da69309ee3621a227",
+          "date": "2026-09-25T16:02:16Z",
+          "message": "Show hub now-playing cards on the Pixoo (#89) (#90)"
+        },
+        {
+          "sha": "8a3b6e6073b4172b0e68ef0fe070681d5e5e7909",
+          "date": "2026-09-25T07:35:41Z",
+          "message": "Add Guide placement to the feature and bug issue templates (#88)"
+        },
+        {
+          "sha": "5004b35867261122e397d6f0b07093f6512a01ed",
+          "date": "2026-09-25T05:14:24Z",
+          "message": "Record the installed Pixoo user service (#85)"
+        },
+        {
+          "sha": "690f14d59c1db4025404ecf6c6ff4fce611470c4",
+          "date": "2026-09-25T02:33:16Z",
+          "message": "Run the installed Pixoo app as a user service with hub settings (#84)"
+        },
         {
           "sha": "0ca009c828fb90f278469302d367f1ac9f9ab4bf",
           "date": "2026-09-24T22:19:55Z",
@@ -3629,6 +4471,46 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/78",
           "base": "main",
           "mergedAt": "2026-09-24T22:19:55Z"
+        },
+        {
+          "number": 84,
+          "title": "Run the installed Pixoo app as a user service with hub settings",
+          "createdAt": "2026-09-25T02:23:26Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/84",
+          "base": "main",
+          "mergedAt": "2026-09-25T02:33:16Z"
+        },
+        {
+          "number": 85,
+          "title": "Record the installed Pixoo user service",
+          "createdAt": "2026-09-25T05:08:10Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/85",
+          "base": "main",
+          "mergedAt": "2026-09-25T05:14:25Z"
+        },
+        {
+          "number": 88,
+          "title": "Add Guide placement to the feature and bug issue templates",
+          "createdAt": "2026-09-25T07:24:38Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/88",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:35:41Z"
+        },
+        {
+          "number": 90,
+          "title": "Show hub now-playing cards on the Pixoo (#89)",
+          "createdAt": "2026-09-25T08:04:34Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/90",
+          "base": "main",
+          "mergedAt": "2026-09-25T16:02:16Z"
+        },
+        {
+          "number": 95,
+          "title": "Name the idea highlight and Extends in the feature template",
+          "createdAt": "2026-09-25T20:39:29Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/95",
+          "base": "main",
+          "mergedAt": "2026-09-25T20:57:15Z"
         }
       ],
       "openPRs": [],
@@ -3842,6 +4724,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/47"
         },
         {
+          "number": 67,
+          "title": "Expose user-entered playlist names through the Pixoo integration extension",
+          "closedAt": "2026-09-25T22:51:53Z",
+          "createdAt": "2026-09-22T05:37:38Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/67"
+        },
+        {
           "number": 68,
           "title": "Align guide-maintenance rules with the current hub procedure",
           "closedAt": "2026-09-23T22:58:10Z",
@@ -3872,12 +4762,28 @@
           "createdAt": "2026-09-24T01:03:01Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/74"
+        },
+        {
+          "number": 77,
+          "title": "Run the installed Pixoo app as a user service with hub settings",
+          "closedAt": "2026-09-25T05:07:15Z",
+          "createdAt": "2026-09-24T08:35:18Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/77"
+        },
+        {
+          "number": 89,
+          "title": "Show hub now-playing cards on the Pixoo",
+          "closedAt": "2026-09-25T16:06:17Z",
+          "createdAt": "2026-09-25T07:44:08Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/89"
         }
       ],
-      "openIssueCount": 19,
+      "openIssueCount": 27,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-24T22:55:06Z"
+        "2026-09-25T23:01:08Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -3888,7 +4794,8 @@
         "2026-09-20": 1,
         "2026-09-22": 1,
         "2026-09-23": 3,
-        "2026-09-24": 7
+        "2026-09-24": 7,
+        "2026-09-25": 11
       }
     }
   }
