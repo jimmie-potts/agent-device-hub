@@ -1044,6 +1044,24 @@ class Ideas(unittest.TestCase):
         self.assertEqual(refresh_backlogs.extends_targets(saved),
                          {'agent-device-hub': [291], 'codex-nanoleaf': [44, 92], 'divoom-app-upgrade': [1]})
 
+    def test_an_extends_key_naming_a_pull_request_stops_the_refresh_before_any_write(self):
+        import refresh_backlogs
+        from unittest import mock
+        with tempfile.TemporaryDirectory(prefix='guide-refresh-extends-') as directory:
+            dest = Path(directory)
+            idea = '## Guide\n\n**Topic:** work-guide\n**Highlight:** idea, r\n**Extends:** H291, N7\n'
+            files = {'agent-device-hub': [{'number': 292, 'state': 'OPEN', 'body': idea}], 'codex-nanoleaf': [], 'divoom-app-upgrade': []}
+            for repo, rows in files.items():
+                (dest / f'{repo}-issues.json').write_text(json.dumps(rows))
+            before = {path.name: path.read_bytes() for path in dest.iterdir()}
+            closed = dict(number=291, state='closed', state_reason='completed', title='t', body='', html_url='u', created_at='c', updated_at='u', closed_at='c', labels=[], milestone=None, comments=0)
+            pull = dict(closed, number=7, pull_request={'url': 'x'})
+            reads = {'repos/jimmie-potts/agent-device-hub/issues/291': closed, 'repos/jimmie-potts/codex-nanoleaf/issues/7': pull}
+            with mock.patch.object(refresh_backlogs, 'DEST', dest), mock.patch.object(refresh_backlogs, 'api', reads.__getitem__):
+                with self.assertRaisesRegex(RuntimeError, 'names N7, which is a pull request'):
+                    refresh_backlogs.keep_extends_targets({repo: {'directReads': []} for repo in files})
+            self.assertEqual({path.name: path.read_bytes() for path in dest.iterdir()}, before, 'Nothing is rewritten')
+
     def test_the_committed_guide_has_the_section_and_no_curated_ideas(self):
         import guide_direction as GDIR
         self.assertFalse(hasattr(GDIR, 'IDEAS'), 'The hand-written Later ideas list is retired')

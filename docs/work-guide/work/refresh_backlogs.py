@@ -115,17 +115,26 @@ def extends_targets(issues_by_repo):
 
 
 def keep_extends_targets(repos):
-    """Read and save each Extends target the refreshed records lack."""
+    """Read and save each Extends target the refreshed records lack. Every target
+    is read and checked before any file is rewritten."""
     saved = {repo: json.loads((DEST / f'{repo}-issues.json').read_text()) for repo in REPOS}
+    fetched = {}
     for repo, numbers in extends_targets(saved).items():
-        issues = saved[repo]
         for number in numbers:
-            issue = normalize(api(f'repos/jimmie-potts/{repo}/issues/{number}'))
-            issues.append(issue)
-            repos[repo]['directReads'].append({'number': number, 'state': issue['state'], 'purpose': 'Guide Extends target'})
-        (DEST / f'{repo}-issues.json').write_text(json.dumps(sorted(issues, key=lambda i: i['number']), indent=2, ensure_ascii=False) + '\n')
-        (DEST / f'{repo}-digest.txt').write_text('\n'.join(f"#{i['number']} [{i['state']}] {i['title']}" for i in sorted(issues, key=lambda i: i['number'])) + '\n')
-
+            key = f'{PREFIXES[repo]}{number}'
+            try:
+                raw = api(f'repos/jimmie-potts/{repo}/issues/{number}')
+            except RuntimeError as error:
+                raise RuntimeError(f'An Extends line names {key}, which GitHub cannot read as an issue: {error}') from error
+            if raw.get('pull_request'):
+                raise RuntimeError(f'An Extends line names {key}, which is a pull request, not a story')
+            fetched.setdefault(repo, []).append(normalize(raw))
+    for repo, issues in fetched.items():
+        for issue in issues:
+            repos[repo]['directReads'].append({'number': issue['number'], 'state': issue['state'], 'purpose': 'Guide Extends target'})
+        rows = sorted(saved[repo] + issues, key=lambda i: i['number'])
+        (DEST / f'{repo}-issues.json').write_text(json.dumps(rows, indent=2, ensure_ascii=False) + '\n')
+        (DEST / f'{repo}-digest.txt').write_text('\n'.join(f"#{i['number']} [{i['state']}] {i['title']}" for i in rows) + '\n')
 
 if __name__ == '__main__':
     started = datetime.now(timezone.utc).isoformat()
