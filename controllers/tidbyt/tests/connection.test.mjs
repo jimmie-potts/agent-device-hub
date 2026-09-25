@@ -209,3 +209,39 @@ test('removal responses are classified like pushes and never retried', async () 
   assert.deepEqual(await connect(timedOut.fetch).remove(signal()), { outcome: 'uncertain' });
   assert.equal(timedOut.calls.length, 1);
 });
+
+test('writes and listings can target a configured additional installation', async () => {
+  const { fetch, calls } = fakeFetch(call => call === 3
+    ? json(200, { installations: [{ id: 'agentstatus' }] })
+    : json(200, {}));
+  const connection = connect(fetch, { additionalInstallationIds: ['nowplaying'] });
+  assert.deepEqual(connection.additionalInstallations, ['nowplaying']);
+  assert.deepEqual(await connection.push(WEBP, signal(), 'nowplaying'), { outcome: 'sent' });
+  assert.equal(JSON.parse(calls[0].body).installationID, 'nowplaying');
+  assert.deepEqual(await connection.remove(signal(), 'nowplaying'), { outcome: 'sent' });
+  assert.equal(calls[1].url, `https://api.tidbyt.com/v0/devices/${DEVICE}/installations/nowplaying`);
+  assert.deepEqual(await connection.readInstallation(signal(), 'nowplaying'), { ok: true, present: false });
+  // Omitting the installation keeps the default target.
+  assert.deepEqual(await connection.push(WEBP, signal()), { outcome: 'sent' });
+  assert.equal(JSON.parse(calls[3].body).installationID, 'agentstatus');
+});
+
+test('an unlisted installation is refused without a request', async () => {
+  const { fetch, calls } = fakeFetch(() => json(200, { installations: [] }));
+  const connection = connect(fetch, { additionalInstallationIds: ['nowplaying'] });
+  const refused = { outcome: 'failed', failure: 'invalid-request', priorEffects: 'none' };
+  assert.deepEqual(await connection.push(WEBP, signal(), 'other'), refused);
+  assert.deepEqual(await connection.remove(signal(), 'other'), refused);
+  assert.deepEqual(await connection.readInstallation(signal(), 'other'), { ok: false, failure: 'invalid-request' });
+  // The default installation is not an additional one, so it cannot be named explicitly.
+  assert.deepEqual(await connection.push(WEBP, signal(), 'agentstatus'), refused);
+  assert.deepEqual(await connect(fetch).push(WEBP, signal(), 'nowplaying'), refused);
+  assert.equal(calls.length, 0);
+});
+
+test('invalid additional installation IDs are rejected', () => {
+  const { fetch } = fakeFetch(() => json(200, {}));
+  for (const additionalInstallationIds of [['has-dash'], [''], ['agentstatus'], ['a', 'a'], ['a', 'b', 'c', 'd', 'e'], 'nowplaying', [1]]) {
+    assert.throws(() => connect(fetch, { additionalInstallationIds }), TidbytConfigurationError);
+  }
+});

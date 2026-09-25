@@ -6,13 +6,16 @@ import {
 import type { ConnectionCapabilities, DisplayConnection, InstallationRead, PushOutcome } from './connection.js';
 import { decodeFrameData, renderFrame, FRAME_HEIGHT, FRAME_WIDTH, type FrameData } from './render.js';
 
-export const DISPLAY_PROFILE = Object.freeze({ profileId: 'tidbyt-display', profileVersion: '1.1.0' });
+export const DISPLAY_PROFILE = Object.freeze({ profileId: 'tidbyt-display', profileVersion: '1.2.0' });
 export const MAX_BODY_BYTES = 64 * 1024;
 export const MAX_RECEIPTS = 256;
 
-/** A controller v1 request envelope carrying a Tidbyt profile command: show a frame or remove the installation. */
+/**
+ * A controller v1 request envelope carrying a Tidbyt profile command: show a frame or remove an installation.
+ * `installation` names one of the connection's additional installations; omitted, the default one is used.
+ */
 export type DisplayRequest = Omit<Request, 'command'> & {
-  command: { kind: 'tidbyt.display'; frame: FrameData } | { kind: 'tidbyt.remove' };
+  command: { kind: 'tidbyt.display'; frame: FrameData; installation?: string } | { kind: 'tidbyt.remove'; installation?: string };
 };
 
 export type Submission =
@@ -20,6 +23,7 @@ export type Submission =
   | { decision: 'queued' | 'replay' | 'join' | FailureCode; reserved: boolean; receipt: Receipt; done: Promise<Receipt> };
 
 type Known<T> = { status: 'unknown' } | ({ status: 'known' } & T);
+export type InstallationEvidence = Known<{ present: boolean; clock: Clock; evidenceAgeMs: number }>;
 export type TidbytSnapshot = {
   apiVersion: '1.0';
   profile: typeof DISPLAY_PROFILE;
@@ -30,7 +34,9 @@ export type TidbytSnapshot = {
     pending: { requestId: Ticket; generation: Ticket }[];
     holds: { authentication: boolean; rateLimitRemainingMs: number };
     /** Cloud installation listing only. It is not evidence that the display shows the frame. */
-    installation: Known<{ present: boolean; clock: Clock; evidenceAgeMs: number }>;
+    installation: InstallationEvidence;
+    /** The same evidence for each additional installation the connection lists. */
+    additionalInstallations: { id: string; evidence: InstallationEvidence }[];
     /** No backend reports what the display shows; physical acceptance is separate evidence. */
     visible: { status: 'unknown' };
   };
@@ -56,6 +62,8 @@ type Entry = {
   generation: Ticket;
   /** The rendered image for a push; absent for a removal. */
   webp?: Uint8Array;
+  /** An additional installation; absent for the default one. */
+  installation?: string;
   resolve: (receipt: Receipt) => void;
   done: Promise<Receipt>;
 };
@@ -65,6 +73,8 @@ const REMOVE = 'remove';
 const operation = (entry: Entry) => entry.webp ? PUSH : REMOVE;
 const sameTicket = (a: Ticket, b: Ticket) => a.epoch === b.epoch && a.sequence === b.sequence;
 const clone = <T>(value: T): T => structuredClone(value);
+/** Evidence key for the default installation. Additional installation IDs are never empty. */
+const DEFAULT_INSTALLATION = '';
 
 function plain(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
@@ -89,8 +99,9 @@ function displayRequest(value: unknown): value is DisplayRequest {
   return value.apiVersion === '1.0' && validate('id', value.controllerId) && validate('id', value.deviceId)
     && validate('ticket', value.requestId) && validate('counter', value.expectedConfigurationRevision)
     && validate('ticket', value.expectedGeneration) && plain(command)
-    && ((command.kind === 'tidbyt.display' && exactKeys(command, ['kind', 'frame']))
-      || (command.kind === 'tidbyt.remove' && exactKeys(command, ['kind'])));
+    && (!Object.hasOwn(command, 'installation') || typeof command.installation === 'string')
+    && ((command.kind === 'tidbyt.display' && (exactKeys(command, ['kind', 'frame']) || exactKeys(command, ['kind', 'frame', 'installation'])))
+      || (command.kind === 'tidbyt.remove' && (exactKeys(command, ['kind']) || exactKeys(command, ['kind', 'installation']))));
 }
 
 function bodyBytes(value: unknown): number {
@@ -132,7 +143,8 @@ export class TidbytController {
   #health: Snapshot['serviceHealth'] = 'unknown';
   #lastSuccessfulSend: Snapshot['state']['lastSuccessfulSend'] = { status: 'unknown' };
   #lastOutcome: Snapshot['state']['lastOutcome'] = { status: 'unknown' };
-  #installation?: { present: boolean; sampledAtMs: number };
+  /** Installation listing evidence by installation, keyed `DEFAULT_INSTALLATION` for the default one. */
+  #installations = new Map<string, { present: boolean; sampledAtMs: number }>();
 
   constructor(options: TidbytControllerOptions) {
     const epoch = options.epoch ?? randomUUID();
@@ -177,6 +189,8 @@ export class TidbytController {
     if (r.controllerId !== this.#identity.controllerId || r.deviceId !== this.#identity.deviceId) {
       return { decision: 'unknown-device', reserved: false };
     }
+    const installation = r.command.installation;
+    if (installation !== undefined && !this.#listed(installation)) return { decision: 'invalid-request', reserved: false };
     if (bodyBytes(r) > MAX_BODY_BYTES) return { decision: 'capacity', reserved: false };
     if (r.requestId.epoch !== this.#epoch) return { decision: 'request-expired', reserved: false };
     const cached = this.#cache.find(entry => sameTicket((entry.request as Request).requestId, r.requestId));
@@ -214,7 +228,7 @@ export class TidbytController {
     if (rendered && !rendered.ok) throw new Error('validated frame failed to render');
     let resolve!: (receipt: Receipt) => void;
     const done = new Promise<Receipt>(settle => { resolve = settle; });
-    this.#active.push({ request: clone(r), receipt, generation: clone(this.#generation), webp: rendered?.webp, resolve, done });
+    this.#active.push({ request: clone(r), receipt, generation: clone(this.#generation), webp: rendered?.webp, installation, resolve, done });
     this.#changed();
     void this.#drain();
     return { decision: 'queued', reserved: true, receipt: clone(receipt), done: done.then(clone) };
@@ -312,7 +326,7 @@ export class TidbytController {
         this.#inFlight = { entry, abort };
         let result: PushOutcome;
         try {
-          result = await (entry.webp ? connection.push(entry.webp, abort.signal) : connection.remove(abort.signal));
+          result = await (entry.webp ? connection.push(entry.webp, abort.signal, entry.installation) : connection.remove(abort.signal, entry.installation));
         } catch {
           result = { outcome: 'uncertain' };
         } finally {
@@ -351,26 +365,31 @@ export class TidbytController {
     this.#authenticationHold = undefined;
     this.#releaseHold();
     this.#health = 'unknown';
-    this.#installation = undefined;
+    this.#installations.clear();
     this.cancelPending();
   }
 
+  #listed(installation: string): boolean {
+    return this.#connection.additionalInstallations?.includes(installation) ?? false;
+  }
+
   /**
-   * Read-only reconnect: refresh installation evidence and health. No command is resubmitted.
+   * Read-only reconnect: refresh the default or named installation's evidence and health. No command is resubmitted.
    * Returns this read's result, or undefined when the controller closed or was reconfigured meanwhile.
    */
-  async refresh(): Promise<InstallationRead | undefined> {
+  async refresh(installation?: string): Promise<InstallationRead | undefined> {
     if (this.#closed) return undefined;
+    if (installation !== undefined && !this.#listed(installation)) return { ok: false, failure: 'invalid-request' };
     const connection = this.#connection;
     let result: InstallationRead;
     try {
-      result = await connection.readInstallation(new AbortController().signal);
+      result = await connection.readInstallation(new AbortController().signal, installation);
     } catch {
       result = { ok: false as const, failure: 'transport-failure' as const };
     }
     if (connection !== this.#connection || this.#closed) return undefined;
     if (result.ok) {
-      this.#installation = { present: result.present, sampledAtMs: this.#now() };
+      this.#installations.set(installation ?? DEFAULT_INSTALLATION, { present: result.present, sampledAtMs: this.#now() });
       // Writes stay refused under an authentication hold, so the service is not ready.
       this.#health = this.#authenticationHold ? 'unavailable' : 'ready';
     } else {
@@ -423,7 +442,14 @@ export class TidbytController {
         observation: { status: 'unknown' },
       },
     };
-    const installation = this.#installation;
+    const evidence = (key: string): InstallationEvidence => {
+      const sample = this.#installations.get(key);
+      return sample ? {
+        status: 'known', present: sample.present,
+        clock: { domain: 'controller-monotonic', epoch: this.#epoch, sampledAtMs: Math.max(0, sample.sampledAtMs) },
+        evidenceAgeMs: Math.max(0, now - sample.sampledAtMs),
+      } : { status: 'unknown' };
+    };
     return {
       apiVersion: '1.0',
       profile: DISPLAY_PROFILE,
@@ -436,11 +462,8 @@ export class TidbytController {
           authentication: this.#authenticationHold !== undefined,
           rateLimitRemainingMs: this.#rateLimitUntil === undefined ? 0 : Math.max(0, this.#rateLimitUntil - now),
         },
-        installation: installation ? {
-          status: 'known', present: installation.present,
-          clock: { domain: 'controller-monotonic', epoch: this.#epoch, sampledAtMs: Math.max(0, installation.sampledAtMs) },
-          evidenceAgeMs: Math.max(0, now - installation.sampledAtMs),
-        } : { status: 'unknown' },
+        installation: evidence(DEFAULT_INSTALLATION),
+        additionalInstallations: (this.#connection.additionalInstallations ?? []).map(id => ({ id, evidence: evidence(id) })),
         visible: { status: 'unknown' },
       },
     };

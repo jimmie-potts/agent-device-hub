@@ -118,3 +118,83 @@ test('runner consumes a real owner feed through its queue and stops without dele
   assert.equal(pushes,1);assert.equal(removals,0);assert.equal(feedCalls,1);
   acquireWriterLease('device',join(s.dir,'locks'))();
 });
+
+import { HubPlaybackFeed, runnerConnection } from '../dist/runner.js';
+
+const playbackSnapshot=(extra={})=>({apiVersion:'1.0',sourceId:'ht-a9',availability:'available',observedAtMs:Date.now(),ageMs:400,
+  playback:{status:'playing',title:'Harvest Moon',artist:'Neil Young',controls:['pause']},...extra});
+
+test('playback feed reads the loopback snapshot for its source and rejects everything else', async t=>{
+  let mode='good',redirectCalls=0;const calls=[];
+  const server=createServer((req,res)=>{
+    calls.push([req.method,req.url,req.headers.authorization]);
+    if(req.url==='/redirect'){redirectCalls++;res.end('{}');return;}
+    if(mode==='timeout'){res.writeHead(200);res.write('{');return;}
+    if(mode==='failed'){res.statusCode=403;res.end('{"error":"forbidden"}');return;}
+    if(mode==='redirect'){res.writeHead(302,{Location:'/redirect'});res.end();return;}
+    if(mode==='oversized'){res.end(' '.repeat(64*1024+1));return;}
+    if(mode==='malformed'){res.end('not json');return;}
+    res.end(JSON.stringify(mode==='source'?playbackSnapshot({sourceId:'other'}):mode==='availability'?playbackSnapshot({availability:'fresh'}):playbackSnapshot()));
+  });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+  const feed=new HubPlaybackFeed({hubUrl:`http://127.0.0.1:${server.address().port}`,sourceId:'ht-a9',token:'p'.repeat(43)});
+  assert.equal((await feed.snapshot()).playback.title,'Harvest Moon');
+  assert.deepEqual(calls,[['GET','/api/playback/v1/snapshot','Bearer '+'p'.repeat(43)]]);
+  for(mode of ['source','availability','malformed','failed','redirect','oversized','timeout'])await assert.rejects(feed.snapshot(),{message:'feed-unavailable'},mode);
+  assert.equal(redirectCalls,0);
+  for(const options of [{sourceId:'bad id'},{sourceId:''},{token:'short'},{hubUrl:'http://localhost:8788'}]){
+    assert.throws(()=>new HubPlaybackFeed({hubUrl:'http://127.0.0.1:8788',sourceId:'ht-a9',token:'p'.repeat(43),...options}),{message:'invalid-runner-config'});
+  }
+});
+
+test('an optional now-playing block is validated like the rest of the private configuration', t=>{
+  const s=privateSetup(t);
+  const playbackTokenFile=join(s.dir,'playback-token');writeFileSync(playbackTokenFile,'p'.repeat(43),{mode:0o600});
+  assert.equal(loadRunnerConfig(s.configFile).nowPlaying,undefined);
+  const write=nowPlaying=>writeFileSync(s.configFile,JSON.stringify({...s.value,nowPlaying}));
+  write({tokenFile:playbackTokenFile,sourceId:'ht-a9'});
+  assert.deepEqual(loadRunnerConfig(s.configFile).nowPlaying,{token:'p'.repeat(43),sourceId:'ht-a9',installationId:'nowplaying'});
+  write({tokenFile:playbackTokenFile,sourceId:'ht-a9',installationId:'music'});
+  assert.equal(loadRunnerConfig(s.configFile).nowPlaying.installationId,'music');
+  const bad=[null,'ht-a9',[],{sourceId:'ht-a9'},{tokenFile:playbackTokenFile},{tokenFile:playbackTokenFile,sourceId:'ht-a9',extra:1},
+    {tokenFile:playbackTokenFile,sourceId:'bad id'},{tokenFile:playbackTokenFile,sourceId:'ht-a9',installationId:'agentdevicehub'},
+    {tokenFile:playbackTokenFile,sourceId:'ht-a9',installationId:'has-dash'},{tokenFile:'relative',sourceId:'ht-a9'}];
+  for(const value of bad){write(value);assert.throws(()=>loadRunnerConfig(s.configFile),{message:'invalid-runner-config'},JSON.stringify(value));}
+  write({tokenFile:playbackTokenFile,sourceId:'ht-a9'});chmodSync(playbackTokenFile,0o644);
+  assert.throws(()=>loadRunnerConfig(s.configFile),{message:'invalid-runner-config'});
+});
+
+test('with now-playing configured, the runner writes both tiles through one controller', async t=>{
+  const s=privateSetup(t);
+  const playbackTokenFile=join(s.dir,'playback-token');writeFileSync(playbackTokenFile,'p'.repeat(43),{mode:0o600});
+  writeFileSync(s.configFile,JSON.stringify({...s.value,nowPlaying:{tokenFile:playbackTokenFile,sourceId:'ht-a9'}}));
+  const owner=await createAgentState({storage:new MemoryStorage(),ownerId:'owner',consumers:[]});t.after(()=>owner.shutdown());
+  const {normalizeHook}=await import('@jimmie-potts/agent-state/providers');
+  const event=normalizeHook({session_id:'test',turn_id:'turn',prompt_id:'turn'},{provider:'claude',client:'code',hostId:'host',sourceId:'source',sessionId:'test',hook:'UserPromptSubmit'},Date.now());
+  assert.equal((await owner.ingest(event)).ok,true);
+  const routes=[];
+  const server=createServer((req,res)=>{
+    routes.push([req.url,req.headers.authorization.slice(-3)]);
+    res.end(JSON.stringify(req.url==='/api/playback/v1/snapshot'?playbackSnapshot():{apiVersion:'1.0',ownerId:'owner',connection:'current',snapshot:owner.snapshot()}));
+  });server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+  const writes=[];let done;const both=new Promise(resolve=>{done=resolve;});
+  const connection={capabilities:{backend:'tidbyt-cloud',backgroundPush:{supported:true},foregroundPush:{supported:false},installationRead:{supported:true},installationRemove:{supported:true}},
+    additionalInstallations:['nowplaying'],
+    async push(_webp,_signal,installation){writes.push(['push',installation]);if(writes.length===2)done();return {outcome:'sent'};},
+    async remove(_signal,installation){writes.push(['remove',installation]);return {outcome:'sent'};},async readInstallation(){return {ok:true,present:true};}};
+  const config={...loadRunnerConfig(s.configFile),hubUrl:`http://127.0.0.1:${server.address().port}`};
+  const runner=startStatusRunner(config,{connection,leaseRoot:join(s.dir,'locks')});t.after(()=>runner.stop());
+  await both;
+  await runner.stop();
+  assert.deepEqual(writes.map(([kind,installation])=>[kind,installation??'default']).sort(),[['push','default'],['push','nowplaying']]);
+  assert.deepEqual(routes.map(([url])=>url).sort(),['/api/monitor/v1/sessions','/api/playback/v1/snapshot']);
+  assert.deepEqual(Object.fromEntries(routes),{'/api/monitor/v1/sessions':'ttt','/api/playback/v1/snapshot':'ppp'},'each route uses its own token');
+  assert.equal(runner.state().nowPlaying.installation,'present');
+});
+
+test('the cloud connection lists the now-playing installation only when it is configured', t=>{
+  const s=privateSetup(t);
+  assert.deepEqual(runnerConnection(loadRunnerConfig(s.configFile)).additionalInstallations,[]);
+  const playbackTokenFile=join(s.dir,'playback-token');writeFileSync(playbackTokenFile,'p'.repeat(43),{mode:0o600});
+  writeFileSync(s.configFile,JSON.stringify({...s.value,nowPlaying:{tokenFile:playbackTokenFile,sourceId:'ht-a9'}}));
+  assert.deepEqual(runnerConnection(loadRunnerConfig(s.configFile)).additionalInstallations,['nowplaying']);
+});

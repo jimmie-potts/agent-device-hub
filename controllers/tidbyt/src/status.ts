@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SessionSnapshot, Snapshot } from '@jimmie-potts/agent-state';
-import { fontText, glyph, GLYPH_ADVANCE, GLYPH_HEIGHT, GLYPH_WIDTH } from './font.js';
+import { dim, fill, text, textWidth, type Rgb } from './draw.js';
+import { fontText, GLYPH_ADVANCE, GLYPH_HEIGHT } from './font.js';
 import { FRAME_BYTES, FRAME_HEIGHT, FRAME_WIDTH, type Frame } from './render.js';
 
 /**
@@ -69,29 +70,9 @@ export function statusView(snapshot: Snapshot | undefined, options: StatusViewOp
   return { feed: unavailable ? 'unavailable' : 'available', rows, idle: !unavailable && shown.length === 0 };
 }
 
-type Rgb = readonly [number, number, number];
 export const STATUS_COLORS: Readonly<Record<StatusState | 'TEXT' | 'MUTED', Rgb>> = Object.freeze({
   ASK: [255, 160, 0], RUN: [40, 120, 255], DONE: [40, 200, 80], TEXT: [220, 220, 220], MUTED: [140, 140, 140],
 });
-const dim = (color: Rgb): Rgb => [Math.floor(color[0] / 3), Math.floor(color[1] / 3), Math.floor(color[2] / 3)];
-
-function fill(rgb: Uint8Array, x: number, y: number, color: Rgb): void {
-  if (x < 0 || y < 0 || x >= FRAME_WIDTH || y >= FRAME_HEIGHT) return;
-  rgb.set(color, (y * FRAME_WIDTH + x) * 3);
-}
-
-function text(rgb: Uint8Array, x: number, y: number, value: string, color: Rgb): void {
-  [...fontText(value)].forEach((ch, i) => {
-    glyph(ch).forEach((bits, dy) => {
-      for (let dx = 0; dx < GLYPH_WIDTH; dx++) {
-        if (bits & (1 << (GLYPH_WIDTH - 1 - dx))) fill(rgb, x + i * GLYPH_ADVANCE + dx, y + dy, color);
-      }
-    });
-  });
-}
-
-const textWidth = (value: string) => value.length * GLYPH_ADVANCE - 1;
-
 /** Draw a status view as the renderer's 64×32 RGB frame: one 8-pixel row per entry. */
 export function statusFrame(view: StatusView): Frame {
   const rgb = new Uint8Array(FRAME_BYTES);

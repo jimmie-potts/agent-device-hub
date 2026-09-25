@@ -466,7 +466,10 @@ explicitly selected source; they are never redirected, retried or replayed. A
 later source keeps its own freshness, and an unavailable selected source is
 shown as unavailable rather than replaced by another source. The
 [host guide](../apps/hub/README.md#playback) documents the routes and the source
-interface. The Windows connector
+interface. Display cards read the same snapshot and render in their own
+controllers: the Tidbyt runner's optional now-playing tile
+([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) writes a
+second background installation through the existing Tidbyt queue. The Windows connector
 ([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36)) is deferred;
 if built, it becomes another source of the same module.
 

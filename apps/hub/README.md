@@ -133,7 +133,7 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 `sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
 
-Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37).
+Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Browser launch sessions do not receive a playback grant; UI and MCP tools belong to [#37](https://github.com/jimmie-potts/agent-device-hub/issues/37). The Tidbyt runner's optional now-playing tile ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) is a read-only consumer of the snapshot; see the [Tidbyt guide](../../controllers/tidbyt/README.md#now-playing-decisions).
 
 ### Snapshot
 

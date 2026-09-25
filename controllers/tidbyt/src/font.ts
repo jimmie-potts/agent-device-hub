@@ -1,5 +1,5 @@
 /**
- * A 3×5 bitmap font for the 64×32 status frame. Each glyph is five rows of
+ * A 3×5 bitmap font for the 64×32 status and now-playing frames. Each glyph is five rows of
  * three bits, most significant bit on the left. Callers map other characters.
  */
 export const GLYPH_WIDTH = 3;
@@ -29,6 +29,11 @@ const GLYPHS: Record<string, readonly number[]> = {
   ' ': [0, 0, 0, 0, 0], '-': [0b000, 0b000, 0b111, 0b000, 0b000],
   '+': [0b000, 0b010, 0b111, 0b010, 0b000], '?': [0b110, 0b001, 0b010, 0b000, 0b010],
   '.': [0b000, 0b000, 0b000, 0b000, 0b010],
+  // Punctuation common in track and artist names.
+  "'": [0b010, 0b010, 0b000, 0b000, 0b000], '&': [0b010, 0b100, 0b010, 0b101, 0b011],
+  '!': [0b010, 0b010, 0b010, 0b000, 0b010], ',': [0b000, 0b000, 0b000, 0b010, 0b100],
+  '(': [0b001, 0b010, 0b010, 0b010, 0b001], ')': [0b100, 0b010, 0b010, 0b010, 0b100],
+  '/': [0b001, 0b001, 0b010, 0b100, 0b100], ':': [0b000, 0b010, 0b000, 0b010, 0b000],
 };
 
 /** Uppercase the text and replace every character the font lacks with `-`. */

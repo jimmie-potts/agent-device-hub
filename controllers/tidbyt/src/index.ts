@@ -3,4 +3,7 @@ export * from './connection.js';
 export * from './credentials.js';
 export * from './controller.js';
 export * from './status.js';
+export * from './nowplaying.js';
+export * from './publishing.js';
 export * from './publisher.js';
+export * from './nowplaying-publisher.js';

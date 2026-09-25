@@ -1,4 +1,6 @@
 // Deterministic 64×32 RGB frames shared by the renderer tests and golden fixtures.
+import { nowPlayingFrame, nowPlayingView } from '../dist/index.js';
+
 export const WIDTH = 64;
 export const HEIGHT = 32;
 
@@ -22,4 +24,9 @@ export const goldenFrames = {
   'red-gradient': () => frame((x, y) => [(x * 4 + y) & 255, 7, 7]),
   'status-bar': () => frame((x, y) => (y < 8 ? [0, 160, 255] : x < 32 ? [255, 200, 0] : [30, 30, 30])),
   noise: () => { const next = noise(16); return frame(() => [next(), next(), next()]); },
+  // The drawn now-playing card, so a drawing change shows up as a golden diff.
+  'now-playing': () => nowPlayingFrame(nowPlayingView({
+    apiVersion: '1.0', sourceId: 'golden', availability: 'available', observedAtMs: 0, ageMs: 0,
+    playback: { status: 'playing', title: "Don't Stop Me Now", artist: 'Queen & Beyoncé', controls: [] },
+  }, { readOk: true, ageMs: 0 })).rgb,
 };

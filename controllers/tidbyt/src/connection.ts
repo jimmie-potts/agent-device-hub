@@ -25,13 +25,18 @@ export type PushOutcome =
   | { outcome: 'uncertain' };
 export type InstallationRead = { ok: true; present: boolean } | { ok: false; failure: PushFailure | 'capacity' };
 
-/** Every write path goes through this interface; a later Tronbyt connection implements it too. */
+/**
+ * Every write path goes through this interface; a later Tronbyt connection implements it too.
+ * `installation` names one of `additionalInstallations`; omitted, the default installation is used.
+ */
 export interface DisplayConnection {
   readonly capabilities: ConnectionCapabilities;
-  push(webp: Uint8Array, signal: AbortSignal): Promise<PushOutcome>;
-  readInstallation(signal: AbortSignal): Promise<InstallationRead>;
-  /** Delete the configured installation, classified like a push. */
-  remove(signal: AbortSignal): Promise<PushOutcome>;
+  /** Operator-configured installations besides the default one. */
+  readonly additionalInstallations?: readonly string[];
+  push(webp: Uint8Array, signal: AbortSignal, installation?: string): Promise<PushOutcome>;
+  readInstallation(signal: AbortSignal, installation?: string): Promise<InstallationRead>;
+  /** Delete the default or named installation, classified like a push. */
+  remove(signal: AbortSignal, installation?: string): Promise<PushOutcome>;
 }
 
 export type TidbytCloudConfig = {
@@ -39,6 +44,8 @@ export type TidbytCloudConfig = {
   deviceId: string;
   apiKey: string;
   installationId: string;
+  /** Further installations this connection may write, such as a now-playing tile. At most four. */
+  additionalInstallationIds?: readonly string[];
   timeoutMs?: number;
   fetch?: typeof fetch;
   /** Wall clock used only to interpret an HTTP-date Retry-After. */
@@ -50,8 +57,11 @@ export const INSTALLATION_ID = /^[A-Za-z0-9]{1,64}$/;
 const CLOUD_DEVICE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const API_KEY = /^[\x21-\x7e]{1,4096}$/;
 const MAX_BODY = 64 * 1024;
+export const MAX_ADDITIONAL_INSTALLATIONS = 4;
 const DEFAULT_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 15 * 60_000;
+/** A write for an installation this connection does not list; nothing is sent. */
+const REFUSED: PushOutcome = Object.freeze({ outcome: 'failed', failure: 'invalid-request', priorEffects: 'none' }) as PushOutcome;
 // Failures raised before any request bytes can have left this host.
 const PRE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EAI_NONAME', 'UND_ERR_CONNECT_TIMEOUT']);
 
@@ -129,13 +139,18 @@ export class TidbytCloudConnection implements DisplayConnection {
   readonly #deviceId: string;
   readonly #apiKey: string;
   readonly #installationId: string;
+  readonly additionalInstallations: readonly string[];
   readonly #timeoutMs: number;
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
 
   constructor(config: TidbytCloudConfig) {
     const timeoutMs = config.timeoutMs ?? 10_000;
-    if (typeof config.deviceId !== 'string' || !CLOUD_DEVICE_ID.test(config.deviceId)
+    const additional = config.additionalInstallationIds ?? [];
+    if (!Array.isArray(additional) || additional.length > MAX_ADDITIONAL_INSTALLATIONS
+        || additional.some(id => typeof id !== 'string' || !INSTALLATION_ID.test(id) || id === config.installationId)
+        || new Set(additional).size !== additional.length
+        || typeof config.deviceId !== 'string' || !CLOUD_DEVICE_ID.test(config.deviceId)
         || typeof config.apiKey !== 'string' || !API_KEY.test(config.apiKey)
         || typeof config.installationId !== 'string' || !INSTALLATION_ID.test(config.installationId)
         || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) {
@@ -144,6 +159,7 @@ export class TidbytCloudConnection implements DisplayConnection {
     this.#deviceId = config.deviceId;
     this.#apiKey = config.apiKey;
     this.#installationId = config.installationId;
+    this.additionalInstallations = Object.freeze([...additional]);
     this.#timeoutMs = timeoutMs;
     this.#fetch = config.fetch ?? globalThis.fetch;
     this.#now = config.now ?? Date.now;
@@ -159,16 +175,26 @@ export class TidbytCloudConnection implements DisplayConnection {
     });
   }
 
-  async push(webp: Uint8Array, signal: AbortSignal): Promise<PushOutcome> {
+  /** The installation to target, or undefined when `installation` is not one this connection may write. */
+  #target(installation: string | undefined): string | undefined {
+    if (installation === undefined) return this.#installationId;
+    return this.additionalInstallations.includes(installation) ? installation : undefined;
+  }
+
+  async push(webp: Uint8Array, signal: AbortSignal, installation?: string): Promise<PushOutcome> {
+    const target = this.#target(installation);
+    if (target === undefined) return REFUSED;
     const body = JSON.stringify({
       deviceID: this.#deviceId, image: Buffer.from(webp).toString('base64'),
-      installationID: this.#installationId, background: true,
+      installationID: target, background: true,
     });
     return this.#write(() => this.#request('/push', signal, body));
   }
 
-  remove(signal: AbortSignal): Promise<PushOutcome> {
-    return this.#write(() => this.#request(`/installations/${this.#installationId}`, signal, undefined, 'DELETE'));
+  async remove(signal: AbortSignal, installation?: string): Promise<PushOutcome> {
+    const target = this.#target(installation);
+    if (target === undefined) return REFUSED;
+    return this.#write(() => this.#request(`/installations/${target}`, signal, undefined, 'DELETE'));
   }
 
   /** Send one write and classify it once. */
@@ -192,7 +218,9 @@ export class TidbytCloudConnection implements DisplayConnection {
     return { outcome: 'failed', failure, priorEffects: 'none' };
   }
 
-  async readInstallation(signal: AbortSignal): Promise<InstallationRead> {
+  async readInstallation(signal: AbortSignal, installation?: string): Promise<InstallationRead> {
+    const target = this.#target(installation);
+    if (target === undefined) return { ok: false, failure: 'invalid-request' };
     try {
       const response = await this.#request('/installations', signal);
       if (!response.ok) {
@@ -201,7 +229,7 @@ export class TidbytCloudConnection implements DisplayConnection {
       }
       const value = JSON.parse(await boundedText(response, MAX_BODY) ?? '');
       if (!Array.isArray(value?.installations)) return { ok: false, failure: 'transport-failure' };
-      return { ok: true, present: value.installations.some((i: unknown) => (i as { id?: unknown })?.id === this.#installationId) };
+      return { ok: true, present: value.installations.some((i: unknown) => (i as { id?: unknown })?.id === target) };
     } catch {
       return { ok: false, failure: 'transport-failure' };
     }
