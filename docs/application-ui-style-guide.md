@@ -184,7 +184,8 @@ semantics, keyboard order, text cues, or which control is primary.
    name and change values only. Every role in 4.1 needs a dark and a light
    value; the fixed set in 4.2 is not copied.
 2. Scope decorative rules under the new `data-skin` value. Decoration is CSS
-   only, sits on borders and artwork, never on text or meaning-carrying edges,
+   only, sits on borders, artwork or a background layer behind all content,
+   is never drawn over text or meaning-carrying edges,
    plays once and ends within 5 seconds of load (there is no pause control,
    per WCAG 2.2.2), respects `prefers-reduced-motion`, and prints as
    nothing.

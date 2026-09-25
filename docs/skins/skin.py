@@ -37,7 +37,7 @@ def controls_script():
     """Theme toggle; the choice is stored for both pages."""
     return f'''(() => {{
  const root = document.documentElement, theme = document.querySelector('#theme-toggle');
- const store = (key, value) => {{ try {{ if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }} catch {{}} }};
+ const store = (key, value) => {{ try {{ localStorage.setItem(key, value); }} catch {{}} }};
  const sync = () => theme.setAttribute('aria-pressed', String(root.dataset.theme === 'light'));
  theme.addEventListener('click', () => {{ root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light'; store('{THEME_KEY}', root.dataset.theme); sync(); }});
  sync();

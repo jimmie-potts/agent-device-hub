@@ -37,13 +37,14 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     let now = await state(page);
     assert.equal(now.skin, SKIN, 'The page names its skin');
     assert.deepEqual([now.motion, now.motionControl], [null, false], 'No pause control and no motion state');
-    const names = await running(page);
-    assert(names.includes(CIRCUIT) && OPENING.some(name => names.includes(name)), `Opening and circuit trace run on a fresh load: ${names}`);
     const animations = await page.evaluate(() => document.getAnimations().map(a => {
       const t = a.effect.getComputedTiming(), target = a.effect.target;
       return {name: a.animationName, iterations: t.iterations, end: t.endTime, pseudo: a.effect.pseudoElement || '',
               body: target === document.body, artwork: Boolean(target.closest('.hero-art')), rule: target.matches('.sidebar-rule')};
     }));
+    // Presence uses every animation, finished or not, so a slow load cannot miss the one-shot trace.
+    const names = animations.map(a => a.name);
+    assert(names.includes(CIRCUIT) && OPENING.some(name => names.includes(name)), `Opening and circuit trace play on a fresh load: ${names}`);
     assert(animations.every(a => a.pseudo || a.artwork || a.rule), 'Animations run only on decorative pseudo-elements, rules and artwork, never on text, badges or edges');
     const late = animations.filter(a => !Number.isFinite(a.iterations) || !(a.end <= MOTION_LIMIT_MS));
     assert.deepEqual(late, [], `Every animation is finite and ends within ${MOTION_LIMIT_MS} ms`);
@@ -54,7 +55,7 @@ async function check(browser, {url, decorated, controls, allowRequest = () => fa
     const retired = await open({reducedMotion: 'no-preference'}, {[RETIRED_MOTION_KEY]: 'paused'});
     now = await state(retired.page);
     assert.deepEqual([now.motion, now.storedMotion], [null, null], 'A pause stored by the retired control is removed and ignored');
-    assert((await running(retired.page)).includes(CIRCUIT), 'The trace plays despite a retired stored pause');
+    assert(await retired.page.evaluate(name => document.getAnimations().some(a => a.animationName === name), CIRCUIT), 'The trace plays despite a retired stored pause');
     // Theme: the toggle switches and stores the choice, a stored choice applies before first paint
     // over the system preference, and without a stored or scripted choice CSS follows the system.
     now = await state(page);

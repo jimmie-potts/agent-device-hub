@@ -157,9 +157,9 @@ The skin's decoration is the corner brackets, the top and sidebar rules, the
 hero artwork and glow, an opening of about 2 seconds, and a circuit trace: a
 pulse that runs once down the page background through a tiled circuit pattern
 from 0.5 to 3.1 seconds, then leaves the layer transparent. It uses CSS
-animation only, scoped to `html[data-skin="neon-geometry-wars"]`. It never sits
-on text, issue badges or diagram edges, and it does not indicate live agent or
-device activity. Every animation plays once per load and ends within 5 seconds,
+animation only, scoped to `html[data-skin="neon-geometry-wars"]`. The trace
+passes behind content; no decoration is drawn over text, issue badges or diagram
+edges, and none of it indicates live agent or device activity. Every animation plays once per load and ends within 5 seconds,
 so the pages have no pause control (WCAG 2.2.2); `prefers-reduced-motion` stops
 it entirely. A skin must keep that limit or bring back a pause control.
 
