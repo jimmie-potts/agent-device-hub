@@ -1031,6 +1031,19 @@ class Ideas(unittest.TestCase):
         self.assertEqual(meta['ideas'], dict(count=len(picks), keys=expected, countedInIssueTotals=False))
         self.assertNotIn('data-count', section.split('<div class="guide-body">', 1)[0], 'The section adds nothing to issue counts')
 
+    def test_a_refresh_keeps_every_closed_extends_target(self):
+        import refresh_backlogs
+        def story(number, body, state='OPEN'):
+            return {'number': number, 'state': state, 'body': body}
+        idea = '## Guide\n\n**Topic:** work-guide\n**Highlight:** idea, r\n**Extends:** {}\n'
+        saved = {'agent-device-hub': [story(292, idea.format('H291, N92, H67')), story(67, '## Guide\n\n**Topic:** desktop-controls\n'),
+                                      story(10, idea.format('H404'), state='CLOSED'), story(11, '## Guide\n\n**Topic:** nope\n**Extends:** H405\n')],
+                 'codex-nanoleaf': [story(158, idea.format('H292, N44'))],
+                 'divoom-app-upgrade': [story(91, idea.format('H291, P1'))]}
+        # Held keys are not fetched again; a closed story's or an unreadable section's Extends is not followed.
+        self.assertEqual(refresh_backlogs.extends_targets(saved),
+                         {'agent-device-hub': [291], 'codex-nanoleaf': [44, 92], 'divoom-app-upgrade': [1]})
+
     def test_the_committed_guide_has_the_section_and_no_curated_ideas(self):
         import guide_direction as GDIR
         self.assertFalse(hasattr(GDIR, 'IDEAS'), 'The hand-written Later ideas list is retired')

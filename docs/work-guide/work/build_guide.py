@@ -379,7 +379,7 @@ JS = '''
  const empty = document.querySelector('#empty-state');
  const clear = document.querySelector('#clear-search');
  const normal = value => value.toLocaleLowerCase().replace(/\\s+/g, ' ').trim();
- const haystacks = new Map([...guides, ...figures, ...prose].map(g => [g, normal(g.textContent)]));
+ const haystacks = new Map([...guides, ...figures].map(g => [g, normal(g.textContent)]));
  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
  const overviewDetails = () => [...document.querySelectorAll('.overview-more')];
  const snapshot = () => ({overview: overviewDetails().map(s => s.open), open: sections.map(s => s.open), evidence: evidence.map(s => s.open), hidden: sections.map(s => s.hidden), figures: figures.map(f => f.hidden), nav: navLinks.map(a => a.hidden)});

@@ -190,6 +190,9 @@ path checks only the form of `Extends` keys, because it reads open stories
 alone; the snapshot build also checks that each key exists. A key the live read
 cannot place links to GitHub without a status claim.
 
+An idea often extends work that has since closed. `refresh_backlogs.py` reads
+and saves every story an open story's `Extends` names that the refreshed
+records lack, so the build's existence check passes without a hand-kept list.
 Marks reach the saved snapshot only at a backlog refresh. Until then, readers
 without scripts, or whose GitHub read fails, see the snapshot's marks.
 

@@ -254,17 +254,21 @@
       groups.insertBefore(element, later || null);
       return element;
     };
-    const regular = new Set();
+    // Rows are diffed, never rebuilt wholesale: a row whose state and Extends are unchanged keeps its
+    // nodes, so a later repository's pass does not undo badge relabels or move focus.
+    const metaSignature = (key, guide) => `${liveScheduling(key)}|${guide.extends.join(',')}`;
+    const present = new Set();
     for (const li of [...groups.querySelectorAll('li.idea')]) {
       const key = li.dataset.key;
       if (!refreshed.has(key[0])) continue; // a failed read keeps the snapshot row untouched
       const guide = liveIdea(key);
-      if (li.closest('.newly-added-since-snapshot') || !guide || guide.topic !== li.dataset.topic) { li.remove(); continue; }
-      regular.add(key);
-      li.querySelector('.idea-reason').textContent = guide.highlight.reason;
-      li.querySelector('.idea-meta').innerHTML = ideaMeta(key, guide);
+      if (!guide || guide.topic !== li.dataset.topic || present.has(key)) { li.remove(); continue; }
+      present.add(key);
+      const reason = li.querySelector('.idea-reason');
+      if (reason.textContent !== guide.highlight.reason) reason.textContent = guide.highlight.reason;
+      if (li.dataset.meta !== metaSignature(key, guide)) { li.querySelector('.idea-meta').innerHTML = ideaMeta(key, guide); li.dataset.meta = metaSignature(key, guide); }
     }
-    const added = Object.keys(rows).filter(key => refreshed.has(key[0]) && !regular.has(key) && liveIdea(key)).sort(sortKey);
+    const added = Object.keys(rows).filter(key => refreshed.has(key[0]) && !present.has(key) && liveIdea(key)).sort(sortKey);
     for (const key of added) {
       const guide = liveIdea(key), topic = group(guide.topic);
       let block = topic.querySelector('.newly-added-since-snapshot');
@@ -274,7 +278,11 @@
         block.innerHTML = '<h4 class="work-heading">Newly added since the snapshot</h4><ul class="ideas-list"></ul>';
         topic.append(block);
       }
-      block.querySelector('ul').insertAdjacentHTML('beforeend', ideaRow(key, guide));
+      const list = block.querySelector('ul'), next = [...list.children].find(li => sortKey(li.dataset.key, key) > 0);
+      const template = document.createElement('template');
+      template.innerHTML = ideaRow(key, guide);
+      template.content.firstElementChild.dataset.meta = metaSignature(key, guide);
+      list.insertBefore(template.content.firstElementChild, next || null);
     }
     groups.querySelectorAll('.newly-added-since-snapshot').forEach(block => { if (!block.querySelector('li')) block.remove(); });
     groups.querySelectorAll('.ideas-topic').forEach(topic => { if (!topic.querySelector('li')) topic.remove(); });
