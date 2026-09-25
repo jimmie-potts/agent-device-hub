@@ -91,6 +91,27 @@ test('multiple sessions from a real agent-state owner are pushed as one status f
   assert.equal(s.connection.state.removals, 0);
 });
 
+test('Desktop retirement releases the installation on current empty reconnect without confusing feed loss', async t => {
+  let available=true;
+  const s=await setup(t,{feed:owner=>({snapshot:()=>available?owner.snapshot():undefined})});
+  const desktop=(name,turn)=>normalizeHook({session_id:'desktop',turn_id:turn},
+    {provider:'codex',client:'desktop',hostId:'host',sourceId:'source',hook:name},++ownerClock.now);
+  await s.ingest(desktop('UserPromptSubmit','old'));
+  s.publisher.start();await s.settle();
+  assert.equal(s.publisher.state().installation,'present');
+  available=false;await s.advance(20*SECOND);
+  await s.ingest(desktop('SessionEnd','old'));
+  await s.advance(MINUTE);
+  assert.equal(s.connection.state.removals,0,'unavailable feed retains its installation');
+  available=true;await s.advance(MINUTE);
+  assert.equal(s.publisher.state().view.idle,true);
+  assert.equal(s.publisher.state().installation,'absent');
+  await s.ingest(desktop('UserPromptSubmit','fresh'));
+  await s.advance(MINUTE);
+  assert.equal(s.publisher.state().view.rows[0].state,'RUN');
+  assert.equal(s.publisher.state().installation,'present');
+});
+
 test('changes within 15 s coalesce into one later push of the latest state', async t => {
   const s = await setup(t);
   await s.ingest(hook('UserPromptSubmit', 'one', 't1'));

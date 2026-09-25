@@ -38,7 +38,7 @@ def normalize(source, destination, database, name):
                 value = re.sub(r'((?:href|src)=[\"\'])(?:\.\./)*(bower|fonts)/', lambda m:m[1]+prefix+'shared/'+m[2]+'/', value)
                 value = value.replace('width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no', 'width=device-width, initial-scale=1')
                 value = value.replace('<html>', '<html lang="en">')
-                banner = f'<div style="padding:14px 20px;background:#102a2b;color:#e8f6f1;font:16px/1.5 system-ui"><a style="color:#9cf1d5" href="{prefix}../index.html">BUNNY reference</a> · {html.escape(name)} · source schema only; no live data. Relationships show declared foreign keys only.</div>'
+                banner = f'<div style="padding:14px 20px;background:#102a2b;color:#e8f6f1;font:16px/1.5 system-ui"><a style="color:#9cf1d5" href="{prefix}../index.html">B.U.N.N.Y. reference</a> · {html.escape(name)} · source schema only; no live data. Relationships show declared foreign keys only.</div>'
                 value = re.sub(r'(<body[^>]*>)', r'\1'+banner, value, count=1)
             data = value.encode('utf-8')
         if shared and target.exists():

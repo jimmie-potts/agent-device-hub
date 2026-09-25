@@ -218,3 +218,5 @@ Hub tests additionally check protected context, native credential exclusion,
 static-asset protections, invalid links, packaged installation and that general
 commands are validated and scoped before any controller request. Source/browser
 checks do not establish installed-client or physical acceptance.
+
+The activity view requests snapshot 1.1 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.

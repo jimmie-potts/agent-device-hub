@@ -98,11 +98,16 @@ The dashboard SHALL disable Pixoo playlist selection and playback actions while 
 - **THEN** the typed failure is shown, no command is repeated, and the control stays available for a fresh explicit action
 
 ### Requirement: Reconnect without losing intent
-The dashboard SHALL obtain authoritative snapshots on resync or expired cursors, reject superseded results, bound reconnect work, preserve focus and drafts, and keep slow/offline device status independent.
+The dashboard SHALL obtain authoritative snapshots on resync or expired cursors, reject superseded results, bound reconnect work, preserve focus and drafts for the same session generation, and keep slow/offline device status independent.
 
 #### Scenario: Reconnect during editing
-- **WHEN** the stream disconnects or resyncs while a user edits a field
+- **WHEN** the stream disconnects or resyncs while a user edits a field and the session generation is unchanged
 - **THEN** updated evidence appears without resetting the field or focus or replaying commands
+
+#### Scenario: Missed retirement while editing a task
+- **WHEN** a current snapshot replaces a session with a different generation under the same identity
+- **THEN** the old task label and acknowledgment drafts are discarded, the new task uses fresh defaults, and no command is submitted
+- **AND** unrelated controller drafts and tasks remain intact
 
 ### Requirement: Accessible verified candidate
 The dashboard SHALL support keyboard navigation, readable contrast, reduced motion and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and require explicit approval of the actual UI before merge.

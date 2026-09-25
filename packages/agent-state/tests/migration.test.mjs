@@ -24,7 +24,7 @@ test('quiesced migration preserves state and permits explicit rollback after rel
 test('malformed, private and incompatible exports never enter an empty or existing store',async()=>{
   const source=await createAgentState(options(new MemoryStorage()));await source.ingest(event);
   const valid=await source.exportState();await source.shutdown();
-  const variants=[{...valid,formatVersion:'2.0'},{...valid,privatePrompt:'SECRET_CANARY'},
+  const variants=[{...valid,formatVersion:'3.0'},{...valid,privatePrompt:'SECRET_CANARY'},
     {...valid,sessions:[{...valid.sessions[0],toolContent:'SECRET_CANARY'}]},
     {...valid,sessions:[valid.sessions[0],valid.sessions[0]]}];
   for(const bad of variants){

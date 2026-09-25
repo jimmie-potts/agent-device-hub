@@ -44,7 +44,7 @@ These are Hub interpretation rules, conditional on qualified provider evidence.
 | Matched input/result | `attention.resolved` | Resolve only the evidenced attention item |
 | Stop | `turn.ended` | Neither success nor readership |
 | Interrupt | `turn.interrupted` | Absence does not prove uninterrupted execution |
-| SessionEnd | `runtime.ended` | Retained notices survive |
+| SessionEnd | `runtime.ended` | Codex Desktop retires known records; other paths retain their existing end policy |
 | SubagentStart/Stop | Child session/turn events | Child identity plus evidenced parent selector |
 | Monitor dismissal | `notice.acknowledged` | Consumer/notice-scoped, never provider read state |
 | Qualified Desktop marker | `read.observed` | Optional evidence, not universal readership |
@@ -62,7 +62,7 @@ The session selector identifies the actual child when `agent_id` is present; the
 - Desktop also lists unopened subagent threads, so only top-level sessions qualify.
 - No hook reports reads, and a Linux file watcher on `/mnt/c` received no events. The reader therefore checks the file's size and modification time every two seconds and parses it only when they change.
 
-A listed session is `unread`. An unlisted session is `read` when it was unread, or when its read value is unknown, it is not known to be active, and its last lifecycle evidence is at least five seconds old. Desktop sets the flag shortly after Stop; legacy Nanoleaf used the same wait. Unordered Interrupt and SessionEnd hooks leave the owner's activity unknown, so the rule excludes only a known running turn. A missing, oversized, malformed or other-version file produces no evidence. The standalone Hub's optional `codexDesktop` configuration enables this reader; see [the Hub guide](../apps/hub/README.md#configuration-and-authority).
+A listed session is `unread`. An unlisted session is `read` when it was unread, or when its read value is unknown, it is not known to be active, and its last lifecycle evidence is at least five seconds old. Desktop sets the flag shortly after Stop; legacy Nanoleaf used the same wait. Unordered Interrupt leaves activity unknown; Desktop SessionEnd removes the record. The read rule excludes a known running turn and never recreates an absent session. A missing, oversized, malformed or other-version file produces no evidence. The standalone Hub's optional `codexDesktop` configuration enables this reader; see [the Hub guide](../apps/hub/README.md#configuration-and-authority).
 
 ## Required-client stops
 
@@ -73,3 +73,11 @@ Source fixtures validate this contract. Live Codex Windows/WSL, Desktop and Clau
 ## Performance handoff
 
 [Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) measures the delivered Linux hook in Ubuntu WSL using pinned source and synthetic isolated state. Native Windows comparison and cross-OS forwarding measurements are not required. Record cold/warm starts, repeat counts, load and artifact revisions. Separate producer return, admission, reduction, publication, consumer admission and transport. Compare durations within one monotonic clock domain. This document supplies no measurements or numeric budgets. Freeze measured budgets before Hub #3; installed-client and integrated qualification retain their own gates.
+
+## Codex Desktop end and archive admission
+
+The [Codex hook reference](https://learn.chatgpt.com/docs/hooks#sessionend) documents SessionEnd for archive/delete of an open main thread, normal shutdown and idle unopened sessions; its reason may be `other`. The shared owner retires known Desktop records on that event without classifying the reason. It adds no turn-duration timer. Source normalization and synthetic host checks do not prove delivery by a particular installed Desktop build.
+
+The optional `codexDesktop` home also supplies positive archive admission evidence. The host checks regular `archived_sessions/rollout-YYYY-MM-DDTHH-MM-SS-<session-id>.jsonl` filenames for a new identity and its known ancestors, including an absent parent. It reads no transcript content, scans at most 10,000 entries within the owner's 200 ms deadline, and does not poll or retain archive results. Missing, unreadable, differently shaped or timed-out evidence cannot block monitoring. An unarchived conversation can supply fresh eligible work. Ending an already tracked session does not consult archive evidence.
+
+Archive filenames are an implementation-specific safeguard exercised with synthetic files. The owning [#218 acceptance](https://github.com/jimmie-potts/agent-device-hub/issues/218) still requires separately authorized throwaway archive and non-archive ends, resume, dashboard removal, and visible Nanoleaf Line release on the selected installation.

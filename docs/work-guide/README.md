@@ -57,6 +57,67 @@ reads. Preserve the matching selection rules when changing either implementation
 Pixoo embedded-host performance remains later by the owner's explicit choice,
 even without a tracker `deferred` label. Its issue scope and acceptance stay intact.
 
+## Skin and tokens
+
+The guide and the B.U.N.N.Y. atlas share one skin, Neon Geometry Wars. Both
+generators inline `docs/skins/fixed.css` and then
+`docs/skins/neon-geometry-wars.css` ahead of their own CSS. Guide and atlas
+styles use token names only; color values live in those two files.
+
+- Fixed tokens, in `fixed.css`, keep their meaning in every skin. Each has a
+  dark, light and print shade, and no skin redefines them. They cover repository
+  identity (`--repo-hub`, `--repo-nanoleaf`, `--repo-pixoo`), issue status
+  (`--status-open`, `--status-active`, `--status-blocked`, `--status-completed`,
+  `--status-closed`), atlas document status (`--status-delivered`,
+  `--status-planned`, `--status-qualification`, `--status-mixed`,
+  `--status-optional`), map edge keys (`--edge-observe`, `--edge-feed`,
+  `--edge-command`, `--edge-other`) and alternative walkthrough lanes
+  (`--walk-alt`).
+- Role tokens, in the skin file, name what a value is for. Surfaces: `--bg`,
+  `--panel`, `--panel-translucent`, `--raised`, `--inset`. Text: `--text`,
+  `--muted`. Borders: `--edge`, `--edge-strong`, `--edge-faint`. Accent and
+  selection: `--accent`, `--accent-ink`, `--link`, `--focus`. Pending:
+  `--pending`. Decoration: `--glow`, `--grid-image`, `--grid-size`. Shape:
+  `--radius`. Type: `--font`, `--mono`, `--type-body`, `--type-small`,
+  `--type-label`. Spacing: `--space-xs` through `--space-xl`.
+
+`<html>` carries `data-skin`, `data-theme="dark"` or `"light"`, and
+`data-motion="paused"` while motion is paused. Before the page paints, a small
+head script applies the stored theme (or the system preference) and any stored
+pause. The guide and the atlas share the `bunny-design-theme`
+and `bunny-design-motion` keys, so a choice carries between them. Without
+scripts, CSS follows the system preference. Print uses its own palette and shows
+no decoration. `docs/skins/skin.py` gives both generators the stylesheet, the
+head script and the Light mode and Pause motion toggles.
+
+The skin's decoration is the corner brackets, the top and sidebar rules, the
+hero artwork and glow, an opening of about 2 seconds and a light streak of about
+1 second every 25 seconds. It uses CSS animation only, scoped to
+`html[data-skin="neon-geometry-wars"]`. It never sits on text, issue badges or
+diagram edges, and it does not indicate live agent or device activity. Pause
+motion and `prefers-reduced-motion` stop it; Resume never replays the opening.
+
+To add a skin, copy `neon-geometry-wars.css` to a new `<name>.css` and change
+only values and decoration. Keep every role name and all four token blocks:
+dark, light, the no-script light fallback (identical to the light block) and
+print. Scope decoration under `html[data-skin="<name>"]`, then set `SKIN` in
+`docs/skins/skin.py` to the new name. The token check fails on a color literal
+in any guide or atlas style source, a missing or unknown role, a skin that
+redefines a fixed token, a fallback that differs from the light block, or
+decoration outside its skin scope:
+
+```bash
+python3 docs/skins/check_tokens.py
+```
+
+`work/test_maintenance.py` and `docs/system-design/check.py` run the same check.
+Both browser checks run `docs/skins/check_skin.cjs` for the theme and motion
+controls, reduced motion, print and decoration placement.
+
+The nine Archify viewers and the atlas's API and database reference
+(`docs/system-design/reference/`, with its bundled Scalar and SchemaSpy output)
+keep their own styling and are outside the token check.
+
 ## Intentional guide revisions
 
 The shared checkpoint contract was introduced by

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import sys
+from copy import deepcopy
 
 ROOT = Path(__file__).resolve().parents[1]
 LIFECYCLE = json.loads((ROOT / 'packages/lifecycle-contracts/schemas/lifecycle-v1.schema.json').read_text())
@@ -67,6 +68,23 @@ def schemas():
         yield name, {'$schema': 'https://json-schema.org/draft/2020-12/schema',
                      '$id': 'https://jimmie-potts.github.io/agent-device-hub/agent-state/' + name,
                      **value, '$defs': definitions}
+    newer = deepcopy(definitions)
+    for name in ['storedSession', 'snapshotSession']:
+        newer[name]['properties']['generation'] = ref('integer')
+    newer['storedSession']['required'].append('generation')
+    newer['retirement'] = obj({'identity': ref('identity'), 'atMs': ref('integer'),
+        'turns': array(ref('id'), 256, True), 'keys': array(ref('hash'), 256, True),
+        'ordering': array(obj({'epoch': ref('id'), 'sequence': ref('integer')}), 256)})
+    next_durable = deepcopy(durable)
+    next_durable['properties']['formatVersion'] = {'const': '2.0'}
+    next_durable['properties']['retirements'] = array(ref('retirement'), 128)
+    next_durable['required'].append('retirements')
+    next_snapshot = deepcopy(snapshot)
+    next_snapshot['properties']['apiVersion'] = {'const': '1.1'}
+    for name, value in [('durable-v2', next_durable), ('snapshot-v1.1', next_snapshot)]:
+        yield name, {'$schema': 'https://json-schema.org/draft/2020-12/schema',
+                     '$id': 'https://jimmie-potts.github.io/agent-device-hub/agent-state/' + name,
+                     **value, '$defs': newer}
 
 
 if __name__ == '__main__':

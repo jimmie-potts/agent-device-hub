@@ -8,8 +8,85 @@ import sys
 import tempfile
 import unittest
 
+SKINS = Path(__file__).resolve().parents[2] / 'skins'
+
+
+def copy_guide(directory):
+    """A disposable guide copy with the shared skin files beside it, as in the repository."""
+    candidate = Path(directory) / 'guide'
+    shutil.copytree(Path(__file__).resolve().parent.parent, candidate, ignore=shutil.ignore_patterns(
+        '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+    shutil.copytree(SKINS, Path(directory) / 'skins', ignore=shutil.ignore_patterns('__pycache__'))
+    return candidate
+
+
+def token_check():
+    sys.path.insert(0, str(SKINS))
+    import check_tokens
+    return check_tokens
+
 
 class GuideMaintenance(unittest.TestCase):
+    def test_styles_take_colors_from_tokens(self):
+        result = subprocess.run([sys.executable, str(SKINS / 'check_tokens.py')], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_token_check_names_each_color_literal(self):
+        check = token_check()
+        source = ("# Nanoleaf #121 follows #118 in a comment, not a color\n"
+                  "CSS = '.a{color:#123456;white-space:nowrap;border:1px solid var(--edge)}.b{fill:rgba(1,2,3,.5)}'\n"
+                  "HTML = '<path stroke=\"red\" fill=\"currentColor\"/><a href=\"#top\">Hub #32</a>'\n")
+        self.assertEqual(check.color_literals(source, '.py'), [(2, '#123456'), (2, 'rgba(1,2,3,.5)'), (3, 'red')])
+        self.assertEqual(check.color_literals('/* #fff */\n.a{outline:1px solid Black;color:transparent}', '.css'), [(2, 'Black')])
+        # Fragment ids that happen to look like hex are not colors; a hex attribute value still is.
+        self.assertEqual(check.color_literals('.a{fill:url(#fade)}<a href="#dead">x</a><use href=\'#cafe\'/>', '.css'), [])
+        self.assertEqual(check.color_literals("document.querySelector('#face');root.querySelectorAll(\"#bead\");", '.js'), [])
+        self.assertEqual(check.color_literals("paint('#ffcc00');tint(\"#bead\")", '.js'), [(1, '#bead'), (1, '#ffcc00')])
+        self.assertEqual(check.color_literals('<path fill="#abc" stroke="#face"/>', '.css'), [(1, '#abc'), (1, '#face')])
+        with tempfile.TemporaryDirectory(prefix='guide-tokens-') as directory:
+            root = Path(directory)
+            docs = SKINS.parent
+            for path in check.sources():
+                target = root / 'docs' / path.relative_to(docs)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+            for name in ('fixed.css', 'neon-geometry-wars.css', 'check_tokens.py'):
+                shutil.copyfile(SKINS / name, root / 'docs/skins' / name)
+            reading = root / 'docs/work-guide/work/guide_reading.css'
+            reading.write_text(reading.read_text() + '.probe{background:#123456}\n')
+            result = subprocess.run([sys.executable, str(root / 'docs/skins/check_tokens.py')], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout)
+            line = reading.read_text().count('\n')
+            self.assertIn(f'docs/work-guide/work/guide_reading.css:{line}: color literal #123456', result.stdout)
+
+    def test_skin_contract_rejects_drift(self):
+        check = token_check()
+        with tempfile.TemporaryDirectory(prefix='guide-skin-') as directory:
+            skin = Path(directory) / 'neon-geometry-wars.css'
+            text = (SKINS / skin.name).read_text()
+            self.assertEqual(check.token_file_problems(SKINS / skin.name, {'dark': check.ROLES, 'light': check.COLOR_ROLES,
+                                                                           'fallback': check.COLOR_ROLES, 'print': check.COLOR_ROLES}), [])
+            fallback = text.index('prefers-color-scheme:light')
+            text = text[:fallback] + text[fallback:].replace('--pending:#a21caf;', '--pending:#a21cae;', 1)
+            text = text.replace('--radius:2px;', '--radius:2px;--repo-hub:#22d3ee;', 1).replace('--focus:#ffffff;', '', 1)
+            skin.write_text(text + '.stray::after{content:""}\n')
+            problems = '\n'.join(check.token_file_problems(skin, {'dark': check.ROLES, 'light': check.COLOR_ROLES,
+                                                                  'fallback': check.COLOR_ROLES, 'print': check.COLOR_ROLES}))
+            for expected in ('fallback must match the light block', 'sets unknown or fixed token --repo-hub',
+                             'dark block lacks --focus', 'decoration outside html[data-skin="neon-geometry-wars"]: .stray::after'):
+                self.assertIn(expected, problems)
+
+    def test_stylesheet_rewrites_must_match(self):
+        with tempfile.TemporaryDirectory(prefix='guide-rewrite-') as directory:
+            candidate = copy_guide(directory)
+            build = candidate / 'work/build_guide.py'
+            text = build.read_text()
+            self.assertEqual(text.count('.guide summary:hover{'), 2)
+            build.write_text(text.replace('.guide summary:hover{background', '.guide>summary:hover{background', 1))
+            result = subprocess.run([sys.executable, str(build)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Stylesheet rewrite target missing: .guide summary:hover{', result.stderr)
+
     def test_overview_uses_creation_dates_and_keeps_all_open_defects(self):
         from guide_status import overview_keys
         def issue(created, *labels, state='OPEN', updated='2026-10-01T00:00:00Z'):
@@ -69,9 +146,7 @@ class GuideMaintenance(unittest.TestCase):
     def test_parallel_recommendation_is_withheld_when_a_blocker_appears(self):
         source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:
-            candidate = Path(directory) / 'guide'
-            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
-                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            candidate = copy_guide(directory)
             path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
             issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 222)
@@ -152,9 +227,7 @@ class GuideMaintenance(unittest.TestCase):
         html = (source / 'outputs/agent-device-work-guides.html').read_text()
         self.assertIn('https://github.com/jimmie-potts/agent-skills/issues/33', html)
         with tempfile.TemporaryDirectory(prefix='guide-external-') as directory:
-            candidate = Path(directory) / 'guide'
-            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
-                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            candidate = copy_guide(directory)
             # An external reference must not inflate the three-repository totals.
             coverage['development-workflow'].append('X33')
             (candidate / 'work/backlogs/guide-coverage.json').write_text(json.dumps(coverage))
@@ -164,11 +237,8 @@ class GuideMaintenance(unittest.TestCase):
             self.assertIn('Coverage mismatch', result.stderr)
 
     def test_guide_tracks_must_cover_their_guide(self):
-        source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-tracks-') as directory:
-            candidate = Path(directory) / 'guide'
-            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
-                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            candidate = copy_guide(directory)
             # A row left out of every track would otherwise vanish from its guide.
             paths = candidate / 'work/guide_paths.py'
             text = paths.read_text()
@@ -241,11 +311,8 @@ class GuideMaintenance(unittest.TestCase):
                     f'https://github.com/jimmie-potts/codex-nanoleaf/issues/{number}#issuecomment-'))
 
     def test_changed_diagram_definition_needs_regeneration(self):
-        source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-diagram-drift-') as directory:
-            candidate = Path(directory) / 'guide'
-            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
-                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            candidate = copy_guide(directory)
             definitions = candidate / 'work/architecture_diagrams.py'
             # Edit one definition and leave every saved specification, receipt and render alone.
             anchor = '\nassert len({d[\'id\'] for d in DIAGRAMS})'
@@ -269,11 +336,8 @@ class GuideMaintenance(unittest.TestCase):
             self.assertIn('(edited)', viewer)
 
     def test_later_history_preserves_reviewed_architecture(self):
-        source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-maintenance-') as directory:
-            candidate = Path(directory) / 'guide'
-            shutil.copytree(source, candidate, ignore=shutil.ignore_patterns(
-                '*.png', '*.pdf', '__pycache__', 'guide-verification.json'))
+            candidate = copy_guide(directory)
             history_path = candidate / 'work/history/github-history.json'
             history = json.loads(history_path.read_text())
             # A later delivery can change all main heads without changing the

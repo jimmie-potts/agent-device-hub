@@ -85,8 +85,12 @@ test('a cloud device lease excludes other installations and is released by proce
   const probe=`import {acquireWriterLease} from ${JSON.stringify(new URL('../dist/runner.js',import.meta.url).href)};acquireWriterLease('device',${JSON.stringify(root)})();`;
   assert.notEqual(spawnSync(process.execPath,['--input-type=module','-e',probe]).status,0,'failed same-process acquisition must not release the original OS lock');
   const other=acquireWriterLease('different-device',root);other();release();release();
-  const code=`import {acquireWriterLease} from ${JSON.stringify(new URL('../dist/runner.js',import.meta.url).href)};acquireWriterLease('device',${JSON.stringify(root)});console.log('leased');setInterval(()=>{},1000);`;
-  const child=spawn(process.execPath,['--input-type=module','-e',code],{stdio:['ignore','pipe','pipe']});
+  const code=`import {acquireWriterLease} from ${JSON.stringify(new URL('../dist/runner.js',import.meta.url).href)};
+    const release=acquireWriterLease('device',${JSON.stringify(root)});
+    process.once('exit',release);
+    for(let i=0;i<3;i++){global.gc();await new Promise(setImmediate);}
+    console.log('leased');setInterval(()=>{},1000);`;
+  const child=spawn(process.execPath,['--expose-gc','--input-type=module','-e',code],{stdio:['ignore','pipe','pipe']});
   t.after(()=>child.kill('SIGKILL'));
   await once(child.stdout,'data');
   assert.throws(()=>acquireWriterLease('device',root),/writer-unavailable/);

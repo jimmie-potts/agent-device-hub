@@ -1,0 +1,710 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jimmie-potts.github.io/agent-device-hub/agent-state/snapshot-v1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "1.1"
+    },
+    "revision": {
+      "$ref": "#/$defs/integer"
+    },
+    "asOfMs": {
+      "$ref": "#/$defs/integer"
+    },
+    "collector": {
+      "enum": [
+        "running",
+        "quiesced",
+        "faulted",
+        "closed"
+      ]
+    },
+    "lossCount": {
+      "$ref": "#/$defs/integer"
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/snapshotSession"
+      },
+      "maxItems": 128
+    }
+  },
+  "required": [
+    "apiVersion",
+    "revision",
+    "asOfMs",
+    "collector",
+    "lossCount",
+    "sessions"
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])"
+    },
+    "integer": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ]
+        },
+        "client": {
+          "enum": [
+            "cli",
+            "desktop",
+            "code"
+          ]
+        },
+        "hostId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "provider",
+        "client",
+        "hostId",
+        "sourceId",
+        "sessionId"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "codex"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "client": {
+                "enum": [
+                  "cli",
+                  "desktop"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "else": {
+            "properties": {
+              "client": {
+                "const": "code"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "knownId": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "status",
+            "id"
+          ]
+        }
+      ]
+    },
+    "parent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "top-level"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "identity": {
+              "$ref": "#/$defs/identity"
+            }
+          },
+          "required": [
+            "status",
+            "identity"
+          ]
+        }
+      ]
+    },
+    "ordering": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "epoch": {
+              "$ref": "#/$defs/id"
+            },
+            "sequence": {
+              "$ref": "#/$defs/integer"
+            }
+          },
+          "required": [
+            "status",
+            "epoch",
+            "sequence"
+          ]
+        }
+      ]
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}(?![\\s\\S])"
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "clearOnNewTurn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "clearOnNewTurn"
+      ]
+    },
+    "attention": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/knownId"
+        },
+        "kind": {
+          "enum": [
+            "question",
+            "input",
+            "approval"
+          ]
+        },
+        "turn": {
+          "$ref": "#/$defs/knownId"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "turn"
+      ]
+    },
+    "notice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/hash"
+        },
+        "kind": {
+          "const": "turn-ended"
+        },
+        "turn": {
+          "$ref": "#/$defs/knownId"
+        },
+        "acknowledgedBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "turn",
+        "acknowledgedBy"
+      ]
+    },
+    "unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "evidence.unavailable"
+        },
+        "dimension": {
+          "enum": [
+            "activity",
+            "attention",
+            "turn",
+            "parent",
+            "read",
+            "ordering"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "unsupported",
+            "inaccessible",
+            "missing",
+            "ambiguous",
+            "lost"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "dimension",
+        "reason"
+      ]
+    },
+    "seen": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/hash"
+        },
+        "content": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "key",
+        "content"
+      ]
+    },
+    "watermark": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9_.:-]+(?![\\s\\S])"
+        },
+        "epoch": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "$ref": "#/$defs/integer"
+        }
+      },
+      "required": [
+        "dimension",
+        "epoch",
+        "sequence"
+      ]
+    },
+    "journal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/integer"
+        },
+        "atMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "sessionKey": {
+          "$ref": "#/$defs/hash"
+        },
+        "kind": {
+          "enum": [
+            "session.started",
+            "turn.started",
+            "activity.observed",
+            "turn.ended",
+            "turn.interrupted",
+            "runtime.ended",
+            "question.continuing",
+            "attention.input",
+            "attention.approval",
+            "attention.resolved",
+            "notice.acknowledged",
+            "read.observed",
+            "evidence.unavailable",
+            "label"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "ambiguous"
+          ]
+        }
+      },
+      "required": [
+        "revision",
+        "atMs",
+        "sessionKey",
+        "kind",
+        "outcome"
+      ]
+    },
+    "storedSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "turn": {
+          "$ref": "#/$defs/knownId"
+        },
+        "parent": {
+          "$ref": "#/$defs/parent"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*(?![\\s\\S])"
+        },
+        "projectId": {
+          "$ref": "#/$defs/id"
+        },
+        "activity": {
+          "enum": [
+            "unknown",
+            "active",
+            "idle",
+            "interrupted",
+            "ended"
+          ]
+        },
+        "attention": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attention"
+          },
+          "maxItems": 64
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/notice"
+          },
+          "maxItems": 128
+        },
+        "read": {
+          "enum": [
+            "unknown",
+            "read",
+            "unread"
+          ]
+        },
+        "unavailable": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unavailable"
+          },
+          "maxItems": 6
+        },
+        "ordering": {
+          "$ref": "#/$defs/ordering"
+        },
+        "lastEvidenceAtMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "observedAtMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "retiredTurns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "seen": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/seen"
+          },
+          "maxItems": 256
+        },
+        "watermarks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/watermark"
+          },
+          "maxItems": 256
+        },
+        "generation": {
+          "$ref": "#/$defs/integer"
+        }
+      },
+      "required": [
+        "identity",
+        "turn",
+        "parent",
+        "activity",
+        "attention",
+        "notices",
+        "read",
+        "unavailable",
+        "ordering",
+        "lastEvidenceAtMs",
+        "observedAtMs",
+        "retiredTurns",
+        "seen",
+        "watermarks",
+        "generation"
+      ]
+    },
+    "snapshotSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "turn": {
+          "$ref": "#/$defs/knownId"
+        },
+        "parent": {
+          "$ref": "#/$defs/parent"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*(?![\\s\\S])"
+        },
+        "projectId": {
+          "$ref": "#/$defs/id"
+        },
+        "activity": {
+          "enum": [
+            "unknown",
+            "active",
+            "idle",
+            "interrupted",
+            "ended"
+          ]
+        },
+        "attention": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attention"
+          },
+          "maxItems": 64
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/notice"
+          },
+          "maxItems": 128
+        },
+        "read": {
+          "enum": [
+            "unknown",
+            "read",
+            "unread"
+          ]
+        },
+        "unavailable": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unavailable"
+          },
+          "maxItems": 6
+        },
+        "ordering": {
+          "$ref": "#/$defs/ordering"
+        },
+        "lastEvidenceAtMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "observedAtMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "observationAgeMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "freshness": {
+          "enum": [
+            "current",
+            "uncertain"
+          ]
+        },
+        "restartUncertain": {
+          "type": "boolean"
+        },
+        "children": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "active": {
+              "$ref": "#/$defs/integer"
+            },
+            "uncertain": {
+              "$ref": "#/$defs/integer"
+            }
+          },
+          "required": [
+            "active",
+            "uncertain"
+          ]
+        },
+        "generation": {
+          "$ref": "#/$defs/integer"
+        }
+      },
+      "required": [
+        "identity",
+        "turn",
+        "parent",
+        "activity",
+        "attention",
+        "notices",
+        "read",
+        "unavailable",
+        "ordering",
+        "lastEvidenceAtMs",
+        "observedAtMs",
+        "observationAgeMs",
+        "freshness",
+        "restartUncertain",
+        "children"
+      ]
+    },
+    "retirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "atMs": {
+          "$ref": "#/$defs/integer"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/hash"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "ordering": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "epoch": {
+                "$ref": "#/$defs/id"
+              },
+              "sequence": {
+                "$ref": "#/$defs/integer"
+              }
+            },
+            "required": [
+              "epoch",
+              "sequence"
+            ]
+          },
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "identity",
+        "atMs",
+        "turns",
+        "keys",
+        "ordering"
+      ]
+    }
+  }
+}

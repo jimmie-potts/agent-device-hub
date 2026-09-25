@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 2.0.4 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 3.0.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -8,7 +8,7 @@ existing backend is the first production host, through
 
 ## Embedding and ownership
 
-Call `createAgentState({storage, ownerId, consumers, clock?, storageTimeoutMs?})`.
+Call `createAgentState({storage, ownerId, consumers, clock?, storageTimeoutMs?, isArchived?})`.
 The optional clock returns nonnegative, safe integer milliseconds and defaults
 to `Date.now`. Reduction uses this clock; backward movement clamps to the last
 durable commit. A host has exactly one active owner. Persist its neutral owner ID
@@ -17,7 +17,7 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 | Operation | Result |
 | --- | --- |
 | `ingest(unknown)` | Validates a lifecycle 1.0 envelope, then returns applied, duplicate, stale, ambiguous or a fixed rejection code. |
-| `snapshot()` | Detached, deeply frozen current snapshot. It contains observation age and collector health separately. |
+| `snapshot(version?)` | Default 1.0 or opt-in 1.1. Detached, deeply frozen current snapshot. It contains observation age and collector health separately. |
 | `subscribe(consumerId, cursor?)` | One bounded async iterator per registered consumer. Revision notifications tell the consumer to read `snapshot()`. |
 | `acknowledge(identity, noticeId, consumerId)` | Durably acknowledges that notice for that consumer. It does not prove readership or clear attention. |
 | `setLabel(identity, stringOrNull)` | Persists an explicit user label or removes it. It does not refresh session evidence. |
@@ -218,8 +218,8 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 2.0.4 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
-| Snapshots / durable exports | Closed version 1.0 schemas; unknown fields or versions reject |
+| Agent state 3.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
+| Snapshots / durable exports | Closed snapshot 1.0 and opt-in 1.1; durable 2.0 with 1.0 import; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
 
@@ -233,19 +233,18 @@ an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
 The new owner expires imported sessions whose last lifecycle evidence is 24 hours
 old or more at startup, as it would any other store.
-Version 1.0 has no predecessor migration; unsupported versions fail closed.
+Durable 1.0 imports migrate to 2.0 in one guarded replacement, preserving evidence clocks and assigning existing records generation zero. Unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
 Package 2.0.1 adds explicit approval recovery without changing those schemas.
 Package 2.0.2 keeps read evidence out of freshness, restart recovery and session
 admission without changing those schemas.
 Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
-Package 2.0.4 forgets approvals without a request ID on retired turns, again
-without changing those schemas.
+Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
+Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
-resetting state. An older package can read the same shape but restores its older
-conservative behavior. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)
+resetting state. Older packages can read the legacy 1.0 shape, but cannot read durable 2.0. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)
 keeps owner/source configuration and the existing store.
 If cutover fails, first stop/release the new owner before restarting the old
 store. Rollback after new writes requires an explicit reconciled export, because
@@ -259,3 +258,13 @@ the immutable release archive and checksum in consuming repositories. The archiv
 bundles the private lifecycle dependency; public dependencies use exact versions.
 Publication records the reviewed source revision and archive hash outside the
 source commit. No checkout-relative imports or private-registry secret is needed.
+
+## Codex Desktop retirement
+
+An accepted `runtime.ended` for Codex Desktop removes the session and known descendants in one durable replacement and publishes one revision. Removal frees capacity and forgets task labels, project overrides, attention and notices. It does not acknowledge, mark read, complete or cancel work. Other provider/client policies are unchanged. Ordinary completion, input waits and freshness uncertainty retain records; a long turn has no new timeout. Each record keeps the existing 24-hour evidence expiry fallback.
+
+Retirement guards are separate from active sessions and diagnostics: at most 128 identities for 24 hours, with up to 256 known turns, retry keys and ordering epochs per identity. They survive restart and reject recognizable delayed events, including an old end after resume. Oldest guards are evicted at the bound. A retired identity requires an eligible session or turn start; a new child naming a retired absent parent is rejected. Missing parent identity, unseen old starts, unqualified order, or evicted evidence can prevent reliable rejection. Receipt timestamps do not prove provider order.
+
+Fresh records receive a generation from their admission revision and defaults; native selectors stay unchanged. `snapshot('1.1')` includes this generation so consumers can reset task-specific state even when they miss the removal. Default 1.0 readers observe disappearance but cannot distinguish recreation hidden between reads. A generation is scoped to the owner and its preserved revision lineage; manually replacing the owner's store is outside that continuity guarantee.
+
+A host can supply `isArchived(identity, signal, ancestors)` for admission only. The owner checks it only for a new Desktop identity, waits at most 200 ms, and keeps at most one unsettled probe. The frozen ancestor list follows known parent links, including the first absent parent, so a delayed child can be checked against its archived conversation. Cycles are bounded by the known session count. Only a literal true supplies archive evidence; failure, timeout or an occupied probe supplies none. The host must honor cancellation, bound its work and read only the selected installation. Runtime-end retirement never invokes this callback.

@@ -2,7 +2,7 @@
  "schema_version": 1,
  "diagram_type": "architecture",
  "meta": {
-  "title": "BUNNY system map: what runs where",
+  "title": "B.U.N.N.Y. system map: what runs where",
   "quality_profile": "showcase",
   "views": [
    {
@@ -89,7 +89,7 @@
   {
    "id": "dashboard",
    "type": "frontend",
-   "label": "BUNNY dashboard",
+   "label": "B.U.N.N.Y. dashboard",
    "sublabel": "React · served by the hub at /",
    "row": 0,
    "col": 2,

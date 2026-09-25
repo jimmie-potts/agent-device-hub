@@ -31,7 +31,7 @@ TOPICS = [
      'These tracks are deferred. Keep assistant access, remote Pixoo control and native-app handoffs distinct; qualify a supported path before implementing its dependent stages.', ['H45', 'H199']),
     ('hosting-migrations', 'Hosting and migrations',
      'Change hosting or source location without creating competing runtime owners.',
-     'Run the installed Pixoo app as a user service so BUNNY controls and agent status survive restarts. Retire the Windows Nanoleaf runtime from source and decommission the old Windows installation; Nanoleaf availability follows WSL until hosting moves off it (Nanoleaf ADR 0011, decided). Other hosting and repository migrations remain later choices; select one target and preserve explicit ownership and private state boundaries.', ['P77', 'N131', 'N132']),
+     'Run the installed Pixoo app as a user service so B.U.N.N.Y. controls and agent status survive restarts. Retire the Windows Nanoleaf runtime from source and decommission the old Windows installation; Nanoleaf availability follows WSL until hosting moves off it (Nanoleaf ADR 0011, decided). Other hosting and repository migrations remain later choices; select one target and preserve explicit ownership and private state boundaries.', ['P77', 'N131', 'N132']),
     ('development-workflow', 'Engineering maintenance',
      'Keep code structure, development tooling and resource use manageable.',
      'Pixoo embedded-host performance is later by owner choice. The Nanoleaf architecture sequence starts with the bridge.py split; hub merge gates and contract consolidation are separate maintenance, and Pixoo’s typed command observations are preferred before shared SSE delivery. Select maintenance only for a concrete need.', ['N118', 'H240', 'H246', 'P80']),
@@ -40,9 +40,9 @@ PATHS = {key: (outcome, action, selected) for key, _, outcome, action, selected 
 ALIASES = {'tidbyt-lifx': 'nanoleaf-devices', 'pc-lighting': 'nanoleaf-devices'}
 OWNER_LATER = {'P61': 'Later by owner choice; keep the recorded performance scope and failed measurements.'}
 NEXT_STEPS = {
-    'P77': 'Keep the installed Pixoo app running across PC and WSL restarts, so BUNNY controls and agent status return without manual steps.',
+    'P77': 'Keep the installed Pixoo app running across PC and WSL restarts, so B.U.N.N.Y. controls and agent status return without manual steps.',
     'N111': 'Keep the wall following the hub feed when a session comes from an undeclared source, so the first Claude Code session cannot stop it.',
-    'H244': 'Release each retired BUNNY browser session’s resources through one cleanup path.',
+    'H244': 'Release each retired B.U.N.N.Y. browser session’s resources through one cleanup path.',
     'H222': 'Announce each hub commit to change-stream readers at once; Nanoleaf can then stop polling every second.',
     'H181': 'Define the shared UI foundation that dashboard adoption needs.',
     'H85': 'Improve the guide and atlas presentation; coordinate token names with the application foundation.',
