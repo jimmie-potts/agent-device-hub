@@ -31,7 +31,7 @@ TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='B.U.N.N.Y. UI foundation', issues=['H181', 'H182'], guide='bunny-controls', main=True),
-        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
+        dict(id='n-controls', x=2, label='Control fixes and tools', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91', 'H271', 'H272'], guide='bunny-controls', main=True),
         dict(id='n-music', x=3, label='Music playback', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
@@ -171,7 +171,7 @@ TRACKS = [
         dict(id='n-wall-edge', x=0, label='Edge rendering baseline', issues=['N124'], guide='nanoleaf-presentation'),
     ]),
     ('Pixoo code maintenance', [
-        dict(id='n-px-typed', x=0, label='Typed commands · SSE · docs', issues=['P80', 'P81', 'P82'], guide='development-workflow'),
+        dict(id='n-px-typed', x=0, label='Typed commands · SSE · docs', issues=['P80', 'P81', 'P82', 'P86'], guide='development-workflow'),
     ]),
     ('Engineering maintenance', [
         dict(id='n-performance', x=4, label='Later performance work', issues=['P61', 'H123'], guide='development-workflow'),

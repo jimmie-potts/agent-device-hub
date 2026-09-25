@@ -87,7 +87,7 @@
 #178 [OPEN] Qualify Apple Music catalog search and chosen-item playback requests
 #179 [CLOSED] Open BUNNY through a local owner launcher without manual browser tokens
 #181 [CLOSED] Define the B.U.N.N.Y. UI foundation, skin template and adoption plan
-#182 [OPEN] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
+#182 [CLOSED] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
 #185 [CLOSED] Add explicit recovery for uncertain approval attention
 #186 [CLOSED] Prepare the complete BUNNY atlas for public guide publication
 #191 [CLOSED] Report Codex Desktop read state to the shared owner
@@ -107,7 +107,7 @@
 #212 [CLOSED] Use shared npm and Playwright caches in setup guidance
 #218 [CLOSED] Clear Codex Desktop tasks and Line assignments when sessions end
 #220 [CLOSED] Refresh work-guide priorities, new issues and defects, and reorganize topic guides
-#222 [OPEN] Push hub change notifications when state commits
+#222 [CLOSED] Push hub change notifications when state commits
 #225 [CLOSED] Clear no-ID approval markers when their turn is retired
 #227 [OPEN] Check Tidbyt stale-status readability with night mode enabled
 #229 [OPEN] Add optional shared playback artwork from the Sony source
@@ -118,11 +118,11 @@
 #240 [OPEN] Qualify enforceable Hub merge gates and guide-only CI handling
 #241 [OPEN] Retire ended monitoring sessions consistently across Codex and Claude
 #242 [OPEN] Qualify and add Sony HT-A9 play/resume when supported
-#244 [OPEN] Bound browser-session resources and centralize retirement cleanup
-#245 [OPEN] Share the dashboard command lifecycle between forms and actions
+#244 [CLOSED] Bound browser-session resources and centralize retirement cleanup
+#245 [CLOSED] Share the dashboard command lifecycle between forms and actions
 #246 [OPEN] Consolidate duplicated Pixoo and Nanoleaf integration-contract definitions
 #247 [OPEN] Prevent dashboard component aliases from colliding with built-in navigation
-#252 [OPEN] Show starting model and thinking-level recommendations for each story in the work guide
+#252 [CLOSED] Show starting model and thinking-level recommendations for each story in the work guide
 #253 [OPEN] Qualify Codex Desktop idle and shutdown SessionEnd emission and reopen behavior
 #254 [OPEN] Add a trading-card skin to the guide and atlas, with art shared by issue label
 #258 [OPEN] Report documentation drift against pinned sources in CI
@@ -131,3 +131,5 @@
 #263 [OPEN] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
+#271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
+#272 [OPEN] Let devices join or leave one shared task pool

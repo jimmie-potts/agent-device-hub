@@ -40,9 +40,12 @@ and status; a failed read keeps its complete snapshot. The opening's freshness
 line names each source. New issues remain accessible through task briefs and
 GitHub even before a guide assignment exists; an expandable list retains all
 unassigned issues, including older ones outside the newest eight. Seven-day
-membership uses each repository's own successful-read or snapshot time. Topic-guide counts, assignments,
-editorial recommendations and explanations remain dated. Recency and absence of
-an open prerequisite do not automatically make an issue a recommendation.
+membership uses each repository's own successful-read or snapshot time. A
+successful complete read also replaces that repository's topic-guide
+placement, notes, workarounds, highlights and counts, per the next section;
+each topic's own outcome, next-step box and other editorial prose remain
+dated. Recency and absence of an open prerequisite do not automatically make
+an issue a recommendation.
 
 Eleven topic guides own each open snapshot issue exactly once. The opening,
 roadmap and architecture links do not add to those totals. Completed milestones
@@ -51,13 +54,56 @@ separate Panels, Tidbyt, LIFX and PC-lighting tracks; deferred PC lighting start
 collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. Earlier guide anchors remain reachable. Search, Expand all and print
 include archived evidence; printing restores the reader's prior expansion state.
 
-`work/guide_paths.py` owns topic names, next steps, owner-selected later work,
-track groupings and optional recorded workarounds. `work/backlogs/guide-coverage.json` owns primary
-issue assignments. `work/guide_status.py` and `work/guide_overview.py` select and
-render snapshot lists; `work/guide_overview.js` applies complete public GitHub
-reads. Preserve the matching selection rules when changing either implementation.
+`work/guide_paths.py` owns the eleven topic names, their outcome and next-step
+prose, aliases and track groupings; these are the guide's structure, not story
+facts. Each open story's own `## Guide` section owns its topic, reading note,
+workaround and highlight, per the next section. `work/guide_status.py` and
+`work/guide_overview.py` select and render snapshot lists; `work/guide_overview.js`
+applies complete public GitHub reads, including topic placement. Preserve the
+matching selection rules when changing either implementation.
 Pixoo embedded-host performance remains later by the owner's explicit choice,
 even without a tracker `deferred` label. Its issue scope and acceptance stay intact.
+
+## Guide sections
+
+A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
+one of the eleven ids `guide_paths.py` defines), `**Note:** ...` (optional,
+one-line reading note), `**Workaround:** ...` (optional; shown only where a
+workaround is displayed, currently Open Defects cards) and `**Highlight:**
+next step | decision | later, <reason>` (optional; replaces a curated
+next-step, decision or later pick). `work/guide_section.py` parses and renders
+the section, sharing its markdown-section engine (`work/story_sections.py`)
+with `work/recommendations.py`'s `## Execution recommendation` parser.
+
+- A missing or unknown `Topic`, an unrecognized key, more than one section, or
+  a `Highlight` that does not read `next step | decision | later, <reason>`
+  makes the section unreadable: the snapshot build fails, naming the story,
+  because every open story must carry a valid topic. There is no guessed
+  default and no "assessment unavailable" fallback for the snapshot build.
+- A story without a section is excluded from the snapshot's topic tables; the
+  live path shows it as "topic assignment pending" instead.
+
+`build_guide.py` derives topic-table coverage, notes, workarounds and
+highlights entirely from these sections; it no longer reads a separate
+coverage file or curated per-issue tables. A story's `Highlight` populates
+exactly one of the opening's Useful next steps, Blockers and decisions, or
+Later sections, replacing what a curated dict used to supply.
+
+The live path (`work/guide_overview.js`) re-parses each successfully read
+repository's open story bodies with the same grammar. A story unknown to the
+snapshot, or reassigned since it, is placed in its live topic with its note
+and gate; a story that closes live is removed from its topic, never moved
+into the dated closed-evidence block. Existing known rows patch their note,
+gate and highlight-derived card in place; a genuinely new or moved-in row
+lands in a "Newly added since the snapshot" block within its topic, so a
+tracked topic (Adding devices, Engineering maintenance) never needs a live
+guess at which curated track a story belongs to. Each topic's `N open` badge
+and the matching sidebar count update to match, per successfully read
+repository; a repository whose read fails keeps its topic placement, notes
+and counts on the dated snapshot, same as its opening lists and badges. The
+freshness line under the opening names which parts are live for which
+repositories and which parts (topic outcomes, next-step boxes, history and
+the roadmap) stay dated regardless.
 
 ## Execution recommendations
 

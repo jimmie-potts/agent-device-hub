@@ -33,7 +33,7 @@
 #84 [CLOSED] Use the shared npm cache instead of a /tmp cache in setup guidance
 #89 [CLOSED] Remove the legacy Codex hooks after the shared-input cutover
 #90 [OPEN] Wake the worker from the hub's change stream instead of polling each second
-#91 [OPEN] Let Codex play saved Nanoleaf scenes through the local MCP server
+#91 [CLOSED] Let Codex play saved Nanoleaf scenes through the local MCP server
 #92 [OPEN] Play custom animations on the Lines when Codex asks for them
 #100 [OPEN] Show Claude Code titles and projects for shared tasks
 #108 [CLOSED] Open a wall task's thread in Codex Desktop

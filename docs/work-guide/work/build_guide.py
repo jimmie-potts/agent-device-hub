@@ -13,8 +13,8 @@ import skin as SKIN  # noqa: E402  shared token files and theme control
 import architecture_diagrams as AD  # noqa: E402  diagram definitions and rendered-file layout
 import guide_status as GS
 import recommendations as REC
-from guide_details import DETAILS
-from guide_paths import PATHS, TOPICS, ALIASES, OWNER_LATER, NEXT_STEPS, DECISIONS, WORKAROUNDS, GUIDE_TRACKS
+import guide_section as GD
+from guide_paths import PATHS, TOPICS, ALIASES, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,9 +36,21 @@ DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
 # Saved Execution recommendation sections, read strictly from the snapshot bodies.
 RECOMMENDATIONS = {key: REC.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
 
-# The catalog holds reading paths; the saved coverage owns each open issue once.
-coverage = json.loads((ROOT / 'work/backlogs/guide-coverage.json').read_text())
-assert {key for keys in coverage.values() for key in keys} <= ISSUES.keys(), 'Coverage mismatch: unknown issue'
+# The catalog holds reading paths; each open story's own Guide section owns its topic.
+GUIDE_STATE = {key: GD.read(issue['body']) for key, issue in ISSUES.items() if issue['state'] == 'OPEN'}
+invalid = [(key, state) for key, state in GUIDE_STATE.items() if state['state'] != 'assigned']
+assert not invalid, 'Stories without a valid Guide topic: ' + '; '.join(
+    f"{key} ({state.get('reason', state['state'])})" for key, state in invalid)
+coverage = {topic_id: [] for topic_id in PATHS}
+for key in sorted(GUIDE_STATE, key=lambda k: (k[0], int(k[1:]))):
+    coverage[GUIDE_STATE[key]['topic']].append(key)
+NEXT_STEPS = {key: state['highlight']['reason'] for key, state in GUIDE_STATE.items()
+             if state['highlight'] and state['highlight']['kind'] == 'next step'}
+DECISIONS = {key: state['highlight']['reason'] for key, state in GUIDE_STATE.items()
+            if state['highlight'] and state['highlight']['kind'] == 'decision'}
+OWNER_LATER = {key: state['highlight']['reason'] for key, state in GUIDE_STATE.items()
+              if state['highlight'] and state['highlight']['kind'] == 'later'}
+WORKAROUNDS = {key: state['workaround'] for key, state in GUIDE_STATE.items() if state['workaround']}
 GUIDES = [dict(id=key, short=title, title=title, phase='Topic guide', intro=outcome,
                headers=['Work', 'Issue', 'Next action or gate'],
                rows=[[html.escape(ISSUES[k]['title']), '[[' + k + ']]', ''] for k in coverage[key]], notes=[])
@@ -132,7 +144,8 @@ for index, guide in enumerate(GUIDES, 1):
         owners = re.findall(r'\[\[([HNP]\d+)\]\]', row[1])
         destination = closed if owners and all(ISSUES[key]['state'] == 'CLOSED' for key in owners) else remaining
         # The issue chip owns status; avoid repeating "Completed" in row labels.
-        row = [row[0], row[1], DETAILS.get(owners[0], '') + '<p>' + gate_text(owners[0]) + '</p>']
+        note = GUIDE_STATE[owners[0]].get('note') or ''
+        row = [row[0], row[1], html.escape(note) + '<p>' + gate_text(owners[0]) + '</p>']
         cells = [render(re.sub(r'^Completed(?: / | )', '', cell)) for cell in row]
         # The starting-session label is added after link rendering so its text stays literal.
         if owners[0] in RECOMMENDATIONS:
@@ -171,7 +184,8 @@ from guide_overview import render_overview
 owners = {key: guide for guide, keys in coverage.items() for key in keys}
 overview = render_overview(ISSUES, DEPENDENCIES, SNAPSHOT['refreshedAt'], owners,
                            {g['id']: g['short'] for g in GUIDES}, issue_link, gate_text,
-                           lambda key: REC.label_html(key, RECOMMENDATIONS[key]))
+                           lambda key: REC.label_html(key, RECOMMENDATIONS[key]),
+                           NEXT_STEPS, DECISIONS, OWNER_LATER, WORKAROUNDS)
 archive_groups = []
 for group in ARCHIVE['groups']:
     rows = ''.join('<tr>' + ''.join('<td>' + render(cell) + '</td>' for cell in row) + '</tr>' for row in group['rows'])
@@ -633,7 +647,7 @@ JS = '''
  async function refreshIssueStatus() {
    if (navigator.onLine === false) {
      window.finishWorkOverview();
-     statusLine.textContent = `GitHub unavailable for Hub, Nanoleaf and Pixoo; showing snapshot status for all badges. Guide text and counts from the ${snapshotDate} snapshot.`;
+     statusLine.textContent = `GitHub unavailable for Hub, Nanoleaf and Pixoo; showing snapshot status for all badges. Guide text from the ${snapshotDate} snapshot.`;
      return;
    }
    const outcomes = await Promise.all(Object.entries(repositories).map(async ([prefix,repo]) => {
@@ -649,11 +663,11 @@ JS = '''
    window.finishWorkOverview();
    const unavailable = outcomes.filter(outcome => !outcome.ok).map(outcome => outcome.label);
    const time = readTime();
-   if (!unavailable.length) statusLine.textContent = `Status from GitHub at ${time}. Guide text and counts from the ${snapshotDate} snapshot.`;
+   if (!unavailable.length) statusLine.textContent = `Status from GitHub at ${time}. Guide text from the ${snapshotDate} snapshot.`;
    else {
      const names = joinNames(unavailable), fallback = unavailable.length === Object.keys(repositories).length ? 'all badges' : `badges for ${names}`;
      const available = outcomes.filter(outcome => outcome.ok).map(outcome => outcome.label);
-     statusLine.textContent = `GitHub unavailable for ${names}; showing snapshot status for ${fallback}.${available.length ? ` Other badges read from GitHub at ${time}.` : ''} Guide text and counts from the ${snapshotDate} snapshot.`;
+     statusLine.textContent = `GitHub unavailable for ${names}; showing snapshot status for ${fallback}.${available.length ? ` Other badges read from GitHub at ${time}.` : ''} Guide text from the ${snapshotDate} snapshot.`;
    }
  }
  refreshIssueStatus();
@@ -682,7 +696,7 @@ document = '''<!doctype html>
 ''' + overview + '''
 <section class="issue-legend" aria-label="Issue status key"><h2>Read status on the issue link</h2><div><span class="status-key" data-status="open"><span aria-hidden="true">○</span> Open</span><span class="status-key" data-status="in-progress"><span aria-hidden="true">◐</span> In progress</span><span class="status-key" data-status="review"><span aria-hidden="true">◐</span> In review</span><span class="status-key" data-status="blocked"><span aria-hidden="true">⊘</span> Blocked</span><span class="status-key" data-status="completed"><span aria-hidden="true">✓</span> Completed</span><span class="status-key" data-status="closed"><span aria-hidden="true">−</span> Closed</span></div><p>Completed means the issue closed as completed within its own scope. Closed alone does not claim delivery. In-progress and review links retain a blocked qualifier when needed. Counts show open stories; closed evidence is expandable.</p></section>
 <p class="document-note"><strong>Static snapshot refreshed <time datetime="@@ISO@@">@@TIMESTAMP@@</time>.</strong> Based on explicit open-issue queries, complete pagination, current issue bodies and native prerequisites, plus direct acceptance and PR reads. Every open issue has one primary guide; repeated dependency, completed-baseline, timeline and architecture links do not add to the counts. “Pixoo” means <strong>divoom-app-upgrade</strong>. Future investigations remain deferred. Issue badges refresh from public GitHub when this page loads; topic-guide text, counts and dependency explanations stay on this snapshot. Opening lists use the freshness shown above them.</p>
-<p id="github-status" class="document-note" role="status" aria-live="polite">Loading GitHub issue status. Guide text and counts from the @@SNAPSHOT_DATE@@ snapshot.</p>
+<p id="github-status" class="document-note" role="status" aria-live="polite">Loading GitHub issue status. Guide text from the @@SNAPSHOT_DATE@@ snapshot.</p>
 
 <div class="guides references">''' + timeline_section + '''</div>
 <div class="toolbar" aria-label="Document controls"><div class="search-wrap"><label class="sr-only" for="search">Search guides by topic, device, or issue</label><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m12 12 5 5" stroke="currentColor" stroke-width="1.5"/></svg><input id="search" type="search" placeholder="Find a topic, device, or issue…" autocomplete="off"></div><button id="expand-all" type="button">Expand all</button><button id="collapse-all" type="button">Collapse all</button><button id="print" type="button">Print / PDF</button></div>
