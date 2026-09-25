@@ -207,7 +207,8 @@ try {
  await scenario('Start Monitor starts an inactive Pixoo Monitor with one mode command and names the screen-off reason',async(f,page)=>{
   f.pixoo.configuration.mode='monitor';f.pixoo.participating=false;f.states.pixel.state.desired.power={status:'known',value:false};
   await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
-  assert.equal(await start.isDisabled(),true);await page.locator('section:visible').getByText('Unavailable: The screen is off. Turn it on first; Monitor shows only while the screen is on.',{exact:false}).waitFor();
+  // An initial device read can still carry the power state from before the fixture mutation.
+  await page.locator('section:visible').getByText('Unavailable: The screen is off. Turn it on first; Monitor shows only while the screen is on.',{exact:false}).waitFor();assert.equal(await start.isDisabled(),true);
   f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();await axe(page);
   const revision=f.pixoo.configurationRevision,generation=f.pixoo.generation;await start.click();await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
