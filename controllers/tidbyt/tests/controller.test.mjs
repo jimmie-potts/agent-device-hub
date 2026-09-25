@@ -15,21 +15,23 @@ function gate() {
 }
 
 /** Fake connection: scripted outcomes, concurrency tracking and optional gates per push. */
-function fakeConnection({ push = () => ({ outcome: 'sent' }), read = () => ({ ok: true, present: true }), remove = () => ({ outcome: 'sent' }) } = {}) {
-  const state = { pushes: [], reads: 0, removals: 0, writes: [], active: 0, maxActive: 0, signals: [] };
+function fakeConnection({ push = () => ({ outcome: 'sent' }), read = () => ({ ok: true, present: true }), remove = () => ({ outcome: 'sent' }), additional } = {}) {
+  const state = { pushes: [], reads: 0, removals: 0, writes: [], targets: [], readTargets: [], active: 0, maxActive: 0, signals: [] };
   return {
     state,
     capabilities: CAPABILITIES,
-    async push(webp, signal) {
+    ...(additional ? { additionalInstallations: additional } : {}),
+    async push(webp, signal, installation) {
       state.active++;
       state.maxActive = Math.max(state.maxActive, state.active);
       state.pushes.push(webp);
       state.writes.push('push');
+      state.targets.push(installation);
       state.signals.push(signal);
       try { return await push(state.pushes.length, signal); } finally { state.active--; }
     },
-    async readInstallation() { state.reads++; return read(state.reads); },
-    async remove() { state.removals++; state.writes.push('remove'); return remove(state.removals); },
+    async readInstallation(_signal, installation) { state.reads++; state.readTargets.push(installation); return read(state.reads, installation); },
+    async remove(_signal, installation) { state.removals++; state.writes.push('remove'); state.targets.push(installation); return remove(state.removals); },
   };
 }
 
@@ -72,7 +74,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 test('the initial snapshot is schema-valid, declares no v1 capability and fabricates no evidence', () => {
   const { controller } = setup();
   const snapshot = checkSnapshot(controller);
-  assert.deepEqual(snapshot.profile, { profileId: 'tidbyt-display', profileVersion: '1.1.0' });
+  assert.deepEqual(snapshot.profile, { profileId: 'tidbyt-display', profileVersion: '1.2.0' });
   const s = snapshot.controller;
   assert.deepEqual(s.identity, { deviceId: 'tidbyt', controllerId: 'tidbyt-main', sourceId: 'tidbyt-cloud', controllerEpoch: 'epoch-1' });
   for (const name of ['power', 'brightness', 'media', 'zones', 'scenes', 'preview']) assert.deepEqual(s.capabilities[name], { supported: false });
@@ -89,6 +91,7 @@ test('the initial snapshot is schema-valid, declares no v1 capability and fabric
     pending: [],
     holds: { authentication: false, rateLimitRemainingMs: 0 },
     installation: { status: 'unknown' },
+    additionalInstallations: [],
     visible: { status: 'unknown' },
   });
   const text = JSON.stringify(snapshot);
@@ -494,4 +497,72 @@ test('a malformed removal or another target is rejected before reservation', asy
   assert.deepEqual(checkSnapshot(controller).controller.nextRequestId, { epoch: 'epoch-1', sequence: 0 });
   await flush();
   assert.equal(connection.state.removals, 0);
+});
+
+test('writes may name an additional installation and share the one queue', async () => {
+  const connection = fakeConnection({ additional: ['nowplaying'] });
+  const { controller } = setup({ connection });
+  assert.deepEqual(checkSnapshot(controller).profile, { profileId: 'tidbyt-display', profileVersion: '1.2.0' });
+  const named = controller.submit(display(controller, 1, { command: { kind: 'tidbyt.display', frame: frameData(1), installation: 'nowplaying' } }));
+  const plain = controller.submit(display(controller, 2));
+  const removed = controller.submit(removal(controller, { command: { kind: 'tidbyt.remove', installation: 'nowplaying' } }));
+  assert.equal(named.decision, 'queued');
+  for (const submission of [named, plain, removed]) assert.equal((await settle(submission)).outcome, 'sent');
+  assert.deepEqual(connection.state.writes, ['push', 'push', 'remove']);
+  assert.deepEqual(connection.state.targets, ['nowplaying', undefined, 'nowplaying']);
+  assert.equal(connection.state.maxActive, 1);
+});
+
+test('an installation the connection does not list is rejected before reservation', async () => {
+  const { controller, connection } = setup({ connection: fakeConnection({ additional: ['nowplaying'] }) });
+  const cases = [
+    display(controller, 1, { command: { kind: 'tidbyt.display', frame: frameData(1), installation: 'other' } }),
+    removal(controller, { command: { kind: 'tidbyt.remove', installation: 'other' } }),
+    display(controller, 1, { command: { kind: 'tidbyt.display', frame: frameData(1), installation: 7 } }),
+    removal(controller, { command: { kind: 'tidbyt.remove', installation: 'nowplaying', extra: true } }),
+  ];
+  for (const request of cases) assert.deepEqual(controller.submit(request), { decision: 'invalid-request', reserved: false });
+  const unlisted = setup();
+  assert.deepEqual(unlisted.controller.submit(removal(unlisted.controller, { command: { kind: 'tidbyt.remove', installation: 'nowplaying' } })),
+    { decision: 'invalid-request', reserved: false });
+  assert.deepEqual(checkSnapshot(controller).controller.nextRequestId, { epoch: 'epoch-1', sequence: 0 });
+  await flush();
+  assert.deepEqual(connection.state.writes, []);
+});
+
+test('a rate limit on one installation holds queued writes to every installation', async () => {
+  const connection = fakeConnection({
+    additional: ['nowplaying'],
+    push: n => (n === 1 ? { outcome: 'failed', failure: 'capacity', priorEffects: 'none', retryAfterMs: 60 } : { outcome: 'sent' }),
+  });
+  const { controller } = setup({ connection, extra: { now: () => performance.now() } });
+  const start = performance.now();
+  const first = controller.submit(display(controller, 1));
+  const second = controller.submit(display(controller, 2, { command: { kind: 'tidbyt.display', frame: frameData(2), installation: 'nowplaying' } }));
+  assert.equal((await settle(first)).failure.code, 'capacity');
+  assert.equal((await settle(second)).outcome, 'sent');
+  assert(performance.now() - start >= 55, 'the other installation waited for the device hold');
+});
+
+test('installation evidence is kept per installation and cleared by reconfiguration', async () => {
+  const connection = fakeConnection({ additional: ['nowplaying'], read: (_n, installation) => ({ ok: true, present: installation === undefined }) });
+  const { controller, clock } = setup({ connection });
+  assert.deepEqual(checkSnapshot(controller).display.additionalInstallations, [{ id: 'nowplaying', evidence: { status: 'unknown' } }]);
+  clock.now = 2000;
+  assert.deepEqual(await controller.refresh('nowplaying'), { ok: true, present: false });
+  let s = checkSnapshot(controller);
+  assert.deepEqual(s.display.installation, { status: 'unknown' });
+  assert.deepEqual(s.display.additionalInstallations, [{ id: 'nowplaying', evidence: {
+    status: 'known', present: false, clock: { domain: 'controller-monotonic', epoch: 'epoch-1', sampledAtMs: 2000 }, evidenceAgeMs: 0,
+  } }]);
+  assert.deepEqual(await controller.refresh(), { ok: true, present: true });
+  assert.equal(checkSnapshot(controller).display.installation.present, true);
+  assert.deepEqual(connection.state.readTargets, ['nowplaying', undefined]);
+  assert.deepEqual(await controller.refresh('other'), { ok: false, failure: 'invalid-request' });
+  assert.equal(connection.state.reads, 2);
+
+  controller.reconfigure(fakeConnection({ additional: ['nowplaying'] }));
+  s = checkSnapshot(controller);
+  assert.deepEqual(s.display.installation, { status: 'unknown' });
+  assert.deepEqual(s.display.additionalInstallations, [{ id: 'nowplaying', evidence: { status: 'unknown' } }]);
 });

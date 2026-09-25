@@ -3,11 +3,14 @@
 Status: the source for a fake-tested cloud controller is here as the private
 workspace package `@jimmie-potts/tidbyt-controller` 0.1.0. It is an in-process
 TypeScript library. It has no network listener or service and isn't installed
-anywhere. Since #19 it includes a fake-tested agent status publisher. The opt-in Linux runner connects it to an existing hub feed; installation and
-visible-device acceptance remain separate from these source tests.
+anywhere. Since #19 it includes a fake-tested agent status publisher, and
+since #38 a now-playing publisher. The opt-in Linux runner connects them to an
+existing hub; installation and visible-device acceptance remain separate from
+these source tests.
 
 This controller displays automatic agent status through Tidbyt's official
-cloud. It consumes the feed of the selected shared agent-state owner. A later
+cloud. It consumes the feed of the selected shared agent-state owner. It can
+also show what is playing, from the hub's shared playback snapshot. A later
 Tronbyt connection will reuse the same renderer and device queue.
 The [shared architecture](../../docs/architecture.md) and
 [ADR 0003](../../docs/decisions/0003-device-controller-monorepo.md) own that direction.
@@ -22,7 +25,10 @@ The [shared architecture](../../docs/architecture.md) and
 - **Cloud connection** (`src/connection.ts`): background pushes to one configured
   installation through `POST /v0/devices/{device}/push`, removal of that
   installation through `DELETE /v0/devices/{device}/installations/{installation}`,
-  and a read-only installation listing. It classifies each result once and never retries it.
+  and a read-only installation listing. `additionalInstallationIds` (at most
+  four, distinct from the default) lets the same connection write further
+  installations, such as the now-playing tile; any other installation is
+  refused without a request. It classifies each result once and never retries it.
   Foreground pushes are declared unsupported, so the current app keeps
   rotating. The [push qualification](https://github.com/jimmie-potts/agent-device-hub/issues/16#issuecomment-5789545093)
   records the cloud behavior this relies on.
@@ -38,18 +44,30 @@ The [shared architecture](../../docs/architecture.md) and
   and 64×32 frame drawer over one agent-state snapshot, and a publisher that
   submits pushes and removals through the controller. See
   [Agent status decisions](#agent-status-decisions).
+- **Now playing** (`src/nowplaying.ts`, `src/nowplaying-publisher.ts`): a pure
+  view and 64×32 card over the hub's playback snapshot, and a publisher that
+  keeps its own installation current through the controller. See
+  [Now-playing decisions](#now-playing-decisions).
+- **Shared publishing** (`src/publishing.ts`, `src/draw.ts`): the evaluation
+  loop, bounded feed read, per-installation write cadence and drawing helpers
+  both publishers use.
 
 ## Display profile and queue
 
 Controller v1 has no frame command, so display writes use the controller-local
-`tidbyt-display` 1.1.0 profile. A request is the v1 envelope (`apiVersion`,
+`tidbyt-display` 1.2.0 profile. A request is the v1 envelope (`apiVersion`,
 `controllerId`, `deviceId`, `requestId`, `expectedConfigurationRevision`,
 `expectedGeneration`) with the command
 `{kind:"tidbyt.display", frame:{width:64,height:32,encoding:"rgb24-base64",data}}`
 or, since 1.1.0, `{kind:"tidbyt.remove"}`. `data` is canonical base64 of
 exactly 6144 bytes. A removal deletes the configured installation. It follows
 the same admission, FIFO order, generation check, holds and receipts as a push,
-with operation ID `remove`. Receipts and the embedded
+with operation ID `remove`. Since 1.2.0 either command may carry
+`installation`, naming one of the connection's additional installations;
+without it, the write targets the default installation. An installation the
+connection does not list is `invalid-request` before reservation. All
+installations share the one queue, generations, holds and receipts, because
+they belong to one device. Receipts and the embedded
 controller snapshot are schema-valid [controller v1](../../docs/controller-contract.md)
 objects. The shared contract is unchanged. The profile is validated in
 TypeScript only and has no version negotiation; a future network surface (#21)
@@ -77,10 +95,12 @@ must add a versioned profile schema and an explicit compatibility error.
   network call until `reconfigure()`.
   A 429 fails that write with `capacity` and holds queued writes for
   `Retry-After` (default 60 s, capped at 15 min).
-- `refresh()` reads the installation list only. It resubmits nothing and
-  reserves no identity.
+- `refresh(installation?)` reads the installation list only, for the default
+  or a named installation. It resubmits nothing and reserves no identity.
 - The snapshot's `display` section reports pending tickets, holds, the
-  connection's declared capabilities and installation evidence with its own age.
+  connection's declared capabilities and installation evidence with its own age:
+  `installation` for the default one and `additionalInstallations` for the
+  rest. `reconfigure()` clears all of it.
   Visible-device evidence is always `unknown`, as are v1 observation, desired
   power/brightness/mode and external control. The v1 `state.pending` list holds
   only v1 commands, so it is always empty here; `display.pending` is the
@@ -144,6 +164,33 @@ hold the details.
 Shared activity, attention, acknowledgment, read evidence and freshness stay
 distinct. The publisher never reduces lifecycle events or acknowledges notices.
 
+## Now-playing decisions
+
+The owner settled these on 2026-09-25 for #38. The
+[now-playing spec](../../openspec/specs/tidbyt-now-playing/spec.md) holds the
+scenarios. The Pixoo card is delivered separately in the Pixoo application.
+
+- **Placement.** The card is its own background installation (default
+  `nowplaying`) in the normal rotation, beside the status tile. Alerts never
+  interrupt it, so there is nothing to restore. Foreground takeover is not
+  qualified.
+- **Layout.** A green play triangle or amber pause bars in the top-left corner.
+  Beside it, the title on up to two 14-character rows, then the artist in blue
+  on the remaining rows. Without an artist, the title may use all four rows.
+  Text wraps at spaces, splits over-long words and ends cut-off text with `.`.
+  Accents fold to their base letter; the font draws letters, digits and
+  ``-+?.'&!,()/:``, and anything else as `-`. The album is not drawn.
+- **Stale.** `playing` and `paused` show the card. A `stale` snapshot, or a
+  failed read, dims the card and replaces the marker with `?`. At 30 s after the
+  last good observation, or on `unavailable`, `stopped`, `inactive` or
+  `unknown`, the publisher removes the installation. A missing read never shows
+  as paused.
+- **Cadence.** Read the snapshot every 5 s. Push only when the card changes, at
+  most once every 15 s, coalescing to the latest. Push an unchanged card again
+  after 10 minutes. Removal, the installation listing check, backoff and the
+  no-replay rule are the same as for status, through the shared installation
+  writer. Each tile keeps its own 15 s gate; the controller serializes both.
+
 ## Issues
 
 GitHub issues own the delivery sequence, prerequisites and acceptance; see the
@@ -169,7 +216,7 @@ result.
 
 ## Run against an installed hub
 
-The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. All pushes and removals still use the existing controller queue.
+The Linux Node 24 runner is `node controllers/tidbyt/dist/cli.js /absolute/private/tidbyt-status.json` from a built release root. It opens no listener and polls the existing hub every 30 seconds with a read-only machine credential. It accepts only `http://127.0.0.1:<port>` and the configured owner ID; redirects, wrong-owner responses, invalid snapshots and unavailable reads become stale-feed evidence. With the optional `nowPlaying` block it also reads `/api/playback/v1/snapshot` every 5 seconds, with a 2.5-second deadline and a 64 KiB bound; another source ID, an invalid envelope, a redirect or a failed read counts as a failed read. All pushes and removals still use the existing controller queue.
 
 Build a pinned reviewed revision in a separate release directory outside your working checkout. Use that revision's `package-lock.json` with `npm ci`, then `npm run build` on Node 24. Keep the release after stopping so its revision and installed bytes remain inspectable. Installing a release does not require restarting the hub or changing provider hooks.
 
@@ -184,11 +231,23 @@ Create a mode-600 JSON file outside Git and outside the release tree, owned by t
 }
 ```
 
-`tokenFile` contains an existing dedicated read-only hub bearer, as 43 base64url characters. The hub's stored digest is not a bearer token. `credentialsFile` uses the Tidbyt fields described above. Both files must also be owner-owned regular files with no group/world permissions. Symlink files, files over 16 KiB and files inside Git checkouts are rejected. File values and session data are never printed. Do not put secrets into the shell command or environment.
+`tokenFile` contains an existing dedicated read-only hub bearer, as 43 base64url characters. The hub's stored digest is not a bearer token. `credentialsFile` uses the Tidbyt fields described above. Both files must also be owner-owned regular files with no group/world permissions.
+
+To add the now-playing tile, add a `nowPlaying` block:
+
+```json
+"nowPlaying": {
+  "tokenFile": "/absolute/private/hub-playback-read-token",
+  "sourceId": "ht-a9",
+  "installationId": "nowplaying"
+}
+```
+
+`tokenFile` holds a hub bearer with `read` scope whose `devices` list includes `sourceId`; the status credential can serve if its `devices` already include the source. See the hub's [Playback](../../apps/hub/README.md#playback) and [Credentials](../../apps/hub/README.md#credentials) sections. `sourceId` must match the hub's selected playback source. `installationId` is optional, letters and digits only, and must differ from the status installation. Without the block, the runner reads and writes exactly as before. Symlink files, files over 16 KiB and files inside Git checkouts are rejected. File values and session data are never printed. Do not put secrets into the shell command or environment.
 
 Confirm the configured cloud device is the intended physical target and that no other host or process owns its display writes. The runner holds an exclusive lease under `~/.local/state/agent-device-hub/tidbyt/`, keyed by the cloud device rather than installation ID. A second runner for that device under the same Linux user fails before network access. The lease is a separate lock database; it never opens the hub or controller database. Do not delete or replace an active lease file. A crash releases the OS lock automatically; no stale-file deletion is needed.
 
-Run the command once as the installation owner. `tidbyt-status-started` reports process startup, not cloud acceptance or a visible frame. Ctrl+C or SIGTERM stops publishing, cancels queued work, settles the active evaluation and releases the lease. **Stopping leaves the current status installation in rotation.** Starting again evaluates the current feed; when that feed is healthy and idle, the publisher removes the installation through its queue. A stale feed never means idle. To restore the prior setup, stop the runner; the hub, provider hooks and other Tidbyt apps are unchanged. Explicit installation removal is a separate queue operation with its own uncertain/failure outcome.
+Run the command once as the installation owner. `tidbyt-status-started` reports process startup, not cloud acceptance or a visible frame. Ctrl+C or SIGTERM stops publishing, cancels queued work, settles the active evaluation and releases the lease. **Stopping leaves the current status and now-playing installations in rotation.** Starting again evaluates the current feeds; when the agent feed is healthy and idle, or nothing is playing, the matching publisher removes its installation through the queue. A stale feed never means idle. To restore the prior setup, stop the runner; the hub, provider hooks and other Tidbyt apps are unchanged. Explicit installation removal is a separate queue operation with its own uncertain/failure outcome.
 
 For the separately authorized display check, record the installed revision, Node/client versions, selected owner and sole-writer confirmation privately. Start one real agent session and hold each state long enough for the 30-second poll and 15-second write gate. Observe `RUN`, `ASK` and `DONE`, whether other apps continue rotating, and the `?`/`FEED ?` state during a controlled feed interruption. Interrupt only this consumer's feed for the stale test; do not stop the shared state owner or change other consumers. Record shutdown behavior. Existing sessions retain their normal priority, so an old attention row can precede the test session. Do not acknowledge unrelated notices merely to make the test visible.
 

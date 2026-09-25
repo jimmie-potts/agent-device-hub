@@ -397,7 +397,14 @@ stale sessions, and the publisher against a real in-memory agent-state owner wit
 fake timers and a fake connection. The publisher cases cover coalescing, the
 15-second minimum, the 10-minute refresh, idle removal, an unavailable or slow
 feed, a hung feed read, failed and uncertain writes, the installation listing
-check before removal and backoff after repeated failures. Every receipt and snapshot is checked with the controller v1 `validate()`. The
+check before removal and backoff after repeated failures. Hub #38 adds
+now-playing tests in the same suite: the playback view, card layout and
+envelope validation; the publisher's 5-second read, 15-second gate, 10-minute
+refresh, stale and failed-read cards, removal when nothing plays, backoff, a
+hung read and coexistence with the status publisher on one controller; the
+controller's additional installations with shared holds and per-installation
+evidence; and the runner's playback feed and optional `nowPlaying`
+configuration. A golden now-playing card is among the Pillow-decoded images. Every receipt and snapshot is checked with the controller v1 `validate()`. The
 Python check decodes the committed golden images with Pillow, independently of
 the encoder. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.
