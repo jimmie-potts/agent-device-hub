@@ -34,4 +34,4 @@ A failed preparation or refresh leaves the control usable once the device read r
 ## Risks / Trade-offs
 
 - [The hook guard, focus restoration and form draft rules still need a browser] → The existing matrix plus the new scenario exercise them on both consumers.
-- [Concurrent #182 skin edits touch `main.tsx` strings] → Small textual rebase. `unreadable` is now one constant for #182's display-name change.
+- [#182's skin and display-name change landed first (`e6de7c6`)] → The merge keeps its B.U.N.N.Y. wording in every string this change moved or added, including the single `unreadable` constant.

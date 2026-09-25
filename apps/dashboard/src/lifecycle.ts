@@ -6,8 +6,8 @@ export type ResultOptions={device?:boolean;sameMode?:boolean};
 /** A command built from a fresh read, or the reason nothing was sent. */
 export type Prepared<T>=T|{blocked:string};
 export const blocked=<T extends object>(value:Prepared<T>):value is {blocked:string}=>'blocked' in value;
-export const unreadable='BUNNY couldn’t read the device’s current state';
-const unprepared=(options:ResultOptions)=>options.device===false?'BUNNY couldn’t read the current sessions':unreadable;
+export const unreadable='B.U.N.N.Y. couldn’t read the device’s current state';
+const unprepared=(options:ResultOptions)=>options.device===false?'B.U.N.N.Y. couldn’t read the current sessions':unreadable;
 
 type ObservedReceipt=ReceiptEvidence&{requestId:unknown;outcome:string};
 /** A later snapshot can carry the terminal outcome for a submitted ticket; queued receipts are not terminal. */

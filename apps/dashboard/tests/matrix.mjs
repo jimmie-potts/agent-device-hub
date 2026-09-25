@@ -25,8 +25,8 @@ try {
   await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);const startCount=f.requests.length;
   await until(()=>f.requests.slice(startCount).some(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot'));
   const start=performance.now();const wall=await fetch(f.hub.url+'/api/controllers/v1/wall/snapshot',{headers:f.headers});assert.equal(wall.status,200);independentDeviceReadMs=performance.now()-start;assert.ok(independentDeviceReadMs<700,'wall does not await pixel');
-  await mode.selectOption('monitor');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await page.getByText('Saved. BUNNY can’t see the device, so check it to confirm.',{exact:true}).waitFor();assert.equal(f.writes.at(-1).integration,true);assert.equal(f.writes.at(-1).command.action.mode,'monitor');assert.equal(await page.getByText('Not applied: capacity.',{exact:false}).count(),0);
-  f.setDelay(0);await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Monitor'));assert.equal(await mode.inputValue(),'monitor','the applied form shows current values without a discard step');await mode.selectOption('media');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await until(()=>f.writes.at(-1).command.action.mode==='media');await page.getByText('Saved. BUNNY can’t see the device, so check it to confirm.',{exact:true}).waitFor();
+  await mode.selectOption('monitor');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await page.getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();assert.equal(f.writes.at(-1).integration,true);assert.equal(f.writes.at(-1).command.action.mode,'monitor');assert.equal(await page.getByText('Not applied: capacity.',{exact:false}).count(),0);
+  f.setDelay(0);await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Monitor'));assert.equal(await mode.inputValue(),'monitor','the applied form shows current values without a discard step');await mode.selectOption('media');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await until(()=>f.writes.at(-1).command.action.mode==='media');await page.getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();
  });
  await scenario('terminal integration failures, known evidence and external control are visible',async(f,page)=>{
   await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').waitFor();f.setQueued(true);await page.getByLabel('Layout style').selectOption('project');await page.getByRole('button',{name:'Apply integration settings',exact:true}).click();await page.getByText('Queued. The device hasn’t received it yet.',{exact:true}).waitFor();
@@ -167,7 +167,7 @@ try {
   await until(()=>f.requests.filter(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot').length>reads);await page.waitForTimeout(300);
   assert.equal(await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).count(),0,'a generation advance alone is not a conflict');
   expected=guard(f);await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===2);assert.deepEqual(general(f)[1],{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:35}});
-  // The generation advances after BUNNY's fresh read but before the controller admits the command: typed, no effects, nothing resubmitted.
+  // The generation advances after B.U.N.N.Y.'s fresh read but before the controller admits the command: typed, no effects, nothing resubmitted.
   await page.getByRole('button',{name:'Next',exact:true,disabled:false}).filter({visible:true}).waitFor();
   await page.route('**/api/controllers/v1/pixel/commands',async route=>{f.advance('pixel');await route.continue();});
   await visible(page,'button','Next').click();const race=page.locator('section:visible [role=status]').filter({hasText:'Next: Not applied: the device moved on before this arrived (stale-generation). Nothing changed. Press Next to try again with current values.'});await race.waitFor();
@@ -178,7 +178,7 @@ try {
  await scenario('accepted brightness and power changes leave their forms ready for the next change without another action',async(f,page)=>{
   await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   await brightness.fill('30');await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===1);
-  await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\. BUNNY can’t see the device, so check it to confirm\.)$/}).waitFor();
+  await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\. B\.U\.N\.N\.Y\. can’t see the device, so check it to confirm\.)$/}).waitFor();
   await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});
   assert.equal(await brightness.inputValue(),'30','the form shows the refreshed value');assert.equal(await form(page,'Brightness').getByRole('button').count(),1,'no discard or reload step remains');assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true,'an unchanged form submits nothing');
   await brightness.fill('20');await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===2);assert.deepEqual(general(f)[1].command,{kind:'brightness.set',percent:20},'the next change needs only its own apply');
@@ -212,7 +212,7 @@ try {
   f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();await axe(page);
   const revision=f.pixoo.configurationRevision,generation=f.pixoo.generation;await start.click();await until(()=>f.writes.length===1);
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
-  await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. BUNNY can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
+  await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');assert.equal(f.writes.length,1);
   await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');
@@ -237,12 +237,12 @@ try {
   const status=page.locator('section:visible [role=status]'),enabled=name=>page.getByRole('button',{name,exact:true,disabled:false}).filter({visible:true});
   // The fresh read taken just before sending fails: nothing is sent and the draft is kept. Once reads recover, one explicit apply sends with current guards.
   await brightness.fill('40');let before=f.writes.length;failing=true;await visible(page,'button','Apply brightness').click();
-  await status.filter({hasText:'Not sent: BUNNY couldn’t read the device’s current state. Nothing changed. Your edit is kept.'}).waitFor();
+  await status.filter({hasText:'Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed. Your edit is kept.'}).waitFor();
   assert.equal(f.writes.length,before,'a failed fresh read sends nothing');assert.equal(await brightness.inputValue(),'40');
   failing=false;await enabled('Apply brightness').waitFor();let expected=guard(f);await visible(page,'button','Apply brightness').click();await until(()=>f.writes.length===before+1);
   assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:40}});
   await enabled('Pause').waitFor();before=f.writes.length;failing=true;await visible(page,'button','Pause').click();
-  await status.filter({hasText:'Pause: Not sent: BUNNY couldn’t read the device’s current state. Nothing changed.'}).waitFor();assert.equal(f.writes.length,before);
+  await status.filter({hasText:'Pause: Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed.'}).waitFor();assert.equal(f.writes.length,before);
   failing=false;
   // The command is accepted, then the refresh that follows it fails: the receipt stays shown, the control is released and nothing is resent.
   await page.route('**/api/controllers/v1/pixel/commands',async route=>{failing=true;await route.continue();});
@@ -267,7 +267,7 @@ try {
    await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
    assert.equal(new URL(page.url()).hash,'','the one-time launch code is removed from browser history');
    assert.equal(f.writes.length,0,'launch and inspection do not command devices');
-   await page.reload();await page.getByText('Open BUNNY with the Hub launcher.').waitFor();
+   await page.reload();await page.getByText('Open B.U.N.N.Y. with the Hub launcher.').waitFor();
    await page.goto(launch.url+'/#launch='+launch.code);await page.reload();await page.getByText('That launch expired or failed. Run the launcher again.').waitFor();
    checks.push('one-click owner launch, history clearing, no-write inspection and reload');
   }finally{await context.close();await f.close();}

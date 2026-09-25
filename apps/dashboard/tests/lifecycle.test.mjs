@@ -9,7 +9,7 @@ try {
  // One bundle, so the test's ApiError is the class the lifecycle checks.
  await build({stdin:{contents:"export * from './lifecycle';export {ApiError} from './client';",resolveDir:'apps/dashboard/src',loader:'ts'},bundle:true,platform:'node',format:'esm',outfile:join(dir,'lifecycle.mjs')});
  const {actionWording,formWording,commandTransition,initialCommand,runCommand,unreadable,ApiError}=await import(join(dir,'lifecycle.mjs'));
- const check='BUNNY can’t see the device, so check it to confirm.';
+ const check='B.U.N.N.Y. can’t see the device, so check it to confirm.';
  const ticket={epoch:'e',sequence:4};
  // Both consumers drive the same lifecycle; they differ only in wording.
  const consumers=[
@@ -38,7 +38,7 @@ try {
    assert.equal(failed.state.status,`${consumer.prefix}Not sent: ${unreadable}. Nothing changed.${consumer.kept}`);
    assert.equal(failed.state.busy,false);assert.equal(failed.state.locked,false);assert.equal(failed.sent.length,0);
    const sessions=harness(consumer,{prepare:()=>Promise.reject(new Error('build failed')),options:{device:false}});await sessions.run();
-   assert.equal(sessions.state.status,`${consumer.prefix}Not sent: BUNNY couldn’t read the current sessions. Nothing changed.${consumer.kept}`);
+   assert.equal(sessions.state.status,`${consumer.prefix}Not sent: B.U.N.N.Y. couldn’t read the current sessions. Nothing changed.${consumer.kept}`);
   });
 
   test(`${consumer.name}: an accepted ticket is watched until its terminal receipt`,async()=>{
