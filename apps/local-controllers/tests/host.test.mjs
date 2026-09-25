@@ -111,6 +111,11 @@ test('bounds, malformed requests and unknown routes are rejected before admissio
     const response = await pending;
     assert.deepEqual([response.status, response.body], [status, { failure: { code } }]);
   }
+  // Nesting far past the bound, still under 64 KiB, is invalid: never a stack overflow answered as a transport failure.
+  for (const body of ['['.repeat(30000) + '1' + ']'.repeat(30000), `{"deviceId":"desk","nested":${'['.repeat(20000)}1${']'.repeat(20000)}}`]) {
+    assert.ok(Buffer.byteLength(body) < 65536);
+    assert.deepEqual(await post(host, body).then(r => [r.status, r.body]), [400, { failure: { code: 'invalid-request' } }]);
+  }
   // A chunked body declares no length and is cut off at the same limit.
   const chunked = await new Promise((resolve, reject) => {
     const req = httpRequest(new URL('/controller/v1/commands', host.url), { method: 'POST', headers: { authorization: `Bearer ${TOKENS.hub}`, 'transfer-encoding': 'chunked' } }, res => {

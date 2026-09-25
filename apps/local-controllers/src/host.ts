@@ -36,11 +36,15 @@ const receiptStatus = (receipt: Receipt) => (receipt.failure && STATUS[receipt.f
 const V1 = '/controller/v1/';
 const LIGHTING = '/controller/lifx-light/v1/';
 
-function depth(value: unknown, level = 1): number {
-  if (!value || typeof value !== 'object') return level - 1;
-  let deepest = level;
-  for (const child of Object.values(value)) deepest = Math.max(deepest, depth(child, level + 1));
-  return deepest;
+/** The contract's JSON depth bound, with the root at level 0. Walks hostile input without recursion, like the contract's own check. */
+function tooDeep(value: unknown): boolean {
+  const pending: [unknown, number][] = [[value, 0]];
+  while (pending.length) {
+    const [item, level] = pending.pop()!;
+    if (level > MAX_JSON_DEPTH) return true;
+    if (item && typeof item === 'object') for (const child of Object.values(item)) pending.push([child, level + 1]);
+  }
+  return false;
 }
 
 /** Read at most `MAX_BODY_BYTES`; undefined means the limit was exceeded. */
@@ -142,7 +146,7 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
     if (!bytes) return failure('capacity');
     let value: unknown;
     try { value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { return failure('invalid-request'); }
-    if (depth(value) > MAX_JSON_DEPTH || !value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-request');
+    if (tooDeep(value) || !value || typeof value !== 'object' || Array.isArray(value)) return failure('invalid-request');
     const deviceId = (value as Record<string, unknown>).deviceId;
     if (!validate('id', deviceId)) return failure('invalid-request');
     if (!allowed(req, credential, deviceId as string, 'control')) return failure('forbidden');

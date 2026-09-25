@@ -115,10 +115,10 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | `POST /api/controllers/v1/:id/integration/cancel` | Nanoleaf extension cancellation request; cannot undo an applied edit |
 | `GET /api/controllers/v1/:id/lighting/snapshot` | Validated LIFX lighting snapshot: `lifx-light` 1.0.0 profile, the controller v1 snapshot and the lighting section. `lifx` aliases only; other kinds answer 422 |
 | `POST /api/controllers/v1/:id/lighting/commands` | One strict `lifx-light` 1.0.0 color or color-temperature request and its controller v1 receipt. `lifx` aliases only |
-
-Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 | `GET /api/playback/v1/snapshot` | Selected playback source's snapshot; see [Playback](#playback) |
 | `POST /api/playback/v1/commands` | One source-bound playback command and its receipt |
+
+Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 
 Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, command bodies 65536 bytes and requests three seconds. Replay retains at most 256 entries and 262144 fingerprint bytes across principals; pending entries cannot be evicted. Repeated quiesce tickets share one immutable export. Native controller calls have a two-second deadline and one MiB response limit. Slow streams disconnect after five seconds of backpressure. Credential replacement closes streams, retires every browser session and removed credential's tickets, and reauthorizes future requests before replay. Restart changes the command epoch.
 
