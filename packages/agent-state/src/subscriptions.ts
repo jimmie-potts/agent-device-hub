@@ -40,11 +40,18 @@ class Channel implements Subscription {
 export class Feeds {
   #channels=new Map<string,Channel>();
   #history:Change[]=[];
+  #listeners=new Set<(revision:number)=>void>();
   constructor(private readonly initialRevision:number){}
   publish(revision:number){
     const change:Change=Object.freeze({apiVersion:'1.0',kind:'change',revision,dropped:0});
     this.#history.push(change);if(this.#history.length>LIMITS.pendingEvents)this.#history.shift();
     for(const channel of this.#channels.values())channel.push(change);
+    // A listener error must not fault the commit path that raised it.
+    for(const listener of this.#listeners)try{listener(revision);}catch{}
+  }
+  listen(callback:(revision:number)=>void):()=>void{
+    this.#listeners.add(callback);
+    return ()=>{this.#listeners.delete(callback);};
   }
   subscribe(id:string,revision:number,cursor?:number):Subscription{
     if(this.#channels.has(id))throw new Error('consumer-already-subscribed');

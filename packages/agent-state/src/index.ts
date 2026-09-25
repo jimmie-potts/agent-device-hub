@@ -195,6 +195,10 @@ export async function createAgentState(options:Options) {
       if(collector==='closed'||collector==='faulted')throw new Error('unavailable');
       return feeds.subscribe(consumerId,data.revision,cursor);
     },
+    onCommit(callback:(revision:number)=>void):()=>void{
+      if(typeof callback!=='function')throw new Error('invalid-listener');
+      return feeds.listen(callback);
+    },
     ingest(input:unknown):Promise<Outcome>{
       const checked=validateEvent(input);
       if(!checked.ok||Buffer.byteLength(JSON.stringify(checked.value))>LIMITS.eventBytes)return Promise.resolve({ok:false,code:'invalid-event'});
