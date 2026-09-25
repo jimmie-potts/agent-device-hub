@@ -9,6 +9,7 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 DEST = ROOT / 'work' / 'backlogs'
 REPOS = ['agent-device-hub', 'codex-nanoleaf', 'divoom-app-upgrade']
+PREFIXES = {'agent-device-hub': 'H', 'codex-nanoleaf': 'N', 'divoom-app-upgrade': 'P'}
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
@@ -96,10 +97,50 @@ def refresh_repo(repo):
     return repo, {'openIssues': sum(i['state'] == 'OPEN' for i in issues), 'openIssueEndpoint': f'{base}/issues?state=open', 'issuePageSizesIncludingPRs': sizes, 'openPRs':len(prs), 'prPageSizes': pr_sizes, 'paginationComplete': True, 'directReads': direct}
 
 
+def extends_targets(issues_by_repo):
+    """Stories an open story's Guide section names in `Extends` that the saved
+    records do not hold, by repository. The build requires every Extends key in
+    the snapshot, and an idea usually builds on work that has since closed."""
+    import guide_section
+    held = {PREFIXES[repo] + str(issue['number']) for repo, issues in issues_by_repo.items() for issue in issues}
+    repositories = {prefix: repo for repo, prefix in PREFIXES.items()}
+    missing = {}
+    for issues in issues_by_repo.values():
+        for issue in issues:
+            state = guide_section.read(issue['body']) if issue['state'] == 'OPEN' else {}
+            for key in state.get('extends', []) if state.get('state') == 'assigned' else []:
+                if key not in held:
+                    missing.setdefault(repositories[key[0]], set()).add(int(key[1:]))
+    return {repo: sorted(numbers) for repo, numbers in missing.items()}
+
+
+def keep_extends_targets(repos):
+    """Read and save each Extends target the refreshed records lack. Every target
+    is read and checked before any file is rewritten."""
+    saved = {repo: json.loads((DEST / f'{repo}-issues.json').read_text()) for repo in REPOS}
+    fetched = {}
+    for repo, numbers in extends_targets(saved).items():
+        for number in numbers:
+            key = f'{PREFIXES[repo]}{number}'
+            try:
+                raw = api(f'repos/jimmie-potts/{repo}/issues/{number}')
+            except RuntimeError as error:
+                raise RuntimeError(f'An Extends line names {key}, which GitHub cannot read as an issue: {error}') from error
+            if raw.get('pull_request'):
+                raise RuntimeError(f'An Extends line names {key}, which is a pull request, not a story')
+            fetched.setdefault(repo, []).append(normalize(raw))
+    for repo, issues in fetched.items():
+        for issue in issues:
+            repos[repo]['directReads'].append({'number': issue['number'], 'state': issue['state'], 'purpose': 'Guide Extends target'})
+        rows = sorted(saved[repo] + issues, key=lambda i: i['number'])
+        (DEST / f'{repo}-issues.json').write_text(json.dumps(rows, indent=2, ensure_ascii=False) + '\n')
+        (DEST / f'{repo}-digest.txt').write_text('\n'.join(f"#{i['number']} [{i['state']}] {i['title']}" for i in rows) + '\n')
+
 if __name__ == '__main__':
     started = datetime.now(timezone.utc).isoformat()
     with ThreadPoolExecutor(max_workers=3) as pool:
         repos = dict(pool.map(refresh_repo, REPOS))
+    keep_extends_targets(repos)
     # Read the documentation PR itself rather than inferring status from issue data.
     pr = api('repos/jimmie-potts/agent-device-hub/pulls/59')
     checks, check_pages = pages(f"repos/jimmie-potts/agent-device-hub/commits/{pr['head']['sha']}/statuses")

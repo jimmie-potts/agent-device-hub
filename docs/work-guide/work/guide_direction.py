@@ -5,10 +5,13 @@ written against. The text renders literally; issue keys render through the
 guide's `issue_link`, so they carry the same status icon and live GitHub
 relabel as every other link. `check()` runs against the saved snapshot before
 the section is rendered: an unknown key, a `SEQUENCE` key that has closed
-without a `DELIVERED_SINCE` entry, or a `DELIVERED_SINCE` key that is still
-open fails the build naming the key, so the direction text is rewritten with
-the refresh instead of going stale. The leverage table is recomputed from the
-saved native prerequisite records at every build and is never typed by hand.
+without a `DELIVERED_SINCE` entry, a `DELIVERED_SINCE` key that is still open,
+or a `SEQUENCE` key whose story carries an idea highlight fails the build
+naming the key, so the direction text is rewritten with the refresh instead of
+going stale. The leverage table is recomputed from the saved native
+prerequisite records at every build and is never typed by hand. "Later ideas"
+is derived from the stories' own idea marks (see `guide_ideas.py`); there is no
+hand-written list beside it.
 """
 import html
 
@@ -76,15 +79,6 @@ IMPROVEMENTS = [
     ('Guide: mission-map navigation and signal playback build on the Neon restyle.', ['H201', 'H202']),
 ]
 
-# Later creative bets worth keeping: (text, keys).
-IDEAS = [
-    ('A combined Lines-and-Panels layout as the first shared task pool.', ['N47']),
-    ('Song-change lighting effects and music visualizers once playback participation is qualified.', ['H39', 'H41']),
-    ('Home Assistant and MQTT for devices the hub does not speak to yet.', ['H11']),
-    ('A conversational assistant and phone-to-app handoffs over the shared device tools.', ['H46', 'H199']),
-    ('A trading-card skin for the guide and atlas, with art shared by issue label.', ['H254']),
-]
-
 # Keys moved out of SEQUENCE at a refresh: (date, keys, note).
 DELIVERED_SINCE = []
 
@@ -98,13 +92,14 @@ def cited():
              'BECOMING': [key for _, keys in BECOMING for key in keys],
              'SEQUENCE': [key for keys, _ in SEQUENCE for key in keys],
              'IMPROVEMENTS': [key for _, keys in IMPROVEMENTS for key in keys],
-             'IDEAS': [key for _, keys in IDEAS for key in keys],
              'DELIVERED_SINCE': [key for _, keys, _ in DELIVERED_SINCE for key in keys]}
     return lists
 
 
-def check(issues):
-    """Fail, naming the key, when the narrative no longer fits the saved snapshot."""
+def check(issues, ideas=()):
+    """Fail, naming the key, when the narrative no longer fits the saved snapshot.
+    `ideas` is the set of open stories whose Guide section carries an idea
+    highlight: "build next" and "later idea" are exclusive."""
     problems = []
     delivered = set(cited()['DELIVERED_SINCE'])
     for name, keys in cited().items():
@@ -115,6 +110,8 @@ def check(issues):
                 problems.append(f'SEQUENCE cites {key}, which is closed in the snapshot; move it to DELIVERED_SINCE and rewrite the sequence')
             elif name == 'DELIVERED_SINCE' and issues[key]['state'] == 'OPEN':
                 problems.append(f'DELIVERED_SINCE lists {key}, which is still open in the snapshot')
+            if name == 'SEQUENCE' and key in ideas:
+                problems.append(f'SEQUENCE cites {key}, whose story carries an idea highlight; build next and later idea are exclusive, so remove one')
     if problems:
         raise AssertionError('Direction text is stale: ' + '; '.join(problems))
 
@@ -143,9 +140,10 @@ def leverage_rows(leverage, issues, scheduling_state, decisions, owner_later):
     return rows[:TABLE_LIMIT]
 
 
-def render(issues, leverage, issue_link, scheduling_state, decisions, owner_later, snapshot_label):
-    """The `#direction` reference section; `snapshot_label` names the prerequisite snapshot."""
-    check(issues)
+def render(issues, leverage, issue_link, scheduling_state, decisions, owner_later, snapshot_label, ideas=()):
+    """The `#direction` reference section; `snapshot_label` names the prerequisite snapshot.
+    `ideas` lists the marked idea stories in Ideas-section order."""
+    check(issues, set(ideas))
     standing = ''.join(f'<div class="direction-surface"><dt>{html.escape(surface)}</dt><dd><p>{html.escape(text)}</p><p class="direction-keys">{_keys(keys, issue_link)}</p></dd></div>'
                        for surface, text, keys in STANDING)
     becoming = ''.join(f'<p>{html.escape(text)}{" " if keys else ""}{_keys(keys, issue_link)}</p>' for text, keys in BECOMING)
@@ -154,7 +152,7 @@ def render(issues, leverage, issue_link, scheduling_state, decisions, owner_late
     delivered_block = (f'<h4>Delivered since this direction was written</h4><ul class="direction-delivered">{delivered}</ul>' if delivered
                        else f'<p class="direction-note">Nothing in this sequence has closed since {html.escape(AS_OF)}. A refresh that finds a closed story moves it here and rewrites the sequence.</p>')
     improvements = ''.join(f'<li>{html.escape(text)} {_keys(keys, issue_link)}</li>' for text, keys in IMPROVEMENTS)
-    ideas = ''.join(f'<li>{html.escape(text)} {_keys(keys, issue_link)}</li>' for text, keys in IDEAS)
+    later = ''.join(f'<li data-key="{key}">{issue_link(key)}<span class="direction-idea-title">{html.escape(issues[key]["title"])}</span></li>' for key in ideas)
     rows = leverage_rows(leverage, issues, scheduling_state, decisions, owner_later)
     headers = ['Story', 'State', 'Direct', 'Total', 'Unblocks']
     body = ''.join('<tr>' + ''.join(f'<td data-label="{header}">{cell}</td>' for header, cell in zip(headers, [
@@ -173,5 +171,7 @@ def render(issues, leverage, issue_link, scheduling_state, decisions, owner_late
       <section class="direction-part" aria-labelledby="direction-leverage"><h3 id="direction-leverage">Least work, most unblocked</h3>{table}
       <p class="direction-note">Direct counts the open stories whose recorded GitHub prerequisites name this story; Total follows those stories' own recorded prerequisites. Counts come from recorded GitHub prerequisites only: a dependency written only in prose is not counted, and a high count is not a priority. State is the story's own scheduling state; a blocked, deferred or owner-later story is listed as such and is not promoted by its count.</p></section>
       <section class="direction-part" aria-labelledby="direction-improve"><h3 id="direction-improve">Improve what exists</h3><ul class="direction-list">{improvements}</ul></section>
-      <section class="direction-part" aria-labelledby="direction-ideas"><h3 id="direction-ideas">Later ideas</h3><ul class="direction-list">{ideas}</ul></section>
+      <section class="direction-part" aria-labelledby="direction-ideas"><h3 id="direction-ideas">Later ideas</h3><ul class="direction-list direction-ideas">{later}</ul>
+      <p class="direction-note direction-ideas-empty"{" hidden" if ideas else ""}>No open story carries an idea mark.</p>
+      <p class="direction-note">Derived from each story's own idea mark, in topic order. <a href="#ideas">Read every idea with its reason and what it extends →</a></p></section>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
