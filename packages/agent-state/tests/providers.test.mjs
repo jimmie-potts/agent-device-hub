@@ -22,6 +22,9 @@ for(const provider of ['codex','claude'])for(const [hook,kind] of Object.entries
     else assert.deepEqual(value.parent,{status:'unknown'});
     if(kind==='attention.approval')assert.deepEqual(value.event.attention,{status:'unknown'});
     assert.ok(Object.isFrozen(value));assert.ok(Object.isFrozen(value.identity));
+    // Documented end reasons and start sources never enter the envelope; the owner applies one end rule to every path.
+    const annotated=normalizeHook({...(hook.startsWith('Subagent')?{...raw,agent_id:'child'}:raw),reason:'clear',source:'resume'},source(hook,provider),1000);
+    assert.equal(annotated.event.kind,kind);assert.doesNotMatch(JSON.stringify(annotated),/clear|resume/);
   });
 }
 

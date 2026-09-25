@@ -12,6 +12,8 @@ import bridge as b
 import shared_input as s
 
 packet=json.load(sys.stdin)
+# The Hub harness names the provider/client path under test; Nanoleaf qualifies exactly that source.
+source=packet.get('source',{'provider':'codex','client':'desktop','hostId':'host','sourceId':'source'})
 for case in packet['corpus']['cases']:
     expected=case['valid']
     if isinstance(case['input'],dict) and case['input'].get('apiVersion')=='1.1':
@@ -26,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='retirement-nano-') as temporary:
         directory.mkdir()
         config={'version':1,'ownerId':'owner','consumerId':'nanoleaf','endpoint':'http://127.0.0.1:1/api/monitor/v1',
                 'tokenFile':str(root/'unused-token'),'clearOnNewTurn':True,
-                'qualifiedSources':[{'provider':'codex','client':'desktop','hostId':'host','sourceId':'source'}],'bindings':[]}
+                'qualifiedSources':[source],'bindings':[]}
         s.configure(directory,b,config)
         s.select_source(directory,b,'shared',fetch=lambda *args,**kwargs:packet['initial'],now=lambda:1000)
         with contextlib.closing(b.connect_state(directory)) as db,db:

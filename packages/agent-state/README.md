@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 3.1.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 3.2.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -243,6 +243,7 @@ Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
 Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
 Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
+Package 3.2.0 retires accepted ends on every supported path and settles stored `ended` records at startup without changing the schemas. Its Claude Code and Codex CLI retirement guards are rejected by the 3.0 and 3.1 validators regardless of age, so those owners fail closed (`invalid-storage`) on a store or export holding one. A guard expires 24 hours after its retirement, but only a running or reopened 3.2.0 owner prunes it; run or reopen 3.2.0 after that point before rolling back, or use an explicitly reconciled export.
 It opens an existing compatible store directly. The frozen pre-change
 [ambiguity fixture](fixtures/legacy-ambiguous-v1.md) verifies recovery without
 resetting state. Older packages can read the legacy 1.0 shape, but cannot read durable 2.0. The [Hub update procedure](../../apps/hub/SETUP.md#update-the-current-status-package)
@@ -260,9 +261,11 @@ bundles the private lifecycle dependency; public dependencies use exact versions
 Publication records the reviewed source revision and archive hash outside the
 source commit. No checkout-relative imports or private-registry secret is needed.
 
-## Codex Desktop retirement
+## Runtime-end retirement
 
-An accepted `runtime.ended` for Codex Desktop removes the session and known descendants in one durable replacement and publishes one revision. Removal frees capacity and forgets task labels, project overrides, attention and notices. It does not acknowledge, mark read, complete or cancel work. Other provider/client policies are unchanged. Ordinary completion, input waits and freshness uncertainty retain records; a long turn has no new timeout. Each record keeps the existing 24-hour evidence expiry fallback.
+An accepted `runtime.ended` for a known session on any supported path (Codex Desktop, Codex CLI or Claude Code) removes the session and its known descendants in one durable replacement and publishes one revision. Removal frees capacity and forgets task labels, project overrides, attention and notices, even when notices or attention remain. It does not acknowledge, mark read, complete or cancel work, and it never terminates an agent. Ending one path's last session cannot remove another path's session, even one with the same native ID under a different selector. Ordinary completion, `SubagentStop`, interruption, input waits and freshness uncertainty retain records, and a long turn has no new timeout. Each record keeps the existing 24-hour evidence expiry fallback, so a run whose end is never delivered still expires on its own clock.
+
+Stores written while only Codex Desktop retired may hold a Claude or CLI record whose accepted end was reduced into activity `ended`. Opening such a store retires exactly those records and their known descendants in one durable revision with the same guards. Settlement adds no journal row and performs no acknowledgment, clock reset or old-effect replay. Records with idle, waiting, interrupted or unknown activity are never treated as ended; they keep their evidence clocks and the 24-hour fallback. That includes a record whose unordered hook end left activity `unknown` under the older owner: the diagnostic journal's `runtime.ended` row is bounded history, not retirement authority, so the record waits for its own expiry. The reducer no longer produces `ended`.
 
 Retirement guards are separate from active sessions and diagnostics: at most 128 identities for 24 hours, with up to 256 known turns, retry keys and ordering epochs per identity. They survive restart and reject recognizable delayed events, including an old end after resume. Oldest guards are evicted at the bound. A retired identity requires an eligible session or turn start; a new child naming a retired absent parent is rejected. Missing parent identity, unseen old starts, unqualified order, or evicted evidence can prevent reliable rejection. Receipt timestamps do not prove provider order.
 
