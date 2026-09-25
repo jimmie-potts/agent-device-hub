@@ -110,9 +110,13 @@ old export cannot be rejected reliably. This release adds no full event history.
 
 For an authorized program rollback, stop the new owner first, retain the latest
 store and reinstall the prior verified program artifact. It can read format 1.0
-but restores the older conservative status behavior. Do not overwrite new
-notices or acknowledgments with the pre-update database backup. A failed reopen
-requires inspection by the installation owner, not a live database reset.
+but restores the older conservative status behavior. A program before Hub 0.3.4
+fails closed on a store holding a Claude Code or Codex CLI retirement guard
+written by 0.3.4; wait until those guards expire, 24 hours after the last such
+retirement, or use the export/import handoff with an explicitly reconciled
+export. Do not overwrite new notices or acknowledgments with the pre-update
+database backup. A failed reopen requires inspection by the installation owner,
+not a live database reset.
 
 ## Failure recovery and evidence
 

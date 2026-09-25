@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {createAgentState, LIMITS, MemoryStorage, validateExport, validateSnapshot} from '../dist/index.js';
 import {normalizeHook} from '../dist/providers.js';
 
@@ -234,34 +235,57 @@ test('legacy durable import preserves clocks and defaults to generation zero bef
   }finally{await owner.shutdown();}
 });
 
-// Stores written before Hub #241 kept a Claude/CLI record after its accepted end with activity
-// `ended`. Startup retires exactly those records and their known descendants; idle, waiting and
-// unknown records keep their evidence clocks and the 24-hour fallback.
+// Stores written before Hub #241 kept a Claude/CLI record after its accepted end. A qualified-order
+// end, or an end on unknown activity, left activity `ended`. The packaged hooks supply no ordering, so an
+// end after a turn on an active or idle record left activity `unknown` with ambiguous evidence and only a
+// bounded diagnostic journal row. Startup retires exactly the `ended` records and their known descendants;
+// every other record keeps its evidence clock and the 24-hour fallback, and the journal is not authority.
+const journalKey=identity=>createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+async function legacyStore(f,formatVersion){
+  const source=await f.open();
+  const start=f.event('ended','turn.started');
+  await source.ingest(start);
+  await source.ingest(f.event('ended','turn.ended'));
+  await source.setLabel(f.identity('ended'),'Finished earlier');
+  await source.ingest(f.event('ended-child','session.started',{parent:{status:'known',identity:f.identity('ended')}}));
+  await source.ingest(f.event('hooked','turn.started'));
+  await source.ingest(f.event('hooked','turn.ended'));
+  await source.ingest(f.event('idle','turn.started'));
+  await source.ingest(f.event('idle','turn.ended'));
+  await source.ingest(f.event('waiting','turn.started'));
+  await source.ingest(f.event('waiting','attention.approval',{event:{kind:'attention.approval',attention:{status:'unknown'}}}));
+  await source.ingest(f.event('unknown','turn.started'));
+  await source.ingest(f.event('unknown','turn.started',{turn:{status:'unknown'}}));
+  const exported=structuredClone(await source.exportState());await source.shutdown();
+  // Previous owner with qualified order or unknown activity: the accepted end was reduced into the record.
+  exported.sessions.find(session=>session.identity.sessionId==='ended').activity='ended';
+  // Previous owner with an unordered hook end on an idle record: activity became unknown/ambiguous and the
+  // diagnostic journal kept the accepted end as its last row for that session.
+  const hooked=exported.sessions.find(session=>session.identity.sessionId==='hooked');
+  hooked.activity='unknown';hooked.unavailable=[{kind:'evidence.unavailable',dimension:'activity',reason:'ambiguous'}];
+  exported.revision+=1;
+  exported.journal.push({revision:exported.revision,atMs:exported.lastCommitAtMs,sessionKey:journalKey(hooked.identity),kind:'runtime.ended',outcome:'ambiguous'});
+  assert.equal(exported.sessions.find(session=>session.identity.sessionId==='unknown').activity,'unknown');
+  if(formatVersion==='1.0'){exported.formatVersion='1.0';delete exported.retirements;for(const session of exported.sessions)delete session.generation;}
+  assert.equal(validateExport(exported).ok,true,formatVersion);
+  return {exported,start};
+}
+async function seed(storage,exported){
+  const signal=new AbortController().signal,lease=await storage.acquire('owner',signal);
+  await lease.commit({expectedRevision:null,revision:exported.revision,atMs:exported.lastCommitAtMs,pruneBeforeMs:0,replace:structuredClone(exported)},signal);
+  await lease.release();
+}
+
 test('an upgraded store retires records holding an accepted end and retains every other record unchanged',async()=>{
-  for(const formatVersion of ['1.0','2.0']){
-    const f=fixture('claude','code'),source=await f.open();
-    await source.ingest(f.event('ended','turn.started'));
-    await source.ingest(f.event('ended','turn.ended'));
-    await source.setLabel(f.identity('ended'),'Finished earlier');
-    await source.ingest(f.event('ended-child','session.started',{parent:{status:'known',identity:f.identity('ended')}}));
-    await source.ingest(f.event('idle','turn.started'));
-    await source.ingest(f.event('idle','turn.ended'));
-    await source.ingest(f.event('waiting','turn.started'));
-    await source.ingest(f.event('waiting','attention.approval',{event:{kind:'attention.approval',attention:{status:'unknown'}}}));
-    await source.ingest(f.event('unknown','turn.started'));
-    await source.ingest(f.event('unknown','turn.started',{turn:{status:'unknown'}}));
-    const exported=structuredClone(await source.exportState());await source.shutdown();
-    // Simulate the previous owner: the accepted end was reduced into the record instead of retiring it.
-    const ended=exported.sessions.find(session=>session.identity.sessionId==='ended');
-    ended.activity='ended';
-    assert.equal(exported.sessions.find(session=>session.identity.sessionId==='unknown').activity,'unknown');
-    if(formatVersion==='1.0'){exported.formatVersion='1.0';delete exported.retirements;for(const session of exported.sessions)delete session.generation;}
-    assert.equal(validateExport(exported).ok,true,formatVersion);
+  for(const formatVersion of ['2.0','1.0']){
+    const f=fixture('claude','code'),{exported,start}=await legacyStore(f,formatVersion);
     f.advance(60*1000);
     const storage=new MemoryStorage();
-    let owner=await f.open({storage,importState:exported});
+    // Format 2.0 opens an already-stored store, the installed upgrade path; format 1.0 uses the import path.
+    if(formatVersion==='2.0')await seed(storage,exported);
+    let owner=await f.open(formatVersion==='2.0'?{storage}:{storage,importState:exported});
     try{
-      assert.deepEqual(ids(owner),['idle','unknown','waiting'],formatVersion);
+      assert.deepEqual(ids(owner),['hooked','idle','unknown','waiting'],formatVersion);
       assert.equal(owner.snapshot().revision,exported.revision+1,'one durable revision settles the upgrade');
       const snapshot=owner.snapshot('1.1');
       for(const session of snapshot.sessions){
@@ -270,6 +294,7 @@ test('an upgraded store retires records holding an accepted end and retains ever
         assert.deepEqual(session.notices,stored.notices,'nothing is acknowledged');
         assert.deepEqual(session.attention,stored.attention);
         assert.equal(session.activity,stored.activity);
+        assert.deepEqual(session.unavailable,stored.unavailable);
         assert.equal(session.restartUncertain,true);
       }
       const state=await owner.exportState();
@@ -279,17 +304,40 @@ test('an upgraded store retires records holding an accepted end and retains ever
       assert.equal(state.journal.length,exported.journal.length,'settlement records no journal row');
       // Export quiesces the owner; reopen the same store, which also proves the settlement is durable.
       await owner.shutdown();owner=await f.open({storage});
-      assert.deepEqual(ids(owner),['idle','unknown','waiting']);
-      // Delayed old evidence for the settled record is guarded; an eligible new start is fresh.
+      assert.deepEqual(ids(owner),['hooked','idle','unknown','waiting']);
+      // The settled record's retained keys and turns guard its own old evidence; a new start is fresh.
+      assert.equal((await owner.ingest(start)).outcome,'stale','the original start is rejected by its retained key');
       assert.equal((await owner.ingest(f.event('ended','activity.observed'))).outcome,'stale');
       assert.equal((await owner.ingest(f.event('ended-child','turn.started',{parent:{status:'known',identity:f.identity('ended')}}))).outcome,'stale');
       await owner.ingest(f.event('ended','turn.started',{turn:{status:'known',id:'resumed'}}));
       const fresh=owner.snapshot('1.1').sessions.find(session=>session.identity.sessionId==='ended');
       assert.equal(fresh.label,undefined);assert.deepEqual(fresh.notices,[]);assert.ok(fresh.generation>0);
       await owner.shutdown();owner=await f.open({storage});
-      assert.deepEqual(ids(owner),['ended','idle','unknown','waiting']);
+      assert.deepEqual(ids(owner),['ended','hooked','idle','unknown','waiting']);
+      // The hook-shaped record waits for its own 24-hour expiry, measured from its last evidence.
+      f.advance(LIMITS.sessionAgeMs-60*1000-1);await owner.maintain();
+      assert.deepEqual(ids(owner),['ended','hooked','idle','unknown','waiting']);
+      f.advance(1);await owner.maintain();
+      assert.deepEqual(ids(owner),['ended']);
     }finally{await owner.shutdown();}
   }
+});
+
+test('a failed settlement at startup fails closed and leaves the stored records for the next open',async()=>{
+  const f=fixture('codex','cli'),{exported}=await legacyStore(f,'2.0');
+  let reject=true;const inner=new MemoryStorage();
+  const storage={async acquire(...args){const lease=await inner.acquire(...args);return {...lease,
+    async commit(change,signal){if(reject&&change.replace&&change.expectedRevision!==null)throw new Error('private-adapter-failure');return lease.commit(change,signal);}};}};
+  await seed(storage,exported);
+  f.advance(60*1000);
+  await assert.rejects(f.open({storage}),/invalid-storage/);
+  reject=false;
+  const owner=await f.open({storage});
+  try{
+    assert.deepEqual(ids(owner),['hooked','idle','unknown','waiting']);
+    assert.equal(owner.snapshot().revision,exported.revision+1);
+    assert.deepEqual((await owner.exportState()).retirements.map(item=>item.identity.sessionId).sort(),['ended','ended-child']);
+  }finally{await owner.shutdown();}
 });
 
 test('archive evidence has a bounded wait and a hung reader cannot accumulate probes or delay retirement',async()=>{

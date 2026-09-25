@@ -43,32 +43,49 @@ retirement authority.
 Install the compatible Hub before activating the upgraded Nanoleaf reader. A
 1.0-only host cannot meet that reader's generation requirement. Older consumers
 can still read the default 1.0 endpoint but cannot detect missed retirement from
-generation metadata. Older owners cannot read format 2.0. Rolling back an owner
-therefore requires a compatible owner and reconciled handoff; do not point an
-older binary at the newer store or silently discard retirement evidence.
+generation metadata. Owners before 3.0.0 cannot read format 2.0. Agent State
+3.2.0 keeps format 2.0 but writes Claude Code and Codex CLI retirement guards,
+which the 3.0 and 3.1 validators reject: those owners fail closed
+(`invalid-state` on open, `invalid-import` on import) on any store or export
+holding such a guard, for up to 24 hours after the last Claude or CLI
+retirement. Rolling back an owner therefore requires a compatible owner and
+reconciled handoff, after those guards expire or through an explicitly
+reconciled export; an older owner would again retain Claude and CLI ends until
+expiry. Do not point an older binary at the newer store or silently discard
+retirement evidence.
 
 ## Upgrade treatment of retained records
 
 Owners before Agent State 3.2.0 retired only Codex Desktop records. A Claude
 Code or Codex CLI end they accepted was reduced into the record instead. With
 qualified ordering, or while activity was still unknown, the record holds
-activity `ended`. An unordered end on an active or idle record left activity
-`unknown` with ambiguous activity evidence, which cannot be told apart from
-other conflicts.
+activity `ended`. The packaged hooks supply no ordering, so an end delivered
+after a turn on an active or idle record left activity `unknown` with ambiguous
+activity evidence; the bounded diagnostic journal also kept a `runtime.ended`
+row for that session for up to 24 hours.
 
-Opening such a store with the new owner settles it once, at startup, in one
-durable revision that also performs the format migration. Every record with
-activity `ended`, and each known descendant, is retired with the same bounded
-guards as a live end. Nothing is acknowledged, no read state is written, no
-evidence clock is reset, no journal row is added and no old effect is replayed.
-Every other record, including unknown, idle, waiting and interrupted ones, is
-retained unchanged with its own 24-hour expiry fallback. The owner never infers
-an old end from idle or unknown activity and never scans transcripts. A delayed
-old event for a settled record is guarded like any other retirement, and an
+Opening such a store with the new owner settles it once, at startup. Every
+record with activity `ended`, and each known descendant, is retired in one
+durable replacement with the same bounded guards as a live end. When nothing
+else is due, that replacement is also the format 1.0 migration; when expiry is
+also due, expiry commits first in its own revision. Nothing is acknowledged, no
+read state is written, no evidence clock is reset, no journal row is added and
+no old effect is replayed. Every other record, including the hook-shaped
+`unknown` ones and idle, waiting and interrupted ones, is retained unchanged
+with its own 24-hour expiry fallback. The journal row is deliberately not used
+as retirement authority: the specification keeps diagnostic history bounded and
+non-authoritative, and the affected records expire within 24 hours of their
+last evidence. A hook-produced Claude or CLI end accepted by an older owner
+therefore keeps its record until that expiry; ends accepted by the new owner
+retire immediately. The owner never infers an old end from idle or unknown
+activity and never scans transcripts. A delayed old event for a settled record,
+including its original start, is guarded like any other retirement, and an
 eligible new start creates a fresh record with a new generation. The legacy-state
-fixture in the owner tests verifies this for format 1.0 and 2.0 stores. The
-reducer no longer produces `ended`; the value remains in the schemas only for
-stores that predate this rule.
+fixture in the owner tests covers the `ended`, hook-shaped `unknown`, idle,
+waiting and unknown cases for an already-stored format 2.0 store and an imported
+format 1.0 store, and a settlement whose commit fails leaves the store unchanged
+for the next open. The reducer no longer produces `ended`; the value remains in
+the schemas only for stores that predate this rule.
 
 ## Acceptance boundary
 
