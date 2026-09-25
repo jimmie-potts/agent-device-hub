@@ -1,4 +1,4 @@
-// Browser checks for the skin contract shared by the work guide and the BUNNY atlas:
+// Browser checks for the skin contract shared by the work guide and the B.U.N.N.Y. atlas:
 // theme and motion controls, decoration that never gets in the way, and both themes
 // at phone and desktop widths. Called by each page's own browser check.
 const assert = require('assert/strict');

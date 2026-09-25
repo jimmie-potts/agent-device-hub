@@ -1,4 +1,4 @@
-"""Shared skin assets for the generated work guide and the BUNNY atlas.
+"""Shared skin assets for the generated work guide and the B.U.N.N.Y. atlas.
 
 Both generators inline stylesheet() ahead of their own CSS, mark <html> with
 HTML_ATTRIBUTES, put head_script() in <head> and run controls_script(). Each page
