@@ -23,7 +23,7 @@ try {
   assert.deepEqual(failureMessage(new ApiError('capacity',429)),{message:'Not applied: too many commands are waiting (capacity). Nothing changed.',locked:false,settled:'rejected',code:'capacity'});
  });
  test('status text says what happened and whether anything changed, never claiming a physical result',()=>{
-  const check='BUNNY can’t see the device, so check it to confirm.';
+  const check='B.U.N.N.Y. can’t see the device, so check it to confirm.';
   assert.deepEqual(resultMessage({outcome:'queued',priorEffects:'none'}),{message:'Queued. The device hasn’t received it yet.',locked:false,settled:'accepted'});
   assert.deepEqual(resultMessage({outcome:'sent',priorEffects:'confirmed-transmission'}),{message:`Sent to the device. ${check}`,locked:false,settled:'accepted'});
   assert.deepEqual(resultMessage({outcome:'applied',priorEffects:'configuration'}),{message:`Saved. ${check}`,locked:false,settled:'accepted'});

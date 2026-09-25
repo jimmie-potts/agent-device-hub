@@ -12,10 +12,10 @@ remain separate work.
 The [application UI style guide](../../docs/application-ui-style-guide.md)
 records the shared visual direction (Neon Geometry Wars), the skin template and
 semantic role names, the component and state rules, the B.U.N.N.Y. spelling and
-the component vocabulary. This dashboard's `src/style.css` `:root` block is the
-application token layer that future pages extend. Applying the guide to the
-current screens is [Hub #182](https://github.com/jimmie-potts/agent-device-hub/issues/182);
-until then the rendered UI keeps its approved candidate.
+the component vocabulary. [`src/skins/neon-geometry-wars.css`](src/skins/neon-geometry-wars.css)
+is the application token layer that future pages extend; `src/style.css` reads
+only its role and private token names, with no raw colors of its own. Adding a
+second skin follows [guide section 4.4](../../docs/application-ui-style-guide.md#44-adding-a-skin).
 
 ## Build and access
 
