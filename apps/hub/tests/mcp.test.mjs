@@ -391,3 +391,45 @@ test('playback tool rejections are typed, uncertain results are not retried and 
  assert.deepEqual([result.structuredContent.data.code,result.structuredContent.data.priorEffects],['owner-quiesced','none']);
  assert.deepEqual(sony.calls,['setPlayPreviousContent','pausePlayingContent']);
 });
+
+test('tidbyt and lifx aliases bind only the tools their kind can use',async t=>{
+ const profile={profileId:'lifx-light',profileVersion:'1.0.0'},seen=[];let failing=false;
+ const snapshot=deviceId=>({apiVersion:'1.0',identity:{deviceId,controllerId:'local',sourceId:'s',controllerEpoch:'e'},configurationRevision:0,generation:{epoch:'e',sequence:0},nextRequestId:{epoch:'e',sequence:0},cursor:{epoch:'e',sequence:0},
+  sampleClock:{domain:'controller-monotonic',epoch:'e',sampledAtMs:1},serviceHealth:'ready',capabilities:{power:{supported:true},brightness:{supported:true,minimum:0,maximum:100},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false}},
+  limits:{maxPending:8,maxBodyBytes:65536,maxInFlight:8,maxReceipts:256,maxEvents:1,maxStreams:1,authenticationTimeoutMs:1},
+  state:{desired:{power:{status:'unknown'},brightness:{status:'unknown'},mode:{status:'unknown'}},pending:[],lastSuccessfulSend:{status:'unknown'},lastOutcome:{status:'unknown'},externalControl:{status:'unknown'},observation:{status:'unknown'}}});
+ const lighting={capabilities:{color:true,temperature:{minimum:1500,maximum:9000},effects:false},pending:[],observation:{status:'unknown'},visible:{status:'unknown'}};
+ const fake=createServer(async(req,res)=>{
+  let body='';for await(const chunk of req)body+=chunk;const url=new URL(req.url,'http://x');seen.push([req.method,url.pathname,body&&JSON.parse(body)]);
+  if(req.method==='POST'){if(failing){req.socket.destroy();return;}const r=JSON.parse(body);res.end(JSON.stringify({apiVersion:'1.0',controllerId:r.controllerId,deviceId:r.deviceId,requestId:r.requestId,configurationRevision:1,generation:{epoch:'e',sequence:0},outcome:'sent',priorEffects:'confirmed-transmission',completedOperations:['write'],uncertainOperations:[]}));return;}
+  const deviceId=url.searchParams.get('deviceId');
+  res.end(JSON.stringify(url.pathname.includes('lifx-light')?{profile,controller:snapshot(deviceId),lighting}:snapshot(deviceId)));
+ });
+ await new Promise(resolve=>fake.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{fake.close(resolve);fake.closeAllConnections();}));
+ const endpoint=`http://127.0.0.1:${fake.address().port}/controller/v1`;
+ const hub=await fixture(t,{credentials:[{...credential,devices:['tidbyt','desk']}],controllers:[{id:'tidbyt',kind:'tidbyt',controllerId:'local',deviceId:'tidbyt',token:'c'.repeat(43),endpoint},{id:'desk',kind:'lifx',controllerId:'local',deviceId:'desk',token:'d'.repeat(43),endpoint}]});
+ const c=client(hub);await c.initialize();
+ const devices=(await c.call('hub_devices')).structuredContent.data.result.devices;
+ assert.deepEqual(devices.map(d=>[d.alias,d.kind]),[['tidbyt','tidbyt'],['desk','lifx']]);
+ const tools=(await c.rpc('tools/list',{})).body.result.tools.map(tool=>tool.name);
+ const bound=alias=>tools.filter(name=>name.startsWith(devices.find(d=>d.alias===alias).toolPrefix+'_')).map(name=>name.slice(devices.find(d=>d.alias===alias).toolPrefix.length+1)).sort();
+ assert.deepEqual(bound('tidbyt'),['status']);
+ assert.deepEqual(bound('desk'),['brightness_set','color_set','lighting_status','power_set','status','temperature_set']);
+ const prefix=devices.find(d=>d.alias==='desk').toolPrefix;
+ const status=(await c.call(prefix+'_lighting_status')).structuredContent.data.result;
+ assert.deepEqual(status.lighting.capabilities.temperature,{minimum:1500,maximum:9000});
+ const guards={requestId:status.controller.nextRequestId,expectedConfigurationRevision:status.controller.configurationRevision,expectedGeneration:status.controller.generation};
+ const color=await c.call(prefix+'_color_set',{...guards,hue:120,saturation:60});
+ assert.equal(color.isError,false);assert.equal(color.structuredContent.data.result.outcome,'sent');
+ const before=seen.length;
+ assert.equal((await c.rpc('tools/call',{name:prefix+'_color_set',arguments:{...guards,hue:361,saturation:60}})).body.result?.isError??true,true);
+ assert.equal(seen.length,before);
+ const temperature=await c.call(prefix+'_temperature_set',{...guards,requestId:{epoch:'e',sequence:1},kelvin:2700});
+ assert.equal(temperature.structuredContent.data.result.outcome,'sent');
+ assert.deepEqual(seen.filter(([method])=>method==='POST').map(([,path,body])=>[path,body.profile,body.command]),[
+  ['/controller/lifx-light/v1/commands',profile,{kind:'lifx.color.set',hue:120,saturation:60}],['/controller/lifx-light/v1/commands',profile,{kind:'lifx.temperature.set',kelvin:2700}]]);
+ failing=true;
+ const lost=await c.call(prefix+'_color_set',{...guards,requestId:{epoch:'e',sequence:2},hue:1,saturation:1});
+ assert.equal(lost.isError,true);assert.deepEqual([lost.structuredContent.data.code,lost.structuredContent.data.priorEffects,lost.structuredContent.data.retry],['uncertain-result','possible','never-automatically']);
+ assert.equal(seen.filter(([method])=>method==='POST').length,3);
+});
