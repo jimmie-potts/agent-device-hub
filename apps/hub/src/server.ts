@@ -10,6 +10,7 @@ import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
 import {startBrowserLaunch} from './browser-launch.js';
 import {HttpError, canonical, exact, id, object} from './common.js';
+import {createReplayLedgers} from './replay.js';
 import {archivedSession,codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
 import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
@@ -17,8 +18,6 @@ import {createSonySource,sonyConfiguration} from './sony.js';
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
 export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number};
-type Replay = {body:string; result:Promise<unknown>; pending:boolean; bytes:number};
-type Ledger = {epoch:string; sequence:number; results:Map<string,Replay>};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -99,9 +98,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     throw error;
   });
   const snapshot = (version:'1.0'|'1.1'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
-  const ledgers = new Map<string,Ledger>();
-  const retained: {ledger:Ledger; key:string; replay:Replay}[] = [];
-  let replayBytes = 0;
+  const replay = createReplayLedgers();
   let exported: Promise<DurableState> | undefined;
   const streams = new Set<ServerResponse>();
   const streamOwners = new Map<ServerResponse,string>();
@@ -112,10 +109,17 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let closeBrowserLaunch: (()=>Promise<void>) | undefined;
   const launchCodes=new Map<string,number>();
   const browserSessions=new Map<string,{credential:Credential;expires:number}>();
+  // The one retirement path for expiry, eviction, logout, credential replacement and shutdown. Repeating it is harmless.
+  // Admitted commands keep running and stay charged until they settle; nothing is cancelled or sent again.
+  const retireBrowser=(digest:string)=>{
+    const session=browserSessions.get(digest);if(!session)return;
+    browserSessions.delete(digest);replay.retire(session.credential.id);
+    for(const [stream,owner] of streamOwners)if(owner===session.credential.id)stream.destroy();
+  };
   const pruneBrowser=()=>{
     const now=Date.now();
     for(const [code,expiry] of launchCodes)if(expiry<=now)launchCodes.delete(code);
-    for(const [hash,session] of browserSessions)if(session.expires<=now)browserSessions.delete(hash);
+    for(const [hash,session] of browserSessions)if(session.expires<=now)retireBrowser(hash);
   };
   const issueLaunch=()=>{
     if(closing)throw new Error('host-closing');
@@ -125,21 +129,23 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   };
   const feedEpoch = randomUUID();let feedSequence = 0, feedSignature = '';
   const feedHistory: {sequence:number; body:string}[] = [];
-  const ledger = (principal: string) => {
-    let value = ledgers.get(principal);
-    if (!value) { value = {epoch:randomUUID(),sequence:0,results:new Map()};ledgers.set(principal,value); }
-    return value;
-  };
-  const ticket = (entry: Ledger) => `${entry.epoch}:${entry.sequence}`;
   const authenticateConfigured = (token:string):Credential|null => {
     if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
     const digest = createHash('sha256').update(token).digest();
     return currentCredentials.find(c => timingSafeEqual(digest,Buffer.from(c.digest,'hex'))) ?? null;
   };
   const authenticate = (token:string):Credential|null => {
+    pruneBrowser();
     const configured=authenticateConfigured(token);if(configured)return configured;
     if(!/^[A-Za-z0-9_-]{43}$/.test(token))return null;
-    pruneBrowser();return browserSessions.get(createHash('sha256').update(token).digest('hex'))?.credential??null;
+    return browserSessions.get(createHash('sha256').update(token).digest('hex'))?.credential??null;
+  };
+  // Authorization can precede a request body or an MCP call by an await. Ticket use re-checks that the principal was not retired meanwhile.
+  const live = (principal:Credential) => {
+    pruneBrowser();
+    if (browserSessions.get(principal.digest)?.credential.id === principal.id) return true;
+    if (currentCredentials.some(c => c.id === principal.id)) return true;
+    throw new HttpError('unauthenticated',401);
   };
   const authorize = (req: IncomingMessage, scope: Scope, device?: string): Credential => {
     const token = req.headers.authorization;
@@ -152,6 +158,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     return principal;
   };
   async function command(principal: Credential, input: unknown) {
+    live(principal);
     if (!object(input) || typeof input.requestId !== 'string' || input.requestId.length > 100) throw new HttpError('invalid-input',400);
     const keys = input.operation === 'label' ? ['operation','requestId','identity','label'] : input.operation === 'acknowledge' ? ['operation','requestId','identity','noticeId','consumerId'] : input.operation === 'recover-approval' ? ['operation','requestId','identity','turnId','expectedRevision'] : ['operation','requestId'];
     if (!exact(input,keys) || !['label','acknowledge','recover-approval','quiesce'].includes(input.operation as string)) throw new HttpError('invalid-input',400);
@@ -163,36 +170,18 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (input.operation === 'recover-approval' && (!id(input.turnId) || !Number.isSafeInteger(input.expectedRevision) || (input.expectedRevision as number)<0)) throw new HttpError('invalid-input',400);
     if (input.operation === 'quiesce' && !principal.scopes.includes('admin')) throw new HttpError('forbidden',403);
     if (staged && input.operation !== 'quiesce') throw new HttpError('owner-quiesced',503);
-    const entry = ledger(principal.id), fingerprint = canonical(input), old = entry.results.get(input.requestId);
-    if (old) { if (old.body !== fingerprint) throw new HttpError('request-conflict',409);return old.result; }
-    if (input.requestId !== ticket(entry)) {
-      const suffix = input.requestId.slice(entry.epoch.length + 1);
-      const future = input.requestId.startsWith(entry.epoch + ':') && /^[0-9]+$/.test(suffix) && Number(suffix) > entry.sequence;
-      throw new HttpError(future ? 'request-order' : 'request-expired',future ? 409 : 410);
-    }
-    if (entry.sequence >= Number.MAX_SAFE_INTEGER) throw new HttpError('capacity',429);
-    const bytes = Buffer.byteLength(fingerprint);
-    while (retained.length >= 256 || replayBytes + bytes > 262144) {
-      const index = retained.findIndex(item => !item.replay.pending);
-      if (index < 0) throw new HttpError('capacity',429);
-      const [expired] = retained.splice(index,1);expired.ledger.results.delete(expired.key);replayBytes -= expired.replay.bytes;
-    }
-    entry.sequence++;
-    const result = Promise.resolve().then(async () => {
+    return replay.submit(principal.id,input.requestId,canonical(input),async () => {
       if (input.operation === 'label') return owner.setLabel(input.identity as Identity,input.label as string | null);
       if (input.operation === 'acknowledge') return owner.acknowledge(input.identity as Identity,input.noticeId as string,input.consumerId as string);
       if (input.operation === 'recover-approval') return owner.recoverApproval(input.identity as Identity,input.turnId as string,input.expectedRevision as number);
       // Persist before releasing an export, including if export subsequently fails.
       lease!.setFence(true); activationAllowed=false; return exported ??= owner.exportState();
     });
-    const replay = {body:fingerprint,result,pending:true,bytes};
-    entry.results.set(input.requestId,replay);retained.push({ledger:entry,key:input.requestId,replay});replayBytes += bytes;
-    void result.then(() => {replay.pending = false;},() => {replay.pending = false;});
-    return result;
   }
   const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'='1.0') => {
     const current = snapshot(version);
-    return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:ticket(ledger(principal.id)),
+    live(principal);
+    return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:replay.ticket(principal.id),
       matches:current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query.toLowerCase())).map(s=>s.identity)};
   };
   const server = createServer({maxHeaderSize:8192,requestTimeout:3000,headersTimeout:3000},(req,res) => {
@@ -223,7 +212,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
           pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
           launchCodes.delete(input.code);
-          if(browserSessions.size>=16)browserSessions.delete(browserSessions.keys().next().value!);
+          if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
           const token=randomBytes(32).toString('base64url');
           const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys()]};
           browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
@@ -235,8 +224,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
-          browserSessions.delete(principal.digest);
-          for(const [stream,id] of streamOwners)if(id===principal.id)stream.destroy();
+          // A configured credential has no browser session to end: its tickets, retained results and streams stay.
+          if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
           json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
@@ -341,6 +330,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     directory:options.directory,
     validateCredentials(input:Credential[]) { credentials(input); },
     staged:() => staged,
+    /** In-process counts for lifecycle tests. There is no HTTP route, and no credential or session content is included. */
+    resources:() => ({browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
     prepareConsumers() {
       if(!staged||!activationAllowed||activating||closing||exported)throw new Error('activation-unavailable');
       preparingConsumers=true;
@@ -357,13 +348,13 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
 
     replaceCredentials(input:Credential[]) {
       currentCredentials = credentials(input);
-      launchCodes.clear();browserSessions.clear();
+      launchCodes.clear();for (const digest of [...browserSessions.keys()]) retireBrowser(digest);
       for (const stream of streams) stream.destroy();
-      for (const key of ledgers.keys()) if (!currentCredentials.some(c => c.id === key)) ledgers.delete(key);
+      for (const principal of replay.principals()) if (!currentCredentials.some(c => c.id === principal)) replay.retire(principal);
     },
     close(): Promise<void> {
       return closePromise ??= (async () => {
-        closing = true;launchCodes.clear();browserSessions.clear();
+        closing = true;launchCodes.clear();for (const digest of [...browserSessions.keys()]) retireBrowser(digest);
         let launchFailure:unknown,playbackFailure:unknown;
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();

@@ -472,6 +472,16 @@ read/control alias bounds without ingest/admin/MCP access, disconnect, reload
 and inspection without device writes. The existing Dashboard CI job and shared
 Hub/package jobs run these checks on Node 24. They do not use the installed Hub.
 
+Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
+`apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
+tests. They repeat launch, monitor read, command and logout, then cover expiry
+and oldest-session eviction. Session, ledger, stream and replay counts must
+return to the configured-credential bound. A configured credential's logout
+keeps its tickets and streams. A command body arriving after logout is refused.
+Deferred fake operations cover a pending command that resolves, rejects or
+outlives its caller after retirement. The existing Hub jobs run them; no new CI
+job is needed.
+
 Hub #151 extends the matrix with general-control scenarios: one guarded command
 per control in Media, Monitor gating with the explicit Media switch and a pending
 mode, concurrent edits with typed conflicts and locked uncertain actions, and
