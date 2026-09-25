@@ -40,7 +40,8 @@ and issue-linked specifications.
 
 The hub owns provider qualification, shared event/session contracts, one
 authoritative agent-state core, common controller contracts, shared MCP
-infrastructure and the cross-device dashboard.
+infrastructure and the cross-device dashboard, including the shared device art
+that dashboard draws ([ADR 0007](decisions/0007-bunny-shell.md)).
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
 Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
@@ -276,8 +277,8 @@ restoration stays, except that an interlude ends automatically.
 [ADR 0007](decisions/0007-bunny-shell.md) makes the dashboard the one
 B.U.N.N.Y. shell: home widgets, a page per registered controller device and a
 later group page, drawn with hub-owned shared device art from hub snapshots.
-The Nanoleaf wall map is a linked specialized editor until each remaining
-operation has a shell home behind the integration extension, then retires.
+The Nanoleaf wall map is a linked advanced editor until each remaining
+operation has a home in the shell, then retires under its own issue.
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.

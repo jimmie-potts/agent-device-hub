@@ -9,7 +9,8 @@ repository.
 
 Scope: the shared B.U.N.N.Y. application (the dashboard in `apps/dashboard`)
 and the reusable UI foundation that future application pages adopt. The
-Nanoleaf wall map keeps its own accepted visual decision. The cross-project
+Nanoleaf wall map keeps its own accepted visual decision while it exists as
+Nanoleaf's advanced editor ([ADR 0007](decisions/0007-bunny-shell.md)). The cross-project
 work guide and the system-design atlas are documentation, not application
 screens; [Hub #85](https://github.com/jimmie-potts/agent-device-hub/issues/85)
 gives them the same token vocabulary through `docs/skins/`, so the names mean
@@ -65,7 +66,7 @@ Legend used throughout:
 | --- | --- | --- |
 | Shared application shell and component pages | `apps/dashboard/src/main.tsx`, `style.css`, `README.md` | Extend the existing navigation and component views. Keep one shell across pages. |
 | Application token layer | `apps/dashboard/src/skins/neon-geometry-wars.css` `:root` custom properties | The shared application seam (section 4), delivered by Hub #182: every section 4.1 role, the dense variants and private skin tokens. `style.css` reads these through `var(...)` and defines none of its own. |
-| Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. Wall-rendering tokens stay there. |
+| Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. Wall-rendering tokens stay there until the shared device art of [ADR 0007](decisions/0007-bunny-shell.md) lands, then move with it into the application token layer. |
 | Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css` (Hub #85, PR #251) | The guide and atlas token files. Same role names, separate consumers. |
 | Cross-project UI ownership | `docs/architecture.md`, "Unified UI and additional devices" | The shared frontend uses the approved Nanoleaf visual language; declared capability and permission decide which controls exist. |
 | Behavior and validation | Each repository's `AGENTS.md`, app README and `docs/development.md` | Follow the owning repository's rules and checks for the page being changed. |
@@ -389,7 +390,7 @@ finished logo exists.
 **Shared rule.** The text wordmark and glyph are the interim mark of the
 shared shell; a dedicated logo needs its own asset and design decision. Identify
 Nanoleaf inside its component view or advanced editor, and keep the wall map's
-own title while it exists as Nanoleaf's specialized editor
+own title while it exists as Nanoleaf's advanced editor
 ([ADR 0007](decisions/0007-bunny-shell.md)); the shell's device pages and
 widgets use the shared device art under the shell's identity. Do not copy the
 `◈` glyph onto every device screen.
@@ -432,7 +433,8 @@ An implementing agent uses this guide with a specific UI issue:
    quiet override.
 3. Inventory the page's colors, type, spacing and components. Map repeated raw
    values to the role names in section 4 without changing any status meaning.
-   Keep Nanoleaf wall-rendering tokens local to the wall map.
+   Keep Nanoleaf wall-rendering tokens local to the wall map until the shared
+   device art of [ADR 0007](decisions/0007-bunny-shell.md) lands.
 4. Implement in the owning application. Extend the dashboard's navigation and
    control patterns; do not migrate Nanoleaf source or alter controller
    behavior as part of a styling task.
