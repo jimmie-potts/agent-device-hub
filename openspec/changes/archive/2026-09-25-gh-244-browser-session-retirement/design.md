@@ -29,7 +29,7 @@ See proposal.md for motivation. The hub previously held command tickets in a map
 - [Pending work retained after retirement can still hold capacity] → Intentional: pending work is never evicted, and settlement releases it. The existing 256-entry bound still applies.
 - [Configured-credential logout no longer closes that principal's streams] → Documented behaviour change; a dashboard's own stream is closed by the page on disconnect.
 - [Pruning on every authentication adds a scan] → At most 8 launch codes and 16 sessions.
-- [Overlap with the Hub #222 stream refactor in the same file] → Shared-file coordination; whichever lands second rebases and keeps `retireBrowser` stream closure.
+- [Overlap with the Hub #222 stream refactor in the same file] → Rebased onto #222's merge (`2145747`). Its shared feed ticks still re-authorize each stream, and `retireBrowser` still closes a retired session's streams by owner.
 
 ## Migration Plan
 

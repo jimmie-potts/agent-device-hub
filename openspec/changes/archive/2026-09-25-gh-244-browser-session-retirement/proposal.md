@@ -9,7 +9,7 @@
 - Logging out of a dashboard opened with a configured credential ends no session. That credential keeps its streams, ticket sequence and retained results. Previously, such a logout closed every change stream of that configured principal, including other consumers' streams.
 - Expired browser sessions are pruned on every authentication, not only on browser-token authentication.
 - The host handle gains in-process resource counts for tests. There is no HTTP diagnostics route.
-- Hub package version 0.3.1.
+- Hub package version 0.3.2.
 
 ## Capabilities
 

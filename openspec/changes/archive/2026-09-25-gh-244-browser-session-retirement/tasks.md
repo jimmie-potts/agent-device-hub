@@ -9,6 +9,6 @@
 
 ## 3. Documentation and qualification
 
-- [x] 3.1 Update the hub README's session and HTTP boundary text and `docs/development.md`, and bump the hub package to 0.3.1. Verify the text matches the tested behavior.
+- [x] 3.1 Update the hub README's session and HTTP boundary text and `docs/development.md`, and bump the hub package to 0.3.2. Verify the text matches the tested behavior.
 - [x] 3.2 Run `npm run build`, `npm run typecheck`, `npm run test:hub`, `npm run test:hub:package`, `npm run test:hub:mcp`, `npm run test:dashboard:browser`, the contract, agent-state, MCP and workflow checks. All must exit zero on Node 24. Record the results in the PR.
 - [x] 3.3 Synchronize the `standalone-hub-host` delta and archive this change before final review. Independent reviews, current-head CI, guarded merge and merged-main readback remain SDLC gates.

@@ -146,6 +146,16 @@
           "Completed / Bounded cross-device compatibility",
           "[[H9]]",
           "Verify one standalone Linux/WSL combination through the real dashboard, Hub and Pixoo/Nanoleaf consumer code with fake physical boundaries. Cover everyday Codex states, two sessions in one project, one Claude smoke test, labels, monitor acknowledgment and representative frontend/MCP integration controls. Check duplicate/late events, one unavailable consumer and restart. Reuse detailed contract, MCP and migration tests; no repeated cutover/rollback suite or older-version matrix. Record one concise results table. The delivered #30 report supplies the performance input; installed-client and physical acceptance stay separately owned. PR #136 merged as 4f90164 after both independent final reviews and all six PR checks passed. All six merged-main checks passed before #9 closed. Its twelve source scenarios pass, all five reduced acceptance criteria are checked, and the seven-task OpenSpec plan is archived."
+        ],
+        [
+          "Completed / Retire ended Desktop tasks",
+          "[[H218]]",
+          "Hub PR #238 merged as 03c4882 with Nanoleaf PR #116 (7a030ac) on September 25, 2026, and #218 closed as completed: an accepted Codex Desktop session end removes the task and its Line assignment in one owner update. Hub PR #257 (49b29d0) fixed the browser-check ordering it exposed. Consistent retirement for Codex CLI and Claude Code continues in [[H241]]."
+        ],
+        [
+          "Completed / B.U.N.N.Y. UI foundation",
+          "[[H181]]",
+          "Hub PR #250 merged as 873041a and #181 closed as completed on September 25, 2026: the application UI style guide defines the foundation, skin template and component glossary. Dashboard adoption continues in [[H182]]."
         ]
       ],
       "notes": [
@@ -304,6 +314,21 @@
           "Not planned / Lively wallpaper",
           "[[N134]]",
           "The owner closed Nanoleaf #10 to #14 as not planned on September 24, 2026. Lively is a Windows application, the runtime now runs on Linux, and Windows-native components are being retired; nothing had been delivered under those issues. The live renderer [[N17]] and the ambient view [[N16]] own the persistent-display direction."
+        ],
+        [
+          "Completed / Open in Codex focus",
+          "[[N117]]",
+          "Nanoleaf PR #116 merged as 7a030ac and #117 closed as completed on September 25, 2026: an unchanged poll no longer moves keyboard focus off Open in Codex."
+        ],
+        [
+          "Completed / One context card",
+          "[[N135]]",
+          "Nanoleaf PR #137 merged as 28bc133 and #135 closed as completed on September 25, 2026: the wall map shows status first with one context card for the selected Line or task."
+        ],
+        [
+          "Completed / Work-mode colors",
+          "[[N139]]",
+          "Nanoleaf PR #141 merged as 31b6ef5 and #139 closed as completed on September 25, 2026: the operator can configure Work-mode light colors so unread tasks stand out. Live-view palette parity continues in [[N18]]."
         ]
       ],
       "notes": [
@@ -397,6 +422,16 @@
           "Completed / Runtime availability decision",
           "[[N133]]",
           "Nanoleaf PR #136 merged as 9e2c413 and #133 closed as completed on September 24, 2026. ADR 0011 records the owner’s decision: no Windows launcher, scheduled task or Startup entry. The runtime stays available while WSL runs, until hub hosting ([[H42]] or [[H44]]) moves it."
+        ],
+        [
+          "Completed / Windows runtime retired",
+          "[[N131]] [[N132]]",
+          "Nanoleaf PR #138 merged as 39e6344 and #131 closed as completed on September 25, 2026, removing the Windows runtime from source. #132, the owner task to decommission the retired Windows installation on the PC, closed as completed the same day."
+        ],
+        [
+          "Completed / Pixoo user service",
+          "[[P77]]",
+          "Pixoo PR #84 merged as 690f14d and PR #85 (5004b35) recorded the installed user service; #77 closed as completed on September 25, 2026. The owner accepted the restart criterion on proxy evidence from earlier WSL boots instead of running wsl --shutdown, which would stop in-progress agents."
         ]
       ],
       "notes": [
@@ -523,6 +558,16 @@
           "Completed / Personal-project scope defaults",
           "[[H237]]",
           "Hub PR #243 (28f7599), Nanoleaf PR #126 (3e6aa99) and Pixoo PR #78 (0ca009c) merged on September 24, 2026, and #237 closed as completed. Each repository’s docs/sdlc.md now has a Scope defaults section that story writing and pickup apply, including in ordinary work without plan-work or deliver-work."
+        ],
+        [
+          "Completed / Neon restyle and mobile publication",
+          "[[H85]] [[H87]]",
+          "Hub PR #251 merged as 5c7c0e3 and #85 closed as completed on September 25, 2026. Hub PR #261 (d4657fa) and public PR agent-device-guide#16 published that revision, and #87 closed as completed."
+        ],
+        [
+          "Completed / One-shot circuit trace",
+          "[[H264]]",
+          "Hub PR #265 merged as d85b8b3 and public PR agent-device-guide#17 published it; #264 closed as completed on September 25, 2026. The trace replaces the Pause motion control."
         ]
       ],
       "notes": [

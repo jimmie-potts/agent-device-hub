@@ -1,0 +1,19 @@
+## Context
+
+`owner.subscribe(consumerId, cursor?)` gives each registered consumer one bounded async iterator; the consumer list is part of durable state, so adding a hub-only consumer would make existing stores fail with `incompatible-state`. The hub's SSE readers are anonymous, transient and per-HTTP-connection, so they cannot use `subscribe` at all. `feeds.publish(revision)` already runs at both commit sites (`commit` and `replaceSessions`), inside `queue`'s try/catch; an error thrown there after the durable write faults the collector and stops ingest until restart.
+
+## Decision
+
+`Feeds` gains a second, simpler registration: `listen(callback)` adds a plain `(revision:number)=>void` callback to a `Set` and returns an unsubscribe function. `publish` calls every registered listener synchronously, in its own try/catch, after pushing to the bounded per-consumer channels. A throwing listener is swallowed there, before `queue`'s own try/catch ever sees it, so it cannot fault the collector or turn a successful commit into `storage-failed`. The owner exposes this as `onCommit(callback)`. It needs no consumer ID, no cursor and no durable state, so it never affects `incompatible-state` compatibility for existing stores.
+
+The hub registers exactly one `onCommit` listener at startup. That listener does no I/O: it sets a `feedScheduled` flag and, if not already set, schedules `setImmediate(() => {...})`. The scheduled callback recomputes the shared projection once (`advanceFeed`), then calls `deliverFeed` for every open stream. Because `onCommit` runs synchronously inside the commit that raised it, and the actual snapshot read and stream writes happen in a later macrotask, a burst of same-tick commits collapses into one `advanceFeed` call and one `res.write` per stream, matching the existing per-stream replay-window batching that a slow timer tick already produced. The `feedTimer` that used to belong to each stream becomes one shared `setInterval`, covering heartbeats, the per-stream auth recheck, and collector/quiesce/loss/rejected/uncertain changes that do not go through `feeds.publish`.
+
+`deliverFeed` keeps every per-stream mechanic unchanged: the `res.writableLength` backpressure check with a 5-second stall deadline, the `Last-Event-ID` cursor resync check against the shared 32-entry `feedHistory`, and destroying a stream whose credential was revoked. None of that runs inside the commit's synchronous stack, so a stalled or paused reader can only delay its own next `deliverFeed` call, never `owner.ingest`, another commit, or another stream's flush.
+
+`feedIntervalMs` is a `HubOptions` field validated the same way `clock` already is: accepted by `startHub` for tests, but absent from the exact key allowlist `cli.ts`'s `readConfiguration` checks, so a real configuration file that includes it is rejected before the hub starts.
+
+## Failure and recovery
+
+A throwing `onCommit` listener leaves the collector `running` and the triggering `ingest`/`setLabel`/etc. call still resolves with its ordinary successful outcome; only the listener's own side effect is lost for that revision. The next commit's notification still fires normally. If the hub process itself throws inside its scheduled `setImmediate` callback (for example a stream whose response object is in an unexpected state), that exception surfaces as an unhandled rejection in the hub process rather than reaching the agent-state core at all, since it runs outside `queue`.
+
+Because bursts advance `feedSequence` and `feedHistory` once per changed fingerprint rather than once per timer tick, the 32-entry replay window now covers fewer wall-clock seconds during a burst. A reconnecting reader whose `Last-Event-ID` has aged out of that window receives `resync` instead of replayed effects, exactly as it would from a stalled reader today; both current clients already refetch the snapshot on `resync`.

@@ -45,6 +45,12 @@ TRACKS = [
         dict(id='n-shared-retire-all', x=2, label='Retire all providers', issues=['H241'], guide='shared-codex'),
         dict(id='n-nl-presence', x=3, label='Work/Free by presence', issues=['N110'], guide='shared-codex'),
     ]),
+    ('Evict everywhere', [
+        dict(id='n-shared-evict', x=3, label='Evict on every device', issues=['H262'], guide='shared-codex'),
+    ]),
+    ('Desktop SessionEnd', [
+        dict(id='n-shared-sessionend', x=1, label='Qualify Desktop SessionEnd', issues=['H253'], guide='shared-codex'),
+    ]),
     ('Change notifications', [
         dict(id='n-shared-push', x=1, label='Push commit notices', issues=['H222'], guide='shared-codex'),
         dict(id='n-nl-push', x=2, label='Nanoleaf wakes on push', issues=['N90'], guide='shared-codex'),
@@ -58,6 +64,9 @@ TRACKS = [
         dict(id='n-desk-presets', x=2, label='Work / Free / Quiet presets', issues=['H67', 'H68'], guide='desktop-controls'),
         dict(id='n-desk-verify', x=3, label='Preset verification', issues=['H69'], guide='desktop-controls'),
         dict(id='n-desk-later', x=4, label='Profiles · Music preset', issues=['H70', 'H71'], guide='desktop-controls'),
+    ]),
+    ('Cross-device looks', [
+        dict(id='n-desk-looks', x=4, label='Coordinated device looks', issues=['H267'], guide='desktop-controls'),
     ]),
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
@@ -77,6 +86,9 @@ TRACKS = [
         dict(id='n-map-metadata', x=0, label='Titles + thread links done', issues=[], guide='nanoleaf-presentation'),
         dict(id='n-map-source', x=1, label='Undeclared-source fix', issues=['N111'], guide='nanoleaf-presentation'),
         dict(id='n-map-claude', x=2, label='Claude Code titles', issues=['N100'], guide='nanoleaf-presentation'),
+    ]),
+    ('Work-mode colors', [
+        dict(id='n-nl-colors', x=1, label='Work-mode colors', issues=['N139'], guide='nanoleaf-presentation'),
     ]),
     ('Comets and animations', [
         dict(id='n-map-comets', x=1, label='Comet fixes · animations', issues=['N81', 'N115', 'N92'], guide='nanoleaf-presentation'),
@@ -114,9 +126,13 @@ TRACKS = [
         dict(id='n-linux-acceptance', x=0, label='Linux runtime accepted', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-signin', x=1, label='WSL availability decided', issues=[], guide='hosting-migrations'),
         dict(id='n-linux-retire', x=2, label='Retire Windows runtime', issues=['N131', 'N132'], guide='hosting-migrations'),
+        dict(id='n-linux-upgrade', x=3, label='Upgrade + rollback command', issues=['N140'], guide='hosting-migrations'),
     ]),
     ('Pixoo installation', [
         dict(id='n-px-service', x=0, label='Run as a user service', issues=['P77'], guide='hosting-migrations'),
+    ]),
+    ('Pixoo network', [
+        dict(id='n-px-cloud', x=0, label='Divoom cloud disconnect', issues=['P83'], guide='pixoo-media'),
     ]),
     ('Hosting + migrations', [
         dict(id='n-host', x=2, label='PC / container hosting', issues=['H42', 'P14'], guide='hosting-migrations'),
@@ -130,6 +146,12 @@ TRACKS = [
     ]),
     ('Hub maintenance', [
         dict(id='n-hub-gates', x=0, label='Merge gates · contracts', issues=['H240', 'H246'], guide='development-workflow'),
+    ]),
+    ('Documentation drift', [
+        dict(id='n-hub-drift', x=0, label='Docs drift in CI', issues=['H258'], guide='development-workflow'),
+    ]),
+    ('Dashboard test stability', [
+        dict(id='n-hub-flake', x=0, label='Stable isolation check', issues=['H263'], guide='development-workflow'),
     ]),
     ('Nanoleaf architecture', [
         dict(id='n-nl-config', x=0, label='Config and hook owners', issues=['N118'], guide='development-workflow'),
@@ -181,6 +203,16 @@ TRACKS = [
         dict(id='n-guide-clipboard', x=0, label='Clipboard check completed', issues=[], guide='development-workflow'),
         dict(id='n-guide-cleanup', x=1, label='Cleanup follow-up done', issues=[], guide='development-workflow'),
     ]),
+    ('Guide recommendations', [
+        dict(id='n-guide-recs', x=0, label='Starting-session labels', issues=['H252'], guide='work-guide'),
+        dict(id='n-guide-placement', x=1, label='Story-owned placement', issues=['H259'], guide='work-guide'),
+    ]),
+    ('Guide skins and motion', [
+        dict(id='n-guide-cards', x=2, label='Trading-card skin', issues=['H254'], guide='work-guide'),
+    ]),
+    ('Guide motion', [
+        dict(id='n-guide-trace', x=2, label='One-shot circuit trace', issues=['H264'], guide='work-guide'),
+    ]),
     ('Guide mission map', [
         dict(id='n-guide-map', x=2, label='Neon mission map', issues=['H201'], guide='development-workflow'),
     ]),
@@ -199,8 +231,8 @@ TRACKS = [
 ]
 # Cross-track prerequisites (from → to). Same-track order is drawn automatically.
 CROSS = [
-    ('n-guide-design', 'n-guide-publish', 'H85'),
-    ('n-guide-design', 'n-guide-map', 'H85'), ('n-guide-design', 'n-atlas-playback', 'H85'),
+    # #85 (the Neon restyle) has closed, so it no longer draws as a prerequisite.
+    ('n-shared-retire-all', 'n-shared-evict', 'H241'), ('n-nl-colors', 'n-np-custom', 'N139'),
     ('n-guide-mobile', 'n-guide-publish', 'H197'),
     ('n-guide-clipboard', 'n-guide-cleanup', 'H210'),
     ('n-guide-clipboard', 'n-hub-cache-docs', 'H210'),
@@ -213,6 +245,7 @@ CROSS = [
     ('n-local', 'n-tl-accept', 'H8'), ('n-local', 'n-pc-accept', 'H8'), ('n-local', 'n-desk-verify', 'H8'),
     ('n-local', 'n-px-media', 'P12'), ('n-local', 'n-px-access', 'P12 · P26'), ('n-local', 'n-host', 'H5'),
     ('n-music', 'n-desk-later', 'H40'), ('n-desk-local', 'n-desk-presets', 'H65'),
+    ('n-desk-presets', 'n-desk-looks', 'H67'),
     # Nanoleaf #121 starts after #118 and after the worker fixes in #111, #112 and #115 merge.
     ('n-nl-config', 'n-nl-context', 'N118'), ('n-map-source', 'n-nl-context', 'N111'),
     ('n-map-inspector', 'n-nl-context', 'N112'), ('n-map-comets', 'n-nl-context', 'N115'),

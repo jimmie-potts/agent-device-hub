@@ -17,7 +17,7 @@ import {createSonySource,sonyConfiguration} from './sony.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number; feedIntervalMs?:number};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -70,7 +70,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
-      (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535))) throw new Error('invalid-configuration');
+      (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)) ||
+      (options.feedIntervalMs !== undefined && (!Number.isInteger(options.feedIntervalMs) || options.feedIntervalMs < 1 || options.feedIntervalMs > 86400000))) throw new Error('invalid-configuration');
   const source = options.playback === undefined ? undefined : playbackSource(options.playback,options.controllers.map(c => c.id));
   const editorLinks:Record<string,string> = {};
   if (options.editorLinks !== undefined) {
@@ -114,7 +115,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const retireBrowser=(digest:string)=>{
     const session=browserSessions.get(digest);if(!session)return;
     browserSessions.delete(digest);replay.retire(session.credential.id);
-    for(const [stream,owner] of streamOwners)if(owner===session.credential.id)stream.destroy();
+    for(const [stream,holder] of streamOwners)if(holder===session.credential.id)stream.destroy();
   };
   const pruneBrowser=()=>{
     const now=Date.now();
@@ -129,6 +130,44 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   };
   const feedEpoch = randomUUID();let feedSequence = 0, feedSignature = '';
   const feedHistory: {sequence:number; body:string}[] = [];
+  const streamState = new Map<ServerResponse,{req:IncomingMessage; lastSequence?:number; blockedAt:number}>();
+  // Recomputed at most once per notification/tick, then written to every open stream.
+  const advanceFeed = () => {
+    const state = snapshot();
+    const projection = {apiVersion:'1.0',ownerId:options.ownerId,revision:state.revision,connection:'current',collector:state.collector,lossCount:state.lossCount,admissionRejected:rejected,uncertain:state.sessions.filter(s => s.freshness === 'uncertain').length};
+    const fingerprint = JSON.stringify(projection);
+    if (fingerprint !== feedSignature) {
+      feedSignature = fingerprint;feedSequence++;
+      feedHistory.push({sequence:feedSequence,body:`id: ${feedEpoch}:${feedSequence}\nevent: state\ndata: ${fingerprint}\n\n`});
+      if (feedHistory.length > 32) feedHistory.shift();
+    }
+  };
+  const deliverFeed = (res: ServerResponse) => {
+    const state = streamState.get(res);if (!state) return;
+    try { authorize(state.req,'read'); } catch {res.destroy();return;}
+    if (res.writableLength > 0) {if (!state.blockedAt) state.blockedAt = Date.now();if (Date.now()-state.blockedAt > 5000) res.destroy();return;}
+    state.blockedAt = 0;
+    const message = (event:string) => `id: ${feedEpoch}:${feedSequence}\nevent: ${event}\ndata: ${feedSignature}\n\n`;
+    const first = feedHistory[0]?.sequence ?? feedSequence;
+    if (state.lastSequence === undefined) {
+      const cursor = state.req.headers['last-event-id'], prefix = feedEpoch + ':';
+      const sequence = typeof cursor === 'string' && cursor.startsWith(prefix) ? Number(cursor.slice(prefix.length)) : NaN;
+      if (typeof cursor === 'string' && cursor === prefix + sequence && Number.isSafeInteger(sequence) && sequence >= first-1 && sequence <= feedSequence) state.lastSequence = sequence;
+      else {state.lastSequence = feedSequence;res.write(message('resync'));return;}
+    }
+    if (state.lastSequence < first-1) res.write(message('resync'));
+    else res.write(feedHistory.filter(event => event.sequence > state.lastSequence!).map(event => event.body).join('') || ': heartbeat\n\n');
+    state.lastSequence = feedSequence;
+  };
+  const feedTick = () => {advanceFeed();for (const res of streams) deliverFeed(res);};
+  const feedTimer = setInterval(feedTick,options.feedIntervalMs ?? 1000);feedTimer.unref();
+  let feedScheduled = false;
+  const unlistenFeed = owner.onCommit(() => {
+    // Deferred outside the commit call so a burst of commits triggers one fan-out.
+    if (streams.size === 0 || feedScheduled) return;
+    feedScheduled = true;
+    setImmediate(() => {feedScheduled = false;feedTick();});
+  });
   const authenticateConfigured = (token:string):Credential|null => {
     if (!/^[A-Za-z0-9_-]{43}(?![\s\S])/.test(token)) return null;
     const digest = createHash('sha256').update(token).digest();
@@ -251,34 +290,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (req.method === 'GET' && path === '/api/monitor/v1/changes' && !url.search) {
           if (streams.size >= 16) throw new HttpError('capacity',429);
           streaming = true;clearTimeout(timer); streams.add(res);streamOwners.set(res,principal.id);
+          streamState.set(res,{req,blockedAt:0});
           res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-store','x-content-type-options':'nosniff'});
-          let lastSequence: number | undefined, blockedAt = 0;
-          const publish = () => {
-            try { authorize(req,'read'); } catch {res.destroy();return;}
-            if (res.writableLength > 0) {if (!blockedAt) blockedAt = Date.now();if (Date.now()-blockedAt > 5000) res.destroy();return;}
-            blockedAt = 0;
-            const state = snapshot();
-            const projection = {apiVersion:'1.0',ownerId:options.ownerId,revision:state.revision,connection:'current',collector:state.collector,lossCount:state.lossCount,admissionRejected:rejected,uncertain:state.sessions.filter(s => s.freshness === 'uncertain').length};
-            const fingerprint = JSON.stringify(projection);
-            const message = (event:string) => `id: ${feedEpoch}:${feedSequence}\nevent: ${event}\ndata: ${fingerprint}\n\n`;
-            if (fingerprint !== feedSignature) {
-              feedSignature = fingerprint;feedSequence++;
-              feedHistory.push({sequence:feedSequence,body:message('state')});
-              if (feedHistory.length > 32) feedHistory.shift();
-            }
-            const first = feedHistory[0]?.sequence ?? feedSequence;
-            if (lastSequence === undefined) {
-              const cursor = req.headers['last-event-id'], prefix = feedEpoch + ':';
-              const sequence = typeof cursor === 'string' && cursor.startsWith(prefix) ? Number(cursor.slice(prefix.length)) : NaN;
-              if (typeof cursor === 'string' && cursor === prefix + sequence && Number.isSafeInteger(sequence) && sequence >= first-1 && sequence <= feedSequence) lastSequence = sequence;
-              else {lastSequence = feedSequence;res.write(message('resync'));return;}
-            }
-            if (lastSequence < first-1) res.write(message('resync'));
-            else res.write(feedHistory.filter(event => event.sequence > lastSequence!).map(event => event.body).join('') || ': heartbeat\n\n');
-            lastSequence = feedSequence;
-          };
-          publish();const interval = setInterval(publish,1000);interval.unref();
-          res.once('close',() => {clearInterval(interval);streams.delete(res);streamOwners.delete(res);});
+          advanceFeed();deliverFeed(res);
+          res.once('close',() => {streams.delete(res);streamOwners.delete(res);streamState.delete(res);});
         } else if (playback && req.method === 'GET' && path === '/api/playback/v1/snapshot' && !url.search) {
           json(res,200,playback.snapshot());
         } else if (playback && req.method === 'POST' && path === '/api/playback/v1/commands' && !url.search) {
@@ -319,6 +334,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     },sessions,command});
     closeBrowserLaunch=await startBrowserLaunch(options.directory,issueLaunch);
   } catch(error) {
+    clearInterval(feedTimer);unlistenFeed();
     await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
   const desktopRead = codexDesktop && startDesktopRead(codexDesktop,owner,options.clock ?? Date.now,() => !staged && !closing && !exported);
@@ -354,7 +370,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     },
     close(): Promise<void> {
       return closePromise ??= (async () => {
-        closing = true;launchCodes.clear();for (const digest of [...browserSessions.keys()]) retireBrowser(digest);
+        closing = true;launchCodes.clear();for (const digest of [...browserSessions.keys()]) retireBrowser(digest);clearInterval(feedTimer);unlistenFeed();
         let launchFailure:unknown,playbackFailure:unknown;
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();

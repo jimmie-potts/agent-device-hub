@@ -314,6 +314,41 @@ test('failed and ambiguous commits publish no speculative revision and recover c
   }
 });
 
+test('a throwing onCommit listener does not fault the collector and the commit still succeeds',async()=>{
+  const storage=new MemoryStorage();const owner=await createAgentState(options(storage));
+  const revisions=[];
+  const stop=owner.onCommit(revision=>{revisions.push(revision);throw new Error('listener-failed');});
+  const first=await owner.ingest(envelope('turn.started'));
+  assert.equal(first.ok,true);
+  assert.equal(owner.snapshot().collector,'running');
+  assert.deepEqual(revisions,[first.revision]);
+  const second=await owner.setLabel(identity,'Label');
+  assert.equal(second.ok,true);
+  assert.equal(owner.snapshot().collector,'running');
+  assert.deepEqual(revisions,[first.revision,second.revision]);
+  stop();
+  await owner.setLabel(identity,'Other');
+  assert.equal(revisions.length,2,'unsubscribing stops further notifications');
+  await owner.shutdown();
+});
+
+test('onCommit fires for both an ordinary commit and a replaceSessions commit, needing no registered consumer',async()=>{
+  let now=1000;const storage=new MemoryStorage();
+  const owner=await createAgentState({...options(storage,()=>now),consumers:[]});
+  const revisions=[];
+  const stop=owner.onCommit(revision=>revisions.push(revision));
+  const ingested=await owner.ingest(envelope('turn.started'));
+  assert.equal(ingested.ok,true);
+  assert.deepEqual(revisions,[ingested.revision]);
+  now+=86400001;
+  const maintained=await owner.maintain();
+  assert.equal(maintained.ok,true);
+  assert.deepEqual(revisions,[ingested.revision,maintained.revision]);
+  assert.equal(owner.snapshot().sessions.length,0);
+  stop();
+  await owner.shutdown();
+});
+
 test('storage lease rejects concurrent owners and is released by shutdown',async()=>{
   const storage=new MemoryStorage();const owner=await createAgentState(options(storage));
   await assert.rejects(createAgentState(options(storage)),/storage-unavailable/);

@@ -12,9 +12,9 @@ REPOS = ['agent-device-hub', 'codex-nanoleaf', 'divoom-app-upgrade']
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
-    'agent-device-hub': [10, 21, 86, 152, 154, 155, 175, 191, 195, 196, 197, 200, 207, 210, 212, 220, 225, 231, 237],
-    'codex-nanoleaf': [15, 31, 46, 75, 78, 84, 89, 108],
-    'divoom-app-upgrade': [38, 47, 68, 72],
+    'agent-device-hub': [10, 21, 85, 86, 87, 152, 154, 155, 175, 181, 191, 195, 196, 197, 200, 207, 210, 212, 218, 220, 225, 231, 237, 264],
+    'codex-nanoleaf': [15, 31, 46, 75, 78, 84, 89, 108, 117, 131, 132, 135, 139],
+    'divoom-app-upgrade': [38, 47, 68, 72, 77],
 }
 
 
