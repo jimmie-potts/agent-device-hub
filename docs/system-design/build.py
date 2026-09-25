@@ -14,7 +14,7 @@ ID = re.compile(r"[A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*\Z")
 sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
 sys.path.insert(0, str(ROOT.parent / "skins"))
 import architecture_diagrams as AD  # noqa: E402  the shared diagram definitions and their Archify renderings
-import skin as SKIN  # noqa: E402  shared token files, theme and motion controls
+import skin as SKIN  # noqa: E402  shared token files and theme control
 
 REPO_LABEL = {"agent-device-hub": "Hub", "codex-nanoleaf": "Nanoleaf", "divoom-app-upgrade": "Pixoo"}
 
@@ -213,7 +213,7 @@ def frame(data, title, content, mode="overview", current=""):
 <p id="search-count" class="search-count" role="status" aria-live="polite">{len(data['components'])} component documents</p>
 <nav aria-label="Document navigation">{nav}</nav>
 <div class="sidebar-foot">Historical design snapshot<br><strong>{escape(data['reviewed_at'])}</strong><br>Follow owning issues for current status.</div></aside>
-<div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button><button id="motion-toggle" type="button" aria-pressed="false">Pause motion</button><button id="print" type="button">Print</button></div></div>
+<div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button><button id="print" type="button">Print</button></div></div>
 <main id="main" tabindex="-1">{notice}{content}</main>
 <footer><span>B.U.N.N.Y. · dated design snapshot, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
 <script>{script}</script></body></html>\n'''

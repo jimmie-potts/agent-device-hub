@@ -112,7 +112,7 @@ The template has three layers. Skins change only the third.
 | --- | --- | --- |
 | Shared component and interaction rules (sections 6 to 9) | Shell structure, navigation, buttons, forms, panels, status cues, focus, pending, unavailable, stale, error and empty states, capability gating, reduced-motion behavior | No |
 | Semantic roles (this section) | The names below and what each one means | No |
-| Skin values, assets and decorative effects | Colors, typography, surfaces, artwork, glow, grid, opening and streak effects | Yes |
+| Skin values, assets and decorative effects | Colors, typography, surfaces, artwork, glow, grid, opening and circuit-trace effects | Yes |
 
 ### 4.1 Semantic roles
 
@@ -172,7 +172,7 @@ readable, but no skin changes what it means or swaps two meanings.
 ### 4.3 What a skin may and may not change
 
 A skin may change colors, typography, surfaces, artwork, glow, grid, opening
-and streak effects, and print colors. A skin may not change capability or
+and circuit-trace effects, and print colors. A skin may not change capability or
 permission gating, the definition of any state (selected, pending, unavailable,
 stale, error, empty), task or project identity, physical device colors, layout
 semantics, keyboard order, text cues, or which control is primary.
@@ -184,8 +184,10 @@ semantics, keyboard order, text cues, or which control is primary.
    name and change values only. Every role in 4.1 needs a dark and a light
    value; the fixed set in 4.2 is not copied.
 2. Scope decorative rules under the new `data-skin` value. Decoration is CSS
-   only, sits on borders and artwork, never on text or meaning-carrying edges,
-   respects `prefers-reduced-motion` and the pause control, and prints as
+   only, sits on borders, artwork or a background layer behind all content,
+   is never drawn over text or meaning-carrying edges,
+   plays once and ends within 5 seconds of load (there is no pause control,
+   per WCAG 2.2.2), respects `prefers-reduced-motion`, and prints as
    nothing.
 3. Run the owning checks: the token check rejects color literals outside the
    token files, and the browser checks verify motion off and readability.
@@ -366,7 +368,8 @@ keeping Work, Quiet and Free distinguishable. Focus is a white outline in both.
   panels, hover states and overlays in the browser, not from the token table.
 - Selection (cyan), pending (magenta) and device or task status (physical
   hues) stay visually and textually distinct in every skin.
-- Under reduced motion or the pause control, decorative motion stops and no
+- Decorative motion plays once and ends within 5 seconds of load, so no pause
+  control is needed (WCAG 2.2.2). Under reduced motion it does not run, and no
   meaning is lost; skins may not encode a state in motion alone.
 - Check wide desktop, the widths near each layout change and a 390 px phone:
   no horizontal overflow, no clipped controls, long labels wrap.
@@ -450,7 +453,7 @@ Acceptance checklist for each new or restyled page:
       controls or horizontal overflow.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
-- [ ] Preserves meaning under reduced motion and the pause control.
+- [ ] Ends decorative motion within 5 seconds and preserves meaning under reduced motion.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
 - [ ] Includes current-candidate screenshots or browser evidence and the

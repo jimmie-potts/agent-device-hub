@@ -2,7 +2,7 @@
 
 Both generators inline stylesheet() ahead of their own CSS, mark <html> with
 HTML_ATTRIBUTES, put head_script() in <head> and run controls_script(). Each page
-supplies a #theme-toggle and a #motion-toggle button. Stdlib only.
+supplies a #theme-toggle button. Stdlib only.
 """
 from pathlib import Path
 import re
@@ -11,7 +11,9 @@ DIR = Path(__file__).resolve().parent
 SKIN = 'neon-geometry-wars'
 HTML_ATTRIBUTES = f'data-skin="{SKIN}"'
 # Shared by the guide and the atlas so a reader's choice follows them between the two.
-THEME_KEY, MOTION_KEY = 'bunny-design-theme', 'bunny-design-motion'
+THEME_KEY = 'bunny-design-theme'
+# Stored by the retired Pause motion control; the head script removes it.
+RETIRED_KEYS = ('bunny-design-motion',)
 # Archify variables the skin owns inside an embedded diagram. The diagram's --text is
 # left unset so the page text token applies; its category and arrow palette stays Archify's.
 ARCHIFY_TOKENS = {'--text-muted': 'var(--muted)', '--text-dim': 'var(--muted)',
@@ -24,21 +26,20 @@ def stylesheet():
 
 
 def head_script():
-    """Sets data-theme (stored choice, else system preference) and a stored pause before first paint."""
-    return ('<script>(()=>{const r=document.documentElement;let t=null,m=null;'
-            f"try{{t=localStorage.getItem('{THEME_KEY}');m=localStorage.getItem('{MOTION_KEY}');}}catch{{}}"
-            "r.dataset.theme=t==='light'||t==='dark'?t:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';"
-            "if(m==='paused')r.dataset.motion='paused';})();</script>")
+    """Sets data-theme (stored choice, else system preference) before first paint."""
+    retired = ''.join(f"localStorage.removeItem('{key}');" for key in RETIRED_KEYS)
+    return ('<script>(()=>{const r=document.documentElement;let t=null;'
+            f"try{{t=localStorage.getItem('{THEME_KEY}');{retired}}}catch{{}}"
+            "r.dataset.theme=t==='light'||t==='dark'?t:matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';})();</script>")
 
 
 def controls_script():
-    """Theme and motion toggles. Only the paused state is stored; Resume never replays the opening."""
+    """Theme toggle; the choice is stored for both pages."""
     return f'''(() => {{
- const root = document.documentElement, theme = document.querySelector('#theme-toggle'), motion = document.querySelector('#motion-toggle');
- const store = (key, value) => {{ try {{ if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }} catch {{}} }};
- const sync = () => {{ theme.setAttribute('aria-pressed', String(root.dataset.theme === 'light')); motion.setAttribute('aria-pressed', String(root.dataset.motion === 'paused')); }};
+ const root = document.documentElement, theme = document.querySelector('#theme-toggle');
+ const store = (key, value) => {{ try {{ localStorage.setItem(key, value); }} catch {{}} }};
+ const sync = () => theme.setAttribute('aria-pressed', String(root.dataset.theme === 'light'));
  theme.addEventListener('click', () => {{ root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light'; store('{THEME_KEY}', root.dataset.theme); sync(); }});
- motion.addEventListener('click', () => {{ const pause = root.dataset.motion !== 'paused'; root.dataset.motion = pause ? 'paused' : 'running'; store('{MOTION_KEY}', pause ? 'paused' : null); sync(); }});
  sync();
 }})();
 '''

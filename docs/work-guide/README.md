@@ -144,21 +144,24 @@ styles use token names only; color values live in those two files.
   `--radius`. Type: `--font`, `--mono`, `--type-body`, `--type-small`,
   `--type-label`. Spacing: `--space-xs` through `--space-xl`.
 
-`<html>` carries `data-skin`, `data-theme="dark"` or `"light"`, and
-`data-motion="paused"` while motion is paused. Before the page paints, a small
-head script applies the stored theme (or the system preference) and any stored
-pause. The guide and the atlas share the `bunny-design-theme`
-and `bunny-design-motion` keys, so a choice carries between them. Without
-scripts, CSS follows the system preference. Print uses its own palette and shows
-no decoration. `docs/skins/skin.py` gives both generators the stylesheet, the
-head script and the Light mode and Pause motion toggles.
+`<html>` carries `data-skin` and `data-theme="dark"` or `"light"`. Before the
+page paints, a small head script applies the stored theme (or the system
+preference) and removes the `bunny-design-motion` key left by the retired Pause
+motion control. The guide and the atlas share the `bunny-design-theme` key, so
+a choice carries between them. Without scripts, CSS follows the system
+preference. Print uses its own palette and shows no decoration.
+`docs/skins/skin.py` gives both generators the stylesheet, the head script and
+the Light mode toggle.
 
 The skin's decoration is the corner brackets, the top and sidebar rules, the
-hero artwork and glow, an opening of about 2 seconds and a light streak of about
-1 second every 25 seconds. It uses CSS animation only, scoped to
-`html[data-skin="neon-geometry-wars"]`. It never sits on text, issue badges or
-diagram edges, and it does not indicate live agent or device activity. Pause
-motion and `prefers-reduced-motion` stop it; Resume never replays the opening.
+hero artwork and glow, an opening of about 2 seconds, and a circuit trace: a
+pulse that runs once down the page background through a tiled circuit pattern
+from 0.5 to 3.1 seconds, then leaves the layer transparent. It uses CSS
+animation only, scoped to `html[data-skin="neon-geometry-wars"]`. The trace
+passes behind content; no decoration is drawn over text, issue badges or diagram
+edges, and none of it indicates live agent or device activity. Every animation plays once per load and ends within 5 seconds,
+so the pages have no pause control (WCAG 2.2.2); `prefers-reduced-motion` stops
+it entirely. A skin must keep that limit or bring back a pause control.
 
 To add a skin, copy `neon-geometry-wars.css` to a new `<name>.css` and change
 only values and decoration. Keep every role name and all four token blocks:
@@ -174,8 +177,8 @@ python3 docs/skins/check_tokens.py
 ```
 
 `work/test_maintenance.py` and `docs/system-design/check.py` run the same check.
-Both browser checks run `docs/skins/check_skin.cjs` for the theme and motion
-controls, reduced motion, print and decoration placement.
+Both browser checks run `docs/skins/check_skin.cjs` for the theme control, the
+5-second one-shot motion limit, reduced motion, print and decoration placement.
 
 The nine Archify viewers and the atlas's API and database reference
 (`docs/system-design/reference/`, with its bundled Scalar and SchemaSpy output)

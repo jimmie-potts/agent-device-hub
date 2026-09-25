@@ -1,5 +1,5 @@
 (() => {
-  // Theme and motion toggles come from docs/skins/skin.py, inlined ahead of this file.
+  // The theme toggle comes from docs/skins/skin.py, inlined ahead of this file.
   document.querySelector('#print').addEventListener('click', () => window.print());
   const menu = document.querySelector('#menu-toggle');
   menu.addEventListener('click', () => {
