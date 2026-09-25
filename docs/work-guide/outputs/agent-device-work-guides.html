@@ -3220,9 +3220,14 @@ main{min-width:0;padding:0 52px 38px}.topbar{min-height:73px;border-bottom:1px s
         handled.add(key);
         tr.querySelector('td:last-child').innerHTML = `${guide.note ? escape(guide.note) : ''}<p>${escape(gateOf(key))}</p>${recommendation(key)}`;
       }
-      // Excludes .delivery-evidence: a reopened story previously archived there under this same
-      // topic must still be eligible for the "Newly added" bucket, not silently disappear.
-      const known = new Set([...body.querySelectorAll('tbody tr')].filter(tr => !tr.closest('.delivery-evidence')).map(ownBadge).filter(Boolean).map(link => link.dataset.issue));
+      // "Known" means "already a regular row the patch loop above owns" — the same scope that
+      // loop skips (.delivery-evidence, .newly-added-since-snapshot). A row already placed in the
+      // "Newly added" bucket is reconciled below by its own present/added diff, not here: counting
+      // it as "known" here would exclude it from `added` on the next repository's refresh pass and
+      // have the present/added diff remove it, so a live-placed story could flicker out again.
+      const known = new Set([...body.querySelectorAll('tbody tr')]
+        .filter(tr => !tr.closest('.delivery-evidence') && !tr.closest('.newly-added-since-snapshot'))
+        .map(ownBadge).filter(Boolean).map(link => link.dataset.issue));
       const added = Object.keys(rows).filter(key => refreshed.has(key[0]) && !handled.has(key) && !known.has(key) && guideOf(key).state === 'assigned' && guideOf(key).topic === topicId);
       added.sort();
       let newSection = body.querySelector('.newly-added-since-snapshot');

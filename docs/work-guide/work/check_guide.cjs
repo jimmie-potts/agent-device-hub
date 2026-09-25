@@ -109,6 +109,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert.equal(await page.locator('#bunny-controls [data-issue="H998"]').count(),1,'A newly discovered guided story appears in its live topic');
     assert((await guideCell('H998').textContent()).includes(newGuidedNote),'Its live note is shown');
     assert((await guideCell('H998').textContent()).includes('No recorded open prerequisite'),'A newly placed live story also gets a gate line');
+    // A "Newly added" row must survive a second, unrelated repository's own refresh reprocessing every
+    // topic: it must not be misread as "known" and removed by that repository's own present/added diff.
+    await page.evaluate(([review,progress])=>window.updateWorkOverview('N',[review,progress]),[nanoleafReview,nanoleafProgress]);
+    assert.equal(await page.locator('#bunny-controls [data-issue="H998"]').count(),1,'A newly placed live story survives a second repository refresh pass');
     // A live-edited note on an already-known story shows live, in place, without moving the row.
     assert((await guideCell('H11').textContent()).includes(editedNote),'A live-edited note replaces the snapshot note');
     // A story with no Guide section (H999) owns no topic anywhere on the page; it stays pending.
