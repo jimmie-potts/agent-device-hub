@@ -1,0 +1,28 @@
+/* Fixed-meaning colors shared by every skin. A skin never redefines these names.
+   Repository identity, issue status, atlas document status and diagram edge keys
+   keep their meaning in every theme; only the shade changes for light and print. */
+:root{
+--repo-hub:#22d3ee;--repo-nanoleaf:#e879f9;--repo-pixoo:#b5ed86;
+--status-open:#a8bbd5;--status-active:#f5ce83;--status-blocked:#ffa3a6;--status-completed:#8ee0b6;--status-closed:#b9afce;
+--status-delivered:#83edce;--status-planned:#a0c9ff;--status-qualification:#ffcc83;--status-mixed:#ffcc83;--status-optional:#d6b1ff;
+--edge-observe:#34d399;--edge-feed:#a78bfa;--edge-command:#fb7185;--edge-other:#94a3b8;
+--walk-alt:#f5b544}
+@media screen{:root[data-theme="light"]{
+--repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
+--status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
+--status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#b45309}}
+/* Without scripts, follow the reader's system preference. Keep identical to the block above. */
+@media screen and (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+--repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
+--status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
+--status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#b45309}}
+@media print{:root{
+--repo-hub:#145565;--repo-nanoleaf:#7b2c8a;--repo-pixoo:#4a6b1f;
+--status-open:#334655;--status-active:#7a4a00;--status-blocked:#9b1c28;--status-completed:#17603d;--status-closed:#574a75;
+--status-delivered:#17563f;--status-planned:#174f80;--status-qualification:#715021;--status-mixed:#715021;--status-optional:#714489;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#9a4a06}}

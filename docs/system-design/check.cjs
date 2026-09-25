@@ -19,7 +19,7 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
   const data = JSON.parse(fs.readFileSync(path.join(root,'design.json'),'utf8'));
   const browser = await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
   try {
-    const page = await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+    const page = await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'reduce',colorScheme:'dark'});
     const errors=[], external=[];
     page.on('pageerror', e=>errors.push(e.message));
     page.on('request', r=>{if(/^https?:/.test(r.url()))external.push(r.url());});
@@ -119,7 +119,11 @@ assert(executablePath, 'Set GUIDE_CHROMIUM_PATH to an installed Chromium executa
     await page.pdf({path:path.join(out,'overview.pdf'),format:'A4',printBackground:true});
     await page.emulateMedia({media:null});
     assert.deepEqual(errors,[]); assert.deepEqual(external,[]);
-    const receipt={ok:true,documents:data.components.length+2,viewports:['1440x1000','1920x1080','390x844'],themes:['dark','light'],checks:['navigation','search','no-results','system-map-first-screen','map-selection-mouse-keyboard-list','map-links','map-zoom','walkthrough-phases','deep-link','theme','mobile-menu','mobile-map-scroll','all-component-pages','anchors','print','print-map-details','no-external-requests','no-console-errors'],overviewSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),output:out};
+    // Neon skin: theme and motion controls, decoration out of the way, both themes at 390 and 1440 px.
+    const {check:checkSkin}=require('../skins/check_skin.cjs'), controls=['#theme-toggle','#motion-toggle','#print','#menu-toggle','#search'];
+    const skin={overview:await checkSkin(browser,{url:pathToFileURL(path.join(root,'index.html')).href,decorated:['.topbar','.component-card'],controls,shot:(p,name)=>p.screenshot({path:path.join(out,`skin-overview-${name}.png`)})}),
+                component:await checkSkin(browser,{url:pathToFileURL(path.join(root,'components/CORE-playback.html')).href,decorated:['.topbar'],controls,shot:(p,name)=>p.screenshot({path:path.join(out,`skin-component-${name}.png`)})})};
+    const receipt={ok:true,documents:data.components.length+2,viewports:['1440x1000','1920x1080','390x844'],themes:['dark','light'],checks:['navigation','search','no-results','system-map-first-screen','map-selection-mouse-keyboard-list','map-links','map-zoom','walkthrough-phases','deep-link','theme','mobile-menu','mobile-map-scroll','all-component-pages','anchors','print','print-map-details','no-external-requests','no-console-errors','skin-theme-motion-decoration'],skin,overviewSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'index.html'))).digest('hex'),output:out};
     fs.writeFileSync(path.join(out,'browser.json'),JSON.stringify(receipt,null,2)+'\n');
     console.log(JSON.stringify(receipt,null,2));
     await require('./reference/check_reference.cjs').check(browser, path.join(out,'reference'));

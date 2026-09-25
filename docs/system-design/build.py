@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build BUNNY's HTML document set from its inventory and authored HTML fragments."""
+"""Build B.U.N.N.Y.'s HTML document set from its inventory and authored HTML fragments."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ID = re.compile(r"[A-Z][A-Z0-9-]*-[a-z][a-z0-9-]*\Z")
 sys.path.insert(0, str(ROOT.parent / "work-guide" / "work"))
+sys.path.insert(0, str(ROOT.parent / "skins"))
 import architecture_diagrams as AD  # noqa: E402  the shared diagram definitions and their Archify renderings
+import skin as SKIN  # noqa: E402  shared token files, theme and motion controls
 
 REPO_LABEL = {"agent-device-hub": "Hub", "codex-nanoleaf": "Nanoleaf", "divoom-app-upgrade": "Pixoo"}
 
@@ -147,10 +149,7 @@ def archify_css():
     classes = json.loads((AD.RENDERED / "archify-classes.json").read_text(encoding="utf-8"))
     scope = lambda selector: ", ".join(f".atlas-canvas {part.strip()}" for part in selector.split(","))
     rules = "".join(f"{scope(selector)}{{{body}}}" for selector, body in classes["rules"].items())
-    dark = dict(classes["dark"], **{"--bg": "#101a28", "--mask": "#101a28", "--grid": "#1b2a3d", "--text": "#eef3fa", "--text-muted": "#a6b4c8", "--text-dim": "#8394ab", "--text-faint": "#8a99ad"})
-    light = dict(classes["light"], **{"--bg": "#fffefb", "--mask": "#fffefb"})
-    variables = lambda values: ";".join(f"{k}:{v}" for k, v in values.items())
-    return rules + f".atlas-canvas{{{variables(dark)}}}:root[data-theme=light] .atlas-canvas{{{variables(light)}}}@media print{{.atlas-canvas{{{variables(light)}}}}}"
+    return rules + SKIN.archify_variables(classes, ".atlas-canvas")
 
 
 def link(item, mode):
@@ -195,28 +194,28 @@ def fragment(item, full=False):
 
 
 def frame(data, title, content, mode="overview", current=""):
-    css = (ROOT / "assets/style.css").read_text(encoding="utf-8") + archify_css()
-    script = (ROOT / "assets/app.js").read_text(encoding="utf-8")
+    css = SKIN.stylesheet() + (ROOT / "assets/style.css").read_text(encoding="utf-8") + archify_css()
+    script = SKIN.controls_script() + (ROOT / "assets/app.js").read_text(encoding="utf-8")
     prefix = "../" if mode == "component" else ""
     nav = navigation(data, mode, current)
     notice = "" if mode == "overview" else f'<aside class="notice" aria-label="Snapshot date"><strong>Design snapshot: {escape(data["reviewed_at"])}.</strong> Implementation labels, issue states and open decisions describe the pinned baseline at that date. Follow the linked owning issues and application guides for current status.</aside>'
     return f'''<!doctype html>
-<html lang="en" data-theme="dark">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{escape(title)} · BUNNY system design</title>
-<meta name="description" content="BUNNY design snapshot from {escape(data['reviewed_at'])}. Component ownership, contracts, event flows, deployment and verification.">
+<html lang="en" {SKIN.HTML_ATTRIBUTES}>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{SKIN.head_script()}
+<title>{escape(title)} · B.U.N.N.Y. system design</title>
+<meta name="description" content="B.U.N.N.Y. design snapshot from {escape(data['reviewed_at'])}. Component ownership, contracts, event flows, deployment and verification.">
 <style>{css}</style></head>
 <body><a class="skip" href="#main">Skip to document</a>
-<header class="mobile-bar"><a href="{prefix}index.html">BUNNY / SYSTEM DESIGN</a><button id="menu-toggle" aria-expanded="false" aria-controls="sidebar">Documents</button></header>
-<aside class="sidebar" id="sidebar"><a class="wordmark" href="{prefix}index.html"><span class="mark" aria-hidden="true">B/</span><span>BUNNY<small>SYSTEM DESIGN ATLAS</small></span></a>
+<header class="mobile-bar"><a href="{prefix}index.html">B.U.N.N.Y. / SYSTEM DESIGN</a><button id="menu-toggle" aria-expanded="false" aria-controls="sidebar">Documents</button></header>
+<aside class="sidebar" id="sidebar"><a class="wordmark" href="{prefix}index.html"><span class="mark" aria-hidden="true">B/</span><span>B.U.N.N.Y.<small>SYSTEM DESIGN ATLAS</small></span></a>
 <p class="edition">Working name · local first</p>
 <label class="search-label" for="search">Find a document</label><input id="search" type="search" placeholder="Music, state, storage…" autocomplete="off">
 <p id="search-count" class="search-count" role="status" aria-live="polite">{len(data['components'])} component documents</p>
 <nav aria-label="Document navigation">{nav}</nav>
 <div class="sidebar-foot">Historical design snapshot<br><strong>{escape(data['reviewed_at'])}</strong><br>Follow owning issues for current status.</div></aside>
-<div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button">Light mode</button><button id="print" type="button">Print</button></div></div>
+<div class="page"><div class="topbar"><span>PERSONAL DEVICE SYSTEM / DESIGN DOCUMENTS</span><div><button id="theme-toggle" type="button" aria-pressed="false">Light mode</button><button id="motion-toggle" type="button" aria-pressed="false">Pause motion</button><button id="print" type="button">Print</button></div></div>
 <main id="main" tabindex="-1">{notice}{content}</main>
-<footer><span>BUNNY · dated design snapshot, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
+<footer><span>B.U.N.N.Y. · dated design snapshot, generated HTML</span><a href="{escape(data['issue'])}" target="_blank" rel="noopener noreferrer">Documentation issue ↗</a></footer></div>
 <script>{script}</script></body></html>\n'''
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export the reviewed BUNNY atlas as a self-contained /atlas/ Pages tree."""
+"""Export the reviewed B.U.N.N.Y. atlas as a self-contained /atlas/ Pages tree."""
 
 import argparse
 import hashlib

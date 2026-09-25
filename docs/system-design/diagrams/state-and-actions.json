@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "diagram_type": "architecture",
-  "meta": {"title": "BUNNY · state and actions", "locale": "en", "quality_profile": "showcase", "viewBox": [1280, 670]},
+  "meta": {"title": "B.U.N.N.Y. · state and actions", "locale": "en", "quality_profile": "showcase", "viewBox": [1280, 670]},
   "components": [
     {"id":"hooks","type":"external","label":"Agent lifecycle hooks","sublabel":"Bounded observations","pos":[40,80],"size":[220,78]},
     {"id":"agent","type":"backend","label":"Agent-state core","sublabel":"Task facts and notices","pos":[370,80],"size":[220,78],"tag":"planned"},
