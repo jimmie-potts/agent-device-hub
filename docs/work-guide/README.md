@@ -63,19 +63,23 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 
 A story may carry one `## Execution recommendation` section that names the
 session to start in Claude Code and in Codex: model, thinking level, session type
-(`One-shot`, `Pair`, `Orchestrate` or `Investigate first`), subagents, availability
-and the prompts to paste. The installed `plan-work` policy defines that shape once
-[agent-skills#58](https://github.com/jimmie-potts/agent-skills/issues/58) lands.
-Until then, the section in
-[#252](https://github.com/jimmie-potts/agent-device-hub/issues/252) is the interim
-reference. This README covers only how the guide reads and shows the section.
+(`One-shot`, `Pair`, `Orchestrate` or `Investigate first`), worker subagents, the
+two final reviewers, availability and the prompts to paste. The `plan-work`
+policy's `references/execution-recommendations.md` defines that shape, as merged
+in [`agent-skills@3746fab`](https://github.com/jimmie-potts/agent-skills/blob/3746fab762ad00e708199e698f8e8b580c818d82/skills/plan-work/references/execution-recommendations.md).
+This README covers only how the guide reads and shows the section, and the
+fingerprint this repository puts in the policy's fingerprint slot.
 
 `work/recommendations.py` parses the section from the saved story bodies in
 `work/backlogs/*-issues.json`. The parser is strict and never fills a gap:
 
 - A missing host value, table row or prompt, an unknown key, table row or session
-  type, a duplicate section, stray text, or availability that does not start with
-  `Verified` or `Provisional` makes the story "Assessment unavailable".
+  type, a duplicate section, stray text, availability that does not start with
+  `Verified` or `Provisional`, or a `Reviewers` value that is not `None` exactly
+  for `Investigate first` makes the story "Assessment unavailable". So does a
+  `Cheaper start` line without both cheaper prompts, unless it starts with
+  `none recorded`, and a fingerprint other than 12 hex characters: this
+  repository always fills the slot, never with `not used`.
 - `**Status:** insufficient` with `**Missing:**` shows "Insufficient information"
   and the missing input. That form carries no answer, table or prompts.
 - A story without a section shows "Not yet assessed".
@@ -99,7 +103,8 @@ the answer line, a two-host table with a verified or provisional label per host,
 and a details element with the reasons, availability and reassessment trigger.
 While the recommendation is current, Implement offers a host toggle (Claude Code
 or Codex, remembered in browser storage when available) and a start toggle
-(Recommended or Cheaper; Cheaper is disabled when none is recorded), and copies
+(Recommended or Cheaper; Cheaper is disabled and shows the recorded reason when
+none is recorded), and copies
 the saved prompt verbatim. Every other state uses the generic Implement prompt and
 says why. Explain, Plan and Review never change. Printing an open brief prints it
 with its details expanded.
@@ -108,7 +113,8 @@ with its details expanded.
 outside Git in the main checkout's `.local/evidence/`. It does not assess. For each
 story it re-reads the live body and replaces only this section, adding a `## Work
 assessment` section only for ratings the story does not already record. It renders
-the prompts from one template per session type and host. It keeps the recorded
+the prompts from one template per session type and host; implementing prompts
+authorize the two reviewers named in the `Reviewers` row. It keeps the recorded
 date when the fingerprint is unchanged, writes nothing when the section is
 unchanged, refuses a story edited after the input's `read_at` time or while it is
 being written, and reads the result back. Run it with `--dry-run` first;
