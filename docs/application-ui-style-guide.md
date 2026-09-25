@@ -64,7 +64,7 @@ Legend used throughout:
 | Concern | Owning source | Rule for an implementing agent |
 | --- | --- | --- |
 | Shared application shell and component pages | `apps/dashboard/src/main.tsx`, `style.css`, `README.md` | Extend the existing navigation and component views. Keep one shell across pages. |
-| Application token layer | `apps/dashboard/src/style.css` `:root` custom properties | The future shared application seam (section 4). Today it holds `--muted`, `--edge`, `--panel` and `--accent`; Hub #182 widens it to the role names in section 4. |
+| Application token layer | `apps/dashboard/src/skins/neon-geometry-wars.css` `:root` custom properties | The shared application seam (section 4), delivered by Hub #182: every section 4.1 role, the dense variants and private skin tokens. `style.css` reads these through `var(...)` and defines none of its own. |
 | Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. Wall-rendering tokens stay there. |
 | Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css` (Hub #85, PR #251) | The guide and atlas token files. Same role names, separate consumers. |
 | Cross-project UI ownership | `docs/architecture.md`, "Unified UI and additional devices" | The shared frontend uses the approved Nanoleaf visual language; declared capability and permission decide which controls exist. |
@@ -196,9 +196,10 @@ semantics, keyboard order, text cues, or which control is primary.
 
 ### 4.5 Ownership of the layers
 
-- The application token layer in `apps/dashboard/src/style.css` is the future
-  shared application seam. New application pages read tokens from it and add
-  none of their own raw colors.
+- The application token layer is `apps/dashboard/src/skins/neon-geometry-wars.css`,
+  the shared application seam. New application pages read tokens from it and add
+  none of their own raw colors; `apps/dashboard/src/style.css` is a consumer, not
+  a token definition site.
 - Wall-rendering and device-specific tokens stay in the Nanoleaf domain
   (`wall.html` `@layer tokens`: canvas, halo, connector, pulse and chip values).
 - Documentation tokens live in `docs/skins/` and are consumed by the guide
