@@ -64,11 +64,11 @@ def update_pr(root, prs, report_path):
 
 def reconcile_unchanged(root, sha, report_path, conclusion, check_summary, base_sha):
     prs = open_prs(root)
-    pages = json.loads(gh(root, ['api', '--method', 'GET',
+    rows = gh(root, ['api', '--method', 'GET',
         'repos/' + REPOSITORY + '/commits/' + sha +
         '/check-runs?check_name=Nightly%20guide%20validation&per_page=100',
-        '--paginate', '--slurp']))
-    checks = [check for page in pages for check in page['check_runs']
+        '--paginate', '--jq', '.check_runs[] | @json'])
+    checks = [check for check in (json.loads(line) for line in rows.splitlines() if line.strip())
               if check['name'] == 'Nightly guide validation'
               and check['head_sha'] == sha
               and check.get('app', {}).get('slug') == 'github-actions']
@@ -156,8 +156,10 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
         sha = git('commit-tree', tree, '-p', base_sha, '-m', 'Refresh saved work guide', env=commit_env)
         git('push', '--force-with-lease=refs/heads/' + BRANCH + ':' + expected_rolling_sha,
             'origin', sha + ':refs/heads/' + BRANCH)
-        post_check(root, sha, conclusion, check_summary)
+        # Commit the report before its check so an interrupted PR update cannot
+        # leave matching validation that would hide the stale body on retry.
         url = update_pr(root, prs, report_path)
+        post_check(root, sha, conclusion, check_summary)
         return {'changed': True, 'sha': sha, 'pr_url': url.strip()}
 
 
