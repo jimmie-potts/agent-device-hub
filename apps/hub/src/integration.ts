@@ -44,3 +44,31 @@ export const validateIntegrationSnapshot:Check = value => shape(value,{
   // Nanoleaf #64: discovered saved scenes; ids match the shared v1 `scenes` capability.
   scenes:list(scene,256)
 });
+
+const finite:Check = value => typeof value === 'number' && Number.isFinite(value);
+const point:Check = value => Array.isArray(value) && value.length === 2 && value.every(finite);
+const zone:Check = value => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65535;
+const node:Check = value => shape(value,{id:matches(/^[0-9]{1,5}(?![\s\S])/),x:finite,y:finite});
+const geometryElement:Check = value => shape(value,{id:v => typeof v === 'string',number:count,zones:v => Array.isArray(v) && v.every(zone),
+  points:v => v === null || (Array.isArray(v) && v.length === 3 && v.every(point))});
+
+/** Closed validation of Nanoleaf's read-only `GET /geometry`: saved elements in the wall map's display coordinates. */
+export const validateIntegrationGeometry:Check = value => {
+  // The owner's identity has exactly four keys; the shared schema's optional label is not part of this contract.
+  if (!shape(value,{apiVersion:one(apiVersion),identity:v => validate('identity',v) && object(v) && !Object.hasOwn(v,'label'),kind:one(null,'lines','panels'),
+    elements:list(geometryElement,300),connectors:v => v === null || shape(v,{nodes:list(node,600),lines:list(l => shape(l,{id:v => typeof v === 'string',a:id,b:id}),300)})}) || !object(value)) return false;
+  const elements = value.elements as {id:string;number:number;zones:number[];points:unknown}[];
+  const connectors = value.connectors as {nodes:{id:string}[];lines:{id:string;a:string;b:string}[]}|null;
+  if (value.kind === null) return elements.length === 0 && connectors === null;
+  // A Line has two zones and a triangle one; its id is its zones in ascending order.
+  const size = value.kind === 'lines' ? 2 : 1, drawn = elements[0]?.points !== null, ids = new Set<string>();
+  const valid = elements.every((e,index) => {
+    const ok = e.number === index + 1 && e.zones.length === size && new Set(e.zones).size === size && (e.points === null) !== drawn &&
+      e.id === [...e.zones].sort((a,b) => a - b).join(':') && !ids.has(e.id);
+    ids.add(e.id);return ok;
+  });
+  if (!valid || connectors === null) return valid;
+  const nodes = new Set(connectors.nodes.map(n => n.id));
+  return value.kind === 'lines' && connectors.nodes.length > 0 && nodes.size === connectors.nodes.length && connectors.lines.length === elements.length &&
+    connectors.lines.every((l,index) => l.id === elements[index].id && nodes.has(l.a) && nodes.has(l.b) && l.a !== l.b);
+};

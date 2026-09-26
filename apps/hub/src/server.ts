@@ -258,7 +258,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           json(res,200,{token,expiresInSeconds:8*60*60});return;
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
-        const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|commands|receipt|cancel)$/.exec(path);
+        const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
         const lightingRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/lighting\/(snapshot|commands)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
         const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? lightingRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
@@ -307,6 +307,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           const operation = integrationRoute[2];
           if (req.method === 'GET' && operation === 'snapshot' && !url.search) json(res,200,await client.integrationSnapshot());
+          else if (req.method === 'GET' && operation === 'geometry' && !url.search) json(res,200,await client.integrationGeometry());
           else if (req.method === 'GET' && operation === 'receipt' && [...url.searchParams.keys()].length === 2 && url.searchParams.has('epoch') && /^[0-9]+$/.test(url.searchParams.get('sequence') ?? ''))
             {const response = await client.integrationReceipt({epoch:url.searchParams.get('epoch'),sequence:Number(url.searchParams.get('sequence'))});json(res,response.status,response.body);}
           else if (req.method === 'POST' && !url.search && operation === 'commands') {const receipt = await client.integrationCommand(await admitted(65536));json(res,receipt.status,receipt.body);}
