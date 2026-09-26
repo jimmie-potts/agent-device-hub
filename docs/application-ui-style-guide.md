@@ -66,7 +66,7 @@ Legend used throughout:
 | --- | --- | --- |
 | Shared application shell and component pages | `apps/dashboard/src/main.tsx`, `style.css`, `README.md` | Extend the existing navigation and component views. Keep one shell across pages. |
 | Application token layer | `apps/dashboard/src/skins/neon-geometry-wars.css` `:root` custom properties | The shared application seam (section 4), delivered by Hub #182: every section 4.1 role, the dense variants and private skin tokens. `style.css` reads these through `var(...)` and defines none of its own. |
-| Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. Wall-rendering tokens stay there until the shared device art of [ADR 0007](decisions/0007-bunny-shell.md) lands, then move with it into the application token layer. |
+| Nanoleaf wall map | `codex-nanoleaf/bridge/wall.html` and its [ADR 0004](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0004-wall-map-visual-direction.md) | Preserve the wall material, status meaning and interaction distinctions. The shared device art of [ADR 0007](decisions/0007-bunny-shell.md) (`apps/dashboard/src/art/`, Hub #355) carries the same material into the shell and holds the wall status tokens in the application token layer. |
 | Documentation skin | `docs/skins/fixed.css` and `docs/skins/neon-geometry-wars.css` (Hub #85, PR #251) | The guide and atlas token files. Same role names, separate consumers. |
 | Cross-project UI ownership | `docs/architecture.md`, "Unified UI and additional devices" | The shared frontend uses the approved Nanoleaf visual language; declared capability and permission decide which controls exist. |
 | Behavior and validation | Each repository's `AGENTS.md`, app README and `docs/development.md` | Follow the owning repository's rules and checks for the page being changed. |
@@ -102,8 +102,10 @@ vivid physical-light colors reserved for actual device or task status. No glow
 on every card, button or heading.
 
 **Device exception.** Crystal tubes, hexagonal connectors, the two-second status
-flow, the opening assembly and the `◈` glyph belong to their owning screens.
-They are not generic components and no skin makes them mandatory.
+flow and the opening assembly are Nanoleaf's device art: drawn by the shared
+device art component on the shell's Nanoleaf pages (Hub #355) and by the wall
+map, never as generic components. The `◈` glyph belongs to the shell's mark. No
+skin makes any of them mandatory.
 
 ## 4. Skin template
 
@@ -165,7 +167,7 @@ approved screen without a reviewed candidate.
 | `--repo-hub`, `--repo-nanoleaf`, `--repo-pixoo` | Repository identity in documentation | cyan `#22d3ee`, magenta `#e879f9`, lime `#b5ed86` |
 | `--status-open`, `--status-active`, `--status-blocked`, `--status-completed`, `--status-closed` | Issue status in documentation | `#a8bbd5`, `#f5ce83`, `#ffa3a6`, `#8ee0b6`, `#b9afce` in `docs/skins/fixed.css` |
 | `--edge-observe`, `--edge-feed`, `--edge-command`, `--edge-other` | Diagram edge meaning | `#34d399`, `#a78bfa`, `#fb7185`, `#94a3b8` in `docs/skins/fixed.css` |
-| Nanoleaf `--wall-*` and `--chip-*` | Task status on the physical wall and its chips | working `#00ff00` / chip `#2bff63`, question `#ffff00` / `#ffe600`, blocked `#ff0000` / `#ff4a4a`, unread `#193cff` / `#5b9bff` (device exception, owned by `wall.html`) |
+| `--wall-*` and `--chip-*` | Task status on the physical wall and its chips | working `#00ff00` / chip `#2bff63`, question `#ffff00` / `#ffe600`, blocked `#ff0000` / `#ff4a4a`, unread `#193cff` / `#5b9bff`. Since Hub #355 the application skin `apps/dashboard/src/skins/neon-geometry-wars.css` holds them for the shared device art; `wall.html` keeps its own copy while the wall map exists |
 
 A fixed-meaning token may take a different shade per color scheme so it stays
 readable, but no skin changes what it means or swaps two meanings.
@@ -201,10 +203,13 @@ semantics, keyboard order, text cues, or which control is primary.
   the shared application seam. New application pages read tokens from it and add
   none of their own raw colors; `apps/dashboard/src/style.css` is a consumer, not
   a token definition site.
-- Wall-rendering and device-specific tokens stay in the Nanoleaf domain
-  (`wall.html` `@layer tokens`: canvas, halo, connector, pulse and chip values)
-  until the shared device art of [ADR 0007](decisions/0007-bunny-shell.md)
-  lands, then move with it into the application token layer.
+- The wall status tokens moved into the application token layer with the
+  shared device art of [ADR 0007](decisions/0007-bunny-shell.md) (Hub #355),
+  together with the art's canvas and edge tokens. The wall map's remaining
+  rendering tokens (`wall.html` `@layer tokens`: halo, connector and pulse
+  values) stay in the Nanoleaf domain while it exists as the advanced editor;
+  the Prism material's own gradient colors live in the renderer source in both
+  places, as material rather than roles.
 - Documentation tokens live in `docs/skins/` and are consumed by the guide
   and the atlas generators.
 - Pixoo keeps its media, player and display rendering.
@@ -435,8 +440,8 @@ An implementing agent uses this guide with a specific UI issue:
    quiet override.
 3. Inventory the page's colors, type, spacing and components. Map repeated raw
    values to the role names in section 4 without changing any status meaning.
-   Keep Nanoleaf wall-rendering tokens local to the wall map until the shared
-   device art of [ADR 0007](decisions/0007-bunny-shell.md) lands.
+   Read the wall status tokens from the application token layer; the wall
+   map's remaining rendering tokens stay local to it.
 4. Implement in the owning application. Extend the dashboard's navigation and
    control patterns; do not migrate Nanoleaf source or alter controller
    behavior as part of a styling task.
