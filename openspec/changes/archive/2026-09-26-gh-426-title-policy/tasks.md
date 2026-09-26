@@ -3,7 +3,9 @@
 - [x] 1.1 Demonstrate title selection and versioned feed failures before the fix: focused status and feed tests failed on the missing title and version query.
 - [x] 1.2 Implement selection, feed opt-in and ADR 0005 policy; preserve legacy consumers with the default-feed and LIFX tests.
 - [x] 1.3 Add deterministic title and neutral preview fixtures; validate the snapshot, emitted frame and independent Pillow decode.
-- [x] 1.4 Run build/typecheck, Tidbyt, agent-status, LIFX, controller-contract TypeScript/Python/package and workflow checks.
+- [x] 1.4 Run build/typecheck, Tidbyt, agent-status, LIFX, local-controller host, controller-contract TypeScript/Python/package and workflow checks.
+
+- [x] 1.5 Update the local-controller fake hubs to honor snapshot version selection: the existing host suite failed three cases before the fixture correction and passes all 25 afterward.
 
 ## Remaining issue work and delivery gates
 

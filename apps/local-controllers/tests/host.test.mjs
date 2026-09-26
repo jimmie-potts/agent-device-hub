@@ -345,7 +345,10 @@ test('a failed read keeps the previous observation and is not retried within 30 
 /** A loopback hub serving a real, mutable shared owner, so a test can drive real state transitions through the running host. */
 async function statusHub(t) {
   const owner = await createAgentState({ storage: new MemoryStorage(), ownerId: 'owner', consumers: [] });
-  const server = createServer((_req, res) => res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot: owner.snapshot() })));
+  const server = createServer((req, res) => {
+    const version = new URL(req.url, 'http://127.0.0.1').searchParams.get('snapshotVersion') ?? '1.0';
+    res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot: owner.snapshot(version) }));
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); server.close(); await owner.shutdown(); });
