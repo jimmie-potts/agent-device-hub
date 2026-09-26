@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-25T23:04:32.554766+00:00",
+  "fetchedAt": "2026-09-26T00:12:59.354775+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-25T22:56:50Z",
+      "pushedAt": "2026-09-25T23:58:17Z",
       "defaultBranch": "main",
-      "headSha": "c851541fd23a54a2474570ad1eca7505ec0daaab",
-      "mainCommitCount": 144,
+      "headSha": "21583cd32a1128e3d0c4f18bcb2f5c6508ede280",
+      "mainCommitCount": 145,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "21583cd32a1128e3d0c4f18bcb2f5c6508ede280",
+          "date": "2026-09-25T23:23:31Z",
+          "message": "Retry the direct wall read when it collides with the page's own poll (#354)"
+        },
         {
           "sha": "c851541fd23a54a2474570ad1eca7505ec0daaab",
           "date": "2026-09-25T22:55:32Z",
@@ -1859,14 +1864,29 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/351",
           "base": "main",
           "mergedAt": "2026-09-25T22:45:44Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 354,
           "title": "Retry the direct wall read when it collides with the page's own poll",
           "createdAt": "2026-09-25T22:57:35Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/354",
+          "base": "main",
+          "mergedAt": "2026-09-25T23:23:32Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 370,
+          "title": "Paginate the open-issue inventory in the guide refresh",
+          "createdAt": "2026-09-25T23:25:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/370",
+          "base": "main"
+        },
+        {
+          "number": 375,
+          "title": "Refresh the work guide for ADR 0007 and ADR 0008 and the stories filed on 2026-09-25",
+          "createdAt": "2026-09-25T23:59:10Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/375",
           "base": "main"
         }
       ],
@@ -2616,10 +2636,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/330"
         }
       ],
-      "openIssueCount": 120,
+      "openIssueCount": 145,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-25T23:04:14Z"
+        "2026-09-26T00:09:32Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -2632,7 +2652,8 @@
         "2026-09-22": 10,
         "2026-09-23": 27,
         "2026-09-24": 20,
-        "2026-09-25": 80
+        "2026-09-25": 96,
+        "2026-09-26": 9
       }
     },
     "codex-nanoleaf": {
@@ -4005,12 +4026,17 @@
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-25T20:57:15Z",
+      "pushedAt": "2026-09-25T23:48:59Z",
       "defaultBranch": "main",
-      "headSha": "2d7e954b23859695088afa97cb6e5dd8c89c59c9",
-      "mainCommitCount": 39,
+      "headSha": "e1efbf33ff73876aa95f4425457ea255ce270e4c",
+      "mainCommitCount": 40,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "e1efbf33ff73876aa95f4425457ea255ce270e4c",
+          "date": "2026-09-25T23:48:59Z",
+          "message": "Show distinct identifiers on unlabeled Pixoo monitor rows (#99)"
+        },
         {
           "sha": "2d7e954b23859695088afa97cb6e5dd8c89c59c9",
           "date": "2026-09-25T20:57:15Z",
@@ -4511,6 +4537,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/95",
           "base": "main",
           "mergedAt": "2026-09-25T20:57:15Z"
+        },
+        {
+          "number": 99,
+          "title": "Show distinct identifiers on unlabeled Pixoo monitor rows",
+          "createdAt": "2026-09-25T23:39:38Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/99",
+          "base": "main",
+          "mergedAt": "2026-09-25T23:48:59Z"
         }
       ],
       "openPRs": [],
@@ -4772,18 +4806,42 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/77"
         },
         {
+          "number": 87,
+          "title": "Pixoo monitor rows all show the same truncated session ID prefix",
+          "closedAt": "2026-09-25T23:52:02Z",
+          "createdAt": "2026-09-25T07:22:26Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/87"
+        },
+        {
           "number": 89,
           "title": "Show hub now-playing cards on the Pixoo",
           "closedAt": "2026-09-25T16:06:17Z",
           "createdAt": "2026-09-25T07:44:08Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/89"
+        },
+        {
+          "number": 97,
+          "title": "Amend ADR 0018 to allow opt-in alert interruptions on the Pixoo display",
+          "closedAt": "2026-09-25T23:11:17Z",
+          "createdAt": "2026-09-25T22:54:34Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/97"
+        },
+        {
+          "number": 101,
+          "title": "Install the #99 row-identifier change on the Pixoo user service and check readability on the display",
+          "closedAt": "2026-09-25T23:58:40Z",
+          "createdAt": "2026-09-25T23:56:16Z",
+          "stateReason": "not_planned",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/101"
         }
       ],
       "openIssueCount": 27,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-25T23:01:08Z"
+        "2026-09-25T23:57:15Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -4795,7 +4853,7 @@
         "2026-09-22": 1,
         "2026-09-23": 3,
         "2026-09-24": 7,
-        "2026-09-25": 11
+        "2026-09-25": 14
       }
     }
   }

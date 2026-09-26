@@ -89,11 +89,13 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert(await liveStatus('N17').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
     assert(await liveStatus('H25').evaluateAll(es=>es.every(e=>e.dataset.status==='open')),'Issues absent from both reads keep their snapshot status');
     const pixooAfterFailure=await page.locator('a.issue.repo-P[data-issue]').evaluateAll(es=>Object.fromEntries(es.map(e=>[e.dataset.issue,e.dataset.status])));
-    // Badges that only appeared inside another repository's live-removed rows (an Extends link on a Hub idea) leave
-    // with those rows; every Pixoo badge still on the page keeps its snapshot status.
-    assert(Object.keys(pixooAfterFailure).length>0,'Pixoo badges remain on the page after its failed read');
-    for(const [key,status] of Object.entries(pixooAfterFailure)) assert.equal(status,pixooSnapshotStatuses[key],`A failed repository keeps ${key} at its snapshot status`);
-    assert(Object.keys(pixooSnapshotStatuses).every(key=>key in pixooAfterFailure||!sourceHtml.includes(`data-issue="${key}" data-state="OPEN"`)),'Every open Pixoo badge from the snapshot is still present');
+    // A Pixoo badge whose every occurrence sits inside another repository's idea row (an Extends link) leaves with
+    // that row when its repository's live read replaces the row. Every other Pixoo badge stays, at its snapshot status.
+    const ideaRowHtml=(sourceHtml.match(/<li class="idea"[\s\S]*?<\/li>/g)||[]).join('');
+    const countIn=(html,key)=>(html.match(new RegExp(`data-issue="${key}"`,'g'))||[]).length;
+    const ideaOnly=new Set(Object.keys(pixooSnapshotStatuses).filter(key=>countIn(sourceHtml,key)===countIn(ideaRowHtml,key)));
+    for(const [key,status] of Object.entries(pixooSnapshotStatuses)){if(!(key in pixooAfterFailure)){assert(ideaOnly.has(key),`A failed repository keeps ${key} on the page`);continue;} assert.equal(pixooAfterFailure[key],status,`A failed repository keeps ${key} at its snapshot status`);}
+    assert.deepEqual(Object.keys(pixooAfterFailure).filter(key=>!(key in pixooSnapshotStatuses)),[],'A failed repository adds no badge');
     assert((await page.locator('#github-status').textContent()).includes(`${snapshotDate} snapshot`));
     assert.equal(await page.locator('#newly-added [data-view-content] > .work-grid > .work-card').first().getAttribute('data-key'),'H999','New issue appears by creation date');
     assert.equal(await page.locator('#open-defects .work-card').first().getAttribute('data-key'),'H999','Explicit priority sorts before an unranked bug');

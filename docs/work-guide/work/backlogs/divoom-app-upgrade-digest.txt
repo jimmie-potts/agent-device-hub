@@ -41,3 +41,5 @@
 #94 [OPEN] Stage agent-proposed GIFs for owner approval
 #96 [OPEN] Expose the media catalog, playlist items and previews through the Pixoo integration extension
 #98 [OPEN] Redesign the Pixoo monitor layout for readability and motion
+#100 [OPEN] Install the #87 row identifier fix on the Pixoo user service and check the rows
+#102 [OPEN] Every monitor row is marked uncertain because hook sources never supply ordering evidence

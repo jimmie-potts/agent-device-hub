@@ -1,18 +1,18 @@
 {
-  "startedAt": "2026-09-25T23:55:01.486777+00:00",
-  "refreshedAt": "2026-09-25T23:55:42.763383+00:00",
+  "startedAt": "2026-09-26T00:12:21.282886+00:00",
+  "refreshedAt": "2026-09-26T00:12:59.327942+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
-      "openIssues": 132,
+      "openIssues": 145,
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
         100,
-        33
+        47
       ],
-      "openPRs": 1,
+      "openPRs": 2,
       "prPageSizes": [
-        1
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -217,17 +217,7 @@
           "commentBodiesStored": false
         },
         {
-          "number": 5,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
           "number": 10,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 18,
           "state": "CLOSED",
           "purpose": "Guide story status"
         },
@@ -402,26 +392,6 @@
           "purpose": "Guide story status"
         },
         {
-          "number": 268,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 269,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 270,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 273,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
           "number": 289,
           "state": "CLOSED",
           "purpose": "Guide story status"
@@ -438,11 +408,6 @@
         },
         {
           "number": 292,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 299,
           "state": "CLOSED",
           "purpose": "Guide story status"
         },
@@ -794,11 +759,6 @@
           "purpose": "Guide story status"
         },
         {
-          "number": 133,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
           "number": 135,
           "state": "CLOSED",
           "purpose": "Guide story status"
@@ -807,44 +767,14 @@
           "number": 139,
           "state": "CLOSED",
           "purpose": "Guide story status"
-        },
-        {
-          "number": 142,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 143,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 144,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 147,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 148,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
-        },
-        {
-          "number": 164,
-          "state": "CLOSED",
-          "purpose": "Guide story status"
         }
       ]
     },
     "divoom-app-upgrade": {
-      "openIssues": 25,
+      "openIssues": 27,
       "openIssueEndpoint": "repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
       "issuePageSizesIncludingPRs": [
-        25
+        27
       ],
       "openPRs": 0,
       "prPageSizes": [
@@ -975,7 +905,7 @@
       ]
     }
   },
-  "openIssues": 202,
+  "openIssues": 217,
   "statusSource": "Explicit state=open REST queries with terminal pagination, independently reconciled with GraphQL OPEN inventories and native prerequisite pageInfo; direct acceptance issue and PR reads.",
   "commentsScope": "Listed acceptance and documentation reads include refreshed comments; Hub #15/#17/#18/#19/#64/#158/#186, Nanoleaf #30/#41/#42/#54/#55/#64/#74 and Pixoo #30/#34 retain comment links and timestamps only. Other issue bodies, states and labels are current."
 }

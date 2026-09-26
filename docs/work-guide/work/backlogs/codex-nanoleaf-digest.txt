@@ -62,12 +62,7 @@
 #135 [CLOSED] Merge the wall map inspector cards and rethink reservation and override controls
 #139 [CLOSED] Customize Work-mode light colors so unread tasks stand out from the base
 #140 [OPEN] Add an upgrade and rollback command for the Linux runtime
-#142 [CLOSED] Add MCP tools to list and play saved Nanoleaf scenes
-#143 [CLOSED] Play custom animations on the Lines when Codex asks for them
-#144 [CLOSED] Switch the wall map between Lines and Light Panels
 #146 [OPEN] Play custom animations for different events
-#147 [CLOSED] Change a registered Panels device's address without re-enrolling
-#148 [CLOSED] Keep following the hub feed when it contains an undeclared source
 #149 [OPEN] Cap how fast animations can flash
 #150 [OPEN] Stop an animation and restore the remembered scene through MCP
 #151 [OPEN] Add a rotating spin direction and a faster speed for animations
@@ -83,7 +78,6 @@
 #161 [OPEN] Report when someone changes the Lines outside the bridge
 #162 [OPEN] Document the in-place runtime upgrade, the codex exec MCP override and the hand-listed bridge modules
 #163 [OPEN] Define the project's domain glossary
-#164 [CLOSED] Control the NL22 Panels through the controller and local MCP server
 #167 [OPEN] Add the NL22 Panels to the installed controller, MCP host and hub
 #168 [OPEN] Pick and play a device's saved scene from its wall map page
 #169 [OPEN] Expose element geometry read-only on the integration route for the Lines and Panels

@@ -474,14 +474,9 @@
           "Pixoo PR #84 merged as 690f14d and PR #85 (5004b35) recorded the installed user service; #77 closed as completed on September 25, 2026. The owner accepted the restart criterion on proxy evidence from earlier WSL boots instead of running wsl --shutdown, which would stop in-progress agents."
         ],
         [
-          "Completed / Hosting direction",
+          "Decided / Hosting direction",
           "[[H42]]",
           "ADR 0008 (Hub PR #339, September 25, 2026): the runtime stays in WSL with a keep-alive ([[H356]]); Docker on the PC is not adopted, and #42 closed as a duplicate folded into [[H44]]."
-        ],
-        [
-          "Completed / Shell decision",
-          "[[H271]]",
-          "ADR 0007 (Hub PR #326, September 25, 2026) answers the shell question in #271: the dashboard is the one B.U.N.N.Y. shell, the wall map's art becomes shared device art ([[H355]]) and the wall map retires after parity ([[N171]])."
         ]
       ],
       "notes": [

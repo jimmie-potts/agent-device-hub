@@ -46,7 +46,7 @@ STANDING = [
      'The six services still start only with a WSL login; ADR 0008 chose linger, an idle timeout and one scheduled task on the PC, with a dedicated server behind a trigger.',
      ['H182', 'H231', 'H245', 'H191', 'H195', 'H241', 'H356', 'H44']),
     ('Guide and atlas',
-     'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. The nightly rolling refresh is the next guide change.',
+     'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. Reconciling story text made stale today and recording recommendations for the new stories come next, then the nightly rolling refresh.',
      ['H197', 'H252', 'H259', 'H308', 'H315']),
 ]
 

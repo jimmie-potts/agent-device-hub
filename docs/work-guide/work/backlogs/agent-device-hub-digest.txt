@@ -131,12 +131,8 @@
 #263 [OPEN] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
-#268 [CLOSED] Push hub change notifications when state commits (#222)
-#269 [CLOSED] Apply the Neon skin foundation and B.U.N.N.Y. display name to the dashboard
-#270 [CLOSED] Retire browser sessions with their tickets, streams and replay entries
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
 #272 [OPEN] Let devices join or leave one shared task pool
-#273 [CLOSED] Share one command lifecycle between dashboard forms and actions
 #276 [OPEN] Open B.U.N.N.Y. from a bookmark without a token or launcher step
 #277 [OPEN] Make the dashboard a dense control surface instead of long single-column pages
 #278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
@@ -157,7 +153,6 @@
 #296 [OPEN] Show a moment log that explains why a device just changed
 #297 [OPEN] Choreograph one moment across devices with a shared palette
 #298 [OPEN] Add a calendar event source for meeting reminders
-#299 [CLOSED] Record ADR 0006: hub moments and interludes across devices
 #303 [OPEN] Dashboard browser job flakes in the keyboard-submit brightness scenario
 #305 [OPEN] Carry observed model and thinking level in shared agent state and show it in B.U.N.N.Y.
 #306 [OPEN] Investigate host-observed model sources for Codex and the Claude Code model id
@@ -215,3 +210,16 @@
 #367 [OPEN] Install the Claude Code producer on the WSL host so Claude sessions reach the shared owner
 #368 [OPEN] Show any B.U.N.N.Y. widget on the Pixoo as a rendered card
 #369 [OPEN] Offer routine templates with a solar trigger for sunset dim, good morning and bedtime
+#371 [OPEN] Add a hub command to install or remove a monitoring producer against the running service
+#372 [OPEN] Let an agent label its own session through the hub MCP label tool without knowing its identity
+#373 [OPEN] Give Codex and Claude one provider color pair on every device
+#374 [OPEN] Label delivery sessions with their story key so every device row names its task
+#376 [OPEN] Collect Roborock status and run history and show them in B.U.N.N.Y.
+#377 [OPEN] Estimate per-room coverage for each Roborock run from its map
+#378 [OPEN] Reach the hub from the Steam Deck through an SSH tunnel
+#379 [OPEN] Add a Steam event source that merges game sessions from several adapters, starting with the Web API
+#380 [OPEN] Read the PC's Steam client as a second game-session adapter
+#381 [OPEN] Run event-triggered routines so a game session sets the desk look and hands it back
+#382 [OPEN] Put B.U.N.N.Y. on the Steam Deck: a Decky overlay for agent attention and Deck-side game events
+#383 [OPEN] Let the Steam Deck play moments through rumble and an overlay toast
+#384 [OPEN] Drive agent sessions from the Steam Deck: a story launcher, tmux and a controller layout

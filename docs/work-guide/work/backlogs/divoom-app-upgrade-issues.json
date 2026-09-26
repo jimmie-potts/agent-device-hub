@@ -1049,7 +1049,7 @@
     "body": "## Problem\n\nEvery row on the installed Pixoo monitor shows the same task identifier, `01A0D+`, so sessions cannot be told apart on the device.\n\nObserved on September 25, 2026 against the installed user service (revision `690f14d`, device mode, remote owner `personal-shared-monitor` on port 8788). The rendition layout listed 19 matching top-level rows over 5 pages. All rows were Codex Desktop sessions (`codex`/`desktop`, host `wsl-ubuntu`), none had a label, and every `shortLabel` was `01A0D+`.\n\nCause, in the current code:\n\n- `DashboardRow.label` falls back to `identity.sessionId` when no label is set (`apps/server/src/agent-dashboard.ts`).\n- `shortLabel()` keeps the first five characters and appends `+` when the label is longer than six characters.\n- Codex session IDs are time-ordered UUIDs, so every session created in the same period shares the prefix `01a0d…`. The five kept characters carry no identifying information.\n- No session has a label because the shared vocabulary only allows user-chosen labels (`label.origin: 'user'`); the hub hook normalizer never sets one, and none were saved through the Monitor tab.\n\nThe `+` is a truncation marker, not part of the identifier. Together with the six-character budget, the row cannot show either a meaningful name or a distinguishing part of the ID.\n\n## Outcome\n\nA Pixoo monitor row identifies its session at a glance. Two sessions visible at the same time never show the same identifier unless they share a label.\n\n## Scope\n\n- Choose a distinguishing fallback when no label exists, for example the last characters of the session ID or a short per-owner ordinal assigned by the renderer, and record the choice in `docs/agent-monitoring.md`.\n- Truncate labels so the marker cannot be mistaken for content, for example by shortening without a suffix when the row budget is fixed, or by using a distinct glyph.\n- Keep the Monitor tab showing the full label or ID beside the truncated glyphs.\n- Keep the shared vocabulary: no automatic titles, prompts or paths become labels in Pixoo. If an automatic neutral label is wanted, that is a hub owner change and needs its own hub issue.\n\nAny change to the row layout should be coordinated with the monitor readability redesign if that is planned separately, so the identifier width is chosen once.\n\n## Acceptance\n\n- With the synthetic examples in `apps/server/src/dashboard-examples.ts` and a fixture of four unlabeled sessions whose IDs share a prefix, the rendered rows show four different identifiers.\n- Unit tests for `shortLabel` and the fallback cover the shared-prefix case and a labeled case.\n- `docs/agent-monitoring.md` describes the identifier rule and the truncation marker.\n- `npm run check` passes. Physical acceptance follows the existing device profile and is reported separately.\n\n## Related\n\n- Hub #241 retires ended sessions across Codex and Claude; fewer stale rows reduces, but does not remove, the collision.\n- Labels: the Monitor tab `Save label` command remains the only way to name a session today.\n\n\n## Evidence update, 2026-09-25 sweep\n\nAfter the hub's session retirement (Hub #241, installed with Hub 0.3.5) the shared owner dropped from 29 to 3 Codex Desktop sessions during the day, so fewer rows collide. The fallback is unchanged: an unlabeled row still shows the first five characters of a time-ordered UUID. Hub #312 qualifies Claude Code and Codex CLI ends; Hub #332 retires stale attention from B.U.N.N.Y. Neither changes the identifier rule.\n\n## Guide\n\n**Topic:** shared-codex\n**Note:** Unlabeled Pixoo rows show a five-character UUID prefix plus `+`, identical for every session from the same period.\n\n\n## Delivery assessment\n\nRefreshed 2026-09-25 at pickup against `main` 2d7e954; stage: delivery.\n\n- **Assumptions:** one owner, one local backend, installed service reads the shared owner (AGENTS.md, docs/sdlc.md). Hub #364 (shared alias) is backlog, so the fallback stays in Pixoo. #98 will choose its own width; the rule here is width-independent.\n- **Decision:** an unlabeled row shows `…` plus the last five ID characters; a long label keeps its first three and last two characters around `…`. The marker glyph is outside the label alphabet. Rationale and rejected options: OpenSpec change `gh-87-distinct-row-identifiers`.\n- **Residual:** different IDs sharing their last five characters, or labels sharing three leading and two trailing characters, still collide (about 1 in 175,000 for four visible UUIDs). Revisit trigger: Hub #364 landing, or an observed collision.\n- **Ratings:** complexity low (pure identifier function, one glyph); uncertainty low (fallback decision delegated by the resume note); impact low (display only, no persistence, device commands or credentials).\n- **Readiness:** ready; no blockers.\n- **Verification:** unit tests for the shared-prefix, labeled, short and unsupported cases; a synthetic four-session example with distinct identifiers and updated hashes; browser preview byte equality; docs by inspection; `npm run check`, `npm run test:browser` and both workflow checks. Physical acceptance needs a separate request.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/87",
     "createdAt": "2026-09-25T07:22:26Z",
-    "updatedAt": "2026-09-25T23:52:04Z",
+    "updatedAt": "2026-09-25T23:58:42Z",
     "closedAt": "2026-09-25T23:52:02Z",
     "labels": [
       {
@@ -1058,7 +1058,7 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 2,
+    "commentCount": 5,
     "commentsRefreshed": false
   },
   {
@@ -1209,6 +1209,52 @@
     "labels": [
       {
         "name": "enhancement"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 100,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Install the #87 row identifier fix on the Pixoo user service and check the rows",
+    "body": "### Outcome and real setup\n\nThe installed Pixoo user service runs a revision that includes #87, so unlabeled monitor rows on the device show distinct identifiers (`…` plus the last five session ID characters) instead of `01A0D+`. Setup: the WSL host's `pixoo-playlist-controller.service`, device mode, Monitor selected, reading the hub owner `personal-shared-monitor` on port 8788. Excluded: layout changes (#98) and shared aliases (Hub #364).\n\nObserved on 2026-09-25: the service's `ExecStart` points at the runtime copy for `bf32654` (#90), started 14:16 EDT. #87 merged later as `e1efbf3` (#99), and main CI passed. The display still shows the old identifiers.\n\n### Smallest useful implementation\n\nReinstall the user service at `e1efbf3` or a later main revision using the documented procedure in `docs/local-operations.md` (#77, #84, #85). Keep the existing private `service.env` and runtime data. Then restart the service and compare the Monitor tab preview with the device.\n\nPrerequisite: the owner's explicit request to install and to replace current display content.\n\n### Behavior and protections to preserve\n\nOne backend and one serialized device writer; the validated private startup configuration and device target; Monitor mode, the now-playing Media setting, playlists, media and runtime data; the previous runtime copy kept for rollback.\n\n### Observable acceptance and planned evidence\n\nDelivery target: including installation and its verification, plus physical-device verification when the owner requests it.\n\n- The service's `ExecStart` names the new revision, and the service is active after restart. Evidence: `systemctl --user cat` and `show` output.\n- The Monitor tab preview shows unlabeled rows as `…XXXXX`, one per session, matching `GET /api/monitor/v1/rendition`. Evidence: rendition `shortLabel` values.\n- With the owner watching, the Pixoo shows the same rows and the `…` marker is readable at native size. Evidence: a dated physical observation. A simulator or HTTP result alone does not prove this.\n\n### Meaningful deferrals\n\nNone.\n\n## Guide\n\n**Topic:** shared-codex\n**Note:** #87 is merged but not installed; the device keeps showing `01A0D+` until the user service moves past `bf32654`.\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/100",
+    "createdAt": "2026-09-25T23:56:12Z",
+    "updatedAt": "2026-09-26T00:06:44Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
+      },
+      {
+        "name": "status:in-progress"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 102,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Every monitor row is marked uncertain because hook sources never supply ordering evidence",
+    "body": "## Observed and expected behavior\n\nObserved on the installed service on 2026-09-25 23:55Z: every monitor row carries the amber `?` uncertainty mark, including Claude Code rows whose activity is `active`, freshness `current` and turn known. The live snapshot showed `evidence.unavailable` with dimension `ordering`, reason `missing` on all ten sessions from all three producers (Codex CLI, Codex Desktop, Claude Code).\n\n`DashboardPager.layout()` in `apps/server/src/agent-dashboard.ts` sets `uncertain` when `s.unavailable.length>0` or `s.ordering.status==='unknown'`. `docs/agent-monitoring.md` records that documented hook fields never establish native event IDs or total ordering, and that unknown ordering is never filled in from arrival order. So no hook-based source can ever produce a row without the mark, and the mark carries no information.\n\nExpected: the `?` mark means something. A row with current freshness, a known turn and a known activity is not marked uncertain merely because ordering is unknown; ordering uncertainty is shown only where it changes what the owner should do, or not at all on the 64x64 frame.\n\n## Reproduction\n\n1. Run the installed service in Monitor with the remote owner, or the simulator with `apps/server/src/dashboard-examples.ts` after adding `unavailable:[{kind:'evidence.unavailable',dimension:'ordering',reason:'missing'}]` and `ordering:{status:'unknown'}` to a current, active session.\n2. Read `GET /api/integration/v1/rendition`: `rows[].uncertain` is true for every row.\n3. The frame shows `?` at x=56 on every row.\n\n## Scope\n\nDecide which evidence dimensions make a row uncertain on the frame: freshness, connection, activity unknown and parent unknown stay; `ordering` and other dimensions that no supported source can supply do not. Keep the full `unavailable` list in the Monitor tab. Update the row rule, the layout table in `docs/agent-monitoring.md`, the synthetic examples and the frame hashes. Out of scope: hub changes to the ordering contract (Hub #139 owns event history and ordering guarantees).\n\n## Acceptance criteria\n\n- A current, active, known-turn session with only `ordering` unavailable renders without the uncertainty mark.\n- A session with stale freshness, unknown activity, an unknown parent or a non-current connection still renders with it.\n- The Monitor tab still lists every `unavailable` entry.\n- `docs/agent-monitoring.md` names the dimensions that set the mark.\n\n## Verification approach\n\nUnit tests in `tests/unit/agent-dashboard.test.ts` for both cases, updated synthetic frame hashes, `npm run check`.\n\n## Dependencies\n\nRelated: #98 (layout redesign shows uncertainty visibly), Hub #139 (ordering guarantees). Neither blocks.\n\n## Delivery target\n\nSource-only. Installing follows #100's pattern.\n\n## Guide\n\n**Topic:** shared-codex\n**Note:** Every row shows `?` because hook sources never supply ordering evidence.\n\n",
+    "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/102",
+    "createdAt": "2026-09-25T23:57:15Z",
+    "updatedAt": "2026-09-25T23:58:44Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "bug"
       },
       {
         "name": "status:backlog"
