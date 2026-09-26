@@ -1,6 +1,6 @@
 # Reversible shared monitoring setup
 
-This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). It supplies local SDK operations for a named installation owner. Running these operations against personal files, starting clients or services, moving live state, and operating devices require a separate explicit request. Source checks use disposable private directories and never start a physical worker. [Connect device controllers for B.U.N.N.Y.](#connect-device-controllers-for-bunny) wires installed device controllers into the hub.
+This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). It supplies local SDK operations for a named installation owner. Running these operations against personal files, starting clients or services, moving live state, and operating devices require a separate explicit request. Source checks use disposable private directories and never start a physical worker. [Connect device controllers for B.U.N.N.Y.](#connect-device-controllers-for-bunny) wires installed device controllers into the hub. [Start the runtime at boot](#start-the-runtime-at-boot) keeps the WSL services running without a sign-in.
 
 ## Supported evidence
 
@@ -237,3 +237,130 @@ An invalid entry stops startup, and the service log names the cause without path
   Nanoleaf devices share one principal, so remove every alias that uses it, such as both the Lines and the Panels. Then revoke the old principal as in [Roll back](#roll-back), create a new one (Pixoo needs a new principal ID), add the removed entries again and restart. Adding an alias that is still present stops startup with a duplicate `id`.
 - **Pixoo is in Monitor but does not present it.** After the Pixoo app starts, or the screen turns off and on, Monitor can be configured without being presented. When the backend starts in device mode, Pixoo resumes a saved Monitor selection by itself if the screen was requested on. Turning the screen on alone never resumes it, and a failed first upload, a retained screen-off request or simulator startup waits for an explicit command. Send it with **Start Monitor** in the Pixoo mode form. The hub never sends one on its own.
 - **A controller stopped mid-session.** Its reads fail with `controller-unavailable` and health shows `unavailable` until the controller returns; the next successful read shows `ready` again without a hub restart. A command in flight when it stopped is `uncertain-result`, not proof that nothing happened. Use **Reload current values** before sending again.
+
+## Start the runtime at boot
+
+[ADR 0008](../../docs/decisions/0008-runtime-hosting.md) keeps the runtime in the Ubuntu WSL distribution and starts it at boot ([#356](https://github.com/jimmie-potts/agent-device-hub/issues/356)). The runtime is six systemd user services: `codex-nanoleaf-monitor` (the shared monitor and hub), `codex-nanoleaf-wall`, `codex-nanoleaf-controller`, `codex-nanoleaf-mcp`, `pixoo-playlist-controller` and `agent-device-hub-local-controllers`. They are wanted by the user's `default.target`, so without this section they start only when someone opens a WSL session, and they stop when WSL shuts the distribution down after the last session closes.
+
+Three pieces change that. Linger starts the user's services with the distribution. A `.wslconfig` idle timeout keeps the distribution running after the last session closes. One Windows scheduled task starts the distribution at system startup, before anyone signs in. The task only starts the distribution and exits; it does not hold a session open, because the idle timeout already keeps the distribution running. Nothing here changes a service, its state, its ports or any device, and nothing touches the firewall, router or firmware. It is the only Windows artifact of the hub's hosting; the Nanoleaf project adds none of its own.
+
+Installing these pieces needs the installation owner's explicit request. The commands were written for WSL 2.6.2 with systemd enabled on Windows 11. Check the version with `wsl.exe --version` and systemd with `ps -p 1 -o comm=` inside the distribution, which prints `systemd`. Run Linux commands in the distribution as the user that owns the services, and PowerShell commands as the same Windows user.
+
+### Enable linger
+
+Linger makes systemd start the user's service manager at boot instead of at the first login, so the enabled user services start with the distribution:
+
+```bash
+sudo loginctl enable-linger "$USER"
+loginctl show-user "$USER" --property=Linger
+systemctl --user is-enabled codex-nanoleaf-monitor codex-nanoleaf-wall codex-nanoleaf-controller codex-nanoleaf-mcp pixoo-playlist-controller agent-device-hub-local-controllers
+```
+
+The second command prints `Linger=yes`, and the third prints `enabled` six times. Enabling linger does not restart the running services.
+
+### Keep the distribution running when the last session closes
+
+By default WSL shuts a distribution down 15 seconds after its last `wsl.exe` session exits, even while systemd services are running. The `[general]` setting `instanceIdleTimeout=-1` turns that shutdown off. WSL added it in 2.5.4. The separate `[wsl2]` setting `vmIdleTimeout` applies only once no distribution is running, so it keeps its default.
+
+In PowerShell, as the installing user, check whether the file already exists:
+
+```powershell
+$wslconfig = Join-Path $env:USERPROFILE '.wslconfig'
+Test-Path $wslconfig
+```
+
+If it prints `False`, create the file:
+
+```powershell
+Set-Content -Path $wslconfig -Value "[general]`r`ninstanceIdleTimeout=-1" -Encoding ascii
+Get-Content $wslconfig
+```
+
+If it prints `True`, add `instanceIdleTimeout=-1` under the file's `[general]` section in a text editor, adding that section if it is missing, and keep every other line. `Get-Content` should show the line under `[general]`.
+
+WSL reads this file when its virtual machine starts, so the setting takes effect after the next `wsl.exe --shutdown` or Windows restart. It applies to every distribution this Windows user starts, so any distribution, such as Docker Desktop's, keeps running until `wsl.exe --terminate <distribution>`, `wsl.exe --shutdown` or a Windows restart.
+
+### Register the startup task
+
+The task runs at system startup as the installing user, whether or not that user is signed in. It uses the S4U logon type, so Windows stores no password, and it runs without elevation. S4U needs the "Log on as a batch job" right, which members of the local Administrators group have by default. The task calls `C:\Program Files\WSL\wsl.exe` directly, not the `wsl.exe` in `System32`: reports on [microsoft/WSL#9231](https://github.com/microsoft/WSL/issues/9231) found that only this path starts WSL from the non-interactive session a startup task runs in.
+
+Register the task from an elevated PowerShell opened by the installing user. `$user` must name that user; check it before registering:
+
+```powershell
+$user = "$env:USERDOMAIN\$env:USERNAME"
+$user
+$action = New-ScheduledTaskAction -Execute 'C:\Program Files\WSL\wsl.exe' -Argument '--distribution Ubuntu --exec /bin/true'
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType S4U -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime' -Description 'Starts the Ubuntu distribution at boot so its user services run without a sign-in (hub ADR 0008).' -Action $action -Trigger $trigger -Principal $principal -Settings $settings
+```
+
+Read it back:
+
+```powershell
+$task = Get-ScheduledTask -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime'
+$task.Principal | Format-List UserId, LogonType, RunLevel
+$task.Actions | Format-List Execute, Arguments
+$task.Triggers | Format-List CimClass, Enabled
+```
+
+Expect the installing user, `S4U`, `Limited`, the `wsl.exe` path and arguments above, and an `MSFT_TaskBootTrigger`.
+
+### Check the installation
+
+A first check needs no restart. Closing WSL stops the six services and every open WSL session, including agent sessions, so choose a quiet moment. From PowerShell:
+
+```powershell
+wsl.exe --shutdown
+Start-ScheduledTask -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime'
+```
+
+`Start-ScheduledTask` returns as soon as the task is queued, and the task then waits while WSL boots the virtual machine and systemd. Wait about a minute, then read the result:
+
+```powershell
+Get-ScheduledTaskInfo -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime' | Format-List LastRunTime, LastTaskResult
+wsl.exe --list --running
+```
+
+`LastTaskResult` is `0` once the task has finished; `267009` means it is still running, so read it again a little later. With no WSL session open, `wsl.exe --list --running` still lists `Ubuntu`. Querying the list does not open a session.
+
+The installation trial repeats this across a real restart and a long idle period, and records the results on [#356](https://github.com/jimmie-potts/agent-device-hub/issues/356):
+
+1. **After a Windows restart without signing in.** Restart Windows and wait at least five minutes before signing in, so the timestamps separate clearly. After signing in, read the Windows boot time in PowerShell with `(Get-CimInstance Win32_OperatingSystem).LastBootUpTime`. Then open the first WSL session and run the unit and hub checks below. Each unit is `active`, and its `ActiveEnterTimestamp` falls shortly after the boot time and before the sign-in. A timestamp after the sign-in means the unit started with the session instead, because opening a session also starts the user's services.
+2. **After every WSL session has been closed for one hour.** Note the `ActiveEnterTimestamp` values, then close every WSL session: terminals, editor remote windows and agent sessions running in WSL. After an hour, run `wsl.exe --list --running` in PowerShell first; it still lists `Ubuntu`. Then open a WSL session and run the checks again. The units are `active` with unchanged timestamps, which shows they never restarted, and the hub answers.
+
+Unit and hub checks, run in WSL. Use the hub's port and a hub credential with `read` scope, as in [Restart and verify](#restart-and-verify):
+
+```bash
+systemctl --user show --property=Id,ActiveState,ActiveEnterTimestamp codex-nanoleaf-monitor codex-nanoleaf-wall codex-nanoleaf-controller codex-nanoleaf-mcp pixoo-playlist-controller agent-device-hub-local-controllers
+uptime --since
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/hub/v1/health
+```
+
+`uptime --since` prints when the WSL virtual machine started, and the health request prints `200`.
+
+[Nanoleaf ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0011-runtime-availability-follows-wsl.md) asks for [Nanoleaf #133](https://github.com/jimmie-potts/codex-nanoleaf/issues/133) to be reopened whenever the services are found stopped while Windows stays up. That reopen is already due, whatever the trial shows, for the WSL restart ADR 0008 observed on 2026-09-25; it is a Nanoleaf tracker action for that project's owner. If the one-hour check also finds the services stopped, record that on #356 and add the observation to #133.
+
+### Troubleshooting
+
+- **The distribution is not running after a restart.** Read `Get-ScheduledTaskInfo` as above. A `LastTaskResult` other than `0`, or a task that works with `Start-ScheduledTask` but not at boot, is the evidence to record on #356 before changing anything. Also check that `.wslconfig` still contains the setting; the WSL Settings app rewrites that file.
+- **The distribution runs but the services do not.** Check `loginctl show-user "$USER" --property=Linger` and read a unit's log with `journalctl --user -u <unit> -b`.
+
+### Remove it
+
+Removing the pieces returns the runtime to manual start: the services start with the first WSL session and stop when WSL shuts the distribution down. Remove the task first, from an elevated PowerShell:
+
+```powershell
+Unregister-ScheduledTask -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime' -Confirm:$false
+Get-ScheduledTask -TaskPath '\agent-device-hub\' -ErrorAction SilentlyContinue
+```
+
+The second command prints nothing. Then delete the `instanceIdleTimeout=-1` line from `.wslconfig`, or delete the file if this procedure created it and nothing else has been added. The default idle shutdown returns after the next `wsl.exe --shutdown` or Windows restart. Finally, in WSL:
+
+```bash
+sudo loginctl disable-linger "$USER"
+loginctl show-user "$USER" --property=Linger
+```
+
+This prints `Linger=no`. The services keep running until the last session closes.

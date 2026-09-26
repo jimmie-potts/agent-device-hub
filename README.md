@@ -115,7 +115,8 @@ Their current repositories retain ownership until those migrations are delivered
 [ADR 0008](docs/decisions/0008-runtime-hosting.md) decides where the runtime
 runs: in the Ubuntu WSL distribution, with linger, an idle timeout and one
 Windows scheduled task still to be installed, until the dedicated Linux server
-of #44 is triggered.
+of #44 is triggered. The hub setup guide documents how to
+[start the runtime at boot](apps/hub/SETUP.md#start-the-runtime-at-boot).
 
 ## Shared lifecycle metadata
 
