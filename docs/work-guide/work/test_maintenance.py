@@ -559,6 +559,22 @@ class Recommendations(unittest.TestCase):
         self.assertEqual(self.R.read(re.sub(r'\| Reviewers \|[^\n]*\n', '', self.written()))['state'], 'unavailable')
         self.assertIsNone(self.R.brief(without)['prompts']['cheaper'])
 
+    def test_work_surface_is_optional_validated_and_badged(self):
+        unmarked = self.R.read(self.written())
+        self.assertIsNone(unmarked['work_surface'], 'A story without the line is not classified')
+        self.assertNotIn('work_surface', self.R.brief(unmarked))
+        self.assertIn('data-surface="none">Not classified</span>', self.R.label_html('H900', unmarked))
+        for value in self.R.WORK_SURFACES:
+            with self.subTest(value=value):
+                marked = self.R.read(self.written(recommendation_entry(work_surface=value)))
+                self.assertEqual(marked['work_surface'], value)
+                self.assertEqual(self.R.brief(marked)['work_surface'], value)
+                self.assertIn(f'data-surface="{value}">{value}</span>', self.R.label_html('H900', marked))
+        invalid = self.written().replace('**Start with:** one fixture session.', '**Start with:** one fixture session.\n**Work surface:** Frontend')
+        result = self.R.read(invalid)
+        self.assertEqual(result['state'], 'unavailable')
+        self.assertIn('Work surface', result['reason'])
+
     def test_unreadable_sections_render_assessment_unavailable(self):
         body = self.written()
         section = self.section(body)
@@ -575,6 +591,7 @@ class Recommendations(unittest.TestCase):
             'missing reviewers row': re.sub(r'\| Reviewers \|[^\n]*\n', '', body),
             'reviewers on an investigation': self.written(recommendation_entry('Investigate first', cheaper=False)).replace('| Reviewers | None | None |', '| Reviewers | Two Sonnet | None |'),
             'no reviewers on an implementation': re.sub(r'\| Reviewers \|[^\n]*\n', '| Reviewers | None | None |\n', body),
+            'invalid work surface': body.replace('**Start with:** one fixture session.', '**Start with:** one fixture session.\n**Work surface:** Frontend'),
         }
         for name, text in cases.items():
             with self.subTest(case=name):
@@ -650,10 +667,13 @@ class Recommendations(unittest.TestCase):
 
     def test_insufficient_story_names_what_is_missing(self):
         entry = dict(repo='agent-device-hub', number=902, status='insufficient', missing='the owner has not chosen the bulbs.',
-                     reassess='the owner records the bulbs.', assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture'))
+                     reassess='the owner records the bulbs.', work_surface='Unknown',
+                     assessed=dict(date='2026-09-24', policy='agent-skills@3e009e6', evidence='fixture'))
         result = self.R.read(self.written(entry))
         self.assertEqual((result['state'], result['label']), ('insufficient', 'Insufficient information'))
         self.assertEqual(result['missing'], 'the owner has not chosen the bulbs.')
+        self.assertEqual(result['work_surface'], 'Unknown')
+        self.assertEqual(self.R.brief(result)['work_surface'], 'Unknown')
         self.assertNotIn('prompts', self.R.brief(result))
         with_table = self.written(entry).replace('**Missing:**', '| | Claude Code | Codex |\n| --- | --- | --- |\n\n**Missing:**')
         self.assertEqual(self.R.read(with_table)['state'], 'unavailable')

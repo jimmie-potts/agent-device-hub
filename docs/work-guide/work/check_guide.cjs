@@ -416,19 +416,29 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert(rendered.length>=liveTotal,'Topic rows and opening cards carry a recommendation label');
      for(const [key,state,text] of rendered){const rec=recs[key]||{state:'unassessed',label:'Not yet assessed'};assert.equal(state,rec.state,`${key} live label state`);assert.equal(text,`Start ${rec.label}`,`${key} live label text`);}
      assert.equal(await page.locator('.work-card[data-key="H999"] .rec').first().textContent(),'Start Not yet assessed','A live-only issue is not yet assessed');
+     // Work surface badges (#411): every open story carries one, "Not classified" when the story has no line.
+     const staticSurfaces=Object.fromEntries([...sourceHtml.matchAll(/<span class="surface-badge" data-key="([HNP]\d+)" data-surface="([^"]*)">([^<]*)<\/span>/g)].map(m=>[m[1],[m[2],m[3]]]));
+     assert.deepEqual(Object.keys(staticSurfaces).sort(),Object.keys(staticLabels).sort(),'Every recommendation entry carries a work-surface badge');
+     for(const [key,[surface,text]] of Object.entries(staticSurfaces)){const expected=recs[key].work_surface||null;
+       assert.equal(surface,expected||'none',`${key} snapshot surface attribute`);assert.equal(decode(text),expected||'Not classified',`${key} snapshot surface text`);}
+     const renderedSurfaces=await page.locator('.surface-badge').evaluateAll(es=>es.map(e=>[e.dataset.key,e.dataset.surface,e.textContent]));
+     assert(renderedSurfaces.length>=liveTotal,'Topic rows and opening cards carry a work-surface badge');
+     for(const [key,surface,text] of renderedSurfaces){const expected=(recs[key]||{}).work_surface||null;
+       assert.equal(surface,expected||'none',`${key} live surface attribute`);assert.equal(text,expected||'Not classified',`${key} live surface text`);}
      // Recommendations from the saved backlog when present, otherwise labeled fixtures injected into this page only.
      const real=state=>Object.entries(recs).find(([,r])=>r.state===state&&(state!=='recommended'||r.prompts.cheaper));
      const fixtureHosts={claude:{model:'Opus',identifier:'opus',thinking:'high',session:'Orchestrate',subagents:'<img src=x onerror="window.recInjected=1"> scouts',reviewers:'Two fresh read-only Sonnet (sonnet) reviewers',availability:'Verified: fixture host evidence',verified:true,checkpoints:null},
                          codex:{model:'Sol',identifier:'gpt-6-sol',thinking:'high',session:'Orchestrate',subagents:'One Luna scout',reviewers:'Two fresh read-only Luna (gpt-6-luna) reviewers at high',availability:'Provisional: fixture',verified:false,checkpoints:null}};
-     const fixture={state:'recommended',label:'Orchestrate · Opus high / Sol high',date:'2026-09-24',policy:'agent-skills@fixture',evidence:'fixture',answer:'<b>fixture</b> answer & "quote"',hosts:fixtureHosts,
+     const fixture={state:'recommended',label:'Orchestrate · Opus high / Sol high',date:'2026-09-24',policy:'agent-skills@fixture',evidence:'fixture',answer:'<b>fixture</b> answer & "quote"',hosts:fixtureHosts,work_surface:'UI',
        why:'fixture why',reassess:'fixture trigger',cheaper:'Fixture cheaper start.',ratings:{Complexity:'medium',Uncertainty:'medium',Impact:'high'},
        prompts:{recommended:{claude:'FIXTURE claude recommended <b>',codex:'FIXTURE codex recommended'},cheaper:{claude:'FIXTURE claude cheaper',codex:'FIXTURE codex cheaper'}}};
      const others=primary.filter(k=>k.startsWith('H')), pick=n=>others[n];
      const cases={recommended:real('recommended')?.[0]||pick(0), plain:pick(1), insufficient:real('insufficient')?.[0]||pick(2), stale:pick(3), unavailable:pick(4)};
      await page.evaluate(([cases,fixture,useReal])=>{const d=document.querySelector('#issue-recommendations'),j=JSON.parse(d.textContent);window.savedRecommendations=d.textContent;
        if(!useReal.recommended)j[cases.recommended]=fixture;
-       j[cases.plain]={...fixture,cheaper:undefined,prompts:{...fixture.prompts,cheaper:null}};
-       if(!useReal.insufficient)j[cases.insufficient]={state:'insufficient',label:'Insufficient information',date:'2026-09-24',policy:'agent-skills@fixture',missing:'the fixture owner decision.',ratings:{}};
+       // No work_surface here: an unmarked recommendation still shows "Not classified".
+       j[cases.plain]={...fixture,work_surface:undefined,cheaper:undefined,prompts:{...fixture.prompts,cheaper:null}};
+       if(!useReal.insufficient)j[cases.insufficient]={state:'insufficient',label:'Insufficient information',date:'2026-09-24',policy:'agent-skills@fixture',missing:'the fixture owner decision.',work_surface:'Backend',ratings:{}};
        j[cases.stale]={state:'stale',label:'Needs reassessment (story text changed after 2026-09-20)',date:'2026-09-20',policy:'agent-skills@fixture',ratings:{}};
        j[cases.unavailable]={state:'unavailable',label:'Assessment unavailable',reason:'unknown key "Rationale"',ratings:{}};
        d.textContent=JSON.stringify(j);},[cases,fixture,{recommended:!!real('recommended'),insufficient:!!real('insufficient')}]);
@@ -445,6 +455,9 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert(text.includes(rec.answer),'The answer line is text'); assert(/Claude Code/i.test(text)&&/Codex/i.test(text),'Both hosts are labeled');
        for(const host of ['claude','codex']){assert(text.includes(rec.hosts[host].session),'Session type as text');assert(text.includes(`${rec.hosts[host].model} (${rec.hosts[host].identifier})`),'Model as text');assert(text.includes(rec.hosts[host].reviewers),'Reviewers as text');assert(text.includes(rec.hosts[host].verified?'verified':'provisional'),'Availability label as text');}
        assert((await start.locator('.brief-rec-state').textContent()).startsWith(`Recommended · assessed ${rec.date}`),'State, date and policy');
+       const surfaceBadge=start.locator('.brief-surface .surface-badge');
+       assert.equal(await surfaceBadge.textContent(),rec.work_surface||'Not classified','Work surface badge text');
+       assert.equal(await surfaceBadge.getAttribute('data-surface'),rec.work_surface||'none','Work surface badge attribute');
        assert(/before pasting/.test(text),'The reader chooses the model and effort in the host');
        assert.equal(await page.evaluate(()=>window.recInjected),undefined,'Recommendation text never executes'); assert.equal(await start.locator('img,b').count(),0,'Recommendation text stays literal');
        await noOverflow(`Recommendation at ${width}`);
@@ -459,6 +472,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert((await hint.textContent()).includes(rec.date));
        await page.keyboard.press('Escape');
        await open(cases.plain); await dialog.locator('[data-action="implement"]').click();
+       assert.equal(await start.locator('.brief-surface .surface-badge').textContent(),'Not classified','An unmarked recommendation is not classified');
+       assert.equal(await start.locator('.brief-surface .surface-badge').getAttribute('data-surface'),'none');
        assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled without a cheaper start'); assert.equal(await dialog.locator('.brief-option-note').textContent(),'No cheaper start is recorded for this story.');
        assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
        await page.keyboard.press('Escape');
@@ -478,6 +493,9 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        for(const [name,key,expect] of [['insufficient',cases.insufficient,/^Insufficient information/],['stale',cases.stale,/^Needs reassessment \(story text changed after 2026-09-20\)/],['unavailable',cases.unavailable,/^Assessment unavailable/],['unassessed','H999',/^Not yet assessed/]]){
          await open(key); await dialog.locator('[data-action="implement"]').click();
          assert.match(await start.locator('.brief-rec-state').textContent(),expect,`${name} state as text`);
+         const stateSurface=(current[key]||{}).work_surface;
+         assert.equal(await start.locator('.brief-surface .surface-badge').textContent(),stateSurface||'Not classified',`${name} surface text`);
+         assert.equal(await start.locator('.brief-surface .surface-badge').getAttribute('data-surface'),stateSurface||'none',`${name} surface attribute`);
          assert(await dialog.locator('.brief-options').isHidden(),`${name}: no host or start toggles`); assert(await start.locator('.brief-hosts').isHidden(),`${name}: no host table`);
          assert.equal(await prompt.inputValue(),key==='H999'?'Use the deliver-work skill to deliver https://github.com/jimmie-potts/agent-device-hub/issues/999. If deliver-work isn\'t available here, say so and stop.':generic(key),`${name} falls back to the generic prompt`);
          assert.match(await hint.textContent(),/generic prompt/,`${name} notice`);

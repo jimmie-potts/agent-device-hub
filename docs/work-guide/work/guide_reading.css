@@ -17,6 +17,12 @@
 .status-key[data-status="in-progress"],.status-key[data-status="review"]{--state:var(--status-active)}
 .status-key[data-status="blocked"]{--state:var(--status-blocked)}
 .status-key[data-status="closed"]{--state:var(--status-closed)}
+/* A story's UI/Backend/Unknown classification from its Execution recommendation (#411); "none" is an unmarked story. */
+.surface-badge{--state:var(--muted);display:inline-block;margin:4px 0 0;color:var(--state);border:1px solid color-mix(in srgb,var(--state) 45%,transparent);padding:2px 8px;border-radius:var(--radius);font:10px/1.5 var(--mono);letter-spacing:.05em;text-transform:uppercase}
+.surface-badge[data-surface="UI"]{--state:var(--accent)}
+.surface-badge[data-surface="Backend"]{--state:var(--text)}
+.surface-badge[data-surface="Unknown"]{--state:var(--pending)}
+.surface-badge[data-surface="none"]{border-style:dashed}
 .issue-legend p,.parallel-plan>p{color:var(--muted);font-size:12px;margin:12px 0 0;max-width:900px}
 .overview h2{font-size:23px;max-width:760px;margin:8px 0 20px}
 .route-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin-bottom:22px}
@@ -45,8 +51,8 @@
 @media(max-width:1000px){.route-grid{grid-template-columns:1fr;gap:15px}.route-grid article+article{padding-top:13px;border-top:1px solid var(--edge)}}
 @media(max-width:600px){.parallel-grid{grid-template-columns:1fr}.overview h2,.parallel-plan h2{font-size:20px}.next-action{padding:14px}.guide>summary{flex-wrap:wrap}.guide-count{margin-left:37px;font-size:10px}.guide-heading{flex-basis:calc(100% - 55px)}.guide .chevron{margin-left:auto}.issue{font-size:11px}.issue-status{font-size:10px}}
 @media print{
-  .issue,.status-key{--state:var(--muted)!important;background:var(--panel)!important;border-color:var(--edge-strong)!important;break-inside:avoid}
-  .issue .issue-id,.issue-status,.status-symbol,.status-key{color:var(--text)!important}
+  .issue,.status-key,.surface-badge{--state:var(--muted)!important;background:var(--panel)!important;border-color:var(--edge-strong)!important;break-inside:avoid}
+  .issue .issue-id,.issue-status,.status-symbol,.status-key,.surface-badge{color:var(--text)!important}
   .issue-legend,.parallel-plan,.next-action,.parallel-unit,.all-done{background:var(--panel);color:var(--text);border-color:var(--edge)}
   .issue-legend p,.parallel-plan p,.parallel-unit p,.next-action p,.next-issues li>span,.delivery-evidence>summary,.guide-evidence>summary{color:var(--muted)}
   .next-action h3,.parallel-unit h3{color:var(--text)}

@@ -29,9 +29,10 @@ RATING = re.compile(r'\b(Complexity|Uncertainty|Impact)\b[\s:*]*(?:is\s+)?\**\s*
 RATING_BEFORE = re.compile(r'\b' + _LEVEL + r'\s+(complexity|uncertainty|impact)\b', re.I)
 HOSTS = {'claude': 'Claude Code', 'codex': 'Codex'}
 SESSION_TYPES = ('One-shot', 'Pair', 'Orchestrate', 'Investigate first')
+WORK_SURFACES = ('UI', 'Backend', 'Unknown')
 ROWS = ('Model', 'Thinking level', 'Session type', 'Subagents', 'Reviewers', 'Availability', 'Checkpoints')
 REQUIRED_ROWS = ROWS[:-1]
-LABELS = ('Start with', 'Cheaper start', 'Why', 'Reassess when', 'Assessed', 'Status', 'Missing')
+LABELS = ('Start with', 'Work surface', 'Cheaper start', 'Why', 'Reassess when', 'Assessed', 'Status', 'Missing')
 PROMPTS = {f'{prefix} ({name})': (start, host) for start, prefix in (('recommended', 'Prompt'), ('cheaper', 'Cheaper prompt'))
            for host, name in HOSTS.items()}
 STATE_LABELS = {'stale': 'Needs reassessment', 'insufficient': 'Insufficient information',
@@ -128,6 +129,17 @@ def _table(rows):
     return hosts
 
 
+def _work_surface(values):
+    """The story's own classification, or None when it carries no line: the
+    guide never infers UI or Backend for an unmarked story."""
+    if 'Work surface' not in values:
+        return None
+    value = values['Work surface']
+    if value not in WORK_SURFACES:
+        raise Unreadable(f'unknown Work surface "{value}"')
+    return value
+
+
 def _assessed(value):
     parts = value.split(' · ')
     if len(parts) < 4 or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', parts[0]):
@@ -153,12 +165,12 @@ def _parse_section(lines):
     if 'Status' in values:
         if values['Status'] != 'insufficient':
             raise Unreadable('Status may only be "insufficient"')
-        extra = set(values) - {'Status', 'Missing', 'Why', 'Reassess when', 'Assessed'}
+        extra = set(values) - {'Status', 'Missing', 'Why', 'Reassess when', 'Assessed', 'Work surface'}
         if extra or prompts or table is not None:
             raise Unreadable('an insufficient section carries no answer, table or prompts')
         if 'Missing' not in values:
             raise Unreadable('an insufficient section names what is Missing')
-        return dict(result, state='insufficient', missing=values['Missing'])
+        return dict(result, state='insufficient', missing=values['Missing'], work_surface=_work_surface(values))
     if 'Missing' in values:
         raise Unreadable('Missing belongs only to an insufficient section')
     for key in ('Start with', 'Why', 'Reassess when'):
@@ -178,7 +190,7 @@ def _parse_section(lines):
     declined = bool(cheaper) and re.match(r'none recorded\b', cheaper, re.I) is not None
     if (bool(cheaper) and not declined) != bool(starts['cheaper']) or (starts['cheaper'] and set(starts['cheaper']) != set(HOSTS)):
         raise Unreadable('a cheaper start needs one line and both host prompts, or "none recorded" and no prompts')
-    return dict(result, state='recommended', answer=values['Start with'], hosts=hosts,
+    return dict(result, state='recommended', answer=values['Start with'], work_surface=_work_surface(values), hosts=hosts,
                 cheaper=cheaper, prompts={k: v or None for k, v in starts.items()})
 
 
@@ -211,6 +223,7 @@ def read(body):
             current = fingerprint(body)
             if result['fingerprint'] != current:
                 result = dict(result, saved_state=result['state'], state='stale', current=current)
+    result.setdefault('work_surface', None)
     result['label'] = label(result)
     result['ratings'] = ratings(body)
     return result
@@ -226,8 +239,8 @@ def display(value):
 def brief(result):
     """What the page may show for one story. Only a current recommendation
     carries its answer, hosts and prompts; other states carry their notice."""
-    fields = {'recommended': ('date', 'policy', 'evidence', 'answer', 'hosts', 'why', 'reassess', 'cheaper', 'prompts'),
-              'insufficient': ('date', 'policy', 'evidence', 'missing', 'why', 'reassess'),
+    fields = {'recommended': ('date', 'policy', 'evidence', 'answer', 'work_surface', 'hosts', 'why', 'reassess', 'cheaper', 'prompts'),
+              'insufficient': ('date', 'policy', 'evidence', 'missing', 'work_surface', 'why', 'reassess'),
               'stale': ('date', 'policy'), 'unavailable': ('reason',), 'unassessed': ()}[result['state']]
     shown = {name: result[name] for name in fields if result.get(name) is not None}
     for name in ('evidence', 'answer', 'why', 'reassess', 'cheaper', 'missing'):
@@ -240,9 +253,12 @@ def brief(result):
 
 
 def label_html(key, result):
-    """The row and card label; guide_overview.js renders the same markup."""
+    """The row and card label plus its work-surface badge; the same markup
+    the brief dialog's JS renders for the saved recommendation."""
+    surface = result.get('work_surface')
+    badge = f'<span class="surface-badge" data-key="{html.escape(key)}" data-surface="{html.escape(surface or "none")}">{html.escape(surface or "Not classified")}</span>'
     return (f'<p class="rec" data-key="{html.escape(key)}" data-rec="{result["state"]}"><span class="rec-key">Start</span> '
-            f'{html.escape(result["label"])}</p>')
+            f'{html.escape(result["label"])}</p>{badge}')
 
 
 # --- Rendering --------------------------------------------------------------
@@ -315,6 +331,9 @@ def _fenced(text):
 
 def render(entry, assessed_date, story_fingerprint):
     """The canonical section text for one assessor entry."""
+    if entry.get('work_surface') and entry['work_surface'] not in WORK_SURFACES:
+        raise ValueError(f"unknown work_surface \"{entry['work_surface']}\"")
+    surface_line = [f"**Work surface:** {entry['work_surface']}"] if entry.get('work_surface') else []
     assessed = entry['assessed']
     closing = [f"**Assessed:** {assessed_date} · policy `{assessed['policy']}` · evidence: {_one_line(assessed['evidence'])} · fingerprint: `{story_fingerprint}`"]
     if entry.get('why'):
@@ -322,12 +341,12 @@ def render(entry, assessed_date, story_fingerprint):
     if entry.get('reassess'):
         closing.insert(len(closing) - 1, f"**Reassess when:** {_one_line(entry['reassess'])}")
     if entry['status'] == 'insufficient':
-        lines = [f'## {HEADING}', '', '**Status:** insufficient', f"**Missing:** {_one_line(entry['missing'])}", '', *closing]
+        lines = [f'## {HEADING}', '', '**Status:** insufficient', f"**Missing:** {_one_line(entry['missing'])}", *surface_line, '', *closing]
         return '\n'.join(lines)
     hosts = entry['hosts']
     rows = {'Model': 'model', 'Thinking level': 'thinking', 'Session type': 'session',
             'Subagents': 'subagents', 'Reviewers': 'reviewers', 'Availability': 'availability', 'Checkpoints': 'checkpoints'}
-    lines = [f'## {HEADING}', '', f"**Start with:** {_one_line(entry['answer'])}", '',
+    lines = [f'## {HEADING}', '', f"**Start with:** {_one_line(entry['answer'])}", *surface_line, '',
              '| | Claude Code | Codex |', '| --- | --- | --- |']
     for row, field in rows.items():
         values = [hosts[host].get(field) for host in HOSTS]
