@@ -22,9 +22,13 @@ class PublishTests(unittest.TestCase):
         subprocess.run(['git', 'init', '--bare', str(self.remote)], check=True, capture_output=True)
         self.git('remote', 'add', 'origin', str(self.remote))
         for path in publisher.ALLOWLIST:
-            directory = self.root / path
-            directory.mkdir(parents=True)
-            (directory / 'fixture.json').write_text('before\n')
+            fixture = self.root / path
+            if not fixture.suffix:
+                fixture = fixture / 'fixture.json'
+            fixture.parent.mkdir(parents=True, exist_ok=True)
+            fixture.write_text('before\n')
+        self.authored_history = self.root / 'docs/work-guide/work/history/completed-guide-evidence.json'
+        self.authored_history.write_text('owner history before\n')
         (self.root / 'source.py').write_text('source before\n')
         self.git('add', '.')
         self.git('commit', '-m', 'base')
@@ -98,7 +102,7 @@ class PublishTests(unittest.TestCase):
         first = self.publish()
         self.prs = [{'number': 900, 'url': first['pr_url']}]
         self.calls.clear()
-        (self.root / publisher.ALLOWLIST[1] / 'fixture.json').write_text('history after\n')
+        (self.root / publisher.ALLOWLIST[1]).write_text('history after\n')
         result = self.publish(first['sha'], 'failure')
         check = next(payload for args, payload in self.calls if args[0] == 'api')
         self.assertEqual(check['head_sha'], result['sha'])
@@ -226,6 +230,13 @@ class PublishTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'Main advanced'):
             self.publish(first['sha'], 'failure')
         self.assertTrue(all(args[:2] == ['pr', 'list'] or args[:3] == ['api', '--method', 'GET'] for args, _ in self.calls))
+
+    def test_authored_history_is_excluded_from_snapshot_commit(self):
+        self.change()
+        self.authored_history.write_text('owner history after\n')
+        result = self.publish()
+        self.assertEqual(self.git('show', result['sha'] + ':docs/work-guide/work/history/completed-guide-evidence.json'), 'owner history before')
+        self.assertEqual(self.authored_history.read_text(), 'owner history after\n')
 
     def test_invalid_conclusion_has_no_mutations(self):
         with self.assertRaises(ValueError):

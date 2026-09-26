@@ -15,7 +15,7 @@ REPOSITORY = 'jimmie-potts/agent-device-hub'
 BRANCH = 'guide/nightly-refresh'
 ALLOWLIST = (
     'docs/work-guide/work/backlogs',
-    'docs/work-guide/work/history',
+    'docs/work-guide/work/history/github-history.json',
     'docs/work-guide/outputs',
 )
 
@@ -138,7 +138,9 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
                 return reconcile_unchanged(root, previous, report_path, conclusion, check_summary, base_sha)
             return {'changed': False, 'sha': previous, 'pr_url': None}
         paths = git('diff', '--name-only', base_sha, tree).splitlines()
-        if any(not any(path.startswith(prefix + '/') for prefix in ALLOWLIST) for path in paths):
+        if any(not (path == ALLOWLIST[1] or any(
+                path.startswith(prefix + '/') for prefix in (ALLOWLIST[0], ALLOWLIST[2])
+        )) for path in paths):
             raise RuntimeError('Snapshot commit includes a path outside the allowlist')
         prs = open_prs(root)
         remote_main = git('ls-remote', 'origin', 'refs/heads/main').split()
