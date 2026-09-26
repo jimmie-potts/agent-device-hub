@@ -314,11 +314,16 @@ A first check needs no restart. Closing WSL stops the six services and every ope
 ```powershell
 wsl.exe --shutdown
 Start-ScheduledTask -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime'
+```
+
+`Start-ScheduledTask` returns as soon as the task is queued, and the task then waits while WSL boots the virtual machine and systemd. Wait about a minute, then read the result:
+
+```powershell
 Get-ScheduledTaskInfo -TaskPath '\agent-device-hub\' -TaskName 'Start WSL runtime' | Format-List LastRunTime, LastTaskResult
 wsl.exe --list --running
 ```
 
-`LastTaskResult` is `0` once the task has finished, and after a minute with no WSL session open `wsl.exe --list --running` still lists `Ubuntu`. Querying the list does not open a session.
+`LastTaskResult` is `0` once the task has finished; `267009` means it is still running, so read it again a little later. With no WSL session open, `wsl.exe --list --running` still lists `Ubuntu`. Querying the list does not open a session.
 
 The installation trial repeats this across a real restart and a long idle period, and records the results on [#356](https://github.com/jimmie-potts/agent-device-hub/issues/356):
 
@@ -335,7 +340,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat /absolu
 
 `uptime --since` prints when the WSL virtual machine started, and the health request prints `200`.
 
-If the one-hour check finds the services stopped while Windows stayed up, record that on #356 and reopen [Nanoleaf #133](https://github.com/jimmie-potts/codex-nanoleaf/issues/133) with the observation, as [Nanoleaf ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0011-runtime-availability-follows-wsl.md) asks.
+[Nanoleaf ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0011-runtime-availability-follows-wsl.md) asks for [Nanoleaf #133](https://github.com/jimmie-potts/codex-nanoleaf/issues/133) to be reopened whenever the services are found stopped while Windows stays up. That reopen is already due, whatever the trial shows, for the WSL restart ADR 0008 observed on 2026-09-25; it is a Nanoleaf tracker action for that project's owner. If the one-hour check also finds the services stopped, record that on #356 and add the observation to #133.
 
 ### Troubleshooting
 
