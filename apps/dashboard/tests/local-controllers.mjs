@@ -21,7 +21,8 @@ try {
  const host={...s.host,credentials:s.host.credentials.map(c=>({...c,devices:c.devices.includes('desk')?[...c.devices,'lamp']:c.devices})),
   lifx:{...s.host.lifx,bulbs:[bulb('desk','192.0.2.10'),{deviceId:'shelf',address:'192.0.2.11'},bulb('lamp','192.0.2.12')]}};
  lifx.mode.power=false;lifx.mode.failFor.add('lamp');
- const local=await startLocalControllers(loadHostConfig(s.write('host.json',host)),{tidbyt:{connection:tidbyt.connection,leaseRoot:s.locks},lifx:{transportFactory:lifx.transportFactory,leaseRoot:s.locks}});
+ // A dedicated, test-scoped mode directory: never the real default under the user's home.
+ const local=await startLocalControllers(loadHostConfig(s.write('host.json',host)),{tidbyt:{connection:tidbyt.connection,leaseRoot:s.locks},lifx:{transportFactory:lifx.transportFactory,leaseRoot:s.locks,modeStateRoot:join(s.dir,'lifx-modes')}});
  cleanup.push(()=>local.close());
  const directory=await mkdtemp(join(tmpdir(),'dashboard-local-'));const token='d'.repeat(43),reader='r'.repeat(43),devices=['tidbyt','desk','shelf','lamp'];
  const endpoint=local.url+'/controller/v1';
@@ -97,6 +98,30 @@ try {
  await section(page).getByLabel('Brightness (%)').fill('35');
  await new Promise(resolve=>{const wait=()=>control.posts.some(p=>p.body.command?.kind==='brightness.set')?resolve():setTimeout(wait,25);wait();});
  assert.deepEqual(control.posts.find(p=>p.body.command?.kind==='brightness.set').body.command,{kind:'brightness.set',percent:35});
+
+ // hub#20: the mode control. A bulb with no recorded mode starts Free, so color/temperature start enabled and there is no Switch to Free button yet.
+ const modeSelect=section(page).getByRole('combobox',{name:'Device mode',exact:true});
+ await modeSelect.waitFor();
+ assert.deepEqual(await modeSelect.locator('option').allTextContents(),['Work','Quiet','Free']);
+ assert.equal(await modeSelect.inputValue(),'Free');
+ assert.equal(await section(page).getByRole('button',{name:'Switch to Free',exact:true}).count(),0);
+ assert.equal(await hue.isDisabled(),false);
+ // Work disables color and temperature with the ADR 0005 reason and offers a one-click Switch to Free; power and brightness stay independent of mode.
+ await modeSelect.selectOption('Work');
+ await form('Mode').getByRole('status').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
+ await section(page).getByText('This bulb is in Work and presents agent status; color and temperature need Free',{exact:false}).first().waitFor();
+ assert.equal(await hue.isDisabled(),true);
+ assert.equal(await saturation.isDisabled(),true);
+ assert.equal(await kelvin.isDisabled(),true);
+ assert.equal(await powerGroup.getByRole('button',{name:'Turn off',exact:true}).isDisabled(),false,'power stays mode-independent');
+ assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false,'brightness stays mode-independent');
+ await axe(page);await capture(page,'lifx-mode-work.png');
+ // The one-click Switch to Free re-enables color and temperature; the button itself disappears once Free is observed.
+ await section(page).getByRole('button',{name:'Switch to Free',exact:true}).click();
+ await section(page).getByRole('button',{name:'Switch to Free',exact:true}).waitFor({state:'detached'});
+ await hue.waitFor();
+ assert.equal(await modeSelect.inputValue(),'Free');
+ assert.equal(await hue.isDisabled(),false);
 
  // An unqualified bulb declares nothing: one line for general controls and one for lighting, and no forms.
  await page.getByRole('link',{name:'shelf lifx',exact:true}).click();

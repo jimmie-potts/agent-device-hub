@@ -1,5 +1,5 @@
 {
-  "name": "@jimmie-potts/lifx-controller",
+  "name": "@jimmie-potts/agent-status",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,6 @@
     }
   },
   "dependencies": {
-    "@jimmie-potts/agent-state": "3.2.0",
-    "@jimmie-potts/agent-status": "0.1.0",
-    "@jimmie-potts/device-contracts": "1.1.0",
-    "ajv": "8.20.0"
+    "@jimmie-potts/agent-state": "3.2.0"
   }
 }

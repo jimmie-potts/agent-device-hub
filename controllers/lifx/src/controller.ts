@@ -1,6 +1,19 @@
-import { readFileSync } from "node:fs";
+import {
+  readFileSync,
+  renameSync,
+  mkdirSync,
+  lstatSync,
+  openSync,
+  closeSync,
+  fstatSync,
+  readSync,
+  writeSync,
+  unlinkSync,
+  constants,
+} from "node:fs";
+import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import {
   admit,
   validate,
@@ -11,6 +24,7 @@ import {
   type Ticket,
   type FailureCode,
   type AdmissionState,
+  type Mode,
 } from "@jimmie-potts/device-contracts";
 import {
   UdpTransport,
@@ -68,14 +82,124 @@ export type Options = {
   maxPending?: number;
   now?: () => number;
   transportFactory?: (bulb: Readonly<BulbConfig>) => Transport;
+  /** Where per-bulb Work/Quiet/Free modes persist. Without one, no bulb has modes: a
+   * qualified bulb still advertises `modes: {supported: false}` and `mode.set` is
+   * `unsupported-capability`. The owning host supplies this path; the package has no
+   * default of its own, so source tests never touch a real home directory. */
+  modeStateRoot?: string;
 };
+/** Qualified bulbs advertise these modes only when `modeStateRoot` is configured; unqualified bulbs never do. */
+export const SUPPORTED_MODES: readonly Mode[] = ["Work", "Quiet", "Free"];
+/** Absolute integer HSBK in LIFX wire units, mirroring `protocol.ts`'s `Hsbk`. */
+export type PaintHsbk = { hue: number; saturation: number; brightness: number; kelvin: number };
+/** A private, non-public command kind: never accepted by `parsed()`/`submit()` or the public
+ * lighting profile schema, so no external caller can reach it. It exists only so the automatic
+ * status paint shares the bulb's queue, request namespace and generation/cancellation rules,
+ * and shows in `lighting.pending` like an ordinary color command. */
+const PAINT_KIND = "lifx.internal.status-paint" as const;
+type PaintCommand = { kind: typeof PAINT_KIND } & PaintHsbk;
+type PaintRequest = { profile: typeof LIFX_PROFILE; requestId: Ticket; command: PaintCommand };
 type Entry = {
-  request: AnyRequest;
+  request: AnyRequest | PaintRequest;
   receipt: Receipt;
   done: Promise<Receipt>;
   resolve: (r: Receipt) => void;
 };
 type Job = { run: () => Promise<void> };
+function modeFile(root: string, deviceId: string): string {
+  return join(root, createHash("sha256").update(deviceId).digest("hex") + ".json");
+}
+const MAX_MODE_FILE_BYTES = 256;
+/** Creates the directory if missing, then requires it be a real directory owned by this
+ * process with no group/world permission bits. A pre-existing unsafe directory (wrong
+ * owner, symlink or group/world readable) fails closed rather than being reused. */
+function safeModeDir(root: string): boolean {
+  try {
+    mkdirSync(root, { recursive: true, mode: 0o700 });
+    const stat = lstatSync(root);
+    return (
+      stat.isDirectory() &&
+      stat.uid === process.getuid?.() &&
+      (stat.mode & 0o077) === 0
+    );
+  } catch {
+    return false;
+  }
+}
+/** Missing file, symlink, wrong owner/permissions, oversize or invalid JSON all default to
+ * Free, per the owner's decision. Opened with `O_NOFOLLOW` so a symlinked path never
+ * resolves outside the mode directory. */
+function readPersistedMode(root: string, deviceId: string): Mode {
+  if (!safeModeDir(root)) return "Free";
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      modeFile(root, deviceId),
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+    const stat = fstatSync(fd);
+    if (
+      !stat.isFile() ||
+      stat.uid !== process.getuid?.() ||
+      (stat.mode & 0o077) !== 0 ||
+      stat.size > MAX_MODE_FILE_BYTES
+    )
+      return "Free";
+    const buffer = Buffer.alloc(MAX_MODE_FILE_BYTES + 1);
+    let count = 0;
+    for (;;) {
+      const size = readSync(fd, buffer, count, buffer.length - count, null);
+      if (size === 0) break;
+      count += size;
+      if (count > MAX_MODE_FILE_BYTES) return "Free";
+    }
+    const value = JSON.parse(buffer.subarray(0, count).toString("utf8"));
+    if (object(value) && SUPPORTED_MODES.includes(value.mode as Mode)) {
+      return value.mode as Mode;
+    }
+  } catch {
+    /* missing, symlinked, unreadable or invalid: default to Free */
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  return "Free";
+}
+/** Atomic, owner-only write: an exclusive, non-following temp file at 0600 in the same
+ * directory, then an atomic rename. Throws (causing a failed receipt) when the directory
+ * is unsafe or the write itself fails; never falls back to an unsafe location. */
+function writePersistedMode(root: string, deviceId: string, mode: Mode): void {
+  if (!safeModeDir(root)) throw new Error("unsafe-mode-directory");
+  const path = modeFile(root, deviceId);
+  const tmp = `${path}.tmp-${randomUUID()}`;
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      tmp,
+      constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_WRONLY,
+      0o600,
+    );
+    const bytes = Buffer.from(JSON.stringify({ mode }), "utf8");
+    let written = 0;
+    while (written < bytes.length) written += writeSync(fd, bytes, written, bytes.length - written);
+    closeSync(fd);
+    fd = undefined;
+    renameSync(tmp, path);
+  } catch (error) {
+    if (fd !== undefined) {
+      try {
+        closeSync(fd);
+      } catch {
+        /* already closed or invalid: nothing more to release */
+      }
+    }
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* nothing to clean up */
+    }
+    throw error;
+  }
+}
 const clone = <T>(x: T): T => structuredClone(x);
 const same = (a: Ticket, b: Ticket) =>
   a.epoch === b.epoch && a.sequence === b.sequence;
@@ -119,9 +243,18 @@ class Bulb {
   jobs: Job[] = [];
   running = false;
   pending: Entry[] = [];
-  cache: { request: AnyRequest; receipt: Receipt }[] = [];
+  cache: { request: AnyRequest | PaintRequest; receipt: Receipt }[] = [];
   active?: AbortController;
   observation?: { state: LightState; at: number };
+  /** The persisted Work/Quiet/Free mode. Read once at construction; changed only by an
+   * admitted, successfully persisted `mode.set`. A bulb with no recorded mode starts Free. */
+  mode: Mode;
+  readonly #modeRoot?: string;
+  readonly #modeListeners = new Set<() => void>();
+  /** Modes exist only for a qualified bulb whose owner configured a mode state root. */
+  get #modesEnabled(): boolean {
+    return this.qualified && this.#modeRoot !== undefined;
+  }
   desired: Snapshot["state"]["desired"] = {
     power: { status: "unknown" },
     brightness: { status: "unknown" },
@@ -144,6 +277,7 @@ class Bulb {
       >
     >,
     factory: (b: Readonly<BulbConfig>) => Transport,
+    modeRoot: string | undefined,
   ) {
     this.qualified =
       config.vendor === 1 &&
@@ -151,6 +285,19 @@ class Bulb {
       config.firmwareMajor === 2 &&
       config.firmwareMinor === 90;
     this.transport = factory(Object.freeze({ ...config }));
+    this.#modeRoot = modeRoot;
+    this.mode =
+      this.qualified && modeRoot !== undefined
+        ? readPersistedMode(modeRoot, config.deviceId)
+        : "Free";
+    if (this.#modesEnabled) {
+      this.desired.mode = { status: "known", value: this.mode };
+    }
+  }
+  /** Subscribe to a successful `mode.set`. Returns an unsubscribe function. */
+  onModeChange(listener: () => void): () => void {
+    this.#modeListeners.add(listener);
+    return () => this.#modeListeners.delete(listener);
   }
   clock() {
     return {
@@ -169,7 +316,9 @@ class Bulb {
       zones: { supported: false },
       scenes: { supported: false },
       preview: { supported: false },
-      modes: { supported: false },
+      modes: this.#modesEnabled
+        ? { supported: true, values: [...SUPPORTED_MODES] }
+        : { supported: false },
     };
   }
   snapshot() {
@@ -252,7 +401,7 @@ class Bulb {
       },
     };
   }
-  retain(request: AnyRequest, receipt: Receipt) {
+  retain(request: AnyRequest | PaintRequest, receipt: Receipt) {
     this.cache.push({ request: clone(request), receipt: clone(receipt) });
     if (this.cache.length > 256) this.cache.shift();
     this.lastOutcome = { status: "known", receipt: clone(receipt) };
@@ -359,9 +508,12 @@ class Bulb {
       done: done.then(clone),
     };
   }
+  /** The current drain-to-empty cycle, if one is running; used by `closeGracefully` to wait
+   * for an active job (and every job queued behind it) without aborting the active one. */
+  draining?: Promise<void>;
   enqueue(run: () => Promise<void>) {
     this.jobs.push({ run });
-    if (!this.running) void this.drain();
+    if (!this.running) this.draining = this.drain();
   }
   async drain() {
     this.running = true;
@@ -432,6 +584,25 @@ class Bulb {
     try {
       if (this.closed || !same(receipt.generation, this.generation))
         throw new Error("cancelled");
+      if (request.command.kind === "mode.set") {
+        // The controller owns the mode: no bulb traffic, no LightGet. The in-memory mode
+        // and desired.mode change only after the persisted write succeeds. The contract's
+        // receipt schema ties outcome "sent" to priorEffects "confirmed-transmission": there
+        // is no valid combination for "succeeded with certainty, nothing was transmitted", so
+        // a fully persisted mode change (its own point of effect, with no possibility of a
+        // lost transmission) reports the same pairing every genuinely completed write does.
+        // admit() already gates mode.set on modes.supported, which requires #modeRoot; this
+        // is an extra defensive check, not a reachable path.
+        if (this.#modeRoot === undefined) throw new Error("mode-not-configured");
+        writePersistedMode(this.#modeRoot, this.config.deviceId, request.command.mode);
+        this.mode = request.command.mode;
+        this.desired.mode = { status: "known", value: this.mode };
+        receipt.outcome = "sent";
+        receipt.priorEffects = "confirmed-transmission";
+        receipt.completedOperations = ["set"];
+        for (const listener of this.#modeListeners) listener();
+        return;
+      }
       let type: number, payload: Buffer;
       if (request.command.kind === "power.set") {
         type = 21;
@@ -480,9 +651,13 @@ class Bulb {
           ? "stale-generation"
           : writeStarted
             ? "uncertain-result"
+            // A persisted-mode write failure never touches the bulb; `transport-failure` is the
+            // closest code in the closed set for "the attempt could not complete" with no
+            // capability, request-shape or generation problem, since the contract has no
+            // dedicated local-storage failure code.
             : "transport-failure",
       };
-      this.health = "degraded";
+      if (request.command.kind !== "mode.set") this.health = "degraded";
     }
   }
   refresh(): Promise<{ ok: boolean; failure?: FailureCode }> {
@@ -507,6 +682,98 @@ class Bulb {
       }),
     );
   }
+  /**
+   * The internal absolute status paint: one zero-duration LightSetColor with full HSBK,
+   * no LightGet, and no effect on power. It mints its own envelope from this bulb's own
+   * next request ID, current revision and generation, exactly like an admitted public
+   * command, and shares the same queue, generation-cancellation and receipt shape. Its
+   * private command kind is never accepted by `parsed()`/`submit()` or the HTTP routes,
+   * so no external caller can reach it. A paint that loses a race for queue capacity is
+   * a failed attempt and is not retried; the next transition tries again.
+   */
+  paintStatus(hsbk: PaintHsbk): Submission {
+    // Defense in depth: an unqualified bulb is never painted, even if a caller reaches this
+    // directly. No traffic, no pending entry.
+    if (!this.qualified) return { decision: "unsupported-capability", reserved: false };
+    if (this.closed || this.jobs.length >= this.options.maxPending) {
+      return { decision: "capacity", reserved: false };
+    }
+    const requestId: Ticket = { epoch: this.epoch, sequence: this.next };
+    this.next += 1;
+    // Transient, like a moment: it paints a color, not a desired configuration change.
+    const receipt: Receipt = {
+      apiVersion: "1.0",
+      controllerId: this.options.controllerId,
+      deviceId: this.config.deviceId,
+      requestId: clone(requestId),
+      configurationRevision: this.revision,
+      generation: clone(this.generation),
+      outcome: "queued",
+      priorEffects: "none",
+      completedOperations: [],
+      uncertainOperations: [],
+    };
+    const request: PaintRequest = {
+      profile: LIFX_PROFILE,
+      requestId,
+      command: { kind: PAINT_KIND, ...hsbk },
+    };
+    let resolve!: (r: Receipt) => void;
+    const done = new Promise<Receipt>((res) => (resolve = res));
+    const entry: Entry = { request, receipt, done, resolve };
+    this.pending.push(entry);
+    this.cursor++;
+    this.enqueue(async () => {
+      await this.executePaint(entry, hsbk);
+      this.pending.splice(this.pending.indexOf(entry), 1);
+      this.retain(request, receipt);
+      resolve(clone(receipt));
+    });
+    return {
+      decision: "queued",
+      reserved: true,
+      receipt: clone(receipt),
+      done: done.then(clone),
+    };
+  }
+  async executePaint(entry: Entry, hsbk: PaintHsbk) {
+    const { receipt } = entry;
+    let writeStarted = false;
+    try {
+      if (this.closed || !same(receipt.generation, this.generation))
+        throw new Error("cancelled");
+      writeStarted = true;
+      await this.exchange(102, encodeColor(hsbk), 45, receipt.generation);
+      receipt.outcome = "sent";
+      receipt.priorEffects = "confirmed-transmission";
+      receipt.completedOperations = ["set"];
+      this.lastSend = {
+        status: "known",
+        requestId: clone(entry.request.requestId),
+        clock: this.clock(),
+        operationIds: ["set"],
+      };
+      this.health = "ready";
+    } catch {
+      const cancelled =
+        this.closed || !same(receipt.generation, this.generation);
+      receipt.outcome = cancelled
+        ? "cancelled"
+        : writeStarted
+          ? "uncertain"
+          : "failed";
+      receipt.priorEffects = writeStarted ? "possible" : "none";
+      receipt.uncertainOperations = writeStarted ? ["set"] : [];
+      receipt.failure = {
+        code: cancelled
+          ? "stale-generation"
+          : writeStarted
+            ? "uncertain-result"
+            : "transport-failure",
+      };
+      this.health = "degraded";
+    }
+  }
   cancel() {
     this.generation = {
       epoch: this.epoch,
@@ -519,6 +786,22 @@ class Bulb {
     if (this.closed) return;
     this.closed = true;
     this.cancel();
+    this.transport.close();
+  }
+  /**
+   * Stops admission and retires every queued (not yet started) job by bumping the
+   * generation, but does not abort a job already in flight: unlike `cancel()`/`close()`,
+   * it never touches `this.active`. The in-flight job settles on its own, already bounded
+   * by `timeoutMs * (retries + 1)`; each job still queued behind it then finds itself
+   * cancelled (stale generation) the instant it starts, sending no traffic. Only once every
+   * job has settled does it close the transport.
+   */
+  async closeGracefully(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    this.generation = { epoch: this.epoch, sequence: this.generation.sequence + 1 };
+    this.cursor++;
+    if (this.draining) await this.draining.catch(() => {});
     this.transport.close();
   }
 }
@@ -553,6 +836,7 @@ export class LifxController {
       addresses.add(b.address);
     }
     const now = options.now ?? (() => performance.now());
+    const modeRoot = options.modeStateRoot;
     const common = {
       controllerId: options.controllerId,
       sourceId: options.sourceId,
@@ -570,6 +854,7 @@ export class LifxController {
             common,
             options.transportFactory ??
               ((config) => new UdpTransport({ address: config.address })),
+            modeRoot,
           ),
         );
     } catch {
@@ -617,6 +902,19 @@ export class LifxController {
       Promise.resolve({ ok: false, failure: "unknown-device" as const })
     );
   }
+  /** The internal absolute status paint for one qualified bulb; see `Bulb#paintStatus`. */
+  paintStatus(deviceId: string, hsbk: PaintHsbk): Submission {
+    const b = this.#bulbs.get(deviceId);
+    if (!b) return { decision: "unknown-device", reserved: false };
+    return b.paintStatus(hsbk);
+  }
+  /** Notifies a listener after a successful `mode.set` for one bulb. Returns an unsubscribe
+   * function; throws `unknown-device` for a device this controller does not own. */
+  onModeChange(deviceId: string, listener: () => void): () => void {
+    const b = this.#bulbs.get(deviceId);
+    if (!b) throw new Error("unknown-device");
+    return b.onModeChange(listener);
+  }
   cancel(deviceId: string) {
     const b = this.#bulbs.get(deviceId);
     if (!b) throw new Error("unknown-device");
@@ -624,5 +922,9 @@ export class LifxController {
   }
   close() {
     for (const b of this.#bulbs.values()) b.close();
+  }
+  /** Graceful shutdown for every bulb: see `Bulb#closeGracefully`. */
+  async closeGracefully(): Promise<void> {
+    await Promise.all([...this.#bulbs.values()].map((b) => b.closeGracefully()));
   }
 }

@@ -3,7 +3,9 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { authorize, validate, type FailureCode, type Receipt } from '@jimmie-potts/device-contracts';
-import { LifxController, type BulbConfig, type Transport } from '@jimmie-potts/lifx-controller';
+import { LifxController, LifxStatusPublisher, type BulbConfig, type Transport } from '@jimmie-potts/lifx-controller';
+import { HubStatusFeed, type Feed, type PublisherTimers } from '@jimmie-potts/agent-status';
+import type { Snapshot } from '@jimmie-potts/agent-state';
 import type { DisplayConnection } from '@jimmie-potts/tidbyt-controller';
 import { acquireWriterLease, startStatusRunner } from '@jimmie-potts/tidbyt-controller/runner';
 import { TIDBYT_DEVICE_ID, type Credential, type HostConfig, type Scope } from './config.js';
@@ -19,7 +21,12 @@ const DEFAULT_LIFX_LEASE_ROOT = join(homedir(), '.local/state/agent-device-hub/l
 
 export type HostOptions = {
   tidbyt?: { connection?: DisplayConnection; leaseRoot?: string };
-  lifx?: { transportFactory?: (bulb: Readonly<BulbConfig>) => Transport; leaseRoot?: string; now?: () => number };
+  lifx?: {
+    transportFactory?: (bulb: Readonly<BulbConfig>) => Transport; leaseRoot?: string; now?: () => number;
+    modeStateRoot?: string;
+    /** Test injection for the automatic status publisher; production uses `HubStatusFeed`. */
+    status?: { feed?: Feed<Snapshot>; timers?: PublisherTimers };
+  };
   settleMs?: number;
 };
 export type LocalControllers = { readonly url: string; close(): Promise<void> };
@@ -72,17 +79,46 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
   const releases: (() => void)[] = [];
   let lifx: LifxController | undefined;
   let runner: ReturnType<typeof startStatusRunner> | undefined;
+  let statusPublisher: LifxStatusPublisher | undefined;
   const credentials = new Map<string, Credential>(config.credentials.map(c => [c.digest, c]));
   try {
     // Every lease before any listener, feed read or device request.
     for (const bulb of config.lifx?.bulbs ?? []) releases.push(acquireWriterLease('lifx:' + bulb.address, options.lifx?.leaseRoot ?? DEFAULT_LIFX_LEASE_ROOT));
     if (config.lifx) {
-      lifx = new LifxController({ ...config.lifx, ...(options.lifx?.transportFactory ? { transportFactory: options.lifx.transportFactory } : {}),
-        ...(options.lifx?.now ? { now: options.lifx.now } : {}) });
+      lifx = new LifxController({
+        controllerId: config.lifx.controllerId, sourceId: config.lifx.sourceId,
+        bulbs: config.lifx.bulbs.map(({ status: _status, ...bulb }) => bulb),
+        ...(config.lifx.timeoutMs !== undefined ? { timeoutMs: config.lifx.timeoutMs } : {}),
+        ...(config.lifx.retries !== undefined ? { retries: config.lifx.retries } : {}),
+        ...(config.lifx.maxPending !== undefined ? { maxPending: config.lifx.maxPending } : {}),
+        ...(options.lifx?.transportFactory ? { transportFactory: options.lifx.transportFactory } : {}),
+        ...(options.lifx?.now ? { now: options.lifx.now } : {}),
+        // The package has no default of its own (so its source tests never touch a real
+        // home directory); the host supplies one alongside the bulb leases it already owns.
+        modeStateRoot: options.lifx?.modeStateRoot ?? join(options.lifx?.leaseRoot ?? DEFAULT_LIFX_LEASE_ROOT, 'modes'),
+      });
+      // Painting requires a qualified bulb, its own `status` block and this host-level feed
+      // config. A qualified bulb without a `status` block still advertises modes but is never
+      // painted; the publisher's own mode read (always Free for an unqualified/unconfigured
+      // bulb) makes that natural rather than a special case here.
+      const statusBulbs = config.lifx.bulbs.filter(b => b.status).map(b => ({
+        deviceId: b.deviceId,
+        ...(b.status!.brightnessCapPercent !== undefined ? { brightnessCapPercent: b.status!.brightnessCapPercent } : {}),
+        ...(b.status!.quietCapPercent !== undefined ? { quietCapPercent: b.status!.quietCapPercent } : {}),
+      }));
+      if (config.lifx.status && statusBulbs.length) {
+        const feed = options.lifx?.status?.feed ?? new HubStatusFeed(config.lifx.status);
+        statusPublisher = new LifxStatusPublisher({
+          feed, controller: lifx, bulbs: statusBulbs,
+          ...(options.lifx?.status?.timers ? { timers: options.lifx.status.timers } : {}),
+        });
+        statusPublisher.start();
+      }
     }
     if (config.tidbyt) runner = startStatusRunner(config.tidbyt, { ...(options.tidbyt?.connection ? { connection: options.tidbyt.connection } : {}),
       ...(options.tidbyt?.leaseRoot ? { leaseRoot: options.tidbyt.leaseRoot } : {}) });
   } catch {
+    statusPublisher?.stop();
     lifx?.close();
     for (const release of releases) release();
     throw new Error('local-controllers-start-failed');
@@ -208,8 +244,8 @@ export async function startLocalControllers(config: HostConfig, options: HostOpt
   const close = () => closing ??= (async () => {
     await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); });
     try {
-      lifx?.close();
-      await runner?.stop();
+      statusPublisher?.stop();
+      await Promise.all([statusPublisher?.whenIdle(), lifx?.closeGracefully(), runner?.stop()]);
     } finally { for (const release of releases) release(); }
   })();
   try {

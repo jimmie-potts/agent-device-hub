@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { request as httpRequest } from 'node:http';
+import { request as httpRequest, createServer } from 'node:http';
+import { once } from 'node:events';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { validate } from '@jimmie-potts/device-contracts';
 import { acquireWriterLease } from '@jimmie-potts/tidbyt-controller/runner';
 import { loadHostConfig, startLocalControllers } from '@jimmie-potts/local-controllers';
+import { createAgentState, MemoryStorage } from '@jimmie-potts/agent-state';
 import { TOKENS, fakeHub, fakeLifx, fakeTidbyt, privateFiles, reads, settle, until, writes } from './helpers.mjs';
 
 async function start(t, { host: change = h => h, settleMs, now } = {}) {
@@ -282,6 +287,17 @@ test('shutdown releases every lease and a restart replays nothing', async t => {
   assert.deepEqual(writes(lifx.log), [['desk', 21]], 'the restart replays no write');
 });
 
+test('mode.set persists under the supplied lease root, not a package default', async t => {
+  const { host, s } = await start(t);
+  const before = await snapshot(host, 'desk');
+  assert.deepEqual(before.capabilities.modes, { supported: true, values: ['Work', 'Quiet', 'Free'] });
+  const response = await post(host, command(before, 'desk', 'mode.set', { mode: 'Quiet' }));
+  assert.equal(response.body.outcome, 'sent');
+  const path = join(s.locks, 'modes', createHash('sha256').update('desk').digest('hex') + '.json');
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { mode: 'Quiet' });
+  assert.deepEqual((await snapshot(host, 'desk')).state.desired.mode, { status: 'known', value: 'Quiet' });
+});
+
 test('a qualified bulb is read on demand, at most once per 30 seconds and only while something reads', async t => {
   let clock = 1000;
   const unqualified = h => ({ ...h, lifx: { ...h.lifx, bulbs: [h.lifx.bulbs[0], { deviceId: 'shelf', address: '192.0.2.11' }] } });
@@ -324,4 +340,49 @@ test('a failed read keeps the previous observation and is not retried within 30 
   assert.deepEqual([after.status, after.power, after.clock.sampledAtMs], ['known', observed.power, observed.clock.sampledAtMs]);
   await snapshot(host, 'desk'); await settle();
   assert.equal(lifx.log.length, 2, 'a failed read still waits 30 s');
+});
+
+/** A loopback hub serving a real, mutable shared owner, so a test can drive real state transitions through the running host. */
+async function statusHub(t) {
+  const owner = await createAgentState({ storage: new MemoryStorage(), ownerId: 'owner', consumers: [] });
+  const server = createServer((_req, res) => res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot: owner.snapshot() })));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => { server.closeAllConnections(); server.close(); await owner.shutdown(); });
+  return { url: `http://127.0.0.1:${server.address().port}`, owner };
+}
+test('the LIFX status publisher paints a bulb configured with a status block through the running host', async t => {
+  const hub = await statusHub(t);
+  const s = privateFiles(t, hub.url);
+  const lifx = fakeLifx(), tidbyt = fakeTidbyt();
+  const withStatus = h => ({
+    ...h,
+    lifx: {
+      ...h.lifx,
+      status: { hubUrl: hub.url, ownerId: 'owner', tokenFile: s.write('lifx-status-token', 't'.repeat(43)) },
+      // Only 'desk' opts in with a custom brightness cap; 'shelf' stays unconfigured for status and must never paint.
+      bulbs: [{ ...h.lifx.bulbs[0], status: { brightnessCapPercent: 40 } }, h.lifx.bulbs[1]],
+    },
+  });
+  const config = loadHostConfig(s.write('host.json', withStatus(s.host)));
+  const host = await startLocalControllers(config, {
+    tidbyt: { connection: tidbyt.connection, leaseRoot: s.locks },
+    // A dedicated, test-scoped mode directory: never the real default under the user's home.
+    lifx: { transportFactory: lifx.transportFactory, leaseRoot: s.locks, modeStateRoot: join(s.dir, 'lifx-modes') },
+  });
+  t.after(() => host.close());
+  const before = await snapshot(host, 'desk');
+  assert.deepEqual(before.capabilities.modes, { supported: true, values: ['Work', 'Quiet', 'Free'] });
+  assert.deepEqual(before.state.desired.mode, { status: 'known', value: 'Free' }, 'no recorded mode starts Free');
+  await post(host, command(before, 'desk', 'mode.set', { mode: 'Work' }));
+  await until(() => writes(lifx.log).some(([id, type]) => id === 'desk' && type === 102));
+  const paint = writes(lifx.log).find(([id, type]) => id === 'desk' && type === 102);
+  assert.ok(paint, 'entering Work paints the current (idle) state once');
+  assert.deepEqual(reads(lifx.log, 'shelf'), [], "shelf has no status block and is never painted, even though it is qualified");
+  assert.equal(writes(lifx.log).filter(([id, type]) => id === 'desk' && type === 102).length, 1);
+  await host.close();
+  // Closing stops the publisher cleanly; the shared cadence/transition/mode/failure/cap
+  // semantics are covered thoroughly at the controllers/lifx level (status-publisher.test.mjs)
+  // with fake timers and payload capture, so this integration test only confirms the host
+  // wires private configuration to a running, per-bulb-opt-in publisher.
 });
