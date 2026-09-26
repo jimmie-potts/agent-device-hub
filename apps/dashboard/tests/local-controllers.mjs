@@ -49,7 +49,7 @@ try {
  const none='No general controls: this controller declares no power, brightness, media or scenes.';
  // Tidbyt: status only; one line instead of four disabled forms, and no editor or integration settings.
  const control=await open(token);const {page}=control;
- await page.getByRole('button',{name:'tidbyt tidbyt',exact:true}).click();
+ await page.getByRole('link',{name:'tidbyt tidbyt',exact:true}).click();
  await section(page).getByText('The local controller host publishes the agent status and now-playing tiles to this Tidbyt.',{exact:false}).waitFor();
  await section(page).getByText(none,{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Apply|^Start|^Activate/}).count(),0,'Tidbyt shows no dead forms');
@@ -57,14 +57,14 @@ try {
  await axe(page);await capture(page,'tidbyt-desktop.png');
 
  // LIFX: the page's first read queues one bulb read; the next refresh shows the bulb is off, and Power starts there.
- await page.getByRole('button',{name:'desk lifx',exact:true}).click();
+ await page.getByRole('link',{name:'desk lifx',exact:true}).click();
  const form=name=>section(page).getByRole('form',{name,exact:true});
  const hue=section(page).getByLabel('Hue (°)'),saturation=section(page).getByLabel('Saturation (%)'),kelvin=section(page).getByLabel('Color temperature (K)');
  await hue.waitFor();
- const power=section(page).getByRole('combobox',{name:'Power',exact:true});
- await form('Power').getByText(/^Last read: off, .+ ago\./).waitFor();
- assert.equal(await power.inputValue(),'off');
- assert.equal(await power.isDisabled(),false);
+ const powerGroup=section(page).getByRole('group',{name:'Power',exact:true});
+ await powerGroup.getByText(/^Last read: off, .+ ago\./).waitFor();
+ assert.equal(await powerGroup.getByRole('button',{name:'Turn on',exact:true}).isDisabled(),false);
+ assert.equal(await powerGroup.getByRole('button',{name:'Turn off',exact:true}).count(),0,'a bulb read as off offers only Turn on');
  await section(page).getByText('Not declared by this controller: media and scenes.',{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Start playlist|^Activate scene/}).count(),0,'no dead media or scene form');
  assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false);
@@ -72,19 +72,17 @@ try {
  assert.deepEqual([await kelvin.getAttribute('min'),await kelvin.getAttribute('max')],['1500','9000']);
  await axe(page);await capture(page,'lifx-desktop.png');
 
- // Disabled and enabled buttons look different. Choosing On from the observed Off sends one power command.
- await power.selectOption('on');
- const colors=name=>section(page).getByRole('button',{name,exact:true}).evaluate(el=>{const c=getComputedStyle(el);return [el.disabled,c.backgroundColor,c.color,c.opacity];});
- const [enabled,disabled]=[await colors('Apply power'),await colors('Apply color')];
- assert.deepEqual([enabled[0],disabled[0]],[false,true]);
- assert.notEqual(disabled[1],enabled[1],'disabled background differs');assert.notEqual(disabled[2],enabled[2],'disabled text differs');assert.equal(disabled[3],'1','not transparency alone');
- await section(page).getByRole('button',{name:'Apply power',exact:true}).click();
- await form('Power').getByRole('status').filter({hasText:/^Sent to the device\./}).waitFor();
+ // Turn on from the observed Off sends one power command.
+ const colors=(on,name)=>section(on).getByRole('button',{name,exact:true}).evaluate(el=>{const c=getComputedStyle(el);return [el.matches(':disabled'),c.backgroundColor,c.color,c.opacity];});
+ await powerGroup.getByRole('button',{name:'Turn on',exact:true}).click();
+ await powerGroup.getByRole('status').filter({hasText:/^Turn on: Sent to the device\./}).waitFor();
+ await powerGroup.getByRole('button',{name:'Turn off',exact:true,disabled:false}).waitFor();const enabledColors=await colors(page,'Turn off');
  assert.deepEqual(control.posts.filter(p=>p.path==='/api/controllers/v1/desk/commands').map(p=>p.body.command),[{kind:'power.set',on:true}]);
 
  // One color change: a fresh lighting read supplies the guards, and exactly one profile request is sent.
  const before=await (await fetch(hub.url+'/api/controllers/v1/desk/lighting/snapshot',{headers:{authorization:`Bearer ${token}`}})).json();const traffic=lifx.log.length;
- await hue.fill('200');await saturation.fill('80');await section(page).getByRole('button',{name:'Apply color',exact:true}).click();
+ // Both sliders change in one task, as one hand adjusting a picker would; a script change sends after the settle pause, once for both.
+ await page.evaluate(()=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;for(const [label,value] of [['Hue (°)','200'],['Saturation (%)','80']]){const input=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(label)&&l.offsetParent!==null).querySelector('input');set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));}});
  await form('Color').getByRole('status').filter({hasText:/^Sent to the device\./}).waitFor();
  const lighting=control.posts.filter(p=>p.path==='/api/controllers/v1/desk/lighting/commands');
  assert.equal(lighting.length,1);
@@ -94,10 +92,10 @@ try {
  await capture(page,'lifx-after-color.png');
 
  // Color temperature is its own single request; brightness still uses the controller v1 route.
- await kelvin.fill('2700');await section(page).getByRole('button',{name:'Apply color temperature',exact:true}).click();
+ await kelvin.fill('2700');
  await form('Color temperature').getByRole('status').filter({hasText:/^Sent to the device\./}).waitFor();
  assert.deepEqual(control.posts.filter(p=>p.path.endsWith('/lighting/commands')).map(p=>p.body.command),[{kind:'lifx.color.set',hue:200,saturation:80},{kind:'lifx.temperature.set',kelvin:2700}]);
- await section(page).getByLabel('Brightness (%)').fill('35');await section(page).getByRole('button',{name:'Apply brightness',exact:true}).click();
+ await section(page).getByLabel('Brightness (%)').fill('35');
  await new Promise(resolve=>{const wait=()=>control.posts.some(p=>p.body.command?.kind==='brightness.set')?resolve():setTimeout(wait,25);wait();});
  assert.deepEqual(control.posts.find(p=>p.body.command?.kind==='brightness.set').body.command,{kind:'brightness.set',percent:35});
 
@@ -110,13 +108,12 @@ try {
  assert.equal(await hue.isDisabled(),false);
  // Work disables color and temperature with the ADR 0005 reason and offers a one-click Switch to Free; power and brightness stay independent of mode.
  await modeSelect.selectOption('Work');
- await section(page).getByRole('button',{name:'Apply mode',exact:true}).click();
  await form('Mode').getByRole('status').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
  await section(page).getByText('This bulb is in Work and presents agent status; color and temperature need Free',{exact:false}).first().waitFor();
  assert.equal(await hue.isDisabled(),true);
  assert.equal(await saturation.isDisabled(),true);
  assert.equal(await kelvin.isDisabled(),true);
- assert.equal(await power.isDisabled(),false,'power stays mode-independent');
+ assert.equal(await powerGroup.getByRole('button',{name:'Turn off',exact:true}).isDisabled(),false,'power stays mode-independent');
  assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false,'brightness stays mode-independent');
  await axe(page);await capture(page,'lifx-mode-work.png');
  // The one-click Switch to Free re-enables color and temperature; the button itself disappears once Free is observed.
@@ -127,37 +124,39 @@ try {
  assert.equal(await hue.isDisabled(),false);
 
  // An unqualified bulb declares nothing: one line for general controls and one for lighting, and no forms.
- await page.getByRole('button',{name:'shelf lifx',exact:true}).click();
+ await page.getByRole('link',{name:'shelf lifx',exact:true}).click();
  await section(page).getByText(none,{exact:true}).waitFor();
  await section(page).getByText('No lighting controls: this bulb’s model is not qualified for color or color temperature.',{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Apply|^Start|^Activate/}).count(),0);
  await capture(page,'lifx-unqualified.png');
 
  // A bulb whose reads fail keeps unknown power: Power starts empty, says so, and either choice is one explicit command.
- await page.getByRole('button',{name:'lamp lifx',exact:true}).click();
- const lampPower=section(page).getByRole('combobox',{name:'Power',exact:true});await lampPower.waitFor();
- assert.equal(await lampPower.inputValue(),'');
- await form('Power').getByText(/Current power is unknown/).waitFor();
- assert.equal(await section(page).getByRole('button',{name:'Apply power',exact:true}).isDisabled(),true,'no guessed value is submittable');
+ await page.getByRole('link',{name:'lamp lifx',exact:true}).click();
+ const lampPower=section(page).getByRole('group',{name:'Power',exact:true});await lampPower.getByText(/Current power is unknown/).waitFor();
+ assert.deepEqual(await lampPower.getByRole('button').allTextContents(),['Turn on','Turn off'],'an unknown state offers both choices and never a guessed value');
  await axe(page);await capture(page,'lifx-unknown-power.png');
- await lampPower.selectOption('on');await section(page).getByRole('button',{name:'Apply power',exact:true}).click();
+ await lampPower.getByRole('button',{name:'Turn on',exact:true}).click();
  await new Promise(resolve=>{const wait=()=>control.posts.some(p=>p.path==='/api/controllers/v1/lamp/commands')?resolve():setTimeout(wait,25);wait();});
  assert.deepEqual(control.posts.filter(p=>p.path==='/api/controllers/v1/lamp/commands').map(p=>p.body.command),[{kind:'power.set',on:true}]);
  assert.deepEqual(control.errors,[]);await control.close();
 
  // A read-only credential sees the controls disabled with its scope named.
  const viewer=await open(reader);
- await viewer.page.getByRole('button',{name:'desk lifx',exact:true}).click();
+ await viewer.page.getByRole('link',{name:'desk lifx',exact:true}).click();
  await section(viewer.page).getByLabel('Hue (°)').waitFor();
  assert.ok(await section(viewer.page).getByText('Unavailable: Your credential is read-only',{exact:false}).count()>=2);
  assert.equal(await section(viewer.page).getByLabel('Hue (°)').isDisabled(),true);
+ // Disabled and enabled buttons look different: the read-only credential's Turn on against the control credential's.
+ const disabledColors=await colors(viewer.page,'Turn off');
+ assert.deepEqual([enabledColors[0],disabledColors[0]],[false,true]);
+ assert.notEqual(disabledColors[1],enabledColors[1],'disabled background differs');assert.notEqual(disabledColors[2],enabledColors[2],'disabled text differs');assert.equal(disabledColors[3],'1','not transparency alone');
  const narrow=await open(token,{width:390,height:844});
- await narrow.page.getByRole('button',{name:'desk lifx',exact:true}).click();await section(narrow.page).getByLabel('Hue (°)').waitFor();
+ await narrow.page.getByRole('link',{name:'desk lifx',exact:true}).click();await section(narrow.page).getByLabel('Hue (°)').waitFor();
  assert.equal(await narrow.page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'no horizontal scroll at phone width');
  await capture(narrow.page,'lifx-phone.png');
  // An unreachable bulb shows both unavailable messages under their section labels without overlap.
  const unreachable=await open(token,{setup:page=>page.route('**/api/controllers/v1/lamp/lighting/snapshot',route=>route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}}))});
- await unreachable.page.getByRole('button',{name:'lamp lifx',exact:true}).click();
+ await unreachable.page.getByRole('link',{name:'lamp lifx',exact:true}).click();
  await section(unreachable.page).getByText('General controls unavailable: no controller snapshot.',{exact:true}).waitFor();
  await section(unreachable.page).getByText('Lighting controls unavailable: no lighting snapshot.',{exact:true}).waitFor();
  await capture(unreachable.page,'lifx-unreachable.png');

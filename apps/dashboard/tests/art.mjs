@@ -21,7 +21,7 @@ const stopColor=(page,index,zone)=>page.locator(`[data-paint="${index}-${zone}"]
 try {
  await scenario('the Lines are drawn from the geometry route with reservation colors, labels, selection and one geometry read',async(f,page)=>{
   f.nano.settings.style='project';
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();
   const art=page.locator('figure.device-art[data-art-kind=lines]');await art.locator('svg.prism-scene').waitFor();
   await page.waitForFunction(()=>document.querySelector('figure.device-art figcaption')?.textContent.includes('Signature zones show reservation colors.'));
   assert.equal(await art.locator('[data-control]').count(),15);assert.equal(await art.locator('[data-node]').count(),12);
@@ -33,9 +33,9 @@ try {
   assert.match(await art.locator('figcaption').innerText(),/15 Lines from the controller’s saved layout\. Mode Work\. Signature zones show reservation colors\. Task status isn’t in the hub snapshot, so no task is shown\./);
   assert.deepEqual(await textOverlaps(page),[],'wall text never overlaps with the art');
   // Selection is the art's own; it also picks the element in the mapping form and sends nothing.
-  await art.locator('[data-control="2"]').click();assert.equal(await art.locator('[data-control="2"]').getAttribute('aria-pressed'),'true');assert.equal(await page.locator('.mapping-views select').first().inputValue(),'105:106');
+  await art.locator('[data-control="2"]').click();assert.equal(await art.locator('[data-control="2"]').getAttribute('aria-pressed'),'true');assert.equal(await page.getByRole('combobox',{name:'Element',exact:true}).filter({visible:true}).inputValue(),'105:106');
   await art.locator('[data-control="2"]').focus();await page.keyboard.press('Tab');assert.ok(await art.locator('[data-control="3"]').evaluate(el=>el===document.activeElement),'elements are reachable by keyboard in order');
-  await page.keyboard.press('Enter');assert.equal(await page.locator('.mapping-views select').first().inputValue(),'107:108');
+  await page.keyboard.press('Enter');assert.equal(await page.getByRole('combobox',{name:'Element',exact:true}).filter({visible:true}).inputValue(),'107:108');
   // A pending wall edit marks its element; a mode change follows the snapshot.
   f.nano.wallPending={settings:{},elements:[{id:'103:104',projectId:f.nano.projects[1].id}],tasks:[]};f.nano.mode='Quiet';f.states.wall.state.desired.mode={status:'known',value:'Quiet'};
   await page.waitForFunction(()=>document.querySelector('figure.device-art svg')?.dataset.prismMode==='quiet');assert.ok(await art.locator('[data-control="1"]').evaluate(el=>el.classList.contains('pending')));
@@ -47,13 +47,13 @@ try {
   assert.equal(await art.locator('[data-control]').count(),15);
  });
  await scenario('a stale controller keeps the art marked stale, never an empty wall',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('svg.prism-scene').waitFor();
-  f.setOffline(true,'wall');await page.getByText('Stale / unavailable',{exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='stale');
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('svg.prism-scene').waitFor();
+  f.setOffline(true,'wall');await page.locator('section:visible').getByText('Stale / unavailable',{exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='stale');
   assert.equal(await art.locator('[data-control]').count(),15);await art.locator('figcaption').getByText('Stale: showing the last snapshot.').waitFor();
   f.setOffline(false);await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='drawn');assert.equal(geometryReads(f,'wall'),1);
  });
  await scenario('the NL22 Panels are drawn as 18 triangles and stay drawable while their snapshot is unavailable',async(f,page)=>{
-  await page.getByRole('button',{name:'panels nanoleaf',exact:true}).click();const art=page.locator('figure.device-art[data-art-kind=panels]');await art.locator('svg.prism-panels').waitFor();
+  await page.getByRole('link',{name:'panels nanoleaf',exact:true}).click();const art=page.locator('figure.device-art[data-art-kind=panels]');await art.locator('svg.prism-panels').waitFor();
   assert.equal(await art.locator('[data-control]').count(),18);assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),'Panel 1 · No task shown');
   assert.match(await art.locator('figcaption').innerText(),/18 Panels from the controller’s saved layout\./);
   await art.locator('[data-control="4"]').click();assert.equal(await art.locator('[data-control="4"]').getAttribute('aria-pressed'),'true');
@@ -63,32 +63,32 @@ try {
   f.setOffline(true,'panels');await page.waitForFunction(()=>document.querySelector('figure.device-art[data-art-kind=panels]')?.dataset.artState==='stale');assert.equal(await art.locator('[data-control]').count(),18);await art.locator('figcaption').getByText('Stale: showing the last snapshot.').waitFor();f.setOffline(false);
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the Panels page has no horizontal overflow at phone width');await axe(page);await page.setViewportSize({width:1280,height:900});
   // The Lines page in the same session draws its own device.
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.locator('figure.device-art[data-art-kind=lines] svg.prism-scene').waitFor();assert.equal(await page.locator('figure.device-art[data-art-kind=lines] [data-control]').count(),15);
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.locator('figure.device-art[data-art-kind=lines] svg.prism-scene').waitFor();assert.equal(await page.locator('figure.device-art[data-art-kind=lines] [data-control]').count(),15);
  },{options:{panels:true}});
  await scenario('a device without a saved layout draws the schematic strip and says why',async(f,page)=>{
-  f.nano.settings.style='project';await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  f.nano.settings.style='project';await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
   await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='schematic'&&document.querySelector('figure.device-art figcaption')?.textContent.includes('Signature zones show reservation colors.'));
   assert.equal(await art.locator('button.art-cell').count(),15);assert.equal(await art.locator('svg.prism-scene').count(),0);
   assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the controller has no saved layout\. Showing one cell per element\. Mode Work\./);
   const first=art.locator('button.art-cell').first();assert.equal(await first.getAttribute('aria-label'),`Line 1 · Reserved: ${f.nano.projects[0].id} · No task shown`);
   assert.equal(await first.locator('span').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(169, 195, 255)');
-  await art.locator('button.art-cell').nth(2).click();assert.equal(await page.locator('.mapping-views select').first().inputValue(),'105:106');assert.equal(await art.locator('button.art-cell').nth(2).getAttribute('aria-pressed'),'true');
+  await art.locator('button.art-cell').nth(2).click();assert.equal(await page.getByRole('combobox',{name:'Element',exact:true}).filter({visible:true}).inputValue(),'105:106');assert.equal(await art.locator('button.art-cell').nth(2).getAttribute('aria-pressed'),'true');
   assert.deepEqual(await textOverlaps(page),[]);await axe(page);await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
   await page.screenshot({path:output+'/art-strip-phone.png',fullPage:true});assert.equal(f.writes.length,0);
  },{options:{geometry:'none'}});
  await scenario('an owner that predates the geometry route gets the strip once, with no retry',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
   assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the controller predates the geometry route\./);
   await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),1,'a 422 is final for the session');assert.equal(f.writes.length,0);
  },{options:{geometry:'older'}});
  await scenario('a hub-valid layout the renderer rejects falls back to the strip without failing the page',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
   assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the saved layout could not be drawn \(Remove connectors that have no Lines\)\. Showing one cell per element\./);
-  assert.equal(await art.locator('button.art-cell').count(),15);await page.getByLabel('Device mode').first().waitFor();assert.equal(await page.getByRole('button',{name:'Apply mode',exact:true}).first().isVisible(),true,'the rest of the page still renders');
+  assert.equal(await art.locator('button.art-cell').count(),15);await page.getByLabel('Device mode').first().waitFor();assert.equal(await page.getByLabel('Device mode').filter({visible:true}).count(),1,'the rest of the page still renders');
   await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),1,'a validated answer is final even when it cannot be drawn');assert.equal(f.writes.length,0);
  },{options:{geometry:'undrawable'}});
  await scenario('a transport failure on the geometry read is retried after the next successful poll, then final',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
   assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the layout could not be read \(/);
   await art.locator('svg.prism-scene').waitFor({timeout:12000});assert.equal(await art.locator('[data-control]').count(),15);assert.equal(geometryReads(f,'wall'),2,'one retry after the failed read');
   await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),2,'the successful read is final');
