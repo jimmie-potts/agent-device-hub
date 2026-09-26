@@ -41,6 +41,36 @@ def pages(endpoint):
     raise RuntimeError(f'Pagination did not terminate: {endpoint}')
 
 
+def graphql(query):
+    result = subprocess.run(['gh', 'api', 'graphql', '-f', f'query={query}'],
+                            check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
+def open_issue_inventory(repo, reader=None):
+    """Read all open issues and native prerequisites as one complete connection."""
+    reader = reader or graphql
+    nodes, cursor, total = [], None, None
+    for _ in range(100):
+        after = f', after:"{cursor}"' if cursor else ''
+        fields = f'issues(first:100, states:OPEN{after}) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ number blockedBy(first:100) {{ totalCount pageInfo {{ hasNextPage }} nodes {{ number state repository {{ nameWithOwner }} }} }} }} }}'
+        query = f'{{ repository(owner:"jimmie-potts",name:"{repo}") {{ {fields} }} }}'
+        page = reader(query)
+        assert not page.get('errors'), page
+        inventory = page['data']['repository']['issues']
+        assert total is None or total == inventory['totalCount'], 'Open-issue total changed during pagination'
+        total = inventory['totalCount']
+        nodes.extend(inventory['nodes'])
+        assert len({node['number'] for node in nodes}) == len(nodes), 'Open-issue pagination returned duplicate issues'
+        if not inventory['pageInfo']['hasNextPage']: break
+        assert inventory['pageInfo']['endCursor'] and inventory['pageInfo']['endCursor'] != cursor, 'Open-issue pagination did not advance'
+        cursor = inventory['pageInfo']['endCursor']
+    else:
+        raise RuntimeError('Open-issue pagination did not terminate')
+    assert total == len(nodes), 'Open-issue inventory count does not match totalCount'
+    return {'totalCount': total, 'pageInfo': {'hasNextPage': False}, 'nodes': nodes}
+
+
 def normalize(issue, comments=None):
     assert issue['state'] in ('open', 'closed'), issue
     return {
@@ -158,22 +188,6 @@ if __name__ == '__main__':
     # Each repository's open issues are read one page at a time and merged into one inventory whose
     # pageInfo reports no next page, so consumers keep reading a single complete connection.
     aliases = {'h':'agent-device-hub', 'n':'codex-nanoleaf', 'p':'divoom-app-upgrade'}
-    def open_issue_inventory(repo):
-        nodes, cursor, total = [], None, None
-        for _ in range(100):
-            after = f', after:"{cursor}"' if cursor else ''
-            fields = f'issues(first:100, states:OPEN{after}) {{ totalCount pageInfo {{ hasNextPage endCursor }} nodes {{ number blockedBy(first:100) {{ totalCount pageInfo {{ hasNextPage }} nodes {{ number state repository {{ nameWithOwner }} }} }} }} }}'
-            query = f'{{ repository(owner:"jimmie-potts",name:"{repo}") {{ {fields} }} }}'
-            page = json.loads(subprocess.run(['gh','api','graphql','-f',f'query={query}'],check=True,capture_output=True,text=True).stdout)
-            assert not page.get('errors'), page
-            inventory = page['data']['repository']['issues']
-            total = inventory['totalCount']; nodes.extend(inventory['nodes'])
-            if not inventory['pageInfo']['hasNextPage']: break
-            assert inventory['pageInfo']['endCursor'] and inventory['pageInfo']['endCursor'] != cursor, 'Open-issue pagination did not advance'
-            cursor = inventory['pageInfo']['endCursor']
-        else:
-            raise RuntimeError('Open-issue pagination did not terminate')
-        return {'totalCount': total, 'pageInfo': {'hasNextPage': False}, 'nodes': nodes}
     native = {'data': {key: {'issues': open_issue_inventory(repo)} for key, repo in aliases.items()}}
     for key, repo in aliases.items():
         inventory = native['data'][key]['issues']
