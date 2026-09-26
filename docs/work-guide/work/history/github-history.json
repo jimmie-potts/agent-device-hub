@@ -1,15 +1,30 @@
 {
-  "fetchedAt": "2026-09-26T05:18:22.063830+00:00",
+  "fetchedAt": "2026-09-26T05:43:29.810394+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T05:12:56Z",
+      "pushedAt": "2026-09-26T05:42:41Z",
       "defaultBranch": "main",
-      "headSha": "a8f85a2b265a3760072138b364cb287af30eb6bb",
-      "mainCommitCount": 164,
+      "headSha": "9399df664a9a754511c90c496d92a52289dae320",
+      "mainCommitCount": 167,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "9399df664a9a754511c90c496d92a52289dae320",
+          "date": "2026-09-26T05:42:41Z",
+          "message": "Align atlas playback with the installed sources and refresh work guides (#440)"
+        },
+        {
+          "sha": "1482b5e67d8783d2f0099526d5e55e4a67304d28",
+          "date": "2026-09-26T05:33:10Z",
+          "message": "Make the dashboard a dense control surface with a home widget grid and hash routes (#421)"
+        },
+        {
+          "sha": "25cfa135c70359120aecb7ebad4701dbcd486e21",
+          "date": "2026-09-26T05:19:45Z",
+          "message": "Port Nanoleaf harnesses to owning modules and refresh pins (#435)"
+        },
         {
           "sha": "a8f85a2b265a3760072138b364cb287af30eb6bb",
           "date": "2026-09-26T05:10:27Z",
@@ -2119,21 +2134,38 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/436",
           "base": "main",
           "mergedAt": "2026-09-26T05:10:27Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 435,
           "title": "Port Nanoleaf harnesses to owning modules and refresh pins",
           "createdAt": "2026-09-26T04:57:15Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/435",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T05:19:45Z"
         },
         {
           "number": 421,
           "title": "Make the dashboard a dense control surface with a home widget grid and hash routes",
           "createdAt": "2026-09-26T03:08:01Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/421",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:33:10Z"
+        },
+        {
+          "number": 440,
+          "title": "Align atlas playback with the installed sources and refresh work guides",
+          "createdAt": "2026-09-26T05:24:38Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/440",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:42:42Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 441,
+          "title": "Paint LIFX status from sessions with uncertain freshness (#439)",
+          "createdAt": "2026-09-26T05:24:42Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/441",
           "base": "main"
         }
       ],
@@ -2987,6 +3019,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/407"
         },
         {
+          "number": 410,
+          "title": "Port the hub's Nanoleaf harness scripts to the split bridge modules before the next pin",
+          "closedAt": "2026-09-26T05:26:33Z",
+          "createdAt": "2026-09-26T02:17:04Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/410"
+        },
+        {
           "number": 411,
           "title": "Show whether each story is UI or backend work in the work guide",
           "closedAt": "2026-09-26T03:28:44Z",
@@ -3003,10 +3043,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/417"
         }
       ],
-      "openIssueCount": 163,
+      "openIssueCount": 165,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T04:23:35Z"
+        "2026-09-26T05:18:24Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -3020,17 +3060,32 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 42
+        "2026-09-26": 45
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-26T05:14:56Z",
+      "pushedAt": "2026-09-26T05:37:33Z",
       "defaultBranch": "main",
-      "headSha": "9e25a4c9cde3f81e9186aefcddb364f9060e5301",
-      "mainCommitCount": 72,
+      "headSha": "da5f9d3c8155b5a6ac25bc1f3e60f41fea2d2073",
+      "mainCommitCount": 75,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "da5f9d3c8155b5a6ac25bc1f3e60f41fea2d2073",
+          "date": "2026-09-26T05:37:33Z",
+          "message": "Persist named animation favorites with safe rename and MCP controls (#186)"
+        },
+        {
+          "sha": "f5933e43367b0b50f41b5dfc8205be748f5ac2ee",
+          "date": "2026-09-26T05:26:29Z",
+          "message": "Add named mood presets to animation control (#185)"
+        },
+        {
+          "sha": "4eddd6ef5197fa9ae5f54de5befa447889d63ccc",
+          "date": "2026-09-26T05:20:35Z",
+          "message": "Restore the remembered scene through MCP (#184)"
+        },
         {
           "sha": "9e25a4c9cde3f81e9186aefcddb364f9060e5301",
           "date": "2026-09-26T05:14:43Z",
@@ -3928,17 +3983,33 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/183",
           "base": "main",
           "mergedAt": "2026-09-26T05:14:44Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 184,
           "title": "Restore the remembered scene through MCP",
           "createdAt": "2026-09-26T05:17:01Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/184",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T05:20:35Z"
+        },
+        {
+          "number": 185,
+          "title": "Add named mood presets to animation control",
+          "createdAt": "2026-09-26T05:22:47Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/185",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:26:30Z"
+        },
+        {
+          "number": 186,
+          "title": "Persist named animation favorites with safe save and rename",
+          "createdAt": "2026-09-26T05:33:00Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/186",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:37:33Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 2,
@@ -4469,12 +4540,36 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/139"
         },
         {
+          "number": 150,
+          "title": "Stop an animation and restore the remembered scene through MCP",
+          "closedAt": "2026-09-26T05:24:38Z",
+          "createdAt": "2026-09-25T16:50:22Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/150"
+        },
+        {
           "number": 151,
           "title": "Add a rotating spin direction and a faster speed for animations",
           "closedAt": "2026-09-26T05:17:55Z",
           "createdAt": "2026-09-25T16:50:23Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/151"
+        },
+        {
+          "number": 153,
+          "title": "Offer a mood library of named animation presets",
+          "closedAt": "2026-09-26T05:30:09Z",
+          "createdAt": "2026-09-25T16:50:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/153"
+        },
+        {
+          "number": 154,
+          "title": "Save and replay favorite animations by name",
+          "closedAt": "2026-09-26T05:41:27Z",
+          "createdAt": "2026-09-25T16:50:26Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/154"
         },
         {
           "number": 166,
@@ -4517,7 +4612,7 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/177"
         }
       ],
-      "openIssueCount": 44,
+      "openIssueCount": 41,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-26T03:33:32Z"
@@ -4536,12 +4631,22 @@
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-26T05:14:08Z",
+      "pushedAt": "2026-09-26T05:25:41Z",
       "defaultBranch": "main",
-      "headSha": "979bd73d9385f46f8e3bf4d4d8d1e1fd26c6740a",
-      "mainCommitCount": 44,
+      "headSha": "9467f90cafe0bdf774eec2d75f66edc9e3bccaaf",
+      "mainCommitCount": 46,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "9467f90cafe0bdf774eec2d75f66edc9e3bccaaf",
+          "date": "2026-09-26T05:25:41Z",
+          "message": "Correct product and integration guidance for delivered Pixoo behavior (#82) (#111)"
+        },
+        {
+          "sha": "2905ffa91be786936d92dc55fd50174594f59d39",
+          "date": "2026-09-26T05:18:48Z",
+          "message": "Share private SSE client delivery while preserving feed policies (#81) (#110)"
+        },
         {
           "sha": "979bd73d9385f46f8e3bf4d4d8d1e1fd26c6740a",
           "date": "2026-09-26T05:04:47Z",
@@ -5107,17 +5212,25 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/109",
           "base": "main",
           "mergedAt": "2026-09-26T05:04:48Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 110,
           "title": "Share SSE client delivery while preserving feed policies (#81)",
           "createdAt": "2026-09-26T05:15:04Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/110",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T05:18:48Z"
+        },
+        {
+          "number": 111,
+          "title": "Correct product and integration guidance for delivered Pixoo behavior (#82)",
+          "createdAt": "2026-09-26T05:22:45Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/111",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:25:42Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -5392,6 +5505,22 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/80"
         },
         {
+          "number": 81,
+          "title": "Share SSE client delivery while preserving browser and native feed contracts",
+          "closedAt": "2026-09-26T05:22:41Z",
+          "createdAt": "2026-09-24T22:46:58Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/81"
+        },
+        {
+          "number": 82,
+          "title": "Reconcile product and hub-integration docs with delivered runtime behavior",
+          "closedAt": "2026-09-26T05:28:49Z",
+          "createdAt": "2026-09-24T22:55:06Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/82"
+        },
+        {
           "number": 86,
           "title": "Retire native Windows support and the flaky Windows CI jobs",
           "closedAt": "2026-09-26T02:33:15Z",
@@ -5448,10 +5577,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/101"
         }
       ],
-      "openIssueCount": 25,
+      "openIssueCount": 26,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-26T04:18:02Z"
+        "2026-09-26T05:39:50Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -5464,7 +5593,7 @@
         "2026-09-23": 3,
         "2026-09-24": 7,
         "2026-09-25": 14,
-        "2026-09-26": 3
+        "2026-09-26": 6
       }
     }
   }

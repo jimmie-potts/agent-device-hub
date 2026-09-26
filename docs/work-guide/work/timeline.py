@@ -29,6 +29,13 @@ MILESTONES = {
 # not from the shared Codex milestone's position in a different row.
 SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
+    ('Pixoo source follow-ups', [
+        dict(id='n-pixoo-sse-edge', x=0, label='Native SSE disconnect', issues=['P112'], guide='development-workflow'),
+    ]),
+    ('Pixoo installed revision', [
+        dict(id='n-pixoo-upgrade', x=0, label='Install reviewed Pixoo', issues=['P113'], guide='hosting-migrations'),
+        dict(id='n-pixoo-build-id', x=4, label='Report running source', issues=['P114'], guide='hosting-migrations'),
+    ]),
     ('Controller setup and health', [
         dict(id='n-controller-ideas', x=4, label='Health · register devices', issues=['H405', 'H406', 'H418'], guide='bunny-controls'),
     ]),
@@ -54,6 +61,7 @@ TRACKS = [
         dict(id='n-element-ideas', x=4, label='Element status · titles', issues=['N178', 'N179'], guide='nanoleaf-devices'),
     ]),
     ('LIFX status follow-ups', [
+        dict(id='n-lifx-freshness', x=0, label='Paint retained state', issues=['H439'], guide='nanoleaf-devices'),
         dict(id='n-lifx-fades', x=4, label='Fade status · attention', issues=['H416'], guide='nanoleaf-devices'),
     ]),
     ('LIFX desk presets', [
@@ -123,7 +131,7 @@ TRACKS = [
     ]),
     ('Now-playing follow-ups', [
         dict(id='n-music-cards', x=3, label='Artwork · source switch', issues=['H285', 'H331'], guide='controls-music'),
-        dict(id='n-music-ideas', x=4, label='Music ideas', issues=['H334', 'H345', 'H346', 'H349', 'H350'], guide='controls-music'),
+        dict(id='n-music-ideas', x=4, label='Music ideas', issues=['H334', 'H345', 'H346', 'H349', 'H350', 'H437', 'H438'], guide='controls-music'),
     ]),
     ('Session settings', [
         dict(id='n-settings-observe', x=1, label='Model + level observed', issues=['H305', 'H306'], guide='shared-codex'),

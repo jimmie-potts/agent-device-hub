@@ -128,7 +128,7 @@
 #258 [OPEN] Report documentation drift against pinned sources in CI
 #259 [CLOSED] Move guide topic assignments and notes into the stories and read them live
 #262 [OPEN] Evict a task across devices through the shared owner
-#263 [OPEN] Make the slow-device browser isolation check deterministic
+#263 [CLOSED] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
@@ -240,7 +240,6 @@
 #406 [OPEN] Register a device controller with one hub command
 #408 [OPEN] Keep the hub MCP tool list short as devices grow
 #409 [OPEN] Draw every device page from a shape its owner publishes
-#410 [OPEN] Port the hub's Nanoleaf harness scripts to the split bridge modules before the next pin
 #415 [OPEN] Add the LIFX bulb to the Work, Free and Quiet desk presets
 #416 [OPEN] Fade LIFX status changes and pulse once when attention starts
 #417 [CLOSED] Install the hub with #323 and check the Panels page in the installed dashboard
@@ -254,3 +253,6 @@
 #430 [OPEN] See and end open B.U.N.N.Y. browser sessions from the Connections page
 #431 [OPEN] Reserve a Line for a project by picking it on the B.U.N.N.Y. wall art
 #432 [OPEN] Play a sent moment on the B.U.N.N.Y. device art
+#437 [OPEN] Show which speaker is playing in B.U.N.N.Y. and the playback snapshot
+#438 [OPEN] Change the volume of the presented speaker from B.U.N.N.Y. and the playback tools
+#439 [OPEN] Paint LIFX status from sessions with uncertain freshness
