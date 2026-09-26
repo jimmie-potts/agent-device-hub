@@ -154,7 +154,10 @@ try {
   assert.equal(f.pixoo.configuration.filter.q,'enter');await statusOf(page,'Monitor view').filter({hasText:/^Saved\./}).waitFor();await page.getByLabel('Project ID').filter({visible:true}).and(page.locator(':enabled')).waitFor();const sent=f.writes.length;
   const projectId=page.getByLabel('Project ID').filter({visible:true});await projectId.fill('not valid!');await projectId.press('Enter');await projectId.press('Tab');await page.waitForTimeout(400);
   assert.equal(f.writes.length,sent,'an invalid value is not sent');assert.equal(await projectId.inputValue(),'not valid!','the invalid value stays in the field for correction');
-  await projectId.fill('project-ok');await projectId.press('Tab');await until(()=>f.writes.length===sent+1);assert.equal(f.pixoo.configuration.filter.projectId,'project-ok');
+  await statusOf(page,'Monitor view').locator('xpath=..').getByText(/^Not sent: Project ID is not valid/).waitFor();
+  // A sibling select in the same form does not send the invalid value either.
+  await page.getByLabel('Monitor provider').filter({visible:true}).selectOption('codex');await page.waitForTimeout(400);assert.equal(f.writes.length,sent,'a sibling field cannot send an invalid value');
+  await projectId.fill('project-ok');await projectId.press('Tab');await until(()=>f.writes.length===sent+1);assert.equal(f.pixoo.configuration.filter.projectId,'project-ok');assert.equal(f.pixoo.configuration.filter.provider,'codex','the corrected form sends every field');
   // Keyboard steps on a select send once, with the option the user stops on.
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();
   const before=wallGeneral(f).length;await mode.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');

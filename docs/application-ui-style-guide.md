@@ -327,10 +327,12 @@ consistency needs no web font anywhere.
   At `900px` the sidebar narrows to `180px` and main padding to `20px`. At
   `680px` the shell becomes a single column, navigation becomes a wrapping row,
   every grid becomes one column, and main padding is `12px`. Measured on the
-  fake-controller fixture: the wall page is 1,384 px tall at 1280 px wide
-  (3,624 px before Hub #277) and the pixel page 971 px; at 1440 px the home,
-  wall and pixel pages each fit within 1000 px, so every component widget, its
-  quick actions and the sessions widget sit in the first screen.
+  fake-controller fixture at Hub `67f6b9c`: the wall page is 1,849 px tall at
+  1280 px wide (3,624 px before Hub #277; the Hub #355 device art figure
+  accounts for about 470 px of it and counts toward the 2,000 px budget) and
+  the pixel page 971 px; at 1440 px the home, pixel and Connections pages fit
+  within 1000 px and the wall page within 1,474 px, so every component widget,
+  its quick actions and the sessions widget sit in the first screen.
 - Wall map: on wide screens a three-column grid of `240px` projects rail,
   `minmax(320px, 1fr)` canvas and `440px` inspector; cards use `14px` padding
   and `12px` gaps. Below `1050px` (`max-width: 1049.98px`) the inspector

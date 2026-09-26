@@ -81,7 +81,8 @@ const settleDelay=300;
 /** A form with no Apply button: a change is sent as soon as its gesture settles, with the guards of a read taken just before sending. The control shows the current value again once the result and the refreshed source arrive, so a rejected change is visible as the unchanged value plus its status. Submission, results and locks follow the shared command lifecycle; an uncertain result locks the form until an explicit reload. */
 export function EditForm<T>({title,source,initial,disabled,api,path,build,refresh,prepare,device=true,extra,help,className,lifecycleKey,children}:FormProps<T>){
  const heading=useId();
- const [draft,setDraft]=useState<Record<string,string>|null>(null);
+ const [draft,setDraft]=useState<Record<string,string>|null>(null),[invalid,setInvalid]=useState('');
+ const form=useRef<HTMLFormElement>(null);
  const command=useCommandLifecycle(source,{device},lifecycleKey),{status,tone,busy,locked}=command;
  const values=draft??initial;
  const latest=useRef(values);latest.current=values;
@@ -90,6 +91,10 @@ export function EditForm<T>({title,source,initial,disabled,api,path,build,refres
  function send(next:Record<string,string>){
   clearTimeout(timer.current);pending.current=false;
   if(disabled||busy||locked){setDraft(null);return;}
+  // The browser's own constraints gate the whole form: an invalid field anywhere keeps every value unsent and says so.
+  const broken=form.current?[...form.current.elements].find((el):el is HTMLInputElement|HTMLSelectElement=>(el instanceof HTMLInputElement||el instanceof HTMLSelectElement)&&!el.checkValidity()):undefined;
+  if(broken){setInvalid(`Not sent: ${broken.labels?.[0]?.textContent?.trim()||'a field'} is not valid (${broken.validationMessage}). Nothing changed.`);pending.current=true;return;}
+  setInvalid('');
   void command.run({wording:formWording,refresh,send:request=>api.request<ReceiptEvidence>(path,request),
    prepare:async()=>{
     if(!prepare)return {request:build(source,next)};
@@ -103,11 +108,11 @@ export function EditForm<T>({title,source,initial,disabled,api,path,build,refres
  const settle=()=>{if(pending.current)send(latest.current);};
  const field:Field={values,set:(name,value)=>send(change(name,value)),adjust:change,settle,settleSoon:()=>{clearTimeout(timer.current);timer.current=setTimeout(settle,settleDelay);}};
  function reload(){setDraft(null);command.reload(refresh);}
- return <form className={'edit'+(className?' '+className:'')} aria-labelledby={heading} onSubmit={e=>{e.preventDefault();settle();}}><h3 id={heading} className={className==='inline'?'vh':undefined}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(field)}</fieldset>{disabled&&<p className="hint">Unavailable: {disabled}</p>}{locked&&<div className="actions"><button type="button" className="secondary" disabled={busy} onClick={reload}>Reload current values</button></div>}<p role="status" data-tone={tone}>{status}</p>{extra}{help&&<Help>{help}</Help>}</form>;
+ return <form ref={form} className={'edit'+(className?' '+className:'')} aria-labelledby={heading} onSubmit={e=>{e.preventDefault();settle();}}><h3 id={heading} className={className==='inline'?'vh':undefined}>{title}</h3><fieldset disabled={!!disabled||busy||locked}>{children(field)}</fieldset>{invalid&&<p className="hint warning">{invalid}</p>}{disabled&&<p className="hint">Unavailable: {disabled}</p>}{locked&&<div className="actions"><button type="button" className="secondary" disabled={busy} onClick={reload}>Reload current values</button></div>}<p role="status" data-tone={tone}>{status}</p>{extra}{help&&<Help>{help}</Help>}</form>;
 }
-/** A text or number field that sends when it is left or when Enter is pressed, and only while the browser's own constraints (pattern, range, required) hold. */
+/** A text or number field that sends when it is left or when Enter is pressed; the form's constraints (pattern, range, required) are checked before every send. */
 export function TextField({label,name,field,...rest}:{label:string;name:string;field:Field}&Omit<React.InputHTMLAttributes<HTMLInputElement>,'name'|'value'|'onChange'|'onBlur'|'onKeyDown'>){
- return <label>{label}<input {...rest} value={field.values[name]} onChange={e=>field.adjust(name,e.target.value)} onBlur={e=>{if(e.currentTarget.checkValidity())field.settle();}} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(e.currentTarget.reportValidity())field.settle();}}}/></label>;
+ return <label>{label}<input {...rest} value={field.values[name]} onChange={e=>field.adjust(name,e.target.value)} onBlur={field.settle} onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();field.settle();}}}/></label>;
 }
 /** A slider sends once when the pointer releases it, or after a pause when it is stepped from the keyboard or set by a script; a drag never sends mid-gesture. A color picker sends on its native change event, which fires when the picker closes. */
 export function RangeField({label,name,field,...rest}:{label:string;name:string;field:Field}&Omit<React.InputHTMLAttributes<HTMLInputElement>,'name'|'value'|'onChange'>){
@@ -117,13 +122,13 @@ export function RangeField({label,name,field,...rest}:{label:string;name:string;
  const release=()=>{pointer.current=false;field.settle();};
  return <label>{label}<input {...rest} ref={input} value={field.values[name]} onChange={e=>{field.adjust(name,e.target.value);if(!pointer.current&&!picker)field.settleSoon();}} onPointerDown={()=>{pointer.current=true;}} onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release} onKeyUp={picker?undefined:field.settleSoon}/></label>;
 }
-/** A select reports a pointer choice at once. A keyboard step changes only what it shows until the user pauses, presses Enter or leaves it, so arrowing through the options reports the one the user stops on. */
-export function Select({label,value,onChange,options}:{label:string;value:string;onChange:(v:string)=>void;options:{value:string;label:string}[]}){
+/** A select reports a pointer choice at once. A keyboard step changes only what it shows until the user pauses, presses Enter or leaves it, so arrowing through the options reports the one the user stops on. A deliberate select never reports on a pause: only Enter or leaving it commits a keyboard choice, for a choice that cannot be undone. */
+export function Select({label,value,onChange,options,deliberate=false}:{label:string;value:string;onChange:(v:string)=>void;options:{value:string;label:string}[];deliberate?:boolean}){
  const [draft,setDraft]=useState<string|null>(null);
  const keyboard=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  useEffect(()=>()=>clearTimeout(timer.current),[]);
  const commit=(next:string)=>{clearTimeout(timer.current);setDraft(null);if(next!==value)onChange(next);};
- return <label>{label}<select value={draft??value} onPointerDown={()=>{keyboard.current=false;}} onKeyDown={e=>{keyboard.current=true;if(e.key==='Enter'&&draft!==null){e.preventDefault();commit(draft);}}} onChange={e=>{const next=e.target.value;if(!keyboard.current){commit(next);return;}setDraft(next);clearTimeout(timer.current);timer.current=setTimeout(()=>commit(next),settleDelay);}} onBlur={()=>{if(draft!==null)commit(draft);}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;
+ return <label>{label}<select value={draft??value} onPointerDown={()=>{keyboard.current=false;}} onKeyDown={e=>{keyboard.current=true;if(e.key==='Enter'&&draft!==null){e.preventDefault();commit(draft);}}} onChange={e=>{const next=e.target.value;if(!keyboard.current){commit(next);return;}setDraft(next);clearTimeout(timer.current);if(!deliberate)timer.current=setTimeout(()=>commit(next),settleDelay);}} onBlur={()=>{if(draft!==null)commit(draft);}}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></label>;
 }
 export const options=(values:string[])=>values.map(value=>({value,label:value}));
 type Availability={disabled?:string;content?:string;reasons:GeneralReasons;pixooMode?:{mode:string;pending:string|null;participating:boolean}};

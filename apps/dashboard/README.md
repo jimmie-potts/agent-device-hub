@@ -35,8 +35,8 @@ rows with an inline label form and their retained notices under the row.
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
 wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
-register in the same catalog. Every page stays mounted and hidden, so the session filter, selection and
-focus survive navigation; a text field still being edited is sent when the
+register in the same catalog. Every page except Connections stays mounted and hidden, so the session filter,
+selection and focus survive navigation; a text field still being edited is sent when the
 user leaves it, and a click on a navigation link leaves it. A control that appears on the home and on its
 component page shares one lifecycle state (`useCommandLifecycle` takes a key per
 component and control): a running command or an uncertain lock on either
@@ -57,7 +57,10 @@ it or after a pause following a keyboard step, never mid-drag; a color picker
 sends when it closes; a text field sends when it is left or on Enter, and only
 while the browser's own constraints (pattern, range, required) hold; Power is a
 button that names the one action left (Turn on or Turn off; both when power is
-unknown). The shared control state is forgotten on disconnect. Choosing a
+unknown). A field that fails the browser's own constraints keeps the whole form unsent
+and says so under the fields; the acknowledgment select commits a keyboard
+choice only on Enter or when it is left, because an acknowledgment cannot be
+undone. The shared control state is forgotten on disconnect. Choosing a
 playlist starts it and choosing a scene activates it; the choice clears once
 the command settles. Every send is still one guarded command from a fresh
 read, and a rejected change shows the current value again with its status.
