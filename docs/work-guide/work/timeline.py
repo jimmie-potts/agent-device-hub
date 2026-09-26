@@ -29,11 +29,44 @@ MILESTONES = {
 # not from the shared Codex milestone's position in a different row.
 SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
+    ('Controller setup and health', [
+        dict(id='n-controller-ideas', x=4, label='Health · register devices', issues=['H405', 'H406', 'H418'], guide='bunny-controls'),
+    ]),
+    ('Shared device art ideas', [
+        dict(id='n-art-ideas', x=4, label='Shapes · reserve · moments', issues=['H409', 'H431', 'H432'], guide='bunny-controls'),
+    ]),
+    ('Browser access ideas', [
+        dict(id='n-browser-ideas', x=4, label='App window · sessions', issues=['H429', 'H430'], guide='bunny-controls'),
+    ]),
+    ('MCP catalog and edits', [
+        dict(id='n-mcp-ideas', x=4, label='Catalog · project edits', issues=['H408', 'N175'], guide='assistant-access'),
+    ]),
+    ('Shared content ideas', [
+        dict(id='n-content-titles', x=3, label='Session titles · projects', issues=['H424', 'P106'], guide='shared-codex'),
+        dict(id='n-content-context', x=4, label='Prompts · cards · cycles', issues=['H425', 'H426', 'P107', 'P108'], guide='shared-codex'),
+    ]),
+    ('Hub upgrade and identity', [
+        dict(id='n-upgrade-docs', x=0, label='Upgrade and rollback guide', issues=['H427'], guide='hosting-migrations'),
+        dict(id='n-running-build', x=4, label='Report the running build', issues=['H428'], guide='hosting-migrations'),
+    ]),
+    ('Nanoleaf integration follow-ups', [
+        dict(id='n-panels-docs', x=0, label='Panels dashboard docs', issues=['N180'], guide='nanoleaf-devices'),
+        dict(id='n-element-ideas', x=4, label='Element status · titles', issues=['N178', 'N179'], guide='nanoleaf-devices'),
+    ]),
+    ('LIFX status follow-ups', [
+        dict(id='n-lifx-fades', x=4, label='Fade status · attention', issues=['H416'], guide='nanoleaf-devices'),
+    ]),
+    ('LIFX desk presets', [
+        dict(id='n-lifx-presets', x=4, label='LIFX in desk presets', issues=['H415'], guide='desktop-controls'),
+    ]),
+    ('Nanoleaf harness compatibility', [
+        dict(id='n-harness-owners', x=0, label='Harnesses for split owners', issues=['H410'], guide='development-workflow'),
+    ]),
     ('Main product path', [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='UI foundation delivered', issues=['H181', 'H182'], guide='bunny-controls', main=True),
         dict(id='n-controls', x=2, label='Alias fix · setup docs done', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
-        dict(id='n-music', x=3, label='Sonos Move · later music', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
+        dict(id='n-music', x=3, label='Sonos done · later music', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('B.U.N.N.Y. shell', [
@@ -145,7 +178,7 @@ TRACKS = [
     ('Nanoleaf Lines + Light Panels', [
         dict(id='n-nl-state', x=0, label='State + geometry delivered', issues=[], guide='nanoleaf-devices'),
         dict(id='n-nl-accept', x=1, label='Panels trial accepted', issues=[], guide='nanoleaf-devices'),
-        dict(id='n-nl-map', x=2, label='Install the Panels', issues=['N44', 'N167'], guide='nanoleaf-devices'),
+        dict(id='n-nl-map', x=2, label='Panels installation done', issues=['N44', 'N167'], guide='nanoleaf-devices'),
         dict(id='n-nl-pool', x=4, label='Combined pool', issues=['N47'], guide='nanoleaf-devices'),
     ]),
     ('Nanoleaf external control', [

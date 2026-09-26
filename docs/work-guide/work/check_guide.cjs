@@ -288,7 +288,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      const pixooIdeas=meta.ideas.keys.filter(k=>k.startsWith('P')), liveIdeas=['H998','H11','N47',...pixooIdeas];
      assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] .newly-added-since-snapshot')),[],'A snapshot idea whose live body changes is patched in place, not listed as newly marked');
      assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="bunny-controls"] .newly-added-since-snapshot')),['H998'],'A new live story marked as an idea lands in its topic');
-     assert.deepEqual(await ideas.locator('.ideas-topic').evaluateAll(es=>es.map(e=>e.dataset.topic)),['bunny-controls','nanoleaf-devices',...(pixooIdeas.length?['pixoo-media']:[])],'Topic groups follow guide order');
+     const liveIdeaTopics=ids.filter(id=>['bunny-controls','nanoleaf-devices'].includes(id)||pixooIdeas.some(key=>coverage[id].includes(key)));
+     assert.deepEqual(await ideas.locator('.ideas-topic').evaluateAll(es=>es.map(e=>e.dataset.topic)),liveIdeaTopics,'Topic groups follow guide order');
      const h11=ideas.locator('li.idea[data-key="H11"]');
      assert.equal(await h11.locator('.idea-reason').textContent(),ideaReason,'The reason renders literally');
      assert.equal(await h11.locator('.idea-reason b').count(),0,'Hostile markup in a reason is text');

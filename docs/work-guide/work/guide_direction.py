@@ -15,14 +15,14 @@ hand-written list beside it.
 """
 import html
 
-AS_OF = '2026-09-25'
-REVISION = 'ed95501'
+AS_OF = '2026-09-26'
+REVISION = 'a8f85a2'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [
     ('Nanoleaf Lines and Panels',
      'Installed on the Linux runtime and following shared monitoring, with the Lines and the NL22 Panels as independent devices. '
-     'Codex titles, the compact inspector, configurable Work-mode colors, saved-scene playback, the Lines/Panels map selector, Panels control through the controller and MCP, and read-only element geometry for the hub are delivered. Installing the Panels in the controller, MCP host and hub is next.',
+     'Codex titles, the compact inspector, configurable Work-mode colors, saved-scene playback, the Lines/Panels map selector, Panels control through the controller and MCP, and read-only element geometry for the hub are delivered. The Panels are installed in the controller, MCP host and hub; dashboard controls for their read-only integration snapshot are delivered in source.',
      ['N46', 'N139', 'N91', 'N44', 'N113', 'N169', 'N167']),
     ('Pixoo',
      'Installed as a user service with hub settings; Monitor and Media controls are verified on the display, and now-playing cards are installed and checked. '
@@ -32,13 +32,13 @@ STANDING = [
      'Agent status and the now-playing card are installed and verified on the cloud-connected device, and the installed local controller host gives it a B.U.N.N.Y. page. The Tronbyt move waits on the dedicated server and is one of its triggers (ADR 0008).',
      ['H21', 'H38', 'H289', 'H23', 'H44']),
     ('LIFX',
-     'The LAN controller runs in the installed local controller host, and B.U.N.N.Y. shows real bulb power. Automatic status waits on the owner\'s behavior decisions; the Beam is its own story.',
-     ['H18', 'H289', 'H330', 'H20', 'H319']),
+     'The LAN controller runs in the installed local controller host, and B.U.N.N.Y. shows real bulb power. Automatic status for the qualified A19 is delivered in source; installation and physical acceptance remain with #22. The Beam is its own story.',
+     ['H18', 'H289', 'H330', 'H20', 'H22', 'H319']),
     ('PC lighting',
      'Later by the owner\'s choice. Every story waits on hardware qualification, so nothing here is scheduled.',
      ['H51', 'H53']),
     ('Playback',
-     'Shared Linux playback with the Sony HT-A9 source, now-playing with Sony-qualified controls in B.U.N.N.Y. and Codex tools, and now-playing cards on the Pixoo and Tidbyt are installed and checked. The Sony cannot resume from the hub, so the Sonos Move is the next source and the qualified route to play and resume.',
+     'Shared playback with both the Sony HT-A9 and Sonos Move sources is installed and checked on hub 0.3.11, alongside now-playing in B.U.N.N.Y., Codex tools, Pixoo and Tidbyt. The Move supplies play and resume. Sources rank by session presence, freshness class, then configured order, under one stable playback ID. The Windows connector stays deferred and PC-local, with a relay after the server move.',
      ['H175', 'H37', 'H38', 'H242', 'H233']),
     ('Hub and dashboard',
      'B.U.N.N.Y. carries the Neon skin, one-step device settings and one command lifecycle for forms and actions. '
@@ -72,17 +72,14 @@ BECOMING = [
 
 # What to build next, in order: (keys, why).
 SEQUENCE = [
-    (['H20'], 'Decide the LIFX status behavior: bulbs, colors, brightness cap, quiet behavior and the manual-change policy. No code, and it releases the LIFX installation and LIFX in every cross-device story.'),
     (['H67'], 'Desk presets with fixed Work, Free and Quiet mappings across Nanoleaf and Pixoo: the smallest visible cross-device win and the base for coordinated modes. The tracker still marks it deferred until the owner selects it.'),
     (['H356'], 'Start the WSL runtime at boot: linger, an idle timeout and one scheduled task, so the lights, map, Pixoo and hub are back after a restart without opening a terminal (ADR 0008).'),
-    (['H355'], 'The Prism art in the dashboard, drawn from the delivered read-only wall geometry: the first shared device art, used by the home miniature and the Nanoleaf pages (ADR 0007).'),
-    (['H233'], 'Add the Sonos Move as the second playback source: the qualified route to play and resume from the hub.'),
     (['N112', 'N81', 'N115'], 'Wall presentation the owner sees directly: show the Lines hold and how to resume it, queue the delayed completion comet, and keep comets and waves when the worker skips revisions.'),
 ]
 
 # Changes to what already exists: (text, keys).
 IMPROVEMENTS = [
-    ('Pixoo media: keep MCP status valid after dashboard uploads, and keep Divoom cloud content off the display after screen-on and reboots.', ['P79', 'P76']),
+    ('Pixoo MCP status after dashboard uploads is fixed in source. Preventing cloud content after screen-on and reboots remains separate work.', ['P79', 'P76']),
     ('Tidbyt: check stale-status readability with night mode enabled.', ['H227']),
     ('Dashboard: stop component aliases colliding with built-in pages.', ['H247']),
     ('Guide: mission-map navigation and signal playback build on the delivered Neon restyle, once their stale blocked labels are cleared.', ['H201', 'H202']),
@@ -90,6 +87,9 @@ IMPROVEMENTS = [
 
 # Keys moved out of SEQUENCE at a refresh: (date, keys, note).
 DELIVERED_SINCE = [
+    ('2026-09-26', ['H20'], 'LIFX automatic status is delivered in source; #22 retains installation and physical acceptance.'),
+    ('2026-09-26', ['H355'], 'Shared Prism device art is delivered in the dashboard source.'),
+    ('2026-09-26', ['H233'], 'The Sonos Move source is installed and checked on hub 0.3.11, including paused track changes and Sony-only presentation.'),
     ('2026-09-25', ['H241'], 'Consistent retirement across Codex and Claude merged; cross-device eviction and the Nanoleaf Work/Free switch no longer wait on it.'),
     ('2026-09-25', ['N44', 'N113'], 'The Lines/Panels map selector and Panels control through the controller and MCP are delivered in source.'),
     ('2026-09-25', ['H37'], 'Now-playing with Sony-qualified controls is installed and its installed acceptance passed; the Sonos Move follows as the second source.'),

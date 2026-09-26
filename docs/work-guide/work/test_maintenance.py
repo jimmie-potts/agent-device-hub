@@ -249,8 +249,8 @@ class GuideMaintenance(unittest.TestCase):
             # A row left out of every track would otherwise vanish from its guide.
             paths = candidate / 'work/guide_paths.py'
             text = paths.read_text()
-            self.assertEqual(text.count("'P86']"), 1)
-            paths.write_text(text.replace("'P86']", ']'))
+            self.assertEqual(text.count("'P61']"), 1)
+            paths.write_text(text.replace("'P61']", ']'))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

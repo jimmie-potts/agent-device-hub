@@ -14,7 +14,7 @@
 #17 [CLOSED] Qualify direct LIFX LAN control
 #18 [CLOSED] Implement the LIFX LAN controller
 #19 [CLOSED] Add automatic agent status to Tidbyt
-#20 [OPEN] Add automatic agent status to LIFX
+#20 [CLOSED] Add automatic agent status to LIFX
 #21 [CLOSED] Install and verify Tidbyt agent status
 #22 [OPEN] Install and verify LIFX agent status
 #23 [OPEN] Implement the deferred Tronbyt connection
@@ -113,7 +113,7 @@
 #229 [OPEN] Add optional shared playback artwork from the Sony source
 #231 [CLOSED] Make BUNNY device settings apply in one step and simplify command status
 #232 [CLOSED] Document connecting device controllers for BUNNY in the hub setup guide
-#233 [OPEN] Add the Sonos Move as a second playback source
+#233 [CLOSED] Add the Sonos Move as a second playback source
 #237 [CLOSED] Use personal-project scope defaults in story writing and pickup
 #240 [OPEN] Qualify enforceable Hub merge gates and guide-only CI handling
 #241 [CLOSED] Retire ended monitoring sessions consistently across Codex and Claude
@@ -133,7 +133,7 @@
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
 #272 [OPEN] Let devices join or leave one shared task pool
-#276 [OPEN] Open B.U.N.N.Y. from a bookmark without a token or launcher step
+#276 [CLOSED] Open B.U.N.N.Y. from a bookmark without a token or launcher step
 #277 [OPEN] Make the dashboard a dense control surface instead of long single-column pages
 #278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
 #279 [OPEN] Clear the visual-alignment leftovers in the style guide, atlas and system map
@@ -169,7 +169,7 @@
 #317 [OPEN] Merge and publish the nightly guide refresh automatically
 #319 [OPEN] Add the LIFX Beam to the LIFX controller and B.U.N.N.Y.
 #320 [OPEN] Install and verify the LIFX Beam in B.U.N.N.Y.
-#323 [OPEN] Show dashboard controls for a Nanoleaf device with a read-only integration snapshot
+#323 [CLOSED] Show dashboard controls for a Nanoleaf device with a read-only integration snapshot
 #324 [CLOSED] Refresh the work guide snapshot so idea marks and the stories filed since the morning of 2026-09-25 reach the static guide
 #325 [OPEN] Show which stories unlock the most ideas from their Extends marks
 #327 [OPEN] Show one run of LIFX Beam zones per agent session as a desk task strip
@@ -195,13 +195,13 @@
 #350 [OPEN] Pause the music when an agent needs the owner, and offer resume
 #352 [OPEN] Add an email event source for message-arrived moments
 #353 [OPEN] Show Pixoo media and playlist previews on the B.U.N.N.Y. Pixoo page
-#355 [OPEN] Port the wall map's Prism renderer into the dashboard as shared device art
+#355 [CLOSED] Port the wall map's Prism renderer into the dashboard as shared device art
 #356 [OPEN] Start the WSL runtime at boot with linger, an idle timeout and one scheduled task
-#357 [OPEN] Keep the hub starting when its MCP tool catalog grows past the response limit
+#357 [CLOSED] Keep the hub starting when its MCP tool catalog grows past the response limit
 #358 [OPEN] Store event rules and the interrupt set, and arbitrate the moments they trigger
 #359 [OPEN] Run weekly scheduled routines through typed device commands with content-mode preconditions
 #360 [OPEN] Add B.U.N.N.Y. Automation widgets and MCP tools for rules and routines
-#361 [OPEN] Install stop-signal handlers before the hub and the Tidbyt runner announce they are ready
+#361 [CLOSED] Install stop-signal handlers before the hub and the Tidbyt runner announce they are ready
 #362 [OPEN] Show when a LIFX bulb was changed outside B.U.N.N.Y.
 #363 [OPEN] Show what the Tidbyt last received, and its cloud state, on its B.U.N.N.Y. page
 #364 [OPEN] Give each session a short neutral alias in shared agent state so every device shows the same task code
@@ -236,3 +236,21 @@
 #401 [OPEN] Update the atlas's playback prose and overview card for installed shared playback
 #402 [OPEN] Show the guide's Build-next list as a widget on the B.U.N.N.Y. home
 #403 [OPEN] Show the six runtime services and their last start on the B.U.N.N.Y. home
+#405 [OPEN] Show live reachability for each device controller in B.U.N.N.Y.
+#406 [OPEN] Register a device controller with one hub command
+#408 [OPEN] Keep the hub MCP tool list short as devices grow
+#409 [OPEN] Draw every device page from a shape its owner publishes
+#410 [OPEN] Port the hub's Nanoleaf harness scripts to the split bridge modules before the next pin
+#415 [OPEN] Add the LIFX bulb to the Work, Free and Quiet desk presets
+#416 [OPEN] Fade LIFX status changes and pulse once when attention starts
+#417 [CLOSED] Install the hub with #323 and check the Panels page in the installed dashboard
+#418 [OPEN] Offer to register each device a connected controller lists, as one explicit setup step
+#424 [OPEN] Carry session titles and project names in shared agent state
+#425 [OPEN] Carry the latest prompt and agent response in shared agent state for devices
+#426 [OPEN] Use real titles in the Tidbyt tile, moments and device controls
+#427 [OPEN] Document upgrading the installed hub with a backup, receipt and rollback
+#428 [OPEN] Report the running hub version and source revision in health and on the Connections page
+#429 [OPEN] Install B.U.N.N.Y. as its own app window from the browser
+#430 [OPEN] See and end open B.U.N.N.Y. browser sessions from the Connections page
+#431 [OPEN] Reserve a Line for a project by picking it on the B.U.N.N.Y. wall art
+#432 [OPEN] Play a sent moment on the B.U.N.N.Y. device art

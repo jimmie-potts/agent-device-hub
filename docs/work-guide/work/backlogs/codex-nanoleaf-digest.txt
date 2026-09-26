@@ -9,6 +9,7 @@
 #29 [CLOSED] Consume shared agent sessions while preserving Nanoleaf behavior
 #30 [CLOSED] Get shared Codex monitoring working on the existing Linux Nanoleaf installation
 #31 [CLOSED] Adopt shared OpenSpec validation tooling
+#33 [CLOSED] Add local Codex MCP bindings for the Nanoleaf controller
 #34 [CLOSED] Verify local Codex control of the Nanoleaf lights
 #37 [CLOSED] Bound CI runtime and remove duplicate branch-push checks
 #41 [CLOSED] Introduce device-aware Nanoleaf state and geometry contracts
@@ -46,7 +47,7 @@
 #117 [CLOSED] Preserve Open in Codex keyboard focus through unchanged polling
 #118 [CLOSED] Separate shared configuration operations, runtime primitives and hook management
 #119 [OPEN] Move the wall page's rebuild policy into one scheduler behind a view model
-#120 [OPEN] Contain SQLite backup, fixture and operation knowledge within state owners
+#120 [CLOSED] Contain SQLite backup, fixture and operation knowledge within state owners
 #121 [OPEN] Carry device identity as a worker context instead of threading parameters
 #122 [OPEN] Investigate a pure shared-input projection function
 #123 [OPEN] Decide whether the standard wall renderer remains a fallback for Prism
@@ -78,8 +79,13 @@
 #161 [OPEN] Report when someone changes the Lines outside the bridge
 #162 [OPEN] Document the in-place runtime upgrade, the codex exec MCP override and the hand-listed bridge modules
 #163 [OPEN] Define the project's domain glossary
-#167 [OPEN] Add the NL22 Panels to the installed controller, MCP host and hub
+#167 [CLOSED] Add the NL22 Panels to the installed controller, MCP host and hub
 #168 [OPEN] Pick and play a device's saved scene from its wall map page
 #169 [CLOSED] Expose element geometry read-only on the integration route for the Lines and Panels
 #170 [OPEN] Carry orientation, palette, Locate, eviction and Panels configuration through the integration extension
 #171 [OPEN] Retire the wall map once every operation has a home in the B.U.N.N.Y. shell
+#174 [CLOSED] Adopt device-mcp 1.0.1 so the MCP host keeps room for new tools
+#175 [OPEN] Change project colors and task projects from Codex through MCP
+#178 [OPEN] Expose each element's task status read-only on the integration route
+#179 [OPEN] Use shared session titles and project names instead of local-only metadata
+#180 [OPEN] Say the hub dashboard now shows Panels controls in the controller guide
