@@ -96,7 +96,7 @@ export type PaintHsbk = { hue: number; saturation: number; brightness: number; k
  * lighting profile schema, so no external caller can reach it. It exists only so the automatic
  * status paint shares the bulb's queue, request namespace and generation/cancellation rules.
  * It is never listed in `lighting.pending`, which `lifx-light` 1.0.0 cannot express (#450);
- * its receipt still reaches `lastOutcome` and `lastSuccessfulSend`. */
+ * its receipt still becomes `lastOutcome`, and a sent paint `lastSuccessfulSend`. */
 const PAINT_KIND = "lifx.internal.status-paint" as const;
 type PaintCommand = { kind: typeof PAINT_KIND } & PaintHsbk;
 type PaintRequest = { profile: typeof LIFX_PROFILE; requestId: Ticket; command: PaintCommand };
@@ -385,7 +385,8 @@ class Bulb {
           effects: false,
         },
         pending: this.pending
-          .filter((e) => "profile" in e.request && e.request.command.kind !== PAINT_KIND)
+          .filter((e): e is Entry & { request: LightingRequest } =>
+            "profile" in e.request && e.request.command.kind !== PAINT_KIND)
           .map((e) => ({
             requestId: clone(e.request.requestId),
             command: clone(e.request.command),

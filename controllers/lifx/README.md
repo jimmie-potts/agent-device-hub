@@ -146,7 +146,7 @@ effect on power. It mints its own envelope from the bulb's own current
 request ID, revision and generation, sharing the same queue,
 generation-cancellation and receipt shape as any admitted command. It is not
 listed in `lighting.pending`, which the `lifx-light` 1.0.0 snapshot cannot
-express (#450); its receipt still reaches `lastOutcome` and
+express (#450); its receipt still becomes `lastOutcome`, and a sent paint
 `lastSuccessfulSend`. Its private command kind is never
 accepted by `parsed()`/`submit()` or the public lighting schema, so no
 external caller can reach it. A paint that loses a race for queue capacity is

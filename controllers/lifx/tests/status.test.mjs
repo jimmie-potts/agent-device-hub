@@ -217,7 +217,7 @@ test("a generation cancel alone drops a queued paint without traffic and leaves 
   await later.done;
 });
 
-test("a generation cancel drops a queued paint and close cancels an outstanding one", async (t) => {
+test("close cancels an in-flight paint", async (t) => {
   let started = 0;
   const c = setup(t, () => { started++; return new Promise(() => {}); });
   const first = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
