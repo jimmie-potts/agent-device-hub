@@ -1,6 +1,6 @@
 # Reversible shared monitoring setup
 
-This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). It supplies local SDK operations for a named installation owner. Running these operations against personal files, starting clients or services, moving live state, and operating devices require a separate explicit request. Source checks use disposable private directories and never start a physical worker.
+This is the Linux/WSL source deliverable for [Hub #8](https://github.com/jimmie-potts/agent-device-hub/issues/8). It supplies local SDK operations for a named installation owner. Running these operations against personal files, starting clients or services, moving live state, and operating devices require a separate explicit request. Source checks use disposable private directories and never start a physical worker. [Connect device controllers for B.U.N.N.Y.](#connect-device-controllers-for-bunny) wires installed device controllers into the hub.
 
 ## Supported evidence
 
@@ -129,3 +129,111 @@ A failed consumer preflight leaves the old selected path in place. A failure aft
 Source evidence consists of setup conflict/recovery tests, silent-hook tests, credential rejection checks, reproducible offline packaging, and `scripts/check-hub-shared-consumers.mjs` against pinned Pixoo/Nanoleaf sources. The latter replaces only physical worker launch with a no-op and uses real owning configuration/preflight/status logic. It verifies the identified event, both projections, revocation, legacy selection and latest-state host rollback. The existing Pixoo host check additionally covers labels/notices/acknowledgment and renderer behavior. These do not establish personal installation, real-client event completeness, integrated performance budgets or optical accuracy. Record each future receipt with its named owner and exact versions; Pixoo #34 and Nanoleaf #30 retain device acceptance.
 
 Credential adapters also retain a private source-principal ownership record in the state owner's directory. Grant and revoke require the same receipt directory and token digest. A second receipt cannot adopt an active source, even with a copy of its token. Confirmed revocation leaves a tombstone; a later reviewed installation may claim that source again. A crash may retain `setup-authority.lock` in the state owner directory or `<target>.setup.lock` beside a client target. These locks serialize credential changes and SDK edits across sources. Recover it under the same dead-coordinator/no-concurrent-writer procedure as `setup.lock`, without deleting the ownership record.
+
+## Connect device controllers for B.U.N.N.Y.
+
+B.U.N.N.Y. commands a device only through a `controllers` entry in the hub configuration. With `"controllers": []` the dashboard has no component to control. This section wires an installed Pixoo or Nanoleaf controller into an installed hub. The configuration fields are described under [Configuration and authority](README.md#configuration-and-authority). Editing the configuration and restarting the hub service needs the installation owner's explicit request. Tidbyt and LIFX devices use the [local controller host](../local-controllers/README.md#register-it-with-the-hub) instead.
+
+Placeholders below are `<...>` or `/absolute/private/...`. Replace them with the owner's actual values. Never commit these values, and never print a token.
+
+### Prerequisites
+
+Each device controller must already be running and serve `/controller/v1` on numeric loopback (`http://127.0.0.1:<port>/controller/v1`):
+
+- **Pixoo:** the backend runs with `PIXOO_MODE=device`, `PIXOO_CONTROLLER_ENABLED=1` and `PIXOO_MONITOR_ENABLED=1`, on `PIXOO_PORT` (default 8787). The monitor flag also serves the Pixoo integration extension that carries B.U.N.N.Y.'s Monitor/Media mode control. See Pixoo's [shared controller API](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/hub-controller-api.md).
+- **Nanoleaf:** the installed controller user service runs `nanoleaf controller-serve` on its fixed port. See Nanoleaf's [local controller API](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/controller-api.md).
+
+You also need the hub's owner-only configuration path, its port, its service unit and a hub credential with `read` scope for the checks below.
+
+### Create a dedicated principal per device
+
+Give the hub its own principal on each controller. Never reuse another client's credential, such as the one Codex MCP uses. Each command prints a new 43-character token once. Write it straight to an owner-only file:
+
+```bash
+umask 077
+# Nanoleaf, with the installed launcher. Grants read and control.
+nanoleaf controller-token --principal <hub-principal-id> > /absolute/private/nanoleaf-hub.token
+# Pixoo, from the Pixoo checkout root, with the backend's private data directory. Grants read and control.
+npm run --silent mcp:credentials -- add /absolute/private/pixoo-data <hub-principal-id> control > /absolute/private/pixoo-hub.token
+```
+
+Check that each token file is not empty (`test -s <file>`); a failed command still creates the file. Use a principal ID that is not already in use. Nanoleaf reissues an existing principal, which replaces that client's credential and cancels its unsent work. Pixoo refuses an existing ID.
+
+### Read the controller and device IDs
+
+The entry's `controllerId` and `deviceId` must equal `identity.controllerId` and `identity.deviceId` in the controller's native snapshot. Read them without printing the token:
+
+```bash
+ids='let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const {controllerId,deviceId}=JSON.parse(s).identity;console.log(controllerId,deviceId)})'
+# Nanoleaf prints the Lines snapshot; add --device-id <id> for another device, such as the Panels.
+nanoleaf controller-status | node -e "$ids"
+# Pixoo serves one device.
+curl -s -H "Authorization: Bearer $(cat /absolute/private/pixoo-hub.token)" http://127.0.0.1:<pixoo-port>/controller/v1/snapshot | node -e "$ids"
+```
+
+Nanoleaf serves each configured device, such as the Lines and the Panels, behind one endpoint and credential. Add one hub entry per device, with the same endpoint and token and that device's `deviceId`. The dashboard shows no controls for the Panels until [#323](https://github.com/jimmie-potts/agent-device-hub/issues/323).
+
+### Add the controller entries
+
+Back up the configuration first. Keep the copy owner-only, outside Git and outside `/mnt`:
+
+```bash
+umask 077
+cp -p /absolute/private/config.json /absolute/private/config.json.before-controllers
+```
+
+Then add one entry per device. `id` is the neutral alias B.U.N.N.Y. and credentials use; `kind` is `pixoo` or `nanoleaf`; `endpoint` is the controller's loopback URL ending `/controller/v1`; `token` is the principal's token. This command copies the token from its file, so it never appears on screen or in shell history:
+
+```bash
+node -e '
+const fs = require("node:fs");
+const [config, entry, tokenFile] = process.argv.slice(1);
+const value = JSON.parse(fs.readFileSync(config, "utf8"));
+value.controllers.push({...JSON.parse(entry), token: fs.readFileSync(tokenFile, "utf8").trim()});
+fs.rmSync(config + ".next", {force: true});
+fs.writeFileSync(config + ".next", JSON.stringify(value, null, 2) + "\n", {mode: 0o600, flag: "wx"});
+fs.renameSync(config + ".next", config);
+' /absolute/private/config.json '{"id":"<alias>","kind":"<pixoo|nanoleaf>","controllerId":"<controllerId>","deviceId":"<deviceId>","endpoint":"http://127.0.0.1:<port>/controller/v1"}' /absolute/private/<device>-hub.token
+```
+
+Launcher sessions reach every registered alias. Any configured hub credential that should reach a new device, including the `read` credential for the checks below and an MCP client's credential, needs the alias in its `devices` list (see [Credentials](README.md#credentials)). Delete the token files once the entries are in place; the controller keeps only the digest, and the configuration holds the only copy.
+
+### Restart and verify
+
+Restart the hub service so it reads the new entries:
+
+```bash
+systemctl --user restart <hub-unit>
+```
+
+An invalid entry stops startup, and the service log names the cause without paths or values: `hub-start-failed: invalid-endpoint` for a non-loopback endpoint, `hub-start-failed: invalid-controller` for a token that is not 43 base64url characters or a malformed ID, and `hub-start-failed: invalid-configuration` for a duplicate alias or a configuration file that is not owner-only. Restore the backup and restart.
+
+1. Health lists each device. `curl -s -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/hub/v1/health` returns a `devices` array with each alias, kind, `controllerId` and `deviceId`. `health` is `unknown` until the hub's first request to that controller.
+2. Native snapshots validate. `curl -s -w ' %{http_code}\n' -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/controllers/v1/<alias>/snapshot` prints the snapshot followed by `200`, and health then shows `ready` for that alias. Repeat with `.../integration/snapshot`, which the dashboard also loads, for Pixoo and the Nanoleaf Lines. On the v1 snapshot, `502` `incompatible-controller` means the entry's IDs do not match the controller's snapshot. `503` `controller-unavailable` means the hub cannot reach the controller, that Pixoo refused the entry's token on its v1 snapshot, or, on the Pixoo integration snapshot, that `PIXOO_MONITOR_ENABLED=1` is missing. Once step 1 has passed with the same read token, `401` `unauthenticated` means the controller refused the entry's token: Nanoleaf answers this way on both snapshots and Pixoo on its integration snapshot. `403` `forbidden` means the read credential's `devices` list lacks the alias. The Panels' integration snapshot always returns `502` `incompatible-controller` until [#323](https://github.com/jimmie-potts/agent-device-hub/issues/323), even with correct IDs, and marks the Panels `unavailable` until their next v1 read.
+3. The launcher session shows the controls. Run the hub's `open` command ([Open B.U.N.N.Y. without typing a token](README.md#open-bunny-without-typing-a-token)). Each component view shows the [general controls](../dashboard/README.md#general-controls) its controller declares.
+
+### Roll back
+
+1. Restore the backup: `cp -p /absolute/private/config.json.before-controllers /absolute/private/config.json`.
+2. Revoke each hub principal: `nanoleaf controller-revoke --principal <hub-principal-id>` and, from the Pixoo checkout, `npm run --silent mcp:credentials -- revoke /absolute/private/pixoo-data <hub-principal-id>`.
+3. Restart the hub service, then confirm health no longer lists the removed aliases.
+
+### Troubleshooting
+
+- **A registered device shows `unknown` health.** Health reports the last request outcome and never contacts the device itself. The first snapshot read, from the dashboard or the check above, sets `ready` or `unavailable`. A Nanoleaf controller that refuses the entry's token answers `401` `unauthenticated` and leaves health `unknown`; a refused Pixoo token shows as `503` `controller-unavailable` on the v1 snapshot and `401` on the integration snapshot. To replace one device's token, remove only that alias's entry, which keeps the other entries and their tokens:
+
+  ```bash
+  node -e '
+  const fs = require("node:fs");
+  const [config, alias] = process.argv.slice(1);
+  const value = JSON.parse(fs.readFileSync(config, "utf8"));
+  value.controllers = value.controllers.filter(entry => entry.id !== alias);
+  fs.rmSync(config + ".next", {force: true});
+  fs.writeFileSync(config + ".next", JSON.stringify(value, null, 2) + "\n", {mode: 0o600, flag: "wx"});
+  fs.renameSync(config + ".next", config);
+  ' /absolute/private/config.json <alias>
+  ```
+
+  Nanoleaf devices share one principal, so remove every alias that uses it, such as both the Lines and the Panels. Then revoke the old principal as in [Roll back](#roll-back), create a new one (Pixoo needs a new principal ID), add the removed entries again and restart. Adding an alias that is still present stops startup with a duplicate `id`.
+- **Pixoo is in Monitor but does not present it.** After the Pixoo app starts, or the screen turns off and on, Monitor can be configured without being presented. When the backend starts in device mode, Pixoo resumes a saved Monitor selection by itself if the screen was requested on. Turning the screen on alone never resumes it, and a failed first upload, a retained screen-off request or simulator startup waits for an explicit command. Send it with **Start Monitor** in the Pixoo mode form. The hub never sends one on its own.
+- **A controller stopped mid-session.** Its reads fail with `controller-unavailable` and health shows `unavailable` until the controller returns; the next successful read shows `ready` again without a hub restart. A command in flight when it stopped is `uncertain-result`, not proof that nothing happened. Use **Reload current values** before sending again.
