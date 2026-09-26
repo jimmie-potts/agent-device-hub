@@ -230,6 +230,17 @@ fingerprint this repository puts in the policy's fingerprint slot.
   prompt does not stale it. The Guide section is placement metadata, so adding,
   moving or rewording it does not stale it either; keep scope out of its notes.
 
+A section may also carry a `**Work surface:**` line, conventionally placed
+directly after `**Start with:**` (or, in the `insufficient` form, after
+`**Missing:**`) as `recommendations.py upsert` writes it, though the parser
+does not require that position, with exactly one value: `UI`, `Backend` or
+`Unknown`, as defined in
+[`agent-skills@2d5b86a`](https://github.com/jimmie-potts/agent-skills/blob/2d5b86a25f2204bffc3529431923420c316fcdbf/skills/plan-work/references/execution-recommendations.md).
+The guide shows it as a badge in the task brief's "Start with" block and next
+to each open story's entry. A story without the line shows "Not classified";
+the guide never infers a value. An unknown value makes the whole section
+"Assessment unavailable", the same as any other unreadable line.
+
 Topic rows and opening cards show one text label per story, session type first,
 for example "Start One-shot · Sonnet medium / Luna medium". Live GitHub reads keep
 each story's snapshot label; a story missing from the snapshot shows "Not yet

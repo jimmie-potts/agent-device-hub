@@ -527,6 +527,8 @@ JS = '''
    start.dataset.rec = rec.state;
    const provenance = rec.date ? ` · assessed ${rec.date}${rec.policy ? ` · policy ${rec.policy}` : ''}` : '';
    start.querySelector('.brief-rec-state').textContent = current ? `Recommended${provenance}` : `${rec.label}${rec.state === 'stale' ? '' : provenance}. ${NOTICES[rec.state]}`;
+   const surfaceBadge = start.querySelector('.brief-surface .surface-badge');
+   surfaceBadge.textContent = rec.work_surface || 'Not classified'; surfaceBadge.dataset.surface = rec.work_surface || 'none';
    const ratings = Object.entries(rec.ratings || {});
    start.querySelector('.brief-ratings').textContent = ratings.length ? 'Assessment: ' + ratings.map(([name, level]) => `${name} ${level}`).join(' · ') : 'Assessment ratings are not recorded in the story.';
    start.querySelector('.brief-answer').textContent = current ? rec.answer : rec.state === 'insufficient' ? `Missing: ${rec.missing}` : rec.state === 'unavailable' ? `Reason: ${rec.reason}` : '';
@@ -728,7 +730,7 @@ document = '''<!doctype html>
 </main></div>
 <dialog id="brief" class="brief" aria-labelledby="brief-title"><div class="brief-body">
 <header class="brief-head"><p class="eyebrow"><span class="brief-repo"></span><span class="brief-number"></span></p><h2 id="brief-title"></h2><a class="brief-link" target="_blank" rel="noopener noreferrer">Open the issue in GitHub ↗</a></header>
-<section class="brief-start" aria-labelledby="brief-start-title"><h3 id="brief-start-title">Start with</h3><p class="brief-rec-state"></p><p class="brief-ratings"></p><p class="brief-answer"></p>
+<section class="brief-start" aria-labelledby="brief-start-title"><h3 id="brief-start-title">Start with</h3><p class="brief-rec-state"></p><p class="brief-surface"><span class="surface-badge"></span></p><p class="brief-ratings"></p><p class="brief-answer"></p>
 <table class="brief-hosts"><caption class="sr-only">Starting session per host</caption><thead><tr><td></td><th scope="col">Claude Code<span class="brief-avail" data-avail="claude"></span></th><th scope="col">Codex<span class="brief-avail" data-avail="codex"></span></th></tr></thead><tbody></tbody></table>
 <p class="brief-choose">Choose the model and effort in your host before pasting. The agent can confirm the model but not the thinking level.</p>
 <details class="brief-why"><summary>Why, availability and when to reassess</summary><dl></dl></details></section>
