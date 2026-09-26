@@ -185,11 +185,16 @@ def _parse_section(lines):
         starts[start][host] = prompt
     if set(starts['recommended']) != set(HOSTS):
         raise Unreadable('both hosts need a prompt')
-    # "none recorded" states that no cheaper start exists; anything else needs both prompts.
+    # An omitted cheaper host must be explicitly declined; never invent its prompt.
     cheaper = values.get('Cheaper start')
     declined = bool(cheaper) and re.match(r'none recorded\b', cheaper, re.I) is not None
-    if (bool(cheaper) and not declined) != bool(starts['cheaper']) or (starts['cheaper'] and set(starts['cheaper']) != set(HOSTS)):
-        raise Unreadable('a cheaper start needs one line and both host prompts, or "none recorded" and no prompts')
+    if (bool(cheaper) and not declined) != bool(starts['cheaper']):
+        raise Unreadable('a cheaper start needs one line and host prompts, or "none recorded" and no prompts')
+    if starts['cheaper']:
+        for host, name in HOSTS.items():
+            absent = re.search(rf'(?:^|[.;]\s*){re.escape(name)}: none(?:[.;]|$)', cheaper, re.I) is not None
+            if (host not in starts['cheaper']) != absent:
+                raise Unreadable(f'a cheaper host needs its prompt or an explicit "{name}: none."')
     return dict(result, state='recommended', answer=values['Start with'], work_surface=_work_surface(values), hosts=hosts,
                 cheaper=cheaper, prompts={k: v or None for k, v in starts.items()})
 
@@ -363,13 +368,18 @@ def render(entry, assessed_date, story_fingerprint):
     cheaper = entry.get('cheaper')
     if cheaper:
         choices = cheaper['hosts']
+        if not choices or set(choices) - set(HOSTS):
+            raise ValueError('cheaper hosts must name at least one supported host')
         sessions = dict.fromkeys(SESSION_NOUN[choice['session']] for choice in choices.values())
-        described = ' or '.join(f"{name} on {choices[host]['model']} `{choices[host]['thinking']}`" for host, name in HOSTS.items())
+        described = ' or '.join(f"{name} on {choices[host]['model']} `{choices[host]['thinking']}`" for host, name in HOSTS.items() if host in choices)
         line = f"{cheaper['covers'][0].upper()}{cheaper['covers'][1:]}, as a {' / '.join(sessions)} session in {described}."
+        line += ''.join(f' {name}: none.' for host, name in HOSTS.items() if host not in choices)
         if cheaper.get('note'):
             line += ' ' + cheaper['note']
         lines += ['', f'**Cheaper start:** {_one_line(line)}']
         for host, name in HOSTS.items():
+            if host not in choices:
+                continue
             lines += ['', f'**Cheaper prompt ({name}):**', '', *_fenced(prompt(entry, host, 'cheaper', assessed_date))]
     else:
         if not entry.get('no_cheaper'):

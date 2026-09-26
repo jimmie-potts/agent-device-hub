@@ -432,7 +432,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      for(const [key,surface,text] of renderedSurfaces){const expected=(recs[key]||{}).work_surface||null;
        assert.equal(surface,expected||'none',`${key} live surface attribute`);assert.equal(text,expected||'Not classified',`${key} live surface text`);}
      // Recommendations from the saved backlog when present, otherwise labeled fixtures injected into this page only.
-     const real=state=>Object.entries(recs).find(([,r])=>r.state===state&&(state!=='recommended'||r.prompts.cheaper));
+     const real=state=>Object.entries(recs).find(([,r])=>r.state===state&&(state!=='recommended'||(r.prompts.cheaper?.claude&&r.prompts.cheaper?.codex)));
      const fixtureHosts={claude:{model:'Opus',identifier:'opus',thinking:'high',session:'Orchestrate',subagents:'<img src=x onerror="window.recInjected=1"> scouts',reviewers:'Two fresh read-only Sonnet (sonnet) reviewers',availability:'Verified: fixture host evidence',verified:true,checkpoints:null},
                          codex:{model:'Sol',identifier:'gpt-6-sol',thinking:'high',session:'Orchestrate',subagents:'One Luna scout',reviewers:'Two fresh read-only Luna (gpt-6-luna) reviewers at high',availability:'Provisional: fixture',verified:false,checkpoints:null}};
      const fixture={state:'recommended',label:'Orchestrate · Opus high / Sol high',date:'2026-09-24',policy:'agent-skills@fixture',evidence:'fixture',answer:'<b>fixture</b> answer & "quote"',hosts:fixtureHosts,work_surface:'UI',
@@ -483,6 +483,31 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        assert(await dialog.locator('button[data-start="cheaper"]').isDisabled(),'Cheaper is disabled without a cheaper start'); assert.equal(await dialog.locator('.brief-option-note').textContent(),'No cheaper start is recorded for this story.');
        assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
        await page.keyboard.press('Escape');
+       // A cheaper alternative belongs to its host; switching never copies an absent prompt.
+       for(const available of ['claude','codex']){
+         const absent=available==='claude'?'codex':'claude', partialKey=others.find(k=>!Object.values(cases).includes(k)&&k!==pick(5));
+         await page.evaluate(([key,fixture,available])=>{const d=document.querySelector('#issue-recommendations'),j=JSON.parse(d.textContent);
+           j[key]={...fixture,hosts:Object.fromEntries(Object.entries(fixture.hosts).map(([h,v])=>[h,{...v,session:'Investigate first',reviewers:'None'}])),cheaper:'One-host cheaper fixture.',prompts:{...fixture.prompts,cheaper:{[available]:'Investigate this fixture read-only; do not implement.'}}};
+           d.textContent=JSON.stringify(j);},[partialKey,fixture,available]);
+         await open(partialKey); await dialog.locator('[data-action="implement"]').click();
+         await dialog.locator(`button[data-host="${available}"]`).click();
+         assert(!(await dialog.locator('button[data-start="cheaper"]').isDisabled()));
+         await dialog.locator('button[data-start="cheaper"]').click();
+         assert.equal(await prompt.inputValue(),'Investigate this fixture read-only; do not implement.');
+         assert(!(await hint.textContent()).includes('merged PR'),'Cheaper investigation must not promise delivery');
+         assert((await hint.textContent()).includes('read-only investigation'),'Cheaper investigation retains the read-only hint');
+         await dialog.locator(`button[data-host="${absent}"]`).click();
+         assert(await dialog.locator('button[data-start="cheaper"]').isDisabled());
+         assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');
+         assert.equal(await prompt.inputValue(),fixture.prompts.recommended[absent]);
+         assert.match(await dialog.locator('.brief-option-note').textContent(),new RegExp(`No cheaper start is recorded for ${absent==='claude'?'Claude Code':'Codex'}`));
+         await dialog.locator(`button[data-host="${available}"]`).click();
+         assert.equal(await prompt.inputValue(),fixture.prompts.recommended[available],'Returning to a host keeps the recommended start until chosen');
+         assert(!(await dialog.locator('button[data-start="cheaper"]').isDisabled()));
+         await noOverflow(`One-host cheaper at ${width}`); await page.keyboard.press('Escape');
+       }
+       // Restore the previously selected host for the persistence check at the next width.
+       await open(cases.recommended); await dialog.locator('button[data-host="codex"]').click(); await page.keyboard.press('Escape');
        // Most saved recommendations record why no cheaper start exists; the reason replaces the generic note.
        // Unrelated to #259: fall back to an injected fixture when the current backlog has no such example,
        // the same pattern already used above for the recommended/insufficient cases.

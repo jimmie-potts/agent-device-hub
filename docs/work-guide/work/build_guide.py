@@ -591,17 +591,18 @@ JS = '''
  const show = () => {
    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.action === action)));
    const current = rec.state === 'recommended', custom = action === 'implement' && current;
-   const cheaper = current && rec.prompts.cheaper;
+   const cheaper = current && rec.prompts.cheaper?.[host];
    if (!cheaper) begin = 'recommended';
    options.hidden = !custom;
    hostButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.host === host)));
    startButtons.forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.start === begin)); if (b.dataset.start === 'cheaper') b.disabled = !cheaper; });
    optionNote.textContent = cheaper ? (begin === 'cheaper' ? rec.cheaper : '') : rec.cheaper ? `Cheaper start: ${rec.cheaper}` : 'No cheaper start is recorded for this story.';
+   if (current && rec.prompts.cheaper && !cheaper) optionNote.textContent = `No cheaper start is recorded for ${HOSTS[host]}. ${rec.cheaper || ''}`;
    const [build, text] = ACTIONS[action];
    if (custom) {
      const session = rec.hosts[host].session;
      prompt.value = rec.prompts[begin][host];
-     hint.textContent = `Saved ${HOSTS[host]} prompt from the story's recommendation, ${rec.date}. ` + (session === 'Investigate first' && begin === 'recommended' ? 'It starts a read-only investigation; the story is reassessed before implementation.' : 'It runs to a merged PR and a closed issue unless it says otherwise.');
+     hint.textContent = `Saved ${HOSTS[host]} prompt from the story's recommendation, ${rec.date}. ` + (session === 'Investigate first' ? 'It starts a read-only investigation; the story is reassessed before implementation.' : 'It runs to a merged PR and a closed issue unless it says otherwise.');
    } else {
      prompt.value = build(issue.url, issue.title);
      hint.textContent = action === 'implement' ? `${rec.label}: generic prompt. ${text}` : text;

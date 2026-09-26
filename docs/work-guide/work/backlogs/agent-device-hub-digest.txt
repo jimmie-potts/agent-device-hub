@@ -135,7 +135,7 @@
 #272 [OPEN] Let devices join or leave one shared task pool
 #276 [CLOSED] Open B.U.N.N.Y. from a bookmark without a token or launcher step
 #277 [CLOSED] Make the dashboard a dense control surface instead of long single-column pages
-#278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
+#278 [CLOSED] Reach every B.U.N.N.Y. surface from one shared places navigation
 #279 [OPEN] Clear the visual-alignment leftovers in the style guide, atlas and system map
 #282 [OPEN] Record a private local history of tasks, devices, music and hub health for graphs
 #283 [OPEN] Add a Status page with velocity and live graph widgets to the dashboard
@@ -267,3 +267,22 @@
 #458 [OPEN] Publish one overall agent status from the hub for B.U.N.N.Y. and every device
 #459 [OPEN] Show finding causes beside deliveries by model in the work guide
 #465 [OPEN] Define the shared install contract and receipt schema for installed runtimes
+#467 [OPEN] Plan Wispr analytics: local collection, private dashboard and future speaking insights
+#468 [OPEN] Collect Wispr usage locally on Windows and publish private aggregate snapshots
+#469 [OPEN] Add opt-in Wispr word, phrase and text-change aggregates
+#470 [OPEN] Serve private Wispr aggregates through source-authorized hub routes
+#471 [OPEN] Show Wispr usage, phrase and correction trends in the B.U.N.N.Y. dashboard
+#472 [OPEN] Install and verify the private Wispr collector and dashboard on the owner PC
+#473 [OPEN] Explore personal speaking-improvement goals from Wispr trends
+#474 [OPEN] Explore reviewed Wispr dictionary and snippet suggestions from repeated edits
+#475 [OPEN] Investigate Wispr mobile usage exports and optional iPhone Shortcut capture
+#476 [OPEN] Finish owned local branch and worktree cleanup with a verified outcome
+#477 [OPEN] Review and clean the accumulated local delivery artifacts
+#478 [OPEN] Capture song plays, skips and metadata for private B.U.N.N.Y. music widgets
+#479 [OPEN] Define evidence-backed agent delivery effectiveness measures
+#480 [OPEN] Qualify Codex and Claude usage sources for private B.U.N.N.Y. widgets
+#481 [OPEN] Qualify PlayStation, Xbox and Nintendo game data sources for B.U.N.N.Y.
+#482 [OPEN] Qualify read-only Robinhood data sources for B.U.N.N.Y.
+#483 [OPEN] Add two Wemo Mini F7C063 plugs to B.U.N.N.Y. after local qualification
+#484 [OPEN] Qualify Galaxy Lamps GPUS projector integration
+#485 [OPEN] Qualify BlissLights Sky Lite 2.0 Bluetooth integration

@@ -1,15 +1,40 @@
 {
-  "fetchedAt": "2026-09-26T16:39:37.520167+00:00",
+  "fetchedAt": "2026-09-26T21:05:15.008372+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T16:32:33Z",
+      "pushedAt": "2026-09-26T21:01:12Z",
       "defaultBranch": "main",
-      "headSha": "c5ae6af0d97819ba4f32974b1adc21cd01e27777",
-      "mainCommitCount": 174,
+      "headSha": "55f11cb0b785e2123711b3e8720489205c02dec4",
+      "mainCommitCount": 179,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "55f11cb0b785e2123711b3e8720489205c02dec4",
+          "date": "2026-09-26T17:28:29Z",
+          "message": "Add shared Places navigation across Hub surfaces (#466)"
+        },
+        {
+          "sha": "6023d3a1cc69ff92039eee99fb7fabce10efb36e",
+          "date": "2026-09-26T17:16:48Z",
+          "message": "Show session titles on Tidbyt and update device-control content policy (#464)"
+        },
+        {
+          "sha": "38b47e3259e3f19f65d0f82234efcce7c48167b9",
+          "date": "2026-09-26T16:54:14Z",
+          "message": "Pin published controller and MCP archives in Hub releases (#463)"
+        },
+        {
+          "sha": "e35bc47f0037f1a164909aec688f6c8b7c78e566",
+          "date": "2026-09-26T16:43:07Z",
+          "message": "Preserve saved work surface when recommendations become stale (#462)"
+        },
+        {
+          "sha": "9d0b78d8f89ab8911339ac982a6dd02357e93843",
+          "date": "2026-09-26T16:40:54Z",
+          "message": "Share bounded session titles and project names across Hub metadata (#452)"
+        },
         {
           "sha": "c5ae6af0d97819ba4f32974b1adc21cd01e27777",
           "date": "2026-09-26T16:20:33Z",
@@ -2227,6 +2252,14 @@
           "mergedAt": "2026-09-26T06:39:48Z"
         },
         {
+          "number": 452,
+          "title": "Share bounded session titles and project names across Hub metadata",
+          "createdAt": "2026-09-26T06:27:00Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/452",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:40:54Z"
+        },
+        {
           "number": 453,
           "title": "Allow nightly guide refresh to read repository issues",
           "createdAt": "2026-09-26T16:07:26Z",
@@ -2249,17 +2282,41 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/460",
           "base": "main",
           "mergedAt": "2026-09-26T16:20:33Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
-          "number": 452,
-          "title": "Share bounded session titles and project names across Hub metadata",
-          "createdAt": "2026-09-26T06:27:00Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/452",
-          "base": "main"
+          "number": 462,
+          "title": "Keep stale recommendation work surfaces consistent in the guide",
+          "createdAt": "2026-09-26T16:41:06Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/462",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:43:07Z"
+        },
+        {
+          "number": 463,
+          "title": "Preserve published dependency bytes in Hub releases",
+          "createdAt": "2026-09-26T16:46:52Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/463",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:54:14Z"
+        },
+        {
+          "number": 464,
+          "title": "Show session titles on Tidbyt and update device-control content policy",
+          "createdAt": "2026-09-26T16:59:40Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/464",
+          "base": "main",
+          "mergedAt": "2026-09-26T17:16:49Z"
+        },
+        {
+          "number": 466,
+          "title": "Add shared Places navigation across Hub surfaces",
+          "createdAt": "2026-09-26T17:21:40Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/466",
+          "base": "main",
+          "mergedAt": "2026-09-26T17:28:30Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -2998,6 +3055,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/277"
         },
         {
+          "number": 278,
+          "title": "Reach every B.U.N.N.Y. surface from one shared places navigation",
+          "closedAt": "2026-09-26T20:58:07Z",
+          "createdAt": "2026-09-25T07:19:52Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/278"
+        },
+        {
           "number": 289,
           "title": "Connect Tidbyt and LIFX to the hub through one local controller host",
           "closedAt": "2026-09-25T21:36:17Z",
@@ -3068,6 +3133,14 @@
           "createdAt": "2026-09-25T19:50:31Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/312"
+        },
+        {
+          "number": 315,
+          "title": "Refresh the work guide nightly into one rolling pull request",
+          "closedAt": "2026-09-26T16:48:25Z",
+          "createdAt": "2026-09-25T20:00:31Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/315"
         },
         {
           "number": 316,
@@ -3190,10 +3263,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/450"
         }
       ],
-      "openIssueCount": 170,
+      "openIssueCount": 188,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T16:16:45Z"
+        "2026-09-26T20:25:50Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -3207,17 +3280,27 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 57
+        "2026-09-26": 77
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-26T05:37:33Z",
+      "pushedAt": "2026-09-26T17:57:46Z",
       "defaultBranch": "main",
-      "headSha": "da5f9d3c8155b5a6ac25bc1f3e60f41fea2d2073",
-      "mainCommitCount": 75,
+      "headSha": "30f1e2e77d5467178e5100e8112cdeb2426b84ea",
+      "mainCommitCount": 77,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "30f1e2e77d5467178e5100e8112cdeb2426b84ea",
+          "date": "2026-09-26T17:57:46Z",
+          "message": "feat: link wall map to B.U.N.N.Y. (#191)"
+        },
+        {
+          "sha": "08acdd37c9f0ca1a3cb8d309b81268ddc5b95ad2",
+          "date": "2026-09-26T17:08:05Z",
+          "message": "feat: consume shared task titles and project names (#190)"
+        },
         {
           "sha": "da5f9d3c8155b5a6ac25bc1f3e60f41fea2d2073",
           "date": "2026-09-26T05:37:33Z",
@@ -4154,6 +4237,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/186",
           "base": "main",
           "mergedAt": "2026-09-26T05:37:33Z"
+        },
+        {
+          "number": 190,
+          "title": "Use shared task titles and project names on the wall",
+          "createdAt": "2026-09-26T16:59:57Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/190",
+          "base": "main",
+          "mergedAt": "2026-09-26T17:08:05Z"
+        },
+        {
+          "number": 191,
+          "title": "Link wall map header to B.U.N.N.Y.",
+          "createdAt": "2026-09-26T17:47:23Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/191",
+          "base": "main",
+          "mergedAt": "2026-09-26T17:57:46Z"
         }
       ],
       "openPRs": [],
@@ -4757,12 +4856,28 @@
           "createdAt": "2026-09-26T02:48:14Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/177"
+        },
+        {
+          "number": 179,
+          "title": "Use shared session titles and project names instead of local-only metadata",
+          "closedAt": "2026-09-26T17:11:39Z",
+          "createdAt": "2026-09-26T03:27:06Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/179"
+        },
+        {
+          "number": 189,
+          "title": "Link the wall map header back to B.U.N.N.Y.",
+          "closedAt": "2026-09-26T18:01:04Z",
+          "createdAt": "2026-09-26T16:46:38Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/189"
         }
       ],
       "openIssueCount": 43,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-26T05:52:01Z"
+        "2026-09-26T20:20:13Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -4773,12 +4888,12 @@
         "2026-09-23": 11,
         "2026-09-24": 34,
         "2026-09-25": 24,
-        "2026-09-26": 8
+        "2026-09-26": 10
       }
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-26T05:25:41Z",
+      "pushedAt": "2026-09-26T17:34:16Z",
       "defaultBranch": "main",
       "headSha": "9467f90cafe0bdf774eec2d75f66edc9e3bccaaf",
       "mainCommitCount": 46,
@@ -5377,7 +5492,15 @@
           "mergedAt": "2026-09-26T05:25:42Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 116,
+          "title": "Show shared session titles and projects on Pixoo",
+          "createdAt": "2026-09-26T17:29:32Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/116",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
@@ -5724,10 +5847,10 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/101"
         }
       ],
-      "openIssueCount": 26,
+      "openIssueCount": 28,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
-        "2026-09-26T05:39:50Z"
+        "2026-09-26T20:20:16Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 18,
@@ -5740,7 +5863,7 @@
         "2026-09-23": 3,
         "2026-09-24": 7,
         "2026-09-25": 14,
-        "2026-09-26": 6
+        "2026-09-26": 8
       }
     }
   }

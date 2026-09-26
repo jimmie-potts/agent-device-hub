@@ -585,6 +585,28 @@ class Recommendations(unittest.TestCase):
         self.assertEqual(self.R.read(re.sub(r'\| Reviewers \|[^\n]*\n', '', self.written()))['state'], 'unavailable')
         self.assertIsNone(self.R.brief(without)['prompts']['cheaper'])
 
+    def test_cheaper_start_can_belong_to_one_host_only(self):
+        for host, other in [('claude', 'codex'), ('codex', 'claude')]:
+            with self.subTest(host=host):
+                entry = recommendation_entry()
+                del entry['cheaper']['hosts'][other]
+                written = self.written(entry)
+                result = self.R.read(written)
+                self.assertEqual(result['state'], 'recommended')
+                self.assertEqual(set(result['prompts']['cheaper']), {host})
+                self.assertIn(f"{self.R.HOSTS[other]}: none.", result['cheaper'])
+                self.assertNotIn(f"**Cheaper prompt ({self.R.HOSTS[other]}):**", written)
+                self.assertEqual(self.R.upsert(written, entry, '2026-09-30'), (written, 'unchanged'))
+                malformed = written.replace(f"{self.R.HOSTS[other]}: none.", '')
+                self.assertEqual(self.R.read(malformed)['state'], 'unavailable')
+                contradictory = written.replace('**Cheaper start:** ', f'**Cheaper start:** {self.R.HOSTS[host]}: none. ')
+                self.assertEqual(self.R.read(contradictory)['state'], 'unavailable')
+        for hosts in ({}, {'unknown': {}}):
+            entry = recommendation_entry()
+            entry['cheaper']['hosts'] = hosts
+            with self.assertRaisesRegex(ValueError, 'cheaper hosts'):
+                self.written(entry)
+
     def test_work_surface_is_optional_validated_and_badged(self):
         unmarked = self.R.read(self.written())
         self.assertIsNone(unmarked['work_surface'], 'A story without the line is not classified')
