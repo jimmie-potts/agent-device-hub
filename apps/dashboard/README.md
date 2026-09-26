@@ -167,10 +167,11 @@ and no source selection.
 `playbackControls` in `src/client.ts` decides the buttons. They are the actions
 the snapshot declares now, and they appear only for a control-scoped caller
 while the source is available. Otherwise the view names the one reason, then
-lists the actions the source does not offer, such as Play until
-[#242](https://github.com/jimmie-potts/agent-device-hub/issues/242). While
-paused, the Sony source offers Next and Previous, and the view warns that the
-receiver may keep the old title until playback resumes. Each press runs the
+lists the actions the source does not offer, such as Play on the Sony
+([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)). While
+paused, the Sony source offers Next and Previous, the Sonos source also offers
+Play, and the view warns that the receiver may keep the old title until playback
+resumes. Each press runs the
 shared command lifecycle. `playbackRequest` builds the command from a fresh
 read, bound to the displayed source ID with a new request ID, or sends nothing
 and names why. `playbackEvidence` maps the hub receipt: `sent` is accepted, a

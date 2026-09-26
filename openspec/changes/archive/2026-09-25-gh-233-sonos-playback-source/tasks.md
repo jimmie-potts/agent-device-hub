@@ -1,0 +1,17 @@
+## 1. Shared module
+
+- [x] 1.1 Add failing tests for two fake sources under one playback ID: independent freshness, the preference rule (Move alone, grouped, Sony alone, Move offline mid-song staying stale then yielding to the Sony), `unknown-source` for a source name, and no command to a source that is not presented. Then rewrite `createPlayback` for several sources. Evidence: on base `ba08043` the rewritten `apps/hub/tests/playback.test.mjs` failed to load (`ERR_MODULE_NOT_FOUND` for `dist/sonos.js`), and the single-source `createPlayback(source, clock)` signature cannot take the `(id, sources, clock)` calls the preference test makes; after the rewrite `the presented source follows session, freshness and configured order under one playback ID` and `closing playback closes every source and reports the first failure afterwards` pass with the other 18 cases (20/20).
+
+## 2. Sonos source
+
+- [x] 2.1 Add failing tests against a fake loopback Sonos AVTransport service: metadata, status mapping, AirPlay session detection, controls by state and advertised actions, failed reads that report nothing, non-overlapping polls, and sent, failed and uncertain commands. Then add `sonos.ts`. Evidence: the suite failed with `ERR_MODULE_NOT_FOUND` for `dist/sonos.js` before the module existed; after it, the four Sonos cases pass. One first green run exposed a fixture defect (a `DIDL({album: undefined})` argument took the default album), fixed in the fixture, not the module.
+
+## 3. Hub configuration and routes
+
+- [x] 3.1 Add failing configuration tests for the `{id, sources}` envelope, the rejected `selected` form, duplicate kinds and invalid Sonos endpoints, and route tests with a fake Sony and a fake Sonos behind one ID. Then change `server.ts` and the Sony configuration shape, and update the MCP and dashboard fixtures. Evidence: with the new `{id, sources}` fixtures, `apps/hub/tests/mcp.test.mjs` failed on base `ba08043` with `Error: invalid-playback` from the old validator; after the change `node --test apps/hub/tests/mcp.test.mjs` passes 23/23, the playback suite 20/20 and the setup suites 19/19.
+
+## 4. Documentation and delivery
+
+- [x] 4.1 Update the hub README (configuration, upgrade, preference rule, Sonos behavior, adding a source, #301 to #233), `docs/development.md`, the architecture guide's Shared playback section and the qualification record's Sonos notes; bump the hub package version. Evidence: the diff; hub 0.3.11 (main released 0.3.9 and 0.3.10 meanwhile); the dashboard README's paused-controls sentence and ADR 0008's Sonos link updated too.
+- [x] 4.2 Run `npm run build`, `npm run typecheck`, `npm run test:hub`, `npm run test:hub:package`, `npm run test:hub:mcp`, `npm run test:setup`, `npm run test:dashboard`, the contract, agent-state, tidbyt and workflow checks on Node 24. All must exit zero; results go in the PR. Evidence: the serialized CI-equivalent set (build, typecheck, contracts, lifecycle, setup, hub, hub package, agent-state, lifx, tidbyt, local-controllers, MCP, hub MCP, dashboard, workflow) exited 0 on the candidate; `test:dashboard:browser` passed separately; `test:tidbyt:python` needs a Python with Pillow, recorded in the PR.
+- [x] 4.3 Synchronize the `hub-playback` delta and archive this change before final review. Evidence: `openspec/specs/hub-playback/spec.md` carries the modified and added requirements and this change sits under `openspec/changes/archive/`. Independent reviews, current-head CI, guarded merge and the owner's live check stay with the SDLC and the issue.

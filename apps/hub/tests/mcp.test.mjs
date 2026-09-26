@@ -336,7 +336,7 @@ async function receiver(t){
  t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve);}));
  return {calls,endpoint:`http://127.0.0.1:${server.address().port}/sony`,set:(next={})=>{state=next.state??state;mode=next.mode??mode;}};
 }
-const playbackConfig=endpoint=>({selected:'living-room',sources:[{id:'living-room',kind:'sony',endpoint}]});
+const playbackConfig=endpoint=>({id:'living-room',sources:[{kind:'sony',endpoint}]});
 const playbackTools=async c=>(await c.rpc('tools/list',{})).body.result.tools.map(tool=>tool.name).filter(name=>name.includes('_playback_')).sort();
 async function available(c,status){for(let i=0;i<100;i++){const view=(await c.call(status)).structuredContent?.data?.result;if(view?.availability==='available')return view;await new Promise(r=>setTimeout(r,50));}throw new Error('playback never became available');}
 test('playback tools are bound to the configured source and listed only for granted credentials',async t=>{
@@ -442,7 +442,7 @@ test('MCP starts with the owner controller set and at the controller maximum',as
  const maximum=Array.from({length:16},(_,i)=>at('nanoleaf-'+i,'nanoleaf','device-'+i,'local-controller'));
  // The installed hub also serves the HT-A9 playback source, whose tools share the catalog. A credential names at most 16
  // devices, so the maximum case covers controllers only.
- const playback={selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:'http://127.0.0.1:9/sony'}]};
+ const playback={id:'ht-a9',sources:[{kind:'sony',endpoint:'http://127.0.0.1:9/sony'}]};
  for(const [controllers,withPlayback] of [[owner,true],[maximum,false]]){
   const hub=await fixture(t,{controllers,...(withPlayback?{playback}:{}),credentials:[{...credential,devices:[...controllers.map(c=>c.id),...(withPlayback?['ht-a9']:[])]}]});
   const c=client(hub);assert.equal((await c.initialize()).status,200);

@@ -61,7 +61,7 @@ Result: the HT-A9 cannot resume a paused AirPlay session over its network API. T
 | Grouped with the HT-A9 | The phone streamed to both. The Move's `Pause` put the HT-A9 in `PAUSED` within 0.5 seconds. The Move's `Play` put both back to `PLAYING` within 0.5 seconds and the position advanced. The HT-A9 received no command. |
 | Phone observation | The owner regrouped the outputs between the runs while playback was running. An explicit phone-state confirmation for each run was not recorded. |
 
-Result: the receiver readings indicate that the Move sends the AirPlay play command back to the phone and that one phone session serves the whole AirPlay 2 group, since the HT-A9 cannot resume on its own and received no command. Play for the grouped HT-A9 is therefore available through a Sonos source. [Hub #301](https://github.com/jimmie-potts/agent-device-hub/issues/301) owns that adapter.
+Result: the receiver readings indicate that the Move sends the AirPlay play command back to the phone and that one phone session serves the whole AirPlay 2 group, since the HT-A9 cannot resume on its own and received no command. Play for the grouped HT-A9 is therefore available through a Sonos source. [Hub #233](https://github.com/jimmie-potts/agent-device-hub/issues/233) owns that adapter.
 
 ## Recommendation and playback contract
 
@@ -79,7 +79,7 @@ The receiver adapter should poll for an initial snapshot and recovery, then use 
 
 Update, September 24, 2026: the plan changed after this qualification. #36's Windows connector is deferred, so the Windows-first ordering above no longer applies: the HT-A9 is the first source, not the second, and there is no #36 snapshot model to extend or Windows selection to initialize. [#175](https://github.com/jimmie-potts/agent-device-hub/issues/175) delivers a shared playback module and this Sony source together on Linux, polling `getPlayingContentInfo` without the WebSocket feed or artwork. Multi-source runtime and selection are deferred; when they arrive, the explicit-selection and no-silent-switch rules above still apply. The recorded observations are unchanged.
 
-Update, September 25, 2026: the [play and resume check](#play-and-resume-check) closed the [#242](https://github.com/jimmie-potts/agent-device-hub/issues/242) question. The HT-A9 cannot resume, and the Sonos Move can, for itself and for a grouped HT-A9. [Hub #301](https://github.com/jimmie-potts/agent-device-hub/issues/301) adds the Move as a selectable second source under the existing single-selection rule; two concurrently observed sources remain deferred.
+Update, September 25, 2026: the [play and resume check](#play-and-resume-check) closed the [#242](https://github.com/jimmie-potts/agent-device-hub/issues/242) question. The HT-A9 cannot resume, and the Sonos Move can, for itself and for a grouped HT-A9. [Hub #233](https://github.com/jimmie-potts/agent-device-hub/issues/233) adds the Move as the second source. The owner chose an ordered preference over the single-selection rule above: both sources are polled, the hub presents the Move whenever it reports a playing or paused AirPlay session and otherwise the HT-A9, and clients see one stable playback ID.
 
 The original boundary follows.
 

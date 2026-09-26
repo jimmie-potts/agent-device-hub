@@ -14,10 +14,11 @@ import {createReplayLedgers} from './replay.js';
 import {archivedSession,codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
 import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
+import {createSonosSource,sonosConfiguration} from './sonos.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -31,13 +32,24 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});
   res.end(JSON.stringify(value));
 }
-/** Builds the one explicitly selected source. The playback source ID shares credential device grants with controller aliases. */
-function playbackSource(value: unknown, aliases: string[]): PlaybackSource {
-  if (!object(value) || !exact(value,['selected','sources']) || !Array.isArray(value.sources) || value.sources.length !== 1 || !object(value.sources[0]) ||
-      value.sources[0].id !== value.selected || aliases.includes(value.selected as string) || value.selected === HOST_SERVICE ||
-      isIPv4(value.selected as string)) throw new Error('invalid-playback');
-  if (value.sources[0].kind === 'sony') return createSonySource(sonyConfiguration(value.sources[0]));
-  throw new Error('invalid-playback');
+/**
+ * Builds the configured sources in preference order under one client-facing playback ID. That ID shares credential device
+ * grants with controller aliases and never changes with the presented source.
+ */
+function playbackSources(value: unknown, aliases: string[]): {id:string; sources:PlaybackSource[]} {
+  if (!object(value) || !exact(value,['id','sources']) || !id(value.id) || aliases.includes(value.id) || value.id === HOST_SERVICE || isIPv4(value.id) ||
+      !Array.isArray(value.sources) || value.sources.length < 1 || value.sources.length > 2) throw new Error('invalid-playback');
+  const kinds = new Set<string>(), sources: PlaybackSource[] = [];
+  for (const entry of value.sources) {
+    if (!object(entry) || typeof entry.kind !== 'string' || kinds.has(entry.kind)) throw new Error('invalid-playback');
+    kinds.add(entry.kind);
+    const config = entry.kind === 'sony' ? sonyConfiguration(entry) : entry.kind === 'sonos' ? sonosConfiguration(entry) : undefined;
+    if (!config) throw new Error('invalid-playback');
+    // The playback ID is returned to clients, so it must not carry a speaker address.
+    if (value.id.includes(new URL(config.endpoint).hostname)) throw new Error('invalid-playback');
+    sources.push(config.kind === 'sony' ? createSonySource(config) : createSonosSource(config));
+  }
+  return {id:value.id,sources};
 }
 async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json' || req.headers['content-encoding']) throw new HttpError('invalid-input',400);
@@ -74,7 +86,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
       (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)) ||
       (options.feedIntervalMs !== undefined && (!Number.isInteger(options.feedIntervalMs) || options.feedIntervalMs < 1 || options.feedIntervalMs > 86400000))) throw new Error('invalid-configuration');
-  const source = options.playback === undefined ? undefined : playbackSource(options.playback,options.controllers.map(c => c.id));
+  const playbackConfig = options.playback === undefined ? undefined : playbackSources(options.playback,options.controllers.map(c => c.id));
+  const playbackId = playbackConfig?.id;
   const editorLinks:Record<string,string> = {};
   if (options.editorLinks !== undefined) {
     if (!object(options.editorLinks) || Object.keys(options.editorLinks).length > 16) throw new Error('invalid-editor-links');
@@ -130,7 +143,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if(closing)throw new HttpError('unavailable',503);
     if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
     const token=randomBytes(32).toString('base64url');
-    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};
+    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(playbackId ? [playbackId] : [])]};
     browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
     return {token,expiresInSeconds:8*60*60};
   };
@@ -287,7 +300,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(source && principal.devices.includes(source.id) ? {playback:{sourceId:source.id}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
@@ -358,7 +371,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
-    },sessions,command,...(source ? {playback:{sourceId:source.id,
+    },sessions,command,...(playbackId ? {playback:{sourceId:playbackId,
       // MCP is mounted before playback starts; until then the source is unavailable and nothing is sent.
       snapshot:() => {if (!playback) throw new HttpError('source-unavailable',503);return playback.snapshot();},
       command:async (principal:Credential,input:unknown) => {
@@ -373,7 +386,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
   const desktopRead = codexDesktop && startDesktopRead(codexDesktop,owner,options.clock ?? Date.now,() => !staged && !closing && !exported);
-  playback = source && createPlayback(source,options.clock ?? Date.now,options.clock ?? (() => performance.now()));
+  playback = playbackConfig && createPlayback(playbackConfig.id,playbackConfig.sources,options.clock ?? Date.now,options.clock ?? (() => performance.now()));
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,
