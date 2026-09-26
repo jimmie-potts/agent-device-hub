@@ -9,7 +9,8 @@ import { schema as contractSchema, validate } from '@jimmie-potts/device-contrac
 import { loadHostConfig, startLocalControllers } from '@jimmie-potts/local-controllers';
 // The hub is a sibling workspace in this repository; its tests cannot import this host, so the joined checks live here.
 import { startHub } from '../../hub/dist/server.js';
-import { validateLightingRequest } from '../../hub/dist/lifx-lighting.js';
+import { validateLightingRequest, validateLightingSnapshot } from '../../hub/dist/lifx-lighting.js';
+import { LifxController } from '@jimmie-potts/lifx-controller';
 import { TOKENS, fakeHub, fakeLifx, fakeTidbyt, privateFiles } from './helpers.mjs';
 
 const operator = 'o'.repeat(43);
@@ -95,4 +96,29 @@ test('the hub lighting validator accepts exactly what the LIFX profile schema ac
   ];
   for (const value of cases) assert.equal(validateLightingRequest(value), owner(value) === true, JSON.stringify(value));
   assert.equal(cases.filter(value => owner(value)).length, 6);
+});
+
+test('a lighting snapshot read while status paints are queued or in flight stays valid lifx-light 1.0.0 for the hub (#450)', async () => {
+  const bulb = { deviceId: 'desk', address: '192.0.2.10', vendor: 1, product: 27, firmwareMajor: 2, firmwareMinor: 90 };
+  const c = new LifxController({ controllerId: 'lifx', sourceId: 'test', bulbs: [bulb], timeoutMs: 10, retries: 0,
+    transportFactory: () => ({ exchange: () => new Promise(() => {}), close() {} }) });
+  const first = c.paintStatus('desk', { hue: 1, saturation: 2, brightness: 3, kelvin: 3500 });
+  const second = c.paintStatus('desk', { hue: 4, saturation: 5, brightness: 6, kelvin: 2700 });
+  assert.equal(first.decision, 'queued');
+  assert.equal(second.decision, 'queued');
+  const snapshot = c.snapshot('desk');
+  assert.equal(validateLightingSnapshot(snapshot), true, 'the hub accepts the lighting snapshot mid-paint');
+  assert.deepEqual(snapshot.lighting.pending, [], 'status paints are not listed as lighting commands');
+  assert.deepEqual(snapshot.controller.state.pending, []);
+  // A public color command queued behind the paints is still listed, and the snapshot stays valid.
+  const s = snapshot.controller;
+  const color = c.submit({ apiVersion: '1.0', controllerId: 'lifx', deviceId: 'desk', requestId: s.nextRequestId,
+    expectedConfigurationRevision: s.configurationRevision, expectedGeneration: s.generation, profile,
+    command: { kind: 'lifx.color.set', hue: 10, saturation: 20 } });
+  assert.equal(color.decision, 'queued');
+  const withColor = c.snapshot('desk');
+  assert.equal(validateLightingSnapshot(withColor), true);
+  assert.deepEqual(withColor.lighting.pending.map(entry => entry.command), [{ kind: 'lifx.color.set', hue: 10, saturation: 20 }]);
+  await Promise.all([first.done, second.done, color.done]);
+  c.close();
 });
