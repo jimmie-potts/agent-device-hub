@@ -241,7 +241,7 @@ def brief(result):
     carries its answer, hosts and prompts; other states carry their notice."""
     fields = {'recommended': ('date', 'policy', 'evidence', 'answer', 'work_surface', 'hosts', 'why', 'reassess', 'cheaper', 'prompts'),
               'insufficient': ('date', 'policy', 'evidence', 'missing', 'work_surface', 'why', 'reassess'),
-              'stale': ('date', 'policy'), 'unavailable': ('reason',), 'unassessed': ()}[result['state']]
+              'stale': ('date', 'policy', 'work_surface'), 'unavailable': ('reason',), 'unassessed': ()}[result['state']]
     shown = {name: result[name] for name in fields if result.get(name) is not None}
     for name in ('evidence', 'answer', 'why', 'reassess', 'cheaper', 'missing'):
         if name in shown:

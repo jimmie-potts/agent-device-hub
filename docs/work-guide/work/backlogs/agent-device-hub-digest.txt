@@ -16,7 +16,7 @@
 #19 [CLOSED] Add automatic agent status to Tidbyt
 #20 [CLOSED] Add automatic agent status to LIFX
 #21 [CLOSED] Install and verify Tidbyt agent status
-#22 [OPEN] Install and verify LIFX agent status
+#22 [CLOSED] Install and verify LIFX agent status
 #23 [OPEN] Implement the deferred Tronbyt connection
 #24 [OPEN] Verify the deferred Tidbyt-to-Tronbyt transition
 #25 [OPEN] Plan and migrate Pixoo into the hub monorepo
@@ -165,7 +165,7 @@
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
 #315 [OPEN] Refresh the work guide nightly into one rolling pull request
-#316 [OPEN] Warn at guide refresh when an open story names a retired term
+#316 [CLOSED] Warn at guide refresh when an open story names a retired term
 #317 [OPEN] Merge and publish the nightly guide refresh automatically
 #319 [OPEN] Add the LIFX Beam to the LIFX controller and B.U.N.N.Y.
 #320 [OPEN] Install and verify the LIFX Beam in B.U.N.N.Y.
@@ -262,3 +262,8 @@
 #445 [OPEN] Undo the last device change from its card
 #446 [OPEN] Show observation freshness as the Eyes badge on every widget and card
 #449 [OPEN] Show the public guide's edition and last verified publication receipt
+#455 [OPEN] Repaint LIFX and Tidbyt status on each hub change notice
+#456 [OPEN] Clear Claude Code approval attention once the prompt is answered
+#457 [OPEN] Show what automatic status is painting on the LIFX page
+#458 [OPEN] Publish one overall agent status from the hub for B.U.N.N.Y. and every device
+#459 [OPEN] Show finding causes beside deliveries by model in the work guide
