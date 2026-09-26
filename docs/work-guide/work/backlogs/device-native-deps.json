@@ -531,7 +531,7 @@
     },
     "p": {
       "issues": {
-        "totalCount": 27,
+        "totalCount": 26,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -852,16 +852,6 @@
           },
           {
             "number": 98,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
-            "number": 100,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {

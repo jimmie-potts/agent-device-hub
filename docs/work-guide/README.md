@@ -47,7 +47,7 @@ each topic's own outcome, next-step box and other editorial prose remain
 dated. Recency and absence of an open prerequisite do not automatically make
 an issue a recommendation.
 
-Eleven topic guides own each open snapshot issue exactly once. The opening,
+Twelve topic guides own each open snapshot issue exactly once. The opening,
 roadmap and architecture links do not add to those totals. Completed milestones
 and retained evidence live in a separate expandable archive. Adding devices has separate Lines and Panels, wall map retirement, Tidbyt, LIFX,
 PC-lighting, Roborock and other-integration tracks; deferred PC lighting starts
@@ -55,7 +55,7 @@ collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. 
 include archived evidence and the Direction and Ideas sections; printing restores
 the reader's prior expansion state.
 
-`work/guide_paths.py` owns the eleven topic names, their outcome and next-step
+`work/guide_paths.py` owns the twelve topic names, their outcome and next-step
 prose, aliases and track groupings; these are the guide's structure, not story
 facts. Each open story's own `## Guide` section owns its topic, reading note,
 workaround and highlight, per the next section. `work/guide_status.py` and
@@ -68,7 +68,7 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 ## Guide sections
 
 A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
-one of the eleven ids `guide_paths.py` defines), `**Note:** ...` (optional,
+one of the twelve ids `guide_paths.py` defines), `**Note:** ...` (optional,
 one-line reading note), `**Workaround:** ...` (optional; shown only where a
 workaround is displayed, currently Open Defects cards), `**Highlight:**
 next step | decision | later | idea, <reason>` (optional; replaces a curated

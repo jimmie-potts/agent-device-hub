@@ -36,7 +36,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
   assert.deepEqual(primary.slice().sort(),openKeys,'Every current open issue has one primary guide');
   assert(!primary.includes('P26')); assert.equal(issueMap.P26.state,'CLOSED'); assert.equal(issueMap.P26.stateReason,'completed');
   const oldIds=['local-acceptance','shared-codex','nanoleaf-devices','tidbyt-lifx','nanoleaf-presentation','pixoo-media','controls-music','hosting-migrations','assistant-access','development-workflow'];
-  assert.equal(count,11); assert(ids.includes('bunny-controls')&&ids.includes('work-guide'));
+  assert.equal(count,12); assert(ids.includes('bunny-controls')&&ids.includes('work-guide'));
   const snapshotDate=JSON.parse(sourceHtml.match(/<script id="snapshot-data" type="application\/json">([\s\S]*?)<\/script>/)[1]).snapshotDate;
   const browser=await chromium.launch({headless:true,executablePath,args:['--no-sandbox']});
   try {
