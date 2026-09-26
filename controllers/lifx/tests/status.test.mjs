@@ -156,13 +156,16 @@ test("paintStatus sends one absolute LightSetColor with full HSBK, no LightGet, 
   const submission = c.paintStatus("bulb-1", hsbk);
   assert.equal(submission.decision, "queued");
   assert.equal(submission.reserved, true);
-  // Visible in lighting.pending, like a color command, while queued.
-  assert.equal(c.snapshot("bulb-1").lighting.pending.length, 1);
+  // Never listed as a lifx-light command, which profile 1.0.0 cannot express (#450); it still takes the queue.
+  assert.deepEqual(c.snapshot("bulb-1").lighting.pending, []);
+  assert.deepEqual(c.snapshot("bulb-1").controller.state.pending, []);
   const receipt = await submission.done;
   assert.equal(receipt.outcome, "sent");
   assert.equal(receipt.priorEffects, "confirmed-transmission");
   assert.deepEqual(calls, [102]);
-  assert.equal(c.snapshot("bulb-1").lighting.pending.length, 0);
+  const state = c.snapshot("bulb-1").controller.state;
+  assert.deepEqual(state.lastOutcome.receipt, receipt, "the paint's receipt is the last outcome");
+  assert.deepEqual(state.lastSuccessfulSend.requestId, receipt.requestId, "and its request is the last successful send");
   c.close();
 });
 
