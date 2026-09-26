@@ -22,6 +22,43 @@ test('a private configuration loads the Tidbyt runner file and the LIFX bulbs', 
   assert.equal(loadHostConfig(s.write('lifx.json', lifxOnly)).tidbyt, undefined);
 });
 
+test('a per-bulb status block and the host-level status feed load with their defaults applied by the publisher, not the loader', t => {
+  const s = privateFiles(t);
+  const tokenFile = s.write('lifx-status-token', 't'.repeat(43));
+  const value = {
+    ...s.host,
+    lifx: {
+      ...s.host.lifx,
+      status: { hubUrl: 'http://127.0.0.1:9', ownerId: 'owner', tokenFile },
+      bulbs: [{ ...s.host.lifx.bulbs[0], status: { brightnessCapPercent: 40, quietCapPercent: 10 } }, s.host.lifx.bulbs[1]],
+    },
+  };
+  const config = loadHostConfig(s.write('host.json', value));
+  assert.deepEqual(config.lifx.status, { hubUrl: 'http://127.0.0.1:9', ownerId: 'owner', token: 't'.repeat(43) });
+  assert.deepEqual(config.lifx.bulbs[0].status, { brightnessCapPercent: 40, quietCapPercent: 10 });
+  assert.equal(config.lifx.bulbs[1].status, undefined, 'a bulb without a status block stays unconfigured for painting');
+});
+
+test('an invalid status feed or per-bulb cap fails before anything starts', t => {
+  const s = privateFiles(t);
+  const tokenFile = s.write('lifx-status-token', 't'.repeat(43));
+  const status = { hubUrl: 'http://127.0.0.1:9', ownerId: 'owner', tokenFile };
+  const variants = {
+    'bad hub url': { ...s.host, lifx: { ...s.host.lifx, status: { ...status, hubUrl: 'https://127.0.0.1:9' } } },
+    'bad owner id': { ...s.host, lifx: { ...s.host.lifx, status: { ...status, ownerId: '' } } },
+    'unknown status field': { ...s.host, lifx: { ...s.host.lifx, status: { ...status, extra: 1 } } },
+    'missing token file': { ...s.host, lifx: { ...s.host.lifx, status: { ...status, tokenFile: join(s.dir, 'missing') } } },
+    'cap below range': { ...s.host, lifx: { ...s.host.lifx, status, bulbs: [{ ...s.host.lifx.bulbs[0], status: { brightnessCapPercent: 0 } }, s.host.lifx.bulbs[1]] } },
+    'cap above range': { ...s.host, lifx: { ...s.host.lifx, status, bulbs: [{ ...s.host.lifx.bulbs[0], status: { quietCapPercent: 101 } }, s.host.lifx.bulbs[1]] } },
+    'fractional cap': { ...s.host, lifx: { ...s.host.lifx, status, bulbs: [{ ...s.host.lifx.bulbs[0], status: { brightnessCapPercent: 40.5 } }, s.host.lifx.bulbs[1]] } },
+    'unknown per-bulb status field': { ...s.host, lifx: { ...s.host.lifx, status, bulbs: [{ ...s.host.lifx.bulbs[0], status: { extra: 1 } }, s.host.lifx.bulbs[1]] } },
+  };
+  for (const [name, value] of Object.entries(variants)) {
+    const path = s.write('host.json', value);
+    assert.throws(() => loadHostConfig(path), { message: 'invalid-host-config' }, name);
+  }
+});
+
 test('unsafe files are refused without echoing their contents', t => {
   const s = privateFiles(t);
   const path = s.write('host.json', s.host);

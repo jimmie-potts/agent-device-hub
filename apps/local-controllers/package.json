@@ -13,6 +13,8 @@
     }
   },
   "dependencies": {
+    "@jimmie-potts/agent-state": "3.2.0",
+    "@jimmie-potts/agent-status": "0.1.0",
     "@jimmie-potts/device-contracts": "1.1.0",
     "@jimmie-potts/lifx-controller": "0.1.0",
     "@jimmie-potts/tidbyt-controller": "0.1.0"

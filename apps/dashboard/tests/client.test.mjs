@@ -7,16 +7,23 @@ import {join} from 'node:path';
 const dir=await mkdtemp(join(tmpdir(),'dashboard-client-'));
 try {
  await build({entryPoints:['apps/dashboard/src/client.ts'],bundle:true,platform:'node',format:'esm',outfile:join(dir,'client.mjs')});
- const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,resultMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,playbackControls,playbackEvidence,playbackRequest,lightingCommand,lightingReasons,observedColor}=await import(join(dir,'client.mjs'));
+ const {makeCommand,safeEditorUrl,Api,ApiError,failureMessage,resultMessage,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,lifxContentReason,playbackControls,playbackEvidence,playbackRequest,lightingCommand,lightingReasons,observedColor}=await import(join(dir,'client.mjs'));
  test('lighting requests carry the snapshot guards, the lifx-light profile and only the lighting command',()=>{
   const snapshot={identity:{controllerId:'lifx',deviceId:'desk'},configurationRevision:4,generation:{epoch:'g',sequence:1},nextRequestId:{epoch:'e',sequence:9}};
   assert.deepEqual(lightingCommand(snapshot,{kind:'lifx.color.set',hue:200,saturation:80}),{apiVersion:'1.0',controllerId:'lifx',deviceId:'desk',requestId:{epoch:'e',sequence:9},expectedConfigurationRevision:4,expectedGeneration:{epoch:'g',sequence:1},profile:{profileId:'lifx-light',profileVersion:'1.0.0'},command:{kind:'lifx.color.set',hue:200,saturation:80}});
-  const lighting=(color,temperature,observation={status:'unknown'})=>({lighting:{capabilities:{color,temperature,effects:false},pending:[],observation,visible:{status:'unknown'}}});
+  const controllerState=(mode,pending=[])=>({state:{pending,desired:{mode:mode==='unknown'?{status:'unknown'}:{status:'known',value:mode}}}});
+  const lighting=(color,temperature,observation={status:'unknown'},mode='Free')=>({controller:controllerState(mode),lighting:{capabilities:{color,temperature,effects:false},pending:[],observation,visible:{status:'unknown'}}});
   // A missing capability is named before scope, like the general controls.
   assert.deepEqual(lightingReasons(lighting(false,null),'Your credential is read-only'),{color:'Color is not declared for this bulb’s qualified model',temperature:'Color temperature is not declared for this bulb’s qualified model'});
   assert.deepEqual(lightingReasons(lighting(true,{minimum:1500,maximum:9000}),'Your credential is read-only'),{color:'Your credential is read-only',temperature:'Your credential is read-only'});
   assert.deepEqual(lightingReasons(lighting(true,{minimum:1500,maximum:9000})),{color:undefined,temperature:undefined});
   assert.deepEqual(lightingReasons(undefined),{color:'No lighting snapshot',temperature:'No lighting snapshot'});
+  // Outside Free, or with an unknown or switching mode, both controls are gated on the content reason instead of enabled.
+  assert.deepEqual(lightingReasons(lighting(true,{minimum:1500,maximum:9000},{status:'unknown'},'Work')),{color:'This bulb is in Work and presents agent status; color and temperature need Free',temperature:'This bulb is in Work and presents agent status; color and temperature need Free'});
+  assert.equal(lifxContentReason(lighting(true,null,undefined,'Free').controller),undefined);
+  assert.equal(lifxContentReason(lighting(true,null,undefined,'Quiet').controller),'This bulb is in Quiet and presents agent status; color and temperature need Free');
+  assert.equal(lifxContentReason(lighting(true,null,undefined,'unknown').controller),'This bulb’s mode is unknown; color and temperature need an observed Free mode');
+  assert.equal(lifxContentReason(controllerState('Work',[{command:{kind:'mode.set',mode:'Free'}}])),'This bulb is switching to Free; wait for the observed mode');
   // Wire units become degrees, percent and kelvin; no read stays unknown.
   assert.equal(observedColor(lighting(true,null).lighting),undefined);
   assert.deepEqual(observedColor(lighting(true,null,{status:'known',color:{hue:65535,saturation:32768,brightness:1,kelvin:3500},evidenceAgeMs:1200}).lighting),{hue:360,saturation:50,kelvin:3500,ageMs:1200});
