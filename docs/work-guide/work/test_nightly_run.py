@@ -36,7 +36,7 @@ class ValidationTests(RunnerFixture):
         super().setUp()
         self.evidence.mkdir()
 
-    def commands(self, status=0, result=None, failures=None, mutate=None):
+    def commands(self, status=0, result=None, failures=None, mutate=None, maintenance=None):
         failures = failures or {}
         result = result if result is not None else {'status': 'passed'}
         def execute(args, log):
@@ -45,6 +45,10 @@ class ValidationTests(RunnerFixture):
                 code = status
             else:
                 code = failures.get(log.name, 0)
+            if '--direction-result' in args and maintenance is not False:
+                receipt = maintenance if maintenance is not None else dict(completed=True, eligible=True, testsRun=125,
+                    failures=0, errors=0, unrelatedSkips=0, unexpectedSuccesses=0, expectedFailures=0, directionBlocked=[])
+                Path(args[args.index('--direction-result') + 1]).write_text(json.dumps(receipt))
             if mutate:
                 mutate(log.name)
             return code
@@ -72,14 +76,24 @@ class ValidationTests(RunnerFixture):
 
     def test_direction_failure_preserves_output_and_reports_blocked_checks(self):
         with self.commands(status=3, result={'status': 'direction-stale', 'directionError': 'H10 closed'},
-                           failures={'blocked-build.log': 1, 'fresh-maintenance.log': 1}) as calls:
+                           failures={'blocked-build.log': 1}) as calls:
             result = runner.validate(self.evidence)
         self.assertEqual(result['directionError'], 'H10 closed')
-        self.assertEqual(result['maintenanceExit'], 1)
+        self.assertEqual(result['maintenanceExit'], 0)
         self.assertNotIn('browserValidated', result)
         self.assertEqual([call.args[1].name for call in calls.call_args_list], [
             'fresh-input-validation.log', 'blocked-build.log', 'fresh-maintenance.log'])
         self.assertEqual((self.guide / 'outputs/guide.html').read_text(), 'accepted output')
+
+    def test_direction_failure_rejects_non_direction_maintenance_failure_or_missing_receipt(self):
+        for code, receipt in ((2, None), (0, False), (0, {'completed':False,'eligible':True}),
+                              (0, {'completed':True,'eligible':True,'testsRun':125,'errors':1})):
+            with self.subTest(code=code, receipt=receipt):
+                (self.evidence / 'fresh-maintenance.json').unlink(missing_ok=True)
+                with self.commands(status=3, result={'status':'direction-stale'},
+                                   failures={'blocked-build.log':1,'fresh-maintenance.log':code}, maintenance=receipt):
+                    with self.assertRaisesRegex(RuntimeError, 'Fresh maintenance'):
+                        runner.validate(self.evidence)
 
     def test_direction_failure_refuses_unexpected_default_build_success(self):
         with self.commands(status=3, result={'status': 'direction-stale'}):

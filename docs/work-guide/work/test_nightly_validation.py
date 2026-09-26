@@ -24,7 +24,14 @@ def candidate(directory):
     shutil.copytree(GUIDE, guide, ignore=shutil.ignore_patterns('__pycache__', '*.png', '*.pdf'))
     shutil.copytree(GUIDE.parent / 'skins', root / 'docs/skins',
                     ignore=shutil.ignore_patterns('__pycache__'))
-    key = guide_direction.cited()['SEQUENCE'][0]
+    from guide_retired import saved_issues
+    saved = saved_issues(guide / 'work')
+    key = next((key for key in guide_direction.cited()['SEQUENCE']
+                if saved[key]['state'] == 'OPEN'), None)
+    if key is None:
+        key = next(key for key, row in saved.items() if row['state'] == 'OPEN')
+        direction = guide / 'work/guide_direction.py'
+        direction.write_text(direction.read_text() + f"\nSEQUENCE.append(([{key!r}], 'Test fixture.'))\n")
     repo = {'H': 'agent-device-hub', 'N': 'codex-nanoleaf', 'P': 'divoom-app-upgrade'}[key[0]]
     number = int(key[1:])
     backlogs = guide / 'work/backlogs'

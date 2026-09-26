@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-26T05:56:21.643186+00:00",
-  "refreshedAt": "2026-09-26T05:57:06.140671+00:00",
+  "startedAt": "2026-09-26T06:48:39.765012+00:00",
+  "refreshedAt": "2026-09-26T06:49:24.321424+00:00",
   "staticSnapshot": true,
   "repositories": {
     "agent-device-hub": {
@@ -8,11 +8,11 @@
       "openIssueEndpoint": "repos/jimmie-potts/agent-device-hub/issues?state=open",
       "issuePageSizesIncludingPRs": [
         100,
-        67
+        69
       ],
-      "openPRs": 0,
+      "openPRs": 2,
       "prPageSizes": [
-        0
+        2
       ],
       "paginationComplete": true,
       "directReads": [
@@ -539,37 +539,42 @@
         {
           "number": 20,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 276,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
+        },
+        {
+          "number": 311,
+          "state": "CLOSED",
+          "purpose": "Guide reference target"
         },
         {
           "number": 323,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 355,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 357,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 361,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 417,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         }
       ]
     },
@@ -876,27 +881,27 @@
         {
           "number": 33,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 151,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 153,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 154,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 174,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         }
       ]
     },
@@ -1045,22 +1050,22 @@
         {
           "number": 10,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 82,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 87,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         },
         {
           "number": 98,
           "state": "CLOSED",
-          "purpose": "Guide Extends target"
+          "purpose": "Guide reference target"
         }
       ]
     }

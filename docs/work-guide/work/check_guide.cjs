@@ -186,7 +186,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert.deepEqual(overflowing,[],'Roadmap labels fit their nodes');
     const prs=Object.values(history.repositories).reduce((n,r)=>n+r.mergedPRs.length,0); assert.equal(await page.locator('.history a.pr').count(),prs); assert.equal(Number(await page.locator('#timeline .stats-row .stat strong').first().textContent()),prs);
     const roadmapIssues=(await page.locator('.roadmap .node').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')))).join(' ');
-    const pendingKeys=await page.locator('[aria-labelledby="roadmap-pending"] [data-key]').evaluateAll(es=>es.map(e=>e.dataset.key));
+    const pendingKeys=await page.locator('[aria-labelledby="roadmap-pending"] [data-issue]').evaluateAll(es=>es.map(e=>e.dataset.issue));
     assert.deepEqual([...pendingKeys].sort(),[...meta.history.unplacedIssues].sort(),'Pending roadmap keys match the saved metadata');
     assert.equal(new Set(pendingKeys).size,pendingKeys.length,'Pending stories appear exactly once');
     assert(pendingKeys.every(key=>openKeys.includes(key)),'Pending roadmap stories are open');

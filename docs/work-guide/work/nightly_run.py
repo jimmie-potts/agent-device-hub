@@ -91,10 +91,21 @@ def validate(evidence):
         # Retain the actual default-build and maintenance failures as evidence.
         # Baseline regressions ran before replacing their accepted snapshot.
         build_status = command([sys.executable, str(GUIDE / 'work/build_guide.py')], evidence / 'blocked-build.log')
-        maintenance_status = command([sys.executable, str(GUIDE / 'work/test_maintenance.py')], evidence / 'fresh-maintenance.log')
+        maintenance_path = evidence / 'fresh-maintenance.json'
+        maintenance_path.unlink(missing_ok=True)
+        maintenance_status = command([sys.executable, str(GUIDE / 'work/test_maintenance.py'),
+                                      '--direction-result', str(maintenance_path)], evidence / 'fresh-maintenance.log')
         if build_status == 0 or output_hashes() != before:
             raise RuntimeError('Stale Direction did not preserve the default build failure/output')
-        result['maintenanceExit'] = maintenance_status
+        maintenance = json.loads(maintenance_path.read_text()) if maintenance_path.exists() else {}
+        if (maintenance_status != 0 or maintenance.get('completed') is not True
+                or maintenance.get('eligible') is not True
+                or type(maintenance.get('testsRun')) is not int or maintenance['testsRun'] <= 0
+                or any(maintenance.get(key) != 0 for key in
+                       ('failures', 'errors', 'unrelatedSkips', 'unexpectedSuccesses', 'expectedFailures'))
+                or not isinstance(maintenance.get('directionBlocked'), list)):
+            raise RuntimeError('Fresh maintenance did not complete with only Direction-dependent blocks; no branch was published')
+        result.update(maintenanceExit=maintenance_status, maintenance=maintenance)
         return result
     if status != 0 or result.get('status') != 'passed':
         raise RuntimeError('Fresh-input validation has a non-Direction failure; no branch was published')
@@ -163,7 +174,7 @@ def main(argv=None):
     report += f'\nSource: `{source}`. Mode: `{args.mode}`. Baseline maintenance passed before refresh.\n'
     if direction_errors:
         report += ('\nFresh non-Direction input validation passed. The default build remains failed; generated output is retained from the previous snapshot. '
-                   'Fresh maintenance failures are retained in the run artifacts. Generated-output and browser validation are blocked until the owner rewrites Direction.\n')
+                   'Fresh maintenance completed; only tests blocked by a typed Direction failure are deferred, with their identities recorded in the run artifacts. Generated-output and browser validation are blocked until the owner rewrites Direction.\n')
     else:
         report += '\nFresh generation, deterministic rebuild, maintenance and browser checks passed.\n'
     report_path = evidence / 'report.md'

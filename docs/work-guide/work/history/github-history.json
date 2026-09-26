@@ -1,15 +1,25 @@
 {
-  "fetchedAt": "2026-09-26T05:51:58.138474+00:00",
+  "fetchedAt": "2026-09-26T06:49:24.372472+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T05:44:10Z",
+      "pushedAt": "2026-09-26T06:39:48Z",
       "defaultBranch": "main",
-      "headSha": "490ad5ab3b8c47b2e82f1bbafd32b724e2b68f1f",
-      "mainCommitCount": 168,
+      "headSha": "5de3a08cdfe59c204de88074eee1971ee7ea2d23",
+      "mainCommitCount": 170,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "5de3a08cdfe59c204de88074eee1971ee7ea2d23",
+          "date": "2026-09-26T06:39:48Z",
+          "message": "Keep LIFX status paints out of lighting.pending (#450) (#451)"
+        },
+        {
+          "sha": "0eb7474ce9d76bc0c928a17da0c5fd23288f9f7b",
+          "date": "2026-09-26T06:03:42Z",
+          "message": "Refresh work guide after playback delivery (#447)"
+        },
         {
           "sha": "490ad5ab3b8c47b2e82f1bbafd32b724e2b68f1f",
           "date": "2026-09-26T05:44:10Z",
@@ -893,6 +903,14 @@
           "mergedAt": "2026-09-07T21:46:24Z"
         },
         {
+          "number": 59,
+          "title": "docs: plan PC and desk lighting integrations and backlog",
+          "createdAt": "2026-09-08T00:03:57Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
+          "base": "main",
+          "mergedAt": "2026-09-10T22:30:08Z"
+        },
+        {
           "number": 72,
           "title": "Keep the cross-project work guide in the SDLC",
           "createdAt": "2026-09-08T16:19:27Z",
@@ -925,6 +943,14 @@
           "mergedAt": "2026-09-08T22:49:23Z"
         },
         {
+          "number": 77,
+          "title": "perf: measure Linux hooks and define early budgets",
+          "createdAt": "2026-09-08T22:54:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
+          "base": "main",
+          "mergedAt": "2026-09-12T00:48:02Z"
+        },
+        {
           "number": 78,
           "title": "docs: record Pixoo soak acceptance and open timing qualification",
           "createdAt": "2026-09-08T23:45:16Z",
@@ -947,6 +973,30 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/81",
           "base": "main",
           "mergedAt": "2026-09-09T00:58:06Z"
+        },
+        {
+          "number": 82,
+          "title": "Document the Nanoleaf Prism delivery sequence",
+          "createdAt": "2026-09-09T23:05:53Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
+          "base": "main",
+          "mergedAt": "2026-09-10T21:11:54Z"
+        },
+        {
+          "number": 84,
+          "title": "Document the fresh Nanoleaf Linux runtime",
+          "createdAt": "2026-09-10T00:29:55Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
+          "base": "main",
+          "mergedAt": "2026-09-10T22:24:49Z"
+        },
+        {
+          "number": 88,
+          "title": "Adopt planning and delivery checkpoints for the work guide",
+          "createdAt": "2026-09-10T00:46:23Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
+          "base": "main",
+          "mergedAt": "2026-09-10T21:33:28Z"
         },
         {
           "number": 89,
@@ -989,28 +1039,12 @@
           "mergedAt": "2026-09-10T13:44:34Z"
         },
         {
-          "number": 82,
-          "title": "Document the Nanoleaf Prism delivery sequence",
-          "createdAt": "2026-09-09T23:05:53Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/82",
-          "base": "main",
-          "mergedAt": "2026-09-10T21:11:54Z"
-        },
-        {
           "number": 95,
           "title": "Record completed Nanoleaf Prism stories in the guide",
           "createdAt": "2026-09-10T21:20:02Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/95",
           "base": "main",
           "mergedAt": "2026-09-10T21:27:11Z"
-        },
-        {
-          "number": 88,
-          "title": "Adopt planning and delivery checkpoints for the work guide",
-          "createdAt": "2026-09-10T00:46:23Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/88",
-          "base": "main",
-          "mergedAt": "2026-09-10T21:33:28Z"
         },
         {
           "number": 96,
@@ -1029,36 +1063,12 @@
           "mergedAt": "2026-09-10T22:13:04Z"
         },
         {
-          "number": 84,
-          "title": "Document the fresh Nanoleaf Linux runtime",
-          "createdAt": "2026-09-10T00:29:55Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/84",
-          "base": "main",
-          "mergedAt": "2026-09-10T22:24:49Z"
-        },
-        {
-          "number": 59,
-          "title": "docs: plan PC and desk lighting integrations and backlog",
-          "createdAt": "2026-09-08T00:03:57Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/59",
-          "base": "main",
-          "mergedAt": "2026-09-10T22:30:08Z"
-        },
-        {
           "number": 98,
           "title": "Record delivered Nanoleaf Linux source and remaining acceptance",
           "createdAt": "2026-09-10T23:07:22Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/98",
           "base": "main",
           "mergedAt": "2026-09-10T23:17:47Z"
-        },
-        {
-          "number": 77,
-          "title": "perf: measure Linux hooks and define early budgets",
-          "createdAt": "2026-09-08T22:54:04Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/77",
-          "base": "main",
-          "mergedAt": "2026-09-12T00:48:02Z"
         },
         {
           "number": 101,
@@ -1077,12 +1087,12 @@
           "mergedAt": "2026-09-12T02:00:16Z"
         },
         {
-          "number": 106,
-          "title": "docs: exempt work-guide UI from human approval",
-          "createdAt": "2026-09-20T17:00:44Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/106",
+          "number": 104,
+          "title": "docs: add BUNNY HTML design atlas and service references",
+          "createdAt": "2026-09-20T02:55:40Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
           "base": "main",
-          "mergedAt": "2026-09-20T17:19:45Z"
+          "mergedAt": "2026-09-20T18:35:15Z"
         },
         {
           "number": 105,
@@ -1091,6 +1101,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/105",
           "base": "main",
           "mergedAt": "2026-09-20T17:42:18Z"
+        },
+        {
+          "number": 106,
+          "title": "docs: exempt work-guide UI from human approval",
+          "createdAt": "2026-09-20T17:00:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/106",
+          "base": "main",
+          "mergedAt": "2026-09-20T17:19:45Z"
         },
         {
           "number": 108,
@@ -1109,12 +1127,12 @@
           "mergedAt": "2026-09-20T18:21:52Z"
         },
         {
-          "number": 104,
-          "title": "docs: add BUNNY HTML design atlas and service references",
-          "createdAt": "2026-09-20T02:55:40Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/104",
+          "number": 110,
+          "title": "Record delivered Pixoo controller API and reconcile the work guide",
+          "createdAt": "2026-09-20T18:50:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
           "base": "main",
-          "mergedAt": "2026-09-20T18:35:15Z"
+          "mergedAt": "2026-09-20T19:25:05Z"
         },
         {
           "number": 111,
@@ -1131,14 +1149,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/112",
           "base": "main",
           "mergedAt": "2026-09-20T19:16:25Z"
-        },
-        {
-          "number": 110,
-          "title": "Record delivered Pixoo controller API and reconcile the work guide",
-          "createdAt": "2026-09-20T18:50:37Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/110",
-          "base": "main",
-          "mergedAt": "2026-09-20T19:25:05Z"
         },
         {
           "number": 113,
@@ -1189,12 +1199,28 @@
           "mergedAt": "2026-09-21T00:20:17Z"
         },
         {
+          "number": 119,
+          "title": "Synchronize Pixoo Monitor and Media controls in the work guide",
+          "createdAt": "2026-09-21T18:15:48Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/119",
+          "base": "main",
+          "mergedAt": "2026-09-21T18:51:46Z"
+        },
+        {
           "number": 120,
           "title": "docs: require a central BUNNY UI for future components",
           "createdAt": "2026-09-21T18:26:29Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/120",
           "base": "main",
           "mergedAt": "2026-09-21T18:31:04Z"
+        },
+        {
+          "number": 121,
+          "title": "Host Linux shared state with controller integration and supervised migration",
+          "createdAt": "2026-09-21T18:28:03Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
+          "base": "main",
+          "mergedAt": "2026-09-21T20:47:40Z"
         },
         {
           "number": 122,
@@ -1205,28 +1231,12 @@
           "mergedAt": "2026-09-21T18:48:20Z"
         },
         {
-          "number": 119,
-          "title": "Synchronize Pixoo Monitor and Media controls in the work guide",
-          "createdAt": "2026-09-21T18:15:48Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/119",
-          "base": "main",
-          "mergedAt": "2026-09-21T18:51:46Z"
-        },
-        {
           "number": 124,
           "title": "Raise Linux service memory budget to 256 MiB",
           "createdAt": "2026-09-21T19:45:58Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/124",
           "base": "main",
           "mergedAt": "2026-09-21T19:48:42Z"
-        },
-        {
-          "number": 121,
-          "title": "Host Linux shared state with controller integration and supervised migration",
-          "createdAt": "2026-09-21T18:28:03Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/121",
-          "base": "main",
-          "mergedAt": "2026-09-21T20:47:40Z"
         },
         {
           "number": 125,
@@ -1243,6 +1253,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/126",
           "base": "main",
           "mergedAt": "2026-09-21T21:27:42Z"
+        },
+        {
+          "number": 127,
+          "title": "Add BUNNY activity and component integration dashboard",
+          "createdAt": "2026-09-21T21:19:43Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
+          "base": "main",
+          "mergedAt": "2026-09-22T00:44:48Z"
         },
         {
           "number": 128,
@@ -1269,12 +1287,12 @@
           "mergedAt": "2026-09-21T21:57:28Z"
         },
         {
-          "number": 127,
-          "title": "Add BUNNY activity and component integration dashboard",
-          "createdAt": "2026-09-21T21:19:43Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/127",
+          "number": 131,
+          "title": "Record Pixoo monitoring delivery and reduced setup scope",
+          "createdAt": "2026-09-22T00:46:51Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
           "base": "main",
-          "mergedAt": "2026-09-22T00:44:48Z"
+          "mergedAt": "2026-09-22T01:08:53Z"
         },
         {
           "number": 132,
@@ -1293,28 +1311,12 @@
           "mergedAt": "2026-09-22T01:01:10Z"
         },
         {
-          "number": 131,
-          "title": "Record Pixoo monitoring delivery and reduced setup scope",
-          "createdAt": "2026-09-22T00:46:51Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/131",
-          "base": "main",
-          "mergedAt": "2026-09-22T01:08:53Z"
-        },
-        {
           "number": 134,
           "title": "docs: close out Nanoleaf shared-monitor installed acceptance",
           "createdAt": "2026-09-22T01:22:24Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/134",
           "base": "main",
           "mergedAt": "2026-09-22T01:24:53Z"
-        },
-        {
-          "number": 140,
-          "title": "Document desktop controls, control profiles and desk presets",
-          "createdAt": "2026-09-22T02:14:54Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/140",
-          "base": "main",
-          "mergedAt": "2026-09-22T02:21:29Z"
         },
         {
           "number": 135,
@@ -1325,14 +1327,6 @@
           "mergedAt": "2026-09-22T02:32:01Z"
         },
         {
-          "number": 142,
-          "title": "Record standalone qualification completion in the work guide",
-          "createdAt": "2026-09-22T02:38:25Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/142",
-          "base": "main",
-          "mergedAt": "2026-09-22T02:42:18Z"
-        },
-        {
           "number": 136,
           "title": "Verify bounded standalone cross-device compatibility",
           "createdAt": "2026-09-22T01:51:59Z",
@@ -1341,12 +1335,28 @@
           "mergedAt": "2026-09-22T02:52:02Z"
         },
         {
-          "number": 145,
-          "title": "Reconcile compatibility delivery and issue closure in the guide",
-          "createdAt": "2026-09-22T02:57:44Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/145",
+          "number": 140,
+          "title": "Document desktop controls, control profiles and desk presets",
+          "createdAt": "2026-09-22T02:14:54Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/140",
           "base": "main",
-          "mergedAt": "2026-09-22T03:01:15Z"
+          "mergedAt": "2026-09-22T02:21:29Z"
+        },
+        {
+          "number": 142,
+          "title": "Record standalone qualification completion in the work guide",
+          "createdAt": "2026-09-22T02:38:25Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/142",
+          "base": "main",
+          "mergedAt": "2026-09-22T02:42:18Z"
+        },
+        {
+          "number": 143,
+          "title": "Qualify the N30 Codex route and keep keyboard A/B outside BUNNY",
+          "createdAt": "2026-09-22T02:38:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:36:18Z"
         },
         {
           "number": 144,
@@ -1355,6 +1365,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/144",
           "base": "main",
           "mergedAt": "2026-09-22T03:12:54Z"
+        },
+        {
+          "number": 145,
+          "title": "Reconcile compatibility delivery and issue closure in the guide",
+          "createdAt": "2026-09-22T02:57:44Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/145",
+          "base": "main",
+          "mergedAt": "2026-09-22T03:01:15Z"
         },
         {
           "number": 146,
@@ -1413,6 +1431,14 @@
           "mergedAt": "2026-09-22T10:29:21Z"
         },
         {
+          "number": 160,
+          "title": "Add Pixoo general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T14:50:15Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/160",
+          "base": "main",
+          "mergedAt": "2026-09-22T20:56:41Z"
+        },
+        {
           "number": 161,
           "title": "Record Nanoleaf native controls and accept discovered scenes",
           "createdAt": "2026-09-22T15:02:23Z",
@@ -1421,12 +1447,12 @@
           "mergedAt": "2026-09-22T16:28:14Z"
         },
         {
-          "number": 160,
-          "title": "Add Pixoo general controls to the BUNNY component view",
-          "createdAt": "2026-09-22T14:50:15Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/160",
+          "number": 162,
+          "title": "Add Nanoleaf general controls to the BUNNY component view",
+          "createdAt": "2026-09-22T16:22:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
           "base": "main",
-          "mergedAt": "2026-09-22T20:56:41Z"
+          "mergedAt": "2026-09-23T01:57:06Z"
         },
         {
           "number": 163,
@@ -1443,14 +1469,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/164",
           "base": "main",
           "mergedAt": "2026-09-23T01:45:20Z"
-        },
-        {
-          "number": 162,
-          "title": "Add Nanoleaf general controls to the BUNNY component view",
-          "createdAt": "2026-09-22T16:22:37Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/162",
-          "base": "main",
-          "mergedAt": "2026-09-23T01:57:06Z"
         },
         {
           "number": 165,
@@ -1483,14 +1501,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/171",
           "base": "main",
           "mergedAt": "2026-09-23T04:22:43Z"
-        },
-        {
-          "number": 143,
-          "title": "Qualify the N30 Codex route and keep keyboard A/B outside BUNNY",
-          "createdAt": "2026-09-22T02:38:29Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/143",
-          "base": "main",
-          "mergedAt": "2026-09-23T05:36:18Z"
         },
         {
           "number": 174,
@@ -1549,14 +1559,6 @@
           "mergedAt": "2026-09-23T08:13:01Z"
         },
         {
-          "number": 190,
-          "title": "Sync work guide after approval recovery delivery",
-          "createdAt": "2026-09-23T08:29:39Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/190",
-          "base": "main",
-          "mergedAt": "2026-09-23T08:33:11Z"
-        },
-        {
           "number": 188,
           "title": "Prepare complete BUNNY atlas for public guide publication",
           "createdAt": "2026-09-23T08:20:33Z",
@@ -1571,6 +1573,22 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/189",
           "base": "main",
           "mergedAt": "2026-09-23T19:17:57Z"
+        },
+        {
+          "number": 190,
+          "title": "Sync work guide after approval recovery delivery",
+          "createdAt": "2026-09-23T08:29:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/190",
+          "base": "main",
+          "mergedAt": "2026-09-23T08:33:11Z"
+        },
+        {
+          "number": 192,
+          "title": "Implement configured LIFX LAN controller",
+          "createdAt": "2026-09-23T20:05:26Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/192",
+          "base": "main",
+          "mergedAt": "2026-09-23T20:31:56Z"
         },
         {
           "number": 193,
@@ -1589,28 +1607,12 @@
           "mergedAt": "2026-09-23T20:26:51Z"
         },
         {
-          "number": 192,
-          "title": "Implement configured LIFX LAN controller",
-          "createdAt": "2026-09-23T20:05:26Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/192",
-          "base": "main",
-          "mergedAt": "2026-09-23T20:31:56Z"
-        },
-        {
           "number": 206,
           "title": "Refresh public guide issue statuses and mobile workspace plan",
           "createdAt": "2026-09-23T21:20:38Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/206",
           "base": "main",
           "mergedAt": "2026-09-23T21:22:36Z"
-        },
-        {
-          "number": 209,
-          "title": "Open task briefs from work guide issue links",
-          "createdAt": "2026-09-23T23:11:39Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/209",
-          "base": "main",
-          "mergedAt": "2026-09-23T23:23:46Z"
         },
         {
           "number": 208,
@@ -1621,6 +1623,14 @@
           "mergedAt": "2026-09-23T23:24:48Z"
         },
         {
+          "number": 209,
+          "title": "Open task briefs from work guide issue links",
+          "createdAt": "2026-09-23T23:11:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/209",
+          "base": "main",
+          "mergedAt": "2026-09-23T23:23:46Z"
+        },
+        {
           "number": 211,
           "title": "Simulate the denied clipboard in the guide browser check",
           "createdAt": "2026-09-23T23:48:43Z",
@@ -1629,20 +1639,20 @@
           "mergedAt": "2026-09-23T23:58:38Z"
         },
         {
-          "number": 214,
-          "title": "Use shared npm and Playwright caches in setup guidance",
-          "createdAt": "2026-09-24T00:00:07Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/214",
-          "base": "main",
-          "mergedAt": "2026-09-24T00:06:01Z"
-        },
-        {
           "number": 213,
           "title": "Refresh work guide to current GitHub status",
           "createdAt": "2026-09-23T23:57:44Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/213",
           "base": "main",
           "mergedAt": "2026-09-24T00:17:50Z"
+        },
+        {
+          "number": 214,
+          "title": "Use shared npm and Playwright caches in setup guidance",
+          "createdAt": "2026-09-24T00:00:07Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/214",
+          "base": "main",
+          "mergedAt": "2026-09-24T00:06:01Z"
         },
         {
           "number": 215,
@@ -1725,6 +1735,14 @@
           "mergedAt": "2026-09-24T09:42:04Z"
         },
         {
+          "number": 238,
+          "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
+          "createdAt": "2026-09-24T20:23:18Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
+          "base": "main",
+          "mergedAt": "2026-09-25T03:07:32Z"
+        },
+        {
           "number": 239,
           "title": "Make BUNNY device settings apply in one step and simplify command status",
           "createdAt": "2026-09-24T20:40:13Z",
@@ -1757,12 +1775,12 @@
           "mergedAt": "2026-09-24T23:45:30Z"
         },
         {
-          "number": 238,
-          "title": "Retire ended Codex Desktop tasks and reset resumed monitoring",
-          "createdAt": "2026-09-24T20:23:18Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/238",
+          "number": 250,
+          "title": "Define the B.U.N.N.Y. UI foundation, skin template and component glossary",
+          "createdAt": "2026-09-25T00:02:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/250",
           "base": "main",
-          "mergedAt": "2026-09-25T03:07:32Z"
+          "mergedAt": "2026-09-25T03:29:23Z"
         },
         {
           "number": 251,
@@ -1779,14 +1797,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/257",
           "base": "main",
           "mergedAt": "2026-09-25T03:28:48Z"
-        },
-        {
-          "number": 250,
-          "title": "Define the B.U.N.N.Y. UI foundation, skin template and component glossary",
-          "createdAt": "2026-09-25T00:02:13Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/250",
-          "base": "main",
-          "mergedAt": "2026-09-25T03:29:23Z"
         },
         {
           "number": 260,
@@ -1813,14 +1823,6 @@
           "mergedAt": "2026-09-25T05:04:58Z"
         },
         {
-          "number": 268,
-          "title": "Push hub change notifications when state commits (#222)",
-          "createdAt": "2026-09-25T05:38:13Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/268",
-          "base": "main",
-          "mergedAt": "2026-09-25T05:43:30Z"
-        },
-        {
           "number": 266,
           "title": "Record starting-session recommendations for every open story (#252 parts B and C)",
           "createdAt": "2026-09-25T05:21:14Z",
@@ -1829,12 +1831,12 @@
           "mergedAt": "2026-09-25T05:50:10Z"
         },
         {
-          "number": 270,
-          "title": "Retire browser sessions with their tickets, streams and replay entries",
-          "createdAt": "2026-09-25T05:54:20Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/270",
+          "number": 268,
+          "title": "Push hub change notifications when state commits (#222)",
+          "createdAt": "2026-09-25T05:38:13Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/268",
           "base": "main",
-          "mergedAt": "2026-09-25T06:14:22Z"
+          "mergedAt": "2026-09-25T05:43:30Z"
         },
         {
           "number": 269,
@@ -1845,12 +1847,12 @@
           "mergedAt": "2026-09-25T06:15:09Z"
         },
         {
-          "number": 274,
-          "title": "Point the style guide's token-layer references at the new skin file",
-          "createdAt": "2026-09-25T06:22:39Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/274",
+          "number": 270,
+          "title": "Retire browser sessions with their tickets, streams and replay entries",
+          "createdAt": "2026-09-25T05:54:20Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/270",
           "base": "main",
-          "mergedAt": "2026-09-25T06:29:13Z"
+          "mergedAt": "2026-09-25T06:14:22Z"
         },
         {
           "number": 273,
@@ -1859,6 +1861,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/273",
           "base": "main",
           "mergedAt": "2026-09-25T06:40:46Z"
+        },
+        {
+          "number": 274,
+          "title": "Point the style guide's token-layer references at the new skin file",
+          "createdAt": "2026-09-25T06:22:39Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/274",
+          "base": "main",
+          "mergedAt": "2026-09-25T06:29:13Z"
         },
         {
           "number": 275,
@@ -1917,14 +1927,6 @@
           "mergedAt": "2026-09-25T19:19:27Z"
         },
         {
-          "number": 322,
-          "title": "Show idea-marked stories in a guide Ideas section",
-          "createdAt": "2026-09-25T20:39:18Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/322",
-          "base": "main",
-          "mergedAt": "2026-09-25T20:56:38Z"
-        },
-        {
           "number": 318,
           "title": "Connect Tidbyt and LIFX to the hub through one local controller host",
           "createdAt": "2026-09-25T20:35:44Z",
@@ -1941,12 +1943,12 @@
           "mergedAt": "2026-09-25T21:31:03Z"
         },
         {
-          "number": 338,
-          "title": "Keep a story's recommendation current when only its Guide section changes",
-          "createdAt": "2026-09-25T21:44:29Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/338",
+          "number": 322,
+          "title": "Show idea-marked stories in a guide Ideas section",
+          "createdAt": "2026-09-25T20:39:18Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/322",
           "base": "main",
-          "mergedAt": "2026-09-25T21:50:05Z"
+          "mergedAt": "2026-09-25T20:56:38Z"
         },
         {
           "number": 326,
@@ -1955,6 +1957,22 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/326",
           "base": "main",
           "mergedAt": "2026-09-25T21:52:28Z"
+        },
+        {
+          "number": 338,
+          "title": "Keep a story's recommendation current when only its Guide section changes",
+          "createdAt": "2026-09-25T21:44:29Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/338",
+          "base": "main",
+          "mergedAt": "2026-09-25T21:50:05Z"
+        },
+        {
+          "number": 339,
+          "title": "Record ADR 0008: keep the runtime in WSL, start it at boot, target a Linux server",
+          "createdAt": "2026-09-25T21:49:42Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/339",
+          "base": "main",
+          "mergedAt": "2026-09-25T22:55:32Z"
         },
         {
           "number": 340,
@@ -1971,14 +1989,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/351",
           "base": "main",
           "mergedAt": "2026-09-25T22:45:44Z"
-        },
-        {
-          "number": 339,
-          "title": "Record ADR 0008: keep the runtime in WSL, start it at boot, target a Linux server",
-          "createdAt": "2026-09-25T21:49:42Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/339",
-          "base": "main",
-          "mergedAt": "2026-09-25T22:55:32Z"
         },
         {
           "number": 354,
@@ -2005,6 +2015,14 @@
           "mergedAt": "2026-09-26T00:29:52Z"
         },
         {
+          "number": 388,
+          "title": "Keep the hub starting when its MCP tool catalog grows",
+          "createdAt": "2026-09-26T00:23:51Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/388",
+          "base": "main",
+          "mergedAt": "2026-09-26T00:55:19Z"
+        },
+        {
           "number": 389,
           "title": "Record installed Codex CLI and Claude Code session-end observations",
           "createdAt": "2026-09-26T00:24:08Z",
@@ -2019,14 +2037,6 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/393",
           "base": "main",
           "mergedAt": "2026-09-26T00:48:40Z"
-        },
-        {
-          "number": 388,
-          "title": "Keep the hub starting when its MCP tool catalog grows",
-          "createdAt": "2026-09-26T00:23:51Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/388",
-          "base": "main",
-          "mergedAt": "2026-09-26T00:55:19Z"
         },
         {
           "number": 394,
@@ -2077,20 +2087,12 @@
           "mergedAt": "2026-09-26T02:48:17Z"
         },
         {
-          "number": 420,
-          "title": "Release hub 0.3.9 for the read-only Nanoleaf dashboard controls",
-          "createdAt": "2026-09-26T03:07:09Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/420",
+          "number": 414,
+          "title": "Port the wall map's Prism renderer into the dashboard as shared device art",
+          "createdAt": "2026-09-26T02:53:24Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/414",
           "base": "main",
-          "mergedAt": "2026-09-26T03:12:22Z"
-        },
-        {
-          "number": 423,
-          "title": "Show whether each story is UI or backend work in the work guide",
-          "createdAt": "2026-09-26T03:19:46Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/423",
-          "base": "main",
-          "mergedAt": "2026-09-26T03:28:43Z"
+          "mergedAt": "2026-09-26T03:50:15Z"
         },
         {
           "number": 419,
@@ -2101,12 +2103,20 @@
           "mergedAt": "2026-09-26T03:33:05Z"
         },
         {
-          "number": 414,
-          "title": "Port the wall map's Prism renderer into the dashboard as shared device art",
-          "createdAt": "2026-09-26T02:53:24Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/414",
+          "number": 420,
+          "title": "Release hub 0.3.9 for the read-only Nanoleaf dashboard controls",
+          "createdAt": "2026-09-26T03:07:09Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/420",
           "base": "main",
-          "mergedAt": "2026-09-26T03:50:15Z"
+          "mergedAt": "2026-09-26T03:12:22Z"
+        },
+        {
+          "number": 421,
+          "title": "Make the dashboard a dense control surface with a home widget grid and hash routes",
+          "createdAt": "2026-09-26T03:08:01Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/421",
+          "base": "main",
+          "mergedAt": "2026-09-26T05:33:10Z"
         },
         {
           "number": 422,
@@ -2115,6 +2125,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/422",
           "base": "main",
           "mergedAt": "2026-09-26T04:00:47Z"
+        },
+        {
+          "number": 423,
+          "title": "Show whether each story is UI or backend work in the work guide",
+          "createdAt": "2026-09-26T03:19:46Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/423",
+          "base": "main",
+          "mergedAt": "2026-09-26T03:28:43Z"
         },
         {
           "number": 433,
@@ -2133,14 +2151,6 @@
           "mergedAt": "2026-09-26T05:03:03Z"
         },
         {
-          "number": 436,
-          "title": "Make the slow-device browser isolation check deterministic",
-          "createdAt": "2026-09-26T04:58:37Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/436",
-          "base": "main",
-          "mergedAt": "2026-09-26T05:10:27Z"
-        },
-        {
           "number": 435,
           "title": "Port Nanoleaf harnesses to owning modules and refresh pins",
           "createdAt": "2026-09-26T04:57:15Z",
@@ -2149,12 +2159,12 @@
           "mergedAt": "2026-09-26T05:19:45Z"
         },
         {
-          "number": 421,
-          "title": "Make the dashboard a dense control surface with a home widget grid and hash routes",
-          "createdAt": "2026-09-26T03:08:01Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/421",
+          "number": 436,
+          "title": "Make the slow-device browser isolation check deterministic",
+          "createdAt": "2026-09-26T04:58:37Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/436",
           "base": "main",
-          "mergedAt": "2026-09-26T05:33:10Z"
+          "mergedAt": "2026-09-26T05:10:27Z"
         },
         {
           "number": 440,
@@ -2171,9 +2181,40 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/441",
           "base": "main",
           "mergedAt": "2026-09-26T05:44:10Z"
+        },
+        {
+          "number": 447,
+          "title": "Refresh work guide after playback delivery",
+          "createdAt": "2026-09-26T05:59:04Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/447",
+          "base": "main",
+          "mergedAt": "2026-09-26T06:03:42Z"
+        },
+        {
+          "number": 451,
+          "title": "Keep LIFX status paints out of lighting.pending (#450)",
+          "createdAt": "2026-09-26T06:23:48Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/451",
+          "base": "main",
+          "mergedAt": "2026-09-26T06:39:48Z"
         }
       ],
-      "openPRs": [],
+      "openPRs": [
+        {
+          "number": 448,
+          "title": "Add nightly guide refresh tooling and retired-term checks",
+          "createdAt": "2026-09-26T06:03:07Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/448",
+          "base": "main"
+        },
+        {
+          "number": 452,
+          "title": "Share bounded session titles and project names across Hub metadata",
+          "createdAt": "2026-09-26T06:27:00Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/452",
+          "base": "main"
+        }
+      ],
       "closedIssues": [
         {
           "number": 1,
@@ -2960,6 +3001,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/308"
         },
         {
+          "number": 311,
+          "title": "Reconcile story text made stale by the 2026-09-25 deliveries",
+          "closedAt": "2026-09-26T06:31:52Z",
+          "createdAt": "2026-09-25T19:50:30Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/311"
+        },
+        {
           "number": 312,
           "title": "Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5",
           "closedAt": "2026-09-26T00:41:54Z",
@@ -3062,12 +3111,28 @@
           "createdAt": "2026-09-26T02:56:46Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/417"
+        },
+        {
+          "number": 439,
+          "title": "Paint LIFX status from sessions with uncertain freshness",
+          "closedAt": "2026-09-26T05:52:18Z",
+          "createdAt": "2026-09-26T05:18:24Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/439"
+        },
+        {
+          "number": 450,
+          "title": "Keep LIFX status paints out of lighting.pending so the lighting snapshot stays valid",
+          "closedAt": "2026-09-26T06:46:28Z",
+          "createdAt": "2026-09-26T06:20:14Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/450"
         }
       ],
-      "openIssueCount": 168,
+      "openIssueCount": 167,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T05:50:38Z"
+        "2026-09-26T06:20:14Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -3081,7 +3146,7 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 50
+        "2026-09-26": 52
       }
     },
     "codex-nanoleaf": {
@@ -3478,6 +3543,14 @@
           "mergedAt": "2026-09-05T17:36:19Z"
         },
         {
+          "number": 3,
+          "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
+          "createdAt": "2026-09-05T18:31:19Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
+          "base": "main",
+          "mergedAt": "2026-09-05T19:52:44Z"
+        },
+        {
           "number": 4,
           "title": "Allow tray upgrades to preserve existing shortcuts",
           "createdAt": "2026-09-05T18:43:19Z",
@@ -3492,14 +3565,6 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/5",
           "base": "main",
           "mergedAt": "2026-09-05T18:59:09Z"
-        },
-        {
-          "number": 3,
-          "title": "Set up GitHub SDLC, OpenSpec, and TDD workflows",
-          "createdAt": "2026-09-05T18:31:19Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/3",
-          "base": "main",
-          "mergedAt": "2026-09-05T19:52:44Z"
         },
         {
           "number": 7,
@@ -3518,14 +3583,6 @@
           "mergedAt": "2026-09-05T23:53:01Z"
         },
         {
-          "number": 32,
-          "title": "Document shared monitoring adoption and Windows ownership",
-          "createdAt": "2026-09-07T02:46:22Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/32",
-          "base": "main",
-          "mergedAt": "2026-09-07T02:52:11Z"
-        },
-        {
           "number": 24,
           "title": "Restructure the wall map layout and surface status, pending edits, and mode",
           "createdAt": "2026-09-07T00:57:37Z",
@@ -3534,12 +3591,12 @@
           "mergedAt": "2026-09-07T03:22:21Z"
         },
         {
-          "number": 36,
-          "title": "Make SQLite initialization atomic and close failed connections",
-          "createdAt": "2026-09-07T04:48:39Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/36",
+          "number": 32,
+          "title": "Document shared monitoring adoption and Windows ownership",
+          "createdAt": "2026-09-07T02:46:22Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/32",
           "base": "main",
-          "mergedAt": "2026-09-07T04:53:33Z"
+          "mergedAt": "2026-09-07T02:52:11Z"
         },
         {
           "number": 35,
@@ -3550,6 +3607,14 @@
           "mergedAt": "2026-09-07T05:23:46Z"
         },
         {
+          "number": 36,
+          "title": "Make SQLite initialization atomic and close failed connections",
+          "createdAt": "2026-09-07T04:48:39Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/36",
+          "base": "main",
+          "mergedAt": "2026-09-07T04:53:33Z"
+        },
+        {
           "number": 39,
           "title": "Add protected Nanoleaf controller API",
           "createdAt": "2026-09-07T17:24:48Z",
@@ -3558,20 +3623,20 @@
           "mergedAt": "2026-09-07T18:25:49Z"
         },
         {
-          "number": 48,
-          "title": "Add authenticated Windows and WSL Nanoleaf MCP bindings",
-          "createdAt": "2026-09-07T19:23:28Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/48",
-          "base": "main",
-          "mergedAt": "2026-09-07T19:33:00Z"
-        },
-        {
           "number": 40,
           "title": "Animate wall assembly from a central orb",
           "createdAt": "2026-09-07T18:03:01Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/40",
           "base": "main",
           "mergedAt": "2026-09-07T19:36:20Z"
+        },
+        {
+          "number": 48,
+          "title": "Add authenticated Windows and WSL Nanoleaf MCP bindings",
+          "createdAt": "2026-09-07T19:23:28Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/48",
+          "base": "main",
+          "mergedAt": "2026-09-07T19:33:00Z"
         },
         {
           "number": 50,
@@ -3598,12 +3663,12 @@
           "mergedAt": "2026-09-09T23:57:57Z"
         },
         {
-          "number": 61,
-          "title": "Bound CI runtime and remove duplicate branch-push checks",
-          "createdAt": "2026-09-10T03:00:45Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+          "number": 57,
+          "title": "Support a fresh Linux installation of Nanoleaf services",
+          "createdAt": "2026-09-10T00:04:39Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
           "base": "main",
-          "mergedAt": "2026-09-10T03:04:28Z"
+          "mergedAt": "2026-09-10T22:56:36Z"
         },
         {
           "number": 58,
@@ -3614,14 +3679,6 @@
           "mergedAt": "2026-09-10T13:17:45Z"
         },
         {
-          "number": 60,
-          "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
-          "createdAt": "2026-09-10T01:21:11Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
-          "base": "main",
-          "mergedAt": "2026-09-10T13:33:17Z"
-        },
-        {
           "number": 59,
           "title": "Adopt shared guide planning and delivery checkpoints",
           "createdAt": "2026-09-10T00:46:40Z",
@@ -3630,12 +3687,20 @@
           "mergedAt": "2026-09-10T21:19:56Z"
         },
         {
-          "number": 57,
-          "title": "Support a fresh Linux installation of Nanoleaf services",
-          "createdAt": "2026-09-10T00:04:39Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/57",
+          "number": 60,
+          "title": "Add luminous Line numbers with conditional visibility and crystal clearance",
+          "createdAt": "2026-09-10T01:21:11Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/60",
           "base": "main",
-          "mergedAt": "2026-09-10T22:56:36Z"
+          "mergedAt": "2026-09-10T13:33:17Z"
+        },
+        {
+          "number": 61,
+          "title": "Bound CI runtime and remove duplicate branch-push checks",
+          "createdAt": "2026-09-10T03:00:45Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/61",
+          "base": "main",
+          "mergedAt": "2026-09-10T03:04:28Z"
         },
         {
           "number": 62,
@@ -3670,6 +3735,14 @@
           "mergedAt": "2026-09-22T15:49:43Z"
         },
         {
+          "number": 67,
+          "title": "Run Lines and NL22 Light Panels as independent devices in the worker",
+          "createdAt": "2026-09-23T04:38:02Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/67",
+          "base": "main",
+          "mergedAt": "2026-09-23T05:31:19Z"
+        },
+        {
           "number": 69,
           "title": "Move CI to Depot",
           "createdAt": "2026-09-23T04:56:09Z",
@@ -3684,14 +3757,6 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/71",
           "base": "main",
           "mergedAt": "2026-09-23T05:25:39Z"
-        },
-        {
-          "number": 67,
-          "title": "Run Lines and NL22 Light Panels as independent devices in the worker",
-          "createdAt": "2026-09-23T04:38:02Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/67",
-          "base": "main",
-          "mergedAt": "2026-09-23T05:31:19Z"
         },
         {
           "number": 73,
@@ -3750,22 +3815,6 @@
           "mergedAt": "2026-09-24T03:16:27Z"
         },
         {
-          "number": 96,
-          "title": "Clear stale unread tasks when the shared feed reports them read",
-          "createdAt": "2026-09-24T03:43:08Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/96",
-          "base": "main",
-          "mergedAt": "2026-09-24T03:55:20Z"
-        },
-        {
-          "number": 97,
-          "title": "Expose read-only worker rendering snapshot",
-          "createdAt": "2026-09-24T03:55:27Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/97",
-          "base": "main",
-          "mergedAt": "2026-09-24T04:00:18Z"
-        },
-        {
           "number": 94,
           "title": "Add safe legacy hook lifecycle for shared input",
           "createdAt": "2026-09-24T03:27:53Z",
@@ -3780,6 +3829,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/95",
           "base": "main",
           "mergedAt": "2026-09-24T04:29:32Z"
+        },
+        {
+          "number": 96,
+          "title": "Clear stale unread tasks when the shared feed reports them read",
+          "createdAt": "2026-09-24T03:43:08Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/96",
+          "base": "main",
+          "mergedAt": "2026-09-24T03:55:20Z"
+        },
+        {
+          "number": 97,
+          "title": "Expose read-only worker rendering snapshot",
+          "createdAt": "2026-09-24T03:55:27Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/97",
+          "base": "main",
+          "mergedAt": "2026-09-24T04:00:18Z"
         },
         {
           "number": 99,
@@ -3814,20 +3879,20 @@
           "mergedAt": "2026-09-24T07:31:21Z"
         },
         {
-          "number": 107,
-          "title": "Show Codex titles and projects in shared input",
-          "createdAt": "2026-09-24T07:41:37Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/107",
-          "base": "main",
-          "mergedAt": "2026-09-24T07:52:57Z"
-        },
-        {
           "number": 106,
           "title": "Keep task positions when selecting in the wall map inspector",
           "createdAt": "2026-09-24T07:34:28Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/106",
           "base": "main",
           "mergedAt": "2026-09-24T08:02:32Z"
+        },
+        {
+          "number": 107,
+          "title": "Show Codex titles and projects in shared input",
+          "createdAt": "2026-09-24T07:41:37Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/107",
+          "base": "main",
+          "mergedAt": "2026-09-24T07:52:57Z"
         },
         {
           "number": 109,
@@ -3838,12 +3903,12 @@
           "mergedAt": "2026-09-24T20:10:26Z"
         },
         {
-          "number": 126,
-          "title": "Size stories for the personal-project setup",
-          "createdAt": "2026-09-24T22:07:32Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/126",
+          "number": 116,
+          "title": "Retain shared tasks until removal and add local eviction",
+          "createdAt": "2026-09-24T20:18:55Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
           "base": "main",
-          "mergedAt": "2026-09-24T22:17:58Z"
+          "mergedAt": "2026-09-25T03:08:19Z"
         },
         {
           "number": 125,
@@ -3854,20 +3919,20 @@
           "mergedAt": "2026-09-24T22:44:22Z"
         },
         {
+          "number": 126,
+          "title": "Size stories for the personal-project setup",
+          "createdAt": "2026-09-24T22:07:32Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/126",
+          "base": "main",
+          "mergedAt": "2026-09-24T22:17:58Z"
+        },
+        {
           "number": 136,
           "title": "Record that runtime availability follows WSL until hub hosting",
           "createdAt": "2026-09-24T22:49:28Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/136",
           "base": "main",
           "mergedAt": "2026-09-24T23:07:28Z"
-        },
-        {
-          "number": 138,
-          "title": "Retire the Windows runtime from source",
-          "createdAt": "2026-09-24T23:53:04Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/138",
-          "base": "main",
-          "mergedAt": "2026-09-25T00:11:05Z"
         },
         {
           "number": 137,
@@ -3878,12 +3943,12 @@
           "mergedAt": "2026-09-25T01:51:43Z"
         },
         {
-          "number": 116,
-          "title": "Retain shared tasks until removal and add local eviction",
-          "createdAt": "2026-09-24T20:18:55Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/116",
+          "number": 138,
+          "title": "Retire the Windows runtime from source",
+          "createdAt": "2026-09-24T23:53:04Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/138",
           "base": "main",
-          "mergedAt": "2026-09-25T03:08:19Z"
+          "mergedAt": "2026-09-25T00:11:05Z"
         },
         {
           "number": 141,
@@ -3910,20 +3975,20 @@
           "mergedAt": "2026-09-25T07:08:06Z"
         },
         {
-          "number": 145,
-          "title": "Add Guide placement to the feature and bug issue templates",
-          "createdAt": "2026-09-25T07:24:26Z",
-          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/145",
-          "base": "main",
-          "mergedAt": "2026-09-25T07:35:38Z"
-        },
-        {
           "number": 144,
           "title": "Switch the wall map between Lines and Light Panels",
           "createdAt": "2026-09-25T07:18:23Z",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/144",
           "base": "main",
           "mergedAt": "2026-09-25T07:36:33Z"
+        },
+        {
+          "number": 145,
+          "title": "Add Guide placement to the feature and bug issue templates",
+          "createdAt": "2026-09-25T07:24:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/145",
+          "base": "main",
+          "mergedAt": "2026-09-25T07:35:38Z"
         },
         {
           "number": 147,
@@ -4633,10 +4698,10 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/177"
         }
       ],
-      "openIssueCount": 41,
+      "openIssueCount": 43,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
-        "2026-09-26T03:33:32Z"
+        "2026-09-26T05:52:01Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-05": 3,
@@ -4647,7 +4712,7 @@
         "2026-09-23": 11,
         "2026-09-24": 34,
         "2026-09-25": 24,
-        "2026-09-26": 6
+        "2026-09-26": 8
       }
     },
     "divoom-app-upgrade": {
@@ -5035,20 +5100,20 @@
           "mergedAt": "2026-09-09T00:14:44Z"
         },
         {
-          "number": 57,
-          "title": "Bound CI runtime and remove duplicate branch-push checks",
-          "createdAt": "2026-09-10T03:04:35Z",
-          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
-          "base": "main",
-          "mergedAt": "2026-09-10T03:10:59Z"
-        },
-        {
           "number": 56,
           "title": "Adopt shared guide planning and delivery checkpoints",
           "createdAt": "2026-09-10T00:46:39Z",
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/56",
           "base": "main",
           "mergedAt": "2026-09-10T21:10:06Z"
+        },
+        {
+          "number": 57,
+          "title": "Bound CI runtime and remove duplicate branch-push checks",
+          "createdAt": "2026-09-10T03:04:35Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/57",
+          "base": "main",
+          "mergedAt": "2026-09-10T03:10:59Z"
         },
         {
           "number": 58,

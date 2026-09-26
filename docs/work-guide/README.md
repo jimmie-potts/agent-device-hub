@@ -454,8 +454,11 @@ remaining inputs without writing output; it returns a distinct Direction-only
 failure only when those checks pass. Such a candidate retains the previous HTML,
 opens a red PR naming `needs owner rewrite of guide_direction.py`, and explicitly
 reports fresh generation/browser validation as blocked. Baseline maintenance
-checks are evidence for the source code, not fresh output. Any other input or
-validation failure prevents a push.
+checks are evidence for the source code, not fresh output. Fresh maintenance
+then runs with a structured result: only a default build failure confirmed by
+the typed input-only Direction diagnostic can block a dependent test. Every
+other failure, skip, interruption or missing completion receipt prevents a push.
+Blocked test identities are recorded; they are not reported as passing.
 
 The manual `replay` mode reuses the rolling snapshot to exercise no-change
 handling. `direction-failure` closes one cited key only in saved fixture data,

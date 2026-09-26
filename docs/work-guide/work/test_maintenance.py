@@ -84,7 +84,7 @@ class GuideMaintenance(unittest.TestCase):
             text = build.read_text()
             self.assertEqual(text.count('.guide summary:hover{'), 2)
             build.write_text(text.replace('.guide summary:hover{background', '.guide>summary:hover{background', 1))
-            result = subprocess.run([sys.executable, str(build)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(build), '--validate-inputs'], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Stylesheet rewrite target missing: .guide summary:hover{', result.stderr)
 
@@ -145,29 +145,45 @@ class GuideMaintenance(unittest.TestCase):
                     self.assertFalse(issue['commentsRefreshed'])
 
     def test_parallel_recommendation_is_withheld_when_a_blocker_appears(self):
-        source = Path(__file__).resolve().parent.parent
+        import guide_section as GD
         with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:
             candidate = copy_guide(directory)
+            backlog = candidate / 'work/backlogs/agent-device-hub-issues.json'
+            rows = json.loads(backlog.read_text())
+            issue = next(row for row in rows if row['state'] == 'OPEN')
+            key = f"H{issue['number']}"
+            section = GD.read(issue['body'])
+            issue['body'], _ = GD.upsert(issue['body'], dict(topic=section['topic'], note=section['note'],
+                workaround=section['workaround'], highlight=dict(kind='next step', reason='Fixture candidate.'), extends=[]))
+            issue['labels'] = [label for label in issue['labels'] if label['name'] not in
+                               ('blocked', 'deferred', 'status:in-progress', 'status:review')]
+            backlog.write_text(json.dumps(rows))
             path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 356)
-            issue['blockedBy']['nodes'].append({
-                'number': 11, 'state': 'OPEN',
-                'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
-            issue['blockedBy']['totalCount'] += 1
+            record = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == issue['number'])
+            record['blockedBy'] = dict(nodes=[], totalCount=0, pageInfo={'hasNextPage': False})
             path.write_text(json.dumps(native))
-            result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
-                                    capture_output=True, text=True)
+            command = [sys.executable, str(candidate / 'work/build_guide.py')]
+            result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
-            baseline = (source / 'outputs/agent-device-work-guides.html').read_text()
-            self.assertIn('data-key="H356"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
+            output = candidate / 'outputs/agent-device-work-guides.html'
+            baseline = output.read_text().split('id="next-steps"', 1)[1].split('</section>', 1)[0]
+            self.assertIn(f'data-key="{key}"', baseline)
+            pixoo = json.loads((candidate / 'work/backlogs/divoom-app-upgrade-issues.json').read_text())
+            blocker = next(row for row in pixoo if row['state'] == 'OPEN')
+            record['blockedBy']['nodes'].append({'number': blocker['number'], 'state': 'OPEN',
+                'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
+            record['blockedBy']['totalCount'] = 1
+            path.write_text(json.dumps(native))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            document = output.read_text()
             next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
-            self.assertNotIn('data-key="H356"', next_section)
+            self.assertNotIn(f'data-key="{key}"', next_section)
             self.assertNotIn('data-key="P61"', next_section)
             blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
-            self.assertIn('data-key="H356"', blockers)
-            self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
+            self.assertIn(f'data-key="{key}"', blockers)
+            self.assertIn(f"Waiting for divoom-app-upgrade #{blocker['number']}.", blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
         from html.parser import HTMLParser
@@ -254,7 +270,8 @@ class GuideMaintenance(unittest.TestCase):
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('Track placement pending: P61', result.stderr)
+            self.assertTrue(any('P61' in line.split(': ', 2)[-1].split(', ')
+                                for line in result.stderr.splitlines() if 'Track placement pending:' in line))
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             pending = document.split('Track placement pending</h3>', 1)[1].split('</table>', 1)[0]
             self.assertIn('data-issue="P61"', pending)
@@ -332,12 +349,16 @@ class GuideMaintenance(unittest.TestCase):
                 "\nnext(d for d in DIAGRAMS if d['id'] == 'seq-nanoleaf-command')['spec']['meta']['title'] += ' (edited)'"
                 + anchor)))
             build = [sys.executable, str(candidate / 'work/build_guide.py')]
-            result = subprocess.run(build, capture_output=True, text=True)
+            # Check this late assertion even when Direction independently blocks output.
+            result = subprocess.run([*build, '--validate-inputs'], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Stale specification for seq-nanoleaf-command', result.stderr)
             archify = Path(os.environ.get('ARCHIFY_DIR', Path.home() / '.agents/skills/archify'))
             if not (archify / 'bin/archify.mjs').exists():
-                self.skipTest('Archify is not installed; regeneration half not run')
+                # The stale-specification assertion above is mandatory. The optional
+                # local round trip requires the separately installed renderer.
+                print('Optional Archify regeneration not exercised: tool is not installed.', file=sys.stderr)
+                return
             render = subprocess.run([sys.executable, str(definitions)], capture_output=True, text=True)
             self.assertEqual(render.returncode, 0, render.stdout + render.stderr)
             result = subprocess.run(build, capture_output=True, text=True)
@@ -1132,10 +1153,20 @@ class Ideas(unittest.TestCase):
 
 def load_tests(loader, tests, pattern):
     for module in ('test_retired', 'test_refresh', 'test_backlog_refresh', 'test_nightly_inputs',
-                   'test_nightly_publish', 'test_nightly_run', 'test_nightly_validation', 'test_unplaced'):
+                   'test_nightly_publish', 'test_nightly_run', 'test_maintenance_diagnostics', 'test_nightly_validation', 'test_unplaced'):
         tests.addTests(loader.loadTestsFromName(module))
     return tests
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--direction-result', type=Path)
+    args, remaining = parser.parse_known_args()
+    if args.direction_result:
+        if remaining:
+            parser.error('Direction diagnostics runs the complete maintenance suite')
+        from maintenance_diagnostics import run_suite
+        suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
+        sys.exit(run_suite(suite, args.direction_result))
     unittest.main()

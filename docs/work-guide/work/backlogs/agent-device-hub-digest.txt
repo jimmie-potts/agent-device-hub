@@ -160,7 +160,7 @@
 #308 [CLOSED] Show recommended creative and expansion stories in a guide Ideas section
 #309 [OPEN] Delete merged delivery branches on merge and prune the ones left behind
 #310 [OPEN] Record the 2026-09-25 delivery gotchas in the development and SDLC docs
-#311 [OPEN] Reconcile story text made stale by the 2026-09-25 deliveries
+#311 [CLOSED] Reconcile story text made stale by the 2026-09-25 deliveries
 #312 [CLOSED] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
@@ -261,3 +261,4 @@
 #444 [OPEN] Release and install the hub with the dense control surface (#277) and check it in the installed dashboard
 #445 [OPEN] Undo the last device change from its card
 #446 [OPEN] Show observation freshness as the Eyes badge on every widget and card
+#449 [OPEN] Show the public guide's edition and last verified publication receipt
