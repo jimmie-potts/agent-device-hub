@@ -22,7 +22,7 @@ async function verifyFiles(directory: string, hashes: Record<string, string>): P
 /** Run after installing an archive whose SHA-256 was verified against its release receipt. */
 export async function verifyInstalledMcpPackage(directory: string): Promise<void> {
   const manifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'));
-  if (manifest.artifact !== '@jimmie-potts/device-mcp' || manifest.version !== '1.0.0' || manifest.contractVersion !== '1.0.0'
+  if (manifest.artifact !== '@jimmie-potts/device-mcp' || manifest.version !== '1.0.1' || manifest.contractVersion !== '1.0.0'
       || manifest.contractSha256 !== CONTRACT_ARTIFACT_SHA256 || manifest.sdk !== '@modelcontextprotocol/sdk@1.30.0'
       || manifest.fixtureFormat !== 1) throw new Error('Unsupported artifact version');
   await verifyFiles(directory, manifest.files);
