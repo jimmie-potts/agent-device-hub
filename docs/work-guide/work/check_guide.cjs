@@ -285,7 +285,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     // so its snapshot rows stay. Expectations are computed from the snapshot's own marks.
     {const ideas=page.locator('#ideas'), keysIn=async locator=>locator.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key));
      assert(meta.ideas.keys.includes('H11')&&meta.ideas.keys.includes('N47'),'The committed snapshot marks the fixture stories H11 and N47 as ideas');
-     const pixooIdeas=meta.ideas.keys.filter(k=>k.startsWith('P')), liveIdeas=['H998','H11','N47',...pixooIdeas];
+     const pixooIdeas=meta.ideas.keys.filter(k=>k.startsWith('P'));
+     const liveIdeas=ids.flatMap(id=>[...(id==='bunny-controls'?['H998']:[]),...(id==='nanoleaf-devices'?['H11','N47']:[]),...pixooIdeas.filter(key=>coverage[id].includes(key))]);
      assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] .newly-added-since-snapshot')),[],'A snapshot idea whose live body changes is patched in place, not listed as newly marked');
      assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="bunny-controls"] .newly-added-since-snapshot')),['H998'],'A new live story marked as an idea lands in its topic');
      const liveIdeaTopics=ids.filter(id=>['bunny-controls','nanoleaf-devices'].includes(id)||pixooIdeas.some(key=>coverage[id].includes(key)));
@@ -315,8 +316,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      if(pixooIdeas.length) assert.equal(await ideas.locator(`li.idea[data-key="${pixooIdeas[0]}"] .idea-reason`).textContent(),pixooReasonBefore,'A failed repository keeps its snapshot row');
      // A story that closes live, or loses its mark, is removed from the section and from Later ideas.
      await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[{...blocked,body:blocked.body.replace(/\n\*\*Highlight:\*\*[^\n]*\n\*\*Extends:\*\*[^\n]*/,'')},...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
-     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['N47',...pixooIdeas],'Closed and unmarked stories leave the section');
-     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['N47',...pixooIdeas]);
+     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas.filter(key=>key!=='H998'&&key!=='H11'),'Closed and unmarked stories leave the section');
+     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas.filter(key=>key!=='H998'&&key!=='H11'));
      assert.equal(await ideas.locator('summary .guide-count').textContent(),`${1+pixooIdeas.length} marked`);
      // The live parser rejects what the build rejects: Extends beside another kind, a lowercase key, a duplicate.
      const invalidIdeas=[['Highlight:** next step, r\n**Extends:** H11',995],['Highlight:** idea, r\n**Extends:** h11',994],['Highlight:** idea, r\n**Extends:** H11, H11',993]]
