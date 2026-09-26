@@ -26,9 +26,9 @@ try {
  test('the home layout places one component widget per registered component, then the hub-wide widgets, at declared sizes',()=>{
   const layout=homeLayout([{id:'wall'},{id:'pixel'},{id:'activity'}]);
   assert.deepEqual(layout.filter(p=>p.widget==='component-status').map(p=>p.instance),['wall','pixel','activity']);
-  assert.deepEqual(layout.filter(p=>p.widget!=='component-status').map(p=>p.widget),['attention','collector','sessions']);
+  assert.deepEqual(layout.filter(p=>p.widget!=='component-status').map(p=>p.widget),['sessions','attention']);
   assert.deepEqual(invalidPlacements(layout),[]);
-  assert.deepEqual(homeLayout([]).map(p=>p.widget),['attention','collector','sessions'],'no components still leaves the hub-wide widgets');
+  assert.deepEqual(homeLayout([]).map(p=>p.widget),['sessions','attention'],'no components still leaves the hub-wide widgets');
  });
  test('a placement outside the catalog or at an undeclared size is reported',()=>{
   assert.deepEqual(invalidPlacements([{widget:'graph',size:'small'},{widget:'attention','size':'large'}]),[{widget:'graph',size:'small'},{widget:'attention',size:'large'}]);

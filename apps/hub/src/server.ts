@@ -1,3 +1,5 @@
+import {validateEvent,validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
+import {enrichCodexTitle} from '@jimmie-potts/agent-state/providers';
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
 import {isIPv4} from 'node:net';
@@ -113,7 +115,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
-  const snapshot = (version:'1.0'|'1.1'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
+  const snapshot = (version:'1.0'|'1.1'|'1.2'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const replay = createReplayLedgers();
   let exported: Promise<DurableState> | undefined;
   const streams = new Set<ServerResponse>();
@@ -231,7 +233,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (input.operation !== 'quiesce' && (!object(input.identity) || !exact(input.identity,['provider','client','hostId','sourceId','sessionId']) ||
         !['codex','claude'].includes(input.identity.provider as string) || !['cli','desktop','code'].includes(input.identity.client as string) ||
         !id(input.identity.hostId) || !id(input.identity.sourceId) || !id(input.identity.sessionId))) throw new HttpError('invalid-input',400);
-    if (input.operation === 'label' && input.label !== null && (typeof input.label !== 'string' || input.label.length > 160)) throw new HttpError('invalid-input',400);
+    if (input.operation === 'label' && input.label !== null && !validDisplayText(input.label,80)) throw new HttpError('invalid-input',400);
     if (input.operation === 'acknowledge' && (!id(input.noticeId) || !options.consumers.some(c => c.id === input.consumerId))) throw new HttpError('invalid-input',400);
     if (input.operation === 'recover-approval' && (!id(input.turnId) || !Number.isSafeInteger(input.expectedRevision) || (input.expectedRevision as number)<0)) throw new HttpError('invalid-input',400);
     if (input.operation === 'quiesce' && !principal.scopes.includes('admin')) throw new HttpError('forbidden',403);
@@ -244,11 +246,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       lease!.setFence(true); activationAllowed=false; return exported ??= owner.exportState();
     });
   }
-  const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'='1.0') => {
+  const sessions = (principal:Credential, query='', provider?:string,version:'1.0'|'1.1'|'1.2'='1.0') => {
     const current = snapshot(version);
     live(principal);
     return {apiVersion:'1.0',ownerId:options.ownerId,connection:'current',snapshot:current,admissionRejected:rejected,nextRequestId:replay.ticket(principal.id),
-      matches:current.sessions.filter(s => (!provider || s.identity.provider === provider) && (s.label ?? s.identity.sessionId).toLowerCase().includes(query.toLowerCase())).map(s=>s.identity)};
+      matches:current.sessions.filter(s => (!provider || s.identity.provider === provider) && [s.label,s.title?.value,s.project,s.identity.sessionId].some(text=>text?.toLowerCase().includes(query.toLowerCase()))).map(s=>s.identity)};
   };
   const server = createServer({maxHeaderSize:8192,requestTimeout:3000,headersTimeout:3000},(req,res) => {
     void (async () => {
@@ -305,10 +307,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
           const version=url.searchParams.get('snapshotVersion')??'1.0';
-          if (!['1.0','1.1'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
+          if (!['1.0','1.1','1.2'].includes(version)||url.searchParams.getAll('snapshotVersion').length>1||
               [...url.searchParams.keys()].some(k => !['q','provider','snapshotVersion'].includes(k)) || (url.searchParams.get('q')?.length ?? 0) > 120 ||
               (url.searchParams.has('provider') && !['codex','claude'].includes(url.searchParams.get('provider')!))) throw new HttpError('invalid-input',400);
-          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1');
+          const view = sessions(principal,url.searchParams.get('q') ?? '',url.searchParams.get('provider') ?? undefined,version as '1.0'|'1.1'|'1.2');
           if(url.searchParams.has('q')||url.searchParams.has('provider'))json(res,200,view);
           else {const {matches,...envelope}=view;json(res,200,envelope);}
         } else if (req.method === 'GET' && path === '/api/hub/v1/health' && !url.search) {
@@ -316,7 +318,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           json(res,current.collector === 'running' ? 200 : 503,{apiVersion:'1.0',ownerId:options.ownerId,collector:current.collector,admission:staged?'fenced':'open',revision:current.revision,devices:[...clients.values()].map(c => c.status())});
         } else if (req.method === 'POST' && path === '/api/monitor/v1/events' && !url.search) {
           if (staged) throw new HttpError('owner-quiesced',503);
-          const result = await owner.ingest(await admitted(2048));
+          let input=await admitted(2048);
+          const checked=validateEvent(input);
+          if(codexDesktop&&checked.ok&&checked.value.identity.client==='desktop'&&checked.value.identity.hostId===codexDesktop.hostId&&checked.value.identity.sourceId===codexDesktop.sourceId)input=await enrichCodexTitle(checked.value,codexDesktop.home);
+          live(principal); // Enrichment may yield while this credential is revoked.
+          const result = await owner.ingest(input);
           json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
         } else if (req.method === 'POST' && path === '/api/monitor/v1/commands' && !url.search) {
           json(res,200,await command(principal,await admitted(65536)));
@@ -371,7 +377,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
-    },sessions,command,...(playbackId ? {playback:{sourceId:playbackId,
+    },sessions:(principal,query,provider)=>sessions(principal,query,provider,'1.2'),command,...(playbackId ? {playback:{sourceId:playbackId,
       // MCP is mounted before playback starts; until then the source is unavailable and nothing is sent.
       snapshot:() => {if (!playback) throw new HttpError('source-unavailable',503);return playback.snapshot();},
       command:async (principal:Credential,input:unknown) => {

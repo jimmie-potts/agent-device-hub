@@ -6,6 +6,7 @@ import unittest
 from agent_lifecycle_contracts import validate_event, deduplication_key
 
 CORPUS = json.loads((pathlib.Path(__file__).resolve().parents[1] / 'fixtures/lifecycle-v1.json').read_text(encoding='utf-8'))
+CORPUS['cases'] += json.loads((pathlib.Path(__file__).resolve().parents[1] / 'fixtures/lifecycle-v1.1.json').read_text(encoding='utf-8'))['cases']
 
 
 class ContractTests(unittest.TestCase):

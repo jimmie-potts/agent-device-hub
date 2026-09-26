@@ -336,7 +336,7 @@ Every built-in page and every registered component SHALL have a hash address, an
 - **THEN** the page says no such component exists and links to the home
 
 ### Requirement: Home widget grid
-The home SHALL be a grid of widgets drawn from a catalog. Each catalog entry SHALL declare an ID, a name, a description, its supported sizes, its source kind (a registered controller alias, a hub route or a read-only external source), the reads it needs and whether it offers command actions; a read-only widget has none. The home SHALL show one component widget per registered component with its health, mode, power, brightness and the everyday mode and power actions, rendered by the same controls as the component page and sharing their lifecycle state with it, and a link to that page. Attention, collector health and the observed sessions SHALL be widgets in the same grid, and every component widget SHALL start within the first screen at 1,440 px wide. Placement on the home is fixed in this version.
+The home SHALL be a grid of widgets drawn from a catalog. Each catalog entry SHALL declare an ID, a name, a description, its supported sizes, its source kind (a registered controller alias, a hub route or a read-only external source), the reads it needs and whether it offers command actions; a read-only widget has none. The home SHALL show one component widget per registered component with its health, mode, power, brightness and the everyday mode and power actions, rendered by the same controls as the component page and sharing their lifecycle state with it, and a link to that page. Observed sessions SHALL start alongside compact component controls in independent columns. Attention SHALL expand when present and collapse to one line when absent. Collector health SHALL use a named indicator with optional diagnostics. The wall and pixel component widgets SHALL start within the first screen at 1,440 px wide. Placement on the home is fixed in this version.
 
 #### Scenario: Whole installation on the first screen
 - **WHEN** the owner opens the home at 1,440 px wide with the wall and pixel components registered
@@ -367,3 +367,29 @@ The application skin SHALL define the spacing steps and type sizes as tokens alo
 #### Scenario: Token boundary
 - **WHEN** the dashboard's authored styles are checked
 - **THEN** no color literal appears outside the skin file and every token the layout reads is defined by the skin
+
+### Requirement: Shared session names and projects
+Session views SHALL request snapshot 1.2 and display explicit labels before shared titles, then neutral fallbacks, with a separate shared project display name. Label forms SHALL enforce the 80-scalar bound. Existing identity/generation form keys, attention and freshness behavior SHALL remain unchanged.
+
+#### Scenario: Title and project display
+- **WHEN** a titled session without an explicit label has a project
+- **THEN** the dashboard shows its title and project while a labelled fixture shows its owner label
+
+#### Scenario: Untitled fallback
+- **WHEN** a session has no label or title
+- **THEN** the dashboard retains a distinct neutral identity fallback
+
+### Requirement: Optional accessible supporting details
+The dashboard SHALL keep session names, project/provider, activity, attention and stale evidence visible. Secondary session facts and label editing SHALL be available through an expandable Details panel. Supporting status information SHALL be available on mouse hover and keyboard focus, dismissible with Escape, and reachable by touch. Indicators SHALL include text rather than relying on color alone. Brightness meters SHALL represent only known values, never agent completion estimates. Inspection SHALL send no device commands.
+
+#### Scenario: Compact session inspection
+- **WHEN** the owner opens a titled session
+- **THEN** its name, project/provider and named activity indicator are visible, while parent/child evidence and label editing remain available under Details
+
+#### Scenario: Equivalent input access
+- **WHEN** the owner hovers or focuses a status indicator, presses Escape, or opens Details on a touch viewport
+- **THEN** supporting information appears and dismisses as requested, and inspection sends no device command
+
+#### Scenario: Visible problems
+- **WHEN** connection evidence is stale or a session requires attention
+- **THEN** the warning remains visible without opening a tooltip or disclosure

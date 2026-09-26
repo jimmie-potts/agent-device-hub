@@ -41,6 +41,7 @@ try{
  await retirement.event('turn.started',{identity,turn:{status:'known',id:'fresh-turn'}});
  await retirementPage.waitForFunction(()=>document.querySelectorAll('article.session').length===1);
  assert.equal(await retirementPage.getByRole('heading',{name:'Desktop retirement fixture',exact:true}).count(),0);
+ await retirementPage.locator('article.session details>summary').first().click();
  await retirementPage.getByLabel('Chosen label').fill('Draft from retired task');
  if(output)await retirementPage.screenshot({path:output+'/retirement-before.png',fullPage:true});
  const retained=await (await fetch(retirement.hub.url+'/api/monitor/v1/sessions?snapshotVersion=1.1',{headers:retirement.headers})).json();

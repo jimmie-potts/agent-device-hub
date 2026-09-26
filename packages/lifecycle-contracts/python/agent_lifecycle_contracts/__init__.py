@@ -6,13 +6,14 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-ARTIFACT_VERSION = '1.0.0'
+ARTIFACT_VERSION = '1.1.0'
 API_VERSION = '1.0'
 MAX_BYTES = 8192
 MAX_DEPTH = 8
 MAX_NODES = 256
 _SCHEMA = json.loads((Path(__file__).resolve().parents[2] / 'schemas/lifecycle-v1.schema.json').read_text(encoding='utf-8'))
 _VALIDATOR = Draft202012Validator(_SCHEMA)
+_V11_VALIDATOR = Draft202012Validator(json.loads((Path(__file__).resolve().parents[2] / 'schemas/lifecycle-v1.1.schema.json').read_text(encoding='utf-8')))
 
 
 def _bounded(value, depth=0, budget=None):
@@ -47,7 +48,7 @@ def validate_event(value):
         if not _bounded(value):
             return {'ok': False, 'code': 'invalid-event'}
         encoded = json.dumps(_normalized(value), ensure_ascii=False, separators=(',', ':'))
-        if len(encoded.encode('utf-8')) > MAX_BYTES or not _VALIDATOR.is_valid(value):
+        if len(encoded.encode('utf-8')) > MAX_BYTES or not (_VALIDATOR.is_valid(value) or _V11_VALIDATOR.is_valid(value)):
             return {'ok': False, 'code': 'invalid-event'}
         if value['parent']['status'] == 'known':
             parent = value['parent']['identity']

@@ -27,10 +27,7 @@ an ID, a name, a description, its sizes, its source kind (a registered
 controller alias, a hub route or a read-only external source from
 [#287](https://github.com/jimmie-potts/agent-device-hub/issues/287)), the reads
 it needs and whether it offers command actions. `homeLayout` is the developer
-placement: one `component-status` widget per registered component (health, the
-status strip, and the same Mode and Power cards as the component page, with a
-link to it), then `attention`, `collector` and `sessions`. Sessions are compact
-rows with an inline label form and their retained notices under the row.
+placement: one `component-status` widget per registered component, with compact Mode and Power controls on the left and Sessions at the top right. The two columns grow independently. Sessions move first on narrow screens. Each session shows its title or label, project/provider and a named activity indicator; parent/child evidence, read evidence and label editing sit behind Details. Attention and retained notices stay visible. Empty attention occupies one line. Collector diagnostics move to a small feed indicator and remain on Connections. Status tooltips open on hover, focus or touch and dismiss with Escape or lost focus; their content is informational, with actions kept in Details. Known brightness uses a meter and numeric value; unknown values never become percentages.
 [#366](https://github.com/jimmie-potts/agent-device-hub/issues/366) makes
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
@@ -447,4 +444,11 @@ opening assembly and reduced motion through a component harness. `tests/art.test
 ported layout validator. The candidate needs the owner's side-by-side approval
 against the wall map on the same fixture before merge.
 
-The activity view requests snapshot 1.1 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.
+The activity view requests snapshot 1.2 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.
+
+Session headings use label, then shared title, then session ID. Project display
+names appear beside the provider facts. Search includes label, title, project
+and ID. Label fields accept up to 80 Unicode scalar values; the HTML 160-code-unit
+ceiling accommodates 80 supplementary characters, while the pattern enforces
+80 scalars. Synthetic desktop/mobile fixtures cover these names, neutral
+fallbacks and owner precedence; their previews require explicit UI approval.

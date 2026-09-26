@@ -124,8 +124,8 @@ change firmware/router/firewall settings or claim physical accuracy from CI,
 simulator frames or transport acknowledgment.
 
 Keep credentials, private media, databases, agent metadata and runtime state out
-of Git. Shared payloads use user-chosen labels or neutral IDs; do not export
-prompts, transcripts, tool content, automatically copied titles or private paths.
+of Git. Session titles, project names, prompts, transcripts and agent output may enter shared data under the owner-approved policy. Credentials, tokens and secrets remain excluded. Only fields declared by the selected versioned contract are transmitted; prompt, response and transcript-content capture requires its separate implementation under Hub #425.
+Preserve explicit-label precedence and neutral fallbacks for untitled sessions.
 
 ## Human-facing prose
 

@@ -12,6 +12,9 @@ const snapshotCheck=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snap
 const durableV2Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v2.schema.json',import.meta.url),'utf8')));
 const snapshotV11Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.1.schema.json',import.meta.url),'utf8')));
 
+const durableV21Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/durable-v2.1.schema.json',import.meta.url),'utf8')));
+const snapshotV12Check=ajv.compile(JSON.parse(readFileSync(new URL('../schemas/snapshot-v1.2.schema.json',import.meta.url),'utf8')));
+
 // Reject accessors and non-JSON input before serialization, schema traversal or cloning.
 function bounded(value:unknown,depth=0,budget={nodes:0,bytes:0}):boolean {
   if(depth>20||++budget.nodes>MAX_NODES)return false;
@@ -55,7 +58,7 @@ function validate<T>(input:unknown,check:(value:unknown)=>boolean,semantics:(val
   }catch{return {ok:false,code:'invalid-state'};}
 }
 export function validateExport(input:unknown):Validation<DurableState>{
-  return validate(input,value=>durableCheck(value)||durableV2Check(value),state=>{
+  return validate(input,value=>durableCheck(value)||durableV2Check(value)||durableV21Check(value),state=>{
     if(!sessionSemantics(state.sessions)||!unique(state.consumers.map(c=>c.id)))return false;
     const consumers=new Set(state.consumers.map(c=>c.id));
     for(const session of state.sessions){
@@ -77,7 +80,7 @@ export function validateExport(input:unknown):Validation<DurableState>{
   });
 }
 export function validateSnapshot(input:unknown):Validation<Snapshot>{
-  return validate(input,value=>snapshotCheck(value)||snapshotV11Check(value),snapshot=>sessionSemantics(snapshot.sessions)&&snapshot.sessions.every(session=>
+  return validate(input,value=>snapshotCheck(value)||snapshotV11Check(value)||snapshotV12Check(value),snapshot=>sessionSemantics(snapshot.sessions)&&snapshot.sessions.every(session=>
     (session.generation??0)<=snapshot.revision&&
     session.lastEvidenceAtMs<=snapshot.asOfMs&&session.observationAgeMs===snapshot.asOfMs-session.lastEvidenceAtMs&&
     session.freshness===(session.restartUncertain||session.observationAgeMs>=300000?'uncertain':'current')&&

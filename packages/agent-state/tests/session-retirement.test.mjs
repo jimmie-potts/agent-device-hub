@@ -180,7 +180,7 @@ test('retirement guards are count-bounded, durable and expire independently of a
       await owner.ingest(f.event('retired-'+i,'runtime.ended'));
     }
     let state=await owner.exportState();
-    assert.equal(state.formatVersion,'2.0');assert.equal(validateExport(state).ok,true);
+    assert.equal(state.formatVersion,'2.1');assert.equal(validateExport(state).ok,true);
     assert.equal(state.retirements.length,LIMITS.retirements);
     assert.equal(state.retirements[0].identity.sessionId,'retired-1');
     assert.equal(state.sessions.length,0);
@@ -233,7 +233,7 @@ test('legacy durable import preserves clocks and defaults to generation zero bef
   await source.setLabel(f.identity('legacy'),'Preserved');
   const exported=structuredClone(await source.exportState());await source.shutdown();
   exported.formatVersion='1.0';delete exported.retirements;
-  for(const session of exported.sessions)delete session.generation;
+  for(const session of exported.sessions){delete session.generation;delete session.labelOrigin;delete session.metadataObservedAtMs;}
   assert.equal(validateExport(exported).ok,true);
   f.advance(5000);
   const owner=await f.open({storage:new MemoryStorage(),importState:exported});
@@ -244,7 +244,7 @@ test('legacy durable import preserves clocks and defaults to generation zero bef
     assert.equal(session.restartUncertain,true);
     assert.equal(owner.snapshot().revision,exported.revision+1);
     await owner.ingest(f.event('new','turn.started'));
-    const state=await owner.exportState();assert.equal(state.formatVersion,'2.0');assert.equal(validateExport(state).ok,true);
+    const state=await owner.exportState();assert.equal(state.formatVersion,'2.1');assert.equal(validateExport(state).ok,true);
   }finally{await owner.shutdown();}
 });
 
@@ -279,7 +279,7 @@ async function legacyStore(f,formatVersion){
   exported.revision+=1;
   exported.journal.push({revision:exported.revision,atMs:exported.lastCommitAtMs,sessionKey:journalKey(hooked.identity),kind:'runtime.ended',outcome:'ambiguous'});
   assert.equal(exported.sessions.find(session=>session.identity.sessionId==='unknown').activity,'unknown');
-  if(formatVersion==='1.0'){exported.formatVersion='1.0';delete exported.retirements;for(const session of exported.sessions)delete session.generation;}
+  if(formatVersion==='1.0'){exported.formatVersion='1.0';delete exported.retirements;for(const session of exported.sessions){delete session.generation;delete session.labelOrigin;delete session.metadataObservedAtMs;}}
   assert.equal(validateExport(exported).ok,true,formatVersion);
   return {exported,start};
 }
@@ -311,7 +311,7 @@ test('an upgraded store retires records holding an accepted end and retains ever
         assert.equal(session.restartUncertain,true);
       }
       const state=await owner.exportState();
-      assert.equal(state.formatVersion,'2.0');assert.equal(validateExport(state).ok,true);
+      assert.equal(state.formatVersion,'2.1');assert.equal(validateExport(state).ok,true);
       assert.deepEqual(state.retirements.map(item=>item.identity.sessionId).sort(),['ended','ended-child']);
       assert.ok(state.retirements.every(item=>item.atMs===f.now()));
       assert.equal(state.journal.length,exported.journal.length,'settlement records no journal row');

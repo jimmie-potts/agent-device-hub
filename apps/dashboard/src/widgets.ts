@@ -17,14 +17,13 @@ export type WidgetDefinition={
 export const widgetCatalog:readonly WidgetDefinition[]=[
  {id:'component-status',name:'Component',description:'Health, mode, power and brightness of one registered component, its everyday mode and power actions, and a link to its page.',sizes:['small','medium'],source:{kind:'controller',needs:['controllers.snapshot','controllers.integration']},commands:true},
  {id:'attention',name:'Attention',description:'Sessions that are waiting on a question or an approval.',sizes:['small','medium'],source:{kind:'hub',needs:['monitor.sessions']},commands:false},
- {id:'collector',name:'Collector',description:'Collector health, state owner, feed state, snapshot age and lost observations.',sizes:['small','medium'],source:{kind:'hub',needs:['monitor.sessions']},commands:false},
  {id:'sessions',name:'Sessions',description:'Observed agent sessions as compact rows with their labels, activity, attention, read evidence and retained notices.',sizes:['medium','large'],source:{kind:'hub',needs:['monitor.sessions','dashboard.context']},commands:true},
 ];
 export type Placement={widget:string;size:WidgetSize;/** The source instance, such as a controller alias; absent for a hub-wide widget. */instance?:string};
 export const widgetDefinition=(id:string):WidgetDefinition|undefined=>widgetCatalog.find(w=>w.id===id);
 /** The home grid: one component widget per registered component, then the hub-wide widgets. Every placement names a catalog widget at one of its declared sizes. */
 export function homeLayout(components:readonly {id:string}[]):Placement[]{
- return [...components.map(c=>({widget:'component-status',size:'small' as const,instance:c.id})),{widget:'attention',size:'small'},{widget:'collector',size:'small'},{widget:'sessions',size:'medium'}];
+ return [...components.map(c=>({widget:'component-status',size:'small' as const,instance:c.id})),{widget:'sessions',size:'medium'},{widget:'attention',size:'small'}];
 }
 /** Placements whose widget is not in the catalog or whose size it does not declare. */
 export function invalidPlacements(placements:readonly Placement[]):Placement[]{

@@ -1,8 +1,8 @@
 import type {Envelope, Identity, KnownId} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export type {Envelope, Identity, KnownId};
-export const VERSION = '3.2.0';
-export const FORMAT_VERSION = '2.0';
+export const VERSION = '3.3.0';
+export const FORMAT_VERSION = '2.1';
 export const LIMITS = Object.freeze({eventBytes:2048, pendingEvents:128, pendingBytes:262144,
   journalEvents:10000, journalAgeMs:86400000, sessionAgeMs:86400000, staleMs:300000, deadlineMs:3000,
   sessions:128, retirements:128, consumers:16, attention:64, notices:128, retiredTurns:256, seen:256, watermarks:256});
@@ -12,7 +12,8 @@ export type Notice = {id:string; kind:'turn-ended'; turn:KnownId; acknowledgedBy
 export type Unavailable = Extract<Envelope['event'],{kind:'evidence.unavailable'}>;
 export type Session = {
   generation?:number;
-  identity:Identity; turn:KnownId; parent:Envelope['parent']; label?:string; projectId?:string;
+  identity:Identity; turn:KnownId; parent:Envelope['parent']; label?:string; labelOrigin?:'user'|'agent'; projectId?:string;
+  title?:Envelope['title']; project?:string; metadataObservedAtMs?:number;
   // `ended` survives only in stores written before every path retired on an accepted end; startup settles it.
   activity:'unknown'|'active'|'idle'|'interrupted'|'ended'; attention:Attention[]; notices:Notice[];
   read:'unknown'|'read'|'unread'; unavailable:Unavailable[]; ordering:Envelope['ordering'];
@@ -23,7 +24,7 @@ export type Session = {
 export type JournalEntry = {revision:number; atMs:number; sessionKey:string; kind:string; outcome:'applied'|'ambiguous'};
 export type Retirement = {identity:Identity; atMs:number; turns:string[]; keys:string[];
   ordering:{epoch:string; sequence:number}[]};
-export type DurableState = {formatVersion:'1.0'|'2.0'; ownerId:string; revision:number; lastCommitAtMs:number;
+export type DurableState = {formatVersion:'1.0'|'2.0'|'2.1'; ownerId:string; revision:number; lastCommitAtMs:number;
   consumers:Consumer[]; sessions:Session[]; journal:JournalEntry[]; retirements?:Retirement[]};
 export type Commit = {expectedRevision:number|null; revision:number; atMs:number;
   session?:Session; journal?:JournalEntry; pruneBeforeMs:number; replace?:DurableState};
@@ -38,11 +39,11 @@ export interface StorageLease {
 export interface Storage { acquire(ownerId:string, signal:AbortSignal):Promise<StorageLease>; }
 export type Outcome = {ok:true; revision:number; outcome:'applied'|'duplicate'|'stale'|'ambiguous'} |
   {ok:false; code:'invalid-event'|'invalid-operation'|'revision-conflict'|'capacity'|'unavailable'|'storage-failed'};
-export type SessionSnapshot = Omit<Session,'retiredTurns'|'seen'|'watermarks'> & {
+export type SessionSnapshot = Omit<Session,'retiredTurns'|'seen'|'watermarks'|'metadataObservedAtMs'> & {
   observationAgeMs:number; freshness:'current'|'uncertain'; restartUncertain:boolean;
   children:{active:number; uncertain:number};
 };
-export type Snapshot = {apiVersion:'1.0'|'1.1'; revision:number; asOfMs:number;
+export type Snapshot = {apiVersion:'1.0'|'1.1'|'1.2'; revision:number; asOfMs:number;
   collector:'running'|'quiesced'|'faulted'|'closed'; lossCount:number; sessions:SessionSnapshot[]};
 export type Change = {apiVersion:'1.0'; kind:'change'|'resync'; revision:number; dropped:number};
 export interface Subscription extends AsyncIterableIterator<Change> { stats():{pending:number; bytes:number; dropped:number}; close():void; }
