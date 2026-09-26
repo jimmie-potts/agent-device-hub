@@ -5,6 +5,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 import {validate} from '@jimmie-potts/device-contracts';
 import {requestBrowserLaunch} from '../../hub/dist/browser-launch.js';
+import {textOverlaps} from './layout.mjs';
 const browser=await chromium.launch({headless:true});
 const checks=[];let independentDeviceReadMs;
 const visible=(page,role,name)=>page.getByRole(role,{name,exact:true}).filter({visible:true});
@@ -136,6 +137,39 @@ try {
   await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);assert.deepEqual(f.scenes.activated,[f.sceneB]);
   await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
+ await scenario('a read-only Nanoleaf device shows mode, power, brightness and scenes without configuration edit forms',async(f,page)=>{
+  await page.getByRole('link',{name:'panels nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  const view=page.locator('section:visible');
+  for(const label of ['Device mode','Power','Saved scene'])assert.equal(await page.getByRole('combobox',{name:label,exact:true}).filter({visible:true}).count(),1,label);
+  const scene=page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true});await scene.waitFor();
+  assert.deepEqual(await scene.locator('option').allTextContents(),['Forest','Sunset'],'the Panels label scenes with their own user-chosen names');
+  await view.getByText('Not supported by this device’s integration: integration settings, element mapping, task mapping and project colors.',{exact:true}).waitFor();
+  for(const label of ['Layout style','Coverage','Element','Element project','Task','Task project','Color project','Color'])assert.equal(await page.getByLabel(label,{exact:true}).filter({visible:true}).count(),0,label);
+  assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),0);
+  assert.equal(await view.getByText('General controls unavailable',{exact:false}).count(),0);assert.equal(await view.getByText('Mappings use controller-declared',{exact:false}).count(),0);
+  assert.deepEqual(await textOverlaps(page),[]);
+  const panels=()=>f.writes.filter(w=>w.id==='panels');const guard=()=>({requestId:structuredClone(f.states.panels.nextRequestId),expectedConfigurationRevision:f.states.panels.configurationRevision,expectedGeneration:structuredClone(f.states.panels.generation)});
+  let expected=guard();await scene.selectOption(f.sceneD);await visible(page,'button','Activate scene').click();await until(()=>panels().length===1);
+  assert.deepEqual(panels()[0],{id:'panels',integration:false,command:{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'panels',...expected,command:{kind:'scene.activate',sceneId:f.sceneD}}});
+  await view.locator('[role=status]').filter({hasText:/Activate scene: (Queued|Sent to the device)/}).waitFor();
+  expected=guard();await brightness.fill('30');await visible(page,'button','Apply brightness').click();await until(()=>panels().length===2);
+  assert.deepEqual(panels()[1].command,{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'panels',...expected,command:{kind:'brightness.set',percent:30}});
+  await settled(page,'Brightness 30%');assert.equal(f.writes.filter(w=>w.integration).length,0,'a read-only device receives no extension command');assert.equal(f.writes.filter(w=>w.id==='wall').length,0,'the Lines receive nothing');
+  if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only.png',fullPage:true});
+  await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(await textOverlaps(page),[]);await axe(page);
+  if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only-mobile.png',fullPage:true});
+  // The Lines keep every configuration edit alongside the Panels.
+  await page.setViewportSize({width:1280,height:900});await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').filter({visible:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),1);for(const label of ['Element','Task','Color project'])assert.equal(await page.getByRole('combobox',{name:label,exact:true}).filter({visible:true}).count(),1,label);
+  assert.equal(await page.locator('section:visible').getByText('Not supported by this device’s integration',{exact:false}).count(),0);
+  await page.locator('section:visible').getByText('Session source: shared. Mappings use controller-declared neutral identifiers.',{exact:true}).waitFor();
+  // An operation withdrawn after the form rendered: the fresh read just before sending applies the same rule and sends nothing. A poll that re-renders first also sends nothing.
+  await page.getByLabel('Layout style').filter({visible:true}).selectOption('project');const sent=f.writes.length;
+  f.nano.capabilities['settings.set']={supported:false,scope:'control'};
+  await page.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Apply integration settings'&&b.offsetParent!==null)?.click());
+  await page.locator('section:visible').getByText('Not supported by this device’s integration: integration settings.',{exact:true}).waitFor();
+  await page.waitForTimeout(300);assert.equal(f.writes.length,sent,'a withdrawn operation sends no extension command');assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),0);
+ },{panels:true});
  await scenario('a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry',async(f,page)=>{
   f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';
   let frozen=null,freeze=false;await page.route('**/api/controllers/v1/wall/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
