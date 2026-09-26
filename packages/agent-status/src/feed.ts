@@ -52,8 +52,12 @@ export class HubStatusFeed implements Feed<Snapshot> {
   readonly #url: string;
   readonly #owner: string;
   readonly #token: string;
-  constructor(options: { hubUrl: string; ownerId: string; token: string }) {
-    this.#url = hubOrigin(options.hubUrl) + '/api/monitor/v1/sessions';
+  readonly #snapshotVersion: '1.2' | undefined;
+  constructor(options: { hubUrl: string; ownerId: string; token: string; snapshotVersion?: '1.2' }) {
+    if (options.snapshotVersion !== undefined && options.snapshotVersion !== '1.2') fail('invalid-runner-config');
+    this.#snapshotVersion = options.snapshotVersion;
+    this.#url = hubOrigin(options.hubUrl) + '/api/monitor/v1/sessions'
+      + (this.#snapshotVersion ? `?snapshotVersion=${this.#snapshotVersion}` : '');
     this.#token = hubToken(options.token);
     if (typeof options.ownerId !== 'string' || !HUB_ID.test(options.ownerId)) fail('invalid-runner-config');
     this.#owner = options.ownerId;
@@ -62,6 +66,7 @@ export class HubStatusFeed implements Feed<Snapshot> {
     const value = await hubJson(this.#url, this.#token, MAX_FEED) as Record<string, unknown> | null;
     if (!value || value.apiVersion !== '1.0' || value.ownerId !== this.#owner || value.connection !== 'current') return fail('feed-unavailable');
     const valid = validateSnapshot(value.snapshot);
-    return valid.ok ? valid.value : fail('feed-unavailable');
+    return valid.ok && (!this.#snapshotVersion || valid.value.apiVersion === this.#snapshotVersion)
+      ? valid.value : fail('feed-unavailable');
   }
 }

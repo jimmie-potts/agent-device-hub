@@ -46,9 +46,9 @@ function identityHash(session: SessionSnapshot): string {
   return createHash('sha256').update(JSON.stringify([provider, client, hostId, sourceId, sessionId])).digest('hex');
 }
 
-/** The user's label, then the user's project ID, then a neutral ID from the identity hash. */
+/** Owner-resolved label, title, project display name/legacy ID, then a neutral identity hash. */
 function sessionLabel(session: SessionSnapshot, hash: string): string {
-  const chosen = session.label || session.projectId;
+  const chosen = session.label || session.title?.value || session.project || session.projectId;
   const text = chosen ? chosen : `${session.identity.provider === 'codex' ? 'X' : 'C'}-${hash.slice(0, 4)}`;
   return fontText(text).slice(0, LABEL_CHARS);
 }

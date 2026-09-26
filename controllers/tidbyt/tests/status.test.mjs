@@ -91,6 +91,16 @@ test('labels prefer the user label, then the project ID, then a neutral hashed I
   for (const value of Object.values(plain.identity)) assert(!text.toUpperCase().includes(value.toUpperCase()), `identity field ${value} leaked`);
 });
 
+test('titles follow explicit labels and precede project display names and legacy IDs', () => {
+  const title = { value: 'Review the launch plan', source: 'provider' };
+  const label = extra => statusView(snapshot([working(extra)], { apiVersion: '1.2' })).rows[0].label;
+  assert.equal(label({ label: 'My label', title, project: 'Hub project' }), 'MY LABEL');
+  assert.equal(label({ title, project: 'Hub project', projectId: 'legacy' }), 'REVIEW THE');
+  assert.equal(label({ title: { value: 'Café 東京', source: 'user' } }), 'CAF- --');
+  assert.equal(label({ project: 'Hub project', projectId: 'legacy' }), 'HUB PROJEC');
+  assert.equal(label({ projectId: 'legacy' }), 'LEGACY');
+});
+
 test('uncertain freshness marks one row; an unavailable feed marks every row and never reports idle', () => {
   const view = statusView(snapshot([working({ label: 'stale', freshness: 'uncertain' }), asking({ label: 'fresh' })]));
   assert.deepEqual(rowSummary(view), ['FRESH ASK', 'STALE RUN?']);
@@ -144,4 +154,14 @@ test('uncertain rows are dimmed and use a ? marker; overflow and feed rows are d
   const feed = statusFrame(statusView(undefined));
   assert(lit(rowPixels(feed, 0)).length > 0, 'FEED ? row is drawn');
   assert.notDeepEqual(feed.rgb, statusFrame(statusView(snapshot([]))).rgb);
+});
+
+test('the title preview is a valid snapshot with label, title, project and neutral rows', async () => {
+  const { validateSnapshot } = await import('@jimmie-potts/agent-state');
+  const { titleSnapshot } = await import('./frames.mjs');
+  assert.equal(validateSnapshot(titleSnapshot).ok, true);
+  const view = statusView(titleSnapshot);
+  assert.deepEqual(view.rows.slice(0, 3).map(row => row.label), ['MY CHOICE', 'LAUNCH REV', 'DEVICE HUB']);
+  assert.match(view.rows[3].label, /^X-[0-9A-F]{4}$/);
+  assert(view.rows.every(row => row.state === 'RUN'));
 });

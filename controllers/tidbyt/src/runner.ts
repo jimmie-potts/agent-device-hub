@@ -143,7 +143,7 @@ export function acquireWriterLease(deviceId: string, root = join(homedir(), '.lo
 export function startStatusRunner(config: RunnerConfig, options: { connection?: DisplayConnection; leaseRoot?: string } = {}) {
   const release = acquireWriterLease(config.credentials.deviceId, options.leaseRoot);
   try {
-    const feed = new HubStatusFeed(config);
+    const feed = new HubStatusFeed({ ...config, snapshotVersion: '1.2' });
     const controller = new TidbytController({ controllerId: 'tidbyt-status', deviceId: 'tidbyt', sourceId: 'tidbyt-cloud', connection: options.connection ?? runnerConnection(config) });
     const publisher = new TidbytStatusPublisher({ feed, controller });
     const nowPlaying = config.nowPlaying && new TidbytNowPlayingPublisher({

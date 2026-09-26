@@ -1,0 +1,158 @@
+{
+  "apiVersion": "1.2",
+  "revision": 2,
+  "asOfMs": 1000,
+  "collector": "running",
+  "lossCount": 0,
+  "sessions": [
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "preview-0"
+      },
+      "turn": {
+        "status": "known",
+        "id": "turn"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "active",
+      "attention": [],
+      "notices": [],
+      "read": "unknown",
+      "unavailable": [],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 1000,
+      "observedAtMs": 1000,
+      "observationAgeMs": 0,
+      "freshness": "current",
+      "restartUncertain": false,
+      "children": {
+        "active": 0,
+        "uncertain": 0
+      },
+      "generation": 0,
+      "label": "My choice",
+      "labelOrigin": "user",
+      "title": {
+        "value": "Hidden title",
+        "source": "provider"
+      },
+      "project": "Device hub"
+    },
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "preview-1"
+      },
+      "turn": {
+        "status": "known",
+        "id": "turn"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "active",
+      "attention": [],
+      "notices": [],
+      "read": "unknown",
+      "unavailable": [],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 999,
+      "observedAtMs": 999,
+      "observationAgeMs": 1,
+      "freshness": "current",
+      "restartUncertain": false,
+      "children": {
+        "active": 0,
+        "uncertain": 0
+      },
+      "generation": 0,
+      "title": {
+        "value": "Launch review",
+        "source": "provider"
+      },
+      "project": "Device hub"
+    },
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "preview-2"
+      },
+      "turn": {
+        "status": "known",
+        "id": "turn"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "active",
+      "attention": [],
+      "notices": [],
+      "read": "unknown",
+      "unavailable": [],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 998,
+      "observedAtMs": 998,
+      "observationAgeMs": 2,
+      "freshness": "current",
+      "restartUncertain": false,
+      "children": {
+        "active": 0,
+        "uncertain": 0
+      },
+      "generation": 0,
+      "project": "Device hub"
+    },
+    {
+      "identity": {
+        "provider": "codex",
+        "client": "desktop",
+        "hostId": "host",
+        "sourceId": "source",
+        "sessionId": "preview-3"
+      },
+      "turn": {
+        "status": "known",
+        "id": "turn"
+      },
+      "parent": {
+        "status": "unknown"
+      },
+      "activity": "active",
+      "attention": [],
+      "notices": [],
+      "read": "unknown",
+      "unavailable": [],
+      "ordering": {
+        "status": "unknown"
+      },
+      "lastEvidenceAtMs": 997,
+      "observedAtMs": 997,
+      "observationAgeMs": 3,
+      "freshness": "current",
+      "restartUncertain": false,
+      "children": {
+        "active": 0,
+        "uncertain": 0
+      },
+      "generation": 0
+    }
+  ]
+}

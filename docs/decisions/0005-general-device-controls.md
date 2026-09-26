@@ -58,7 +58,14 @@ the owning services and never becomes a physical writer.
   granularity is introduced.
 - Playlist and scene names, when shown, come from the device-owned integration
   extensions as user-entered names within the shared label bound. IDs are shown
-  until then. Nothing is copied from media titles, filenames or paths.
+  until then. Superseded by the owner-approved content policy in
+  [Hub #424](https://github.com/jimmie-potts/agent-device-hub/issues/424) and
+  applied by [Hub #426](https://github.com/jimmie-potts/agent-device-hub/issues/426):
+  controls may show media titles and filenames where useful, through bounded
+  fields declared by the device-owned integration contract. Explicit owner
+  labels still win. Credentials, tokens and secrets stay excluded. This policy
+  grants no filesystem access and does not add undeclared wire fields;
+  device-specific presentation remains with its owning implementation issue.
 
 ## Vocabulary
 

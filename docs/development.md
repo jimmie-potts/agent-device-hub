@@ -420,6 +420,13 @@ Python check decodes the committed golden images with Pillow, independently of
 the encoder. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.
 
+Hub #426 extends these same suites with label/title/project/neutral precedence,
+a title-bearing golden frame, a snapshot 1.2 runner request and the exact frame
+sent through its queue. Run `npm run test:agent-status` and `npm run test:lifx`
+as shared-feed consumer checks too: the feed's version selection is optional,
+and LIFX retains its default request. The title golden is independently decoded
+by `test:tidbyt:python`; it is a synthetic preview, not visible-device evidence.
+
 Hub #20 moves the per-session ranking (`sessionState`/`RANK`), the whole-owner
 reduction, `HubStatusFeed` and its bounded hub GET helpers, and the generic
 feed-cadence machinery (`EvaluationLoop`, `BoundedReader`) into the new

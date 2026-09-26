@@ -73,3 +73,33 @@ test('an invalid owner ID is rejected before any request', () => {
     assert.throws(() => new HubStatusFeed({ hubUrl: 'http://127.0.0.1:8788', ownerId, token: 't'.repeat(43) }), /invalid-runner-config/);
   }
 });
+
+test('an opted-in feed requests and validates title-bearing snapshot 1.2', async t => {
+  const owner = await createAgentState({ storage: new MemoryStorage(), ownerId: 'owner', consumers: [] });
+  t.after(() => owner.shutdown());
+  const calls = [];
+  const identity = { provider: 'claude', client: 'code', hostId: 'host', sourceId: 'source', sessionId: 'session' };
+  assert.equal((await owner.ingest({ apiVersion: '1.1', identity, turn: { status: 'known', id: 'turn' },
+    parent: { status: 'unknown' }, event: { kind: 'turn.started' }, observedAtMs: Date.now(),
+    ordering: { status: 'unknown' }, title: { value: 'Launch review', source: 'provider' }, project: 'Device hub' })).ok, true);
+  let snapshot = owner.snapshot('1.2');
+  const server = createServer((req, res) => {
+    calls.push(req.url);
+    res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const options = { hubUrl: `http://127.0.0.1:${server.address().port}`, ownerId: 'owner', token: 't'.repeat(43), snapshotVersion: '1.2' };
+  const feed = new HubStatusFeed(options);
+  const received = await feed.snapshot();
+  assert.equal(received.apiVersion, '1.2');
+  assert.equal(received.sessions[0].title.value, 'Launch review');
+  assert.equal(received.sessions[0].project, 'Device hub');
+  assert.deepEqual(calls, ['/api/monitor/v1/sessions?snapshotVersion=1.2']);
+  snapshot = { ...snapshot, sessions: [{ ...snapshot.sessions[0], title: { value: 'x'.repeat(161), source: 'provider' } }] };
+  await assert.rejects(feed.snapshot(), /feed-unavailable/);
+  snapshot = owner.snapshot();
+  await assert.rejects(feed.snapshot(), /feed-unavailable/);
+  assert.throws(() => new HubStatusFeed({ ...options, snapshotVersion: '2.0' }), /invalid-runner-config/);
+});
