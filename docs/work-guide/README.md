@@ -230,9 +230,11 @@ fingerprint this repository puts in the policy's fingerprint slot.
   prompt does not stale it. The Guide section is placement metadata, so adding,
   moving or rewording it does not stale it either; keep scope out of its notes.
 
-A section may also carry a `**Work surface:**` line, directly after `**Start
-with:**` (or, in the `insufficient` form, after `**Missing:**`), with exactly
-one value: `UI`, `Backend` or `Unknown`, as defined in
+A section may also carry a `**Work surface:**` line, conventionally placed
+directly after `**Start with:**` (or, in the `insufficient` form, after
+`**Missing:**`) as `recommendations.py upsert` writes it, though the parser
+does not require that position, with exactly one value: `UI`, `Backend` or
+`Unknown`, as defined in
 [`agent-skills@2d5b86a`](https://github.com/jimmie-potts/agent-skills/blob/2d5b86a25f2204bffc3529431923420c316fcdbf/skills/plan-work/references/execution-recommendations.md).
 The guide shows it as a badge in the task brief's "Start with" block and next
 to each open story's entry. A story without the line shows "Not classified";
