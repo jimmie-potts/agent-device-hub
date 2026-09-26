@@ -10,14 +10,17 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 function run(args,cwd){const result=spawnSync(process.execPath,args,{cwd,encoding:'utf8',maxBuffer:8*1024*1024});if(result.error||result.status!==0)throw new Error(result.error?.message??result.stdout+'\n'+result.stderr);return result.stdout;}
 function npm(args,cwd){if(!process.env.npm_execpath)throw new Error('npm-execpath-unavailable');return run([process.env.npm_execpath,...args],cwd);}
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Previously published private dependencies retain their original archive bytes.
+const released={
+ 'device-contracts':{version:'1.1.0',sha256:'25407c366cca0792ba09fba81b88f5467e123ad8583b21b1065954b41b920f3f',manifest:'86ab212aecc089b2720adbf6f9cec9352cc8526616c1ab98738fe3ce2c1122bf'},
+ 'device-mcp':{version:'1.0.1',sha256:'e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32',manifest:'949ef80fd0a440e1816bc2dc250f63c5f40ff6369f251519cad1e3408d036a3e'}
+};
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
 const scratchRoot=join(root,'.local/scratch/package-archives');await mkdir(scratchRoot,{recursive:true});
 const scratch=await mkdtemp(join(scratchRoot,'hub-'));
 try {
-  // Build the exact local dependencies; neither a registry secret nor a sibling checkout is used.
-  run([join(root,'scripts/package-contracts.mjs')],root);
+  // Build the new state/lifecycle pair; existing releases stay pinned below.
   run([join(root,'scripts/package-agent-state.mjs')],root);
-  run([join(root,'scripts/package-mcp.mjs')],root);
   const stage=join(scratch,'stage');await mkdir(stage);
   for(const name of ['package.json','src','dist','public','tests','fixtures','bin','README.md','SETUP.md'])await cp(join(root,'apps/hub',name),join(stage,name),{recursive:true});
   const metadata=JSON.parse(await readFile(join(stage,'package.json'),'utf8'));
@@ -28,9 +31,12 @@ try {
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
   for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.3.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.1.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz']]){
+    const pin=released[name],source=join(root,pin?'vendor':'artifacts',archive);
+    if(pin){assert.equal(metadata.dependencies[`@jimmie-potts/${name}`],pin.version);assert.equal(sha(await readFile(source)),pin.sha256,`published archive: ${name}`);}
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
-    const result=spawnSync('tar',['-xzf',join(root,'artifacts',archive),'--strip-components=1','-C',target],{encoding:'utf8'});
+    const result=spawnSync('tar',['-xzf',source,'--strip-components=1','-C',target],{encoding:'utf8'});
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);
+    if(released[name])assert.equal(sha(await readFile(join(target,'manifest.json'))),released[name].manifest,`published manifest: ${name}`);
   }
   async function hoistPublic(directory){
     const modules=join(directory,'node_modules');

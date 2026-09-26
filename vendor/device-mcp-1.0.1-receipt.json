@@ -1,0 +1,144 @@
+{
+  "artifact": "@jimmie-potts/device-mcp",
+  "version": "1.0.1",
+  "sourceRevision": "6b561baf3698415740184b702fc73107daec9022",
+  "sha256": "e6cd65600d02128f5c996e6e4940654d1a9a67b312f7d27148a2137d766a7e32",
+  "filename": "jimmie-potts-device-mcp-1.0.1.tgz",
+  "sourceRepository": "https://github.com/jimmie-potts/agent-device-hub",
+  "sourcePullRequest": "https://github.com/jimmie-potts/agent-device-hub/pull/388",
+  "sourceMergeRevision": "30dec5d82d5fc1f5964fefc421c6e0b7f5fce8f3",
+  "issue": "https://github.com/jimmie-potts/agent-device-hub/issues/407",
+  "tag": "device-mcp-v1.0.1",
+  "release": "https://github.com/jimmie-potts/agent-device-hub/releases/tag/device-mcp-v1.0.1",
+  "protocolVersions": [
+    "2025-11-25",
+    "2025-06-18"
+  ],
+  "sdk": {
+    "name": "@modelcontextprotocol/sdk",
+    "version": "1.30.0",
+    "license": "MIT"
+  },
+  "bundledContract": {
+    "artifact": "@jimmie-potts/device-contracts",
+    "version": "1.0.0",
+    "sha256": "5e0b30ac92e6e8e1e38d8249b740b565de66e3cc810a04bc6fac23e182e84e87",
+    "sourceRevision": "589846bcbe6a4a06ef6aaec9d2952c9f9d58dac3",
+    "tag": "controller-contracts-v1.0.0"
+  },
+  "validation": {
+    "runtime": {
+      "node": "24.21.0",
+      "python": "3.14.4",
+      "platform": "Linux"
+    },
+    "localCommands": [
+      {
+        "command": "npm run build",
+        "exitCode": 0,
+        "seconds": 10.11
+      },
+      {
+        "command": "npm run typecheck",
+        "exitCode": 0,
+        "seconds": 10.01
+      },
+      {
+        "command": "npm run test:contracts:built",
+        "exitCode": 0,
+        "seconds": 0.5
+      },
+      {
+        "command": "npm run test:contracts:python",
+        "exitCode": 0,
+        "seconds": 0.3
+      },
+      {
+        "command": "npm run test:package:built",
+        "exitCode": 0,
+        "seconds": 1.82
+      },
+      {
+        "command": "npm run test:mcp:built",
+        "exitCode": 0,
+        "seconds": 1.05
+      },
+      {
+        "command": "npm run test:mcp:protocol:built",
+        "exitCode": 0,
+        "seconds": 2.18
+      },
+      {
+        "command": "npm run test:mcp:package:built",
+        "exitCode": 0,
+        "seconds": 8.06
+      },
+      {
+        "command": "npm run check:workflow",
+        "exitCode": 0,
+        "seconds": 0.67
+      },
+      {
+        "command": "npm run test:workflow",
+        "exitCode": 0,
+        "seconds": 5.57
+      },
+      {
+        "command": "npm run package:mcp",
+        "exitCode": 0
+      }
+    ],
+    "cleanConsumer": "Archive checksum, package and bundled contract manifests, both protocol profiles, consumer TypeScript example and tamper rejection passed.",
+    "sourceChecks": [
+      {
+        "id": 108338888655,
+        "name": "Checks / Contracts and state Python 3.14 on ubuntu-latest",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/dkf89g8ks5?job=vj2s23f8rj&repo=jimmie-potts%2Fagent-device-hub"
+      },
+      {
+        "id": 108338887374,
+        "name": "Checks / Contracts and state Python 3.12 on ubuntu-latest",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/dkf89g8ks5?job=fh6cmh2d0t&repo=jimmie-potts%2Fagent-device-hub"
+      },
+      {
+        "id": 108338885168,
+        "name": "Checks / Dashboard browser and contracts on ubuntu-latest",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/dkf89g8ks5?job=m6s8kmfrjc&repo=jimmie-potts%2Fagent-device-hub"
+      },
+      {
+        "id": 108338884083,
+        "name": "Checks / MCP on ubuntu-latest",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/dkf89g8ks5?job=vh62bzmtm3&repo=jimmie-potts%2Fagent-device-hub"
+      },
+      {
+        "id": 108338882334,
+        "name": "Checks / Workflow checks on ubuntu-latest",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/dkf89g8ks5?job=cvrvttnlwf&repo=jimmie-potts%2Fagent-device-hub"
+      },
+      {
+        "id": 108338880585,
+        "name": "Work guide / Work guide build and browser checks",
+        "headSha": "6b561baf3698415740184b702fc73107daec9022",
+        "app": "depot-code-access",
+        "conclusion": "success",
+        "url": "https://depot.dev/orgs/0kwdkp3sc9/workflows/v4hm989231?job=2zkmvhkzt1&repo=jimmie-potts%2Fagent-device-hub"
+      }
+    ]
+  },
+  "scope": "Source artifact only; no personal installation, configuration, migration, installed-client or physical-device acceptance."
+}
