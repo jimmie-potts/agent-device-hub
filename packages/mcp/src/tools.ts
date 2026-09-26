@@ -23,16 +23,34 @@ const extensionOutputBase = { type: 'object' as const, $defs: schema.$defs, addi
   properties: { kind: { enum: ['extension', 'gateway-error'] }, code: outputBase.properties.code, priorEffects: outputBase.properties.priorEffects,
     retry: outputBase.properties.retry, requestId: outputBase.properties.requestId, data: { type: 'object' } }, required: ['kind'] };
 
-/** Keep only the root definitions a schema reaches, so each published tool stays proportional to what it uses. */
+/** Keep only the root definitions a schema reaches, so each published tool stays proportional to what it uses.
+ * References inside a nested `$id` resource resolve against that resource and are skipped. A reference this
+ * cannot classify keeps every definition, so pruning can only remove what is provably unused. */
 function referencedDefinitions(value: JsonSchema): JsonSchema {
-  const defs = (value.$defs ?? {}) as Record<string, unknown>;
-  const references = (node: unknown) => [...JSON.stringify(node).matchAll(/"#\/\$defs\/([^"]+)"/g)].map(match => match[1]);
-  const kept = new Set<string>(); const pending = references({ ...value, $defs: undefined });
-  while (pending.length) {
-    const name = pending.pop()!;
-    if (kept.has(name) || !Object.hasOwn(defs, name)) continue;
-    kept.add(name); pending.push(...references(defs[name]));
-  }
+  const defs = value.$defs as Record<string, unknown> | undefined;
+  if (!defs) return value;
+  const kept = new Set<string>(); let unclassified = false;
+  const reach = (reference: string) => {
+    const match = /^#\/(?:\$|%24)defs\/([^/]+)/.exec(reference);
+    if (!match) { if (reference !== '#' && !reference.startsWith('#/')) unclassified = true; return; }
+    let name: string;
+    try { name = decodeURIComponent(match[1]).replace(/~1/g, '/').replace(/~0/g, '~'); } catch { unclassified = true; return; }
+    if (!Object.hasOwn(defs, name)) { unclassified = true; return; }
+    if (kept.has(name)) return;
+    kept.add(name); visit(defs[name], false);
+  };
+  const visit = (node: unknown, root: boolean): void => {
+    if (Array.isArray(node)) { node.forEach(item => visit(item, false)); return; }
+    if (!node || typeof node !== 'object') return;
+    if (!root && typeof (node as JsonSchema).$id === 'string') return;
+    for (const [key, child] of Object.entries(node)) {
+      if (root && key === '$defs') continue;
+      if ((key === '$ref' || key === '$dynamicRef') && typeof child === 'string') reach(child);
+      else visit(child, false);
+    }
+  };
+  visit(value, true);
+  if (unclassified) return value;
   const { $defs: _unused, ...rest } = value;
   return kept.size ? { ...rest, $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => kept.has(name))) } as JsonSchema : rest as JsonSchema;
 }
@@ -104,8 +122,9 @@ function createTool(registry: DeviceRegistry, name: string, operation: Binding['
         || extension.annotations.openWorldHint !== true || typeof extension.annotations.idempotentHint !== 'boolean'
         || Object.keys(extension.inputSchema.properties ?? {}).some(key => ['deviceId', 'controllerId', 'url', 'ip', 'path', 'credential', 'authorization'].includes(key))) throw new Error('Invalid extension');
     inputSchema = structuredClone(extension.inputSchema);
+  } else {
+    inputSchema = referencedDefinitions(inputSchema);  // Only the shared definitions this package injects; an extension's own schema is kept as declared.
   }
-  inputSchema = referencedDefinitions(inputSchema);
   const outputSchema: JsonSchema & { properties: Record<string, unknown> } = structuredClone(extension ? extensionOutputBase : outputBase);
   if (extension) {
     const embedded = structuredClone(extension.outputSchema);
@@ -113,7 +132,10 @@ function createTool(registry: DeviceRegistry, name: string, operation: Binding['
     embedded.$id ??= `urn:agent-device-mcp:output:${createHash('sha256').update(JSON.stringify(embedded)).digest('hex')}`;
     outputSchema.properties.data = embedded;
   }
-  const tool = deepFreeze({ name, inputSchema, outputSchema: referencedDefinitions(outputSchema),
+  const published = referencedDefinitions(outputSchema);
+  // Every published schema must resolve on its own, so a pruning or contract change cannot ship an unusable catalog.
+  for (const candidate of [inputSchema, published]) new Ajv2020({ strict: true }).compile(candidate);
+  const tool = deepFreeze({ name, inputSchema, outputSchema: published,
     description: extension?.description ?? (operation === 'list' ? 'List authorized configured device IDs. No network discovery or agent/session state.'
       : operation === 'status' ? 'Read the owning controller snapshot. Unknown observation stays unknown; transmission is not visible-device verification.'
       : `Set optional device ${operation} through its owner. Read status for request identity and revisions first. Reuse an exact identity only for replay; never retry an ambiguous write with a new identity. Acceptance is not visible-device verification.`),

@@ -94,7 +94,7 @@ export function createMcpHandler(options: McpHandlerOptions): McpHandler {
   async function initialize(principal: MachinePrincipal, version: string): Promise<Session> {
     if (sessions.size >= limits.maxSessions) throw new HttpFailure(429);
     const id = randomUUID();
-    const server = new Server({ name: 'agent-device-mcp', version: '1.0.0' }, { capabilities: { tools: { listChanged: false } },
+    const server = new Server({ name: 'agent-device-mcp', version: '1.0.1' }, { capabilities: { tools: { listChanged: false } },
       instructions: 'Use configured device tools. Read current identity and revisions before a write. Never automatically retry an ambiguous write with a new identity. A queued or sent result is not optical verification or agent task success.' });
     const transport = new JsonResponseTransport(id, limits.maxResponseBytes);
     const session: Session = { server, transport, principalId: principal.id, version, ready: false, requests: new Set(), calls: new Set() };

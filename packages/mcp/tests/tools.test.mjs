@@ -238,3 +238,36 @@ test('published schemas carry only referenced definitions and extension tools st
   const validateStatus = new Ajv2020({ strict: true }).compile(status.outputSchema);
   assert.equal(validateStatus((await api.invokeDeviceTool(f.registry, status, {}, principal())).structuredContent), true, JSON.stringify(validateStatus.errors));
 });
+
+// Review of Hub #357: pruning must never drop a definition reached through another valid reference form.
+test('extensions keep every definition they reach through any reference form', async () => {
+  const { Ajv2020 } = await import('ajv/dist/2020.js');
+  const forms = {
+    deepPointer: { $defs: { shape: { type: 'object', properties: { size: { type: 'integer' } } } }, properties: { v: { $ref: '#/$defs/shape/properties/size' } } },
+    escapedName: { $defs: { 'a/b': { type: 'integer' } }, properties: { v: { $ref: '#/$defs/a~1b' } } },
+    percentEncoded: { $defs: { x: { type: 'integer' } }, properties: { v: { $ref: '#/%24defs/x' } } },
+    absoluteId: { $id: 'urn:ext:in', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: 'urn:ext:in#/$defs/v' } } },
+  };
+  for (const [label, parts] of Object.entries(forms)) {
+    const schema = { type: 'object', additionalProperties: false, ...parts };
+    const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { read: {
+      inputSchema: schema, outputSchema: label === 'absoluteId' ? { ...schema, $id: 'urn:ext:out', properties: { v: { $ref: 'urn:ext:out#/$defs/v' } } } : schema, scope: 'read', description: 'Read.', annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      invoke: async () => ({ data: { v: 1 } }) } } }]);
+    const [tool] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'read', name: 'read' }] });
+    for (const published of [tool.inputSchema, tool.outputSchema]) new Ajv2020({ strict: true }).compile(published);
+    assert.equal((await api.invokeDeviceTool(registry, tool, { v: 1 }, principal())).structuredContent.kind, 'extension', label);
+  }
+});
+
+test('an embedded extension schema does not keep unused shared definitions', () => {
+  // Its own definitions share names with the shared contract (as the Nanoleaf consumer's do) but resolve inside the extension.
+  const shared = { type: 'object', additionalProperties: false, $defs: { snapshot: { type: 'string' }, unused: { type: 'integer' } }, properties: { t: { $ref: '#/$defs/snapshot' } } };
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { read: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} }, outputSchema: shared, scope: 'read', description: 'Read.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, invoke: async () => ({ data: { t: 'x' } }) } } }]);
+  const [tool] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'read', name: 'read' }] });
+  // The root keeps only the shared ticket closure its own requestId needs, not the embedded schema's definitions.
+  assert.deepEqual(Object.keys(tool.outputSchema.$defs ?? {}).sort(), ['counter', 'id', 'ticket']);
+  assert.ok(Buffer.byteLength(JSON.stringify(tool.outputSchema)) < 4096);
+  assert.deepEqual(Object.keys(tool.outputSchema.properties.data.$defs).sort(), ['snapshot', 'unused']);
+});

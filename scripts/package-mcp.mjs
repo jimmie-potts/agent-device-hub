@@ -47,7 +47,7 @@ try {
   await rm(join(stage, 'package-lock.json'), { force: true });
   const hashes = {};
   for (const name of await files(stage)) hashes[name] = sha256(await readFile(join(stage, name)));
-  await writeFile(join(stage, 'manifest.json'), JSON.stringify({ artifact: '@jimmie-potts/device-mcp', version: '1.0.0',
+  await writeFile(join(stage, 'manifest.json'), JSON.stringify({ artifact: '@jimmie-potts/device-mcp', version: '1.0.1',
     contractVersion: BUNDLED_CONTRACT_VERSION, contractSha256: CONTRACT_ARTIFACT_SHA256, sdk: '@modelcontextprotocol/sdk@1.30.0',
     protocolVersions: ['2025-11-25', '2025-06-18'], fixtureFormat: 1, files: hashes }, null, 2) + '\n');
   const destination = join(root, 'artifacts'); await mkdir(destination, { recursive: true });
@@ -71,5 +71,5 @@ try {
     assert.throws(() => run(process.execPath, ['--input-type=module', '-e', check, installed], consumer), /Artifact file mismatch/);
     console.log('Isolated MCP archive import, bundled contract hashes, consumer typecheck, both protocol profiles and corruption rejection passed.');
   }
-  console.log(JSON.stringify({ archive, sha256: checksum, version: '1.0.0' }));
+  console.log(JSON.stringify({ archive, sha256: checksum, version: '1.0.1' }));
 } finally { await rm(scratch, { recursive: true, force: true }); }

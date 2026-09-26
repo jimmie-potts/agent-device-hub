@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {promisify} from 'node:util';
 import {startupFailureCode} from '../dist/startup-failure.js';
+import {createDeviceRegistry,bindServiceTools,createMcpHandler} from '@jimmie-potts/device-mcp';
 
 // Hub #357: a failed start names its cause without exposing paths or private values.
 test('startup failures name stable causes only',()=>{
@@ -23,4 +24,16 @@ test('the CLI prints the named cause of a failed start',async t=>{
  const failure=await promisify(execFile)(process.execPath,[new URL('../dist/cli.js',import.meta.url).pathname,'serve',file]).then(()=>assert.fail('start must fail'),error=>error);
  assert.equal(failure.stderr,'hub-start-failed: invalid-configuration\n');
  assert.equal(failure.code,1);
+});
+
+test('the gateway error for an oversized catalog maps to its named cause',()=>{
+ const registry=createDeviceRegistry([{controllerId:'controller',deviceId:'light',extensions:{read:{inputSchema:{type:'object',additionalProperties:false,properties:{}},
+  outputSchema:{type:'object',additionalProperties:false,properties:{}},scope:'read',description:'x'.repeat(1000),
+  annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:true},invoke:async()=>({data:{}})}}}]);
+ const tools=bindServiceTools(registry,{deviceId:'light',bindings:[{extension:'read',name:'read'}]});
+ let failure;
+ try{createMcpHandler({enabled:true,registry,tools,authenticate:async()=>null,allowedHosts:['127.0.0.1:1'],allowedOrigins:['http://127.0.0.1:1'],limits:{maxResponseBytes:1024}});}
+ catch(error){failure=error;}
+ assert.ok(failure,'an oversized catalog must stop the handler');
+ assert.equal(startupFailureCode(failure),'mcp-tool-catalog-too-large');
 });

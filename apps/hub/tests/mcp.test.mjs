@@ -440,13 +440,17 @@ test('MCP starts with the owner controller set and at the controller maximum',as
  const owner=[at('nanoleaf-wall','nanoleaf','wall','local-controller'),at('nanoleaf-panels','nanoleaf','panels','local-controller'),at('pixoo','pixoo','pixoo-local'),
   at('tidbyt','tidbyt','tidbyt'),at('beam','lifx','beam','lifx'),at('pendant-1','lifx','pendant-1','lifx')];
  const maximum=Array.from({length:16},(_,i)=>at('nanoleaf-'+i,'nanoleaf','device-'+i,'local-controller'));
- for(const controllers of [owner,maximum]){
-  const hub=await fixture(t,{controllers,credentials:[{...credential,devices:controllers.map(c=>c.id)}]});
+ // The installed hub also serves the HT-A9 playback source, whose tools share the catalog. A credential names at most 16
+ // devices, so the maximum case covers controllers only.
+ const playback={selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:'http://127.0.0.1:9/sony'}]};
+ for(const [controllers,withPlayback] of [[owner,true],[maximum,false]]){
+  const hub=await fixture(t,{controllers,...(withPlayback?{playback}:{}),credentials:[{...credential,devices:[...controllers.map(c=>c.id),...(withPlayback?['ht-a9']:[])]}]});
   const c=client(hub);assert.equal((await c.initialize()).status,200);
   const list=await c.rpc('tools/list',{});
   assert.equal(list.status,200);
   const bytes=Buffer.byteLength(JSON.stringify(list.body.result));
   assert.ok(bytes<512*1024,`${controllers.length} controllers publish a ${bytes}-byte catalog`);
   for(const controller of controllers)assert.ok(list.body.result.tools.some(tool=>tool.name.startsWith('device_'+controller.id.replace(/-/g,'_'))),controller.id);
+  if(withPlayback)assert.ok(list.body.result.tools.some(tool=>tool.name.startsWith('device_ht_a9')),'playback');
  }
 });

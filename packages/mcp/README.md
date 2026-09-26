@@ -1,4 +1,4 @@
-# Device MCP module 1.0.0
+# Device MCP module 1.0.1
 
 This private package embeds authenticated MCP in an owning application's optional local HTTP route. It exposes registered services through common status, power and brightness tools or strict application-specific extensions. It does not listen, scan the LAN, start playback or write to devices.
 
