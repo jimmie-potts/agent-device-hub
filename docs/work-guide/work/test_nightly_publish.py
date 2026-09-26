@@ -238,6 +238,27 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.git('show', result['sha'] + ':docs/work-guide/work/history/completed-guide-evidence.json'), 'owner history before')
         self.assertEqual(self.authored_history.read_text(), 'owner history after\n')
 
+    def test_main_authored_input_advance_rebases_identical_snapshots_before_check(self):
+        self.change()
+        first = self.publish()
+        direction = self.root / 'docs/work-guide/work/guide_direction.py'
+        direction.write_text('owner corrected Direction\n')
+        self.git('add', str(direction.relative_to(self.root)))
+        self.git('commit', '-m', 'Owner updates Direction')
+        self.git('push', 'origin', 'main')
+        self.base = self.git('rev-parse', 'HEAD')
+        self.calls.clear()
+        result = self.publish(first['sha'])
+        self.assertTrue(result['changed'])
+        self.assertNotEqual(result['sha'], first['sha'])
+        self.assertEqual(self.git('rev-parse', result['sha'] + '^'), self.base)
+        self.assertEqual(self.git('show', result['sha'] + ':docs/work-guide/work/guide_direction.py'), 'owner corrected Direction')
+        self.assertEqual(self.git('diff', '--name-only', self.base, result['sha']), publisher.ALLOWLIST[0] + '/fixture.json')
+        checks = [payload for _, payload in self.calls if payload is not None]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]['head_sha'], result['sha'])
+        self.assertEqual(checks[0]['conclusion'], 'success')
+
     def test_invalid_conclusion_has_no_mutations(self):
         with self.assertRaises(ValueError):
             self.publish(conclusion='neutral')

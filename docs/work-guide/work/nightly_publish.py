@@ -94,7 +94,7 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
 
     expected_rolling_sha is the fetched rolling head, or an empty string when
     the caller observed no branch. The push lease rejects concurrent writers.
-    Unchanged artifacts never push. Missing PRs and missing or outdated checks
+    Identical complete trees never push. Missing PRs and missing or outdated checks
     are repaired after interrupted writes; a complete matching result is read-only.
     """
     root = Path(root).resolve()
@@ -132,7 +132,10 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
         git('add', '-A', '--', *ALLOWLIST, env=env)
         tree = git('write-tree', env=env)
         previous = expected_rolling_sha or base_sha
-        changed = git('diff', '--name-only', previous, tree, '--', *ALLOWLIST)
+        # Validation used current main's authored inputs. The entire tree must
+        # match before reusing a rolling SHA, or a new result could describe
+        # newer Direction/source while being attached to an older commit.
+        changed = git('diff', '--name-only', previous, tree)
         if not changed:
             if expected_rolling_sha:
                 return reconcile_unchanged(root, previous, report_path, conclusion, check_summary, base_sha)
