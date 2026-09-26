@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import re
 import subprocess
 import time
 
@@ -148,20 +149,70 @@ def keep_extends_targets(repos):
     """Read and save each Extends target the refreshed records lack. Every target
     is read and checked before any file is rewritten."""
     saved = {repo: json.loads((DEST / f'{repo}-issues.json').read_text()) for repo in REPOS}
+    _keep_targets(repos, saved, extends_targets(saved), 'An Extends line', 'Guide Extends target')
+
+
+def authored_targets(issues_by_repo):
+    """Find missing keys used by Direction, topic prose and rendered Guide fields.
+
+    Read the authored inputs, not generated HTML or their previous issue states.
+    A closed sequence entry must survive refresh so Direction can reject it.
+    """
+    import guide_direction
+    import guide_paths
+    import guide_section
+
+    keys = {key for values in guide_direction.cited().values() for key in values}
+
+    def collect(value):
+        if isinstance(value, str):
+            keys.update(re.findall(r'\[\[([HNP]\d+)\]\]', value))
+        elif isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item)
+
+    for outcome, action, selected in guide_paths.PATHS.values():
+        keys.update(selected)
+        collect((outcome, action))
+    for issues in issues_by_repo.values():
+        for issue in issues:
+            if issue['state'] == 'OPEN':
+                state = guide_section.read(issue['body'])
+                if state['state'] == 'assigned':
+                    collect((state.get('note'), state.get('workaround'), state.get('highlight')))
+    held = {PREFIXES[repo] + str(issue['number']) for repo, issues in issues_by_repo.items() for issue in issues}
+    return {repo: sorted(int(key[1:]) for key in keys - held if key.startswith(prefix))
+            for repo, prefix in PREFIXES.items() if any(key.startswith(prefix) for key in keys - held)}
+
+
+def keep_guide_references(repos):
+    """Retain authoritative records for every dynamic or authored guide reference."""
+    saved = {repo: json.loads((DEST / f'{repo}-issues.json').read_text()) for repo in REPOS}
+    targets = extends_targets(saved)
+    for repo, numbers in authored_targets(saved).items():
+        targets[repo] = sorted(set(targets.get(repo, [])) | set(numbers))
+    _keep_targets(repos, saved, targets, 'A guide reference', 'Guide reference target')
+
+
+def _keep_targets(repos, saved, targets, source, purpose):
+    # Fetch and validate the whole set before replacing any saved file or receipt.
     fetched = {}
-    for repo, numbers in extends_targets(saved).items():
+    for repo, numbers in targets.items():
         for number in numbers:
             key = f'{PREFIXES[repo]}{number}'
             try:
                 raw = api(f'repos/jimmie-potts/{repo}/issues/{number}')
             except RuntimeError as error:
-                raise RuntimeError(f'An Extends line names {key}, which GitHub cannot read as an issue: {error}') from error
+                raise RuntimeError(f'{source} names {key}, which GitHub cannot read as an issue: {error}') from error
             if raw.get('pull_request'):
-                raise RuntimeError(f'An Extends line names {key}, which is a pull request, not a story')
+                raise RuntimeError(f'{source} names {key}, which is a pull request, not a story')
             fetched.setdefault(repo, []).append(normalize(raw))
     for repo, issues in fetched.items():
         for issue in issues:
-            repos[repo]['directReads'].append({'number': issue['number'], 'state': issue['state'], 'purpose': 'Guide Extends target'})
+            repos[repo]['directReads'].append({'number': issue['number'], 'state': issue['state'], 'purpose': purpose})
         rows = sorted(saved[repo] + issues, key=lambda i: i['number'])
         (DEST / f'{repo}-issues.json').write_text(json.dumps(rows, indent=2, ensure_ascii=False) + '\n')
         (DEST / f'{repo}-digest.txt').write_text('\n'.join(f"#{i['number']} [{i['state']}] {i['title']}" for i in rows) + '\n')
@@ -170,7 +221,7 @@ if __name__ == '__main__':
     started = datetime.now(timezone.utc).isoformat()
     with ThreadPoolExecutor(max_workers=3) as pool:
         repos = dict(pool.map(refresh_repo, REPOS))
-    keep_extends_targets(repos)
+    keep_guide_references(repos)
     # Read the documentation PR itself rather than inferring status from issue data.
     pr = api('repos/jimmie-potts/agent-device-hub/pulls/59')
     checks, check_pages = pages(f"repos/jimmie-potts/agent-device-hub/commits/{pr['head']['sha']}/statuses")
