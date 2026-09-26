@@ -110,6 +110,15 @@ test('a lighting snapshot read while status paints are queued or in flight stays
   assert.equal(validateLightingSnapshot(snapshot), true, 'the hub accepts the lighting snapshot mid-paint');
   assert.deepEqual(snapshot.lighting.pending, [], 'status paints are not listed as lighting commands');
   assert.deepEqual(snapshot.controller.state.pending, []);
-  await Promise.all([first.done, second.done]);
+  // A public color command queued behind the paints is still listed, and the snapshot stays valid.
+  const s = snapshot.controller;
+  const color = c.submit({ apiVersion: '1.0', controllerId: 'lifx', deviceId: 'desk', requestId: s.nextRequestId,
+    expectedConfigurationRevision: s.configurationRevision, expectedGeneration: s.generation, profile,
+    command: { kind: 'lifx.color.set', hue: 10, saturation: 20 } });
+  assert.equal(color.decision, 'queued');
+  const withColor = c.snapshot('desk');
+  assert.equal(validateLightingSnapshot(withColor), true);
+  assert.deepEqual(withColor.lighting.pending.map(entry => entry.command), [{ kind: 'lifx.color.set', hue: 10, saturation: 20 }]);
+  await Promise.all([first.done, second.done, color.done]);
   c.close();
 });

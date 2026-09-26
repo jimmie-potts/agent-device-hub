@@ -188,11 +188,33 @@ test("paintStatus for an unknown device is rejected without traffic", async (t) 
 test("paintStatus for an unqualified bulb is rejected without traffic or a pending entry", async (t) => {
   let calls = 0;
   const c = setup(t, async () => { calls++; return Buffer.alloc(0); }, { bulbs: [{ ...bulb(), firmwareMinor: 91 }] });
+  const before = c.snapshot("bulb-1").controller;
   const result = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
   assert.deepEqual(result, { decision: "unsupported-capability", reserved: false });
   assert.equal(calls, 0);
-  assert.equal(c.snapshot("bulb-1").lighting.pending.length, 0);
+  // Paints are never listed as pending (#450), so identity and cursor show that no entry was created.
+  const after = c.snapshot("bulb-1").controller;
+  assert.deepEqual(after.nextRequestId, before.nextRequestId);
+  assert.deepEqual(after.cursor, before.cursor);
   c.close();
+});
+
+test("a generation cancel alone drops a queued paint without traffic and leaves the controller open", async (t) => {
+  let started = 0;
+  const c = setup(t, () => { started++; return new Promise(() => {}); });
+  const inFlight = c.paintStatus("bulb-1", { hue: 0, saturation: 0, brightness: 0, kelvin: 2700 });
+  const queued = c.paintStatus("bulb-1", { hue: 1, saturation: 1, brightness: 1, kelvin: 2700 });
+  await new Promise(resolve => setImmediate(resolve));
+  c.cancel("bulb-1");
+  const dropped = await queued.done;
+  assert.equal(dropped.outcome, "cancelled");
+  assert.equal(dropped.priorEffects, "none");
+  await inFlight.done;
+  assert.equal(started, 1, "the queued paint never reached the transport");
+  const later = c.paintStatus("bulb-1", { hue: 2, saturation: 2, brightness: 2, kelvin: 2700 });
+  assert.equal(later.decision, "queued", "the controller still admits paints after a cancel");
+  c.close();
+  await later.done;
 });
 
 test("a generation cancel drops a queued paint and close cancels an outstanding one", async (t) => {

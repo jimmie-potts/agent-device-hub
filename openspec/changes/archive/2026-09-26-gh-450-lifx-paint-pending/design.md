@@ -15,4 +15,4 @@ The LIFX controller's lighting snapshot follows the `lifx-light` 1.0.0 profile, 
 
 ## Risks / Trade-offs
 
-For up to about a second a queued paint is invisible in the pending lists, while `maxInFlight` still counts it. A caller whose command is rejected for capacity at that moment sees no pending entry to explain it; with a queue bound of 8 and one paint per transition this is unlikely.
+For up to about a second a queued paint is invisible in the pending lists, while it still occupies one of the bulb's `maxPending` queue slots. A caller whose command is rejected for capacity at that moment sees no pending entry to explain it; with a queue bound of 8 and one paint per transition this is unlikely.
