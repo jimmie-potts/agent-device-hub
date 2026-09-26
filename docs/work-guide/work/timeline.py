@@ -39,6 +39,8 @@ TRACKS = [
     ('B.U.N.N.Y. shell', [
         dict(id='n-shell-open', x=0, label='Bookmark · dense home', issues=['H276', 'H277'], guide='bunny-controls'),
         dict(id='n-shell-widgets', x=1, label='Widgets · Panels · wall art', issues=['H287', 'H286', 'H323', 'H355'], guide='bunny-controls'),
+    ]),
+    ('Status page + histories', [
         dict(id='n-shell-status', x=2, label='Status page + histories', issues=['H282', 'H283', 'H329', 'H342'], guide='bunny-controls'),
     ]),
     ('Group page + task pool', [
@@ -353,7 +355,7 @@ CROSS = [
     ('n-guide-mobile', 'n-guide-publish', 'H197'), ('n-shell-geometry', 'n-shell-widgets', 'N169'), ('n-host', 'n-tl-later', 'H44'),
     ('n-hub-start', 'n-nl-map', 'H357'), ('n-music', 'n-music-cards', 'H229'), ('n-hub-gates', 'n-guide-publish-auto', 'H240'),
     ('n-moments-rules', 'n-steam-events', 'H358'), ('n-moments-rules', 'n-game-routines', 'H358'), ('n-moments-routines', 'n-game-routines', 'H359'), ('n-desk-presets', 'n-game-routines', 'H67'),
-    ('n-steam-events', 'n-deck-client', 'H379'), ('n-deck-access', 'n-deck-client', 'H378'), ('n-shell-scene-picker', 'n-shell-retire', 'N168'),
+    ('n-steam-events', 'n-deck-client', 'H379'), ('n-deck-access', 'n-deck-client', 'H378'),
     ('n-guide-clipboard', 'n-guide-cleanup', 'H210'),
     ('n-guide-clipboard', 'n-hub-cache-docs', 'H210'),
     ('n-guide-mobile', 'n-guide-refresh', 'H197 only'),
