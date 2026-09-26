@@ -640,6 +640,19 @@ acceptance and in PR #275. Installed browser and Codex MCP acceptance come after
 merge, need separate authorization and are recorded on the issue. Human UI
 approval of the candidate is required before merge and is recorded in the PR.
 
+Hub #277 makes the dashboard a dense control surface. `apps/dashboard/tests/routes.test.mjs`
+and `widgets.test.mjs` run under `npm run test:dashboard`; the browser suite
+adds the first-screen, width-reach, route, alias-collision, unknown-address and
+1,280 px height checks, and the matrix and local-controllers suites address
+navigation links and open the Details disclosure where a fact moved behind it.
+The owner's design decision on the candidate removes the Apply buttons: the
+suites drive a select, slider, text field or Power button directly, a matrix
+scenario checks the home widget's quick actions, the shared lock and running
+state between the widget and the page, the surviving session draft and the skip
+link, and the lifecycle unit test carries the form wording. The overlap check ignores closed disclosures. Full-page height at
+1,280 px is recorded in the browser receipt. Human UI approval of the candidate
+is required before merge and is recorded in the PR.
+
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`

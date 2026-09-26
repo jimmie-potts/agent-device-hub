@@ -17,11 +17,17 @@ try{
   try{
    const page=await context.newPage();page.setDefaultTimeout(12000);
    await page.goto(f.hub.url);await signedIn(page);
-   await page.getByRole('button',{name:'wall nanoleaf',exact:true}).waitFor();await page.getByRole('button',{name:'pixel pixoo',exact:true}).waitFor();
+   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).waitFor();await page.getByRole('link',{name:'pixel pixoo',exact:true}).waitFor();
    assert.equal(await page.getByText('Use a separately provisioned access token').count(),0,'no login form');
    assert.equal(f.hub.resources().browserSessions,1);
    if(output)await page.screenshot({path:output+'/trusted-signed-in.png',fullPage:true});
    checks.push('a fresh context opens signed in');
+
+   // Hub #277: a bookmarked page address is a route, not a launch code; it opens signed in on that page and keeps its address.
+   const bookmark=await context.newPage();await bookmark.goto(f.hub.url+'/#/component/pixel');await signedIn(bookmark);
+   await bookmark.locator('section:visible .section-heading h2',{hasText:/^pixel$/}).waitFor();assert.equal(new URL(bookmark.url()).hash,'#/component/pixel');
+   await bookmark.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===1,'the bookmark tab logs out');
+   checks.push('a route bookmark opens signed in on its page');
 
    await page.reload();await signedIn(page);
    await until(()=>f.hub.resources().browserSessions===1,'the unloaded page’s session is logged out');
