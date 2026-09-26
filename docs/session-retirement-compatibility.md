@@ -103,14 +103,16 @@ The selected Desktop task did not reliably emit a non-archive end during the
 installed idle/shutdown trials. [Hub #253](https://github.com/jimmie-potts/agent-device-hub/issues/253)
 owns that native emission investigation and subsequent reopen-without-prompt and
 live-resume qualification, under the user-approved scope split. The Codex CLI and
-Claude Code paths adopted by #241 are qualified at the source level only. Their
-documented end and start mappings are recorded in
-[provider qualification](provider-qualification.md#runtime-ends-and-archive-admission).
-A separately authorized installed observation of a normal end and a resume per
-path still needs to record the emitted events and the owner's removal and
-recreation. An accepted end retires its known session tree; quitting a client
-does not establish that every record received an end. No new thirty-minute timer or global clear is
-provided. The existing twenty-four-hour evidence expiry remains the fallback.
+Claude Code paths adopted by #241 were observed on the installed Hub 0.3.7 for
+[Hub #312](https://github.com/jimmie-potts/agent-device-hub/issues/312).
+[Provider qualification](provider-qualification.md#installed-cli-and-claude-observation)
+records the emitted events and the owner's removal and recreation for normal
+exit, `/clear` and resume.
+Codex CLI 0.156.0 ended a cleared session only when the CLI exited, in one run
+whose emission was inferred from the owner. An accepted end retires its known
+session tree; quitting a client does not establish that every record received
+an end. No new thirty-minute timer or global clear is provided. The existing
+twenty-four-hour evidence expiry remains the fallback.
 Native mode automation remains owned by Nanoleaf #110.
 
 Nanoleaf's existing policy suppresses completion comets and waves whenever its poll skips owner revisions. [Nanoleaf #115](https://github.com/jimmie-potts/codex-nanoleaf/issues/115) owns that limitation. This companion preserves that policy while preventing a retired task's effects from returning.
