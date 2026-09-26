@@ -280,7 +280,7 @@
  "boundaries": [
   {
    "kind": "region",
-   "label": "Linux hub process (apps/hub) · source; installation separate",
+   "label": "Linux hub process (apps/hub) · installed shared monitor",
    "wraps": [
     "mcpModule",
     "hubRoutes",

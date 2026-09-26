@@ -24,7 +24,7 @@
         <rect width="100%" height="100%" fill="url(#arch-shared-system-grid)" />
 
         <!-- Boundaries (behind everything) -->
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Linux hub process (apps/hub) · source; installation separate" x="220" y="152" width="840" height="112" rx="12" class="c-region" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="arch-shared-system-0" data-composition-frame-label="Linux hub process (apps/hub) · installed shared monitor" x="220" y="152" width="840" height="112" rx="12" class="c-region" stroke-width="1"/>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="arch-shared-system-1" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)" x="10" y="294" width="420" height="254" rx="8" class="c-security-group" stroke-width="1"/>
 
@@ -114,8 +114,8 @@
         <text data-detail="fine" x="955" y="94" class="t-external" font-size="7" text-anchor="middle">playback installed</text>
         </g>
 
-        <g id="arch-shared-system-node-mcpModule" data-node-id="arch-shared-system-mcpModule" data-node-label="device-mcp module" tabindex="0" role="button" aria-label="Focus device-mcp module, library · no listener, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="backend" data-node-sublabel="library · no listener" data-node-tag="source 1.0.0" data-node-context="Linux hub process (apps/hub) · source; installation separate">
-          <title>device-mcp module · library · no listener · Linux hub process (apps/hub) · source; installation separate · source 1.0.0</title>
+        <g id="arch-shared-system-node-mcpModule" data-node-id="arch-shared-system-mcpModule" data-node-label="device-mcp module" tabindex="0" role="button" aria-label="Focus device-mcp module, library · no listener, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="backend" data-node-sublabel="library · no listener" data-node-tag="source 1.0.0" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
+          <title>device-mcp module · library · no listener · Linux hub process (apps/hub) · installed shared monitor · source 1.0.0</title>
           <rect x="250" y="182" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="250" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(256 188) scale(0.6875)">
@@ -126,8 +126,8 @@
         <text data-detail="fine" x="325" y="236" class="t-backend" font-size="7" text-anchor="middle">source 1.0.0</text>
         </g>
 
-        <g id="arch-shared-system-node-hubRoutes" data-node-id="arch-shared-system-hubRoutes" data-node-label="Hub HTTP routes" tabindex="0" role="button" aria-label="Focus Hub HTTP routes, monitor · controllers · mcp, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="security" data-node-sublabel="monitor · controllers · mcp" data-node-tag="loopback · bearer" data-node-context="Linux hub process (apps/hub) · source; installation separate">
-          <title>Hub HTTP routes · monitor · controllers · mcp · Linux hub process (apps/hub) · source; installation separate · loopback · bearer</title>
+        <g id="arch-shared-system-node-hubRoutes" data-node-id="arch-shared-system-hubRoutes" data-node-label="Hub HTTP routes" tabindex="0" role="button" aria-label="Focus Hub HTTP routes, monitor · controllers · mcp, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="security" data-node-sublabel="monitor · controllers · mcp" data-node-tag="loopback · bearer" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
+          <title>Hub HTTP routes · monitor · controllers · mcp · Linux hub process (apps/hub) · installed shared monitor · loopback · bearer</title>
           <rect x="460" y="182" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="460" y="182" width="150" height="62" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(466 188) scale(0.6875)">
@@ -139,8 +139,8 @@
         <text data-detail="fine" x="535" y="236" class="t-security" font-size="7" text-anchor="middle">loopback · bearer</text>
         </g>
 
-        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, reducer · one active owner, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="backend" data-node-sublabel="reducer · one active owner" data-node-tag="source delivered" data-node-context="Linux hub process (apps/hub) · source; installation separate">
-          <title>Agent-state core · reducer · one active owner · Linux hub process (apps/hub) · source; installation separate · source delivered</title>
+        <g id="arch-shared-system-node-core" data-node-id="arch-shared-system-core" data-node-label="Agent-state core" tabindex="0" role="button" aria-label="Focus Agent-state core, reducer · one active owner, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="backend" data-node-sublabel="reducer · one active owner" data-node-tag="source delivered" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
+          <title>Agent-state core · reducer · one active owner · Linux hub process (apps/hub) · installed shared monitor · source delivered</title>
           <rect x="670" y="182" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="670" y="182" width="150" height="62" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(676 188) scale(0.6875)">
@@ -151,8 +151,8 @@
         <text data-detail="fine" x="745" y="236" class="t-backend" font-size="7" text-anchor="middle">source delivered</text>
         </g>
 
-        <g id="arch-shared-system-node-hubStore" data-node-id="arch-shared-system-hubStore" data-node-label="Hub private SQLite" tabindex="0" role="button" aria-label="Focus Hub private SQLite, owner + state files · 0700, Linux hub process (apps/hub) · source; installation separate" aria-pressed="false" data-node-kind="database" data-node-sublabel="owner + state files · 0700" data-node-tag="never a controller store" data-node-context="Linux hub process (apps/hub) · source; installation separate">
-          <title>Hub private SQLite · owner + state files · 0700 · Linux hub process (apps/hub) · source; installation separate · never a controller store</title>
+        <g id="arch-shared-system-node-hubStore" data-node-id="arch-shared-system-hubStore" data-node-label="Hub private SQLite" tabindex="0" role="button" aria-label="Focus Hub private SQLite, owner + state files · 0700, Linux hub process (apps/hub) · installed shared monitor" aria-pressed="false" data-node-kind="database" data-node-sublabel="owner + state files · 0700" data-node-tag="never a controller store" data-node-context="Linux hub process (apps/hub) · installed shared monitor">
+          <title>Hub private SQLite · owner + state files · 0700 · Linux hub process (apps/hub) · installed shared monitor · never a controller store</title>
           <rect x="880" y="182" width="150" height="62" rx="6" class="c-mask"/>
           <rect x="880" y="182" width="150" height="62" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 188) scale(0.6875)">
@@ -328,9 +328,9 @@
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
-        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Linux hub process (apps/hub) · source; installation separate">
-          <rect data-graph-role="structural-frame-label-mask" x="224" y="162" width="334" height="16" rx="3" class="c-mask"/>
-          <text data-boundary-label="" x="228" y="175" class="t-cloud" font-size="9" font-weight="600">Linux hub process (apps/hub) · source; installation separate</text>
+        <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-0" data-composition-frame-kind="region" data-composition-frame-label="Linux hub process (apps/hub) · installed shared monitor">
+          <rect data-graph-role="structural-frame-label-mask" x="224" y="162" width="307" height="16" rx="3" class="c-mask"/>
+          <text data-boundary-label="" x="228" y="175" class="t-cloud" font-size="9" font-weight="600">Linux hub process (apps/hub) · installed shared monitor</text>
         </g>
 
         <g data-graph-role="structural-frame-label" data-composition-frame-id="arch-shared-system-1" data-composition-frame-kind="security-group" data-composition-frame-label="Nanoleaf Linux runtime (codex-nanoleaf, WSL)">
