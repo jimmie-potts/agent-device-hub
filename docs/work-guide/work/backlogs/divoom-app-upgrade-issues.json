@@ -1204,19 +1204,22 @@
     "body": "## Outcome and real setup\n\nThe installed Pixoo (device mode, user service, Monitor selected) shows agent sessions in a layout a person can read from across the room, with visible motion, instead of a dense grid of letter codes. The simulator preview shows the same bytes. Excluded: alert interruptions and moments (#92), the identifier fallback rule (#87), page cadence changes.\n\n## Problem\n\nThe current 64x64 layout (`apps/server/src/dashboard-pixels.ts`, documented in `docs/agent-monitoring.md`) packs four sessions per page in a 3x5 font. Each row is a run of single-letter codes: provider `C`/`L`, activity `>`/`=`/`X`/`]`/`?`, attention `A`/`!`/`?`, a six-character label, a child count and two amber flags. On the installed service on September 25, 2026, every row read `C? 01A0D+ +0? ?T`. The codes need a legend, the label budget is too small to be useful, and the only change over time is the page number every ten seconds.\n\n## Smallest useful implementation\n\nOne session per screen, cycling, instead of four rows. Proposed layout, to be refined in the preview before code changes:\n\n- **Label** in a larger font over up to two lines, with room for roughly ten characters per line. Full labels stay in the Monitor tab. The shared `apps/server/src/pixel-font.ts` from #89 and the now-playing card's wrapping rules are the starting point.\n- **Provider and state as icons and color**, not letters: a provider mark, a state color (active, idle, attention, ended, unknown) and a distinct attention badge.\n- **An activity bar** that pulses while the session is active and holds still when idle, giving motion without hiding information.\n- **A summary strip** at the bottom: total sessions, sessions needing attention, and page dots instead of `4/5`. Connection and collector health stay visible as a small indicator.\n- **Attention-first ordering** is preserved, and sessions with attention may blink slowly.\n- **Empty and uncertain states** stay explicit: an empty view shows the summary strip; an uncertain row shows its uncertainty visibly rather than as a trailing `?`.\n\nSteps: sketch two or three candidate layouts in `docs/examples/agent-dashboard.html` through `scripts/dashboard-preview.mjs` and pick one with the owner; replace the row renderer with the chosen layout; keep the `DashboardPager` sort, filter and paging contracts, with rows-per-page set to one; update the layout table and legend in `docs/agent-monitoring.md`, `apps/server/src/dashboard-examples.ts`, the frame hashes in `tests/unit/agent-dashboard.test.ts` and the qualification fixtures in `packages/device/src/dashboard-fixtures.ts`. Choose the identifier width once so #87 and this layout agree. Prerequisite: none; #87 is related.\n\n## Behavior and protections to preserve\n\nThe 64x64 complete RGB upload, coalescing and the minimum cadence from ADR 0015 and ADR 0018; the single writer and generation guards; the Monitor tab preview as the same RGB bytes, nearest-neighbor scaled; the now-playing card precedence from ADR 0019. Motion within one screen is delivered as a multi-frame upload at the adapter's supported timing where the device profile allows it, or as successive frames at the configured cadence otherwise; record which of those the qualification evidence supports.\n\n## Observable acceptance and planned evidence\n\nDelivery target: source-only.\n\n- The chosen layout is recorded in the preview HTML and `docs/agent-monitoring.md` with a legend that fits in one short table.\n- Synthetic scenarios (attention first, overflow, stale source, empty) render deterministically with updated hashes, and every state in the legend appears in at least one scenario.\n- The Monitor tab preview and the device rendition remain byte-identical for the same layout.\n- Browser tests for the Monitor tab pass, and `npm run check` and `npm run test:browser` pass.\n- Physical readability on the Pixoo64 needs an explicit request and an owner, and is reported separately.\n\n## Meaningful deferrals\n\nAlert interruptions and moments: #92 and Hub #358. Identifier fallback: #87. Stale rows: Hub #241 and Hub #332 reduce them but are not required.\n\n## Guide\n\n**Topic:** shared-codex\n**Note:** One session per screen with icons, a pulsing activity bar and a summary strip, replacing the four-row letter grid.\n",
     "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/98",
     "createdAt": "2026-09-25T23:01:08Z",
-    "updatedAt": "2026-09-25T23:11:13Z",
+    "updatedAt": "2026-09-26T01:32:59Z",
     "closedAt": null,
     "labels": [
       {
         "name": "enhancement"
       },
       {
-        "name": "status:backlog"
+        "name": "status:review"
+      },
+      {
+        "name": "blocked"
       }
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 3,
     "commentsRefreshed": false
   },
   {

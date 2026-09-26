@@ -2,7 +2,7 @@
   "data": {
     "n": {
       "issues": {
-        "totalCount": 45,
+        "totalCount": 43,
         "pageInfo": {
           "hasNextPage": false
         },
@@ -188,16 +188,6 @@
           },
           {
             "number": 115,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
-            "number": 118,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {
@@ -488,16 +478,6 @@
           },
           {
             "number": 168,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
-            "number": 169,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {

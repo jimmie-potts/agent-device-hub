@@ -1,15 +1,45 @@
 {
-  "fetchedAt": "2026-09-26T00:32:30.725624+00:00",
+  "fetchedAt": "2026-09-26T01:43:46.823497+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T00:31:49Z",
+      "pushedAt": "2026-09-26T01:16:42Z",
       "defaultBranch": "main",
-      "headSha": "503450cb0be0adc9ffb8b83b82e0461e6a701cf6",
-      "mainCommitCount": 147,
+      "headSha": "ed955017a64fe2c948ed5712850dff4891d11e52",
+      "mainCommitCount": 153,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "ed955017a64fe2c948ed5712850dff4891d11e52",
+          "date": "2026-09-26T01:16:42Z",
+          "message": "Read Nanoleaf element geometry through a sibling integration route (#396)"
+        },
+        {
+          "sha": "e3fe2638470fb85fe7741b7291db4f00a7c4583a",
+          "date": "2026-09-26T01:04:41Z",
+          "message": "Document connecting device controllers for B.U.N.N.Y. in the hub setup guide (#395)"
+        },
+        {
+          "sha": "5d68ab47a68512c10e391f218fae7fc4d376071b",
+          "date": "2026-09-26T00:59:58Z",
+          "message": "Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime (#394)"
+        },
+        {
+          "sha": "30dec5d82d5fc1f5964fefc421c6e0b7f5fce8f3",
+          "date": "2026-09-26T00:55:19Z",
+          "message": "Keep the hub starting when its MCP tool catalog grows (#388)"
+        },
+        {
+          "sha": "267844bb720b5f6972421769950732c1b2e2bd5b",
+          "date": "2026-09-26T00:48:40Z",
+          "message": "Add a Steam Deck topic guide and refresh the work guide after #375 (#393)"
+        },
+        {
+          "sha": "40480e2904a50f7caff110f60cce1357e8901038",
+          "date": "2026-09-26T00:37:15Z",
+          "message": "Record installed Codex CLI and Claude Code session-end observations (#389)"
+        },
         {
           "sha": "503450cb0be0adc9ffb8b83b82e0461e6a701cf6",
           "date": "2026-09-26T00:29:51Z",
@@ -1898,24 +1928,57 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/375",
           "base": "main",
           "mergedAt": "2026-09-26T00:29:52Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 388,
           "title": "Keep the hub starting when its MCP tool catalog grows",
           "createdAt": "2026-09-26T00:23:51Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/388",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T00:55:19Z"
         },
         {
           "number": 389,
           "title": "Record installed Codex CLI and Claude Code session-end observations",
           "createdAt": "2026-09-26T00:24:08Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/389",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T00:37:16Z"
+        },
+        {
+          "number": 393,
+          "title": "Add a Steam Deck topic guide and refresh the work guide after #375",
+          "createdAt": "2026-09-26T00:36:11Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/393",
+          "base": "main",
+          "mergedAt": "2026-09-26T00:48:40Z"
+        },
+        {
+          "number": 394,
+          "title": "Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime",
+          "createdAt": "2026-09-26T00:36:46Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/394",
+          "base": "main",
+          "mergedAt": "2026-09-26T00:59:59Z"
+        },
+        {
+          "number": 395,
+          "title": "Document connecting device controllers for B.U.N.N.Y. in the hub setup guide",
+          "createdAt": "2026-09-26T00:45:02Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/395",
+          "base": "main",
+          "mergedAt": "2026-09-26T01:04:42Z"
+        },
+        {
+          "number": 396,
+          "title": "Read Nanoleaf element geometry through a sibling integration route",
+          "createdAt": "2026-09-26T01:01:47Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/396",
+          "base": "main",
+          "mergedAt": "2026-09-26T01:16:42Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -2510,6 +2573,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/231"
         },
         {
+          "number": 232,
+          "title": "Document connecting device controllers for BUNNY in the hub setup guide",
+          "closedAt": "2026-09-26T01:09:37Z",
+          "createdAt": "2026-09-24T08:35:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/232"
+        },
+        {
           "number": 234,
           "title": "Document how to create hub credentials and what each grant allows",
           "closedAt": "2026-09-24T08:55:46Z",
@@ -2654,18 +2725,42 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/308"
         },
         {
+          "number": 312,
+          "title": "Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5",
+          "closedAt": "2026-09-26T00:41:54Z",
+          "createdAt": "2026-09-25T19:50:31Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/312"
+        },
+        {
+          "number": 324,
+          "title": "Refresh the work guide snapshot so idea marks and the stories filed since the morning of 2026-09-25 reach the static guide",
+          "closedAt": "2026-09-26T00:55:58Z",
+          "createdAt": "2026-09-25T21:08:27Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/324"
+        },
+        {
           "number": 330,
           "title": "Show real LIFX power in B.U.N.N.Y. and stop presenting controls a device cannot use",
           "closedAt": "2026-09-25T23:03:39Z",
           "createdAt": "2026-09-25T21:37:00Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/330"
+        },
+        {
+          "number": 392,
+          "title": "Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime",
+          "closedAt": "2026-09-26T01:10:01Z",
+          "createdAt": "2026-09-26T00:30:58Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/392"
         }
       ],
-      "openIssueCount": 151,
+      "openIssueCount": 154,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T00:30:58Z"
+        "2026-09-26T01:34:38Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -2679,17 +2774,27 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 15
+        "2026-09-26": 22
       }
     },
     "codex-nanoleaf": {
       "createdAt": "2026-09-05T16:18:38Z",
-      "pushedAt": "2026-09-25T20:57:12Z",
+      "pushedAt": "2026-09-26T01:35:10Z",
       "defaultBranch": "main",
-      "headSha": "88831e48ab06a3ebf7bc4403466efd2e353e6c05",
-      "mainCommitCount": 66,
+      "headSha": "f003a390e14f32083a4ba4708b88cb4fccaa7b5d",
+      "mainCommitCount": 68,
       "firstCommitAt": "2026-09-05T16:17:05Z",
       "mainCommits": [
+        {
+          "sha": "f003a390e14f32083a4ba4708b88cb4fccaa7b5d",
+          "date": "2026-09-26T01:35:10Z",
+          "message": "Give shared operations owning modules and one dependency direction (#173)"
+        },
+        {
+          "sha": "0043456deea4f224dfa39ae1bb9d4f289e77e3d1",
+          "date": "2026-09-26T00:59:41Z",
+          "message": "Expose element geometry read-only on the integration route (#172)"
+        },
         {
           "sha": "88831e48ab06a3ebf7bc4403466efd2e353e6c05",
           "date": "2026-09-25T20:57:12Z",
@@ -3509,6 +3614,22 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/165",
           "base": "main",
           "mergedAt": "2026-09-25T20:57:12Z"
+        },
+        {
+          "number": 172,
+          "title": "Expose element geometry read-only on the integration route",
+          "createdAt": "2026-09-26T00:48:08Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/172",
+          "base": "main",
+          "mergedAt": "2026-09-26T00:59:41Z"
+        },
+        {
+          "number": 173,
+          "title": "Give shared operations owning modules and one dependency direction",
+          "createdAt": "2026-09-26T01:21:26Z",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/pull/173",
+          "base": "main",
+          "mergedAt": "2026-09-26T01:35:10Z"
         }
       ],
       "openPRs": [],
@@ -3978,6 +4099,14 @@
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/117"
         },
         {
+          "number": 118,
+          "title": "Separate shared configuration operations, runtime primitives and hook management",
+          "closedAt": "2026-09-26T01:38:40Z",
+          "createdAt": "2026-09-24T21:21:25Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/118"
+        },
+        {
           "number": 131,
           "title": "Retire the legacy Windows runtime from source",
           "closedAt": "2026-09-25T00:15:04Z",
@@ -4032,9 +4161,17 @@
           "createdAt": "2026-09-25T21:03:08Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/166"
+        },
+        {
+          "number": 169,
+          "title": "Expose element geometry read-only on the integration route for the Lines and Panels",
+          "closedAt": "2026-09-26T01:21:41Z",
+          "createdAt": "2026-09-25T22:58:19Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/169"
         }
       ],
-      "openIssueCount": 45,
+      "openIssueCount": 43,
       "issueCreatedRange": [
         "2026-09-05T17:58:03Z",
         "2026-09-25T23:00:34Z"
@@ -4052,12 +4189,17 @@
     },
     "divoom-app-upgrade": {
       "createdAt": "2026-09-05T22:00:30Z",
-      "pushedAt": "2026-09-25T23:48:59Z",
+      "pushedAt": "2026-09-26T01:18:03Z",
       "defaultBranch": "main",
-      "headSha": "e1efbf33ff73876aa95f4425457ea255ce270e4c",
-      "mainCommitCount": 40,
+      "headSha": "fec2e2d78f76051b6cb9f7d08669703c74077f8c",
+      "mainCommitCount": 41,
       "firstCommitAt": "2026-09-05T22:00:30Z",
       "mainCommits": [
+        {
+          "sha": "fec2e2d78f76051b6cb9f7d08669703c74077f8c",
+          "date": "2026-09-26T01:18:03Z",
+          "message": "Show one agent session per Pixoo monitor picture (#98) (#103)"
+        },
         {
           "sha": "e1efbf33ff73876aa95f4425457ea255ce270e4c",
           "date": "2026-09-25T23:48:59Z",
@@ -4571,6 +4713,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/99",
           "base": "main",
           "mergedAt": "2026-09-25T23:48:59Z"
+        },
+        {
+          "number": 103,
+          "title": "Show one agent session per Pixoo monitor picture (#98)",
+          "createdAt": "2026-09-26T01:00:14Z",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/pull/103",
+          "base": "main",
+          "mergedAt": "2026-09-26T01:18:03Z"
         }
       ],
       "openPRs": [],

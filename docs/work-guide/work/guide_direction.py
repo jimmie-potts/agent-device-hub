@@ -16,14 +16,14 @@ hand-written list beside it.
 import html
 
 AS_OF = '2026-09-25'
-REVISION = '503450c'
+REVISION = 'ed95501'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [
     ('Nanoleaf Lines and Panels',
      'Installed on the Linux runtime and following shared monitoring, with the Lines and the NL22 Panels as independent devices. '
-     'Codex titles, the compact inspector, configurable Work-mode colors, saved-scene playback, the Lines/Panels map selector and Panels control through the controller and MCP are delivered. Installing the Panels in the controller, MCP host and hub is next.',
-     ['N46', 'N139', 'N91', 'N44', 'N113', 'N167']),
+     'Codex titles, the compact inspector, configurable Work-mode colors, saved-scene playback, the Lines/Panels map selector, Panels control through the controller and MCP, and read-only element geometry for the hub are delivered. Installing the Panels in the controller, MCP host and hub is next.',
+     ['N46', 'N139', 'N91', 'N44', 'N113', 'N169', 'N167']),
     ('Pixoo',
      'Installed as a user service with hub settings; Monitor and Media controls are verified on the display, and now-playing cards are installed and checked. '
      'Two media defects remain visible on the device: extra GIF flashes and cloud content after screen-on or a reboot.',
@@ -75,7 +75,7 @@ SEQUENCE = [
     (['H20'], 'Decide the LIFX status behavior: bulbs, colors, brightness cap, quiet behavior and the manual-change policy. No code, and it releases the LIFX installation and LIFX in every cross-device story.'),
     (['H67'], 'Desk presets with fixed Work, Free and Quiet mappings across Nanoleaf and Pixoo: the smallest visible cross-device win and the base for coordinated modes. The tracker still marks it deferred until the owner selects it.'),
     (['H356'], 'Start the WSL runtime at boot: linger, an idle timeout and one scheduled task, so the lights, map, Pixoo and hub are back after a restart without opening a terminal (ADR 0008).'),
-    (['N169', 'H355'], 'Read-only wall geometry and the Prism art in the dashboard: the first shared device art, used by the home miniature and the Nanoleaf pages (ADR 0007).'),
+    (['H355'], 'The Prism art in the dashboard, drawn from the delivered read-only wall geometry: the first shared device art, used by the home miniature and the Nanoleaf pages (ADR 0007).'),
     (['H233'], 'Add the Sonos Move as the second playback source: the qualified route to play and resume from the hub.'),
     (['N112', 'N81', 'N115'], 'Wall presentation the owner sees directly: show the Lines hold and how to resume it, queue the delayed completion comet, and keep comets and waves when the worker skips revisions.'),
 ]
@@ -84,7 +84,7 @@ SEQUENCE = [
 IMPROVEMENTS = [
     ('Pixoo media: keep MCP status valid after dashboard uploads, and keep Divoom cloud content off the display after screen-on and reboots.', ['P79', 'P76']),
     ('Tidbyt: check stale-status readability with night mode enabled.', ['H227']),
-    ('Dashboard: document connecting device controllers, and stop component aliases colliding with built-in pages.', ['H232', 'H247']),
+    ('Dashboard: stop component aliases colliding with built-in pages.', ['H247']),
     ('Guide: mission-map navigation and signal playback build on the delivered Neon restyle, once their stale blocked labels are cleared.', ['H201', 'H202']),
 ]
 
@@ -93,6 +93,7 @@ DELIVERED_SINCE = [
     ('2026-09-25', ['H241'], 'Consistent retirement across Codex and Claude merged; cross-device eviction and the Nanoleaf Work/Free switch no longer wait on it.'),
     ('2026-09-25', ['N44', 'N113'], 'The Lines/Panels map selector and Panels control through the controller and MCP are delivered in source.'),
     ('2026-09-25', ['H37'], 'Now-playing with Sony-qualified controls is installed and its installed acceptance passed; the Sonos Move follows as the second source.'),
+    ('2026-09-25', ['N169'], 'Read-only element geometry for the Lines and Panels is delivered in source, with the hub\'s sibling route, and installed on the Nanoleaf runtime; the installed hub serves it after its next upgrade.'),
 ]
 
 SCHEDULING = {'candidate': 'Candidate', 'active': 'Active', 'blocked': 'Blocked', 'deferred': 'Deferred', 'closed': 'Closed'}

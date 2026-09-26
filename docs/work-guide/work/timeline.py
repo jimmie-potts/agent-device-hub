@@ -32,12 +32,12 @@ TRACKS = [
     ('Main product path', [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='UI foundation delivered', issues=['H181', 'H182'], guide='bunny-controls', main=True),
-        dict(id='n-controls', x=2, label='Alias fix · setup docs', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
+        dict(id='n-controls', x=2, label='Alias fix · setup docs done', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
         dict(id='n-music', x=3, label='Sonos Move · later music', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('B.U.N.N.Y. shell', [
-        dict(id='n-shell-open', x=0, label='Bookmark · dense home', issues=['H276', 'H277'], guide='bunny-controls'),
+        dict(id='n-shell-open', x=0, label='Bookmark · home · next', issues=['H276', 'H277', 'H402'], guide='bunny-controls'),
         dict(id='n-shell-widgets', x=1, label='Widgets · Panels · wall art', issues=['H287', 'H286', 'H323', 'H355'], guide='bunny-controls'),
     ]),
     ('Status page + histories', [
@@ -60,7 +60,7 @@ TRACKS = [
         dict(id='n-steam-events', x=2, label='Steam event source', issues=['H379', 'H380'], guide='steam-deck'),
     ]),
     ('Game-session routines', [
-        dict(id='n-game-routines', x=4, label='Game session sets the desk', issues=['H381'], guide='steam-deck'),
+        dict(id='n-game-routines', x=4, label='Game sets desk · quiet', issues=['H381', 'H399'], guide='steam-deck'),
     ]),
     ('IFTTT', [
         dict(id='n-ifttt', x=3, label='IFTTT out · IFTTT in', issues=['H385', 'H386'], guide='assistant-access'),
@@ -70,6 +70,9 @@ TRACKS = [
     ]),
     ('Roborock moments', [
         dict(id='n-roborock-events', x=4, label='Roborock moments', issues=['H391'], guide='assistant-access'),
+    ]),
+    ('Artwork palettes', [
+        dict(id='n-art-palettes', x=4, label='Palettes from artwork', issues=['H400'], guide='assistant-access'),
     ]),
     ('Steam Deck client', [
         dict(id='n-deck-client', x=3, label='Deck overlay · rumble', issues=['H382', 'H383'], guide='steam-deck'),
@@ -95,10 +98,10 @@ TRACKS = [
     ]),
     ('Producers + MCP clients', [
         dict(id='n-producers', x=1, label='Producer · MCP clients', issues=['H367', 'H371', 'N159', 'N160'], guide='shared-codex'),
-        dict(id='n-producers-ends', x=2, label='Session-end qualification', issues=['H312'], guide='shared-codex'),
+        dict(id='n-producers-ends', x=2, label='Ends done · start state', issues=['H312', 'H397'], guide='shared-codex'),
     ]),
     ('Monitor readability', [
-        dict(id='n-monitor-rows', x=1, label='Monitor rows · aliases', issues=['P87', 'P98', 'P100', 'P102', 'H364', 'H372', 'H374'], guide='shared-codex'),
+        dict(id='n-monitor-rows', x=1, label='Monitor rows · aliases', issues=['P87', 'P98', 'P100', 'P102', 'H364', 'H372', 'H374', 'H398'], guide='shared-codex'),
     ]),
     ('Provider colors', [
         dict(id='n-provider-colors', x=2, label='Provider color pair', issues=['H373'], guide='shared-codex'),
@@ -149,7 +152,7 @@ TRACKS = [
         dict(id='n-nl-external', x=1, label='Report external changes', issues=['N161'], guide='nanoleaf-devices'),
     ]),
     ('Wall map retirement', [
-        dict(id='n-shell-geometry', x=0, label='Geometry · extension ops', issues=['N169', 'N170'], guide='nanoleaf-devices'),
+        dict(id='n-shell-geometry', x=0, label='Geometry done · ext. ops', issues=['N169', 'N170'], guide='nanoleaf-devices'),
         dict(id='n-shell-retire', x=4, label='Retire the wall map', issues=['N171'], guide='nanoleaf-devices'),
     ]),
     ('Wall map scene picker', [
@@ -244,7 +247,7 @@ TRACKS = [
         dict(id='n-px-cloud', x=0, label='Divoom cloud disconnect', issues=['P83'], guide='pixoo-media'),
     ]),
     ('Hosting + migrations', [
-        dict(id='n-host-keepalive', x=1, label='Keep-alive · clean stops', issues=['H356', 'H361'], guide='hosting-migrations'),
+        dict(id='n-host-keepalive', x=1, label='Keep-alive · stops · status', issues=['H356', 'H361', 'H403'], guide='hosting-migrations'),
         dict(id='n-host', x=2, label='Linux server · ARM64 check', issues=['H44', 'P14'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
@@ -269,7 +272,7 @@ TRACKS = [
         dict(id='n-nl-docs', x=0, label='Upgrade docs · glossary', issues=['N162', 'N163'], guide='development-workflow'),
     ]),
     ('Nanoleaf architecture', [
-        dict(id='n-nl-config', x=0, label='Config and hook owners', issues=['N118'], guide='development-workflow'),
+        dict(id='n-nl-config', x=0, label='Config and hook owners done', issues=['N118'], guide='development-workflow'),
         dict(id='n-nl-owners', x=1, label='Render input · state owners', issues=['N127', 'N120'], guide='development-workflow'),
     ]),
     ('Nanoleaf worker context', [
@@ -312,10 +315,10 @@ TRACKS = [
         dict(id='n-guide-overview', x=0, label='Overview refresh delivered', issues=[], guide='work-guide'),
     ]),
     ('Architecture viewers', [
-        dict(id='n-guide-viewers', x=0, label='Re-render viewers · ADRs', issues=['H392'], guide='work-guide'),
+        dict(id='n-guide-viewers', x=0, label='Viewers done · atlas prose', issues=['H392', 'H401'], guide='work-guide'),
     ]),
     ('Guide refresh', [
-        dict(id='n-guide-snapshot', x=0, label='Snapshot · text · recs', issues=['H324', 'H311', 'H341'], guide='work-guide'),
+        dict(id='n-guide-snapshot', x=0, label='Snapshot done · text · recs', issues=['H324', 'H311', 'H341'], guide='work-guide'),
         dict(id='n-guide-nightly', x=1, label='Nightly refresh · warnings', issues=['H315', 'H316'], guide='work-guide'),
         dict(id='n-guide-publish-auto', x=2, label='Auto publish', issues=['H317'], guide='work-guide'),
     ]),

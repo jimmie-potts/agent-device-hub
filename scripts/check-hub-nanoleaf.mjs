@@ -20,5 +20,8 @@ try{
  const applied=await client.integrationReceipt(request.requestId);assert.equal(applied.body.outcome,'applied');assert.equal(applied.body.physicalOutcome,'unknown');
  const updated=await client.integrationSnapshot();assert.equal(updated.settings.style,'project');
  assert.equal((await client.integrationCommand(request)).body.outcome,'applied');
- console.log(JSON.stringify({contract:snapshot.apiVersion,source:'80628498136203a8f5fcb06ab5fa306e961e2def',http:true,queued:true,applied:true,replay:true,physical:false}));
+ // The fixture saves two Lines without drawing geometry, so every element is undrawn and there is no connector graph.
+ const geometry=await client.integrationGeometry();
+ assert.deepEqual({kind:geometry.kind,ids:geometry.elements.map(e=>e.id),drawn:geometry.elements.some(e=>e.points),connectors:geometry.connectors},{kind:'lines',ids:['101:102','103:104'],drawn:false,connectors:null});
+ console.log(JSON.stringify({contract:snapshot.apiVersion,source:pin.revision,http:true,queued:true,applied:true,replay:true,geometry:true,physical:false}));
 }finally{client?.close();child.stdin.end('stop\n');await new Promise(r=>child.once('exit',r));}

@@ -44,7 +44,7 @@
 #114 [CLOSED] Change a registered Nanoleaf device's address without re-enrolling
 #115 [OPEN] Keep completion comets and waves when the worker skips owner revisions
 #117 [CLOSED] Preserve Open in Codex keyboard focus through unchanged polling
-#118 [OPEN] Separate shared configuration operations, runtime primitives and hook management
+#118 [CLOSED] Separate shared configuration operations, runtime primitives and hook management
 #119 [OPEN] Move the wall page's rebuild policy into one scheduler behind a view model
 #120 [OPEN] Contain SQLite backup, fixture and operation knowledge within state owners
 #121 [OPEN] Carry device identity as a worker context instead of threading parameters
@@ -80,6 +80,6 @@
 #163 [OPEN] Define the project's domain glossary
 #167 [OPEN] Add the NL22 Panels to the installed controller, MCP host and hub
 #168 [OPEN] Pick and play a device's saved scene from its wall map page
-#169 [OPEN] Expose element geometry read-only on the integration route for the Lines and Panels
+#169 [CLOSED] Expose element geometry read-only on the integration route for the Lines and Panels
 #170 [OPEN] Carry orientation, palette, Locate, eviction and Panels configuration through the integration extension
 #171 [OPEN] Retire the wall map once every operation has a home in the B.U.N.N.Y. shell

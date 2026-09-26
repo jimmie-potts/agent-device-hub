@@ -112,7 +112,7 @@
 #227 [OPEN] Check Tidbyt stale-status readability with night mode enabled
 #229 [OPEN] Add optional shared playback artwork from the Sony source
 #231 [CLOSED] Make BUNNY device settings apply in one step and simplify command status
-#232 [OPEN] Document connecting device controllers for BUNNY in the hub setup guide
+#232 [CLOSED] Document connecting device controllers for BUNNY in the hub setup guide
 #233 [OPEN] Add the Sonos Move as a second playback source
 #237 [CLOSED] Use personal-project scope defaults in story writing and pickup
 #240 [OPEN] Qualify enforceable Hub merge gates and guide-only CI handling
@@ -161,7 +161,7 @@
 #309 [OPEN] Delete merged delivery branches on merge and prune the ones left behind
 #310 [OPEN] Record the 2026-09-25 delivery gotchas in the development and SDLC docs
 #311 [OPEN] Reconcile story text made stale by the 2026-09-25 deliveries
-#312 [OPEN] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
+#312 [CLOSED] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
 #315 [OPEN] Refresh the work guide nightly into one rolling pull request
@@ -170,7 +170,7 @@
 #319 [OPEN] Add the LIFX Beam to the LIFX controller and B.U.N.N.Y.
 #320 [OPEN] Install and verify the LIFX Beam in B.U.N.N.Y.
 #323 [OPEN] Show dashboard controls for a Nanoleaf device with a read-only integration snapshot
-#324 [OPEN] Refresh the work guide snapshot so idea marks and the stories filed since the morning of 2026-09-25 reach the static guide
+#324 [CLOSED] Refresh the work guide snapshot so idea marks and the stories filed since the morning of 2026-09-25 reach the static guide
 #325 [OPEN] Show which stories unlock the most ideas from their Extends marks
 #327 [OPEN] Show one run of LIFX Beam zones per agent session as a desk task strip
 #328 [OPEN] Generate a weekly what-changed page in the guide from nightly refresh reports
@@ -228,4 +228,11 @@
 #387 [OPEN] Put the desk in Quiet when the owner leaves home and apply a chosen look on arrival
 #390 [OPEN] Show the Roborock on the B.U.N.N.Y. home as a widget
 #391 [OPEN] Add the Roborock as an event source so run end and stuck alerts become moments
-#392 [OPEN] Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime
+#392 [CLOSED] Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime
+#397 [OPEN] Stop showing a Claude Code session as working before its first prompt and after /resume
+#398 [OPEN] Keep a session's label when the same session resumes
+#399 [OPEN] Keep flourishes quiet automatically while a game runs
+#400 [OPEN] Derive device palettes from artwork as one hub service for games and music
+#401 [OPEN] Update the atlas's playback prose and overview card for installed shared playback
+#402 [OPEN] Show the guide's Build-next list as a widget on the B.U.N.N.Y. home
+#403 [OPEN] Show the six runtime services and their last start on the B.U.N.N.Y. home
