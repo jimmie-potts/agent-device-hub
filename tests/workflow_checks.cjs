@@ -368,7 +368,7 @@ test('nightly guide refresh has bounded triggers, permissions and one serialized
   const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide-refresh.yml'), 'utf8'));
   assert.deepEqual(Object.keys(workflow.on).sort(), ['schedule', 'workflow_dispatch']);
   assert.deepEqual(workflow.on.schedule, [{ cron: '0 3 * * *', timezone: 'America/New_York' }]);
-  assert.deepEqual(workflow.permissions, { contents: 'write', 'pull-requests': 'write', checks: 'write' });
+  assert.deepEqual(workflow.permissions, { contents: 'write', 'pull-requests': 'write', checks: 'write', issues: 'read' });
   assert.equal(workflow.concurrency['cancel-in-progress'], false);
   assert.equal(workflow.concurrency.group, 'guide-nightly-refresh');
   assert.deepEqual(Object.keys(workflow.jobs), ['refresh']);
