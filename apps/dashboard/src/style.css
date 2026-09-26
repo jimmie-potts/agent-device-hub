@@ -34,6 +34,10 @@ nav a[aria-current]{background:var(--nav-selected);border-color:var(--edge-stron
 nav a:hover{background:var(--raised)}
 .nav-label,.eyebrow{font-size:var(--type-label);letter-spacing:.17em;color:var(--muted-dense);font-weight:650;font-family:var(--mono);margin-bottom:var(--space-xs)}
 .nav-label{margin:var(--space-m) var(--space-m) var(--space-xs)}
+.places-group{border-top:1px solid var(--edge-dense);padding-top:var(--space-s)}
+.places-group nav{display:grid;gap:var(--space-xs)}
+.places-group nav>span{border:1px solid var(--edge-strong);border-radius:var(--radius);background:var(--nav-selected);color:var(--emphasis-text);display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);padding:var(--space-s) var(--space-m);font-weight:650}
+.places-group small{font-size:var(--type-label);color:var(--muted-dense)}
 .sidebar-foot{margin-top:auto;display:grid;gap:var(--space-s);justify-items:start}
 .sidebar-foot p{font-size:var(--type-small);color:var(--muted-dense);margin:0}
 .login>button{margin-bottom:var(--space-l)}
@@ -153,6 +157,7 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(max-width:900px){.shell{grid-template-columns:180px minmax(0,1fr)}.shell>main{padding:0 var(--space-l)}.shell>aside{padding:var(--space-l) var(--space-s)}}
 @media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:var(--space-m)}.brand{font-size:var(--type-subheading)}nav{display:flex;flex-wrap:wrap;gap:var(--space-xs)}nav a{font-size:var(--type-small)}.nav-label{display:none}.sidebar-foot{display:flex;gap:var(--space-m);align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:var(--type-label);padding:var(--space-xs) var(--space-s)}.shell>main{padding:0 var(--space-m)}.top{font-size:var(--type-brand-small);gap:var(--space-s)}.widgets,.cards,.cards.two,.facts,.edit.wide fieldset{grid-template-columns:1fr}.widget[data-size=medium],.widget[data-size=large]{grid-column:auto}.device-art{padding:var(--space-s)}.device-art-host svg{max-height:40vh}.filters{grid-template-columns:1fr}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:var(--space-l)}}
 @media(min-width:681px){.widget[data-size=medium]{grid-column:span 2}}
+@media(max-width:680px){.places-group .nav-label{display:block}.places-group nav{grid-template-columns:repeat(2,minmax(0,1fr))}.places-group nav a,.places-group nav>span{padding:var(--space-xs) var(--space-s)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* Independent columns keep the session list alongside compact controls. */

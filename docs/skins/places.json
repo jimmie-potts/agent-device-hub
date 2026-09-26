@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "places": [
+    {"id": "guide", "label": "Guide", "group": "Public", "publicUrl": "https://jimmie-potts.github.io/agent-device-guide/", "localPath": "docs/work-guide/outputs/agent-device-work-guides.html"},
+    {"id": "architecture", "label": "Architecture", "group": "Public", "publicUrl": "https://jimmie-potts.github.io/agent-device-guide/architecture/arch-shared-system.html", "localPath": "docs/work-guide/outputs/architecture/arch-shared-system.html"},
+    {"id": "atlas", "label": "Atlas", "group": "Public", "publicUrl": "https://jimmie-potts.github.io/agent-device-guide/atlas/", "localPath": "docs/system-design/index.html"},
+    {"id": "reference", "label": "Reference", "group": "Public", "publicUrl": "https://jimmie-potts.github.io/agent-device-guide/atlas/reference/", "localPath": "docs/system-design/reference/index.html"},
+    {"id": "bunny", "label": "B.U.N.N.Y.", "group": "Local", "localUrl": "http://127.0.0.1:8788/"},
+    {"id": "wall", "label": "Wall", "group": "Local", "localUrl": "http://127.0.0.1:8765/"}
+  ]
+}

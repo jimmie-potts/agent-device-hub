@@ -1263,16 +1263,6 @@
             }
           },
           {
-            "number": 315,
-            "blockedBy": {
-              "totalCount": 0,
-              "pageInfo": {
-                "hasNextPage": false
-              },
-              "nodes": []
-            }
-          },
-          {
             "number": 317,
             "blockedBy": {
               "totalCount": 2,
@@ -1282,7 +1272,7 @@
               "nodes": [
                 {
                   "number": 315,
-                  "state": "OPEN",
+                  "state": "CLOSED",
                   "repository": {
                     "nameWithOwner": "jimmie-potts/agent-device-hub"
                   }
@@ -2095,21 +2085,44 @@
           {
             "number": 427,
             "blockedBy": {
-              "totalCount": 0,
+              "totalCount": 2,
               "pageInfo": {
                 "hasNextPage": false
               },
-              "nodes": []
+              "nodes": [
+                {
+                  "number": 428,
+                  "state": "OPEN",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/agent-device-hub"
+                  }
+                },
+                {
+                  "number": 465,
+                  "state": "OPEN",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/agent-device-hub"
+                  }
+                }
+              ]
             }
           },
           {
             "number": 428,
             "blockedBy": {
-              "totalCount": 0,
+              "totalCount": 1,
               "pageInfo": {
                 "hasNextPage": false
               },
-              "nodes": []
+              "nodes": [
+                {
+                  "number": 465,
+                  "state": "OPEN",
+                  "repository": {
+                    "nameWithOwner": "jimmie-potts/agent-device-hub"
+                  }
+                }
+              ]
             }
           },
           {
@@ -2274,6 +2287,16 @@
           },
           {
             "number": 459,
+            "blockedBy": {
+              "totalCount": 0,
+              "pageInfo": {
+                "hasNextPage": false
+              },
+              "nodes": []
+            }
+          },
+          {
+            "number": 465,
             "blockedBy": {
               "totalCount": 0,
               "pageInfo": {

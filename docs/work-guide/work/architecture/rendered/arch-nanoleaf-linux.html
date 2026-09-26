@@ -4847,8 +4847,47 @@
       svg [data-node-id], svg [data-edge-from], svg [data-detail], svg [data-detail-anchor], svg [data-legend-hit], svg { transition: none !important; }
     }
   </style>
-</head>
-<body>
+<style id="places-style">/* Fixed-meaning colors shared by every skin. A skin never redefines these names.
+   Repository identity, issue status, atlas document status and diagram edge keys
+   keep their meaning in every theme; only the shade changes for light and print. */
+:root{
+--repo-hub:#22d3ee;--repo-nanoleaf:#e879f9;--repo-pixoo:#b5ed86;
+--status-open:#a8bbd5;--status-active:#f5ce83;--status-blocked:#ffa3a6;--status-completed:#8ee0b6;--status-closed:#b9afce;
+--status-delivered:#83edce;--status-planned:#a0c9ff;--status-qualification:#ffcc83;--status-mixed:#ffcc83;--status-optional:#d6b1ff;
+--edge-observe:#34d399;--edge-feed:#a78bfa;--edge-command:#fb7185;--edge-other:#94a3b8;
+--walk-alt:#f5b544}
+@media screen{:root[data-theme="light"]{
+--repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
+--status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
+--status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#b45309}}
+/* Without scripts, follow the reader's system preference. Keep identical to the block above. */
+@media screen and (prefers-color-scheme:light){:root:not([data-theme="dark"]){
+--repo-hub:#0e7490;--repo-nanoleaf:#a21caf;--repo-pixoo:#3f6a0e;
+--status-open:#4a5f7a;--status-active:#8a5300;--status-blocked:#b42330;--status-completed:#1d7a4e;--status-closed:#6b5a8e;
+--status-delivered:#13674d;--status-planned:#205898;--status-qualification:#815213;--status-mixed:#815213;--status-optional:#6e438f;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#b45309}}
+@media print{:root{
+--repo-hub:#145565;--repo-nanoleaf:#7b2c8a;--repo-pixoo:#4a6b1f;
+--status-open:#334655;--status-active:#7a4a00;--status-blocked:#9b1c28;--status-completed:#17603d;--status-closed:#574a75;
+--status-delivered:#17563f;--status-planned:#174f80;--status-qualification:#715021;--status-mixed:#715021;--status-optional:#714489;
+--edge-observe:#059669;--edge-feed:#7c3aed;--edge-command:#e11d48;--edge-other:#64748b;
+--walk-alt:#9a4a06}}
+.places-nav{box-sizing:border-box;display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .65rem;width:100vw;max-width:100%;padding:.55rem .85rem;border-block:1px solid var(--edge-other);background:transparent;color:var(--status-open);font:500 .8rem/1.4 system-ui,sans-serif;letter-spacing:normal;overflow-wrap:anywhere}
+.places-nav *{box-sizing:border-box}
+.places-nav__brand{font-weight:750;letter-spacing:.07em;color:var(--status-delivered);margin-right:.4rem}
+.places-nav__current{font-weight:650;color:var(--status-delivered)}
+.places-nav__links{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem .65rem;min-width:0}
+.places-nav a,.places-nav__current{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .2rem;white-space:normal}
+.places-nav a{color:var(--status-open);text-decoration:underline;text-underline-offset:.2em}
+.places-nav a:hover,.places-nav a:focus-visible{color:var(--status-delivered)}
+.places-nav a:focus-visible{outline:2px solid var(--status-delivered);outline-offset:2px}
+.places-nav__tag{font-size:.67rem;text-transform:uppercase;letter-spacing:.05em;color:var(--status-active)}
+@media print{.places-nav{display:none}}
+</style></head>
+<body><!-- places:start --><nav class="places-nav" aria-label="Places" data-current="architecture"><span class="places-nav__brand">B.U.N.N.Y. / Architecture</span><span class="places-nav__links"><a href="../../../outputs/agent-device-work-guides.html">Guide</a><span class="places-nav__current" aria-current="page">Architecture</span><a href="../../../../system-design/index.html">Atlas</a><a href="../../../../system-design/reference/index.html">Reference</a><a href="http://127.0.0.1:8788/">B.U.N.N.Y.<span class="places-nav__tag">Local</span></a><a href="http://127.0.0.1:8765/">Wall<span class="places-nav__tag">Local</span></a></span></nav><!-- places:end -->
   <!-- Toolbar: theme, live visual style, trace motion, presentation stage, and export.
        Motion appears only for trace-enabled artifacts and has no shortcut;
        Keyboard: T toggles theme, S cycles style, F toggles the stage, E opens export. -->

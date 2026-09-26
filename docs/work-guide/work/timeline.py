@@ -381,7 +381,7 @@ TRACKS = [
         dict(id='n-guide-records', x=3, label='Delivery records', issues=['H307'], guide='work-guide'),
     ]),
     ('Guide navigation + polish', [
-        dict(id='n-guide-places', x=0, label='Places · polish · installed', issues=['H278', 'H279', 'H313'], guide='work-guide'),
+        dict(id='n-guide-places', x=0, label='Places · polish · installed', issues=['H278', 'N189', 'H279', 'H313'], guide='work-guide'),
     ]),
     ('Guide automatic refresh', [
         dict(id='n-guide-refresh', x=3, label='Manual refresh baseline', issues=[], guide='development-workflow'),

@@ -62,7 +62,7 @@
 #134 [CLOSED] Decide the disposition of the Lively wallpaper issues
 #135 [CLOSED] Merge the wall map inspector cards and rethink reservation and override controls
 #139 [CLOSED] Customize Work-mode light colors so unread tasks stand out from the base
-#140 [OPEN] Add an upgrade and rollback command for the Linux runtime
+#140 [OPEN] Upgrade and roll back the Linux runtime with one command under the install contract
 #146 [OPEN] Play custom animations for different events
 #149 [OPEN] Cap how fast animations can flash
 #150 [CLOSED] Stop an animation and restore the remembered scene through MCP
@@ -77,7 +77,7 @@
 #159 [OPEN] Register the Nanoleaf MCP server with the Codex clients
 #160 [OPEN] Investigate Codex sessions left blocked by MCP tool approvals
 #161 [OPEN] Report when someone changes the Lines outside the bridge
-#162 [OPEN] Document the in-place runtime upgrade, the codex exec MCP override and the hand-listed bridge modules
+#162 [OPEN] Document the codex exec MCP override and the hand-listed bridge modules
 #163 [OPEN] Define the project's domain glossary
 #167 [CLOSED] Add the NL22 Panels to the installed controller, MCP host and hub
 #168 [OPEN] Pick and play a device's saved scene from its wall map page
@@ -87,7 +87,7 @@
 #174 [CLOSED] Adopt device-mcp 1.0.1 so the MCP host keeps room for new tools
 #175 [OPEN] Change project colors and task projects from Codex through MCP
 #178 [OPEN] Expose each element's task status read-only on the integration route
-#179 [OPEN] Use shared session titles and project names instead of local-only metadata
 #180 [OPEN] Say the hub dashboard now shows Panels controls in the controller guide
 #187 [OPEN] Install and verify the animation-control bundle on the approved Nanoleaf runtime
 #188 [OPEN] Check a saved animation against the current Lines layout before playing it
+#189 [OPEN] Link the wall map header back to B.U.N.N.Y.

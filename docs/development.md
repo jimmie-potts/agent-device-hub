@@ -61,6 +61,19 @@ remain outside Git. This documentation workflow starts no application, installs
 no hooks and contacts no devices. Product contracts and runtime acceptance remain
 with their existing owners. No new OpenSpec capability is introduced by the atlas.
 
+Hub #278 adds the shared Places manifest under `docs/skins/`. Run
+`python3 -m unittest docs/skins/test_places.py` for its order, destination and
+local/public link contract; `docs/system-design/check.py` includes that test in
+the Work guide CI job. Run the public exporter into a new disk-backed scratch
+directory and inspect `atlas/manifest.json`'s `placesPages`: every exported HTML
+page must carry the public Places strip. The dashboard browser suite checks its
+sidebar destinations and that rendering them sends no controller request. The
+Nanoleaf return link is owned by codex-nanoleaf #189 and has separate source and
+UI acceptance.
+Run `node docs/skins/check_places.cjs` after generation for the source-page
+inventory, 390 px navigation and screenshots. The Work guide CI job runs it with
+the pinned Chromium alongside the existing guide and atlas browser checks.
+
 For an authorized public atlas publication, export from the exact validated Hub
 revision with `python3 docs/system-design/export_public.py /absolute/new/site-stage`.
 The exporter stages the generated guide as `site-stage/index.html`, its nine

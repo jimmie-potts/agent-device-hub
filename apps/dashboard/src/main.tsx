@@ -1,5 +1,6 @@
 import React, {useEffect,useId,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
+import placesManifest from '../../../docs/skins/places.json';
 import type {SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot} from '../../../packages/contracts/src/types';
 import {Api,ApiError,safeEditorUrl,playbackControls,playbackEvidence,playbackRequest,isPlaybackReceipt,observedColor,type Lighting,type Context,type Component,type PlaybackAction,type PlaybackReceipt,type PlaybackSnapshot} from './client';
@@ -24,6 +25,16 @@ function navigate(hash:string){if(location.hash!==hash)location.hash=hash;emitRo
 function NavLink({route,current,children}:{route:Route;current?:Route;children:React.ReactNode}){
  const href=routeHash(route);
  return <a href={href} aria-current={current&&routeHash(current)===href?'page':undefined} onClick={e=>{if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();navigate(href);}}>{children}</a>;
+}
+type Place={id:string;label:string;group:'Public'|'Local';publicUrl?:string;localUrl?:string};
+const places=placesManifest.places as Place[];
+function PlacesNav(){
+ return <div className="places-group"><p className="nav-label">PLACES</p><nav aria-label="Places">{places.map(place=>{
+  const href=place.group==='Local'?safeEditorUrl(place.localUrl):place.publicUrl;
+  if(place.id==='bunny')return <span key={place.id} aria-current="page">{place.label}<small>Local</small></span>;
+  if(!href||(place.group==='Public'&&!href.startsWith('https://jimmie-potts.github.io/agent-device-guide/')))throw new Error(`Invalid place: ${place.id}`);
+  return <a key={place.id} href={href} target="_blank" rel="noopener noreferrer">{place.label}{place.group==='Local'&&<small>Local</small>}</a>;
+ })}</nav></div>;
 }
 /** The status strip a component shows on its page and in its home widget: the everyday readouts, with the rare facts left to the Details disclosure. */
 function statusItems(d:DeviceControls,now:number):[string,React.ReactNode][]{
@@ -217,7 +228,7 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
  const components=context?.components??[],playback=context?.playback;
  const known=route.kind==='home'||route.kind==='connections'||(route.kind==='component'&&components.some(c=>c.id===route.id))||(route.kind==='playback'&&playback?.sourceId===route.sourceId);
  const view={context,control:context?{...context,control:context.control&&!error}:undefined};
- return <div className="shell"><a className="skip" href="#main" onClick={e=>{e.preventDefault();document.getElementById('main')?.focus();}}>Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><NavLink route={{kind:'home'}} current={route}>Home <span>{sessions.length}</span></NavLink><p className="nav-label">COMPONENTS</p>{components.map(c=><NavLink key={c.id} route={{kind:'component',id:c.id}} current={route}>{c.id}<small>{c.kind}</small></NavLink>)}{playback&&<><p className="nav-label">MUSIC</p><NavLink route={{kind:'playback',sourceId:playback.sourceId}} current={route}>{playback.sourceId}<small>now playing</small></NavLink></>}<NavLink route={{kind:'connections'}} current={route}>Connections</NavLink></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p>{renew&&error==='unauthenticated'&&<button onClick={renew}>Sign in again</button>}<button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
+ return <div className="shell"><a className="skip" href="#main" onClick={e=>{e.preventDefault();document.getElementById('main')?.focus();}}>Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><NavLink route={{kind:'home'}} current={route}>Home <span>{sessions.length}</span></NavLink><p className="nav-label">COMPONENTS</p>{components.map(c=><NavLink key={c.id} route={{kind:'component',id:c.id}} current={route}>{c.id}<small>{c.kind}</small></NavLink>)}{playback&&<><p className="nav-label">MUSIC</p><NavLink route={{kind:'playback',sourceId:playback.sourceId}} current={route}>{playback.sourceId}<small>now playing</small></NavLink></>}<NavLink route={{kind:'connections'}} current={route}>Connections</NavLink></nav><PlacesNav/><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p>{renew&&error==='unauthenticated'&&<button onClick={renew}>Sign in again</button>}<button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
  {components.map(c=><section key={c.id} hidden={!(route.kind==='component'&&route.id===c.id)} aria-label={c.id}>{view.control&&<ComponentView component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/>}</section>)}
  {playback&&<section key={'playback:'+playback.sourceId} hidden={!(route.kind==='playback'&&route.sourceId===playback.sourceId)} aria-label="Now playing"><PlaybackView api={api} sourceId={playback.sourceId} control={!!context?.control&&!error} now={now}/></section>}
  <section hidden={route.kind!=='home'} aria-label="Home"><header className="page"><h1>Home</h1><div className="home-status"><span>{sessions.filter(s=>s.activity==='active').length} active · {components.length} components</span><CollectorIndicator monitor={monitor} feed={feed} received={received} now={now} error={error}/></div></header>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}

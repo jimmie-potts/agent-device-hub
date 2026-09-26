@@ -5,9 +5,14 @@ HTML_ATTRIBUTES, put head_script() in <head> and run controls_script(). Each pag
 supplies a #theme-toggle button. Stdlib only.
 """
 from pathlib import Path
+from html import escape
+import json
+import os
 import re
+from urllib.parse import urlsplit
 
 DIR = Path(__file__).resolve().parent
+REPO = DIR.parent.parent
 SKIN = 'neon-geometry-wars'
 HTML_ATTRIBUTES = f'data-skin="{SKIN}"'
 # Shared by the guide and the atlas so a reader's choice follows them between the two.
@@ -23,6 +28,76 @@ ARCHIFY_TOKENS = {'--text-muted': 'var(--muted)', '--text-dim': 'var(--muted)',
 def stylesheet():
     """Fixed-meaning tokens, then the skin's role tokens and decoration."""
     return ''.join((DIR / name).read_text(encoding='utf-8') for name in ('fixed.css', f'{SKIN}.css'))
+
+
+def places():
+    """Read and validate the shared, public-safe destination inventory."""
+    data = json.loads((DIR / 'places.json').read_text(encoding='utf-8'))
+    result = data['places']
+    assert data['version'] == 1 and [p['id'] for p in result] == [
+        'guide', 'architecture', 'atlas', 'reference', 'bunny', 'wall']
+    assert [p['group'] for p in result] == ['Public'] * 4 + ['Local'] * 2
+    assert [p['label'] for p in result] == [
+        'Guide', 'Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.', 'Wall']
+    for place in result:
+        if place['group'] == 'Public':
+            url = urlsplit(place['publicUrl'])
+            assert url.scheme == 'https' and url.netloc == 'jimmie-potts.github.io'
+            assert url.path.startswith('/agent-device-guide/') and not url.query and not url.fragment
+            local = Path(place['localPath'])
+            assert not local.is_absolute() and local.parts[0] == 'docs' and '..' not in local.parts
+        else:
+            url = urlsplit(place['localUrl'])
+            assert url.scheme == 'http' and url.hostname == '127.0.0.1'
+            assert url.path == '/' and not url.query and not url.fragment and not url.username
+    return result
+
+
+def places_stylesheet(include_fixed=False):
+    return ((DIR / 'fixed.css').read_text(encoding='utf-8') if include_fixed else '') + (DIR / 'places-style.inc').read_text(encoding='utf-8')
+
+
+def places_strip(current, output, public=False):
+    """The same labels/order, with source-relative or published destinations."""
+    output = Path(output).resolve()
+    items = places()
+    assert current in {p['id'] for p in items}
+    links = []
+    for place in items:
+        label = escape(place['label'])
+        tag = '<span class="places-nav__tag">Local</span>' if place['group'] == 'Local' else ''
+        if place['id'] == current:
+            links.append(f'<span class="places-nav__current" aria-current="page">{label}{tag}</span>')
+        else:
+            if place['group'] == 'Local':
+                href = place['localUrl']
+            elif public:
+                href = place['publicUrl']
+            else:
+                href = os.path.relpath(REPO / place['localPath'], output.parent).replace(os.sep, '/')
+            links.append(f'<a href="{escape(href, quote=True)}">{label}{tag}</a>')
+    return (f'<!-- places:start --><nav class="places-nav" aria-label="Places" data-current="{current}">'
+            f'<span class="places-nav__brand">B.U.N.N.Y. / {escape(next(p["label"] for p in items if p["id"] == current))}</span>'
+            f'<span class="places-nav__links">{"".join(links)}</span></nav><!-- places:end -->')
+
+
+def inject_places(document, current, output, public=False):
+    """Insert or refresh one generated strip immediately after the body opens."""
+    strip = places_strip(current, output, public=public)
+    style = f'<style id="places-style">{places_stylesheet(include_fixed=True)}</style>'
+    if '<style id="places-style">' in document:
+        document, count = re.subn(r'<style id="places-style">.*?</style>', lambda _: style, document, count=1, flags=re.S)
+        assert count == 1
+    else:
+        assert document.count('</head>') == 1
+        document = document.replace('</head>', style + '</head>', 1)
+    if '<!-- places:start -->' in document:
+        changed, count = re.subn(r'<!-- places:start -->.*?<!-- places:end -->', strip, document, count=1, flags=re.S)
+        assert count == 1 and '<!-- places:start -->' not in changed.replace(strip, '', 1)
+        return changed
+    changed, count = re.subn(r'(<body\b[^>]*>)', lambda m: m.group(1) + strip, document, count=1)
+    assert count == 1
+    return changed
 
 
 def head_script():

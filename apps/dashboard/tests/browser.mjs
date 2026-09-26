@@ -20,6 +20,12 @@ try {
  await page.route(/\/api\/controllers\/v1\/(synthetic|activity|connections)\/snapshot$/,async route=>{const value=structuredClone(f.states.wall);value.identity={controllerId:'test',deviceId:'sensor',sourceId:'test',controllerEpoch:'epoch'};value.capabilities={power:{supported:false},brightness:{supported:false},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};await route.fulfill({json:value});});
  await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();
  await page.getByRole('heading',{name:'Build the integration',exact:true}).waitFor();
+ const places=page.getByRole('navigation',{name:'Places'});
+ assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(),
+  ['Guide','Architecture','Atlas','Reference','B.U.N.N.Y.Local','WallLocal']);
+ assert.equal(await places.getByRole('link',{name:'Wall Local'}).getAttribute('href'),'http://127.0.0.1:8765/');
+ assert.equal(await places.getByRole('link',{name:'Guide'}).getAttribute('href'),'https://jimmie-potts.github.io/agent-device-guide/');
+ assert.equal(f.writes.length,0,'Places are read-only navigation');
  // Hub #277: the home is a widget grid whose component widgets, their quick actions and the sessions sit in the first screen at 1440 px.
  await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
  const widgets=page.locator('article[data-widget=component-status]');await widgets.first().getByLabel('Device mode').waitFor();

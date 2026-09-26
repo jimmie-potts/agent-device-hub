@@ -17,6 +17,8 @@ import re
 import shutil
 import subprocess
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skins'))
+import skin as SKIN  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 ARCH = ROOT / 'work' / 'architecture'
@@ -782,6 +784,9 @@ def render():
         validation = receipt['validation']
         assert validation['checksPassed'] == validation['checkCount'] == 9 and validation['errors'] == 0 and validation['warnings'] == 0, validation
         svg, rules, variables, light = extract(out, diagram)
+        out.write_text(SKIN.inject_places(out.read_text(encoding='utf-8'), 'architecture', out), encoding='utf-8')
+        receipt['archifyArtifact'] = receipt['artifact']
+        receipt['artifact'] = {**receipt['artifact'], 'sha256': sha256(out), 'bytes': out.stat().st_size}
         (RENDERED / f"{diagram['id']}.svg").write_text(svg, encoding='utf-8')
         for selector, body in rules:
             css_rules.setdefault(selector, body)

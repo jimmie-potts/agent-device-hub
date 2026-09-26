@@ -36,6 +36,8 @@ jobs:
         run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" node docs/work-guide/work/check_guide.cjs
       - name: Check system design navigation and print output
         run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs
+      - name: Check shared Places on mobile
+        run: GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_PLACES_RECEIPTS="$RUNNER_TEMP/bunny-places-review" node docs/skins/check_places.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: work-guide-review
@@ -43,6 +45,7 @@ jobs:
             docs/work-guide/work/guide-*.png
             docs/work-guide/work/guide-print-check.pdf
             docs/work-guide/work/guide-verification.json
+            ${{ runner.temp }}/bunny-places-review/
             ${{ runner.temp }}/bunny-design-review
           if-no-files-found: error
           retention-days: 14

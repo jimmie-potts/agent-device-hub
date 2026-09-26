@@ -43,6 +43,7 @@ if __name__ == "__main__":
     subprocess.run([sys.executable, str(ROOT / "reference/check_reference.py")], check=True)
     # Atlas and guide colors come only from the shared token files.
     subprocess.run([sys.executable, str(ROOT.parent / "skins/check_tokens.py")], check=True)
+    subprocess.run([sys.executable, '-m', 'unittest', str(ROOT.parent / 'skins/test_places.py')], check=True)
     assert before == hashes(sources), "Source documents changed during verification"
     data = json.loads((ROOT / "design.json").read_text())
     paths = [ROOT / "index.html", ROOT / "full-system-design.html", *sorted((ROOT / "components").glob("*.html"))]
@@ -54,7 +55,7 @@ if __name__ == "__main__":
         for href in doc.links:
             url = urlsplit(href)
             if url.scheme:
-                assert url.scheme == "https", f"Unexpected URL scheme: {href}"
+                assert url.scheme == "https" or href in {'http://127.0.0.1:8788/', 'http://127.0.0.1:8765/'}, f"Unexpected URL scheme: {href}"
                 continue
             target = (path.parent / unquote(url.path)).resolve() if url.path else path
             assert target.is_file(), f"Broken link in {path.name}: {href}"
