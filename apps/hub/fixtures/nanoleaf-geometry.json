@@ -1,0 +1,2175 @@
+{
+ "_source": {
+  "repository": "https://github.com/jimmie-potts/codex-nanoleaf",
+  "revision": "0043456deea4f224dfa39ae1bb9d4f289e77e3d1",
+  "path": "contracts/integration-v1/fixtures.json",
+  "key": "geometry"
+ },
+ "geometry": [
+  {
+   "name": "lines",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": true
+  },
+  {
+   "name": "panels",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "panels",
+    "elements": [
+     {
+      "id": "4021",
+      "number": 1,
+      "zones": [
+       4021
+      ],
+      "points": [
+       [
+        0,
+        -86.6
+       ],
+       [
+        -75,
+        43.3
+       ],
+       [
+        75,
+        43.3
+       ]
+      ]
+     },
+     {
+      "id": "517",
+      "number": 2,
+      "zones": [
+       517
+      ],
+      "points": [
+       [
+        150,
+        -43.3
+       ],
+       [
+        75,
+        86.6
+       ],
+       [
+        0,
+        -43.3
+       ]
+      ]
+     }
+    ],
+    "connectors": null
+   },
+   "valid": true
+  },
+  {
+   "name": "no-saved-layout",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": null,
+    "elements": [],
+    "connectors": null
+   },
+   "valid": true
+  },
+  {
+   "name": "lines-without-drawable-geometry",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": null
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": null
+     }
+    ],
+    "connectors": null
+   },
+   "valid": true
+  },
+  {
+   "name": "extra-address",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    },
+    "ip": "192.0.2.1"
+   },
+   "valid": false
+  },
+  {
+   "name": "identity-credential",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc",
+     "token": "PRIVATE_CANARY"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "identity-path",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "/private/wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "wrong-version",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/2.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "empty-with-elements",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": null,
+    "elements": [
+     {
+      "id": "4021",
+      "number": 1,
+      "zones": [
+       4021
+      ],
+      "points": [
+       [
+        0,
+        -86.6
+       ],
+       [
+        -75,
+        43.3
+       ],
+       [
+        75,
+        43.3
+       ]
+      ]
+     },
+     {
+      "id": "517",
+      "number": 2,
+      "zones": [
+       517
+      ],
+      "points": [
+       [
+        150,
+        -43.3
+       ],
+       [
+        75,
+        86.6
+       ],
+       [
+        0,
+        -43.3
+       ]
+      ]
+     }
+    ],
+    "connectors": null
+   },
+   "valid": false
+  },
+  {
+   "name": "empty-with-connectors",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": null,
+    "elements": [],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "two-points",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        1,
+        1
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "non-numeric-point",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        "50",
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "mixed-null-points",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": null
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "id-not-from-zones",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:103",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "number-out-of-order",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 3,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "duplicate-element",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     },
+     {
+      "id": "101:102",
+      "number": 3,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "extra-element-key",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ],
+      "position": [
+       50,
+       0
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "panel-with-two-zones",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "panels",
+    "elements": [
+     {
+      "id": "4021:4022",
+      "number": 1,
+      "zones": [
+       4021,
+       4022
+      ],
+      "points": [
+       [
+        0,
+        -86.6
+       ],
+       [
+        -75,
+        43.3
+       ],
+       [
+        75,
+        43.3
+       ]
+      ]
+     },
+     {
+      "id": "517",
+      "number": 2,
+      "zones": [
+       517
+      ],
+      "points": [
+       [
+        150,
+        -43.3
+       ],
+       [
+        75,
+        86.6
+       ],
+       [
+        0,
+        -43.3
+       ]
+      ]
+     }
+    ],
+    "connectors": null
+   },
+   "valid": false
+  },
+  {
+   "name": "line-with-one-zone",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101",
+      "number": 1,
+      "zones": [
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "zone-out-of-range",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "panels",
+    "elements": [
+     {
+      "id": "70000",
+      "number": 1,
+      "zones": [
+       70000
+      ],
+      "points": [
+       [
+        0,
+        -86.6
+       ],
+       [
+        -75,
+        43.3
+       ],
+       [
+        75,
+        43.3
+       ]
+      ]
+     },
+     {
+      "id": "517",
+      "number": 2,
+      "zones": [
+       517
+      ],
+      "points": [
+       [
+        150,
+        -43.3
+       ],
+       [
+        75,
+        86.6
+       ],
+       [
+        0,
+        -43.3
+       ]
+      ]
+     }
+    ],
+    "connectors": null
+   },
+   "valid": false
+  },
+  {
+   "name": "connectors-on-panels",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "panels",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "panels",
+    "elements": [
+     {
+      "id": "4021",
+      "number": 1,
+      "zones": [
+       4021
+      ],
+      "points": [
+       [
+        0,
+        -86.6
+       ],
+       [
+        -75,
+        43.3
+       ],
+       [
+        75,
+        43.3
+       ]
+      ]
+     },
+     {
+      "id": "517",
+      "number": 2,
+      "zones": [
+       517
+      ],
+      "points": [
+       [
+        150,
+        -43.3
+       ],
+       [
+        75,
+        86.6
+       ],
+       [
+        0,
+        -43.3
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "connector-unknown-node",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "10"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "connector-same-ends",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "7"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "connector-order",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      },
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "connector-missing-line",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "duplicate-node",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      },
+      {
+       "id": "7",
+       "x": 1,
+       "y": 1
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  },
+  {
+   "name": "node-source-ids",
+   "geometry": {
+    "apiVersion": "nanoleaf.integration/1.0",
+    "identity": {
+     "controllerId": "controller",
+     "deviceId": "wall",
+     "sourceId": "source",
+     "controllerEpoch": "cccccccccccccccccccccccccccccccc"
+    },
+    "kind": "lines",
+    "elements": [
+     {
+      "id": "101:102",
+      "number": 1,
+      "zones": [
+       102,
+       101
+      ],
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        50,
+        0
+       ],
+       [
+        100,
+        0
+       ]
+      ]
+     },
+     {
+      "id": "103:104",
+      "number": 2,
+      "zones": [
+       103,
+       104
+      ],
+      "points": [
+       [
+        100,
+        0
+       ],
+       [
+        125,
+        -43.3
+       ],
+       [
+        150,
+        -86.6
+       ]
+      ]
+     }
+    ],
+    "connectors": {
+     "nodes": [
+      {
+       "id": "7",
+       "x": 0,
+       "y": 0,
+       "sourceIds": [
+        1028
+       ]
+      },
+      {
+       "id": "8",
+       "x": 100,
+       "y": 0
+      },
+      {
+       "id": "9",
+       "x": 150,
+       "y": -86.6
+      }
+     ],
+     "lines": [
+      {
+       "id": "101:102",
+       "a": "7",
+       "b": "8"
+      },
+      {
+       "id": "103:104",
+       "a": "8",
+       "b": "9"
+      }
+     ]
+    }
+   },
+   "valid": false
+  }
+ ]
+}

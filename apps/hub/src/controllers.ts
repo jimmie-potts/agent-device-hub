@@ -1,7 +1,7 @@
 import {validate, type Request, type Receipt, type Snapshot} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
 import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
-import {validateIntegrationSnapshot,validateIntegrationReceipt} from './integration.js';
+import {validateIntegrationSnapshot,validateIntegrationReceipt,validateIntegrationGeometry} from './integration.js';
 import {validateRequest as validateIntegrationRequest,ticket as integrationTicket,apiVersion as integrationVersion,type Ticket} from './vendor/nanoleaf-integration.js';
 import {validateLightingRequest,validateLightingSnapshot} from './lifx-lighting.js';
 
@@ -25,7 +25,8 @@ export class ControllerClient {
   }
   status() { return {id:this.config.id,kind:this.config.kind,controllerId:this.config.controllerId,deviceId:this.config.deviceId,health:this.health,pending:this.busy ? 1 : 0}; }
   /** `integration` selects the device's integration API; `lighting` selects the LIFX `lifx-light` profile route. */
-  private async request(path: string, body?: unknown, integration: boolean|'lighting' = false): Promise<{status:number;value:unknown}> {
+  /** `optional` marks a read route an older owner may lack: its 404 means unsupported, not unavailable. */
+  private async request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
     if (this.busy) throw new HttpError('capacity',429);
     this.busy = true;
@@ -44,6 +45,8 @@ export class ControllerClient {
           const codes:Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-input':400,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'monitor-unavailable':503};
           if (typeof value.error.code === 'string' && codes[value.error.code] === response.status) throw new HttpError(value.error.code,response.status);
         }
+        if (optional && response.status === 404 && object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
+            value.failure.code === 'invalid-request') throw new HttpError('unsupported-capability',422);
         const mapping: Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-request':400,'unknown-device':404,
           'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'unsupported-capability':422};
         if (object(value) && exact(value,['failure']) && object(value.failure) && exact(value.failure,['code']) &&
@@ -89,6 +92,15 @@ export class ControllerClient {
     }
     const {value} = await this.request('/snapshot?deviceId=' + encodeURIComponent(this.config.deviceId),undefined,true);
     if (!validateIntegrationSnapshot(value) || !object(value) || !object(value.identity) || value.identity.deviceId !== this.config.deviceId || value.identity.controllerId !== this.config.controllerId) {
+      this.health = 'unavailable';throw new HttpError('incompatible-controller',502);
+    }
+    this.health = 'ready';return value;
+  }
+  /** Nanoleaf's saved element geometry for this device; a read that never changes the owner. */
+  async integrationGeometry(): Promise<unknown> {
+    this.requireIntegration();
+    const {value} = await this.request('/geometry?deviceId=' + encodeURIComponent(this.config.deviceId),undefined,true,true);
+    if (!validateIntegrationGeometry(value) || !object(value) || !object(value.identity) || value.identity.deviceId !== this.config.deviceId || value.identity.controllerId !== this.config.controllerId) {
       this.health = 'unavailable';throw new HttpError('incompatible-controller',502);
     }
     this.health = 'ready';return value;

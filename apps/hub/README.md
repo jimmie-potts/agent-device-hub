@@ -59,7 +59,7 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `POST /api/monitor/v1/commands` to label, acknowledge or recover an approval | `control` | none |
 | `POST /api/monitor/v1/commands` to quiesce | `control` and `admin` | none |
 | `GET /api/hub/v1/authority?scope=<scope>` | the named scope: `read`, `control` or `ingest` | none |
-| `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/receipt`, `GET .../lighting/snapshot` | `read` | the controller alias `:id` |
+| `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/geometry`, `GET .../integration/receipt`, `GET .../lighting/snapshot` | `read` | the controller alias `:id` |
 | `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel`, `POST .../lighting/commands` | `control` | the controller alias `:id` |
 | `GET /api/playback/v1/snapshot` | `read` | the selected playback source ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
@@ -110,6 +110,7 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias |
 | `POST /api/controllers/v1/:id/commands` | Validated controller v1 command and its original receipt/status |
 | `GET /api/controllers/v1/:id/integration/snapshot` | Validated Nanoleaf or Pixoo settings snapshot |
+| `GET /api/controllers/v1/:id/integration/geometry` | Validated Nanoleaf element geometry for the alias's device: saved elements, their zones and display points, and the Lines' connector graph. `nanoleaf` aliases only; an owner without the route answers 422 `unsupported-capability` |
 | `POST /api/controllers/v1/:id/integration/commands` | Owning versioned settings request |
 | `GET /api/controllers/v1/:id/integration/receipt?epoch=...&sequence=...` | Nanoleaf extension receipt, without issuing another command |
 | `POST /api/controllers/v1/:id/integration/cancel` | Nanoleaf extension cancellation request; cannot undo an applied edit |
@@ -201,6 +202,7 @@ The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup a
 | Pixoo native controller | Released controller v1, #37; `pixoo-integration/1.0`, source `28f4875b7a0f0e57ca6f25d9971e125e927a5503`; strict native snapshots/commands and pinned fixtures |
 | Nanoleaf native controller | Released controller v1, #28; configured Linux owner |
 | Nanoleaf settings | `nanoleaf.integration/1.0`, source `80628498136203a8f5fcb06ab5fa306e961e2def`; pinned request consumer and fixtures recorded in `fixtures/nanoleaf-source.json` |
+| Nanoleaf geometry | `nanoleaf.integration/1.0` `GET /geometry` from codex-nanoleaf#169, source `0043456deea4f224dfa39ae1bb9d4f289e77e3d1`; closed `validateIntegrationGeometry` checked against the owner's fixtures copied to `fixtures/nanoleaf-geometry.json` |
 
 Run `npm run test:hub`, `npm run test:hub:package` and all shared checks from the worktree root. The tests use synthetic tokens, private temporary directories, fake loopback controllers and a fake loopback Sony receiver. These checks do not qualify installed clients, physical results, live migration or performance budgets. A database lease prevents concurrent use of that store; it does not by itself prevent a second owner in another directory. The supervised migration path below verifies source-process release, destination and consumer readiness before resuming ingestion.
 
