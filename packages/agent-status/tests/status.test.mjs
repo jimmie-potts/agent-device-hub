@@ -57,12 +57,17 @@ test('highestStatus is unknown for an unavailable feed, a non-running collector,
   assert.equal(highestStatus(snapshot([working()], { collector: 'faulted' })), 'unknown');
 });
 
-test('an uncertain shown session makes the whole result unknown, even alongside a current one', () => {
-  const uncertain = working({ freshness: 'uncertain' });
-  assert.equal(highestStatus(snapshot([uncertain])), 'unknown');
-  assert.equal(highestStatus(snapshot([uncertain, asking()])), 'unknown');
-  // A session with nothing outstanding never poisons the result even if its freshness is uncertain.
-  assert.equal(highestStatus(snapshot([session({ freshness: 'uncertain' }), working()])), 'working');
+test('uncertain freshness never hides the state the owner reports (#439)', () => {
+  const stale = { freshness: 'uncertain', observationAgeMs: 300_000 };
+  assert.equal(highestStatus(snapshot([working(stale)])), 'working');
+  assert.equal(highestStatus(snapshot([working(stale), asking(stale)])), 'attention');
+  assert.equal(highestStatus(snapshot([working(stale), asking()])), 'attention');
+  // A finished turn waiting to be read is idle by nature, so it is usually uncertain; it still shows as done.
+  assert.equal(highestStatus(snapshot([done(stale)])), 'done');
+  // Restored after a restart, a session keeps its reported state until fresh evidence arrives.
+  assert.equal(highestStatus(snapshot([working({ freshness: 'uncertain', restartUncertain: true })])), 'working');
+  // A session with nothing outstanding stays idle whatever its freshness.
+  assert.equal(highestStatus(snapshot([session(stale)])), 'idle');
 });
 
 test('a child session never gets its own state, but makes its active root working', () => {
