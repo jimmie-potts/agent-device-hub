@@ -29,7 +29,7 @@ export function panelsGeometry(deviceId='panels'){
  return {apiVersion:'nanoleaf.integration/1.0',identity:identityOf(deviceId),kind:'panels',elements,connectors:null};
 }
 /** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route, 'undrawable' serves a hub-valid Lines layout with a connector no Line joins, which the renderer rejects, and 'flaky' fails the first geometry read with a transport failure and serves the layout afterwards. */
-export async function fixture({empty=false,playback=false,panels=false,geometry='layout',browserAccess}={}){
+export async function fixture({empty=false,playback=false,panels=false,geometry='layout',browserAccess,beforeRead}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64),sceneA='scene-'+'a'.repeat(64),sceneB='scene-'+'b'.repeat(64);
@@ -57,7 +57,9 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
  const controllers=[];
  for(const id of ids){
   const server=createServer(async(req,res)=>{
-   requests.push({id,method:req.method,url:req.url});
+   const request={id,method:req.method,url:req.url,finished:false};requests.push(request);
+   res.once('finish',()=>{request.finished=true;});
+   if(req.method==='GET'&&beforeRead)await beforeRead(request);
    if(id===offline){res.writeHead(503,{'content-type':'application/json'});res.end('{"failure":{"code":"transport-failure"}}');return;}
    if(id==='pixel'&&delay)await new Promise(r=>setTimeout(r,delay));
    let body='';for await(const chunk of req)body+=chunk;
