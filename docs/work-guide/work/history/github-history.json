@@ -1,15 +1,25 @@
 {
-  "fetchedAt": "2026-09-26T00:12:59.354775+00:00",
+  "fetchedAt": "2026-09-26T00:32:30.725624+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-25T23:58:17Z",
+      "pushedAt": "2026-09-26T00:31:49Z",
       "defaultBranch": "main",
-      "headSha": "21583cd32a1128e3d0c4f18bcb2f5c6508ede280",
-      "mainCommitCount": 145,
+      "headSha": "503450cb0be0adc9ffb8b83b82e0461e6a701cf6",
+      "mainCommitCount": 147,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "503450cb0be0adc9ffb8b83b82e0461e6a701cf6",
+          "date": "2026-09-26T00:29:51Z",
+          "message": "Refresh the work guide for ADR 0007 and ADR 0008 and the stories filed on 2026-09-25 (#375)"
+        },
+        {
+          "sha": "054916220e106430dc9f91a120a96561e68ac110",
+          "date": "2026-09-26T00:29:13Z",
+          "message": "Paginate the open-issue inventory in the guide refresh (#370)"
+        },
         {
           "sha": "21583cd32a1128e3d0c4f18bcb2f5c6508ede280",
           "date": "2026-09-25T23:23:31Z",
@@ -1872,21 +1882,37 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/354",
           "base": "main",
           "mergedAt": "2026-09-25T23:23:32Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 370,
           "title": "Paginate the open-issue inventory in the guide refresh",
           "createdAt": "2026-09-25T23:25:44Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/370",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T00:29:14Z"
         },
         {
           "number": 375,
           "title": "Refresh the work guide for ADR 0007 and ADR 0008 and the stories filed on 2026-09-25",
           "createdAt": "2026-09-25T23:59:10Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/375",
+          "base": "main",
+          "mergedAt": "2026-09-26T00:29:52Z"
+        }
+      ],
+      "openPRs": [
+        {
+          "number": 388,
+          "title": "Keep the hub starting when its MCP tool catalog grows",
+          "createdAt": "2026-09-26T00:23:51Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/388",
+          "base": "main"
+        },
+        {
+          "number": 389,
+          "title": "Record installed Codex CLI and Claude Code session-end observations",
+          "createdAt": "2026-09-26T00:24:08Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/389",
           "base": "main"
         }
       ],
@@ -2636,10 +2662,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/330"
         }
       ],
-      "openIssueCount": 145,
+      "openIssueCount": 151,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T00:09:32Z"
+        "2026-09-26T00:30:58Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -2653,7 +2679,7 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 9
+        "2026-09-26": 15
       }
     },
     "codex-nanoleaf": {
@@ -4830,6 +4856,14 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/97"
         },
         {
+          "number": 100,
+          "title": "Install the #87 row identifier fix on the Pixoo user service and check the rows",
+          "closedAt": "2026-09-26T00:14:33Z",
+          "createdAt": "2026-09-25T23:56:12Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/100"
+        },
+        {
           "number": 101,
           "title": "Install the #99 row-identifier change on the Pixoo user service and check readability on the display",
           "closedAt": "2026-09-25T23:58:40Z",
@@ -4838,7 +4872,7 @@
           "url": "https://github.com/jimmie-potts/divoom-app-upgrade/issues/101"
         }
       ],
-      "openIssueCount": 27,
+      "openIssueCount": 26,
       "issueCreatedRange": [
         "2026-09-05T22:02:32Z",
         "2026-09-25T23:57:15Z"

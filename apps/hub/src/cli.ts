@@ -6,6 +6,7 @@ import {promisify} from 'node:util';
 import {startHub,type HubOptions} from './server.js';
 import {requestBrowserLaunch} from './browser-launch.js';
 import {object,exact} from './common.js';
+import {startupFailureCode} from './startup-failure.js';
 
 async function readConfiguration(path:string):Promise<HubOptions> {
   if (process.platform !== 'linux' || resolve(path) !== path || await realpath(path) !== path) throw new Error('invalid-configuration');
@@ -44,6 +45,8 @@ try {
   };
   process.once('SIGTERM',stop);process.once('SIGINT',stop);
   }
-} catch {
-  process.stderr.write(process.argv[2]==='open'?'bunny-open-failed\n':'hub-start-failed\n');process.exitCode = 1;
+} catch (error) {
+  // Name a stable cause, never a path or private value, so an operator can tell what to fix.
+  const code=startupFailureCode(error);
+  process.stderr.write((process.argv[2]==='open'?'bunny-open-failed':'hub-start-failed')+(code?': '+code:'')+'\n');process.exitCode = 1;
 }

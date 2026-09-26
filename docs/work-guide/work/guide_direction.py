@@ -16,7 +16,7 @@ hand-written list beside it.
 import html
 
 AS_OF = '2026-09-25'
-REVISION = '21583cd'
+REVISION = '503450c'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [
@@ -45,6 +45,10 @@ STANDING = [
      'Shared monitoring runs as an installed service with Codex Desktop read state, 24-hour session expiry and consistent retirement across Codex and Claude. '
      'The six services still start only with a WSL login; ADR 0008 chose linger, an idle timeout and one scheduled task on the PC, with a dedicated server behind a trigger.',
      ['H182', 'H231', 'H245', 'H191', 'H195', 'H241', 'H356', 'H44']),
+    ('Steam Deck',
+     'Planned only: seven stories filed on 2026-09-25 make the Deck a couch control for agents and B.U.N.N.Y. and a Steam event source for the room. '
+     'The route to the loopback hub is the owner\'s first decision; the story launcher on WSL is ready now.',
+     ['H378', 'H384', 'H379', 'H382']),
     ('Guide and atlas',
      'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. Reconciling story text made stale today and recording recommendations for the new stories come next, then the nightly rolling refresh.',
      ['H197', 'H252', 'H259', 'H308', 'H315']),

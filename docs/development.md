@@ -309,7 +309,7 @@ contracts and workflow checks. Tests start ephemeral loopback servers and use
 synthetic authentication and fake owning services. No test discovers or contacts
 a device or launches an installed agent client.
 
-`npm run package:mcp` creates `@jimmie-potts/device-mcp` 1.0.0 under artifacts/.
+`npm run package:mcp` creates `@jimmie-potts/device-mcp` 1.0.1 under artifacts/. Version 1.0.1 (Hub #357) publishes smaller tool schemas; the released 1.0.0 archive stays as its consumers pinned it.
 The private controller-contract 1.0.0 archive is pinned under vendor/ with its
 original release receipt. Packaging verifies its SHA-256 before bundling it and
 pins the packed dependency to that bundled version, while the workspace builds

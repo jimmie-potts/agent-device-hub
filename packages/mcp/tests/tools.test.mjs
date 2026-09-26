@@ -205,3 +205,94 @@ test('review embedded extension output preserves local schema references', async
   assert.equal(validate(result.structuredContent), true, JSON.stringify(validate.errors));
   assert.equal(validate({ kind: 'extension', data: { count: -1 } }), false);
 });
+
+// Hub #357: every definition a tool publishes must be one it references, and an extension tool
+// describes only the results it can return, so the catalog stays small as devices are added.
+function referencedDefs(schema) {
+  const text = JSON.stringify({ ...schema, $defs: undefined });
+  const defs = schema.$defs ?? {};
+  const seen = new Set(); const queue = [...text.matchAll(/"#\/\$defs\/([^"]+)"/g)].map(m => m[1]);
+  while (queue.length) { const name = queue.pop(); if (seen.has(name) || !defs[name]) continue; seen.add(name);
+    for (const m of JSON.stringify(defs[name]).matchAll(/"#\/\$defs\/([^"]+)"/g)) queue.push(m[1]); }
+  return seen;
+}
+test('published schemas carry only referenced definitions and extension tools stay small', async () => {
+  const { Ajv2020 } = await import('ajv/dist/2020.js');
+  const f = fixture();
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { catalog: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    outputSchema: { type: 'object', additionalProperties: false, properties: { items: { type: 'array', items: { type: 'string' } } }, required: ['items'] },
+    scope: 'read', description: 'Read items.', annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    invoke: async () => ({ data: { items: [] } }) } } }]);
+  const [extension] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'catalog', name: 'catalog' }] });
+  for (const tool of [...f.tools, extension]) for (const schema of [tool.inputSchema, tool.outputSchema]) {
+    assert.deepEqual(Object.keys(schema.$defs ?? {}).sort(), [...referencedDefs(schema)].sort(), tool.name);
+  }
+  assert.deepEqual(extension.outputSchema.properties.kind, { enum: ['extension', 'gateway-error'] });
+  for (const key of ['snapshot', 'receipt', 'devices']) assert.equal(key in extension.outputSchema.properties, false, key);
+  assert.ok(Buffer.byteLength(JSON.stringify(extension)) < 4096, `extension tool is ${Buffer.byteLength(JSON.stringify(extension))} bytes`);
+  const validate = new Ajv2020({ strict: true }).compile(extension.outputSchema);
+  assert.equal(validate((await api.invokeDeviceTool(registry, extension, {}, principal())).structuredContent), true, JSON.stringify(validate.errors));
+  assert.equal(validate((await api.invokeDeviceTool(registry, extension, { extra: 1 }, principal())).structuredContent), true, JSON.stringify(validate.errors));
+  const status = f.tools.find(t => t.name.endsWith('_status'));
+  const validateStatus = new Ajv2020({ strict: true }).compile(status.outputSchema);
+  assert.equal(validateStatus((await api.invokeDeviceTool(f.registry, status, {}, principal())).structuredContent), true, JSON.stringify(validateStatus.errors));
+});
+
+// Review of Hub #357: pruning must never drop a definition reached through another valid reference form.
+test('extensions keep every definition they reach through any reference form', async () => {
+  const { Ajv2020 } = await import('ajv/dist/2020.js');
+  const forms = {
+    deepPointer: { $defs: { shape: { type: 'object', properties: { size: { type: 'integer' } } } }, properties: { v: { $ref: '#/$defs/shape/properties/size' } } },
+    escapedName: { $defs: { 'a/b': { type: 'integer' } }, properties: { v: { $ref: '#/$defs/a~1b' } } },
+    percentEncoded: { $defs: { x: { type: 'integer' } }, properties: { v: { $ref: '#/%24defs/x' } } },
+    absoluteId: { $id: 'urn:ext:in', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: 'urn:ext:in#/$defs/v' } } },
+  };
+  for (const [label, parts] of Object.entries(forms)) {
+    const schema = { type: 'object', additionalProperties: false, ...parts };
+    const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { read: {
+      inputSchema: schema, outputSchema: label === 'absoluteId' ? { ...schema, $id: 'urn:ext:out', properties: { v: { $ref: 'urn:ext:out#/$defs/v' } } } : schema, scope: 'read', description: 'Read.', annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      invoke: async () => ({ data: { v: 1 } }) } } }]);
+    const [tool] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'read', name: 'read' }] });
+    for (const published of [tool.inputSchema, tool.outputSchema]) new Ajv2020({ strict: true }).compile(published);
+    assert.equal((await api.invokeDeviceTool(registry, tool, { v: 1 }, principal())).structuredContent.kind, 'extension', label);
+  }
+});
+
+test('an embedded extension schema does not keep unused shared definitions', () => {
+  // Its own definitions share names with the shared contract (as the Nanoleaf consumer's do) but resolve inside the extension.
+  const shared = { type: 'object', additionalProperties: false, $defs: { snapshot: { type: 'string' }, unused: { type: 'integer' } }, properties: { t: { $ref: '#/$defs/snapshot' } } };
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { read: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} }, outputSchema: shared, scope: 'read', description: 'Read.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, invoke: async () => ({ data: { t: 'x' } }) } } }]);
+  const [tool] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'read', name: 'read' }] });
+  // The root keeps only the shared ticket closure its own requestId needs, not the embedded schema's definitions.
+  assert.deepEqual(Object.keys(tool.outputSchema.$defs ?? {}).sort(), ['counter', 'id', 'ticket']);
+  assert.ok(Buffer.byteLength(JSON.stringify(tool.outputSchema)) < 4096);
+  assert.deepEqual(Object.keys(tool.outputSchema.properties.data.$defs).sort(), ['snapshot', 'unused']);
+});
+
+// Review of Hub #357: each branch of the definition walker and the publish guard is exercised directly.
+test('the definition walker keeps every reference form and prunes only unused definitions', async () => {
+  const { referencedDefinitions } = await import('../dist/tools.js');
+  const defs = { 'a/b': { type: 'integer' }, 'c~d': { type: 'integer' }, x: { type: 'integer' }, shape: { type: 'object', properties: { size: { $ref: '#/$defs/leaf' } } },
+    leaf: { type: 'integer' }, unused: { type: 'integer' } };
+  const kept = referencedDefinitions({ type: 'object', $defs: defs, properties: { a: { $ref: '#/$defs/a~1b' }, c: { $ref: '#/$defs/c~0d' },
+    x: { $ref: '#/%24defs/x' }, s: { $ref: '#/$defs/shape/properties/size' },
+    nested: { $id: 'urn:nested', $defs: { unused: { type: 'string' } }, $ref: '#/$defs/unused' } } });
+  assert.deepEqual(Object.keys(kept.$defs).sort(), ['a/b', 'c~d', 'leaf', 'shape', 'x']);
+  for (const reference of ['urn:other#/$defs/x', '#anchor', '#/$defs/missing', '#/$defs/%E0%A4%A']) {
+    const schema = { type: 'object', $defs: defs, properties: { v: { $ref: reference } } };
+    assert.equal(referencedDefinitions(schema), schema, reference);
+  }
+  const bare = referencedDefinitions({ type: 'object', $defs: defs, properties: {} });
+  assert.equal('$defs' in bare, false);
+});
+
+test('a published schema that does not resolve is refused before any tool exists', async () => {
+  const { publishedSchema } = await import('../dist/tools.js');
+  assert.throws(() => publishedSchema({ type: 'object', properties: { v: { $ref: '#/$defs/missing' } } }));
+  assert.throws(() => publishedSchema({ type: 'object', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: '#/$defs/v/wrong' } } }, false));
+  const valid = { type: 'object', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: '#/$defs/v' } } };
+  assert.deepEqual(publishedSchema(valid), valid);
+});

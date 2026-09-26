@@ -364,7 +364,9 @@ test('review oversized write envelope preserves possible effects and native requ
     invoke: async () => { submissions++; return { data: { message: 'x'.repeat(1000) } }; },
   } } }]);
   const tools = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'write', name: 'write' }] });
-  const maxResponseBytes = Buffer.byteLength(JSON.stringify({ tools })) + 100;
+  // The limit must still hold the catalog. The floor keeps the extension result (bounded at 6 bytes per character against
+  // half the limit) admissible now that catalogs are small (Hub #357), so the case stays about the envelope.
+  const maxResponseBytes = Math.max(Buffer.byteLength(JSON.stringify({ tools })) + 100, 16384);
   const f = await httpFixture(t, { options: { registry, tools, limits: { maxResponseBytes } } }); await f.initialize();
   const response = await f.rpc('tools/call', { name: 'write', arguments: { request_id: 'native-1' } }, { id: 'x'.repeat(maxResponseBytes - 1000) });
   assert.equal(response.status, 200);
@@ -392,7 +394,7 @@ for (const [label, identity] of [['control', '\u0000'.repeat(128)], ['unicode', 
       invoke: async () => { submissions++; throw new Error('Synthetic uncertain write'); },
     } } }]);
     const tools = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'write', name: 'write' }] });
-    const maxResponseBytes = Buffer.byteLength(JSON.stringify({ tools })) + 100;
+    const maxResponseBytes = Math.max(Buffer.byteLength(JSON.stringify({ tools })) + 100, 16384);
     const envelopeBytes = requestId => Buffer.byteLength(JSON.stringify({ jsonrpc: '2.0', id: '', result: gatewayFailure('uncertain-result', 'possible', requestId) }));
     const oldBytes = envelopeBytes('x'.repeat(128)), actualBytes = envelopeBytes(identity);
     assert.ok(actualBytes > oldBytes, 'fixture exceeds the previous reservation');
