@@ -1,12 +1,12 @@
 import http from 'node:http';
-import { spawn } from 'node:child_process';
 import type { Config } from './config.js';
 export const EXCHANGE_MS = 6000, MAX_RESPONSE = 524288;
 export type ExchangeResult = {
     status: number;
     body: unknown;
 };
-export type Operation = 'snapshot' | 'command';
+export type Operation = 'snapshot' | 'command' | 'scenes' | 'animations' | 'extension-command';
+const WRITES: readonly Operation[] = ['command', 'extension-command'];
 export class TransportFailure extends Error {
     constructor(readonly possible: boolean) { super('Controller exchange unavailable'); }
 }
@@ -29,7 +29,7 @@ export function safeJson(text: string): unknown {
     return result;
 }
 export async function exchange(config: Config, operation: Operation, token: string, request?: unknown): Promise<ExchangeResult> {
-    if (!Number.isInteger(config.controllerPort) || config.controllerPort < 1024 || config.controllerPort > 65535 || !(/^[A-Za-z0-9._-]{1,128}$/.test(config.deviceId)) || !(/^[A-Za-z0-9_-]{43,512}$/.test(token)) || !['snapshot', 'command'].includes(operation))
+    if (!Number.isInteger(config.controllerPort) || config.controllerPort < 1024 || config.controllerPort > 65535 || !(/^[A-Za-z0-9._-]{1,128}$/.test(config.deviceId)) || !(/^[A-Za-z0-9_-]{43,512}$/.test(token)) || !['snapshot', 'command', 'scenes', 'animations', 'extension-command'].includes(operation))
         throw new TransportFailure(false);
     let body: string;
     try {
@@ -41,17 +41,21 @@ export async function exchange(config: Config, operation: Operation, token: stri
     catch {
         throw new TransportFailure(false);
     }
-    if (config.transport === 'windows-http')
-        return direct(config, operation, token, body);
-    if (config.transport !== 'wsl-helper' || !config.windowsPython || !config.windowsHelper)
+    if (config.transport !== 'loopback-http')
         throw new TransportFailure(false);
-    return helper(config, operation, token, request);
+    return direct(config, operation, token, body);
 }
 function direct(config: Config, operation: Operation, token: string, body: string): Promise<ExchangeResult> {
     return new Promise((resolve, reject) => {
         let finished = false, possible = false;
         let response: http.IncomingMessage | undefined;
-        const req = http.request({ hostname: '127.0.0.1', port: config.controllerPort, method: operation === 'snapshot' ? 'GET' : 'POST', path: operation === 'snapshot' ? `/controller/v1/snapshot?deviceId=${encodeURIComponent(config.deviceId)}` : '/controller/v1/commands', agent: false, headers: { Host: `127.0.0.1:${config.controllerPort}`, Authorization: `Bearer ${token}`, ...(operation === 'command' ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}) } }, res => {
+        const path = operation === 'snapshot' ? `/controller/v1/snapshot?deviceId=${encodeURIComponent(config.deviceId)}`
+            : operation === 'scenes' ? `/controller/integration/v1/snapshot?deviceId=${encodeURIComponent(config.deviceId)}`
+                : operation === 'animations' ? `/controller/integration/v1/animations?deviceId=${encodeURIComponent(config.deviceId)}`
+                    : operation === 'extension-command' ? '/controller/integration/v1/commands'
+                        : '/controller/v1/commands';
+        const write = WRITES.includes(operation);
+        const req = http.request({ hostname: '127.0.0.1', port: config.controllerPort, method: write ? 'POST' : 'GET', path, agent: false, headers: { Host: `127.0.0.1:${config.controllerPort}`, Authorization: `Bearer ${token}`, ...(write ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}) } }, res => {
             response = res;
             let length = 0;
             const chunks: Buffer[] = [];
@@ -75,46 +79,7 @@ function direct(config: Config, operation: Operation, token: string, body: strin
         function finish(value?: ExchangeResult) { if (finished)
             return; finished = true; clearTimeout(timer); req.destroy(); response?.destroy(); value ? resolve(value) : reject(new TransportFailure(possible)); }
         req.on('error', () => finish());
-        req.on('socket', socket => socket.once('connect', () => { possible = operation === 'command'; }));
-        req.end(operation === 'command' ? body : undefined);
-    });
-}
-function helper(config: Config, operation: Operation, token: string, request: unknown): Promise<ExchangeResult> {
-    return new Promise((resolve, reject) => {
-        let possible = false, finished = false, bytes = 0, errors = 0;
-        const chunks: Buffer[] = [];
-        const child = spawn(config.windowsPython!, [config.windowsHelper!], { shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-        const timer = setTimeout(() => finish(), EXCHANGE_MS);
-        function finish(value?: ExchangeResult) { if (finished)
-            return; finished = true; clearTimeout(timer); if (child.exitCode === null)
-            child.kill('SIGKILL'); value ? resolve(value) : reject(new TransportFailure(possible)); }
-        child.on('error', () => finish());
-        child.on('spawn', () => { possible = operation === 'command'; });
-        child.stdin.on('error', () => finish());
-        child.stdout.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > MAX_RESPONSE + 128) {
-            finish();
-            return;
-        } chunks.push(chunk); });
-        child.stderr.on('data', (chunk: Buffer) => { errors += chunk.length; if (errors > 4096)
-            finish(); });
-        child.on('close', code => { if (finished)
-            return; try {
-            if (code !== 0)
-                throw new Error('Helper failure');
-            const value = safeJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))) as ExchangeResult;
-            if (!value || typeof value !== 'object' || Object.keys(value).sort().join(',') !== 'body,status' || !Number.isInteger(value.status) || value.status < 200 || value.status >= 600 || (value.status >= 300 && value.status < 400))
-                throw new Error('Invalid helper response');
-            finish(value);
-        }
-        catch {
-            finish();
-        } });
-        const input = JSON.stringify({ operation, port: config.controllerPort, deviceId: config.deviceId, token, ...(operation === 'command' ? { request } : {}) });
-        if (Buffer.byteLength(input) > 65536) {
-            possible = false;
-            finish();
-            return;
-        }
-        child.stdin.end(input);
+        req.on('socket', socket => socket.once('connect', () => { possible = write; }));
+        req.end(write ? body : undefined);
     });
 }

@@ -114,15 +114,15 @@
   {
    "id": "future",
    "type": "external",
-   "label": "Music + automation",
-   "sublabel": "Windows connector · rules",
+   "label": "Music + moments",
+   "sublabel": "HT-A9 source · rules planned",
    "row": 0,
    "col": 4,
    "size": [
     150,
     62
    ],
-   "tag": "future · own owner"
+   "tag": "playback installed"
   },
   {
    "id": "mcpModule",

@@ -1,6 +1,7 @@
 # ADR 0018: Monitor and Media share the existing writer
 
-Status: Accepted for issue #33 source implementation.
+Status: Accepted for issue #33 source implementation. Amended for issue #77:
+device-mode startup restores a saved Monitor selection.
 
 ## Decision
 
@@ -20,8 +21,9 @@ can cancel even while persistence is pending. Screen-on cannot resume work.
 One upload can be in flight. Coalesce the latest completed rendition and never
 replay intermediate pictures. Preserve an uncertain late physical receipt under
 its old generation; do not roll back unknown artwork or retry automatically.
-Restart restores selection but not activation. Persistence failure prevents
-activation. The renderer and collection remain available without device writes.
+Restart restores selection. In device mode a saved Monitor selection also
+restores activation (see the amendment below); simulator startup does not.
+Persistence failure prevents activation. The renderer and collection remain available without device writes.
 
 ## Commands and consumers
 
@@ -40,7 +42,8 @@ source evidence and physical outcome stay separate in snapshots and UI.
 
 A dashboard-owned adapter would create a second physical writer and is rejected.
 Automatic attention takeover would violate Media intent. Autoactivation after
-restart or screen-on would turn observation into unsolicited display writes.
+screen-on would turn observation into unsolicited display writes. Autoactivation
+after restart was rejected for the same reason until the #77 amendment.
 A shared API v1 schema change would break the released contract, so the extension
 is versioned under Pixoo ownership.
 
@@ -48,3 +51,22 @@ The monitor-control, presentation, migration and browser fixtures verify source
 behavior. They do not prove actual client hooks or integrated physical fidelity.
 Those checks remain #34. See [monitor operations](../agent-monitoring.md) and the
 [capability specification](../../openspec/specs/agent-monitor-controls/spec.md).
+
+## Amendment for issue #77: restore Monitor at device startup
+
+Owner decision, September 24, 2026, on
+[issue #77](https://github.com/jimmie-potts/divoom-app-upgrade/issues/77):
+keep the Pixoo's default content off the display after the installed backend
+restarts. A device-mode backend that loads a saved Monitor selection, with the
+screen requested on, reactivates presentation during startup. It reuses explicit
+activation's pause and generation capture, without a save, client command or
+request identity. Uploads follow the ordinary cadence through Player's sole
+adapter. A failed or uncertain first upload suspends presentation with no
+automatic retry, as for any other transmission.
+
+Simulator startup, a saved Media selection and a retained screen-off request
+stay passive. Screen-on still never activates presentation; screen-on and device
+reboot recovery stay with
+[#76](https://github.com/jimmie-potts/divoom-app-upgrade/issues/76). A crash
+restart by the user service repeats the restore and sends the newest complete
+picture, not a replay; the service's start limit bounds repetition.

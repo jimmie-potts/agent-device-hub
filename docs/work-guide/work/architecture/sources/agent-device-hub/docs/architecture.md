@@ -5,7 +5,7 @@ This document records accepted ownership, state and command boundaries. The
 [dashboard](../apps/dashboard/README.md) guides describe their implementations;
 GitHub issues hold current delivery and acceptance status.
 
-The [BUNNY HTML system design](system-design/index.html) preserves a dated
+The [B.U.N.N.Y. HTML system design](system-design/index.html) preserves a dated
 September 19, 2026 design snapshot. Its labels and open decisions reflect that
 baseline, not the current implementation.
 
@@ -14,7 +14,15 @@ baseline, not the current implementation.
 [ADR 0004](decisions/0004-local-first-personal-assistant.md) records the accepted
 local-first assistant direction. Preserve the Codex-first milestone before
 general device controls and Apple Music integration. Container migration and
-remote voice access remain later work.
+remote voice access remain later work; [ADR 0008](decisions/0008-runtime-hosting.md)
+decides that the runtime stays in WSL, to be started at boot by a keep-alive
+still to be installed, until a triggered server migration.
+
+The shared application's user-facing name is B.U.N.N.Y. The
+[application UI style guide](application-ui-style-guide.md) owns that spelling,
+the visual foundation and skin template, and the component vocabulary (Brain,
+Ears, Eyes, Nerves, Paws, Face, Burrow) that names the responsibilities below
+without changing any owner, package, path or identifier.
 
 The assistant is the conversational client of available services and tools.
 An automation rule is an explicitly accepted event-to-action policy that can
@@ -34,7 +42,8 @@ and issue-linked specifications.
 
 The hub owns provider qualification, shared event/session contracts, one
 authoritative agent-state core, common controller contracts, shared MCP
-infrastructure and the cross-device dashboard.
+infrastructure and the cross-device dashboard, including the shared device art
+that dashboard draws ([ADR 0007](decisions/0007-bunny-shell.md)).
 
 Pixoo owns its media library, renditions, player, 64x64 status renderer,
 Monitor/Media policy and serialized device writer. Nanoleaf owns its Python
@@ -50,7 +59,11 @@ Tidbyt owns its 64×32 renderer, backend connection and serialized display write
 LIFX owns bulb capability mapping, LAN transport, lighting policy and per-device
 queues. These new controllers belong in this repository. The Tidbyt cloud
 controller exists as a fake-tested in-process package; its status integration and
-installation remain separate. LIFX is documentation only. The shared core interprets
+installation remain separate. LIFX provides a fake-tested in-process LAN controller;
+its status integration and installation remain separate. The
+[local controller host](../apps/local-controllers/README.md) (#289) is the single
+process that owns both libraries and serves them to the hub over controller v1.
+It runs the Tidbyt runner in-process and holds a writer lease per bulb. The shared core interprets
 agent observations once, and each controller maps shared state to its device.
 
 Shared agent methods stay in agent-skills. Hub development tooling will own the
@@ -67,11 +80,15 @@ signals for actual accessible versions.
 The core identifies sessions by provider, source/host and session ID, retaining
 turn and child relationships only where evidenced. Separate sessions in one
 project stay separate. Activity, attention, retained notices, acknowledgment,
-optional provider read evidence and freshness are independent concepts.
+optional provider read evidence and freshness are independent concepts. The owner
+forgets a session after 24 hours without lifecycle evidence, which frees its
+capacity. Expiry is not acknowledgment, readership, success or cancellation. An accepted runtime end on any supported path (Codex Desktop, Codex CLI or Claude Code) retires the known session tree sooner through the same atomic replacement boundary; the owner interprets that evidence once and devices add no end filters or timers. Bounded durable guards reject recognizable delayed events. Opt-in snapshot 1.1 generations let consumers reset a recreated task even if they missed its removal.
 
 A turn end is not proof of successful work or readership. Nanoleaf's current
 Codex unread reconciliation remains a provider/consumer capability during
-migration. Pixoo dismissal changes monitor state only. New generic consumers
+migration. The standalone Hub can also read Codex Desktop's unread marker from
+the mounted Windows Codex home and record `read.observed` for top-level Desktop
+sessions. Pixoo dismissal changes monitor state only. New generic consumers
 must not assume every provider supplies read receipts.
 
 Only lifecycle metadata, identifiers, timestamps and explicit user-chosen labels
@@ -161,8 +178,8 @@ emitters live in packages/agent-state/src/providers.ts; the silent source hook i
 packages/agent-state/bin/hook.mjs. The host and dashboard live under apps/.
 The adapters/nanoleaf and adapters/pixoo paths remain proposals; their source
 migrations have separate deferred issues. controllers/tidbyt holds the
-in-process cloud controller package; controllers/lifx and controllers/pc-lighting
-currently contain documents. Use Node 24 and npm workspaces for executable packages.
+in-process cloud controller package; controllers/lifx holds the in-process LAN controller and controllers/pc-lighting
+currently contains documents. Use Node 24 and npm workspaces for executable packages.
 Publish versioned private artifacts when a separate consumer needs
 them; avoid worktree-relative imports and unnecessary independent packages.
 
@@ -231,7 +248,7 @@ modes, pending changes and last update outcomes, with explicit supported control
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free or Pixoo Monitor/Media intent.
 
-The shared frontend in apps/dashboard is BUNNY's central interface. It uses
+The shared frontend in apps/dashboard is B.U.N.N.Y.'s central interface. It uses
 the approved Nanoleaf visual language and interaction patterns. Each current
 and future user-facing component joins the same navigation and reusable views
 for its available status, settings and supported controls, with specialized
@@ -252,6 +269,19 @@ content controls are disabled while a device presents agent status, with an
 explicit switch to Media or Free; nothing restores automatically; availability
 is declared capability times existing control scope. The ADR links the bounded
 issues.
+[ADR 0006](decisions/0006-hub-moments-and-interludes.md) adds event-driven
+moments. The hub decides: event sources, rules, agent personas, arbitration,
+choreography and the moment log. Each device guarantees: translation, one
+writer, precedence at execution, returning to its current base, and evidence.
+Every moment is a time-boxed interlude, and only owner-approved event kinds
+may cover status presentation. No moment changes a mode. ADR 0005's explicit
+restoration stays, except that an interlude ends automatically.
+[ADR 0007](decisions/0007-bunny-shell.md) makes the dashboard the one
+B.U.N.N.Y. shell, with a starting page set of home widgets, a page per
+registered controller device and a later group page, drawn with hub-owned
+shared device art from hub snapshots; the final page split stays open in #271.
+The Nanoleaf wall map is a linked advanced editor until each remaining
+operation has a home in the shell, then retires under its own issue.
 Routine supported operations belong in the central UI; full migration of the
 linked advanced editors remains separate follow-on work. Additional production
 components require their own delivered integration and acceptance.
@@ -291,6 +321,15 @@ acceptance; the supplied "A16" name must not be silently treated as A19. Expose
 only supported capabilities. Source development uses fake packets and configured
 neutral identities. No startup discovery or physical writes are implied by setup.
 See the [LIFX guide](../controllers/lifx/README.md).
+
+The hub reaches both through the local controller host, registered as the
+`tidbyt` and `lifx` controller kinds. The host serves each device's controller
+v1 snapshot and commands on one loopback port. The Tidbyt controller declares no
+v1 capability, so the hub can read its status but never pushes frames. LIFX color
+and color temperature use the controller's own `lifx-light` 1.0.0 profile on a
+separate typed route, not a v1 extension. The host never paints bulbs on its
+own; automatic LIFX status stays with #20. It reads a qualified bulb only on
+demand, at most every 30 s while its snapshot is being read (#330).
 
 The status issues own the initial display layout, session selection, lighting
 effects, update limits, takeover/manual-control and restoration policies. Resolve
@@ -439,6 +478,34 @@ store never opens a controller database. Source and performance receipts live
 with [#5](https://github.com/jimmie-potts/agent-device-hub/issues/5) and
 [#30](https://github.com/jimmie-potts/agent-device-hub/issues/30); installation
 and physical acceptance retain their own owners.
+[ADR 0008](decisions/0008-runtime-hosting.md) records where the six user
+services run: in the Ubuntu WSL distribution, today started only by a user
+session, with linger, an idle timeout and one Windows scheduled task decided
+but not yet installed. A dedicated Linux server (#44, which absorbs #42's
+Docker packaging) follows under the ADR's proposed trigger: the Tronbyt move
+starting, a story needing LAN discovery or events, or a failed keep-alive.
+
+## Shared playback
+
+The standalone host owns shared playback
+([#175](https://github.com/jimmie-potts/agent-device-hub/issues/175)). A shared
+module keeps each source's normalized snapshot, observation freshness and
+command results. Source modules own their protocols, endpoints and field
+mapping. The first source reads the owner's Sony HT-A9 while an iPhone plays
+Apple Music to it over AirPlay; audio never passes through the hub. Playback
+state is separate from agent sessions and state exports.
+
+Sources have stable neutral IDs. Commands name a source ID and go only to the
+explicitly selected source; they are never redirected, retried or replayed. A
+later source keeps its own freshness, and an unavailable selected source is
+shown as unavailable rather than replaced by another source. The
+[host guide](../apps/hub/README.md#playback) documents the routes and the source
+interface. Display cards read the same snapshot and render in their own
+controllers: the Tidbyt runner's optional now-playing tile
+([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) writes a
+second background installation through the existing Tidbyt queue. The Windows connector
+([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36)) is deferred;
+if built, it becomes another source of the same module.
 
 ## Linux host handoff implementation
 
@@ -456,7 +523,7 @@ and selected remote facade. The tool cannot silently restore embedded ownership
 into an occupied Pixoo store. Installed hooks, source qualification and physical
 acceptance remain separate from these source tests.
 
-## BUNNY frontend, Hub #6
+## B.U.N.N.Y. frontend, Hub #6
 
 The implementation in `apps/dashboard` provides React/TypeScript activity, component
 and connection views served by `apps/hub` at the same origin. A dedicated scoped
