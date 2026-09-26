@@ -591,12 +591,13 @@ JS = '''
  const show = () => {
    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.action === action)));
    const current = rec.state === 'recommended', custom = action === 'implement' && current;
-   const cheaper = current && rec.prompts.cheaper;
+   const cheaper = current && rec.prompts.cheaper?.[host];
    if (!cheaper) begin = 'recommended';
    options.hidden = !custom;
    hostButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.host === host)));
    startButtons.forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.start === begin)); if (b.dataset.start === 'cheaper') b.disabled = !cheaper; });
    optionNote.textContent = cheaper ? (begin === 'cheaper' ? rec.cheaper : '') : rec.cheaper ? `Cheaper start: ${rec.cheaper}` : 'No cheaper start is recorded for this story.';
+   if (current && rec.prompts.cheaper && !cheaper) optionNote.textContent = `No cheaper start is recorded for ${HOSTS[host]}. ${rec.cheaper || ''}`;
    const [build, text] = ACTIONS[action];
    if (custom) {
      const session = rec.hosts[host].session;

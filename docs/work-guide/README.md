@@ -27,6 +27,11 @@ scripts, opens GitHub instead.
 Other guide views open the same dialog with `openBrief(key)`.
 `work/guide_brief.css` styles it.
 
+A cheaper start may exist for just one host. The recommendation names each
+other host as `none` and omits its cheaper prompt. Switching to that host resets
+the brief to Recommended and disables Cheaper; it never substitutes another
+host's prompt. Existing two-host alternatives remain supported.
+
 The opening contains Current work, Newly added, Open defects, Useful next steps,
 Blockers and decisions, and Later. Newly added shows the latest eight open issues
 by creation date, plus an expandable seven-day list. Editing an issue does not
@@ -222,12 +227,15 @@ fingerprint this repository puts in the policy's fingerprint slot.
 `work/recommendations.py` parses the section from the saved story bodies in
 `work/backlogs/*-issues.json`. The parser is strict and never fills a gap:
 
-- A missing host value, table row or prompt, an unknown key, table row or session
+- A missing host value, table row or recommended prompt, an unknown key, table row or session
   type, a duplicate section, stray text, availability that does not start with
   `Verified` or `Provisional`, or a `Reviewers` value that is not `None` exactly
   for `Investigate first` makes the story "Assessment unavailable". So does a
-  `Cheaper start` line without both cheaper prompts, unless it starts with
-  `none recorded`, and a fingerprint other than 12 hex characters: this
+  `Cheaper start` line without any cheaper prompt, unless it starts with
+  `none recorded`. One-host alternatives must explicitly name the other host
+  as `Claude Code: none.` or `Codex: none.` and omit that host's cheaper prompt.
+  A prompt contradicting such a declaration is unreadable. So is a fingerprint
+  other than 12 hex characters: this
   repository always fills the slot, never with `not used`.
 - `**Status:** insufficient` with `**Missing:**` shows "Insufficient information"
   and the missing input. That form carries no answer, table or prompts.

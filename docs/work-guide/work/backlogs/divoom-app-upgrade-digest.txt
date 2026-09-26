@@ -47,3 +47,4 @@
 #113 [OPEN] Install and verify an approved Pixoo revision containing #80–#82
 #114 [OPEN] Show the running Pixoo source revision in local Settings and diagnostics
 #115 [OPEN] Upgrade and roll back the Pixoo user service with one command under the install contract
+#117 [OPEN] Finish owned local branch and worktree cleanup with a verified outcome
