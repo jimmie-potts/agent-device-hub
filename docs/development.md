@@ -437,9 +437,9 @@ the worktree root. The combined contracts/state CI jobs run
 
 Tests cover the ranking (attention over working over done, an active child
 making its root working, read evidence never retiring done), `highestStatus`
-(idle only when the feed is healthy and nothing is outstanding, `unknown` for
-an unavailable feed, a non-running collector or any shown session with
-uncertain freshness, even alongside an otherwise-current session), the hub
+(idle only when the feed is healthy and nothing is outstanding, `unknown` only
+for an unavailable feed or a non-running collector, and uncertain freshness
+never hiding a session's reported state, #439), the hub
 feed against a real in-memory agent-state owner and a fake `fetch` (redirect,
 oversized, malformed, wrong-owner and slow responses), and the evaluation
 loop/bounded reader (coalescing, stop, a hung read blocking further reads

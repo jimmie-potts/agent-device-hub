@@ -156,9 +156,13 @@ in depth, since the publisher never calls it for an unqualified bulb anyway.
 show one shared agent-state owner's status on every configured qualified
 bulb, reading the feed through `@jimmie-potts/agent-status`'s `HubStatusFeed`
 and `highestStatus` on the same 30-second/3-second cadence Tidbyt's status
-publisher uses. It paints only on a shown-state transition: never a
-heartbeat, an unchanged snapshot, a repeated read or a timer. The shown key
-advances to the attempted target regardless of the paint's outcome, so a
+publisher uses. Every shown root session counts with the state the shared
+owner reports, whatever its freshness: a finished turn waiting to be read is
+idle and soon `uncertain`, yet still done until acknowledged (#439). Only an
+unavailable feed or a collector that is not running is `unknown`, which paints
+nothing and keeps the last appearance. It paints only on a shown-state
+transition: never a heartbeat, an unchanged snapshot, a repeated read or a
+timer. The shown key advances to the attempted target regardless of the paint's outcome, so a
 failed paint is not replayed; the next transition is a fresh request for the
 current state. Painting requires Work or Quiet; Free never paints and leaves
 the bulb alone. Quiet paints only attention, at its own cap; everything else

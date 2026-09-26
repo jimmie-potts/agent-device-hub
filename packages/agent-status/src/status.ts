@@ -3,11 +3,11 @@ import type { SessionSnapshot, Snapshot } from '@jimmie-potts/agent-state';
 /**
  * The shared per-session ranking and whole-owner status reduction, consumed by every
  * device that shows automatic agent status. A session's state is never inferred from
- * missing evidence: silence never means done, and an uncertain session is never ranked.
+ * missing evidence: silence never means done. Freshness does not change a session's rank.
  */
 export type AgentState = 'attention' | 'working' | 'done';
-/** `idle` means the feed is healthy and nothing is outstanding. `unknown` covers an
- * unavailable feed, a non-running collector, or any shown session with uncertain freshness. */
+/** `idle` means the feed is healthy and nothing is outstanding. `unknown` covers only an
+ * unavailable feed or a collector that is not running. */
 export type HighestStatus = AgentState | 'idle' | 'unknown';
 
 const RANK: Record<AgentState, number> = { attention: 0, working: 1, done: 2 };
@@ -35,9 +35,10 @@ export type HighestStatusOptions = {
 
 /**
  * The single highest state across every root session, or `idle`/`unknown`. Highest is
- * attention > working > done. An uncertain shown session makes the whole result `unknown`,
- * because painting one color for the owner's status must not assert a state some evidence
- * cannot currently support.
+ * attention > working > done. Each session counts with the state the owner reports, whatever
+ * its freshness: a finished turn waiting to be read is idle by nature and soon uncertain, yet
+ * it is still done until acknowledged (#439). Only an unavailable feed or a collector that is
+ * not running makes the result `unknown`.
  */
 export function highestStatus(snapshot: Snapshot | undefined, options: HighestStatusOptions = {}): HighestStatus {
   if (options.feedAvailable === false || !snapshot || snapshot.collector !== 'running') return 'unknown';
@@ -45,7 +46,6 @@ export function highestStatus(snapshot: Snapshot | undefined, options: HighestSt
     .filter(session => session.parent.status !== 'known')
     .map(session => ({ session, state: sessionState(session, options.acknowledgingConsumers) }))
     .filter((entry): entry is typeof entry & { state: AgentState } => entry.state !== undefined);
-  if (shown.some(({ session }) => session.freshness === 'uncertain')) return 'unknown';
   if (shown.length === 0) return 'idle';
   return shown.reduce((best, entry) => RANK[entry.state] < RANK[best] ? entry.state : best, shown[0]!.state);
 }
