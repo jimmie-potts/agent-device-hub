@@ -71,6 +71,36 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result['failures'], 1)
         self.assertEqual(result['directionBlocked'], [])
 
+    def test_non_direction_without_json_preserves_negative_fixture_result(self):
+        def expects_rejection():
+            result = subprocess.run([sys.executable, '/fixture/work/build_guide.py'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, 'invalid Guide fixture')
+        def rejected(command, **kwargs):
+            return subprocess.CompletedProcess(command, 1, stderr='invalid Guide fixture')
+        code, result = self.execute([expects_rejection], rejected)
+        self.assertEqual(code, 0)
+        self.assertEqual(result['errors'], 0)
+        self.assertEqual(result['directionBlocked'], [])
+        code, result = self.execute([self.build], rejected)
+        self.assertEqual(code, 1)
+        self.assertEqual(result['failures'], 1)
+        self.assertEqual(result['errors'], 0)
+
+    def test_non_direction_without_json_preserves_called_process_error(self):
+        def expects_rejection():
+            with self.assertRaises(subprocess.CalledProcessError) as caught:
+                subprocess.run([sys.executable, '/fixture/work/build_guide.py'], check=True)
+            self.assertEqual(caught.exception.returncode, 1)
+        def rejected(command, **kwargs):
+            if kwargs.get('check'):
+                raise subprocess.CalledProcessError(1, command, stderr='invalid fixture')
+            return subprocess.CompletedProcess(command, 1)
+        code, result = self.execute([expects_rejection], rejected)
+        self.assertEqual(code, 0)
+        self.assertEqual(result['errors'], 0)
+        self.assertEqual(result['directionBlocked'], [])
+
     def test_matching_stderr_without_typed_result_never_blocks(self):
         code, result = self.execute([self.build], lambda command, **kwargs:
             subprocess.CompletedProcess(command, 3, stderr='direction-stale: H10 closed'))

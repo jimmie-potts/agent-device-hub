@@ -79,10 +79,18 @@ def run_suite(suite, result_path):
                 path = Path(directory) / 'result.json'
                 probe = invoke([*command, '--validate-inputs', '--validation-result', str(path)],
                                *remaining, **dict(options, check=False))
+                if probe.returncode != 3:
+                    # Negative fixtures deliberately make the default builder
+                    # fail. Preserve that result so their own assertions run.
+                    if original_error is not None:
+                        raise original_error
+                    return result
                 if not path.is_file():
                     raise RuntimeError('Build diagnostic did not produce a typed result')
                 diagnostic = json.loads(path.read_text(encoding='utf-8'))
-                if probe.returncode == 3 and isinstance(diagnostic, dict) and diagnostic.get('status') == 'direction-stale':
+                if not isinstance(diagnostic, dict) or diagnostic.get('status') != 'direction-stale':
+                    raise RuntimeError('Exit-3 build diagnostic has an invalid typed result')
+                if diagnostic.get('status') == 'direction-stale':
                     # TestResult receives a string for SkipTest, so associate the
                     # exact exception reason with this typed record. Never infer
                     # eligibility by matching process stderr or a skip's wording.
