@@ -6,6 +6,17 @@ import json
 import re
 import shutil
 import sys
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--validate-inputs', action='store_true', help='Validate fresh inputs without writing generated output')
+parser.add_argument('--validation-result', type=Path)
+args = parser.parse_args()
+if args.validation_result and not args.validate_inputs:
+    parser.error('--validation-result requires --validate-inputs')
+if args.validation_result:
+    # An earlier result must never authorize publication after this run fails.
+    args.validation_result.unlink(missing_ok=True)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skins'))
@@ -15,6 +26,7 @@ import guide_status as GS
 import recommendations as REC
 import guide_section as GD
 import guide_direction as GDIR  # noqa: E402  dated direction narrative and computed leverage
+import guide_retired as RETIRED
 import guide_ideas as GI  # noqa: E402  idea-marked stories, derived from their Guide sections
 from guide_paths import PATHS, TOPICS, ALIASES, GUIDE_TRACKS
 import timeline as TL  # noqa: E402  history chart and ordered roadmap map
@@ -34,6 +46,11 @@ for key, (repo, _) in REPOS.items():
     for issue in json.loads((ROOT / 'work' / 'backlogs' / f'{repo}-issues.json').read_text()):
         ISSUES[f'{key}{issue["number"]}'] = issue
 
+retired_warnings, retired_errors = RETIRED.scan(ISSUES)
+for warning in retired_warnings:
+    print('WARNING: ' + warning, file=sys.stderr)
+assert not retired_errors, '; '.join(retired_errors)
+
 DEPENDENCIES = GS.load_dependencies(ROOT / 'work/backlogs', ISSUES)
 LEVERAGE = GS.leverage(ISSUES, DEPENDENCIES)
 # Saved Execution recommendation sections, read strictly from the snapshot bodies.
@@ -49,7 +66,13 @@ IDEAS = GI.marked(GUIDE_STATE)
 IDEA_KEYS = GI.ordered(IDEAS, list(PATHS))
 # The direction narrative is checked against the snapshot before anything renders, so a stale
 # citation, or a story both in the build-next sequence and marked as an idea, stops the build here.
-GDIR.check(ISSUES, set(IDEAS))
+direction_error = None
+try:
+    GDIR.check(ISSUES, set(IDEAS))
+except AssertionError as error:
+    if not args.validate_inputs:
+        raise
+    direction_error = error
 coverage = {topic_id: [] for topic_id in PATHS}
 for key in sorted(GUIDE_STATE, key=lambda k: (k[0], int(k[1:]))):
     coverage[GUIDE_STATE[key]['topic']].append(key)
@@ -80,6 +103,8 @@ assert all(COUNTS[key] == SNAPSHOT['repositories'][repo]['openIssues'] for key,(
 assert ISSUES['P26']['state'] == 'CLOSED' and ISSUES['P26']['stateReason'] == 'completed', 'Review completed baseline prose'
 TL.reconcile(ISSUES, coverage, ALIASES)
 TIMELINE = TL.build(HISTORY, SNAPSHOT['refreshedAt'], ISSUES, {g['id']: g['short'] for g in GUIDES}, coverage)
+if TIMELINE['unplaced']:
+    print('WARNING: Roadmap placement pending: ' + ', '.join(TIMELINE['unplaced']), file=sys.stderr)
 # Architecture is a reference section: its issue links never add to counts, and its
 # source review has its own timestamp separate from the backlog snapshot.
 receipt_by_id = {r['id']: r for r in DIAGRAM_RECEIPTS['diagrams']}
@@ -166,9 +191,15 @@ for index, guide in enumerate(GUIDES, 1):
         return f'<table><caption class="sr-only">{guide["title"]}: {caption}</caption><thead><tr>{headings}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
     work = '<h3 class="work-heading">Remaining work</h3>' + table(remaining, 'remaining work and dependencies') if remaining else '<p class="all-done">No open stories owned by this guide.</p>'
     if guide_id in GUIDE_TRACKS:
-        tracks = GUIDE_TRACKS[guide_id]
-        # A row outside every track would silently disappear from the guide.
-        assert sorted(key for keys in tracks.values() for key in keys) == sorted(coverage[guide_id]), f'Tracks must cover {guide_id} exactly once'
+        tracks = {name: [key for key in keys if key in coverage[guide_id]]
+                  for name, keys in GUIDE_TRACKS[guide_id].items()}
+        listed = [key for keys in tracks.values() for key in keys]
+        assert len(listed) == len(set(listed)), f'Tracks list {guide_id} issues more than once'
+        pending = [key for key in coverage[guide_id] if key not in listed]
+        if pending:
+            tracks['Track placement pending'] = pending
+            print('WARNING: Track placement pending: ' + ', '.join(pending), file=sys.stderr)
+        assert sorted(key for keys in tracks.values() for key in keys) == sorted(coverage[guide_id])
         work = ''
         for track, keys in tracks.items():
             rows = [row for row, key in zip(remaining, coverage[guide_id]) if key in keys]
@@ -254,6 +285,13 @@ architecture_section = f'''<details class="reference" id="architecture" data-dia
 
 # --- Timeline: where we've been, where we're going --------------------------
 totals = TIMELINE['totals']
+roadmap_pending = ''
+if TIMELINE['unplaced']:
+    roadmap_pending = ('<section aria-labelledby="roadmap-pending"><h4 id="roadmap-pending">Roadmap placement pending</h4>'
+                       '<p>These stories have a topic but no owner-written roadmap position. This list assigns no priority or dependency.</p><ul>'
+                       + ''.join('<li>' + issue_link(key) + ' ' + html.escape(ISSUES[key]['title']) + '</li>' for key in TIMELINE['unplaced'])
+                       + '</ul></section>')
+
 timeline_section = f'''<details class="reference timeline" id="timeline">
       <summary><span class="guide-number">T</span><span class="guide-heading"><span class="eyebrow">Map · where we've been and where we're going</span><h2>Delivery history and ordered roadmap</h2></span><span class="guide-count">{totals['merged']} merged</span><span class="chevron" aria-hidden="true">−</span></summary>
       <div class="guide-body">
@@ -266,12 +304,13 @@ timeline_section = f'''<details class="reference timeline" id="timeline">
       <p class="timeline-note">History read from GitHub at <time datetime="{html.escape(HISTORY['fetchedAt'])}">@@HISTORY_TIMESTAMP@@</time>: pull requests merged to main and issues closed since each repository was created. Local time is America/New_York. Merged means reviewed source on main; installed-client, transport and physical evidence are recorded separately in the guides. Ringed marks are named delivery baselines; where captions would overlap, the name is in the mark’s tooltip.</p></section>
       <section class="timeline-panel" aria-labelledby="roadmap-heading"><div class="panel-head"><h3 id="roadmap-heading">Where we're going</h3><span class="eyebrow">Ordered · not dated</span></div>
       <div class="chart-wrap roadmap-wrap">{TIMELINE['roadmap']}</div>
+      {roadmap_pending}
       <div class="chart-legend"><span class="legend-same">── order within a track</span><span class="legend-cross">┄┄ cross-track prerequisite (hover a node to highlight)</span><span class="legend-ready">▣ stages link to their guides</span></div>
-      <p class="timeline-note">Every one of the {TOTAL} open issues appears exactly once on this map, in its primary guide's track. Columns show relative order within each track. Arrows identify sequence and cross-track prerequisites; sharing a column does not make an independent track wait for the Codex milestone. Columns are not dates and imply no schedule or readiness. Connections retain delivered inputs for context; completed inputs add no wait. Use issue-link status and next-step gates to select work. Click a node to open its work guide.</p></section>
+      <p class="timeline-note">Each placed issue appears once on the map in its primary guide's track; stories awaiting placement are listed above. All {TOTAL} open issues remain in their topic guides. Columns show relative order within each track. Arrows identify sequence and cross-track prerequisites; sharing a column does not make an independent track wait for the Codex milestone. Columns are not dates and imply no schedule or readiness. Connections retain delivered inputs for context; completed inputs add no wait. Use issue-link status and next-step gates to select work. Click a node to open its work guide.</p></section>
       </div><div id="timeline-tip" class="timeline-tip" role="status" hidden></div>
       <a class="back-top" href="#top">Back to overview <span aria-hidden="true">↑</span></a></div></details>'''
 
-direction_section = GDIR.render(ISSUES, LEVERAGE, issue_link, lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])),
+direction_section = '' if direction_error else GDIR.render(ISSUES, LEVERAGE, issue_link, lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])),
                                 DECISIONS, OWNER_LATER, REFRESHED.strftime('%-d %B %Y'), IDEA_KEYS)
 ideas_section = GI.render(IDEAS, ISSUES, [(topic, title) for topic, title, *_ in TOPICS], issue_link,
                           lambda key: GS.scheduling_state(ISSUES[key], DEPENDENCIES.get(key, [])), REFRESHED.strftime('%-d %B %Y'))
@@ -764,6 +803,14 @@ document = document.replace('</dialog><script>', f'</dialog><script id="snapshot
 assert set(all_primary) <= referenced
 assert document.count('class="diagram"') == len(AD.DIAGRAMS) and document.count('<details class="guide"') == len(GUIDES)
 assert 'src="http' not in document and 'href="http' not in re.sub(r'href="https://github\.com/[^"]*"', '', document), 'Only GitHub links may leave the document'
+if args.validate_inputs:
+    result = {'status': 'direction-stale' if direction_error else 'passed',
+              'directionError': str(direction_error) if direction_error else None,
+              'generatedOutputValidated': False, 'browserValidated': False}
+    if args.validation_result:
+        args.validation_result.write_text(json.dumps(result, indent=2) + '\n')
+    print(json.dumps(result))
+    sys.exit(3 if direction_error else 0)
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(document, encoding='utf-8')
 # Companion interactive viewers (full Archify HTML) sit beside the guide; the

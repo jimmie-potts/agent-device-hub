@@ -111,6 +111,14 @@ PR revisions are cancelled per workflow and PR; main revisions keep independent
 runs. Each job has a ten-minute timeout. Branch pushes do not duplicate PR checks.
 The two original workflows under `.github/workflows/` are disabled in GitHub
 Actions; their earlier billing-blocked runs do not validate a candidate.
+The separate `.github/workflows/guide-refresh.yml` performs the nightly guide
+refresh and exact-commit validation reporting beside `work-guide.yml`; it does
+not replace either Depot workflow or its merge gates. Its schedule, dispatch
+fixtures and one rolling PR are documented in the [guide procedure](work-guide/README.md#nightly-refresh).
+The guide maintenance suite includes the history/report, retired-term, staged
+input, validation and local-Git publisher tests. The publisher tests use a local
+bare repository and recorded API responses; actual dispatch evidence is separate.
+
 
 Both Depot workflows use `paths-ignore: ['docs/work-guide/**']` for PRs and main
 pushes. Guide-only edits, including generators and tests, retain local guide

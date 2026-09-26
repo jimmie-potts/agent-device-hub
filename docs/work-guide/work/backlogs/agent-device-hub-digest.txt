@@ -128,13 +128,13 @@
 #258 [OPEN] Report documentation drift against pinned sources in CI
 #259 [CLOSED] Move guide topic assignments and notes into the stories and read them live
 #262 [OPEN] Evict a task across devices through the shared owner
-#263 [OPEN] Make the slow-device browser isolation check deterministic
+#263 [CLOSED] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
 #272 [OPEN] Let devices join or leave one shared task pool
 #276 [CLOSED] Open B.U.N.N.Y. from a bookmark without a token or launcher step
-#277 [OPEN] Make the dashboard a dense control surface instead of long single-column pages
+#277 [CLOSED] Make the dashboard a dense control surface instead of long single-column pages
 #278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
 #279 [OPEN] Clear the visual-alignment leftovers in the style guide, atlas and system map
 #282 [OPEN] Record a private local history of tasks, devices, music and hub health for graphs
@@ -160,7 +160,7 @@
 #308 [CLOSED] Show recommended creative and expansion stories in a guide Ideas section
 #309 [OPEN] Delete merged delivery branches on merge and prune the ones left behind
 #310 [OPEN] Record the 2026-09-25 delivery gotchas in the development and SDLC docs
-#311 [OPEN] Reconcile story text made stale by the 2026-09-25 deliveries
+#311 [CLOSED] Reconcile story text made stale by the 2026-09-25 deliveries
 #312 [CLOSED] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
@@ -233,14 +233,13 @@
 #398 [OPEN] Keep a session's label when the same session resumes
 #399 [OPEN] Keep flourishes quiet automatically while a game runs
 #400 [OPEN] Derive device palettes from artwork as one hub service for games and music
-#401 [OPEN] Update the atlas's playback prose and overview card for installed shared playback
+#401 [CLOSED] Update the atlas's playback prose and overview card for installed shared playback
 #402 [OPEN] Show the guide's Build-next list as a widget on the B.U.N.N.Y. home
 #403 [OPEN] Show the six runtime services and their last start on the B.U.N.N.Y. home
 #405 [OPEN] Show live reachability for each device controller in B.U.N.N.Y.
 #406 [OPEN] Register a device controller with one hub command
 #408 [OPEN] Keep the hub MCP tool list short as devices grow
 #409 [OPEN] Draw every device page from a shape its owner publishes
-#410 [OPEN] Port the hub's Nanoleaf harness scripts to the split bridge modules before the next pin
 #415 [OPEN] Add the LIFX bulb to the Work, Free and Quiet desk presets
 #416 [OPEN] Fade LIFX status changes and pulse once when attention starts
 #417 [CLOSED] Install the hub with #323 and check the Panels page in the installed dashboard
@@ -254,3 +253,12 @@
 #430 [OPEN] See and end open B.U.N.N.Y. browser sessions from the Connections page
 #431 [OPEN] Reserve a Line for a project by picking it on the B.U.N.N.Y. wall art
 #432 [OPEN] Play a sent moment on the B.U.N.N.Y. device art
+#437 [OPEN] Show which speaker is playing in B.U.N.N.Y. and the playback snapshot
+#438 [OPEN] Change the volume of the presented speaker from B.U.N.N.Y. and the playback tools
+#439 [CLOSED] Paint LIFX status from sessions with uncertain freshness
+#442 [OPEN] Verify installed Hub and Tidbyt fallback revisions include the early stop handlers
+#443 [OPEN] Preview desk preset participation and unavailable devices before applying
+#444 [OPEN] Release and install the hub with the dense control surface (#277) and check it in the installed dashboard
+#445 [OPEN] Undo the last device change from its card
+#446 [OPEN] Show observation freshness as the Eyes badge on every widget and card
+#449 [OPEN] Show the public guide's edition and last verified publication receipt
