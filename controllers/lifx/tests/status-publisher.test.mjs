@@ -211,6 +211,34 @@ test("stale input: an unavailable feed sends no write; recovery paints only on a
   controller.close();
 });
 
+test("stale input: a collector that is not running sends no write, like an unavailable feed", async t => {
+  const o = await owner(t);
+  const { controller, log } = fakeLifx([{ deviceId: "desk", address: "192.0.2.10", ...evidence }], { modeRoot: tempRoot(t) });
+  let collector = "running";
+  const publisher = new LifxStatusPublisher({
+    feed: { snapshot: async () => ({ ...(await o.snapshot()), collector }) },
+    controller, bulbs: [{ deviceId: "desk" }], pollMs: 30_000, feedTimeoutMs: 3_000,
+  });
+  t.after(() => publisher.stop());
+  const paints = () => log.filter(e => e.deviceId === "desk" && e.type === 102);
+  await setMode(controller, "desk", "Work");
+  await publisher.whenIdle();
+  await flush();
+  assert.equal(paints().length, 1, "Work-entry paints the current (idle) state once");
+  await o.ingest(hook("UserPromptSubmit", "s", "t1"));
+  for (const state of ["quiesced", "faulted"]) {
+    collector = state;
+    await publisher.update();
+    await flush();
+    assert.equal(paints().length, 1, `a ${state} collector paints nothing, even though the real state changed`);
+  }
+  collector = "running";
+  await publisher.update();
+  await flush();
+  assert.equal(paints().length, 2, "a running collector again paints the changed state");
+  controller.close();
+});
+
 test("uncertain freshness: a finished turn idle past five minutes still paints its reported state (#439)", async t => {
   let offsetMs = 0;
   const o = await createAgentState({ storage: new MemoryStorage(), ownerId: "owner", consumers: [], clock: () => Date.now() + offsetMs });

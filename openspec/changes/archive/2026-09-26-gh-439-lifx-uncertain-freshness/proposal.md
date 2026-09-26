@@ -16,7 +16,7 @@ None.
 
 ### Modified Capabilities
 
-- `local-controller-host`: the automatic LIFX status painting requirement states how session freshness and feed health affect painting.
+- `local-controller-host`: the automatic LIFX status painting requirement states how session freshness and feed health affect painting. The publisher's feed and painting rules live in this host requirement; `lifx-controller` covers only the controller's modes and internal paint, which do not change, so #439's mention of the `lifx-controller` spec lands here instead.
 
 ## Impact
 

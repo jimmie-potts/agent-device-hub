@@ -3,7 +3,8 @@ import type { SessionSnapshot, Snapshot } from '@jimmie-potts/agent-state';
 /**
  * The shared per-session ranking and whole-owner status reduction, consumed by every
  * device that shows automatic agent status. A session's state is never inferred from
- * missing evidence: silence never means done. Freshness does not change a session's rank.
+ * missing evidence: silence never means done. A root's own freshness does not change its
+ * rank; an active child makes its root working only while the child's evidence is current.
  */
 export type AgentState = 'attention' | 'working' | 'done';
 /** `idle` means the feed is healthy and nothing is outstanding. `unknown` covers only an
@@ -35,8 +36,8 @@ export type HighestStatusOptions = {
 
 /**
  * The single highest state across every root session, or `idle`/`unknown`. Highest is
- * attention > working > done. Each session counts with the state the owner reports, whatever
- * its freshness: a finished turn waiting to be read is idle by nature and soon uncertain, yet
+ * attention > working > done. Each root counts with the state the owner reports, whatever its
+ * own freshness: a finished turn waiting to be read is idle by nature and soon uncertain, yet
  * it is still done until acknowledged (#439). Only an unavailable feed or a collector that is
  * not running makes the result `unknown`.
  */
@@ -44,10 +45,10 @@ export function highestStatus(snapshot: Snapshot | undefined, options: HighestSt
   if (options.feedAvailable === false || !snapshot || snapshot.collector !== 'running') return 'unknown';
   const shown = snapshot.sessions
     .filter(session => session.parent.status !== 'known')
-    .map(session => ({ session, state: sessionState(session, options.acknowledgingConsumers) }))
-    .filter((entry): entry is typeof entry & { state: AgentState } => entry.state !== undefined);
+    .map(session => sessionState(session, options.acknowledgingConsumers))
+    .filter((state): state is AgentState => state !== undefined);
   if (shown.length === 0) return 'idle';
-  return shown.reduce((best, entry) => RANK[entry.state] < RANK[best] ? entry.state : best, shown[0]!.state);
+  return shown.reduce((best, state) => RANK[state] < RANK[best] ? state : best);
 }
 
 /** A display-agnostic RGB triple, shared so every device paints the same color per state. */

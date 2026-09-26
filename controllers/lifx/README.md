@@ -162,8 +162,8 @@ idle and soon `uncertain`, yet still done until acknowledged (#439). Only an
 unavailable feed or a collector that is not running is `unknown`, which paints
 nothing and keeps the last appearance. It paints only on a shown-state
 transition: never a heartbeat, an unchanged snapshot, a repeated read or a
-timer. The shown key advances to the attempted target regardless of the paint's outcome, so a
-failed paint is not replayed; the next transition is a fresh request for the
+timer. The shown key advances to the attempted target regardless of the
+paint's outcome, so a failed paint is not replayed; the next transition is a fresh request for the
 current state. Painting requires Work or Quiet; Free never paints and leaves
 the bulb alone. Quiet paints only attention, at its own cap; everything else
 collapses to "nothing to paint" under Quiet, so leaving attention writes
