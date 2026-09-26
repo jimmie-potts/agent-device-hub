@@ -17,6 +17,7 @@ permissions:
   contents: write
   pull-requests: write
   checks: write
+  issues: read
 jobs:
   refresh:
     name: Refresh and validate the rolling guide PR
