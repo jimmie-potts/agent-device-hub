@@ -176,6 +176,11 @@
           "Completed / Browser sessions and command lifecycle",
           "[[H244]] [[H245]] [[H182]]",
           "Hub PRs #270, #273 and #269: bounded browser-session resources, one command lifecycle for forms and actions, and the Neon skin with the B.U.N.N.Y. name on the dashboard."
+        ],
+        [
+          "Completed / Installed session-end observations",
+          "[[H312]]",
+          "Hub PR #389 recorded the installed Codex CLI and Claude Code session-end observations; #312 closed as completed on September 26, 2026 (UTC)."
         ]
       ],
       "notes": [
@@ -223,6 +228,11 @@
           "Completed / Selector, Panels control and address change",
           "[[N44]] [[N113]] [[N114]]",
           "Nanoleaf PRs #144, #164 and #147, closed as completed on September 25, 2026; installation of the Panels in the controller, MCP host and hub continues in [[N167]]."
+        ],
+        [
+          "Completed / Read-only element geometry",
+          "[[N169]]",
+          "Nanoleaf PR #172 and hub PR #396 merged, and #169 closed as completed on September 26, 2026 (UTC): the Lines' and Panels' saved geometry reaches B.U.N.N.Y. through a read-only route. It is installed on the Nanoleaf runtime; the installed hub serves it after its next upgrade, alongside [[N167]]."
         ]
       ],
       "notes": [
@@ -434,6 +444,11 @@
           "Completed / Now-playing and display cards",
           "[[H37]] [[H38]] [[P89]] [[H242]]",
           "Hub PR #275 passed installed acceptance on September 25, 2026; the Tidbyt (Hub PR #280) and Pixoo (Pixoo PR #90) cards are installed and physically checked; the #242 qualification (Hub PR #302) found the Sony API rejects resume, so the Sonos Move is the route to play."
+        ],
+        [
+          "Completed / Controller setup guide",
+          "[[H232]]",
+          "Hub PR #395 documented connecting device controllers for B.U.N.N.Y. in the hub setup guide; #232 closed as completed on September 26, 2026 (UTC)."
         ]
       ],
       "notes": [
@@ -623,6 +638,11 @@
           "Completed / Recommendations, placement, direction and ideas",
           "[[H252]] [[H259]] [[H290]] [[H308]]",
           "Hub PRs #260/#266, #281, #300 and #322: starting-session recommendations, story-owned topic placement, the dated Direction section and the Ideas section."
+        ],
+        [
+          "Completed / Bridge operation owners",
+          "[[N118]]",
+          "Nanoleaf PR #173, a behavior-preserving refactor, gave shared operations owning modules and one dependency direction; #118 closed as completed on September 26, 2026 (UTC)."
         ]
       ],
       "notes": [

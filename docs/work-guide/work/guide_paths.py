@@ -13,7 +13,7 @@ TOPICS = [
      "Codex task titles, current projects first and the compact inspector are delivered. Thread links, the simpler default layout, the Open in Codex focus fix, the merged inspector card and configurable Work-mode colors are delivered. Next: show the Lines hold, keep comets on skipped revisions and queue the delayed completion comet. Claude Code titles wait on three open decisions. Switching between Work and Free by session presence no longer waits on session retirement, but it keeps a blocked label. Saved-scene playback and requested animations through MCP are delivered; stopping an animation and restoring the remembered scene through MCP is ready. The wall map stays Nanoleaf's advanced editor (ADR 0007), so new editing controls land in B.U.N.N.Y.", ['N112', 'N115', 'N81', 'N150']),
     ('nanoleaf-devices', 'Adding devices',
      'Extend device support through separate Lines and Panels, wall map retirement, Tidbyt, LIFX, PC-lighting, Roborock and other-integration tracks.',
-     'The Lines and Panels trial and Tidbyt agent status are accepted on the installed devices. The map selector, Panels control through the controller and MCP, and address changes without re-enrolling are delivered. The local controller host for Tidbyt and LIFX is installed. Next: install the Panels in the controller, MCP host and hub, which waits on the hub starting with a sixth controller, and expose wall geometry read-only so B.U.N.N.Y. can draw it (ADR 0007). The remaining wall-map operations then move behind the integration extension before the wall map retires; the wall-map scene picker, filed after ADR 0007, sits on that parity list until the owner decides whether it moves to the shell. Choose LIFX status behavior before implementation, and check stale Tidbyt rows with night mode. PC lighting stays later.', ['N169', 'N170', 'H20', 'H227']),
+     'The Lines and Panels trial and Tidbyt agent status are accepted on the installed devices. The map selector, Panels control through the controller and MCP, address changes without re-enrolling and read-only wall geometry for B.U.N.N.Y. (ADR 0007) are delivered; the geometry is installed on the Nanoleaf runtime and reaches the installed hub at its next upgrade. The local controller host for Tidbyt and LIFX is installed. Next: install the Panels in the controller, MCP host and hub, which waits on the hub starting with a sixth controller. The remaining wall-map operations then move behind the integration extension before the wall map retires; the wall-map scene picker, filed after ADR 0007, sits on that parity list until the owner decides whether it moves to the shell. Choose LIFX status behavior before implementation, and check stale Tidbyt rows with night mode. PC lighting stays later.', ['N167', 'N170', 'H20', 'H227']),
     ('pixoo-media', 'Pixoo media and playlists',
      'Improve media behavior on the accepted local Pixoo baseline.',
      'Keep MCP status valid after dashboard uploads, and keep Divoom cloud content off the display after screen-on and reboots; disconnecting the Pixoo from the Divoom cloud is an owner network step with its own receipts. Now-playing cards are installed and checked on the display. The media catalog, playlist items and previews through the integration extension feed the B.U.N.N.Y. Pixoo page. Select a media defect or timing investigation when needed; the accepted uniform-frame profile does not establish variable visible timing.', ['P79', 'P76', 'P96', 'P52']),
@@ -37,14 +37,14 @@ TOPICS = [
      'The Pixoo app runs as a user service, and the Windows Nanoleaf runtime is retired and decommissioned. ADR 0008 keeps the runtime in WSL: start it at boot with linger, an idle timeout and one scheduled task, and install stop-signal handlers so services stop cleanly. Docker on the PC is not adopted. The dedicated Linux server carries the Docker packaging and starts only on its trigger. An upgrade and rollback command would replace the manual Linux runtime upgrade. Repository migrations remain later choices that preserve explicit ownership and private state.', ['H356', 'H361', 'N140']),
     ('development-workflow', 'Engineering maintenance',
      'Keep code structure, development tooling and resource use manageable.',
-     'Pixoo embedded-host performance is later by owner choice. The Nanoleaf architecture sequence starts with the bridge.py split; hub merge gates and contract consolidation are separate maintenance, and Pixoo’s typed command observations are preferred before shared SSE delivery. The dashboard browser flake is in progress and the slow-device isolation check is ready. Select maintenance only for a concrete need.', ['H303', 'H263', 'N118', 'H240', 'P80']),
+     'Pixoo embedded-host performance is later by owner choice. The Nanoleaf bridge.py split into configuration, runtime and hook owners is delivered, and the render-input and state owners come next; hub merge gates and contract consolidation are separate maintenance, and Pixoo’s typed command observations are preferred before shared SSE delivery. The dashboard browser flake is in progress and the slow-device isolation check is ready. Select maintenance only for a concrete need.', ['H303', 'H263', 'N127', 'H240', 'P80']),
 ]
 PATHS = {key: (outcome, action, selected) for key, _, outcome, action, selected in TOPICS}
 ALIASES = {'tidbyt-lifx': 'nanoleaf-devices', 'pc-lighting': 'nanoleaf-devices'}
 
 DEVICE_TRACKS = {
     'Lines and Panels': ['N47', 'N167', 'N168', 'N161'],
-    'Wall map retirement': ['N169', 'N170', 'N171'],
+    'Wall map retirement': ['N170', 'N171'],
     'Tidbyt': ['H227', 'H23', 'H24'],
     'LIFX': ['H20', 'H22', 'H319', 'H320', 'H327', 'H337'],
     'PC lighting': ['H51', 'H52', 'H53', 'H55', 'H56', 'H57', 'H58', 'H60', 'H61', 'H62'],
@@ -53,7 +53,7 @@ DEVICE_TRACKS = {
 }
 MAINTENANCE_TRACKS = {
     'Hub': ['H240', 'H246', 'H123', 'H258', 'H263', 'H303', 'H309', 'H310', 'H314'],
-    'Nanoleaf': ['N118', 'N127', 'N120', 'N121', 'N119', 'N122', 'N128', 'N129', 'N130', 'N162', 'N163'],
+    'Nanoleaf': ['N127', 'N120', 'N121', 'N119', 'N122', 'N128', 'N129', 'N130', 'N162', 'N163'],
     'Pixoo': ['P80', 'P81', 'P82', 'P61', 'P86'],
 }
 # Guides whose remaining work is split under track headings; tracks cover each guide exactly.
