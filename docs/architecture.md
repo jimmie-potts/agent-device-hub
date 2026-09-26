@@ -501,10 +501,11 @@ Music to them over AirPlay; audio never passes through the hub. Playback state
 is separate from agent sessions and state exports.
 
 Clients see one stable neutral playback ID that never changes with the speaker.
-The hub polls every configured source and presents the first, in configured
-order, that reports a playing or paused session, then the freshest; a source
-that goes silent mid-song stays shown as stale before another is presented, and
-nothing is shown as paused for lack of evidence. Commands name the playback ID
+The hub polls every configured source and ranks them first by whether they
+report a playing or paused session, then by freshness class (available, stale,
+unavailable), then by configured order. A source that goes silent mid-song
+can remain shown as stale while it retains the highest rank; nothing is shown
+as paused for lack of evidence. Commands name the playback ID
 and go only to the presented source; they are never redirected, retried or
 replayed. The owner chose this ordered preference on 2026-09-25 over the
 explicit selection #175 designed, because the phone chooses the output. The

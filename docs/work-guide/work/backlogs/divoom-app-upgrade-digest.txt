@@ -27,12 +27,12 @@
 #72 [CLOSED] Use shared npm and Playwright caches and fnm for Node 24 in setup guidance
 #76 [OPEN] Keep Divoom cloud content off the Pixoo after screen-on and device reboots
 #77 [CLOSED] Run the installed Pixoo app as a user service with hub settings
-#79 [OPEN] Keep MCP status valid after dashboard uploads with typed display evidence
-#80 [OPEN] Separate typed command observations from replay payloads
+#79 [CLOSED] Keep MCP status valid after dashboard uploads with typed display evidence
+#80 [CLOSED] Separate typed command observations from replay payloads
 #81 [OPEN] Share SSE client delivery while preserving browser and native feed contracts
 #82 [OPEN] Reconcile product and hub-integration docs with delivered runtime behavior
 #83 [OPEN] Disconnect the Pixoo from Divoom's cloud while keeping local control
-#86 [OPEN] Stop Windows CI integration tests from timing out at the 5-second Vitest default
+#86 [CLOSED] Retire native Windows support and the flaky Windows CI jobs
 #87 [CLOSED] Pixoo monitor rows all show the same truncated session ID prefix
 #89 [CLOSED] Show hub now-playing cards on the Pixoo
 #91 [OPEN] Tag the media library with moods for hub moments
@@ -40,5 +40,8 @@
 #93 [OPEN] Accept agent-generated pixel art as bounded media
 #94 [OPEN] Stage agent-proposed GIFs for owner approval
 #96 [OPEN] Expose the media catalog, playlist items and previews through the Pixoo integration extension
-#98 [OPEN] Redesign the Pixoo monitor layout for readability and motion
+#98 [CLOSED] Redesign the Pixoo monitor layout for readability and motion
 #102 [OPEN] Every monitor row is marked uncertain because hook sources never supply ordering evidence
+#106 [OPEN] Show session titles and project names on the Pixoo monitor
+#107 [OPEN] Cycle the Pixoo monitor through active and waiting sessions and summarize the rest
+#108 [OPEN] Show what the agent is asking on the Pixoo attention card
