@@ -103,12 +103,12 @@ The selected Desktop task did not reliably emit a non-archive end during the
 installed idle/shutdown trials. [Hub #253](https://github.com/jimmie-potts/agent-device-hub/issues/253)
 owns that native emission investigation and subsequent reopen-without-prompt and
 live-resume qualification, under the user-approved scope split. The Codex CLI and
-Claude Code paths adopted by #241 are qualified at the source level only. Their
-documented end and start mappings are recorded in
-[provider qualification](provider-qualification.md#runtime-ends-and-archive-admission).
-A separately authorized installed observation of a normal end and a resume per
-path still needs to record the emitted events and the owner's removal and
-recreation. An accepted end retires its known session tree; quitting a client
+Claude Code paths adopted by #241 were observed on the installed Hub 0.3.7 for
+[Hub #312](https://github.com/jimmie-potts/agent-device-hub/issues/312).
+[Provider qualification](provider-qualification.md#installed-cli-and-claude-observation)
+records the emitted events and the owner's removal and recreation for normal
+exit, `/clear` and resume.
+Codex CLI sends a cleared session's end only when the CLI exits. An accepted end retires its known session tree; quitting a client
 does not establish that every record received an end. No new thirty-minute timer or global clear is
 provided. The existing twenty-four-hour evidence expiry remains the fallback.
 Native mode automation remains owned by Nanoleaf #110.
