@@ -1,0 +1,466 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "metadata-title-project",
+      "input": {
+        "apiVersion": "1.2",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "id": "credential",
+      "input": {
+        "apiVersion": "1.2",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "overlong-project",
+      "input": {
+        "apiVersion": "1.2",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-label-origin",
+      "input": {
+        "apiVersion": "1.2",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "provider"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "orphan-origin",
+      "input": {
+        "apiVersion": "1.2",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "legacy-reject-1.0",
+      "input": {
+        "apiVersion": "1.0",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": false
+    },
+    {
+      "id": "legacy-reject-1.1",
+      "input": {
+        "apiVersion": "1.1",
+        "revision": 2,
+        "asOfMs": 1000,
+        "collector": "running",
+        "lossCount": 0,
+        "sessions": [
+          {
+            "identity": {
+              "provider": "codex",
+              "client": "desktop",
+              "hostId": "host",
+              "sourceId": "source",
+              "sessionId": "session"
+            },
+            "turn": {
+              "status": "known",
+              "id": "turn"
+            },
+            "parent": {
+              "status": "unknown"
+            },
+            "label": "Owner",
+            "activity": "idle",
+            "attention": [],
+            "notices": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "kind": "turn-ended",
+                "turn": {
+                  "status": "known",
+                  "id": "turn"
+                },
+                "acknowledgedBy": [
+                  "pixoo"
+                ]
+              }
+            ],
+            "read": "unknown",
+            "unavailable": [],
+            "ordering": {
+              "status": "unknown"
+            },
+            "lastEvidenceAtMs": 1000,
+            "observedAtMs": 1000,
+            "observationAgeMs": 0,
+            "freshness": "current",
+            "restartUncertain": false,
+            "children": {
+              "active": 0,
+              "uncertain": 0
+            },
+            "generation": 0,
+            "title": {
+              "value": "Café prompt design",
+              "source": "provider"
+            },
+            "project": "device-hub",
+            "labelOrigin": "user"
+          }
+        ]
+      },
+      "valid": false
+    }
+  ]
+}

@@ -8,7 +8,7 @@ import {createServer} from 'node:http';
 import {createHash} from 'node:crypto';
 import {hookCommand} from '../dist/setup.js';
 import {startHub} from '../dist/server.js';
-async function run(config,payload){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,config],{stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',v=>stdout+=v);child.stderr.on('data',v=>stderr+=v);child.on('error',reject);child.on('exit',code=>resolve({code,stdout,stderr}));child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));});}
+async function run(config,payload,env={}){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[new URL('../bin/monitor-hook.mjs',import.meta.url).pathname,config],{env:{...process.env,...env},stdio:['pipe','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',v=>stdout+=v);child.stderr.on('data',v=>stderr+=v);child.on('error',reject);child.on('exit',code=>resolve({code,stdout,stderr}));child.stdin.on('error',()=>{});child.stdin.end(JSON.stringify(payload));});}
 test('packaged Desktop hook drives successive turns through the real host and existing store',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'hub-hook-current-')),token='k'.repeat(43);let hub;
  t.after(async()=>{await hub?.close();await rm(directory,{recursive:true,force:true});});
@@ -62,4 +62,15 @@ test('setup receipt blocks incomplete, foreign and malformed installations after
   await writeFile(receiptPath,value===null?'{invalid':JSON.stringify(value),{mode:0o600});assert.deepEqual(await run(path,{hook_event_name:'Stop',session_id:'session'}),{code:0,stdout:'',stderr:''});assert.equal(requests,0);
  }
  await writeFile(receiptPath,JSON.stringify(receipt),{mode:0o600});await run(path,{hook_event_name:'Stop',session_id:'session'});assert.equal(requests,1);
+});
+
+test('explicit lifecycle 1.1 produces bounded shared names; old configuration keeps 1.0',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-title-hook-'));t.after(()=>rm(directory,{recursive:true,force:true}));const path=join(directory,'producer.json'),transcript=join(directory,'session.jsonl');
+ const requests=[];const server=createServer(async(req,res)=>{let data='';for await(const b of req)data+=b;requests.push(JSON.parse(data));res.end('{}');});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const common={enabled:true,qualified:true,source:{provider:'claude',client:'code',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:`http://127.0.0.1:${server.address().port}/api/monitor/v1/events`,token:'t'.repeat(43)};
+ await writeFile(transcript,JSON.stringify({type:'custom-title',customTitle:'Rewrite café prompts',sessionId:'session'})+'\n');
+ const payload={hook_event_name:'UserPromptSubmit',session_id:'session',prompt_id:'turn',transcript_path:transcript,cwd:'/private/work/project',prompt:'CONTENT_CANARY'};
+ for(const config of [common,{...common,lifecycleVersion:'1.1'}]){await writeFile(path,JSON.stringify(config),{mode:0o600});assert.deepEqual(await run(path,payload,{CODEX_HOME:directory}),{code:0,stdout:'',stderr:''});}
+ assert.equal(requests.length,2);assert.equal(requests[0].apiVersion,'1.0');assert.equal(requests[0].project,undefined);
+ assert.equal(requests[1].apiVersion,'1.1');assert.deepEqual(requests[1].title,{value:'Rewrite café prompts',source:'user'});assert.equal(requests[1].project,'project');assert.ok(!JSON.stringify(requests).includes('CONTENT_CANARY'));assert.ok(!JSON.stringify(requests).includes('/private/'));
 });

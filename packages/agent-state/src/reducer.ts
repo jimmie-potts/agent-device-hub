@@ -43,8 +43,21 @@ function mergeMetadata(session:Session,event:Envelope):{changed:boolean;ambiguou
       }else session.parent=event.parent;
     }
   }
-  if(event.label&&session.label!==event.label.value){session.label=event.label.value;changed=true;}
-  if(event.projectId&&session.projectId!==event.projectId){session.projectId=event.projectId;changed=true;}
+  if(event.observedAtMs >= (session.metadataObservedAtMs ?? 0)){
+    if(event.label && (event.label.origin==='user'||session.label===undefined||session.labelOrigin==='agent') &&
+      (session.label!==event.label.value||session.labelOrigin!==event.label.origin)){
+      session.label=event.label.value;session.labelOrigin=event.label.origin;changed=true;
+    }
+    if(event.title && (session.title?.value!==event.title.value||session.title.source!==event.title.source)){
+      session.title=event.title;changed=true;
+    }
+    if(event.project!==undefined&&session.project!==event.project){session.project=event.project;changed=true;}
+    if(event.projectId&&session.projectId!==event.projectId){session.projectId=event.projectId;changed=true;}
+    if(event.title||event.project!==undefined||event.label||event.projectId){
+      if(session.metadataObservedAtMs!==event.observedAtMs)changed=true;
+      session.metadataObservedAtMs=event.observedAtMs;
+    }
+  }
   return {changed,ambiguous};
 }
 function selectTurn(session:Session,turn:KnownId,consumers:Consumer[],recover=false) {

@@ -1,3 +1,5 @@
+import {readSessionTitle,projectName,withMetadata,type MetadataOptions} from './metadata.js';
+export {enrichCodexTitle} from './metadata.js';
 import type {Envelope,Identity} from '@jimmie-potts/agent-lifecycle-contracts';
 
 export const MAX_NORMALIZED_EVENT_BYTES=2048;
@@ -75,6 +77,16 @@ export function normalizeHook(raw:unknown,source:SourceConfiguration,nowMs:numbe
     if(Buffer.byteLength(JSON.stringify(envelope))>MAX_NORMALIZED_EVENT_BYTES)return null;
     return Object.freeze(envelope);
   }catch{return null;}
+}
+
+/** Optional, version-selected enrichment for newly configured producers. */
+export async function enrichHook(raw:unknown,source:SourceConfiguration,nowMs:number,options:MetadataOptions={}):Promise<Envelope|null>{
+  const event=normalizeHook(raw,source,nowMs);if(!event)return null;
+  if(event.parent.status==='known')return withMetadata(event,{});
+  const record=plain(raw);if(!record)return event;
+  const project=projectName(string(record,'cwd'));
+  const title=await readSessionTitle(event.identity.provider,event.identity.sessionId,string(record,'transcript_path'),options);
+  return withMetadata(event,{...(project?{project}:{}),...(title?{title}:{})});
 }
 
 type Item={envelope:Envelope;bytes:number;deadlineMs:number;resolve:()=>void;resolved:boolean;released:boolean};

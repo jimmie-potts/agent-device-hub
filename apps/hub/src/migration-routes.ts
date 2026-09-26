@@ -96,7 +96,7 @@ export async function retargetRoute(receipt:StagedRoute,ownerId:string,endpoint:
 export async function stageProducer(path:string,expected:string,endpoint:string,token:string):Promise<StagedRoute>{
  if(loopbackEndpoint(endpoint).pathname!=='/api/monitor/v1/events'||!validToken(token))throw new Error('invalid-producer-route');
  return stage(path,expected,'producer',value=>{
-  if(!exact(value,['enabled','qualified','source','endpoint','token'])||typeof value.enabled!=='boolean'||typeof value.qualified!=='boolean')throw new Error('invalid-producer-file');
+  if(!exact(value,value.lifecycleVersion===undefined?['enabled','qualified','source','endpoint','token']:['enabled','qualified','source','endpoint','token','lifecycleVersion'])||value.lifecycleVersion!==undefined&&value.lifecycleVersion!=='1.1'||typeof value.enabled!=='boolean'||typeof value.qualified!=='boolean')throw new Error('invalid-producer-file');
   const emitter=createEmitter({source:value.source as SourceConfiguration,enabled:false,qualified:value.qualified,send:async()=>{}});emitter.close();
   return {...value,enabled:false,endpoint,token};
  });

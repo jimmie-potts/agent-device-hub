@@ -5,7 +5,7 @@ import {createEmitter,type SourceConfiguration} from '@jimmie-potts/agent-state/
 import {object,loopbackEndpoint,canonical} from './common.js';
 import {digest,privateDirectory,readPrivate,replacePrivate} from './setup-files.js';
 
-export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;windowsDistribution?:string;credentialFile?:string};
+export type SetupInput={directory:string;target:string;source:SourceConfiguration;endpoint:string;node:string;hook:string;owner:string;qualified:boolean;lifecycleVersion?:'1.1';windowsDistribution?:string;credentialFile?:string};
 /** Implementations must persist grants/revocations and confirm the active owner's access state before resolving. */
 export type SetupAuthority={grant:(id:string,token:string,receiptDirectory:string)=>Promise<void>;revoke:(id:string,token:string,receiptDirectory:string)=>Promise<void>};
 type Entry={event:string;group:{hooks:{type:string;command:string;timeout:number;commandWindows?:string}[]}};
@@ -21,7 +21,7 @@ export function hookCommand(node:string,hook:string,config:string,distribution?:
  return {command,commandWindows:['wsl.exe','--distribution',distribution,'--exec',node,hook,config].map(v=>'"'+v+'"').join(' ')};
 }
 function validate(input:SetupInput){
- if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile'].includes(k))||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
+ if(!object(input)||Object.keys(input).some(k=>!['directory','target','source','endpoint','node','hook','owner','qualified','windowsDistribution','credentialFile','lifecycleVersion'].includes(k))||input.lifecycleVersion!==undefined&&input.lifecycleVersion!=='1.1'||typeof input.qualified!=='boolean'||!input.owner||!/^[A-Za-z0-9_.-]{1,128}$/.test(input.owner))throw new Error('invalid-setup');
  if(input.windowsDistribution!==undefined&&input.source.provider!=='codex')throw new Error('unsupported-windows-client');
  const emitter=createEmitter({source:input.source,enabled:false,send:async()=>{}});emitter.close();
  if(loopbackEndpoint(input.endpoint).pathname!=='/api/monitor/v1/events')throw new Error('invalid-endpoint');
@@ -93,7 +93,7 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
   const current=(await readPrivate(input.target))!;
   if(current!==record.before&&current!==record.after)throw new Error('configuration-changed');
   const producerPath=join(input.directory,'producer.json');
-  const producer={enabled:false,qualified:input.qualified,source:input.source,endpoint:input.endpoint,token:record.token};
+  const producer={...(input.lifecycleVersion?{lifecycleVersion:input.lifecycleVersion}:{}),enabled:false,qualified:input.qualified,source:input.source,endpoint:input.endpoint,token:record.token};
   const existing=await readPrivate(producerPath,true);
   if(existing!==null&&canonical(JSON.parse(existing))!==canonical(producer)&&canonical(JSON.parse(existing))!==canonical({...producer,enabled:input.qualified}))throw new Error('producer-changed');
   await replacePrivate(producerPath,existing,encode(producer));

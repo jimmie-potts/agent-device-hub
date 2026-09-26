@@ -447,4 +447,11 @@ opening assembly and reduced motion through a component harness. `tests/art.test
 ported layout validator. The candidate needs the owner's side-by-side approval
 against the wall map on the same fixture before merge.
 
-The activity view requests snapshot 1.1 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.
+The activity view requests snapshot 1.2 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.
+
+Session headings use label, then shared title, then session ID. Project display
+names appear beside the provider facts. Search includes label, title, project
+and ID. Label fields accept up to 80 Unicode scalar values; the HTML 160-code-unit
+ceiling accommodates 80 supplementary characters, while the pattern enforces
+80 scalars. Synthetic desktop/mobile fixtures cover these names, neutral
+fallbacks and owner precedence; their previews require explicit UI approval.

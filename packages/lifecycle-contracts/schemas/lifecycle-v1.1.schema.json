@@ -1,0 +1,527 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jimmie-potts.github.io/agent-device-hub/agent-lifecycle/1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "1.1"
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "turn": {
+      "$ref": "#/$defs/knownId"
+    },
+    "parent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "top-level"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "identity": {
+              "$ref": "#/$defs/identity"
+            }
+          },
+          "required": [
+            "status",
+            "identity"
+          ]
+        }
+      ]
+    },
+    "eventId": {
+      "$ref": "#/$defs/id"
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "session.started"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "turn.started"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "activity.observed"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "turn.ended"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "turn.interrupted"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "runtime.ended"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "question.continuing"
+            },
+            "attention": {
+              "$ref": "#/$defs/knownId"
+            }
+          },
+          "required": [
+            "kind",
+            "attention"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "attention.input"
+            },
+            "attention": {
+              "$ref": "#/$defs/knownId"
+            }
+          },
+          "required": [
+            "kind",
+            "attention"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "attention.approval"
+            },
+            "attention": {
+              "$ref": "#/$defs/knownId"
+            }
+          },
+          "required": [
+            "kind",
+            "attention"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "attention.resolved"
+            },
+            "attention": {
+              "$ref": "#/$defs/knownId"
+            }
+          },
+          "required": [
+            "kind",
+            "attention"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "notice.acknowledged"
+            },
+            "consumerId": {
+              "$ref": "#/$defs/id"
+            },
+            "noticeId": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "kind",
+            "consumerId",
+            "noticeId"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "read.observed"
+            },
+            "state": {
+              "enum": [
+                "read",
+                "unread"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "evidence.unavailable"
+            },
+            "dimension": {
+              "enum": [
+                "activity",
+                "attention",
+                "turn",
+                "parent",
+                "read",
+                "ordering"
+              ]
+            },
+            "reason": {
+              "enum": [
+                "unsupported",
+                "inaccessible",
+                "missing",
+                "ambiguous",
+                "lost"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "dimension",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "observedAtMs": {
+      "$ref": "#/$defs/integer"
+    },
+    "occurredAtMs": {
+      "$ref": "#/$defs/integer"
+    },
+    "ordering": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "epoch": {
+              "$ref": "#/$defs/id"
+            },
+            "sequence": {
+              "$ref": "#/$defs/integer"
+            }
+          },
+          "required": [
+            "status",
+            "epoch",
+            "sequence"
+          ]
+        }
+      ]
+    },
+    "projectId": {
+      "$ref": "#/$defs/id"
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "user",
+            "agent"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^(?!.*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "origin",
+        "value"
+      ]
+    },
+    "title": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/displayText"
+        },
+        "source": {
+          "enum": [
+            "provider",
+            "user"
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "source"
+      ]
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^(?!.*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "identity",
+    "turn",
+    "parent",
+    "event",
+    "observedAtMs",
+    "ordering"
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_.-]+(?![\\s\\S])"
+    },
+    "integer": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "codex",
+            "claude"
+          ]
+        },
+        "client": {
+          "enum": [
+            "cli",
+            "desktop",
+            "code"
+          ]
+        },
+        "hostId": {
+          "$ref": "#/$defs/id"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/id"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "provider",
+        "client",
+        "hostId",
+        "sourceId",
+        "sessionId"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "codex"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "client": {
+                "enum": [
+                  "cli",
+                  "desktop"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "else": {
+            "properties": {
+              "client": {
+                "const": "code"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "knownId": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "unknown"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "known"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "required": [
+            "status",
+            "id"
+          ]
+        }
+      ]
+    },
+    "displayText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^(?!.*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "properties": {
+              "kind": {
+                "const": "read.observed"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "identity": {
+            "properties": {
+              "provider": {
+                "const": "codex"
+              },
+              "client": {
+                "const": "desktop"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -16,10 +16,10 @@ The contract SHALL distinguish documented, observed, unsupported and inaccessibl
 
 ### Requirement: Strict versioned metadata
 
-The contract SHALL validate a bounded versioned envelope containing provider/client, neutral host/source/session identity, available turn identity, event identity or deterministic fallback, event kind and observation time. Unknown fields, incompatible versions, private payload fields and malformed values SHALL be rejected with content-free errors.
+The contract SHALL validate a bounded versioned envelope containing provider/client, neutral host/source/session identity, available turn identity, event identity or deterministic fallback, event kind and observation time. Unknown fields, incompatible versions, undeclared payload fields and malformed values SHALL be rejected with content-free errors.
 
 #### Scenario: Privacy canary
-- **WHEN** an otherwise valid event contains a prompt, transcript, tool result, copied title, credential or private path field
+- **WHEN** an otherwise valid event contains an undeclared credential, token, prompt, transcript, response or full-path field
 - **THEN** no validated event or content-bearing error is returned
 
 #### Scenario: Unsupported version and excessive input
@@ -76,3 +76,14 @@ The existing lifecycle 1.0 `runtime.ended` envelope SHALL cover the documented S
 #### Scenario: Clear, resume and compact
 - **WHEN** a provider ends a session with reason clear or resume, or starts one with source resume, clear or compact
 - **THEN** the end retires the ended identity, a start is an ordinary start for its identity, and a same-identity start after retirement creates a fresh record subject to the retained delayed-event guards
+
+### Requirement: Versioned session display metadata
+The contract SHALL accept lifecycle 1.1 title values with provider or user source, separate project display names and labels with user or agent origin. Titles SHALL be limited to 160 Unicode scalars and project names and labels to 80, nonempty and control-free. Credentials and tokens SHALL remain excluded. Lifecycle 1.0 SHALL retain its strict shape.
+
+#### Scenario: Shared title and prompt-related words
+- **WHEN** a 1.1 event contains a title about editing prompts and a project display name
+- **THEN** both language validators accept it, while rejecting extra credential, prompt, response or transcript-content fields
+
+#### Scenario: Legacy shape
+- **WHEN** a 1.0 envelope contains a 1.1 field
+- **THEN** both validators reject it with a content-free error

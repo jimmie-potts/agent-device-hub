@@ -454,3 +454,17 @@ test('MCP starts with the owner controller set and at the controller maximum',as
   if(withPlayback)assert.ok(list.body.result.tools.some(tool=>tool.name.startsWith('device_ht_a9')),'playback');
  }
 });
+
+test('session tools expose title/project metadata and the scalar label bound',async t=>{
+ const hub=await fixture(t),c=client(hub);await c.initialize();
+ await http(hub,'/api/monitor/v1/events',{...event,apiVersion:'1.1',observedAtMs:Date.now(),title:{value:'Review café prompts',source:'provider'},project:'device-hub'});
+ for(const q of ['café','device-hub']){
+  const view=(await c.call('hub_sessions',{q})).structuredContent.data.result;
+  assert.equal(view.snapshot.apiVersion,'1.2');assert.equal(view.snapshot.sessions[0].title.value,'Review café prompts');assert.deepEqual(view.matches,[event.identity]);
+ }
+ const before=(await c.call('hub_sessions')).structuredContent.data.result;
+ const valid=await c.call('hub_label',{request_id:before.nextRequestId,identity:event.identity,label:'😀'.repeat(80)});assert.equal(valid.isError,false);
+ const after=(await c.call('hub_sessions')).structuredContent.data.result;assert.equal(after.snapshot.sessions[0].labelOrigin,'user');
+ assert.equal((await c.call('hub_label',{request_id:after.nextRequestId,identity:event.identity,label:'x'.repeat(81)})).isError,true);
+ await c.close();
+});

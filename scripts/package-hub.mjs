@@ -11,7 +11,8 @@ function run(args,cwd){const result=spawnSync(process.execPath,args,{cwd,encodin
 function npm(args,cwd){if(!process.env.npm_execpath)throw new Error('npm-execpath-unavailable');return run([process.env.npm_execpath,...args],cwd);}
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function files(directory,prefix=''){const result=[];for(const entry of (await readdir(join(directory,prefix),{withFileTypes:true})).sort((a,b)=>a.name<b.name?-1:1)){if(!prefix&&['node_modules','package-lock.json'].includes(entry.name))continue;const name=prefix?prefix+'/'+entry.name:entry.name;if(entry.isDirectory())result.push(...await files(directory,name));else if(entry.isFile())result.push(name);else throw new Error('unexpected-package-entry');}return result;}
-const scratch=await mkdtemp(join(tmpdir(),'hub-package-'));
+const scratchRoot=join(root,'.local/scratch/package-archives');await mkdir(scratchRoot,{recursive:true});
+const scratch=await mkdtemp(join(scratchRoot,'hub-'));
 try {
   // Build the exact local dependencies; neither a registry secret nor a sibling checkout is used.
   run([join(root,'scripts/package-contracts.mjs')],root);
@@ -26,7 +27,7 @@ try {
   const original=JSON.stringify(metadata,null,2)+'\n';await writeFile(join(stage,'package.json'),original);
   // Keep private archives intact: npm cannot resolve their private transitive
   // version pins from a registry. Public packages come from npm ci and its lock.
-  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.2.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.1.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz']]){
+  for(const [name,archive] of [['agent-state','jimmie-potts-agent-state-3.3.0.tgz'],['agent-lifecycle-contracts','jimmie-potts-agent-lifecycle-contracts-1.1.0.tgz'],['device-contracts','jimmie-potts-device-contracts-1.1.0.tgz'],['device-mcp','jimmie-potts-device-mcp-1.0.1.tgz']]){
     const target=join(stage,'node_modules/@jimmie-potts',name);await mkdir(target,{recursive:true});
     const result=spawnSync('tar',['-xzf',join(root,'artifacts',archive),'--strip-components=1','-C',target],{encoding:'utf8'});
     if(result.error||result.status!==0)throw new Error(result.error?.message??result.stderr);

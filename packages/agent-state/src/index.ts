@@ -73,7 +73,7 @@ export async function createAgentState(options:Options) {
     if(stored===null){
       const at=clock();
       if(!Number.isSafeInteger(at)||at<0)throw new Error('invalid-clock');
-      if(options.importState===undefined)data={formatVersion:'2.0',ownerId:options.ownerId,revision:0,lastCommitAtMs:at,consumers,sessions:[],journal:[],retirements:[]};
+      if(options.importState===undefined)data={formatVersion:'2.1',ownerId:options.ownerId,revision:0,lastCommitAtMs:at,consumers,sessions:[],journal:[],retirements:[]};
       else{const imported=validateExport(options.importState);if(!imported.ok)throw new Error('invalid-import');data=imported.value;}
       if(data.ownerId!==options.ownerId||JSON.stringify(data.consumers)!==JSON.stringify(consumers))throw new Error('incompatible-state');
       data.journal=data.journal.filter(row=>row.atMs>at-LIMITS.journalAgeMs);
@@ -140,7 +140,7 @@ export async function createAgentState(options:Options) {
   async function replaceSessions(sessions:Session[],at:number,retirements:Retirement[]=data.retirements??[]):Promise<Outcome> {
     if(data.revision>=Number.MAX_SAFE_INTEGER){loss();return {ok:false,code:'capacity'};}
     const revision=data.revision+1,pruneBeforeMs=at-LIMITS.journalAgeMs;
-    const next:DurableState={...data,formatVersion:'2.0',revision,lastCommitAtMs:at,sessions:sessions.map(session=>({...session,generation:session.generation??0})),
+    const next:DurableState={...data,formatVersion:'2.1',revision,lastCommitAtMs:at,sessions:sessions.map(session=>({...session,generation:session.generation??0})),
       retirements:retirements.filter(item=>item.atMs>at-LIMITS.sessionAgeMs).slice(-LIMITS.retirements),
       journal:data.journal.filter(row=>row.atMs>pruneBeforeMs).slice(-LIMITS.journalEvents)};
     await io(signal=>lease.commit(freeze(structuredClone({expectedRevision:data.revision,revision,atMs:at,pruneBeforeMs,replace:next})),signal));
@@ -202,11 +202,11 @@ export async function createAgentState(options:Options) {
   function identify(identity:unknown):identity is Identity {
     return validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'}}).ok;
   }
-  if(data.formatVersion==='1.0'||expired(now()).length||data.sessions.some(ended)||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)||
+  if(data.formatVersion!=='2.1'||expired(now()).length||data.sessions.some(ended)||data.sessions.some(unsettled)||data.journal.some(row=>row.atMs<=now()-LIMITS.journalAgeMs)||
     data.retirements?.some(item=>item.atMs<=now()-LIMITS.sessionAgeMs)){
     const result=await queue(async()=>{
       // A settlement replacement also migrates the format, so a legacy store takes one revision.
-      if(data.formatVersion==='1.0'&&!data.sessions.some(ended)){
+      if(data.formatVersion!=='2.1'&&!data.sessions.some(ended)){
         const migrated=await replaceSessions(data.sessions,now());if(!migrated.ok)return migrated;
       }
       return maintenance();
@@ -261,10 +261,10 @@ export async function createAgentState(options:Options) {
         if(result.ok&&reduced.fresh)restarted.delete(identityKey(event.identity));return result;
       });
     },
-    setLabel(identity:Identity,label:string|null):Promise<Outcome>{
-      if(!identify(identity)||(label!==null&&!validateEvent({apiVersion:'1.0',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'},label:{origin:'user',value:label}}).ok))return Promise.resolve({ok:false,code:'invalid-operation'});
+    setLabel(identity:Identity,label:string|null,origin:'user'|'agent'='user'):Promise<Outcome>{
+      if(!['user','agent'].includes(origin)||!identify(identity)||(label!==null&&!validateEvent({apiVersion:'1.1',identity,turn:{status:'unknown'},parent:{status:'unknown'},event:{kind:'session.started'},observedAtMs:0,ordering:{status:'unknown'},label:{origin,value:label}}).ok))return Promise.resolve({ok:false,code:'invalid-operation'});
       const selected=structuredClone(identity);
-      return queue(async()=>{const old=get(selected);if(!old)return {ok:false,code:'invalid-operation'};const next=structuredClone(old);if(label===null)delete next.label;else next.label=label;return commit(next,'label');});
+      return queue(async()=>{const old=get(selected);if(!old)return {ok:false,code:'invalid-operation'};const next=structuredClone(old);if(origin==='agent'&&old.label!==undefined&&old.labelOrigin!=='agent')return {ok:true,revision:data.revision,outcome:'stale'};if(label===null){delete next.label;delete next.labelOrigin;}else{next.label=label;next.labelOrigin=origin;}return commit(next,'label');});
     },
     acknowledge(identity:Identity,noticeId:string,consumerId:string):Promise<Outcome>{
       if(!identify(identity)||!id(noticeId)||!consumers.some(c=>c.id===consumerId))return Promise.resolve({ok:false,code:'invalid-operation'});
@@ -298,13 +298,14 @@ export async function createAgentState(options:Options) {
         return commit(next,'attention.resolved','ambiguous',recoveryJournalKey(selected,turnId));
       });
     },
-    snapshot(version:'1.0'|'1.1'='1.0'):Snapshot{
-      if(version!=='1.0'&&version!=='1.1')throw new Error('unsupported-version');
+    snapshot(version:'1.0'|'1.1'|'1.2'='1.0'):Snapshot{
+      if(version!=='1.0'&&version!=='1.1'&&version!=='1.2')throw new Error('unsupported-version');
       const at=now();
       const sessions:Snapshot['sessions']=data.sessions.map(session=>{
-        const {seen,watermarks,retiredTurns,generation,...visible}=structuredClone(session);
+        const {seen,watermarks,retiredTurns,generation,title,project,labelOrigin,metadataObservedAtMs,...visible}=structuredClone(session);
         const age=Math.max(0,at-session.lastEvidenceAtMs),restartUncertain=restarted.has(identityKey(session.identity));
-        return {...visible,...(version==='1.1'?{generation:generation??0}:{}),observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
+        if(version!=='1.2'&&labelOrigin==='agent')delete visible.label;
+        return {...visible,...(version!=='1.0'?{generation:generation??0}:{}),...(version==='1.2'?{...(title?{title}:{}),...(project?{project}:{}),...(visible.label!==undefined?{labelOrigin:labelOrigin??'user'}:{})}:{}),observationAgeMs:age,freshness:restartUncertain||age>=LIMITS.staleMs?'uncertain':'current',restartUncertain,children:{active:0,uncertain:0}};
       });
       for(const session of sessions)session.children=childCounts(sessions,session.identity);
       return freeze({apiVersion:version,revision:data.revision,asOfMs:at,collector,lossCount,sessions});

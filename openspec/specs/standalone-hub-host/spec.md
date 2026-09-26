@@ -250,3 +250,14 @@ The host SHALL accept `127.0.0.1:<port>` and `localhost:<port>` as the Host of t
 #### Scenario: Mixed or foreign host names
 - **WHEN** a request carries Host `localhost:<port>` with Origin `http://127.0.0.1:<port>`, or a Host other than the two loopback names
 - **THEN** the host refuses it
+
+### Requirement: Versioned title and project session reads
+The authenticated session route SHALL support snapshotVersion=1.2 with title/project metadata while retaining the existing default projection. Label commands SHALL enforce the same 80-scalar bound as the owner.
+
+#### Scenario: Version selection
+- **WHEN** old and new clients read sessions
+- **THEN** only clients selecting 1.2 receive the new fields
+
+#### Scenario: Label bound
+- **WHEN** a client submits a label with 80 Unicode scalars or 81
+- **THEN** the former passes the text bound and the latter rejects before state mutation
