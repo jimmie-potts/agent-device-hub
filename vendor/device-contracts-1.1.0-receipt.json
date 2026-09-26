@@ -1,0 +1,46 @@
+{
+  "artifact": "@jimmie-potts/device-contracts",
+  "version": "1.1.0",
+  "apiVersions": [
+    "1.0",
+    "1.1"
+  ],
+  "sourceRevision": "9f13c08906d7ca3a77f3bd5590a0b2dee632c3be",
+  "reviewedHead": "0a5688ddcb3778dc0d3490418ea082e658dc87f7",
+  "sha256": "25407c366cca0792ba09fba81b88f5467e123ad8583b21b1065954b41b920f3f",
+  "filename": "jimmie-potts-device-contracts-1.1.0.tgz",
+  "pr": "https://github.com/jimmie-potts/agent-device-hub/pull/321",
+  "issue": "https://github.com/jimmie-potts/agent-device-hub/issues/292",
+  "mainCiChecks": [
+    {
+      "name": "Checks / MCP on ubuntu-latest",
+      "checkRunId": 108259011119,
+      "conclusion": "success"
+    },
+    {
+      "name": "Checks / Dashboard browser and contracts on ubuntu-latest",
+      "checkRunId": 108259008793,
+      "conclusion": "success"
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.14 on ubuntu-latest",
+      "checkRunId": 108259005614,
+      "conclusion": "success"
+    },
+    {
+      "name": "Checks / Contracts and state Python 3.12 on ubuntu-latest",
+      "checkRunId": 108259003445,
+      "conclusion": "success"
+    },
+    {
+      "name": "Checks / Workflow checks on ubuntu-latest",
+      "checkRunId": 108258999668,
+      "conclusion": "success"
+    },
+    {
+      "name": "Work guide / Work guide build and browser checks",
+      "checkRunId": 108258996392,
+      "conclusion": "success"
+    }
+  ]
+}
