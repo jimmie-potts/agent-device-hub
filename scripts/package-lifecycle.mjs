@@ -24,7 +24,8 @@ async function files(directory,prefix=''){
  }
  return result;
 }
-const scratch=await mkdtemp(join(tmpdir(),'hub-lifecycle-package-'));
+const scratchRoot=join(root,'.local/scratch/package-archives');await mkdir(scratchRoot,{recursive:true});
+const scratch=await mkdtemp(join(scratchRoot,'lifecycle-'));
 try{
  const stage=join(scratch,'stage');await mkdir(stage);
  for(const name of ['package.json','src','dist','schemas','fixtures','python','tests'])
@@ -33,7 +34,7 @@ try{
  await cp(join(root,'requirements-contracts.txt'),join(stage,'requirements-contracts.txt'));
  await cp(join(root,'docs/provider-qualification.md'),join(stage,'provider-qualification.md'));
  const hashes={};for(const name of await files(stage))hashes[name]=sha256(await readFile(join(stage,name)));
- await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:'@jimmie-potts/agent-lifecycle-contracts',version:'1.0.0',apiVersion:'1.0',schemaDraft:'2020-12',fixtureFormat:1,files:hashes},null,2)+'\n');
+ await writeFile(join(stage,'manifest.json'),JSON.stringify({artifact:'@jimmie-potts/agent-lifecycle-contracts',version:'1.1.0',apiVersion:'1.0',apiVersions:['1.0','1.1'],schemaDraft:'2020-12',fixtureFormat:1,files:hashes},null,2)+'\n');
  const destination=join(root,'artifacts');await mkdir(destination,{recursive:true});
  const packed=JSON.parse(npm(['pack','--ignore-scripts','--json','--pack-destination',destination],stage))[0];
  const archive=join(destination,packed.filename),checksum=sha256(await readFile(archive));
@@ -52,9 +53,9 @@ try{
   const python=process.platform==='win32'?'python':'python3';
   const pythonCode='import sys, unittest; sys.path.insert(0,sys.argv[1]); suite=unittest.defaultTestLoader.discover(sys.argv[2],pattern="test_*.py"); result=unittest.TextTestRunner().run(suite); sys.exit(not result.wasSuccessful())';
   run(python,['-c',pythonCode,join(installed,'python'),join(installed,'tests')],consumer);
-  const imported=run(process.execPath,['--input-type=module','-e','import {ARTIFACT_VERSION,validateEvent} from "@jimmie-potts/agent-lifecycle-contracts"; if(ARTIFACT_VERSION!=="1.0.0"||validateEvent({}).ok)process.exit(1);'],consumer);
+  const imported=run(process.execPath,['--input-type=module','-e','import {ARTIFACT_VERSION,validateEvent} from "@jimmie-potts/agent-lifecycle-contracts"; if(ARTIFACT_VERSION!=="1.1.0"||validateEvent({}).ok)process.exit(1);'],consumer);
   assert.equal(imported,'');
   console.log('Isolated TypeScript and Python package imports, hashes and full conformance corpus passed.');
  }
- console.log(JSON.stringify({archive,sha256:checksum,version:'1.0.0'}));
+ console.log(JSON.stringify({archive,sha256:checksum,version:'1.1.0'}));
 }finally{await rm(scratch,{recursive:true,force:true});}

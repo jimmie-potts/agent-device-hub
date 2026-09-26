@@ -10,8 +10,8 @@ context: |
   standalone hosting needs an explicit one-owner migration. Nanoleaf retains
   its Python Windows worker and both devices retain their own rendering/writers.
   Keep activity, attention, notices, optional read evidence and freshness distinct.
-  Use allowlisted metadata, chosen labels or neutral IDs; never copy conversation
-  content or private paths. Hooks fail open and never command devices.
+  Use versioned allowlisted metadata, title/project display names and label provenance.
+  Credentials and tokens remain excluded; prompt/response capture is separate Hub #425. Hooks fail open and never command devices.
   Generate no local shared skills. Source, installation, client and physical
   verification have separate acceptance and authorization boundaries.
 rules:

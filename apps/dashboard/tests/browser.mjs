@@ -68,7 +68,7 @@ try {
  await page.getByLabel('Color project').selectOption(f.nano.projects[1].id);assert.equal(await page.locator('input[type=color]:visible').inputValue(),'#ff0000');await applyNano(()=>page.locator('input[type=color]:visible').fill('#112233'));await page.waitForFunction(()=>Array.from(document.querySelectorAll('[role=status]')).filter(x=>x.textContent==='Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.').length>=4);assert.equal(f.nano.projects[1].color,'#112233');
 
  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Label / ID filter').waitFor();assert.deepEqual(await textOverlaps(page),[],'Pixoo text never overlaps');await page.getByLabel('Label / ID filter').fill('chosen');await page.getByLabel('Label / ID filter').press('Tab');await page.locator('section:visible').getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();assert.equal(f.pixoo.configuration.filter.q,'chosen');
- await page.getByRole('link',{name:/^Home/}).click();const label=page.getByLabel('Chosen label');await label.fill('My deliberate label');await label.focus();
+ await page.getByRole('link',{name:/^Home/}).click();await page.locator('article.session details>summary').first().click();const label=page.getByLabel('Chosen label');await label.fill('My deliberate label');await label.focus();
  const before=f.writes.length;
  for(let i=0;i<5;i++){const start=performance.now();await f.event('session.started');timings.push(performance.now()-start);}
  await page.waitForTimeout(1500);assert.equal(await label.inputValue(),'My deliberate label');assert.equal(await label.evaluate(el=>el===document.activeElement),true);assert.equal(f.writes.length,before);

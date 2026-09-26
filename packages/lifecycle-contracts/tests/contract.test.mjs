@@ -24,6 +24,7 @@ test('valid lifecycle metadata is admitted without private payload fields', () =
 });
 
 const corpus = JSON.parse(readFileSync(new URL('../fixtures/lifecycle-v1.json',import.meta.url),'utf8'));
+corpus.cases.push(...JSON.parse(readFileSync(new URL('../fixtures/lifecycle-v1.1.json',import.meta.url),'utf8')).cases);
 assert.equal(new Set(corpus.cases.map(c=>c.id)).size,corpus.cases.length);
 for (const fixture of corpus.cases) test(fixture.id, () => {
   const result = validateEvent(fixture.input);

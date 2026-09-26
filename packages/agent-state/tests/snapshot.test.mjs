@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {validateSnapshot} from '../dist/index.js';
 const fixtures=JSON.parse(readFileSync(new URL('../fixtures/snapshots-v1.json',import.meta.url),'utf8'));
+fixtures.cases.push(...JSON.parse(readFileSync(new URL('../fixtures/snapshots-v1.2.json',import.meta.url),'utf8')).cases);
 for(const entry of fixtures.cases)test(`snapshot contract: ${entry.id}`,()=>{
   const before=structuredClone(entry.input),result=validateSnapshot(entry.input);
   assert.equal(result.ok,entry.valid);assert.deepEqual(entry.input,before);

@@ -1,0 +1,690 @@
+{
+  "formatVersion": 1,
+  "cases": [
+    {
+      "id": "title-project-provider",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "provider"
+        },
+        "project": "café-project"
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "ae7ae713d083d6de6b92de49f44ce1f6dacc32f398ffe45203b656d913429758"
+      }
+    },
+    {
+      "id": "user-title-agent-label",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Owner rename",
+          "source": "user"
+        },
+        "label": {
+          "value": "Agent task",
+          "origin": "agent"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "2385bf949e66c2ae3d50f4ee757869ab7d92cef6dd0594d78212109bdcd8a690"
+      }
+    },
+    {
+      "id": "scalar-bound",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "source": "provider"
+        },
+        "project": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "label": {
+          "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "origin": "user"
+        }
+      },
+      "valid": true,
+      "deduplication": {
+        "kind": "content",
+        "key": "fb7615b748ce2c699f10c252438190e6561878a1c437cac8cf7fbb5c9c828562"
+      }
+    },
+    {
+      "id": "legacy-rejects-title",
+      "input": {
+        "apiVersion": "1.0",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "New title",
+          "source": "provider"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "overlong-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "source": "provider"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "overlong-project",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "project": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "valid": false
+    },
+    {
+      "id": "empty-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "",
+          "source": "user"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "control-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "first\nsecond",
+          "source": "provider"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "bad-source",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title",
+          "source": "agent"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "extra-title-field",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title",
+          "source": "user",
+          "token": "SECRET_CANARY"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "credential-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source": "provider"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "credential-label",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "label": {
+          "value": "token=SECRET_CANARY",
+          "origin": "agent"
+        }
+      },
+      "valid": false
+    },
+    {
+      "id": "excluded-credentials",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "credentials": "CONTENT_CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "excluded-token",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "token": "CONTENT_CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "excluded-prompt",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "prompt": "CONTENT_CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "excluded-transcript",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "transcript": "CONTENT_CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "excluded-response",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "response": "CONTENT_CANARY"
+      },
+      "valid": false
+    },
+    {
+      "id": "credential-after-0x2028-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss",
+          "source": "provider"
+        },
+        "project": "café-project"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2028-project",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "provider"
+        },
+        "project": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2029-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss",
+          "source": "provider"
+        },
+        "project": "café-project"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2029-project",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "provider"
+        },
+        "project": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss"
+      },
+      "valid": false,
+      "deduplication": null
+    }
+  ]
+}

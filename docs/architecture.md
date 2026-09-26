@@ -91,11 +91,12 @@ the mounted Windows Codex home and record `read.observed` for top-level Desktop
 sessions. Pixoo dismissal changes monitor state only. New generic consumers
 must not assume every provider supplies read receipts.
 
-Only lifecycle metadata, identifiers, timestamps and explicit user-chosen labels
-enter the shared feed. Neutral IDs are the fallback. Prompt text, transcripts,
-tool arguments/results, automatically copied titles, credentials and unrelated
-private paths are excluded before transmission and persistence. Existing local
-Nanoleaf metadata cannot silently become shared data.
+Session titles, project names, prompts, transcripts and agent output may enter shared data under the owner-approved policy. Credentials, tokens and secrets remain excluded. Only fields declared by the selected versioned contract are transmitted; prompt, response and transcript-content capture requires its separate implementation under Hub #425.
+Lifecycle 1.1 carries bounded title/source and project display metadata. Project
+identity remains separate; hooks send only the cwd basename for display. Explicit
+owner labels precede agent labels and provider titles. Neutral IDs remain the
+fallback. No local reader or personal configuration changes merely because the
+policy permits a field.
 
 Hooks remain bounded, observational and fail-open. Device/collector failure must
 not deny an agent action, change permissions or hold work waiting. MCP is the

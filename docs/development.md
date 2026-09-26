@@ -884,3 +884,27 @@ node scripts/check-session-retirement.mjs /absolute/pixoo-source /absolute/nanol
 ```
 
 Set `RETIREMENT_PATH` to `codex/desktop` (the default), `codex/cli` or `claude/code` and run it once per path. It supplies actual owner snapshots to both consumers, checks the shared fixture corpus through Nanoleaf, and distinguishes healthy-empty reconnect from unavailable retained state. It launches no device worker. The existing Tidbyt publisher and dashboard browser jobs also exercise retirement on every path. Keep the standalone harness receipts alongside required CI; they are source evidence, not installed or physical acceptance.
+
+## Shared title and project checks
+
+Hub #424 adds lifecycle 1.1 and snapshot 1.2 corpora to the existing TypeScript
+and Python checks. New state tests cover rename ordering, label provenance,
+legacy projections and synthetic restart. Hook tests cover explicit version
+selection, bounded Codex/Claude title reads, missing sources and content
+exclusion. HTTP tests exercise the configured Desktop index and Unicode labels;
+MCP and browser checks cover metadata exposure. The existing glob-based suites
+and Depot matrix include these tests; `test:dashboard:browser` also runs
+`apps/dashboard/tests/session-metadata.mjs` for desktop/mobile candidates.
+
+Run build/type, controller, lifecycle, state, agent-status, Tidbyt, LIFX,
+local-controller, MCP, Hub, setup, dashboard and workflow checks, including both
+language corpora and isolated packages. The local source-consumer compatibility
+checks retain their pinned historical source revisions. Record installed and
+physical acceptance separately; these fixtures establish neither.
+
+The lifecycle 1.1.0 archive is built from the candidate source and bundled in
+agent-state 3.3.0 with archive/manifest hashes. Hub 0.4.0 bundles those artifacts.
+Publication follows the reviewed merged revision, with immutable source/checksum
+receipts and preserved prior release bytes. Packaging scratch is disk-backed
+under `.local/scratch/package-archives`; runtime fixtures keep their small
+private stores outside Git checkouts.

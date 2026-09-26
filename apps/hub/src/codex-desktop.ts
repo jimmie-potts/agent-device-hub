@@ -12,7 +12,7 @@ const MARKER = '.codex-global-state.json', MAX_BYTES = 16*1024*1024, POLL_MS = 2
 // Desktop sets the unread flag shortly after Stop; legacy Nanoleaf used the same wait.
 export const READ_SETTLE_MS = 5000;
 
-/** Positive filename evidence only. Never read a transcript or retain an archive cache. */
+/** Archive admission uses positive filename evidence only; title enrichment is separate. */
 export async function archivedSession(source:CodexDesktopOptions,identity:Identity,signal:AbortSignal,ancestors:readonly Identity[]=[]):Promise<boolean> {
   const ids=new Set([identity,...ancestors].filter(item=>item.provider==='codex'&&item.client==='desktop'&&
     item.hostId===source.hostId&&item.sourceId===source.sourceId).map(item=>item.sessionId));

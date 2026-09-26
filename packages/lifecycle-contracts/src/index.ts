@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {Ajv2020} from 'ajv/dist/2020.js';
 
-export const ARTIFACT_VERSION = '1.0.0';
+export const ARTIFACT_VERSION = '1.1.0';
 export const API_VERSION = '1.0';
 export const MAX_BYTES = 8192;
 export const MAX_DEPTH = 8;
@@ -16,14 +16,21 @@ export type LifecycleEvent =
   | {kind:'read.observed'; state:'read'|'unread'}
   | {kind:'evidence.unavailable'; dimension:'activity'|'attention'|'turn'|'parent'|'read'|'ordering'; reason:'unsupported'|'inaccessible'|'missing'|'ambiguous'|'lost'};
 export type Envelope = {
-  apiVersion:'1.0'; identity:Identity; turn:KnownId;
+  apiVersion:'1.0'|'1.1'; identity:Identity; turn:KnownId;
   parent:{status:'unknown'|'top-level'}|{status:'known'; identity:Identity};
   eventId?:string; event:LifecycleEvent; observedAtMs:number; occurredAtMs?:number;
   ordering:{status:'unknown'}|{status:'known'; epoch:string; sequence:number};
-  projectId?:string; label?:{origin:'user'; value:string};
+  projectId?:string; label?:{origin:'user'|'agent'; value:string};
+  title?:{value:string;source:'provider'|'user'}; project?:string;
 };
 export type Validation = {ok:true; value:Envelope}|{ok:false; code:'invalid-event'};
 const schema = JSON.parse(readFileSync(new URL('../schemas/lifecycle-v1.schema.json', import.meta.url), 'utf8'));
+const metadataSchema = JSON.parse(readFileSync(new URL('../schemas/lifecycle-v1.1.schema.json', import.meta.url), 'utf8'));
+const metadataCheck = new Ajv2020({strict:true, allErrors:false}).compile(metadataSchema);
+const displayPattern = new RegExp(metadataSchema.$defs.displayText.pattern,'u');
+export function validDisplayText(value:unknown, maximum=160):value is string {
+  return typeof value==='string' && [...value].length<=maximum && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) && displayPattern.test(value);
+}
 const check = new Ajv2020({strict:true, allErrors:false}).compile(schema);
 
 // Accept plain JSON only, before schema evaluation or serialization. Never return
@@ -49,7 +56,7 @@ export function validateEvent(input:unknown):Validation {
   try {
     if (!bounded(input)) return {ok:false, code:'invalid-event'};
     const encoded = JSON.stringify(input);
-    if (Buffer.byteLength(encoded,'utf8') > MAX_BYTES || !check(input)) return {ok:false, code:'invalid-event'};
+    if (Buffer.byteLength(encoded,'utf8') > MAX_BYTES || !(check(input) || metadataCheck(input))) return {ok:false, code:'invalid-event'};
     const value = JSON.parse(encoded) as Envelope;
     if (value.parent.status === 'known') {
       const parent = value.parent.identity;

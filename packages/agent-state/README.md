@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 3.2.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 3.3.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -16,15 +16,15 @@ and consumer configuration across restarts. See [the typed example](examples/emb
 
 | Operation | Result |
 | --- | --- |
-| `ingest(unknown)` | Validates a lifecycle 1.0 envelope, then returns applied, duplicate, stale, ambiguous or a fixed rejection code. |
-| `snapshot(version?)` | Default 1.0 or opt-in 1.1. Detached, deeply frozen current snapshot. It contains observation age and collector health separately. |
+| `ingest(unknown)` | Validates a lifecycle 1.0 or 1.1 envelope, then returns applied, duplicate, stale, ambiguous or a fixed rejection code. |
+| `snapshot(version?)` | Default 1.0 or opt-in 1.1/1.2. Detached, deeply frozen current snapshot. It contains observation age and collector health separately. |
 | `subscribe(consumerId, cursor?)` | One bounded async iterator per registered consumer. Revision notifications tell the consumer to read `snapshot()`. |
 | `onCommit(callback)` | Registers a listener that runs synchronously after every committed revision, from any admission path. No consumer ID or cursor; returns an unsubscribe function. A throwing listener is caught and never faults the collector or the triggering call's outcome. Callers should keep the listener cheap and defer heavier work, for example with `setImmediate`. |
 | `acknowledge(identity, noticeId, consumerId)` | Durably acknowledges that notice for that consumer. It does not prove readership or clear attention. |
-| `setLabel(identity, stringOrNull)` | Persists an explicit user label or removes it. It does not refresh session evidence. |
+| `setLabel(identity, stringOrNull, origin?)` | Persists or removes a label; origin defaults to user, and agent labels cannot replace user labels. It does not refresh session evidence. |
 | `recoverApproval(identity, turnId, expectedRevision)` | Explicitly retires one uncertain unknown-ID approval for that exact session and turn. Requires the current revision; does not act on the provider permission. |
 | `journal()` / `maintain()` | Read retained diagnostics or force durable retention maintenance. |
-| `exportState()` | Quiesces admission, drains accepted work, and returns a validated frozen version 1.0 export. |
+| `exportState()` | Quiesces admission, drains accepted work, and returns a validated frozen version 2.1 export. |
 | `shutdown()` | Quiesces and drains admission, settles outstanding storage before releasing ownership, and closes subscriptions. |
 
 All host storage operations have a maximum three-second deadline. The host
@@ -171,7 +171,8 @@ checks. An unqualified raw hook `event_id` remains outside the normalizer allowl
 
 Only lifecycle allowlisted metadata reaches storage, diagnostic entries or
 transport. Normalizers select fields before creating the envelope; they exclude
-prompts, transcripts, tool content, automatic titles and private paths. Errors
+undeclared content, credentials, tokens and full source paths. Version-selected
+title/project readers extract only display metadata. Errors
 and emitter counters never include raw payload or host exception text. Labels
 and project IDs require explicit user choice. No API takes a device mode or
 device address; collection remains independent of Monitor/Media/Free selection.
@@ -219,8 +220,8 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 3.0.0 | Lifecycle envelopes 1.0 from lifecycle package 1.0.0 |
-| Snapshots / durable exports | Closed snapshot 1.0 and opt-in 1.1; durable 2.0 with 1.0 import; unknown fields or versions reject |
+| Agent state 3.3.0 | Lifecycle envelopes 1.0 and 1.1 from lifecycle package 1.1.0 |
+| Snapshots / durable exports | Closed snapshots 1.0, 1.1 and opt-in 1.2; durable 2.1 with 1.0/2.0 import; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
 
@@ -234,7 +235,7 @@ an empty destination. Owner ID, consumer policy, session identity, revisions,
 labels and acknowledgments must match. Import rejects an occupied destination.
 The new owner expires imported sessions whose last lifecycle evidence is 24 hours
 old or more at startup, as it would any other store.
-Durable 1.0 imports migrate to 2.0 in one guarded replacement, preserving evidence clocks and assigning existing records generation zero. Unsupported versions fail closed.
+Durable 1.0 and 2.0 imports migrate to 2.1 in one guarded replacement, preserving evidence clocks and assigning existing records generation zero. Unsupported versions fail closed.
 Package 2.0.0 changes selection semantics without changing storage/snapshot 1.0.
 Package 2.0.1 adds explicit approval recovery without changing those schemas.
 Package 2.0.2 keeps read evidence out of freshness, restart recovery and session
@@ -253,7 +254,7 @@ store. Rollback after new writes requires an explicit reconciled export, because
 the old copy lacks those writes. No migration accesses controller databases.
 
 `npm run package:agent-state` creates the private versioned archive and SHA-256
-sidecar. `npm run test:agent-state:package` installs it outside this checkout,
+sidecar. `npm run test:agent-state:package` installs it in an isolated scratch consumer,
 checks manifests and the pinned lifecycle archive, typechecks the example, runs
 the Node/process and Python fixtures, and compares repeated archive bytes. Pin
 the immutable release archive and checksum in consuming repositories. The archive
@@ -272,3 +273,47 @@ Retirement guards are separate from active sessions and diagnostics: at most 128
 Fresh records receive a generation from their admission revision and defaults; native selectors stay unchanged. `snapshot('1.1')` includes this generation so consumers can reset task-specific state even when they miss the removal. Default 1.0 readers observe disappearance but cannot distinguish recreation hidden between reads. A generation is scoped to the owner and its preserved revision lineage; manually replacing the owner's store is outside that continuity guarantee.
 
 A host can supply `isArchived(identity, signal, ancestors)` for admission only. The owner checks it only for a new Desktop identity, waits at most 200 ms, and keeps at most one unsettled probe. The frozen ancestor list follows known parent links, including the first absent parent, so a delayed child can be checked against its archived conversation. Cycles are bounded by the known session count. Only a literal true supplies archive evidence; failure, timeout or an occupied probe supplies none. The host must honor cancellation, bound its work and read only the selected installation. Runtime-end retirement never invokes this callback.
+
+## Shared titles and projects
+
+Lifecycle 1.1 supplies optional `title:{value,source}` and a separate `project`
+display name. Titles have 1–160 Unicode scalar values, projects and labels 1–80.
+`label.origin` can be `user` or `agent`. Snapshot 1.2 exposes the winning label
+as `label` plus `labelOrigin`, and exposes title/project independently. Owner
+labels cannot be overwritten by agent labels; `setLabel(identity,value)` is an
+owner operation, while trusted callers can supply a third `agent` origin. This
+does not implement an MCP self-identity resolver. Clearing an owner label removes
+it; titles never write that slot. Existing stored labels imply user origin.
+
+Use `snapshot('1.2')` to read metadata. Default 1.0 and opt-in 1.1 omit title,
+project, provenance and agent-origin labels, preserving their closed shapes.
+Generation remains present in 1.1 and 1.2. Names never become session identity.
+Metadata has its own observation watermark; an older name cannot overwrite a
+later one, and a metadata-only update cannot refresh lifecycle evidence.
+
+`enrichHook` adds bounded metadata lookup to pure `normalizeHook`. Codex uses
+`session_index.jsonl` under an explicitly supplied home, `CODEX_HOME`, or the
+user's standard `.codex` home. Claude reads only matching `custom-title` and
+`ai-title` records from `transcript_path`, preferring custom titles. A child
+never receives the parent's title or cwd. A project is the cwd basename, with
+Windows separators supported; the full path is never transmitted.
+
+Each lookup reads at most the final 1 MiB, at most 8,192 lines and 64 KiB per
+record, with a 100 ms deadline and at most four unsettled reads per process.
+Only regular JSONL files are read; a final symlink is rejected. Partial tail
+records are skipped. A truncated Claude tail without a custom title does not
+use an AI title that might displace an earlier custom one. Missing or unusable
+metadata is omitted. Titles are bounded by Unicode scalars; metadata is omitted
+as needed to preserve the 2,048-byte lifecycle envelope. A bounded lookup may
+miss older titles, so neutral fallbacks remain required.
+
+Hooks select this behavior with optional `lifecycleVersion:"1.1"`; absent means
+legacy 1.0. The process deadline still covers input, imports, lookup and one
+transport attempt. New setup inputs may choose 1.1 only for an upgraded owner.
+No source change edits an installed producer configuration.
+
+The owner saves durable 2.1 and imports 1.0/2.0 with its existing exclusive
+lease. A synthetic restart preserves metadata; installation is not tested by
+that fixture. Older owners cannot reopen 2.1. Before a separately authorized
+upgrade, preserve an export with the previous owner; after new writes, recovery
+must use a 2.1-compatible owner to avoid discarding metadata or lifecycle state.

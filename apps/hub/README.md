@@ -384,3 +384,27 @@ A normalized `runtime.ended` from any supported path (Codex Desktop, Codex CLI o
 The owner writes durable 2.0 and imports 1.0 in place with a guarded revision, preserving evidence clocks. Older owner packages cannot open 2.0; installation must back up the store and retain a compatible rollback path. Source tests use disposable stores and do not install this version. Hub #218 retains installed-client and visible-device acceptance.
 
 See the [session retirement compatibility assessment](../../docs/session-retirement-compatibility.md) for consumer versions, durable migration, upgrade treatment and rollback limits.
+
+## Shared display metadata
+
+Request `/api/monitor/v1/sessions?snapshotVersion=1.2` for shared titles,
+projects and label origins. Omit the parameter for the unchanged 1.0 projection;
+1.1 remains available for generation-aware legacy readers. `hub_sessions` and
+B.U.N.N.Y. select 1.2 and search labels, titles, projects and session IDs. Owner
+labels win; the UI shows a shared title when no label exists and preserves an
+untitled ID fallback. Label commands accept at most 80 Unicode scalar values.
+
+The optional setup input `lifecycleVersion:"1.1"` produces metadata-capable
+hooks for an upgraded owner. Existing receipts/configurations without it stay
+1.0. Changing an installed receipt or producer file manually is not an upgrade
+procedure. The source tests use synthetic settings only. For matching Desktop
+sources, the owner enriches 1.1 events from its configured `codexDesktop.home`
+index, allowing a Windows Codex home already mounted in WSL to supply titles.
+It does not read transcript bodies or export the home path. Claude title lookup
+and cwd basenames belong to the producer, as described in the
+[agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
+
+Hub 0.4.0 uses agent-state 3.3.0 and lifecycle 1.1.0. Durable 2.1 is not readable
+by old owners. Package publication is source delivery, not installation;
+real-client rename observations and physical presentation require separate
+owner-authorized acceptance.
