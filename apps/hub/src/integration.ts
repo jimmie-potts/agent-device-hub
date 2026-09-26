@@ -54,7 +54,8 @@ const geometryElement:Check = value => shape(value,{id:v => typeof v === 'string
 
 /** Closed validation of Nanoleaf's read-only `GET /geometry`: saved elements in the wall map's display coordinates. */
 export const validateIntegrationGeometry:Check = value => {
-  if (!shape(value,{apiVersion:one(apiVersion),identity:v => validate('identity',v),kind:one(null,'lines','panels'),
+  // The owner's identity has exactly four keys; the shared schema's optional label is not part of this contract.
+  if (!shape(value,{apiVersion:one(apiVersion),identity:v => validate('identity',v) && object(v) && !Object.hasOwn(v,'label'),kind:one(null,'lines','panels'),
     elements:list(geometryElement,300),connectors:v => v === null || shape(v,{nodes:list(node,600),lines:list(l => shape(l,{id:v => typeof v === 'string',a:id,b:id}),300)})}) || !object(value)) return false;
   const elements = value.elements as {id:string;number:number;zones:number[];points:unknown}[];
   const connectors = value.connectors as {nodes:{id:string}[];lines:{id:string;a:string;b:string}[]}|null;

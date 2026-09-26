@@ -63,12 +63,14 @@ test('Nanoleaf geometry fixtures from the owning contract validate exactly',asyn
  const cases=JSON.parse(await readFile(new URL('../fixtures/nanoleaf-geometry.json',import.meta.url),'utf8'));
  assert.ok(cases.geometry.filter(c=>c.valid).length>=4&&cases.geometry.filter(c=>!c.valid).length>=20);
  for(const c of cases.geometry) assert.equal(validateIntegrationGeometry(c.geometry),c.valid,c.name);
+ const lines=cases.geometry.find(c=>c.name==='lines').geometry;
+ assert.equal(validateIntegrationGeometry({...lines,identity:{...lines.identity,label:'Wall'}}),false);
 });
 
 test('Nanoleaf geometry passes through a read-only sibling route with the owner\'s credential kept private',async()=>{
  const cases=JSON.parse(await readFile(new URL('../fixtures/nanoleaf-geometry.json',import.meta.url),'utf8'));
- const geometry=cases.geometry.find(c=>c.name==='lines').geometry,panels=cases.geometry.find(c=>c.name==='panels').geometry;
- const nativeToken='n'.repeat(43),browserToken='b'.repeat(43);const seen=[];let reply=()=>[200,geometry];
+ const geometry=cases.geometry.find(c=>c.name==='lines').geometry,panels=cases.geometry.find(c=>c.name==='panels').geometry,empty=cases.geometry.find(c=>c.name==='no-saved-layout').geometry;
+ const nativeToken='n'.repeat(43),browserToken='b'.repeat(43),controlToken='c'.repeat(43);const seen=[];let reply=()=>[200,geometry];
  const native=createServer((req,res)=>{seen.push({method:req.method,path:req.url,authorization:req.headers.authorization});
   const [status,value]=req.url.startsWith('/controller/integration/v1/snapshot')?[200,{...snapshot,identity:{...snapshot.identity,deviceId:'wall'}}]:reply(req);
   res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));});
@@ -79,7 +81,8 @@ test('Nanoleaf geometry passes through a read-only sibling route with the owner\
    {id:'wall',kind:'nanoleaf',controllerId:'controller',deviceId:'wall',endpoint,token:nativeToken},
    {id:'panels',kind:'nanoleaf',controllerId:'controller',deviceId:'panels',endpoint,token:nativeToken},
    {id:'pixoo',kind:'pixoo',controllerId:'controller',deviceId:'pixoo',endpoint,token:nativeToken}],
-   credentials:[{id:'browser',digest:createHash('sha256').update(browserToken).digest('hex'),scopes:['read'],devices:['wall','panels','pixoo']}]});
+   credentials:[{id:'browser',digest:createHash('sha256').update(browserToken).digest('hex'),scopes:['read'],devices:['wall','panels','pixoo']},
+    {id:'control',digest:createHash('sha256').update(controlToken).digest('hex'),scopes:['read','control'],devices:['wall']}]});
   const headers={authorization:`Bearer ${browserToken}`};
   const get=path=>fetch(hub.url+path,{headers});
   const health=async()=>(await (await get('/api/hub/v1/health')).json()).devices.find(d=>d.id==='wall').health;
@@ -87,7 +90,10 @@ test('Nanoleaf geometry passes through a read-only sibling route with the owner\
   assert.equal(result.status,200);assert.deepEqual(await result.json(),geometry);assert.equal(await health(),'ready');
   reply=()=>[200,panels];result=await get('/api/controllers/v1/panels/integration/geometry');
   assert.equal(result.status,200);assert.deepEqual(await result.json(),panels);
-  assert.deepEqual(seen.map(r=>r.method+' '+r.path),['GET /controller/integration/v1/geometry?deviceId=wall','GET /controller/integration/v1/geometry?deviceId=panels']);
+  // A device without a saved layout keeps the owner's explicit empty result.
+  reply=()=>[200,empty];result=await get('/api/controllers/v1/panels/integration/geometry');
+  assert.equal(result.status,200);assert.deepEqual(await result.json(),empty);
+  assert.deepEqual(seen.map(r=>r.method+' '+r.path),['GET /controller/integration/v1/geometry?deviceId=wall','GET /controller/integration/v1/geometry?deviceId=panels','GET /controller/integration/v1/geometry?deviceId=panels']);
   assert.ok(seen.every(r=>r.authorization===`Bearer ${nativeToken}`));
   // An owner that predates the route answers 404; the alias stays usable and its health is unchanged.
   reply=()=>[404,{failure:{code:'invalid-request'}}];result=await get('/api/controllers/v1/wall/integration/geometry');
@@ -101,6 +107,8 @@ test('Nanoleaf geometry passes through a read-only sibling route with the owner\
   result=await get('/api/controllers/v1/pixoo/integration/geometry');assert.equal(result.status,422);assert.deepEqual(await result.json(),{error:{code:'unsupported-capability'}});
   result=await get('/api/controllers/v1/wall/integration/geometry?deviceId=panels');assert.equal(result.status,400);
   result=await fetch(hub.url+'/api/controllers/v1/wall/integration/geometry',{method:'POST',headers:{...headers,'content-type':'application/json','x-pixoo-request':'1'},body:'{}'});assert.equal(result.status,403);
+  result=await fetch(hub.url+'/api/controllers/v1/wall/integration/geometry',{method:'POST',headers:{authorization:`Bearer ${controlToken}`,'content-type':'application/json','x-pixoo-request':'1'},body:'{}'});
+  assert.equal(result.status,400);assert.deepEqual(await result.json(),{error:{code:'invalid-input'}});
   assert.equal(seen.length,before);
  }finally{await hub?.close();await new Promise(resolve=>{native.close(resolve);native.closeAllConnections();});await rm(directory,{recursive:true,force:true});}
 });
