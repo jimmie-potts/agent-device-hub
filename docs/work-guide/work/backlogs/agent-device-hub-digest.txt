@@ -286,3 +286,4 @@
 #483 [OPEN] Add two Wemo Mini F7C063 plugs to B.U.N.N.Y. after local qualification
 #484 [OPEN] Qualify Galaxy Lamps GPUS projector integration
 #485 [OPEN] Qualify BlissLights Sky Lite 2.0 Bluetooth integration
+#487 [OPEN] Retry transient issue-inventory drift in nightly guide refresh
