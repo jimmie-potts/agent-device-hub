@@ -1,3 +1,4 @@
+#10 [CLOSED] Deliver persistent local startup, diagnostics, and backup/restore
 #11 [OPEN] Provide explicit authenticated HTTPS LAN access
 #12 [CLOSED] Validate local physical playback, recovery, and soak reliability
 #13 [OPEN] Let hub routines play a playlist or one rendition only while the Pixoo is in Media mode
@@ -29,8 +30,7 @@
 #77 [CLOSED] Run the installed Pixoo app as a user service with hub settings
 #79 [CLOSED] Keep MCP status valid after dashboard uploads with typed display evidence
 #80 [CLOSED] Separate typed command observations from replay payloads
-#81 [OPEN] Share SSE client delivery while preserving browser and native feed contracts
-#82 [OPEN] Reconcile product and hub-integration docs with delivered runtime behavior
+#82 [CLOSED] Reconcile product and hub-integration docs with delivered runtime behavior
 #83 [OPEN] Disconnect the Pixoo from Divoom's cloud while keeping local control
 #86 [CLOSED] Retire native Windows support and the flaky Windows CI jobs
 #87 [CLOSED] Pixoo monitor rows all show the same truncated session ID prefix
@@ -45,3 +45,6 @@
 #106 [OPEN] Show session titles and project names on the Pixoo monitor
 #107 [OPEN] Cycle the Pixoo monitor through active and waiting sessions and summarize the rest
 #108 [OPEN] Show what the agent is asking on the Pixoo attention card
+#112 [OPEN] Characterize native SSE disconnect during registration and verify reservation release
+#113 [OPEN] Install and verify an approved Pixoo revision containing #80–#82
+#114 [OPEN] Show the running Pixoo source revision in local Settings and diagnostics

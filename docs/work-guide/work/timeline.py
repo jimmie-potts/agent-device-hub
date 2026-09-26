@@ -29,6 +29,24 @@ MILESTONES = {
 # not from the shared Codex milestone's position in a different row.
 SLOTS = ['First in this track', 'Next in this track', 'Following stage', 'Later', 'Deferred · conditional']
 TRACKS = [
+    ('Nanoleaf animation follow-ups', [
+        dict(id='n-animation-install', x=0, label='Install animation bundle', issues=['N187'], guide='hosting-migrations'),
+        dict(id='n-animation-compatibility', x=4, label='Check saved recipe fit', issues=['N188'], guide='assistant-access'),
+    ]),
+    ('Dense dashboard follow-ups', [
+        dict(id='n-dashboard-install', x=0, label='Install dense home', issues=['H444'], guide='bunny-controls'),
+        dict(id='n-dashboard-feedback', x=4, label='Preview · Undo · Eyes', issues=['H443', 'H445', 'H446'], guide='bunny-controls'),
+    ]),
+    ('Installed shutdown checks', [
+        dict(id='n-shutdown-install', x=0, label='Verify stop handlers', issues=['H442'], guide='hosting-migrations'),
+    ]),
+    ('Pixoo source follow-ups', [
+        dict(id='n-pixoo-sse-edge', x=0, label='Native SSE disconnect', issues=['P112'], guide='development-workflow'),
+    ]),
+    ('Pixoo installed revision', [
+        dict(id='n-pixoo-upgrade', x=0, label='Install reviewed Pixoo', issues=['P113'], guide='hosting-migrations'),
+        dict(id='n-pixoo-build-id', x=4, label='Report running source', issues=['P114'], guide='hosting-migrations'),
+    ]),
     ('Controller setup and health', [
         dict(id='n-controller-ideas', x=4, label='Health · register devices', issues=['H405', 'H406', 'H418'], guide='bunny-controls'),
     ]),
@@ -54,6 +72,7 @@ TRACKS = [
         dict(id='n-element-ideas', x=4, label='Element status · titles', issues=['N178', 'N179'], guide='nanoleaf-devices'),
     ]),
     ('LIFX status follow-ups', [
+        dict(id='n-lifx-freshness', x=0, label='Paint retained state', issues=['H439'], guide='nanoleaf-devices'),
         dict(id='n-lifx-fades', x=4, label='Fade status · attention', issues=['H416'], guide='nanoleaf-devices'),
     ]),
     ('LIFX desk presets', [
@@ -123,7 +142,7 @@ TRACKS = [
     ]),
     ('Now-playing follow-ups', [
         dict(id='n-music-cards', x=3, label='Artwork · source switch', issues=['H285', 'H331'], guide='controls-music'),
-        dict(id='n-music-ideas', x=4, label='Music ideas', issues=['H334', 'H345', 'H346', 'H349', 'H350'], guide='controls-music'),
+        dict(id='n-music-ideas', x=4, label='Music ideas', issues=['H334', 'H345', 'H346', 'H349', 'H350', 'H437', 'H438'], guide='controls-music'),
     ]),
     ('Session settings', [
         dict(id='n-settings-observe', x=1, label='Model + level observed', issues=['H305', 'H306'], guide='shared-codex'),
@@ -348,7 +367,7 @@ TRACKS = [
         dict(id='n-guide-overview', x=0, label='Overview refresh delivered', issues=[], guide='work-guide'),
     ]),
     ('Architecture viewers', [
-        dict(id='n-guide-viewers', x=0, label='Viewers done · atlas prose', issues=['H392', 'H401'], guide='work-guide'),
+        dict(id='n-guide-viewers', x=0, label='Atlas playback prose done', issues=['H392', 'H401'], guide='work-guide'),
     ]),
     ('Guide refresh', [
         dict(id='n-guide-snapshot', x=0, label='Snapshot done · text · recs', issues=['H324', 'H311', 'H341'], guide='work-guide'),
