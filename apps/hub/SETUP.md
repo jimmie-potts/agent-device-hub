@@ -340,7 +340,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat /absolu
 
 `uptime --since` prints when the WSL virtual machine started, and the health request prints `200`.
 
-[Nanoleaf ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0011-runtime-availability-follows-wsl.md) asks for [Nanoleaf #133](https://github.com/jimmie-potts/codex-nanoleaf/issues/133) to be reopened whenever the services are found stopped while Windows stays up. That reopen is already due, whatever the trial shows, for the WSL restart ADR 0008 observed on 2026-09-25; it is a Nanoleaf tracker action for that project's owner. If the one-hour check also finds the services stopped, record that on #356 and add the observation to #133.
+[Nanoleaf ADR 0011](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/decisions/0011-runtime-availability-follows-wsl.md) asks for [Nanoleaf #133](https://github.com/jimmie-potts/codex-nanoleaf/issues/133) to be reopened when the services are found stopped while Windows stays up. The hub owns that fix through ADR 0008 and #356, so such observations go on #133 as a comment instead, and it stays closed. The WSL restart ADR 0008 observed on 2026-09-25 is [already recorded there](https://github.com/jimmie-potts/codex-nanoleaf/issues/133#issuecomment-5847762759). If the one-hour check finds the services stopped, record that on #356 and link it from a comment on #133.
 
 ### Troubleshooting
 
