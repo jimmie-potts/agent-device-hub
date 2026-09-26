@@ -110,8 +110,9 @@ records the emitted events and the owner's removal and recreation for normal
 exit, `/clear` and resume.
 Codex CLI 0.156.0 ended a cleared session only when the CLI exited, in one run
 whose emission was inferred from the owner. An accepted end retires its known
-session tree; quitting a client does not establish that every record received an end. No new thirty-minute timer or global clear is
-provided. The existing twenty-four-hour evidence expiry remains the fallback.
+session tree; quitting a client does not establish that every record received
+an end. No new thirty-minute timer or global clear is provided. The existing
+twenty-four-hour evidence expiry remains the fallback.
 Native mode automation remains owned by Nanoleaf #110.
 
 Nanoleaf's existing policy suppresses completion comets and waves whenever its poll skips owner revisions. [Nanoleaf #115](https://github.com/jimmie-potts/codex-nanoleaf/issues/115) owns that limitation. This companion preserves that policy while preventing a retired task's effects from returning.
