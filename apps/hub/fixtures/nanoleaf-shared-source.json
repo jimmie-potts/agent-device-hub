@@ -1,9 +1,11 @@
 {
   "repository": "https://github.com/jimmie-potts/codex-nanoleaf",
-  "revision": "5375a3088522507c7f207c6e9c824454db1e1d5f",
+  "revision": "f3c13843f1e5431b01ddca344a91cd7484348f59",
   "files": {
-    "bridge/bridge.py": "d96e3b0fc43b95d89f47cd107e0fbd255f57943cfe611dab3a77081288088663",
-    "bridge/shared_input.py": "7618d8ac7455dd01447122b06541cee779be0c8b10e0903e84f16d1397ed3dcc",
-    "bridge/project_map.py": "df925871dffc55e727bfbbc211354ea84589a48f56552af820691913565e7d76"
+    "bridge/bridge.py": "618013bb004a1d1ca6bc246c8e89b71ae786a039e7cfe1d67c51b0f9e08454a4",
+    "bridge/shared_input.py": "85d6153818495d25447680e86783b8cdf1b1817d1518f581d299fcbc50107aaf",
+    "bridge/project_map.py": "aabcfacd9d09a75647c15d8f2b387f5f2e9abb83a884585d44737dbdeb91719c",
+    "bridge/shared_source.py": "9b78e3d59ab3ae852508adc918142796d331ab9672997f2f6be2e48a937b421f",
+    "bridge/database.py": "b0f7093d6223ccfdcfe4990981fad3f99b5706f9cb35f84e453065528010dc13"
   }
 }
