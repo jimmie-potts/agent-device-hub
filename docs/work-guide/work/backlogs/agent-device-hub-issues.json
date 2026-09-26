@@ -6579,7 +6579,7 @@
     "body": "> Backlog placeholder, filed on 2026-09-26 from the agent-skills#66 closeout. It holds the idea until it is clarified and defined. It does not authorize implementation, installation or device changes.\n\n### Outcome and real setup\n\nThe work guide's \"Deliveries by model\" table (#307) shows, for each coordinator model and level, why reviewers found what they found: edge-case misses, untested bugs, wrong approaches and causes outside the candidate, so a reader can see whether a level's failures are the kind more effort buys down or the kind it does not.\n\n### Observation\n\nagent-skills#66 (merged 2026-09-26 as `762a2de`) added a `Finding causes` row to the `## Execution record`: `edge-case <n>; untested-bug <n>; wrong-approach <n>; other <n>` over the P0 to P2 findings, following Thariq Shihipar's \"Spending your effort\" finding that higher effort cuts missed edge cases but not wrong approaches. Once #307 parses records, the row is one more column in the same group-by; #342 groups the same rows by model and level on the Status page.\n\n### Smallest useful implementation\n\nTo be defined. Starting points:\n\n- `execution_record.py` accepts records with and without the row, telling them apart by the row's presence, never by date.\n- The #307 table adds four cause counts per model-and-level row, with unknown shown as unknown and the P0 to P2 total as the denominator.\n- No score or ranking; #198 and #283 exclude those.\n\n### Behavior and protections to preserve\n\nHistory remains a dated snapshot; nothing fetches live in the browser. Records without the row stay valid.\n\n### Observable acceptance and planned evidence\n\nTo be defined.\n\n### Meaningful deferrals\n\nPer-story cause history and any recommendation change stay out of scope.\n\n## Guide\n\n**Topic:** work-guide\n**Highlight:** idea, The new Finding causes row turns the deliveries-by-model table into a view of what each effort level fails at, for one extra group-by.\n**Extends:** H307, H342\n\n## Execution recommendation\n\n**Status:** insufficient\n**Missing:** #307's parser and table shape, and the acceptance criteria for the cause columns.\n\n**Why:** The current story leaves the named definition unresolved; no readiness or implementation scope is inferred.\n",
     "url": "https://github.com/jimmie-potts/agent-device-hub/issues/459",
     "createdAt": "2026-09-26T16:16:45Z",
-    "updatedAt": "2026-09-26T16:16:45Z",
+    "updatedAt": "2026-09-26T16:41:28Z",
     "closedAt": null,
     "labels": [
       {
@@ -6591,7 +6591,7 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 0,
+    "commentCount": 1,
     "commentsRefreshed": false
   }
 ]
