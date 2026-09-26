@@ -26,7 +26,7 @@ const extensionOutputBase = { type: 'object' as const, $defs: schema.$defs, addi
 /** Keep only the root definitions a schema reaches, so each published tool stays proportional to what it uses.
  * References inside a nested `$id` resource resolve against that resource and are skipped. A reference this
  * cannot classify keeps every definition, so pruning can only remove what is provably unused. */
-function referencedDefinitions(value: JsonSchema): JsonSchema {
+export function referencedDefinitions(value: JsonSchema): JsonSchema {
   const defs = value.$defs as Record<string, unknown> | undefined;
   if (!defs) return value;
   const kept = new Set<string>(); let unclassified = false;
@@ -53,6 +53,18 @@ function referencedDefinitions(value: JsonSchema): JsonSchema {
   if (unclassified) return value;
   const { $defs: _unused, ...rest } = value;
   return kept.size ? { ...rest, $defs: Object.fromEntries(Object.entries(defs).filter(([name]) => kept.has(name))) } as JsonSchema : rest as JsonSchema;
+}
+
+const verifiedSchemas = new Set<string>();
+/** Publish a schema only if it resolves on its own; prune package-owned roots first. Identical schemas compile once. */
+export function publishedSchema(value: JsonSchema, prune = true): JsonSchema {
+  const candidate = prune ? referencedDefinitions(value) : value;
+  const key = JSON.stringify(candidate);
+  if (!verifiedSchemas.has(key)) {
+    new Ajv2020({ strict: true }).compile(candidate);
+    verifiedSchemas.add(key);
+  }
+  return candidate;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -122,9 +134,9 @@ function createTool(registry: DeviceRegistry, name: string, operation: Binding['
         || extension.annotations.openWorldHint !== true || typeof extension.annotations.idempotentHint !== 'boolean'
         || Object.keys(extension.inputSchema.properties ?? {}).some(key => ['deviceId', 'controllerId', 'url', 'ip', 'path', 'credential', 'authorization'].includes(key))) throw new Error('Invalid extension');
     inputSchema = structuredClone(extension.inputSchema);
-  } else {
-    inputSchema = referencedDefinitions(inputSchema);  // Only the shared definitions this package injects; an extension's own schema is kept as declared.
   }
+  // Only the shared definitions this package injects are pruned; an extension's own input schema is kept as declared.
+  inputSchema = publishedSchema(inputSchema, !extension);
   const outputSchema: JsonSchema & { properties: Record<string, unknown> } = structuredClone(extension ? extensionOutputBase : outputBase);
   if (extension) {
     const embedded = structuredClone(extension.outputSchema);
@@ -132,10 +144,8 @@ function createTool(registry: DeviceRegistry, name: string, operation: Binding['
     embedded.$id ??= `urn:agent-device-mcp:output:${createHash('sha256').update(JSON.stringify(embedded)).digest('hex')}`;
     outputSchema.properties.data = embedded;
   }
-  const published = referencedDefinitions(outputSchema);
   // Every published schema must resolve on its own, so a pruning or contract change cannot ship an unusable catalog.
-  for (const candidate of [inputSchema, published]) new Ajv2020({ strict: true }).compile(candidate);
-  const tool = deepFreeze({ name, inputSchema, outputSchema: published,
+  const tool = deepFreeze({ name, inputSchema, outputSchema: publishedSchema(outputSchema),
     description: extension?.description ?? (operation === 'list' ? 'List authorized configured device IDs. No network discovery or agent/session state.'
       : operation === 'status' ? 'Read the owning controller snapshot. Unknown observation stays unknown; transmission is not visible-device verification.'
       : `Set optional device ${operation} through its owner. Read status for request identity and revisions first. Reuse an exact identity only for replay; never retry an ambiguous write with a new identity. Acceptance is not visible-device verification.`),

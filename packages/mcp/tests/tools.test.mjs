@@ -271,3 +271,28 @@ test('an embedded extension schema does not keep unused shared definitions', () 
   assert.ok(Buffer.byteLength(JSON.stringify(tool.outputSchema)) < 4096);
   assert.deepEqual(Object.keys(tool.outputSchema.properties.data.$defs).sort(), ['snapshot', 'unused']);
 });
+
+// Review of Hub #357: each branch of the definition walker and the publish guard is exercised directly.
+test('the definition walker keeps every reference form and prunes only unused definitions', async () => {
+  const { referencedDefinitions } = await import('../dist/tools.js');
+  const defs = { 'a/b': { type: 'integer' }, 'c~d': { type: 'integer' }, x: { type: 'integer' }, shape: { type: 'object', properties: { size: { $ref: '#/$defs/leaf' } } },
+    leaf: { type: 'integer' }, unused: { type: 'integer' } };
+  const kept = referencedDefinitions({ type: 'object', $defs: defs, properties: { a: { $ref: '#/$defs/a~1b' }, c: { $ref: '#/$defs/c~0d' },
+    x: { $ref: '#/%24defs/x' }, s: { $ref: '#/$defs/shape/properties/size' },
+    nested: { $id: 'urn:nested', $defs: { unused: { type: 'string' } }, $ref: '#/$defs/unused' } } });
+  assert.deepEqual(Object.keys(kept.$defs).sort(), ['a/b', 'c~d', 'leaf', 'shape', 'x']);
+  for (const reference of ['urn:other#/$defs/x', '#anchor', '#/$defs/missing', '#/$defs/%E0%A4%A']) {
+    const schema = { type: 'object', $defs: defs, properties: { v: { $ref: reference } } };
+    assert.equal(referencedDefinitions(schema), schema, reference);
+  }
+  const bare = referencedDefinitions({ type: 'object', $defs: defs, properties: {} });
+  assert.equal('$defs' in bare, false);
+});
+
+test('a published schema that does not resolve is refused before any tool exists', async () => {
+  const { publishedSchema } = await import('../dist/tools.js');
+  assert.throws(() => publishedSchema({ type: 'object', properties: { v: { $ref: '#/$defs/missing' } } }));
+  assert.throws(() => publishedSchema({ type: 'object', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: '#/$defs/v/wrong' } } }, false));
+  const valid = { type: 'object', $defs: { v: { type: 'integer' } }, properties: { v: { $ref: '#/$defs/v' } } };
+  assert.deepEqual(publishedSchema(valid), valid);
+});
