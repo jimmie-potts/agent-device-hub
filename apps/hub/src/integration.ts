@@ -36,7 +36,8 @@ export const validateIntegrationSnapshot:Check = value => shape(value,{
   elements:list(v => shape(v,{id:line,projectId:nullableProject,signature:one(0,1)}),300),
   wallPending:v => v === null || shape(v,{settings,elements:list(element,300),tasks:list(t => shape(t,{taskId:task,projectId:nullableProject}),1000)}),
   pending:list(validateRequest,1),outcomes:list(validateIntegrationReceipt,32),nextRequestId:ticket,
-  capabilities:v => shape(v,Object.fromEntries(['settings.set','elements.assign','task.assign','project.color'].map(k => [k,(c:unknown) => shape(c,{supported:one(true),scope:one('control')})]).concat([
+  // codex-nanoleaf#113: a device other than the Lines, such as the Panels, is read-only and marks the four configuration operations unsupported.
+  capabilities:v => shape(v,Object.fromEntries(['settings.set','elements.assign','task.assign','project.color'].map(k => [k,(c:unknown) => shape(c,{supported:one(true,false),scope:one('control')})]).concat([
     ['mode.set',(c:unknown) => shape(c,{supported:one(true),scope:one('control'),route:one('/controller/v1/commands')})]
   ]))),
   limits:v => shape(v,{maxItems:one(1000),maxPending:one(1),maxReceipts:one(256),maxBodyBytes:one(65536)})

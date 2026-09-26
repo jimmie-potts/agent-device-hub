@@ -38,6 +38,50 @@ test('integration projection rejects unexpected private data and invalid receipt
 });
 
 
+// codex-nanoleaf#113 (`device_view` at the pinned source): a device other than the Lines keeps the exact key set, lists no elements or requests and marks the four configuration operations unsupported.
+const operations=['settings.set','elements.assign','task.assign','project.color'];
+export const readOnlySnapshot={...snapshot,identity:{...snapshot.identity,deviceId:'panels'},mode:'Free',source:'shared',nextRequestId:{epoch:'c'.repeat(32),sequence:0},
+ scenes:[{id:'scene-'+'e'.repeat(64),name:'Forest'},{id:'scene-'+'f'.repeat(64),name:'Sunset'}],
+ capabilities:{...Object.fromEntries(operations.map(k=>[k,{supported:false,scope:'control'}])),'mode.set':snapshot.capabilities['mode.set']}};
+
+test('a read-only Nanoleaf device snapshot validates with the same closed shape',()=>{
+ assert.equal(validateIntegrationSnapshot(readOnlySnapshot),true);
+ const capability=(name,value)=>({...readOnlySnapshot,capabilities:{...readOnlySnapshot.capabilities,[name]:value}});
+ for(const name of operations){
+  assert.equal(validateIntegrationSnapshot(capability(name,{supported:false,scope:'read'})),false,name);
+  assert.equal(validateIntegrationSnapshot(capability(name,{supported:false})),false,name);
+  assert.equal(validateIntegrationSnapshot(capability(name,{supported:false,scope:'control',reason:'PRIVATE_CANARY'})),false,name);
+  assert.equal(validateIntegrationSnapshot(capability(name,{supported:'false',scope:'control'})),false,name);
+ }
+ // Mode control stays on controller v1 for every device; the extension never declares it unsupported.
+ assert.equal(validateIntegrationSnapshot(capability('mode.set',{supported:false,scope:'control',route:'/controller/v1/commands'})),false);
+ const {'project.color':_,...missing}=readOnlySnapshot.capabilities;
+ assert.equal(validateIntegrationSnapshot({...readOnlySnapshot,capabilities:missing}),false);
+ assert.equal(validateIntegrationSnapshot(capability('animation.play',{supported:false,scope:'control'})),false);
+ assert.equal(validateIntegrationSnapshot({...readOnlySnapshot,token:'PRIVATE_CANARY'}),false);
+});
+
+test('the integration route serves a read-only device snapshot next to the Lines',async()=>{
+ const nativeToken='n'.repeat(43),browserToken='b'.repeat(43);const seen=[];
+ const lines={...snapshot,identity:{...snapshot.identity,deviceId:'wall'}};
+ const native=createServer((req,res)=>{seen.push({path:req.url,authorization:req.headers.authorization});res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url.endsWith('deviceId=panels')?readOnlySnapshot:lines));});
+ await new Promise(resolve=>native.listen(0,'127.0.0.1',resolve));const directory=await mkdtemp(join(tmpdir(),'hub-read-only-'));let hub;
+ try{
+  const endpoint=`http://127.0.0.1:${native.address().port}/controller/v1`;
+  hub=await startHub({directory,ownerId:'owner',consumers:[],controllers:[
+   {id:'wall',kind:'nanoleaf',controllerId:'controller',deviceId:'wall',endpoint,token:nativeToken},
+   {id:'panels',kind:'nanoleaf',controllerId:'controller',deviceId:'panels',endpoint,token:nativeToken}],
+   credentials:[{id:'browser',digest:createHash('sha256').update(browserToken).digest('hex'),scopes:['read'],devices:['wall','panels']}]});
+  const get=alias=>fetch(hub.url+`/api/controllers/v1/${alias}/integration/snapshot`,{headers:{authorization:`Bearer ${browserToken}`}});
+  let result=await get('panels');assert.equal(result.status,200);assert.deepEqual(await result.json(),readOnlySnapshot);
+  result=await get('wall');assert.equal(result.status,200);assert.deepEqual(await result.json(),lines);
+  const health=(await (await fetch(hub.url+'/api/hub/v1/health',{headers:{authorization:`Bearer ${browserToken}`}})).json()).devices;
+  assert.deepEqual(health.map(d=>[d.id,d.health]),[['wall','ready'],['panels','ready']]);
+  assert.deepEqual(seen.map(r=>r.path),['/controller/integration/v1/snapshot?deviceId=panels','/controller/integration/v1/snapshot?deviceId=wall']);
+  assert.ok(seen.every(r=>r.authorization===`Bearer ${nativeToken}`));
+ }finally{await hub?.close();await new Promise(resolve=>{native.close(resolve);native.closeAllConnections();});await rm(directory,{recursive:true,force:true});}
+});
+
 test('Nanoleaf routes retain owner status, tickets and private credential boundary',async()=>{
  const cases=JSON.parse(await readFile(new URL('../fixtures/nanoleaf-integration.json',import.meta.url),'utf8'));
  const request=cases.requests.find(c=>c.valid).request;
