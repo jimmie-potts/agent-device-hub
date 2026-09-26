@@ -12,7 +12,7 @@ button.secondary{background:transparent;color:var(--secondary-text);border-color
 button.secondary:hover:not(:disabled){background:var(--secondary-hover-bg);color:var(--emphasis-text);border-color:var(--secondary-hover-edge)}
 button:disabled,button.secondary:disabled{background:var(--disabled-bg);color:var(--disabled-text);border-color:var(--disabled-edge);cursor:not-allowed}
 input,select{background:var(--inset);color:var(--text);border:1px solid var(--secondary-edge);border-radius:var(--radius);padding:var(--space-s);width:100%;min-width:0}
-input:invalid{border-color:var(--pending)}
+input:invalid{border-color:var(--warning-badge-edge)}
 label{display:grid;gap:var(--space-xs);font-size:var(--type-small);color:var(--muted-dense);min-width:0}
 a{color:var(--link)}
 h1,h2,h3,h4,p,dl,ul{margin-top:0}

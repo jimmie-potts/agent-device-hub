@@ -92,7 +92,9 @@ try {
  assert.equal(await page.getByText('1 active / 0 uncertain',{exact:true}).count(),1);
  await f.event('turn.ended');await page.getByRole('heading',{name:'Retained notices',exact:true}).waitFor();
  const parent=page.locator('article.session').filter({has:page.getByRole('heading',{name:'My deliberate label',exact:true})});const ackWrites=f.writes.length;
- await parent.getByLabel('Acknowledge for').selectOption('dashboard');await parent.getByText('Acknowledged by: dashboard.',{exact:false}).waitFor();assert.equal(f.writes.length,ackWrites,'monitor acknowledgment never commands a device');
+ // An acknowledgment cannot be undone, so a keyboard step never commits on a pause: only Enter (or leaving the select) sends it.
+ const ack=parent.getByLabel('Acknowledge for');await ack.focus();await page.keyboard.press('ArrowDown');await page.waitForTimeout(500);assert.equal(await ack.inputValue(),'dashboard');await parent.getByText('Acknowledged by: none.',{exact:false}).waitFor();
+ await page.keyboard.press('Enter');await parent.getByText('Acknowledged by: dashboard.',{exact:false}).waitFor();assert.equal(f.writes.length,ackWrites,'monitor acknowledgment never commands a device');
  const snapshot=await (await fetch(f.hub.url+'/api/monitor/v1/sessions',{headers:f.headers})).json();assert.equal(snapshot.snapshot.sessions.find(x=>x.identity.sessionId==='task-one').read,'unknown','acknowledgment cannot mark provider read');
  await page.screenshot({path:output+'/activity-evidence.png',fullPage:true});
  await page.getByRole('button',{name:'Disconnect',exact:true}).click();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.reader);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('heading',{name:'My deliberate label',exact:true}).waitFor();await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByText('Unavailable: Your credential is read-only',{exact:true}).first().waitFor();
