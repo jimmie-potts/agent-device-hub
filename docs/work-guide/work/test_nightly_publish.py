@@ -144,7 +144,7 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(self.publish()['changed'])
         self.assertEqual(self.calls, [])
 
-    def test_unchanged_failure_posts_red_without_branch_or_pr_updates(self):
+    def test_unchanged_failure_posts_red_and_updates_report_without_push(self):
         self.change()
         first = self.publish()
         self.calls.clear()
@@ -156,6 +156,9 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(args[0], 'api')
         self.assertEqual(check['head_sha'], first['sha'])
         self.assertEqual(check['conclusion'], 'failure')
+        edits = [args for args, _ in self.calls if args[:2] == ['pr', 'edit']]
+        self.assertEqual(len(edits), 1)
+        self.assertIn(str(self.report), edits[0])
         self.assertTrue(self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).startswith(first['sha']))
 
     def test_interrupted_publish_retries_missing_check_and_pr_without_push(self):
@@ -207,7 +210,22 @@ class PublishTests(unittest.TestCase):
         self.assertTrue(result['repaired'])
         self.assertFalse(result['changed'])
         self.assertEqual(self.checks[-1]['conclusion'], 'success')
-        self.assertFalse(any(args[:2] in (['pr', 'create'], ['pr', 'edit']) for args, _ in self.calls))
+        self.assertFalse(any(args[:2] == ['pr', 'create'] for args, _ in self.calls))
+        edits = [args for args, _ in self.calls if args[:2] == ['pr', 'edit']]
+        self.assertEqual(len(edits), 1)
+        self.assertIn(str(self.report), edits[0])
+
+    def test_main_advance_blocks_unchanged_validation_repair(self):
+        self.change()
+        first = self.publish()
+        (self.root / 'source.py').write_text('new main source\n')
+        self.git('add', 'source.py')
+        self.git('commit', '-m', 'concurrent main')
+        self.git('push', 'origin', 'main')
+        self.calls.clear()
+        with self.assertRaisesRegex(RuntimeError, 'Main advanced'):
+            self.publish(first['sha'], 'failure')
+        self.assertTrue(all(args[:2] == ['pr', 'list'] or args[:3] == ['api', '--method', 'GET'] for args, _ in self.calls))
 
     def test_invalid_conclusion_has_no_mutations(self):
         with self.assertRaises(ValueError):

@@ -62,7 +62,7 @@ def update_pr(root, prs, report_path):
                     '--base', 'main', '--label', 'documentation']).strip()
 
 
-def reconcile_unchanged(root, sha, report_path, conclusion, check_summary):
+def reconcile_unchanged(root, sha, report_path, conclusion, check_summary, base_sha):
     prs = open_prs(root)
     pages = json.loads(gh(root, ['api', '--method', 'GET',
         'repos/' + REPOSITORY + '/commits/' + sha +
@@ -74,13 +74,18 @@ def reconcile_unchanged(root, sha, report_path, conclusion, check_summary):
               and check.get('app', {}).get('slug') == 'github-actions']
     latest = max(checks, key=lambda check: check['id']) if checks else None
     repaired = not latest or latest['status'] != 'completed' or latest['conclusion'] != conclusion
-    if repaired:
-        post_check(root, sha, conclusion, check_summary)
-    if prs:
-        url = prs[0]['url']
-    else:
-        url = update_pr(root, [], report_path)
+    if repaired or not prs:
+        remote_main = run(root, ['git', 'ls-remote', 'origin', 'refs/heads/main']).split()
+        if not remote_main or remote_main[0] != base_sha:
+            raise RuntimeError('Main advanced during validation; rerun the refresh')
+        # Update the report before the check. If either call is interrupted, the
+        # old/missing check makes the next retry reconcile both again.
+        url = update_pr(root, prs, report_path)
+        if repaired:
+            post_check(root, sha, conclusion, check_summary)
         repaired = True
+    else:
+        url = prs[0]['url']
     return {'changed': False, 'repaired': repaired, 'sha': sha, 'pr_url': url}
 
 
@@ -130,7 +135,7 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
         changed = git('diff', '--name-only', previous, tree, '--', *ALLOWLIST)
         if not changed:
             if expected_rolling_sha:
-                return reconcile_unchanged(root, previous, report_path, conclusion, check_summary)
+                return reconcile_unchanged(root, previous, report_path, conclusion, check_summary, base_sha)
             return {'changed': False, 'sha': previous, 'pr_url': None}
         paths = git('diff', '--name-only', base_sha, tree).splitlines()
         if any(not any(path.startswith(prefix + '/') for prefix in ALLOWLIST) for path in paths):
