@@ -63,6 +63,25 @@ class NightlyInputs(unittest.TestCase):
             self.assertEqual(json.loads((work / 'backlogs/agent-device-hub-prs.json').read_text()), rows[:1])
             self.assertEqual(json.loads((work / 'backlogs/snapshot.json').read_text())['repositories']['agent-device-hub']['openPRs'], 1)
 
+    def test_own_push_metadata_and_pagination_do_not_refresh_observation(self):
+        from nightly_inputs import retain_unchanged_time
+        with tempfile.TemporaryDirectory() as directory:
+            before, after = [Path(directory) / name for name in ('before', 'after')]
+            for root, suffix in ((before, 'old'), (after, 'new')):
+                (root / 'backlogs').mkdir(parents=True)
+                (root / 'history').mkdir()
+                metadata = {'startedAt': suffix, 'refreshedAt': suffix, 'repositories': {
+                    'agent-device-hub': {'openPRs': 1, 'prPageSizes': [1 if suffix == 'old' else 2],
+                                         'issuePageSizesIncludingPRs': [3 if suffix == 'old' else 4]}}}
+                (root / 'backlogs/snapshot.json').write_text(json.dumps(metadata))
+                prs = [{'number': 1, 'head': {'ref': 'feature', 'sha': 'abc',
+                        'repo': {'full_name': 'owner/repo', 'pushed_at': suffix, 'open_issues_count': 3 if suffix == 'old' else 4}}}]
+                (root / 'backlogs/agent-device-hub-prs.json').write_text(json.dumps(prs))
+                (root / 'history/github-history.json').write_text('{}')
+            self.assertTrue(retain_unchanged_time(before, after))
+            self.assertEqual((before / 'backlogs/snapshot.json').read_bytes(), (after / 'backlogs/snapshot.json').read_bytes())
+            self.assertEqual((before / 'backlogs/agent-device-hub-prs.json').read_bytes(), (after / 'backlogs/agent-device-hub-prs.json').read_bytes())
+
 
 if __name__ == '__main__':
     unittest.main()

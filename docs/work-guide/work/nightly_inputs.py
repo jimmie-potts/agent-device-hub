@@ -30,25 +30,45 @@ def remove_rolling_pr(work):
     path.write_text(json.dumps(snapshot, indent=2) + '\n')
 
 
+def semantic_input(relative, content):
+    """Exclude query timing and embedded repository metadata, not PR facts."""
+    if relative == Path('backlogs/snapshot.json'):
+        value = json.loads(content)
+        for field in ('startedAt', 'refreshedAt'):
+            value.pop(field, None)
+        for repository in value.get('repositories', {}).values():
+            # Raw page lengths include PRs; the workflow's own PR is excluded
+            # from the guide inventory. Retain actual page evidence on disk.
+            for field in ('prPageSizes', 'issuePageSizesIncludingPRs'):
+                repository.pop(field, None)
+        return value
+    if relative.name.endswith('-prs.json'):
+        rows = json.loads(content)
+        for row in rows:
+            for side in ('head', 'base'):
+                ref = row.get(side)
+                if ref and ref.get('repo'):
+                    ref['repo'] = {key: ref['repo'].get(key) for key in ('id', 'full_name')}
+        return rows
+    return content
+
+
 def retain_unchanged_time(before, after):
     """A no-change check retains the previous observation, never invents freshness."""
-    old = before / 'backlogs/snapshot.json'
-    new = after / 'backlogs/snapshot.json'
-    previous, current = json.loads(old.read_text()), json.loads(new.read_text())
-    for field in ('startedAt', 'refreshedAt'):
-        current[field] = previous.get(field)
     files = sorted(p.relative_to(after) for folder in ('backlogs', 'history')
                    for p in (after / folder).rglob('*') if p.is_file())
     old_files = sorted(p.relative_to(before) for folder in ('backlogs', 'history')
                        for p in (before / folder).rglob('*') if p.is_file())
-    if files != old_files or current != previous:
+    if files != old_files:
         return False
     for relative in files:
-        if relative == Path('backlogs/snapshot.json'):
-            continue
-        if (before / relative).read_bytes() != (after / relative).read_bytes():
+        old, new = (before / relative).read_bytes(), (after / relative).read_bytes()
+        if semantic_input(relative, old) != semantic_input(relative, new):
             return False
-    new.write_bytes(old.read_bytes())
+    # Keep the entire dated evidence set together, including old raw pagination
+    # and embedded metadata. Today's read is reported in the workflow log.
+    for relative in files:
+        (after / relative).write_bytes((before / relative).read_bytes())
     return True
 
 

@@ -158,6 +158,25 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn('Closed: H1', result)
         self.assertIn('Direction check: passed', result)
 
+    def test_history_only_closure_does_not_invent_label_removal(self):
+        from refresh_report import load_snapshots, render_report
+        from refresh_backlogs import REPOS
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            (work / 'backlogs').mkdir()
+            (work / 'history').mkdir()
+            for repo in REPOS:
+                (work / 'backlogs' / f'{repo}-issues.json').write_text('[]')
+            history = {'repositories': {repo: {'closedIssues': []} for repo in REPOS}}
+            history['repositories']['agent-device-hub']['closedIssues'] = [
+                {'number': 1, 'title': 'Closed story', 'closedAt': '2026-09-26T01:00:00Z'}]
+            (work / 'history/github-history.json').write_text(json.dumps(history))
+            before = {'agent-device-hub': [{'number': 1, 'title': 'Closed story', 'state': 'OPEN',
+                      'body': '', 'labels': [{'name': 'maintenance'}]}]}
+            report = render_report(before, load_snapshots(work / 'backlogs'), refreshed_at='now')
+            self.assertIn('Closed: H1', report)
+            self.assertNotIn('Relabelled: H1', report)
+
 
 if __name__ == '__main__':
     unittest.main()

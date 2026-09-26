@@ -19,7 +19,7 @@ def load_snapshots(path):
         history = json.loads(history_path.read_text(encoding='utf-8'))
         for repo, rows in result.items():
             held = {row['number'] for row in rows}
-            rows.extend(dict(row, state='CLOSED', body='', labels=[]) for row in history['repositories'][repo]['closedIssues'] if row['number'] not in held)
+            rows.extend(dict(row, state='CLOSED', body='') for row in history['repositories'][repo]['closedIssues'] if row['number'] not in held)
     return result
 
 
@@ -83,7 +83,7 @@ def render_report(before, after, *, refreshed_at, direction_errors=(), retired_w
                 if previous['title'] != current['title']:
                     changes.append(f'- Retitled: {key} — {_text(previous["title"])} → {_text(current["title"])}')
                 labels = lambda row: sorted(label['name'] if isinstance(label, dict) else label for label in row.get('labels', []))
-                if labels(previous) != labels(current):
+                if 'labels' in previous and 'labels' in current and labels(previous) != labels(current):
                     changes.append(f'- Relabelled: {key} — {_text(", ".join(labels(previous)) or "none")} → {_text(", ".join(labels(current)) or "none")}')
                 if is_open and _topic(previous) != _topic(current):
                     changes.append(f'- Topic: {key} — {_text(_topic(previous))} → {_text(_topic(current))}')
