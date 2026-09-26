@@ -14,10 +14,11 @@ import {createReplayLedgers} from './replay.js';
 import {archivedSession,codexDesktopOptions,startDesktopRead,type CodexDesktopOptions} from './codex-desktop.js';
 import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
+import {createSonosSource,sonosConfiguration} from './sonos.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number; feedIntervalMs?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -31,13 +32,24 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff'});
   res.end(JSON.stringify(value));
 }
-/** Builds the one explicitly selected source. The playback source ID shares credential device grants with controller aliases. */
-function playbackSource(value: unknown, aliases: string[]): PlaybackSource {
-  if (!object(value) || !exact(value,['selected','sources']) || !Array.isArray(value.sources) || value.sources.length !== 1 || !object(value.sources[0]) ||
-      value.sources[0].id !== value.selected || aliases.includes(value.selected as string) || value.selected === HOST_SERVICE ||
-      isIPv4(value.selected as string)) throw new Error('invalid-playback');
-  if (value.sources[0].kind === 'sony') return createSonySource(sonyConfiguration(value.sources[0]));
-  throw new Error('invalid-playback');
+/**
+ * Builds the configured sources in preference order under one client-facing playback ID. That ID shares credential device
+ * grants with controller aliases and never changes with the presented source.
+ */
+function playbackSources(value: unknown, aliases: string[]): {id:string; sources:PlaybackSource[]} {
+  if (!object(value) || !exact(value,['id','sources']) || !id(value.id) || aliases.includes(value.id) || value.id === HOST_SERVICE || isIPv4(value.id) ||
+      !Array.isArray(value.sources) || value.sources.length < 1 || value.sources.length > 2) throw new Error('invalid-playback');
+  const kinds = new Set<string>(), sources: PlaybackSource[] = [];
+  for (const entry of value.sources) {
+    if (!object(entry) || typeof entry.kind !== 'string' || kinds.has(entry.kind)) throw new Error('invalid-playback');
+    kinds.add(entry.kind);
+    const config = entry.kind === 'sony' ? sonyConfiguration(entry) : entry.kind === 'sonos' ? sonosConfiguration(entry) : undefined;
+    if (!config) throw new Error('invalid-playback');
+    // The playback ID is returned to clients, so it must not carry a speaker address.
+    if (value.id.includes(new URL(config.endpoint).hostname)) throw new Error('invalid-playback');
+    sources.push(config.kind === 'sony' ? createSonySource(config) : createSonosSource(config));
+  }
+  return {id:value.id,sources};
 }
 async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   if (req.headers['content-type']?.split(';')[0] !== 'application/json' || req.headers['content-encoding']) throw new HttpError('invalid-input',400);
@@ -66,13 +78,16 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let activating = false;
   let preparingConsumers = false;
   if (options.mcp !== undefined && typeof options.mcp !== 'boolean') throw new Error('invalid-configuration');
+  // Hub #276: the owner's opt-in to sign any same-origin loopback page in without a launch code.
+  if (options.browserAccess !== undefined && options.browserAccess !== 'trusted-loopback') throw new Error('invalid-configuration');
   const codexDesktop = options.codexDesktop === undefined ? undefined : codexDesktopOptions(options.codexDesktop);
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
       new Set(options.controllers.map(c => c.controllerId + ':' + c.deviceId)).size !== options.controllers.length ||
       (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535)) ||
       (options.feedIntervalMs !== undefined && (!Number.isInteger(options.feedIntervalMs) || options.feedIntervalMs < 1 || options.feedIntervalMs > 86400000))) throw new Error('invalid-configuration');
-  const source = options.playback === undefined ? undefined : playbackSource(options.playback,options.controllers.map(c => c.id));
+  const playbackConfig = options.playback === undefined ? undefined : playbackSources(options.playback,options.controllers.map(c => c.id));
+  const playbackId = playbackConfig?.id;
   const editorLinks:Record<string,string> = {};
   if (options.editorLinks !== undefined) {
     if (!object(options.editorLinks) || Object.keys(options.editorLinks).length > 16) throw new Error('invalid-editor-links');
@@ -104,7 +119,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const streams = new Set<ServerResponse>();
   const streamOwners = new Map<ServerResponse,string>();
   let active = 0, rejected = 0, closing = false;
-  let origin = '';
+  let origin = '', hosts: string[] = [];
   let mcp: HubMcp | undefined;
   let playback: ReturnType<typeof createPlayback> | undefined;
   let closeBrowserLaunch: (()=>Promise<void>) | undefined;
@@ -122,6 +137,20 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     for(const [code,expiry] of launchCodes)if(expiry<=now)launchCodes.delete(code);
     for(const [hash,session] of browserSessions)if(session.expires<=now)retireBrowser(hash);
   };
+  // The launch exchange and the trusted-loopback route issue the same session, so their grants, expiry and cap cannot drift.
+  const openBrowserSession=()=>{
+    // A request admitted before shutdown may finish reading its body afterwards; it must not outlive the shutdown retirement.
+    if(closing)throw new HttpError('unavailable',503);
+    if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
+    const token=randomBytes(32).toString('base64url');
+    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(playbackId ? [playbackId] : [])]};
+    browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
+    return {token,expiresInSeconds:8*60*60};
+  };
+  // Host is one of the loopback names and any Origin names that same host, so a rebinding page, or a page on the other loopback name, is refused.
+  const sameOrigin=(req:IncomingMessage,{requireOrigin=false,sites=[undefined,'none','same-origin']}:{requireOrigin?:boolean;sites?:(string|undefined)[]}={})=>
+    hosts.includes(req.headers.host ?? '') && (req.headers.origin === undefined ? !requireOrigin : req.headers.origin === 'http://' + req.headers.host) &&
+    sites.includes(req.headers['sec-fetch-site'] as string | undefined);
   const issueLaunch=()=>{
     if(closing)throw new Error('host-closing');
     pruneBrowser();if(launchCodes.size>=8)throw new Error('launch-capacity');
@@ -190,9 +219,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     const token = req.headers.authorization;
     const principal = typeof token === 'string' && token.startsWith('Bearer ') ? authenticate(token.slice(7)) : null;
     if (!principal) throw new HttpError('unauthenticated',401);
-    if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) ||
-        ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined) ||
-        !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
+    if (!sameOrigin(req) || !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
     if (req.method !== 'GET' && req.headers['x-pixoo-request'] !== '1') throw new HttpError('forbidden',403);
     return principal;
   };
@@ -234,7 +261,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         if (req.method === 'GET' && !url.search && ['/', '/dashboard.js', '/dashboard.css'].includes(path)) {
-          if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) || ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined)) throw new HttpError('forbidden',403);
+          if (!sameOrigin(req)) throw new HttpError('forbidden',403);
           const asset = path === '/' ? 'index.html' : path.slice(1);
           const bytes = await readFile(new URL('../public/' + asset,import.meta.url)).catch(()=>null);
           if (!bytes) throw new HttpError('not-found',404);
@@ -246,16 +273,19 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           await mcp.handle(req,res);return;
         }
         if(req.method==='POST'&&path==='/api/dashboard/v1/launch'&&!url.search){
-          if(req.headers.host!==origin.slice(7)||req.headers.origin!==origin||![undefined,'same-origin'].includes(req.headers['sec-fetch-site'] as string|undefined)||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
+          if(!sameOrigin(req,{requireOrigin:true,sites:[undefined,'same-origin']})||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
           const input=await body(req,128);
           if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
           pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
           launchCodes.delete(input.code);
-          if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
-          const token=randomBytes(32).toString('base64url');
-          const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};
-          browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
-          json(res,200,{token,expiresInSeconds:8*60*60});return;
+          json(res,200,openBrowserSession());return;
+        }
+        if(req.method==='POST'&&path==='/api/dashboard/v1/session'&&!url.search){
+          // Off unless configured, like MCP. On, any same-origin loopback page gets a launcher-equivalent session (Hub #276).
+          if(options.browserAccess!=='trusted-loopback')throw new HttpError('not-found',404);
+          if(!sameOrigin(req,{requireOrigin:true,sites:[undefined,'same-origin']})||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
+          const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
+          pruneBrowser();json(res,200,openBrowserSession());return;
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
@@ -270,7 +300,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(source && principal.devices.includes(source.id) ? {playback:{sourceId:source.id}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {
@@ -334,13 +364,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   try {
     await new Promise<void>((resolve,reject) => {server.once('error',reject);server.listen(options.port ?? 0,'127.0.0.1',() => {server.off('error',reject);resolve();});});
   } catch (error) { await owner.shutdown();throw error; }
-  origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
+  const port = (server.address() as {port:number}).port;
+  origin = `http://127.0.0.1:${port}`;hosts = [`127.0.0.1:${port}`,`localhost:${port}`];
   try {
     if (options.mcp) mcp = createHubMcp({origin,clients,authenticate:authenticateConfigured,principal:(id,scope,device) => {
       const value=currentCredentials.find(c=>c.id===id);
       if (!value || !value.scopes.includes(scope) || (device !== HOST_SERVICE && !value.devices.includes(device))) throw new HttpError('forbidden',403);
       return value;
-    },sessions,command,...(source ? {playback:{sourceId:source.id,
+    },sessions,command,...(playbackId ? {playback:{sourceId:playbackId,
       // MCP is mounted before playback starts; until then the source is unavailable and nothing is sent.
       snapshot:() => {if (!playback) throw new HttpError('source-unavailable',503);return playback.snapshot();},
       command:async (principal:Credential,input:unknown) => {
@@ -355,7 +386,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     await mcp?.close().catch(()=>{});await new Promise<void>(resolve=>server.close(()=>resolve()));await owner.shutdown();throw error;
   }
   const desktopRead = codexDesktop && startDesktopRead(codexDesktop,owner,options.clock ?? Date.now,() => !staged && !closing && !exported);
-  playback = source && createPlayback(source,options.clock ?? Date.now,options.clock ?? (() => performance.now()));
+  playback = playbackConfig && createPlayback(playbackConfig.id,playbackConfig.sources,options.clock ?? Date.now,options.clock ?? (() => performance.now()));
   let closePromise: Promise<void> | undefined;
   return {
     url:origin,

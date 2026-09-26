@@ -59,7 +59,7 @@ Facts read on the PC on 2026-09-25, recorded as dated observations:
   music source ([#36](https://github.com/jimmie-potts/agent-device-hub/issues/36))
   are PC-local.
 - LIFX uses configured unicast addresses and no discovery. The planned Sonos
-  source ([#301](https://github.com/jimmie-potts/agent-device-hub/issues/301))
+  source ([#233](https://github.com/jimmie-potts/agent-device-hub/issues/233))
   polls because UPnP callbacks across the WSL NAT were not qualified.
 
 Docker on the PC changes packaging, not placement: containers would run in a

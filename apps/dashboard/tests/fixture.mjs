@@ -8,15 +8,38 @@ import {validate} from '@jimmie-potts/device-contracts';
 import {validateRequest} from '../../hub/dist/vendor/nanoleaf-integration.js';
 import {validatePixooRequest} from '../../hub/dist/pixoo-integration.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
-export async function fixture({empty=false,playback=false,panels=false}={}){
+const identityOf=deviceId=>({controllerId:'wall-controller',deviceId,sourceId:'source',controllerEpoch:'epoch'});
+const round=v=>Math.round(v*1000)/1000;
+/** A Lines layout in the geometry route's shape (codex-nanoleaf#169): 12 connectors on a triangular lattice joined by 15 Lines, every join on a connector's six flat faces, in display coordinates. Zone ids 101–130; element ids are the sorted zone pair. */
+export function linesGeometry(deviceId='wall'){
+ const S=100,h=S*Math.sqrt(3)/2,nodes=[],index={};let n=0;
+ for(let j=0;j<3;j++)for(let i=0;i<4;i++){index[`${i},${j}`]=String(++n);nodes.push({id:String(n),x:round(i*S+j*S/2),y:round(-j*h)});}
+ const edges=[];for(let j=0;j<3;j++)for(let i=0;i<3;i++)edges.push([`${i},${j}`,`${i+1},${j}`]);
+ for(const [i,j] of [[0,0],[1,0],[2,0],[3,0],[0,1],[2,1]])edges.push([`${i},${j}`,`${i},${j+1}`]);
+ const elements=[],lines=[];
+ edges.forEach(([a,b],k)=>{const zones=[101+2*k,102+2*k],id=zones.join(':'),A=nodes[+index[a]-1],B=nodes[+index[b]-1];elements.push({id,number:k+1,zones,points:[[A.x,A.y],[round((A.x+B.x)/2),round((A.y+B.y)/2)],[B.x,B.y]]});lines.push({id,a:index[a],b:index[b]});});
+ return {apiVersion:'nanoleaf.integration/1.0',identity:identityOf(deviceId),kind:'lines',elements,connectors:{nodes,lines}};
+}
+/** An NL22 Panels layout of 18 edge-adjacent triangles in two rows, three corners per element as the geometry route serves them (apex at 90° + o + 120°k around each centroid, Y inverted for the screen). Panel ids 4001–4018. */
+export function panelsGeometry(deviceId='panels'){
+ const S=100,r=S/Math.sqrt(3),h=1.5*r,triangles=[];
+ for(let k=0;k<5;k++)triangles.push({cx:k*S,cy:r/2,o:0});for(let k=0;k<4;k++)triangles.push({cx:k*S+S/2,cy:r,o:60});
+ for(let k=0;k<4;k++)triangles.push({cx:k*S+S/2,cy:h+r/2,o:0});for(let k=0;k<5;k++)triangles.push({cx:k*S,cy:h+r,o:60});
+ const elements=triangles.map((t,i)=>({id:String(4001+i),number:i+1,zones:[4001+i],points:[0,1,2].map(k=>{const a=(90+t.o+120*k)*Math.PI/180;return [round(t.cx+r*Math.cos(a)),round(-(t.cy+r*Math.sin(a)))];})}));
+ return {apiVersion:'nanoleaf.integration/1.0',identity:identityOf(deviceId),kind:'panels',elements,connectors:null};
+}
+/** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route, 'undrawable' serves a hub-valid Lines layout with a connector no Line joins, which the renderer rejects, and 'flaky' fails the first geometry read with a transport failure and serves the layout afterwards. */
+export async function fixture({empty=false,playback=false,panels=false,geometry='layout',browserAccess}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64),sceneA='scene-'+'a'.repeat(64),sceneB='scene-'+'b'.repeat(64);
- const nano={apiVersion:'nanoleaf.integration/1.0',identity:{controllerId:'wall-controller',deviceId:'wall',sourceId:'source',controllerEpoch:'epoch'},configurationRevision:0,revision:'b'.repeat(64),mode:'Work',settings:{style:'classic',coverage:'whole'},source:'shared',projects:[{id:project,color:'#a9c3ff'},{id:'project-'+'c'.repeat(64),color:'#ff0000'}],tasks:[{id:task,projectId:project,overrideProjectId:null}],elements:[{id:'1:2',projectId:project,signature:0},{id:'2:3',projectId:null,signature:1}],wallPending:null,pending:[],outcomes:[],nextRequestId:{epoch:'a'.repeat(32),sequence:0},scenes:[{id:sceneA,name:'Beach Waves'},{id:sceneB}],capabilities:Object.fromEntries(['settings.set','elements.assign','task.assign','project.color','mode.set'].map(k=>[k,{supported:true,scope:'control',...(k==='mode.set'?{route:'/controller/v1/commands'}:{})}])),limits:{maxItems:1000,maxPending:1,maxReceipts:256,maxBodyBytes:65536}};
+ const nano={apiVersion:'nanoleaf.integration/1.0',identity:{controllerId:'wall-controller',deviceId:'wall',sourceId:'source',controllerEpoch:'epoch'},configurationRevision:0,revision:'b'.repeat(64),mode:'Work',settings:{style:'classic',coverage:'whole'},source:'shared',projects:[{id:project,color:'#a9c3ff'},{id:'project-'+'c'.repeat(64),color:'#ff0000'}],tasks:[{id:task,projectId:project,overrideProjectId:null}],elements:linesGeometry().elements.map((e,index)=>({id:e.id,projectId:index===0?project:null,signature:index===1?1:0})),wallPending:null,pending:[],outcomes:[],nextRequestId:{epoch:'a'.repeat(32),sequence:0},scenes:[{id:sceneA,name:'Beach Waves'},{id:sceneB}],capabilities:Object.fromEntries(['settings.set','elements.assign','task.assign','project.color','mode.set'].map(k=>[k,{supported:true,scope:'control',...(k==='mode.set'?{route:'/controller/v1/commands'}:{})}])),limits:{maxItems:1000,maxPending:1,maxReceipts:256,maxBodyBytes:65536}};
  // codex-nanoleaf#113: the Panels share the Lines' controller, and their extension snapshot is read-only. It keeps the exact key set, lists no elements or requests and marks the four configuration operations unsupported.
  const sceneC='scene-'+'c'.repeat(64),sceneD='scene-'+'d'.repeat(64);
  const readOnly={...structuredClone(nano),identity:{...nano.identity,deviceId:'panels'},revision:'c'.repeat(64),mode:'Free',elements:[],nextRequestId:{epoch:'c'.repeat(32),sequence:0},scenes:[{id:sceneC,name:'Forest'},{id:sceneD,name:'Sunset'}],
   capabilities:{...Object.fromEntries(['settings.set','elements.assign','task.assign','project.color'].map(k=>[k,{supported:false,scope:'control'}])),'mode.set':nano.capabilities['mode.set']}};
+ const undrawable=()=>{const g=linesGeometry();g.connectors.nodes.push({id:'99',x:900,y:900});return g;};
+ const geometries={wall:geometry==='none'?{apiVersion:nano.apiVersion,identity:identityOf('wall'),kind:null,elements:[],connectors:null}:geometry==='undrawable'?undrawable():linesGeometry(),panels:panelsGeometry()};let geometryReads=0;
  const pixoo=JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json','utf8')).snapshot;
  pixoo.identity={controllerId:'pixel-controller',deviceId:'pixel',sourceId:'pixel'};
  const ids=['wall','pixel',...(panels?['panels']:[])],nanoleaf=id=>id!=='pixel',states=Object.fromEntries(ids.map(id=>[id,structuredClone(template)]));
@@ -30,16 +53,18 @@ export async function fixture({empty=false,playback=false,panels=false}={}){
  if(panels){states.panels.capabilities={...structuredClone(states.wall.capabilities),scenes:{supported:true,sceneIds:[sceneC,sceneD]}};states.panels.state.desired.power={status:'unknown'};states.panels.state.desired.brightness={status:'unknown'};}
  const media={playlistId:null,actions:[]},scenes={activated:[]};
  const supports=(c,command)=>command.kind==='mode.set'?!!c.modes?.supported&&c.modes.values.includes(command.mode):command.kind==='power.set'?c.power.supported:command.kind==='brightness.set'?c.brightness.supported:command.kind==='media.start'?c.media.supported&&c.media.playlistIds.includes(command.playlistId):command.kind==='media.control'?c.media.supported&&c.media.actions.includes(command.action):command.kind==='scene.activate'?c.scenes.supported&&c.scenes.sceneIds.includes(command.sceneId):false;
- const writes=[],requests=[];let offline=false,uncertain=false,delay=0,queued=false;
+ const writes=[],requests=[];let offline='',uncertain=false,delay=0,queued=false;
  const controllers=[];
  for(const id of ids){
   const server=createServer(async(req,res)=>{
    requests.push({id,method:req.method,url:req.url});
-   if(id==='pixel'&&offline){res.writeHead(503,{'content-type':'application/json'});res.end('{"failure":{"code":"transport-failure"}}');return;}
+   if(id===offline){res.writeHead(503,{'content-type':'application/json'});res.end('{"failure":{"code":"transport-failure"}}');return;}
    if(id==='pixel'&&delay)await new Promise(r=>setTimeout(r,delay));
    let body='';for await(const chunk of req)body+=chunk;
    const send=(status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
    const integration=req.url.includes('integration');const state=states[id],ext=id==='wall'?nano:id==='panels'?readOnly:pixoo;
+   // The read-only geometry route (codex-nanoleaf#169): an older owner answers 404 like any unknown route.
+   if(req.method==='GET'&&req.url.startsWith('/controller/integration/v1/geometry')){if(geometry==='older'){send(404,{failure:{code:'invalid-request'}});return;}if(geometry==='flaky'&&geometryReads++===0){send(503,{failure:{code:'transport-failure'}});return;}send(200,geometries[id]);return;}
    if(req.method==='GET'){send(200,integration?ext:state);return;}
    const command=JSON.parse(body);writes.push({id,integration,command});
    if(uncertain){req.socket.destroy();return;}
@@ -92,11 +117,11 @@ export async function fixture({empty=false,playback=false,panels=false}={}){
  }
  const devices=[...ids,...(playback?['ht-a9']:[])];
  const directory=await mkdtemp(join(tmpdir(),'dashboard-browser-')),token='d'.repeat(43),reader='r'.repeat(43),native='n'.repeat(43);
- const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices},{id:'reader',digest:hash(reader),scopes:['read'],devices}],...(playback?{clock:()=>Date.now()+sony.skew,playback:{selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:`http://127.0.0.1:${receiver.address().port}/sony`}]}}:{}),controllers:controllers.map(({id,server})=>({id,kind:nanoleaf(id)?'nanoleaf':'pixoo',controllerId:nanoleaf(id)?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'}});
+ const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices},{id:'reader',digest:hash(reader),scopes:['read'],devices}],...(playback?{clock:()=>Date.now()+sony.skew,playback:{id:'ht-a9',sources:[{kind:'sony',endpoint:`http://127.0.0.1:${receiver.address().port}/sony`}]}}:{}),controllers:controllers.map(({id,server})=>({id,kind:nanoleaf(id)?'nanoleaf':'pixoo',controllerId:nanoleaf(id)?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'},...(browserAccess?{browserAccess}:{})});
  const headers={authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'};
  const identity={provider:'codex',client:'cli',hostId:'local',sourceId:'codex',sessionId:'task-one'};
  let seq=0;
  async function event(kind,extra={}){const value={apiVersion:'1.0',identity,turn:{status:'known',id:'turn-one'},parent:{status:'unknown'},event:{kind},observedAtMs:Date.now(),ordering:{status:'known',epoch:'fixture',sequence:seq++},...extra};const r=await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(value)});if(!r.ok)throw new Error('fixture-event-'+r.status);return r.json();}
  if(!empty)await event('session.started',{label:{origin:'user',value:'Build the integration'}});
- return {hub,token,reader,media,scenes,sceneA,sceneB,sceneC,sceneD,readOnly,reconnect({scopes=['read','control','ingest'],granted=devices}={}){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes,devices:granted},{id:'reader',digest:hash(reader),scopes:['read'],devices}]);},sony,writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:v=>offline=v,setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});if(receiver)await new Promise(r=>{receiver.close(r);receiver.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+ return {hub,token,reader,media,scenes,sceneA,sceneB,sceneC,sceneD,readOnly,geometries,reconnect({scopes=['read','control','ingest'],granted=devices}={}){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes,devices:granted},{id:'reader',digest:hash(reader),scopes:['read'],devices}]);},sony,writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:(v,id='pixel')=>offline=v?id:'',setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});if(receiver)await new Promise(r=>{receiver.close(r);receiver.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }

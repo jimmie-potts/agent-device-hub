@@ -1,4 +1,4 @@
-import React, {useEffect,useId,useRef,useState,useSyncExternalStore} from 'react';
+import React, {useEffect,useId,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot} from '../../../packages/contracts/src/types';
@@ -6,6 +6,8 @@ import {Api,ApiError,safeEditorUrl,playbackControls,playbackEvidence,playbackReq
 import {actionWording} from './lifecycle';
 import {age,nano,pixoo,title,listed,Badge,Facts,EditForm,TextField,Select,options,useCommandLifecycle,resetLifecycles,deviceControls,hasModeControl,undeclaredCapabilities,lightingNote,ModeCard,PowerCard,BrightnessCard,MediaCard,SceneCard,LightingCards,NanoAssignments,PixooMonitor,type Monitor,type Nano,type Pixoo,type Device,type Refresh,type DeviceControls} from './controls';
 import {parseRoute,routeHash,type Route} from './routes';
+import {NanoleafArt} from './art/NanoleafArt';
+import {geometryRead,type Geometry} from './art/nanoleaf';
 import {homeLayout,widgetDefinition,type WidgetSize} from './widgets';
 import './style.css';
 
@@ -41,6 +43,8 @@ const health=(d:DeviceControls)=><Badge warning={!!d.device.error}>{d.device.err
 function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:Refresh;now:number;sessions:SessionSnapshot[]}){
  const d=deviceControls(component,device,context,api,refresh);
  const {snapshot,integr,local}=d;
+ // The shared device art keeps its own selection; picking an element there also selects it in the Assignments panel.
+ const [pickedElement,setPickedElement]=useState<string>(),artSelection=useMemo(()=>pickedElement?[pickedElement]:[],[pickedElement]);
  const editor=safeEditorUrl(component.editorUrl);
  const elapsed=device.received?Math.max(0,now-device.received):0;
  const undeclared=snapshot?undeclaredCapabilities(snapshot):[];
@@ -56,6 +60,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  ...(component.kind==='lifx'?[['Lighting pending',device.lighting?`${device.lighting.lighting.pending.length} queued`:'Unknown']] as [string,React.ReactNode][]:[]),
  ...(local?[]:[['Integration outcomes',nano(integr)?integr.outcomes.length?integr.outcomes.map(r=>`${r.outcome}${r.failure?' · '+r.failure.code:''}`).join('; '):'None recorded':pixoo(integr)?integr.lastOutcome?`${integr.lastOutcome.status}${integr.lastOutcome.code?' · '+integr.lastOutcome.code:''}`:'None recorded':'Unknown'],['Integration pending',nano(integr)?`${integr.pending.length} commands; wall edits ${integr.wallPending?'pending':'none'}`:pixoo(integr)?integr.pendingMode??'None':'Unknown']] as [string,React.ReactNode][])
  ]}/></details>
+ {component.kind==='nanoleaf'&&<NanoleafArt title={component.id} read={device.geometry} snapshot={nano(integr)?integr:undefined} stale={!!device.error} selection={artSelection} onSelect={setPickedElement}/>}
  {component.kind==='tidbyt'&&<p className="hint">The local controller host publishes the agent status and now-playing tiles to this Tidbyt. They follow agent activity and what is playing; this view has nothing to change on the display.</p>}
  <p className="eyebrow general">CONTROLS</p>
  {cards&&<div className="cards"><ModeCard d={d}/><PowerCard d={d}/><BrightnessCard d={d}/><MediaCard d={d}/><SceneCard d={d}/>{component.kind==='lifx'&&<LightingCards d={d}/>}</div>}
@@ -65,7 +70,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  </>:<p className="hint">General controls unavailable: no controller snapshot.</p>}
  {note&&<p className="hint">{note}</p>}
  {!local&&!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
- {nano(integr)&&<NanoAssignments d={d} integration={integr}/>}
+ {nano(integr)&&<NanoAssignments d={d} integration={integr} picked={pickedElement} onPick={setPickedElement}/>}
  {pixoo(integr)&&<PixooMonitor d={d} integration={integr} sessions={sessions}/>}
  {!local&&<p className="hint">{editor?<a href={editor} target="_blank" rel="noopener noreferrer">Open advanced {component.kind==='pixoo'?'playlist':'wall'} editor ↗</a>:'Advanced editor unavailable: no validated link configured.'} Rendition selection is not part of this view. Exact previews are not available.</p>}
  </>;
@@ -159,7 +164,8 @@ function SessionsWidget({sessions,monitor,context,api,refresh,stale,elapsed,size
  {monitor&&context&&<div className="sessions">{sessions.map(s=><div key={key(s)} hidden={!filtered.includes(s)}><SessionRow session={s} monitor={monitor} context={context} api={api} refresh={refresh} stale={stale} elapsed={elapsed}/></div>)}</div>}
  </Widget>;
 }
-function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
+/** renew is offered only for a trusted-loopback session: one explicit click asks the hub for a new session after this one ended. */
+function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()=>void}){
  const [context,setContext]=useState<Context>(),[monitor,setMonitor]=useState<Monitor>(),[devices,setDevices]=useState<Record<string,Device>>({}),[error,setError]=useState(''),[feed,setFeed]=useState(false),[now,setNow]=useState(Date.now()),[received,setReceived]=useState(0);
  const route=useRoute();
  // One session's shared control state never shows in the next: disconnecting unmounts the dashboard and forgets it.
@@ -171,13 +177,16 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
   // Resolves with the device record after a read that started after this call, so a caller can build a command from authoritative guards.
   async function refreshDevice(c:Component):Promise<Device|undefined>{if(stop.signal.aborted)return latest.get(c.id);
    if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return new Promise<Device|undefined>(resolve=>{const waiting=deviceWaiters.get(c.id)??[];waiting.push(()=>resolve(latest.get(c.id)));deviceWaiters.set(c.id,waiting);});}
-   deviceBusy.add(c.id);
+   deviceBusy.add(c.id);let polled=false;
    // A LIFX read is one lighting snapshot; its controller part guards the general and lighting controls alike.
-   try {if(c.kind==='lifx'){const lighting=await api.request<Lighting>(`/api/controllers/v1/${c.id}/lighting/snapshot`,undefined,stop.signal);update(c.id,{snapshot:lighting.controller,lighting,error:undefined,received:Date.now()});}
+   try {if(c.kind==='lifx'){const lighting=await api.request<Lighting>(`/api/controllers/v1/${c.id}/lighting/snapshot`,undefined,stop.signal);update(c.id,{snapshot:lighting.controller,lighting,error:undefined,received:Date.now()});polled=true;}
     else {const snapshot=await api.request<Snapshot>(`/api/controllers/v1/${c.id}/snapshot`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
     if(['nanoleaf','pixoo'].includes(c.kind))integration=await api.request<Nano|Pixoo>(`/api/controllers/v1/${c.id}/integration/snapshot`,undefined,stop.signal);
-    update(c.id,{snapshot,integration,error:undefined,received:Date.now()});}
-   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}finally{deviceBusy.delete(c.id);if(deviceAgain.delete(c.id)&&!stop.signal.aborted)void refreshDevice(c);else{const waiting=deviceWaiters.get(c.id)??[];deviceWaiters.delete(c.id);waiting.forEach(resolve=>resolve());}}
+    update(c.id,{snapshot,integration,error:undefined,received:Date.now()});polled=true;}
+   }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}
+   // The device art draws from the geometry route (codex-nanoleaf#169). One read per session after a successful poll, through the same per-device queue; a device without a layout or an owner without the route is final, any other failure is retried after the next successful poll.
+   if(polled&&c.kind==='nanoleaf'&&!latest.get(c.id)?.geometry?.final&&!stop.signal.aborted){try{const geometry=await api.request<Geometry>(`/api/controllers/v1/${c.id}/integration/geometry`,undefined,stop.signal);update(c.id,{geometry:geometryRead({geometry})});}catch(e){update(c.id,{geometry:geometryRead(e instanceof ApiError?{error:e.code,status:e.status}:{error:'unavailable',status:0})});}}
+   deviceBusy.delete(c.id);if(deviceAgain.delete(c.id)&&!stop.signal.aborted)void refreshDevice(c);else{const waiting=deviceWaiters.get(c.id)??[];deviceWaiters.delete(c.id);waiting.forEach(resolve=>resolve());}
    return latest.get(c.id);
   }
   // Resolves after a read that started after this call, so a settled form starts again from current values.
@@ -195,7 +204,7 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  const components=context?.components??[],playback=context?.playback;
  const known=route.kind==='home'||route.kind==='connections'||(route.kind==='component'&&components.some(c=>c.id===route.id))||(route.kind==='playback'&&playback?.sourceId===route.sourceId);
  const view={context,control:context?{...context,control:context.control&&!error}:undefined};
- return <div className="shell"><a className="skip" href="#main" onClick={e=>{e.preventDefault();document.getElementById('main')?.focus();}}>Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><NavLink route={{kind:'home'}} current={route}>Home <span>{sessions.length}</span></NavLink><p className="nav-label">COMPONENTS</p>{components.map(c=><NavLink key={c.id} route={{kind:'component',id:c.id}} current={route}>{c.id}<small>{c.kind}</small></NavLink>)}{playback&&<><p className="nav-label">MUSIC</p><NavLink route={{kind:'playback',sourceId:playback.sourceId}} current={route}>{playback.sourceId}<small>now playing</small></NavLink></>}<NavLink route={{kind:'connections'}} current={route}>Connections</NavLink></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p><button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
+ return <div className="shell"><a className="skip" href="#main" onClick={e=>{e.preventDefault();document.getElementById('main')?.focus();}}>Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><NavLink route={{kind:'home'}} current={route}>Home <span>{sessions.length}</span></NavLink><p className="nav-label">COMPONENTS</p>{components.map(c=><NavLink key={c.id} route={{kind:'component',id:c.id}} current={route}>{c.id}<small>{c.kind}</small></NavLink>)}{playback&&<><p className="nav-label">MUSIC</p><NavLink route={{kind:'playback',sourceId:playback.sourceId}} current={route}>{playback.sourceId}<small>now playing</small></NavLink></>}<NavLink route={{kind:'connections'}} current={route}>Connections</NavLink></nav><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p>{renew&&error==='unauthenticated'&&<button onClick={renew}>Sign in again</button>}<button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
  {components.map(c=><section key={c.id} hidden={!(route.kind==='component'&&route.id===c.id)} aria-label={c.id}>{view.control&&<ComponentView component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/>}</section>)}
  {playback&&<section key={'playback:'+playback.sourceId} hidden={!(route.kind==='playback'&&route.sourceId===playback.sourceId)} aria-label="Now playing"><PlaybackView api={api} sourceId={playback.sourceId} control={!!context?.control&&!error} now={now}/></section>}
  <section hidden={route.kind!=='home'} aria-label="Home"><header className="page"><h1>Home</h1><Facts className="strip stats" items={[['Active sessions',sessions.filter(s=>s.activity==='active').length],['Attention signals',sessions.reduce((n,s)=>n+s.attention.length,0)],['Components',components.length],['Collector health',monitor?.snapshot.collector??'Unknown']]}/></header>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}
@@ -211,20 +220,44 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
  {context&&!known&&<section aria-label="Not found"><div className="empty"><h2>{route.kind==='component'?`No component named ${route.id}`:'Nothing at this address'}</h2><p>Only registered components and the built-in pages have addresses. <NavLink route={{kind:'home'}}>Go to the home</NavLink>.</p></div></section>}
  <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer></main></div>;
 }
+const bearer=(value:unknown)=>value&&typeof value==='object'&&'token' in value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{43}$/.test(value.token)?value.token:undefined;
 function App(){
  const [api,setApi]=useState<Api>(),[token,setToken]=useState(''),[launching,setLaunching]=useState(false),[launchError,setLaunchError]=useState(false);
+ // trusted: the hub signed this page in without a code (Hub #276). The bearer stays in page memory; nothing is stored.
+ const [trusted,setTrusted]=useState(false),[signInError,setSignInError]=useState(false),signing=useRef(false);
+ // Disconnect and a manual Connect supersede a sign-in still in flight, so its late answer never overrides the user's last action.
+ const attempt=useRef(0);
+ /** Asks the hub for a trusted-loopback session. A 404 means the option is off, so the login page shows as before. Only a page load or an explicit click calls this. */
+ async function signIn(){
+  if(signing.current)return;signing.current=true;const mine=++attempt.current;setLaunching(true);setSignInError(false);
+  try{
+   const response=await fetch('/api/dashboard/v1/session',{method:'POST',cache:'no-store',redirect:'error',headers:{'content-type':'application/json','x-pixoo-request':'1'},body:'{}'});
+   if(mine!==attempt.current)return;
+   if(response.status===404){setTrusted(false);setApi(undefined);return;}
+   const value=response.ok?bearer(await response.json()):undefined;if(mine!==attempt.current)return;if(!value)throw new Error('sign-in-failed');
+   setTrusted(true);setApi(new Api(value));
+  }catch{if(mine===attempt.current){setApi(undefined);setSignInError(true);}}finally{signing.current=false;setLaunching(false);}
+ }
+ // A page address (`#/...`) is a route, not a launch code: a bookmarked page signs in like an empty hash and keeps its address. Only a `#launch=` fragment is exchanged.
  useEffect(()=>{
-  if(!location.hash||location.hash.startsWith('#/'))return;
+  if(!location.hash||location.hash.startsWith('#/')){void signIn();return;}
   const fragment=new URLSearchParams(location.hash.slice(1));
   history.replaceState(null,'',location.pathname+location.search);
   const code=fragment.get('launch');
   if(fragment.size!==1||!code||!/^[A-Za-z0-9_-]{43}$/.test(code)){setLaunchError(true);return;}
   setLaunching(true);
   void fetch('/api/dashboard/v1/launch',{method:'POST',cache:'no-store',redirect:'error',headers:{'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify({code})})
-   .then(async response=>{if(!response.ok)throw new Error('launch-failed');const value:unknown=await response.json();if(!value||typeof value!=='object'||!('token' in value)||typeof value.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.token))throw new Error('launch-failed');setApi(new Api(value.token));})
+   .then(async response=>{if(!response.ok)throw new Error('launch-failed');const value=bearer(await response.json());if(!value)throw new Error('launch-failed');setApi(new Api(value));})
    .catch(()=>setLaunchError(true)).finally(()=>setLaunching(false));
  },[]);
- const disconnect=()=>{if(api)void api.request('/api/dashboard/v1/logout',{}).catch(()=>{});setApi(undefined);setToken('');};
- return api?<Dashboard api={api} disconnect={disconnect}/>:<main className="login"><p className="eyebrow">B.U.N.N.Y. / LOCAL INTEGRATION</p><h1>{launching?'Connecting to the local Hub…':'Open B.U.N.N.Y. with the Hub launcher.'}</h1>{launchError&&<p role="alert">That launch expired or failed. Run the launcher again.</p>}<details><summary>Use a separately provisioned access token</summary><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">The launcher connects automatically; after a reload, run it again. Never use a native controller token. Browser access stays in page memory and clears on disconnect or reload.</p></details></main>;
+ // A trusted page ends its session as it unloads, so reloads never pile up against the session limit. A page restored from the back-forward cache signs in again.
+ useEffect(()=>{
+  if(!api||!trusted)return;
+  const hide=()=>api.release(),show=(event:PageTransitionEvent)=>{if(event.persisted)void signIn();};
+  addEventListener('pagehide',hide);addEventListener('pageshow',show);
+  return ()=>{removeEventListener('pagehide',hide);removeEventListener('pageshow',show);};
+ },[api,trusted]);
+ const disconnect=()=>{attempt.current++;if(api)void api.request('/api/dashboard/v1/logout',{}).catch(()=>{});setApi(undefined);setToken('');};
+ return api?<Dashboard api={api} disconnect={disconnect} renew={trusted?()=>void signIn():undefined}/>:<main className="login"><p className="eyebrow">B.U.N.N.Y. / LOCAL INTEGRATION</p><h1>{launching?'Connecting to the local Hub…':trusted?'You’re signed out.':'Open B.U.N.N.Y. with the Hub launcher.'}</h1>{trusted&&!launching&&<button onClick={()=>void signIn()}>Sign in</button>}{signInError&&<p role="alert">B.U.N.N.Y. couldn’t sign you in. Reload to try again, or use the launcher.</p>}{launchError&&<p role="alert">That launch expired or failed. Run the launcher again.</p>}{!trusted&&<p className="hint">The launcher opens this page and connects automatically. After a reload, run it again.</p>}<details><summary>Use a separately provisioned access token</summary><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){attempt.current++;setTrusted(false);setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">Never use a native controller token. Browser access stays in page memory and clears on disconnect or reload.</p></details></main>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

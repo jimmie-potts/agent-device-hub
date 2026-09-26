@@ -82,7 +82,7 @@ second skin follows [guide section 4.4](../../docs/application-ui-style-guide.md
 Use Node 24 at the repository root. `npm ci` and `npm run build` produce the fixed
 HTML, JavaScript and CSS assets in `apps/hub/public`. `npm run package:hub` includes
 these assets in the reproducible offline-installable host archive. The configured
-hub serves them at its numeric-loopback origin. There is no separate frontend
+hub serves them at its loopback origin, `127.0.0.1` or `localhost`. There is no separate frontend
 server or CORS grant.
 
 The dashboard can command only the devices registered in the hub's `controllers`
@@ -96,6 +96,15 @@ URL fragment, removes the fragment before exchange, and returns a memory-only
 browser session with read/control on configured aliases. Reload requires another
 launcher invocation. A direct URL still shows the manual-token option. See
 [the Hub launcher procedure](../hub/README.md#open-bunny-without-typing-a-token).
+
+When the hub's configuration sets `browserAccess` to `trusted-loopback`, a direct
+visit or bookmark signs in on load instead, with the same session and no stored
+token. A reload or second tab signs in again, and a page logs its session out
+as it unloads. After Disconnect the page shows **Sign in**; after an eviction or
+expiry the sidebar shows **Sign in again**. Neither signs in on its own. If the
+request fails, the page shows an alert with the launcher and token options.
+Without the setting the hub answers 404 and the login page is unchanged. See
+[Open B.U.N.N.Y. from a bookmark](../hub/README.md#open-bunny-from-a-bookmark).
 
 For manual access, provision a dedicated hub browser credential with `read`,
 optional `control`, and only the intended registered device aliases. Give the
@@ -167,6 +176,46 @@ power, brightness and scene controls
 include monitor filters and cadence. Advanced editors remain links. The UI never
 translates these into a global mode or exposes raw commands.
 
+## Device art
+
+[Hub #355](https://github.com/jimmie-potts/agent-device-hub/issues/355) adds
+the first hub-owned shared device art under
+[ADR 0007](../../docs/decisions/0007-bunny-shell.md): the Nanoleaf component
+pages draw the wall above the device facts with the wall map's Prism crystal
+material, ported into [`src/art/`](src/art/README.md) with its provenance. The
+Lines are crystal tubes between hexagonal connectors and the NL22 Panels are
+triangles in the same material. The component sends nothing and opens no device
+state; it keeps its own animation clock and selection state, and every animation
+derives from its inputs, never from device frames.
+
+The page reads each Nanoleaf component's saved layout once from
+`GET /api/controllers/v1/<alias>/integration/geometry`
+([codex-nanoleaf#169](https://github.com/jimmie-potts/codex-nanoleaf/issues/169))
+through the same per-device queue as the 5-second poll, after the component's
+first successful poll, and again after the next successful poll only when that
+read failed. A device without a saved layout or an owner that predates the
+route answers once for the session and the page draws a schematic strip, one
+cell per element, that says why; so does a layout the hub accepts but the
+renderer cannot draw, naming the rule it broke. Reload the page after changing
+the layout in the wall editor.
+
+The `nanoleaf.integration/1.0` snapshot supplies mode, project colors, element
+reservations and pending wall edits. Colors follow the wall map: the status
+color on both zones, and in the project layout style the signature zone takes
+the reservation's project color. The snapshot carries neither which Line shows
+which task nor that task's status, so the page passes no status or activity, no
+Line pulses, and the caption says that no task is shown. The component takes
+both as inputs for consumers that have a source; `tests/art.mjs` drives them in
+a harness. A stale or unavailable snapshot keeps the last art with a stale mark
+rather than an empty device. Selecting an element in the art also selects it in
+the element mapping form; nothing is sent. Reduced motion skips the opening
+assembly and stops the flow while Work, Quiet and Free stay distinguishable.
+The wall status tokens `--wall-*` and `--chip-*` now live in the application
+skin as fixed-meaning tokens. Locate, reservations and other controls on the
+art stay on the wall map until their integration operations exist; measured
+number placement stays there too, so numerals show on hover, focus and
+selection only.
+
 ## Now playing
 
 [Hub #37](https://github.com/jimmie-potts/agent-device-hub/issues/37) adds a
@@ -183,10 +232,11 @@ and no source selection.
 `playbackControls` in `src/client.ts` decides the buttons. They are the actions
 the snapshot declares now, and they appear only for a control-scoped caller
 while the source is available. Otherwise the view names the one reason, then
-lists the actions the source does not offer, such as Play until
-[#242](https://github.com/jimmie-potts/agent-device-hub/issues/242). While
-paused, the Sony source offers Next and Previous, and the view warns that the
-receiver may keep the old title until playback resumes. Each press runs the
+lists the actions the source does not offer, such as Play on the Sony
+([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)). While
+paused, the Sony source offers Next and Previous, the Sonos source also offers
+Play, and the view warns that the receiver may keep the old title until playback
+resumes. Each press runs the
 shared command lifecycle. `playbackRequest` builds the command from a fresh
 read, bound to the displayed source ID with a new request ID, or sends nothing
 and names why. `playbackEvidence` maps the hub receipt: `sent` is accepted, a
@@ -383,5 +433,15 @@ Hub tests additionally check protected context, native credential exclusion,
 static-asset protections, invalid links, packaged installation and that general
 commands are validated and scoped before any controller request. Source/browser
 checks do not establish installed-client or physical acceptance.
+`tests/art.mjs` (Hub #355) draws the Lines from a 15-Line, 12-connector fake
+layout with reservation colors, labels, keyboard selection and one geometry read
+per session, keeps the art marked stale while the controller is offline, draws
+the Panels from an 18-triangle fake, draws the schematic strip for a device
+without a saved layout, for an owner that predates the route and for a layout
+the renderer rejects, retries a failed geometry read after the next poll, runs
+axe at 1280 px and 390 px, and drives status, activity, mode, stale, the
+opening assembly and reduced motion through a component harness. `tests/art.test.mjs` covers the adapter and the
+ported layout validator. The candidate needs the owner's side-by-side approval
+against the wall map on the same fixture before merge.
 
 The activity view requests snapshot 1.1 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.

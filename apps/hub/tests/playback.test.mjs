@@ -8,21 +8,22 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createPlayback} from '../dist/playback.js';
 import {createSonySource,sonyConfiguration} from '../dist/sony.js';
+import {createSonosSource,sonosConfiguration} from '../dist/sonos.js';
 import {startHub} from '../dist/server.js';
 import {requestBrowserLaunch} from '../dist/browser-launch.js';
 
-const principal={id:'phone',devices:['kitchen']};
+const principal={id:'phone',devices:['kitchen','music']};
 const playing={status:'playing',title:'Song',artist:'Artist',controls:['pause','next']};
 
-// A source written without any Sony code, to show the shared module needs only the interface.
-function fakeSource(id='kitchen'){
+// A source written without any Sony code, to show the shared module needs only the interface. It has no ID: the playback ID belongs to the shared module.
+function fakeSource(){
   const sent=[];let report;
-  return {id,sent,report:value=>report(value),start(callback){report=callback;},async command(action){sent.push(action);return 'sent';},closed:false,async close(){this.closed=true;}};
+  return {sent,report:value=>report(value),start(callback){report=callback;},async command(action){sent.push(action);return 'sent';},closed:false,async close(){this.closed=true;}};
 }
 
 test('a non-Sony source uses the shared playback interface unchanged',async()=>{
   const source=fakeSource();let clock=1000;
-  const playback=createPlayback(source,()=>clock);
+  const playback=createPlayback('kitchen',[source],()=>clock);
   assert.deepEqual(playback.snapshot(),{apiVersion:'1.0',sourceId:'kitchen',availability:'unavailable',observedAtMs:null,ageMs:null,playback:null});
   source.report(playing);clock+=250;
   assert.deepEqual(playback.snapshot(),{apiVersion:'1.0',sourceId:'kitchen',availability:'available',observedAtMs:1000,ageMs:250,playback:playing});
@@ -57,8 +58,8 @@ async function fakeSony(){
 }
 async function sonyFixture(options={}){
   const sony=await fakeSony();let clock=1000;
-  const source=createSonySource({id:'living-room',kind:'sony',endpoint:sony.endpoint},{pollMs:60000,timeoutMs:200,...options});
-  const playback=createPlayback(source,()=>clock);await source.refresh();
+  const source=createSonySource({kind:'sony',endpoint:sony.endpoint},{pollMs:60000,timeoutMs:200,...options});
+  const playback=createPlayback('living-room',[source],()=>clock);await source.refresh();
   return {sony,source,playback,advance:ms=>{clock+=ms;},view:()=>playback.snapshot().playback,
     close:async()=>{await playback.close();await sony.close();}};
 }
@@ -82,8 +83,8 @@ test('Sony AirPlay observations normalize metadata, status and controls',async()
 test('only successful Sony reads refresh freshness, which ages through stale to unavailable',async()=>{
   const sony=await fakeSony();let clock=1000;
   sony.set(()=>({error:[7,'Illegal State']}));
-  const source=createSonySource({id:'living-room',kind:'sony',endpoint:sony.endpoint},{pollMs:60000,timeoutMs:200});
-  const playback=createPlayback(source,()=>clock);
+  const source=createSonySource({kind:'sony',endpoint:sony.endpoint},{pollMs:60000,timeoutMs:200});
+  const playback=createPlayback('living-room',[source],()=>clock);
   try{
     await source.refresh();
     assert.deepEqual(playback.snapshot(),{apiVersion:'1.0',sourceId:'living-room',availability:'unavailable',observedAtMs:null,ageMs:null,playback:null});
@@ -107,8 +108,8 @@ test('only successful Sony reads refresh freshness, which ages through stale to 
 test('Sony reads poll on a timer without overlapping',async()=>{
   const sony=await fakeSony();
   sony.set(async()=>{await delay(60);return playingInfo([airplay()]);});
-  const source=createSonySource({id:'living-room',kind:'sony',endpoint:sony.endpoint},{pollMs:20,timeoutMs:200});
-  const playback=createPlayback(source,Date.now);
+  const source=createSonySource({kind:'sony',endpoint:sony.endpoint},{pollMs:20,timeoutMs:200});
+  const playback=createPlayback('living-room',[source],Date.now);
   try{
     await Promise.all([source.refresh(),source.refresh()]);
     await delay(250);
@@ -119,6 +120,199 @@ test('Sony reads poll on a timer without overlapping',async()=>{
   const calls=sony.calls.length;await delay(80);assert.equal(sony.calls.length,calls,'closing stops polling');
 });
 
+
+const DIDL=({title='Move Song',artist='Move Artist',album='Move Album'}={})=>`<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="-1" parentID="-1" restricted="true"><res protocolInfo="x-sonos-vli:*:*:*">x-sonos-vli:RINCON_000E58FFFFFF01400:2,airplay:1</res><r:streamContent></r:streamContent><upnp:albumArtURI>http://127.0.0.1:1400/getaa?s=1&amp;u=x</upnp:albumArtURI>${title===null?'':`<dc:title>${title}</dc:title>`}<upnp:class>object.item.audioItem.musicTrack</upnp:class>${artist===null?'':`<dc:creator>${artist}</dc:creator>`}${album===null?'':`<upnp:album>${album}</upnp:album>`}</item></DIDL-Lite>`;
+const escapeXml=value=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const envelope=inner=>`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>${inner}</s:Body></s:Envelope>`;
+const soapFault=code=>envelope(`<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0"><errorCode>${code}</errorCode></UPnPError></detail></s:Fault>`);
+
+// Answers UPnP AVTransport SOAP like the Sonos Move. `state` drives the default replies; `set` overrides them with a body, {status, body}, 'hang' or 'drop'.
+async function fakeSonos(){
+  const calls=[],sockets=new Set();let reply,active=0,peak=0;
+  const state={transport:'PLAYING',uri:'x-sonos-vli:RINCON_000E58FFFFFF01400:2,airplay:1',metadata:DIDL(),actions:'Set, Stop, Pause, Play, Next, Previous',duration:'0:03:41',rel:'0:01:03'};
+  const responses={
+    GetTransportInfo:()=>`<u:GetTransportInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><CurrentTransportState>${state.transport}</CurrentTransportState><CurrentTransportStatus>OK</CurrentTransportStatus><CurrentSpeed>1</CurrentSpeed></u:GetTransportInfoResponse>`,
+    GetPositionInfo:()=>`<u:GetPositionInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><Track>1</Track><TrackDuration>${state.duration}</TrackDuration><TrackMetaData>${escapeXml(state.metadata)}</TrackMetaData><TrackURI>${escapeXml(state.uri)}</TrackURI><RelTime>${state.rel}</RelTime><AbsTime>NOT_IMPLEMENTED</AbsTime><RelCount>2147483647</RelCount><AbsCount>2147483647</AbsCount></u:GetPositionInfoResponse>`,
+    GetCurrentTransportActions:()=>`<u:GetCurrentTransportActionsResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><Actions>${state.actions}</Actions></u:GetCurrentTransportActionsResponse>`};
+  const server=createServer(async(req,res)=>{
+    let text='';for await(const chunk of req)text+=chunk;
+    const action=/^"urn:schemas-upnp-org:service:AVTransport:1#(\w+)"$/.exec(req.headers.soapaction??'')?.[1];
+    const call={path:req.url,action,soapaction:req.headers.soapaction,contentType:req.headers['content-type'],body:text};calls.push(call);active++;peak=Math.max(peak,active);
+    try{
+      const value=reply?await reply(call):undefined;
+      if(value==='hang')return;
+      if(value==='drop'){req.socket.destroy();return;}
+      if(value!==undefined){const {status=200,body}=typeof value==='string'?{body:value}:value;res.writeHead(status,{'content-type':'text/xml; charset="utf-8"'});res.end(body);return;}
+      if(!action||req.url!=='/MediaRenderer/AVTransport/Control'){res.writeHead(500,{'content-type':'text/xml; charset="utf-8"'});res.end(soapFault(401));return;}
+      const inner=responses[action]?.()??`<u:${action}Response xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"></u:${action}Response>`;
+      res.writeHead(200,{'content-type':'text/xml; charset="utf-8"'});res.end(envelope(inner));
+    }finally{active--;}
+  });
+  server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  return {endpoint:`http://127.0.0.1:${server.address().port}/MediaRenderer/AVTransport/Control`,calls,state,peak:()=>peak,set(next){reply=next;},
+    close:()=>new Promise(resolve=>{for(const socket of sockets)socket.destroy();server.close(resolve);})};
+}
+async function sonosFixture(options={}){
+  const sonos=await fakeSonos();let clock=1000;
+  const source=createSonosSource({kind:'sonos',endpoint:sonos.endpoint},{pollMs:60000,timeoutMs:200,...options});
+  const playback=createPlayback('music',[source],()=>clock);await source.refresh();
+  return {sonos,source,playback,advance:ms=>{clock+=ms;},view:()=>playback.snapshot().playback,
+    close:async()=>{await playback.close();await sonos.close();}};
+}
+const sonosCommands=sonos=>sonos.calls.filter(call=>!call.action?.startsWith('Get'));
+
+test('Sonos AirPlay observations normalize metadata, status, session and controls',async()=>{
+  const {sonos,source,view,close}=await sonosFixture();
+  try{
+    assert.deepEqual(view(),{status:'playing',title:'Move Song',artist:'Move Artist',album:'Move Album',controls:['pause','next','previous']});
+    assert.deepEqual(sonos.calls.map(call=>call.action),['GetTransportInfo','GetPositionInfo','GetCurrentTransportActions'],'one read is three sequential calls');
+    for(const call of sonos.calls){
+      assert.equal(call.path,'/MediaRenderer/AVTransport/Control');
+      assert.equal(call.soapaction,`"urn:schemas-upnp-org:service:AVTransport:1#${call.action}"`);
+      assert.match(call.contentType,/^text\/xml; charset="utf-8"$/);
+      assert.ok(call.body.includes(`<u:${call.action} xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID></u:${call.action}>`),call.body);
+    }
+    sonos.state.transport='PAUSED_PLAYBACK';sonos.state.metadata=DIDL({title:'  Song &amp; Co  ',album:null});await source.refresh();
+    assert.deepEqual(view(),{status:'paused',title:'Song & Co',artist:'Move Artist',controls:['play','next','previous']},'entities are decoded once per layer and a missing album stays absent');
+    sonos.state.actions='Set, Stop, Pause, Next, Previous';await source.refresh();
+    assert.deepEqual(view().controls,['next','previous'],'a control is declared only while the Move advertises its action');
+    sonos.state.actions='Set, Stop, Pause, Play';await source.refresh();
+    assert.deepEqual(view().controls,['play']);
+    sonos.state.transport='PLAYING';await source.refresh();
+    assert.deepEqual(view().controls,['pause'],'next and previous follow the advertised actions while playing too');
+    sonos.state.actions='Set, Stop, Pause, Play, Next, Previous';
+    sonos.state.transport='STOPPED';await source.refresh();
+    assert.deepEqual(view(),{status:'stopped',title:'Song & Co',artist:'Move Artist',controls:[]});
+    sonos.state.transport='TRANSITIONING';await source.refresh();
+    assert.deepEqual(view().status,'unknown');assert.deepEqual(view().controls,[]);
+    sonos.state.transport='PLAYING';sonos.state.metadata=DIDL({title:'x'.repeat(300),artist:'',album:'Album'});await source.refresh();
+    assert.deepEqual(view(),{status:'playing',title:'x'.repeat(256),album:'Album',controls:['pause','next','previous']},'text is limited to 256 characters and empty text is absent');
+    sonos.state.metadata='NOT_IMPLEMENTED';await source.refresh();
+    assert.deepEqual(view(),{status:'playing',controls:['pause','next','previous']});
+    sonos.state.metadata=DIDL();sonos.state.uri='x-rincon-queue:RINCON_000E58FFFFFF01400#0';await source.refresh();
+    assert.deepEqual(view(),{status:'inactive',controls:[]},'a track that is not the AirPlay session is another input');
+    sonos.state.uri='';await source.refresh();
+    assert.deepEqual(view(),{status:'inactive',controls:[]});
+    assert.ok(!JSON.stringify(view()).includes('getaa')&&!JSON.stringify(view()).includes('0:03'),'no artwork URL, position or duration');
+  }finally{await close();}
+});
+
+test('only complete Sonos reads refresh freshness',async()=>{
+  const sonos=await fakeSonos();let clock=1000;
+  sonos.set(()=>({status:500,body:soapFault(701)}));
+  const source=createSonosSource({kind:'sonos',endpoint:sonos.endpoint},{pollMs:60000,timeoutMs:200});
+  const playback=createPlayback('music',[source],()=>clock);
+  try{
+    await source.refresh();
+    assert.deepEqual(playback.snapshot(),{apiVersion:'1.0',sourceId:'music',availability:'unavailable',observedAtMs:null,ageMs:null,playback:null});
+    sonos.set(undefined);await source.refresh();
+    assert.deepEqual([playback.snapshot().availability,playback.snapshot().observedAtMs],['available',1000]);
+    const failures=[()=>({status:500,body:soapFault(701)}),()=>({status:404,body:'missing'}),()=>'not xml at all',()=>envelope('<u:GetTransportInfoResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"></u:GetTransportInfoResponse>'),
+      call=>call.action==='GetCurrentTransportActions'?'hang':undefined,call=>call.action==='GetPositionInfo'?'drop':undefined,()=>({status:200,body:'<'.repeat(70000)})];
+    for(const failure of failures){sonos.set(failure);clock+=100;await source.refresh();}
+    assert.equal(playback.snapshot().observedAtMs,1000,'a read with any failed call reports nothing');
+    sonos.set(undefined);await source.refresh();
+    assert.equal(playback.snapshot().observedAtMs,1700,'the next complete read recovers');
+  }finally{await playback.close();await sonos.close();}
+});
+
+test('Sonos reads poll on a timer without overlapping',async()=>{
+  const sonos=await fakeSonos();
+  sonos.set(async()=>{await delay(20);return undefined;});
+  const source=createSonosSource({kind:'sonos',endpoint:sonos.endpoint},{pollMs:20,timeoutMs:200});
+  const playback=createPlayback('music',[source],Date.now);
+  try{
+    await Promise.all([source.refresh(),source.refresh()]);
+    await delay(300);
+    assert.ok(sonos.calls.length>=6,'the timer keeps polling');
+    assert.equal(sonos.peak(),1,'calls never overlap');
+    assert.equal(playback.snapshot().availability,'available');
+  }finally{await playback.close();await sonos.close();}
+  const calls=sonos.calls.length;await delay(80);assert.equal(sonos.calls.length,calls,'closing stops polling');
+});
+
+test('Sonos commands post one SOAP action and report sent, failed or uncertain',async()=>{
+  const {sonos,source,playback,close}=await sonosFixture();
+  const music={id:'phone',devices:['music']};
+  try{
+    sonos.state.transport='PAUSED_PLAYBACK';await source.refresh();
+    const play=await playback.command({requestId:'r1',sourceId:'music',action:'play'},music);
+    assert.deepEqual(play,{status:200,body:{requestId:'r1',sourceId:'music',action:'play',outcome:'sent'}});
+    assert.equal(sonosCommands(sonos).length,1);
+    assert.ok(sonosCommands(sonos)[0].body.includes('<u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"><InstanceID>0</InstanceID><Speed>1</Speed></u:Play>'),'Play carries speed 1');
+    sonos.set(call=>call.action==='Next'?{status:500,body:soapFault(701)}:undefined);
+    const failed=await playback.command({requestId:'r2',sourceId:'music',action:'next'},music);
+    assert.deepEqual([failed.status,failed.body.outcome],[502,'failed']);
+    sonos.set(call=>call.action==='Previous'?'hang':undefined);
+    const uncertain=await playback.command({requestId:'r3',sourceId:'music',action:'previous'},music);
+    assert.deepEqual([uncertain.status,uncertain.body.outcome],[503,'uncertain']);
+    sonos.set(call=>call.action==='Previous'?{status:500,body:'<broken'}:undefined);
+    const malformed=await playback.command({requestId:'r4',sourceId:'music',action:'previous'},music);
+    assert.deepEqual([malformed.status,malformed.body.outcome],[503,'uncertain'],'a 500 without a SOAP fault is uncertain');
+    sonos.set(undefined);sonos.state.transport='PLAYING';await source.refresh();
+    const pause=await playback.command({requestId:'r5',sourceId:'music',action:'pause'},music);
+    assert.equal(pause.body.outcome,'sent');
+    assert.deepEqual(sonosCommands(sonos).map(call=>call.action),['Play','Next','Previous','Previous','Pause']);
+    assert.ok(sonosCommands(sonos).every(call=>!call.body.includes('<Speed>')||call.action==='Play'));
+  }finally{await close();}
+});
+
+test('the presented source follows session, freshness and configured order under one playback ID',async()=>{
+  const move=fakeSource(),sony=fakeSource();let clock=1000;
+  const playback=createPlayback('music',[move,sony],()=>clock);
+  const view=()=>playback.snapshot(),send=(requestId,action)=>playback.command({requestId,sourceId:'music',action},principal);
+  const inactive={status:'inactive',controls:[]},stopped={status:'stopped',controls:[]};
+  const sonyPlaying={status:'playing',title:'Sony song',controls:['pause','next','previous']};
+  const movePlaying={status:'playing',title:'Move song',controls:['pause','next','previous']},movePaused={...movePlaying,status:'paused',controls:['play','next','previous']};
+  assert.deepEqual(view(),{apiVersion:'1.0',sourceId:'music',availability:'unavailable',observedAtMs:null,ageMs:null,playback:null});
+  sony.report(sonyPlaying);
+  assert.deepEqual([view().availability,view().playback.title],['available','Sony song'],'an unobserved first source does not hide the second');
+  move.report(inactive);
+  assert.equal(view().playback.title,'Sony song','Sony alone: the Move answers inactive');
+  await send('r1','next');
+  assert.deepEqual([move.sent,sony.sent],[[],['next']]);
+  move.report(movePlaying);
+  assert.equal(view().playback.title,'Move song','grouped: both play and the Move is configured first');
+  await send('r2','pause');
+  assert.deepEqual([move.sent,sony.sent],[['pause'],['next']]);
+  sony.report(inactive);move.report(movePaused);
+  assert.deepEqual(view().playback.controls,['play','next','previous']);
+  await send('r3','play');
+  assert.deepEqual([move.sent,sony.sent],[['pause','play'],['next']],'play goes to the Move only');
+  move.report(movePlaying);clock+=5000;sony.report(inactive);
+  assert.deepEqual([view().availability,view().playback.title,view().observedAtMs,view().ageMs],['stale','Move song',1000,5000],'a Move that stops answering stays presented as stale');
+  await assert.rejects(send('r4','pause'),{code:'source-unavailable',status:503});
+  clock+=24999;sony.report(inactive);
+  assert.equal(view().availability,'stale');
+  clock+=1;sony.report(inactive);
+  assert.deepEqual([view().availability,view().playback,view().observedAtMs],['available',inactive,31000],'after 30 seconds the Sony is presented');
+  move.report(stopped);sony.report(sonyPlaying);
+  assert.equal(view().playback.title,'Sony song','a stopped Move does not outrank a playing Sony');
+  move.report({status:'unknown',controls:[]});
+  assert.equal(view().playback.title,'Sony song','an unrecognized state is not a session');
+  move.report(inactive);sony.report(stopped);
+  assert.equal(view().playback.status,'inactive','nothing playing: ties go to configured order');
+  clock+=6000;sony.report(stopped);
+  assert.deepEqual([view().availability,view().playback.status],['available','stopped'],'nothing playing: the fresher source is presented');
+  move.report(movePaused);sony.report(sonyPlaying);
+  assert.deepEqual(view().playback.controls,['play','next','previous']);
+  move.report(inactive);
+  await assert.rejects(send('r5','play'),{code:'unsupported-control',status:422});
+  assert.deepEqual([move.sent,sony.sent],[['pause','play'],['next']],'a command checked after the presented source changed is not redirected');
+  await assert.rejects(playback.command({requestId:'r6',sourceId:'kitchen',action:'next'},principal),{code:'unknown-source',status:404});
+  await assert.rejects(playback.command({requestId:'r7',sourceId:'sony',action:'next'},{id:'phone',devices:['sony','music']}),{code:'unknown-source',status:404});
+  assert.deepEqual([move.sent,sony.sent],[['pause','play'],['next']]);
+  await playback.close();assert.deepEqual([move.closed,sony.closed],[true,true]);
+});
+
+test('closing playback closes every source and reports the first failure afterwards',async()=>{
+  const good=fakeSource(),bad={...fakeSource(),async close(){throw new Error('close-failed');}};
+  const playback=createPlayback('music',[bad,good],()=>1000);
+  await assert.rejects(playback.close(),/close-failed/);
+  assert.equal(good.closed,true);
+});
+
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const tokens={controller:'a'.repeat(43),reader:'b'.repeat(43),other:'c'.repeat(43)};
 const credentials=[{id:'controller',digest:hash(tokens.controller),scopes:['read','control'],devices:['living-room','kitchen']},
@@ -126,17 +320,18 @@ const credentials=[{id:'controller',digest:hash(tokens.controller),scopes:['read
   {id:'other',digest:hash(tokens.other),scopes:['read','control'],devices:[]}];
 const commandCalls=sony=>sony.calls.filter(call=>call.method!=='getPlayingContentInfo');
 
-async function hubFixture(migration){
-  const sony=await fakeSony(),directory=await mkdtemp(join(tmpdir(),'hub-playback-'));let clock=Date.now();
+async function hubFixture(migration,{withSonos=false}={}){
+  const sony=await fakeSony(),sonos=withSonos?await fakeSonos():undefined,directory=await mkdtemp(join(tmpdir(),'hub-playback-'));let clock=Date.now();
+  if(sonos)sonos.state.uri='x-rincon-queue:RINCON_000E58FFFFFF01400#0';
   const hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:[],clock:()=>clock,
-    playback:{selected:'living-room',sources:[{id:'living-room',kind:'sony',endpoint:sony.endpoint}]}},migration);
+    playback:{id:'living-room',sources:[...(sonos?[{kind:'sonos',endpoint:sonos.endpoint}]:[]),{kind:'sony',endpoint:sony.endpoint}]}},migration);
   const call=(path,body,{token=tokens.controller,headers={}}={})=>fetch(hub.url+path,{method:body===undefined?'GET':'POST',
     headers:{authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1',...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const snapshot=async()=>(await call('/api/playback/v1/snapshot')).json();
   const until=async predicate=>{for(let i=0;i<120;i++){if(predicate(await snapshot()))return;await delay(50);}throw new Error('timed out');};
   const command=(requestId,action,options)=>call('/api/playback/v1/commands',{requestId,sourceId:'living-room',action},options);
-  return {sony,hub,directory,call,snapshot,until,command,advance:ms=>{clock+=ms;},
-    close:async()=>{await hub.close();await sony.close();await rm(directory,{recursive:true,force:true});}};
+  return {sony,sonos,hub,directory,call,snapshot,until,command,advance:ms=>{clock+=ms;},
+    close:async()=>{await hub.close();await sony.close();await sonos?.close();await rm(directory,{recursive:true,force:true});}};
 }
 
 test('playback routes require authentication, scope and the source grant',async()=>{
@@ -204,6 +399,31 @@ test('a launcher browser session reads and commands the configured playback sour
   }finally{await close();}
 });
 
+
+test('a hub with both sources serves and commands the presented one under the configured ID',async()=>{
+  const {sony,sonos,call,snapshot,until,command,close}=await hubFixture(undefined,{withSonos:true});
+  try{
+    await until(value=>value.availability==='available'&&value.playback?.title==='Song');
+    assert.deepEqual((await snapshot()).playback.controls,['pause','next','previous'],'the Sony is presented while the Move reports another input');
+    sonos.state.uri='x-sonos-vli:RINCON_000E58FFFFFF01400:2,airplay:1';sonos.state.transport='PAUSED_PLAYBACK';
+    await until(value=>value.playback?.title==='Move Song');
+    const view=await snapshot();
+    assert.deepEqual([view.sourceId,view.playback.status,view.playback.controls],['living-room','paused',['play','next','previous']]);
+    assert.ok(!JSON.stringify(view).includes('127.0.0.1')&&!JSON.stringify(view).includes('sonos'),'no address and no source name');
+    const play=await command('r1','play');
+    assert.deepEqual([play.status,await play.json()],[200,{requestId:'r1',sourceId:'living-room',action:'play',outcome:'sent'}]);
+    assert.deepEqual(sonosCommands(sonos).map(item=>item.action),['Play']);
+    assert.deepEqual(commandCalls(sony),[],'the Sony receives nothing while the Move is presented');
+    for(const [sourceId,status] of [['kitchen',404],['sonos',403],['sony',403]]){
+      const other=await call('/api/playback/v1/commands',{requestId:'r-'+sourceId,sourceId,action:'pause'});
+      assert.equal(other.status,status,sourceId);
+    }
+    assert.deepEqual(sonosCommands(sonos).map(item=>item.action),['Play']);
+    const context=await call('/api/dashboard/v1/context');
+    assert.deepEqual((await context.json()).playback,{sourceId:'living-room'});
+  }finally{await close();}
+});
+
 test('the dashboard context names the playback source only for credentials that grant it',async()=>{
   const {until,call,close}=await hubFixture();
   try{
@@ -259,27 +479,43 @@ test('a staged hub serves playback snapshots but rejects commands',async()=>{
   }finally{await close();}
 });
 
-test('playback configuration needs one selected Sony source at a private address',async()=>{
-  const base={id:'living-room',kind:'sony',endpoint:'http://192.168.1.20:10000/sony'};
+test('playback configuration needs one ID and one or two sources of distinct kinds at private addresses',async()=>{
+  const sony={kind:'sony',endpoint:'http://192.168.1.20:10000/sony'},sonos={kind:'sonos',endpoint:'http://192.168.1.30:1400/MediaRenderer/AVTransport/Control'};
   const options=(playback,controllers=[])=>({directory:'/nonexistent/hub-playback',ownerId:'owner',consumers:[],credentials,controllers,playback});
   const controller={id:'living-room',kind:'pixoo',controllerId:'pixoo',deviceId:'pixoo',token:'e'.repeat(43),endpoint:'http://127.0.0.1:9/controller/v1'};
   for(const endpoint of ['http://10.0.0.5:10000/sony','http://172.31.2.3:10000/sony','http://127.0.0.1:10000/sony'])
-    assert.deepEqual(sonyConfiguration({...base,endpoint}),{...base,endpoint});
-  const invalid=[null,{selected:'living-room',sources:[]},{selected:'kitchen',sources:[base]},{selected:'living-room',sources:[base,{...base,id:'kitchen'}]},
-    {selected:'living-room',sources:[base],extra:true},{selected:'living-room',sources:[{...base,kind:'sonos'}]},{selected:'living-room',sources:[{...base,extra:true}]},
-    {selected:'hub-service',sources:[{...base,id:'hub-service'}]},{selected:'bad id',sources:[{...base,id:'bad id'}]},
-    {selected:'192.168.1.20',sources:[{...base,id:'192.168.1.20'}]},{selected:'10.0.0.9',sources:[{...base,id:'10.0.0.9'}]},{selected:'sony-192.168.1.20',sources:[{...base,id:'sony-192.168.1.20'}]}];
+    assert.deepEqual(sonyConfiguration({...sony,endpoint}),{...sony,endpoint});
+  for(const endpoint of ['http://10.0.0.5:1400/MediaRenderer/AVTransport/Control','http://127.0.0.1:1400/MediaRenderer/AVTransport/Control'])
+    assert.deepEqual(sonosConfiguration({...sonos,endpoint}),{...sonos,endpoint});
+  const invalid=[null,{id:'living-room',sources:[]},{id:'living-room',sources:[sony,sonos,sony]},{id:'living-room',sources:[sony,{...sony,endpoint:'http://192.168.1.21:10000/sony'}]},
+    {id:'living-room',sources:[sonos,{...sonos,endpoint:'http://192.168.1.31:1400/MediaRenderer/AVTransport/Control'}]},{id:'living-room',sources:[sony],extra:true},
+    {id:'living-room',sources:[{...sony,kind:'airplay'}]},{id:'living-room',sources:[{...sony,extra:true}]},{id:'living-room',sources:[{...sony,id:'living-room'}]},
+    {selected:'living-room',sources:[{id:'living-room',kind:'sony',endpoint:sony.endpoint}]},{selected:'living-room',sources:[sony]},
+    {id:'hub-service',sources:[sony]},{id:'bad id',sources:[sony]},{id:'192.168.1.20',sources:[sony]},{id:'10.0.0.9',sources:[sony]},
+    {id:'sony-192.168.1.20',sources:[sony]},{id:'move-192.168.1.30',sources:[sonos,sony]},{id:'living-room',sources:'sony'}];
   for(const endpoint of ['https://192.168.1.20:10000/sony','http://8.8.8.8:10000/sony','http://172.32.0.1:10000/sony','http://soundbar.local:10000/sony',
     'http://192.168.1.20/sony','http://192.168.1.20:10000/sony/','http://192.168.1.20:10000/other','http://user:pw@192.168.1.20:10000/sony',
     'http://192.168.1.20:10000/sony?x=1','http://192.168.1.20:10000/sony#x','http://[::1]:10000/sony','not a url'])
-    invalid.push({selected:'living-room',sources:[{...base,endpoint}]});
+    invalid.push({id:'living-room',sources:[{...sony,endpoint}]});
+  for(const endpoint of ['https://192.168.1.30:1400/MediaRenderer/AVTransport/Control','http://8.8.8.8:1400/MediaRenderer/AVTransport/Control','http://move.local:1400/MediaRenderer/AVTransport/Control',
+    'http://192.168.1.30/MediaRenderer/AVTransport/Control','http://192.168.1.30:1400/','http://192.168.1.30:1400/MediaRenderer/AVTransport/Event','http://192.168.1.30:1400/MediaRenderer/AVTransport/Control/',
+    'http://user:pw@192.168.1.30:1400/MediaRenderer/AVTransport/Control','http://192.168.1.30:1400/MediaRenderer/AVTransport/Control?x=1','http://192.168.1.30:1400/MediaRenderer/AVTransport/Control#x','not a url'])
+    invalid.push({id:'living-room',sources:[{...sonos,endpoint}]});
   for(const playback of invalid)await assert.rejects(startHub(options(playback)),/invalid-playback/,JSON.stringify(playback));
-  await assert.rejects(startHub(options({selected:'living-room',sources:[base]},[controller])),/invalid-playback/);
+  await assert.rejects(startHub(options({id:'living-room',sources:[sony]},[controller])),/invalid-playback/);
+  for(const sources of [[sony],[sonos],[sonos,sony],[sony,sonos]]){
+    const directory=await mkdtemp(join(tmpdir(),'hub-playback-config-'));
+    const hub=await startHub({...options({id:'living-room',sources}),directory});
+    try{
+      const read=await fetch(hub.url+'/api/playback/v1/snapshot',{headers:{authorization:`Bearer ${tokens.controller}`}});
+      assert.deepEqual([read.status,(await read.json()).sourceId],[200,'living-room'],JSON.stringify(sources));
+    }finally{await hub.close();await rm(directory,{recursive:true,force:true});}
+  }
 });
 
 test('freshness follows the monotonic clock and receipts stay bounded',async()=>{
   const source=fakeSource();let wall=100000,elapsed=0;
-  const playback=createPlayback(source,()=>wall,()=>elapsed);
+  const playback=createPlayback('kitchen',[source],()=>wall,()=>elapsed);
   const unavailable=playback.command({requestId:'early',sourceId:'kitchen',action:'next'},principal);
   await assert.rejects(unavailable,{code:'source-unavailable',status:503});
   source.report(playing);

@@ -8,7 +8,7 @@ The host supplies private SQLite ownership, the shared agent-state engine, authe
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop` and optional [`playback`](#playback). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop`, optional [`playback`](#playback) and optional [`browserAccess`](#open-bunny-from-a-bookmark). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 
 Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
@@ -61,11 +61,11 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `GET /api/hub/v1/authority?scope=<scope>` | the named scope: `read`, `control` or `ingest` | none |
 | `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/geometry`, `GET .../integration/receipt`, `GET .../lighting/snapshot` | `read` | the controller alias `:id` |
 | `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel`, `POST .../lighting/commands` | `control` | the controller alias `:id` |
-| `GET /api/playback/v1/snapshot` | `read` | the selected playback source ID |
+| `GET /api/playback/v1/snapshot` | `read` | the playback ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
 
-`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
+`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead. With [`browserAccess`](#open-bunny-from-a-bookmark) set, `POST /api/dashboard/v1/session` signs the page in without a code.
 
 When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. A missing or unknown token gets HTTP 401. A tool the token's scopes or `devices` do not cover is left out of the tool list, and calling it anyway returns a tool error with code `forbidden` rather than HTTP 403. `<prefix>` is the per-device value that `hub_devices` returns.
 
@@ -92,13 +92,13 @@ When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read`
 
 ### Browser sessions
 
-The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias and on the configured playback source for up to eight hours. That session has no `ingest` or `admin` scope, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
+The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file, and neither does the [trusted-loopback sign-in](#open-bunny-from-a-bookmark). Each creates a temporary one with `read` and `control` on every configured controller alias and on the configured playback source for up to eight hours. That session has no `ingest` or `admin` scope, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
 
 Each browser session owns its command tickets, its change streams and its retained replay results. Logout, the eight-hour expiry, eviction at the 16-session limit, credential replacement and shutdown all retire a session the same way. Its token and cached requests are refused, its streams close, and its ticket ledger and settled replay results are released. A command the session already submitted keeps running. It is not cancelled or sent again, and its replay entry stays charged until the command settles, then is released once. A retired session's late write, whose body arrives after retirement, is refused before it reaches the owner or a controller. After every browser session retires and its submitted commands settle, the host holds no browser ledger, stream or replay entry. Tickets for configured credentials are unaffected. Disconnecting a dashboard that was opened with a configured token ends no session: that credential keeps its streams, its ticket sequence and its retained results.
 
 ## HTTP boundary
 
-All routes authenticate before replay. Host must equal the actual numeric-loopback listener, supplied Origin must match, and cross-site fetch metadata is refused. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
+All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, a supplied Origin must name that same host, and cross-site fetch metadata is refused. MCP accepts only the numeric-loopback host. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
 
 | Route | Behavior |
 | --- | --- |
@@ -116,8 +116,8 @@ All routes authenticate before replay. Host must equal the actual numeric-loopba
 | `POST /api/controllers/v1/:id/integration/cancel` | Nanoleaf extension cancellation request; cannot undo an applied edit |
 | `GET /api/controllers/v1/:id/lighting/snapshot` | Validated LIFX lighting snapshot: `lifx-light` 1.0.0 profile, the controller v1 snapshot and the lighting section. `lifx` aliases only; other kinds answer 422 |
 | `POST /api/controllers/v1/:id/lighting/commands` | One strict `lifx-light` 1.0.0 color or color-temperature request and its controller v1 receipt. `lifx` aliases only |
-| `GET /api/playback/v1/snapshot` | Selected playback source's snapshot; see [Playback](#playback) |
-| `POST /api/playback/v1/commands` | One source-bound playback command and its receipt |
+| `GET /api/playback/v1/snapshot` | The presented playback source's snapshot; see [Playback](#playback) |
+| `POST /api/playback/v1/commands` | One playback command to the presented source and its receipt |
 
 Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 
@@ -125,73 +125,100 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 ## Playback
 
-[Hub #175](https://github.com/jimmie-potts/agent-device-hub/issues/175) adds shared playback with the Sony HT-A9 as its first source. The owner's iPhone keeps playing Apple Music to the soundbar over AirPlay; the hub reads what is playing and can send pause, next and previous. No audio passes through the hub. The [HT-A9 qualification](../../docs/iphone-apple-music-qualification.md) records the receiver behavior this relies on.
+[Hub #175](https://github.com/jimmie-potts/agent-device-hub/issues/175) added shared playback with the Sony HT-A9 as its first source, and [#233](https://github.com/jimmie-potts/agent-device-hub/issues/233) added the Sonos Move as the second. The owner's iPhone plays Apple Music over AirPlay to one speaker or to both as a group; the hub reads what is playing and can send pause, play, next and previous. No audio passes through the hub. The [qualification record](../../docs/iphone-apple-music-qualification.md) documents the speaker behavior this relies on.
 
 ### Configuration
 
 ```json
 "playback": {
-  "selected": "living-room",
-  "sources": [{"id": "living-room", "kind": "sony", "endpoint": "http://192.168.1.20:10000/sony"}]
+  "id": "ht-a9",
+  "sources": [
+    {"kind": "sonos", "endpoint": "http://192.168.1.30:1400/MediaRenderer/AVTransport/Control"},
+    {"kind": "sony", "endpoint": "http://192.168.1.20:10000/sony"}
+  ]
 }
 ```
 
-`sources` currently holds exactly one source, and `selected` must name it. `id` is a neutral label you choose. It becomes the `sourceId` in every snapshot and command, so never use a track name. An ID that looks like an IPv4 address or contains the endpoint address is rejected. It must differ from every controller alias and from `hub-service`. `endpoint` must be exactly `http://<IPv4>:<port>/sony` with a numeric private (10/8, 172.16/12, 192.168/16) or loopback address and no credentials, query or fragment. The Sony Audio Control API listens on port 10000. Any other shape stops the hub with `invalid-playback`. Keep the address in the private configuration file only.
+`id` is a neutral label you choose. It is the one playback ID every client sees: the `sourceId` in every snapshot and receipt, the credential device grant, the MCP tool prefix and the dashboard context. It never changes when the hub switches between speakers, so never use a track name or a speaker address. An ID that looks like an IPv4 address or contains a configured endpoint address is rejected. It must differ from every controller alias and from `hub-service`.
 
-Credentials need the source ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Launcher browser sessions receive both on the configured source, and B.U.N.N.Y. shows it under Music ([#37](https://github.com/jimmie-potts/agent-device-hub/issues/37)). The MCP playback tools are described under [Optional local MCP](#optional-local-mcp). The Tidbyt runner's optional now-playing tile ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) is a read-only consumer of the snapshot; see the [Tidbyt guide](../../controllers/tidbyt/README.md#now-playing-decisions).
+`sources` lists one or two speakers in preference order, at most one of each `kind`. Entries have no ID of their own. Each `endpoint` must use a numeric private (10/8, 172.16/12, 192.168/16) or loopback IPv4 address with a port and no credentials, query or fragment:
+
+| `kind` | `endpoint` | Speaker API |
+| --- | --- | --- |
+| `sony` | exactly `http://<IPv4>:<port>/sony` | Sony Audio Control API, port 10000 |
+| `sonos` | exactly `http://<IPv4>:1400/MediaRenderer/AVTransport/Control` | UPnP AVTransport control URL |
+
+Any other shape stops the hub with `invalid-playback`. Keep the addresses in the private configuration file only.
+
+**Upgrading from a single `selected` source.** Hub 0.3.10 and earlier used `{"selected": "ht-a9", "sources": [{"id": "ht-a9", "kind": "sony", ...}]}`. That form is rejected. Rename `selected` to `id`, remove the `id` from the Sony entry and add the Sonos entry first, as above. Keep the same ID, and credentials, the Tidbyt `nowPlaying` block and the Pixoo card need no change.
+
+Credentials need the playback ID in `devices`: `read` scope for snapshots and `control` scope for commands. See [Credentials](#credentials) to create one. Launcher browser sessions receive both, and B.U.N.N.Y. shows the playback under Music ([#37](https://github.com/jimmie-potts/agent-device-hub/issues/37)). The MCP playback tools are described under [Optional local MCP](#optional-local-mcp). The Tidbyt runner's optional now-playing tile ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) is a read-only consumer of the snapshot; see the [Tidbyt guide](../../controllers/tidbyt/README.md#now-playing-decisions).
+
+### Which speaker is shown
+
+The hub polls every configured source and keeps a separate observation and freshness record for each. Every snapshot and command uses the *presented* source: the first source, in configured order, with the highest rank of
+
+1. reporting a session, meaning its retained observation is `playing` or `paused`;
+2. freshness, `available` over `stale` over `unavailable`;
+3. configured order.
+
+With the Move listed first: the phone playing to the Move alone, or to the Move and the HT-A9 as a group, shows the Move; the phone playing to the HT-A9 alone shows the HT-A9, because the Move reports `inactive`; a Move that stops answering mid-song stays shown as `stale` with its last track for up to 30 seconds, then the HT-A9 is shown. A stopped, inactive or unrecognized state is not a session, so a Move that still shows a stopped AirPlay track does not outrank a playing HT-A9. When nothing is playing, the freshest source is shown, ties going to configured order. The snapshot does not say which speaker is presented, and the ID never changes.
 
 ### Snapshot
 
 `GET /api/playback/v1/snapshot` returns:
 
 ```json
-{"apiVersion": "1.0", "sourceId": "living-room", "availability": "available", "observedAtMs": 1790000000000, "ageMs": 850,
+{"apiVersion": "1.0", "sourceId": "ht-a9", "availability": "available", "observedAtMs": 1790000000000, "ageMs": 850,
  "playback": {"status": "playing", "title": "...", "artist": "...", "album": "...", "controls": ["pause", "next", "previous"]}}
 ```
 
-`observedAtMs` is the hub's wall-clock time of the last successful read. `ageMs` is the larger of the monotonic and wall-clock ages, so neither a system clock change nor a suspend can make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
+`observedAtMs` is the hub's wall-clock time of the presented source's last successful read. `ageMs` is the larger of the monotonic and wall-clock ages, so neither a system clock change nor a suspend can make an old read look fresh. A successful read refreshes both even when nothing changed; a failed read does not.
 
-| `availability` | Age of the last successful read | `playback` |
+| `availability` | Age of the presented source's last successful read | `playback` |
 | --- | --- | --- |
 | `available` | under 5 seconds | last observation |
 | `stale` | 5 to under 30 seconds | last observation, kept for context |
 | `unavailable` | 30 seconds or more, or no read yet | `null` |
 
-The hub starts `unavailable`. A receiver that stops answering never turns into `paused`. `status` is `playing`, `paused`, `stopped`, `inactive` or `unknown`. `inactive` means the receiver answered but AirPlay is not its current input. `title`, `artist` and `album` are omitted when the receiver does not supply them. Artwork, position, duration and song-change events are not part of this version; see [#229](https://github.com/jimmie-potts/agent-device-hub/issues/229) and [#39](https://github.com/jimmie-potts/agent-device-hub/issues/39).
+The hub starts `unavailable`. A speaker that stops answering never turns into `paused`. `status` is `playing`, `paused`, `stopped`, `inactive` or `unknown`. `inactive` means the speaker answered but AirPlay is not its current input. `title`, `artist` and `album` are omitted when the speaker does not supply them. Artwork, position, duration and song-change events are not part of this version, because the Tidbyt and Pixoo card parsers reject unknown keys; see [#229](https://github.com/jimmie-potts/agent-device-hub/issues/229), [#38](https://github.com/jimmie-potts/agent-device-hub/issues/38) and [#39](https://github.com/jimmie-potts/agent-device-hub/issues/39).
 
 ### Commands
 
-`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "living-room", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The Sony source lists pause, next and previous while AirPlay is playing, only next and previous while it is paused, and never lists play, because the HT-A9 cannot resume a paused AirPlay session ([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)). Play is planned through the Sonos source in [#301](https://github.com/jimmie-potts/agent-device-hub/issues/301). While playing, previous restarts the current song on this receiver. The owner's 2026-09-25 live check for #37 showed that next and previous change the phone's track while paused without resuming, but the receiver kept reporting the old title, so a paused snapshot's title can lag until playback resumes.
+`POST /api/playback/v1/commands` takes exactly `{"requestId": "...", "sourceId": "ht-a9", "action": "pause"}` with `X-Pixoo-Request: 1` and a body of at most 1024 bytes. `requestId` is a client-chosen neutral ID and `sourceId` is the playback ID. `action` is `play`, `pause`, `next` or `previous`, but only actions listed in the presented source's current `controls` are accepted, and only while `availability` is `available`. A stale snapshot still shows its last controls for context. The command goes to the source presented at that moment; if the presented source changed since the client's read and no longer declares the action, the hub answers `unsupported-control` and sends nothing. The Sony source lists pause, next and previous while AirPlay is playing, only next and previous while it is paused, and never lists play, because the HT-A9 cannot resume a paused AirPlay session ([#242](https://github.com/jimmie-potts/agent-device-hub/issues/242)). The Sonos source lists play while paused, so play and resume run through the Move, including for a grouped HT-A9. While playing, previous restarts the current song on both speakers. The owner's 2026-09-25 live check for #37 showed that next and previous change the phone's track while paused without resuming, but the HT-A9 kept reporting the old title, so a paused snapshot's title can lag until playback resumes.
 
 | Result | Meaning |
 | --- | --- |
-| 200 `sent` | The receiver accepted the call. This is transport evidence, not proof the phone reacted. |
-| 502 `failed` | The receiver refused the call. |
-| 503 `uncertain` | No JSON-RPC result or error: a timeout after 1.5 seconds, a network error, or a non-200, malformed or mismatched reply. The command may have taken effect. |
-| 400 `invalid-input`, 403 `forbidden` | Bad body, missing scope, header or source grant |
-| 404 `unknown-source` | The body names a source other than the selected one |
+| 200 `sent` | The speaker accepted the call. This is transport evidence, not proof the phone reacted. |
+| 502 `failed` | The speaker refused the call. |
+| 503 `uncertain` | No usable reply: a timeout after 1.5 seconds, a network error, or a non-200, malformed or mismatched reply. The command may have taken effect. |
+| 400 `invalid-input`, 403 `forbidden` | Bad body, missing scope, header or playback grant |
+| 404 `unknown-source` | The body names something other than the playback ID |
 | 409 `request-conflict` | The request ID was already used with a different body |
 | 413 `capacity` | The body is larger than 1024 bytes |
-| 422 `unsupported-control` | The action is not in the current controls |
+| 422 `unsupported-control` | The action is not in the presented source's current controls |
 | 429 `capacity` | Another playback command is still running |
-| 503 `source-unavailable`, `owner-quiesced` | The source is not `available`, or the host is staged |
+| 503 `source-unavailable`, `owner-quiesced` | The presented source is not `available`, or the host is staged |
 
-Admitted results carry `{requestId, sourceId, action, outcome}`. Repeating a request ID with the same body returns the original receipt without contacting the receiver, so a client retry after a lost response is safe. The hub keeps the latest 64 receipts; a restart clears them. Only one command runs at a time, nothing is retried automatically and no command is redirected to another source or address.
+Admitted results carry `{requestId, sourceId, action, outcome}`. Repeating a request ID with the same body returns the original receipt without contacting a speaker, so a client retry after a lost response is safe. The hub keeps the latest 64 receipts; a restart clears them. Only one command runs at a time across both sources, nothing is retried automatically and no command is redirected to another source or address.
 
 ### Sony source behavior
 
 The Sony module calls `avContent.getPlayingContentInfo` version 1.2 at startup and then every two seconds. Each call has a 1.5-second timeout and a 64 KiB reply limit, and a read already in progress is reused instead of starting another. It uses the entry whose `source` is `extInput:airPlay`, maps `PLAYING`, `PAUSED` and `STOPPED` to the shared statuses and any other state to `unknown`. It trims `title`, `artist` and `albumName` and limits each to 256 characters. Other receiver fields, including the thumbnail URL that embeds the receiver address, are dropped. JSON-RPC errors, non-200 replies, malformed bodies, timeouts and network errors are failed reads. Commands call `pausePlayingContent` 1.1, `setPlayNextContent` 1.0 or `setPlayPreviousContent` 1.0; a JSON-RPC result is `sent` and a JSON-RPC error is `failed`.
 
+### Sonos source behavior
+
+The Sonos module sends three SOAP actions on `InstanceID` 0 to the configured AVTransport control URL at startup and then every two seconds, in sequence: `GetTransportInfo`, `GetPositionInfo` and `GetCurrentTransportActions`. Each call has a 1.5-second timeout and a 64 KiB reply limit, a read already in progress is reused, and any call that does not return HTTP 200 with its response element fails the whole read, which reports nothing. A `TrackURI` with the `x-sonos-vli` scheme is the AirPlay session; any other URI, or none, is `inactive` with no metadata and no controls. `CurrentTransportState` maps `PLAYING`, `PAUSED_PLAYBACK` and `STOPPED` to the shared statuses and any other state, including `TRANSITIONING`, to `unknown`. The DIDL-Lite `TrackMetaData` supplies `dc:title`, `dc:creator` and `upnp:album`, decoded, trimmed and limited to 256 characters; `albumArtURI`, `RelTime` and `TrackDuration` are not copied. Controls intersect the advertised `Actions` with the state: playing declares pause, next and previous, paused declares play, next and previous, and other states declare nothing. Pause, next and previous while playing and play while paused were confirmed on the phone ([qualification record](../../docs/iphone-apple-music-qualification.md#sonos-move-check)); next and previous while paused follow the Move's own action list and are unconfirmed until the #233 live check. Commands post `Pause`, `Play` with `<Speed>1</Speed>`, `Next` or `Previous` once. HTTP 200 is `sent`, an HTTP 500 carrying a SOAP fault is `failed`, and anything else is `uncertain`.
+
 ### Adding a source
 
-`src/playback.ts` is the shared module and imports no source code. A source implements `PlaybackSource`:
+`src/playback.ts` is the shared module and imports no source code. It serves one playback ID from the sources in configured order. A source implements `PlaybackSource` and has no ID of its own:
 
-- `id`: the configured neutral source ID.
 - `start(report)`: begin observing and call `report` with a normalized observation after every successful read, including unchanged ones. Never report a failed read.
 - `command(action)`: resolve `sent` when the source accepted the call or `failed` when it refused before any effect. Reject for any uncertain result, and apply your own timeout under the host's three-second request limit.
-- `close()`: stop observing and abort in-flight work. If it fails, the host still finishes shutting down and then reports the error.
+- `close()`: stop observing and abort in-flight work. If it fails, the other sources still close, the host finishes shutting down and then reports the error.
 
-`src/sony.ts` is the reference adapter. `server.ts` validates the `playback` envelope, builds the source for its `kind` and closes it with the host. A second source currently needs a new `kind` branch there. Multi-source runtime and selection are deferred. The [OpenSpec design](../../openspec/changes/archive/2026-09-24-gh-175-shared-playback/design.md#future-two-source-flow) describes how two sources keep independent freshness, commands stay bound to the selected source and an unavailable selection never falls back silently.
+`src/sony.ts` and `src/sonos.ts` are the two adapters; each validates its own `{kind, endpoint}` entry. `server.ts` validates the `playback` envelope, builds each source for its `kind`, allows one entry per kind and closes every source with the host. A third kind needs a new module and a new branch there. The archived [#233 design](../../openspec/changes/archive/2026-09-25-gh-233-sonos-playback-source/design.md) records the preference rule and why the ID stays stable.
 
 ## Compatibility and evidence
 
@@ -259,12 +286,49 @@ the oldest browser session. Existing machine and manual browser credentials
 remain configured separately. The private socket is removed on orderly
 shutdown. On restart, the host removes an unresponsive socket only when it is
 still the same owner-owned socket; a live socket blocks startup. Do not clear
-the state-owner database or start a second owner.
+the state-owner database or start a second owner. With
+[`browserAccess`](#open-bunny-from-a-bookmark) set, a bookmark replaces the
+launcher.
 
-This source command does not update the running installation. A named owner
-must install a reviewed Hub package and wire the shortcut to its actual private
-configuration. Browser handoff tests use disposable stores and fake controllers;
-they do not qualify a personal service or device result.
+### Open B.U.N.N.Y. from a bookmark
+
+Hub [#276](https://github.com/jimmie-potts/agent-device-hub/issues/276) adds an
+opt-in sign-in for the owner's own PC. Add this field to the private
+configuration and restart the hub:
+
+```json
+"browserAccess": "trusted-loopback"
+```
+
+Then bookmark `http://127.0.0.1:8788/` or `http://localhost:8788/`, using the
+configured `port`. On load the page posts `{}` to `POST /api/dashboard/v1/session`
+and receives the same browser session the launcher issues: `read` and `control`
+on configured aliases and the playback source, no `ingest`, `admin` or MCP,
+eight hours, and the shared 16-session limit and retirement. There is no cookie
+or browser storage. A reload or a new tab signs in again, and a page logs its
+session out as it unloads. The route requires the page's Host, a matching
+Origin, `Sec-Fetch-Site` absent or `same-origin`, `X-Pixoo-Request: 1` and an empty JSON
+object body. Without the field it answers 404, and any other value refuses
+startup with `invalid-configuration`. The launcher and token form keep working.
+
+The option removes one protection. Without it, a local program needs a
+configured token or the owner-only launch socket to command devices. With it,
+any program on the PC that can send a loopback request with the page's Host,
+Origin and custom header gets the same read and control. This matches the
+Nanoleaf wall map on port 8765. Reassess before any LAN, phone or
+second-operator exposure.
+
+If the bookmark shows the login page, the option is off or the hub has not been
+restarted since it was added: the session route answers 404. If the page shows
+"couldn't sign you in", the hub refused or failed the request; reload,
+or use the launcher or token form. After an eviction or the eight-hour expiry,
+the dashboard offers **Sign in again**.
+
+This source change does not update the running installation. A named owner
+must install a reviewed Hub package, and either wire the launcher shortcut or
+add `browserAccess` to its actual private configuration. Browser handoff tests
+use disposable stores and fake controllers; they do not qualify a personal
+service or device result.
 
 Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
 HTTP editor links without query/fragment. Existing API-only configurations remain

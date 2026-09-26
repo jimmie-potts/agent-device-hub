@@ -488,19 +488,24 @@ starting, a story needing LAN discovery or events, or a failed keep-alive.
 ## Shared playback
 
 The standalone host owns shared playback
-([#175](https://github.com/jimmie-potts/agent-device-hub/issues/175)). A shared
-module keeps each source's normalized snapshot, observation freshness and
-command results. Source modules own their protocols, endpoints and field
-mapping. The first source reads the owner's Sony HT-A9 while an iPhone plays
-Apple Music to it over AirPlay; audio never passes through the hub. Playback
-state is separate from agent sessions and state exports.
+([#175](https://github.com/jimmie-potts/agent-device-hub/issues/175),
+[#233](https://github.com/jimmie-potts/agent-device-hub/issues/233)). A shared
+module keeps each source's normalized observation and freshness and the command
+results. Source modules own their protocols, endpoints and field mapping. The
+sources read the owner's Sony HT-A9 and Sonos Move while an iPhone plays Apple
+Music to them over AirPlay; audio never passes through the hub. Playback state
+is separate from agent sessions and state exports.
 
-Sources have stable neutral IDs. Commands name a source ID and go only to the
-explicitly selected source; they are never redirected, retried or replayed. A
-later source keeps its own freshness, and an unavailable selected source is
-shown as unavailable rather than replaced by another source. The
-[host guide](../apps/hub/README.md#playback) documents the routes and the source
-interface. Display cards read the same snapshot and render in their own
+Clients see one stable neutral playback ID that never changes with the speaker.
+The hub polls every configured source and presents the first, in configured
+order, that reports a playing or paused session, then the freshest; a source
+that goes silent mid-song stays shown as stale before another is presented, and
+nothing is shown as paused for lack of evidence. Commands name the playback ID
+and go only to the presented source; they are never redirected, retried or
+replayed. The owner chose this ordered preference on 2026-09-25 over the
+explicit selection #175 designed, because the phone chooses the output. The
+[host guide](../apps/hub/README.md#playback) documents the routes, the rule and
+the source interface. Display cards read the same snapshot and render in their own
 controllers: the Tidbyt runner's optional now-playing tile
 ([#38](https://github.com/jimmie-potts/agent-device-hub/issues/38)) writes a
 second background installation through the existing Tidbyt queue. The Windows connector

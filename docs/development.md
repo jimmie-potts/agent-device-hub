@@ -437,16 +437,22 @@ devices. The source includes supervised child release, fenced import, route read
 interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
 
-Playback for #175 is covered by `apps/hub/tests/playback.test.mjs`, which
+Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
-shared playback module against a non-Sony fake source and the Sony module
-against a fake loopback receiver. Freshness checks use a controlled clock; route
-checks cover authentication, the configured target, unsupported controls,
-duplicate and concurrent commands and failed/uncertain results. These tests do
-not contact a receiver or phone. Installed playback acceptance with a real
-iPhone and HT-A9 needs a separately authorized receiver address and is recorded
-on the issue.
+shared playback module against fake sources with no speaker code, the Sony
+module against a fake loopback receiver and the Sonos module against a fake
+loopback AVTransport service. Freshness checks use a controlled clock. The #233
+cases cover two sources under one playback ID: independent freshness, the
+preference rule (Move alone, grouped, Sony alone, a Move that goes silent
+mid-song staying stale and then yielding to the Sony), a command checked after
+the presented source changed, and the rejected `selected` configuration form.
+Route checks cover authentication, the configured target, unsupported controls,
+duplicate and concurrent commands, failed/uncertain results and a hub with both
+sources. The dashboard browser fixture and `mcp.test.mjs` use the same
+configuration shape. These tests do not contact a speaker or phone. Installed
+playback acceptance with a real iPhone, HT-A9 and Move needs separately
+authorized speaker addresses and is recorded on the issue.
 
 For owning-service acceptance, prepare the immutable revisions in
 `apps/hub/fixtures/pixoo-source.json` and `nanoleaf-source.json` in disposable
@@ -481,6 +487,15 @@ checks. Cover single-use and expired codes, rejected cross-origin exchanges,
 read/control alias bounds without ingest/admin/MCP access, disconnect, reload
 and inspection without device writes. The existing Dashboard CI job and shared
 Hub/package jobs run these checks on Node 24. They do not use the installed Hub.
+
+Hub #276 adds `apps/hub/tests/trusted-loopback.test.mjs` to `npm run test:hub`
+and `apps/dashboard/tests/trusted.mjs` to `npm run test:dashboard:browser`.
+They cover the session route off by default, invalid `browserAccess` values,
+refused Host, Origin, fetch-metadata, header and body cases, the `localhost`
+alias, launcher-equivalent grants without ingest/admin/MCP, the shared session
+limit and retirement, and in Chromium sign-in on load, reload, second tab,
+`pagehide` logout, eviction recovery, Disconnect, a failed request and the
+unchanged page without the option. They do not use the installed Hub.
 
 Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
 `apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
@@ -521,6 +536,21 @@ scene commands are schema-validated before forwarding. Client unit tests cover
 the scene availability order, name-or-ID labelling from the integration snapshot
 and the Work/Quiet/pending/unknown gating. Human UI approval of the candidate is
 recorded in its PR.
+
+Hub #355 adds `apps/dashboard/tests/art.test.mjs` to `npm run test:dashboard`
+and `apps/dashboard/tests/art.mjs` to `npm run test:dashboard:browser`. The fake
+Nanoleaf controller serves a 15-Line, 12-connector layout and, with the
+`panels` option, an 18-triangle NL22 layout on the read-only geometry route, or
+an explicit empty layout, a 404 like an owner that predates the route, a
+hub-valid layout the renderer rejects, or one transport failure before the
+layout. The browser check covers the drawn Lines with reservation colors and
+labels, keyboard selection shared with the mapping form, pending marks, one
+geometry read per session, a stale controller, the Panels with their controller
+offline, the schematic fallbacks, the retried read, reads only and axe at
+1280 px and 390 px, then drives status, activity, mode, the opening assembly and
+reduced motion through a component harness bundled from `tests/art-harness.tsx`. The
+existing Dashboard CI job runs both; no new job is needed. Human UI approval of
+the candidate, compared side by side with the wall map, is recorded in its PR.
 
 Hub #231 adds matrix scenarios for fresh guards and one-step settings:
 - A controller generation advance between render and activation sends one

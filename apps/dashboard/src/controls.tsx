@@ -2,13 +2,16 @@ import React, {useCallback,useEffect,useId,useReducer,useRef,useState,useSyncExt
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
 import {Api,type ReceiptEvidence,makeCommand,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,lightingCommand,lightingReasons,observedColor,type Lighting,type GeneralReasons,type Context,type Component} from './client';
+import type {GeometryRead} from './art/nanoleaf';
 import {actionWording,blocked,commandTransition,formWording,initialCommand,runCommand,unreadable,type Attempt,type CommandEvent,type CommandState,type Prepared,type ResultOptions} from './lifecycle';
 
 export type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string};
 export type Nano={apiVersion:string;identity:Snapshot['identity'];revision:string;configurationRevision:number;mode:string;settings:{style?:string;coverage?:string};source:string;projects:{id:string;color:string}[];tasks:{id:string;projectId:string|null;overrideProjectId:string|null}[];elements:{id:string;projectId:string|null;signature:number}[];pending:unknown[];wallPending:unknown;outcomes:{requestId:{epoch:string;sequence:number};outcome:string;failure?:{code:string}}[];nextRequestId:{epoch:string;sequence:number};scenes?:{id:string;name?:string}[];capabilities:Record<string,{supported:boolean}>};
 export type Pixoo={apiVersion:string;identity:{controllerId:string;deviceId:string};configurationRevision:number;generation:number;nextRequestId:string;configuration:{mode:string;filter:{q?:string;provider?:string;projectId?:string;session?:SessionSnapshot['identity']};cadenceMs:number};pendingMode:string|null;sourceConnection:string;participating:boolean;inFlight:number;lastOutcome:null|{status:string;code?:string};capabilities:{modes:string[];filters:string[];minimumCadenceMs:number;maximumCadenceMs:number}};
 /** A LIFX device keeps its lighting snapshot; its controller part is the device's snapshot. */
-export type Device={snapshot?:Snapshot;integration?:Nano|Pixoo;lighting?:Lighting;error?:string;received?:number;busy?:boolean};
+export type Device={snapshot?:Snapshot;integration?:Nano|Pixoo;lighting?:Lighting;error?:string;received?:number;busy?:boolean;
+ /** Nanoleaf only: the saved element geometry for the shared device art, read once per session after the first poll and again only after a non-final failure (Hub #355). */
+ geometry?:GeometryRead};
 /** Resolves with the device record from a read that started after the call. */
 export type Refresh=()=>Promise<Device|undefined>;
 export const age=(ms:number)=>ms<1000?'less than 1s':ms<60000?`${Math.floor(ms/1000)}s`:`${Math.floor(ms/60000)}m`;
@@ -288,10 +291,12 @@ export function LightingCards({d}:{d:DeviceControls}){
  </>;
 }
 /** The Nanoleaf assignments panel: layout style and coverage, element assignments, task mappings and project colors, in one place. Each form sends one guarded integration command. */
-export function NanoAssignments({d,integration:s}:{d:DeviceControls;integration:Nano}){
+export function NanoAssignments({d,integration:s,picked,onPick}:{d:DeviceControls;integration:Nano;/** The element chosen in the shared device art, when a page supplies one. */picked?:string;onPick?:(id:string)=>void}){
  const {disabled,api,path,refresh,reread,component}=d;
  const heading=useId();
- const [elementId,setElementId]=useState(''),[taskId,setTaskId]=useState(''),[projectId,setProjectId]=useState('');
+ const [ownElement,setOwnElement]=useState(''),[taskId,setTaskId]=useState(''),[projectId,setProjectId]=useState('');
+ // The element choice is shared with the device art when a page supplies one.
+ const elementId=picked??ownElement,setElementId=(id:string)=>{setOwnElement(id);onPick?.(id);};
  const element=s.elements.some(e=>e.id===elementId)?elementId:s.elements[0]?.id??'',task=s.tasks.some(t=>t.id===taskId)?taskId:s.tasks[0]?.id??'',project=s.projects.some(p=>p.id===projectId)?projectId:s.projects[0]?.id??'';
  const projects=[{value:'',label:'Shared pool'},...s.projects.map(p=>({value:p.id,label:p.id}))];
  const base={source:s,api,path:path+'/integration/commands',refresh};

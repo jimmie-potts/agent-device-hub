@@ -1,30 +1,20 @@
-import {isIPv4} from 'node:net';
-import {exact,id,object,responseJson} from './common.js';
+import {exact,object,privateHttpEndpoint,responseJson,text} from './common.js';
 import type {PlaybackAction,PlaybackObservation,PlaybackSource,PlaybackStatus} from './playback.js';
 
 // Sony HT-A9 Audio Control API source for #175, qualified in
 // docs/iphone-apple-music-qualification.md. The endpoint and raw replies stay in this module.
-export type SonyConfiguration = {id:string; kind:'sony'; endpoint:string};
+export type SonyConfiguration = {kind:'sony'; endpoint:string};
 
-const AIRPLAY = 'extInput:airPlay', MAX_BYTES = 65536, TEXT_LIMIT = 256;
+const AIRPLAY = 'extInput:airPlay', MAX_BYTES = 65536;
 const STATES:Record<string,PlaybackStatus> = {PLAYING:'playing',PAUSED:'paused',STOPPED:'stopped'};
 const METHODS:Partial<Record<PlaybackAction,[string,string]>> = {pause:['pausePlayingContent','1.1'],next:['setPlayNextContent','1.0'],previous:['setPlayPreviousContent','1.0']};
 
-const privateAddress = (host:string) => {
-  const [a,b] = host.split('.').map(Number);
-  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-};
+/** `{kind: "sony", endpoint: "http://<private IPv4>:<port>/sony"}`; the Audio Control API listens on port 10000. */
 export function sonyConfiguration(value:unknown):SonyConfiguration {
-  if (!object(value) || !exact(value,['id','kind','endpoint']) || !id(value.id) || value.kind !== 'sony' || typeof value.endpoint !== 'string' || !URL.canParse(value.endpoint)) throw new Error('invalid-playback');
-  const url = new URL(value.endpoint);
-  if (url.protocol !== 'http:' || !isIPv4(url.hostname) || !privateAddress(url.hostname) || !url.port || url.username || url.password ||
-      url.search || url.hash || url.pathname !== '/sony' || url.href !== value.endpoint) throw new Error('invalid-playback');
-  // The source ID is returned to clients, so it must not carry the receiver address.
-  if (value.id.includes(url.hostname)) throw new Error('invalid-playback');
-  return {id:value.id,kind:'sony',endpoint:value.endpoint};
+  if (!object(value) || !exact(value,['kind','endpoint']) || value.kind !== 'sony') throw new Error('invalid-playback');
+  return {kind:'sony',endpoint:privateHttpEndpoint(value.endpoint,'/sony','invalid-playback')};
 }
 
-const text = (value:unknown) => typeof value === 'string' && value.trim() ? Array.from(value.trim()).slice(0,TEXT_LIMIT).join('') : undefined;
 /** Normalizes a getPlayingContentInfo result: a list of per-output entries, possibly wrapped in one more list. */
 function sonyObservation(result:unknown[]):PlaybackObservation {
   const entry = result.flat().find(item => object(item) && item.source === AIRPLAY) as Record<string,unknown>|undefined;
@@ -69,7 +59,6 @@ export function createSonySource(config:SonyConfiguration,options:{pollMs?:numbe
     })().finally(() => {reading = undefined;});
   }
   const source:PlaybackSource & {refresh():Promise<void>} = {
-    id:config.id,
     refresh,
     start(callback) {
       report = callback;void refresh();
