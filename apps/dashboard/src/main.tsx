@@ -339,15 +339,18 @@ function App(){
  const [api,setApi]=useState<Api>(),[token,setToken]=useState(''),[launching,setLaunching]=useState(false),[launchError,setLaunchError]=useState(false);
  // trusted: the hub signed this page in without a code (Hub #276). The bearer stays in page memory; nothing is stored.
  const [trusted,setTrusted]=useState(false),[signInError,setSignInError]=useState(false),signing=useRef(false);
+ // Disconnect and a manual Connect supersede a sign-in still in flight, so its late answer never overrides the user's last action.
+ const attempt=useRef(0);
  /** Asks the hub for a trusted-loopback session. A 404 means the option is off, so the login page shows as before. Only a page load or an explicit click calls this. */
  async function signIn(){
-  if(signing.current)return;signing.current=true;setLaunching(true);setSignInError(false);
+  if(signing.current)return;signing.current=true;const mine=++attempt.current;setLaunching(true);setSignInError(false);
   try{
    const response=await fetch('/api/dashboard/v1/session',{method:'POST',cache:'no-store',redirect:'error',headers:{'content-type':'application/json','x-pixoo-request':'1'},body:'{}'});
+   if(mine!==attempt.current)return;
    if(response.status===404){setTrusted(false);setApi(undefined);return;}
-   const value=response.ok?bearer(await response.json()):undefined;if(!value)throw new Error('sign-in-failed');
+   const value=response.ok?bearer(await response.json()):undefined;if(mine!==attempt.current)return;if(!value)throw new Error('sign-in-failed');
    setTrusted(true);setApi(new Api(value));
-  }catch{setApi(undefined);setSignInError(true);}finally{signing.current=false;setLaunching(false);}
+  }catch{if(mine===attempt.current){setApi(undefined);setSignInError(true);}}finally{signing.current=false;setLaunching(false);}
  }
  useEffect(()=>{
   if(!location.hash){void signIn();return;}
@@ -367,7 +370,7 @@ function App(){
   addEventListener('pagehide',hide);addEventListener('pageshow',show);
   return ()=>{removeEventListener('pagehide',hide);removeEventListener('pageshow',show);};
  },[api,trusted]);
- const disconnect=()=>{if(api)void api.request('/api/dashboard/v1/logout',{}).catch(()=>{});setApi(undefined);setToken('');};
- return api?<Dashboard api={api} disconnect={disconnect} renew={trusted?()=>void signIn():undefined}/>:<main className="login"><p className="eyebrow">B.U.N.N.Y. / LOCAL INTEGRATION</p><h1>Your workspace.<br/>One clear view.</h1><p>{launching?'Connecting to the local Hub…':trusted?'You’re signed out.':'Open B.U.N.N.Y. with the Hub launcher.'}</p>{trusted&&!launching&&<button onClick={()=>void signIn()}>Sign in</button>}{signInError&&<p role="alert">B.U.N.N.Y. couldn’t sign in automatically. Reload to try again, or use the launcher.</p>}{launchError&&<p role="alert">That launch expired or failed. Run the launcher again.</p>}{!trusted&&<p className="hint">The launcher opens this page and connects automatically. After a reload, run it again.</p>}<details><summary>Use a separately provisioned access token</summary><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){setTrusted(false);setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">Never use a native controller token. Browser access stays in page memory and clears on disconnect or reload.</p></details></main>;
+ const disconnect=()=>{attempt.current++;if(api)void api.request('/api/dashboard/v1/logout',{}).catch(()=>{});setApi(undefined);setToken('');};
+ return api?<Dashboard api={api} disconnect={disconnect} renew={trusted?()=>void signIn():undefined}/>:<main className="login"><p className="eyebrow">B.U.N.N.Y. / LOCAL INTEGRATION</p><h1>Your workspace.<br/>One clear view.</h1><p>{launching?'Connecting to the local Hub…':trusted?'You’re signed out.':'Open B.U.N.N.Y. with the Hub launcher.'}</p>{trusted&&!launching&&<button onClick={()=>void signIn()}>Sign in</button>}{signInError&&<p role="alert">B.U.N.N.Y. couldn’t sign you in. Reload to try again, or use the launcher.</p>}{launchError&&<p role="alert">That launch expired or failed. Run the launcher again.</p>}{!trusted&&<p className="hint">The launcher opens this page and connects automatically. After a reload, run it again.</p>}<details><summary>Use a separately provisioned access token</summary><form onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(token)){attempt.current++;setTrusted(false);setApi(new Api(token));setToken('');}}}><label>Hub browser access token<input type="password" autoComplete="off" required pattern="[A-Za-z0-9_-]{43}" value={token} onChange={e=>setToken(e.target.value)}/></label><button>Connect</button></form><p className="hint">Never use a native controller token. Browser access stays in page memory and clears on disconnect or reload.</p></details></main>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

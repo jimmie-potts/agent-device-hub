@@ -17,6 +17,7 @@ try{
   try{
    const page=await context.newPage();page.setDefaultTimeout(12000);
    await page.goto(f.hub.url);await signedIn(page);
+   await page.getByRole('button',{name:'wall nanoleaf',exact:true}).waitFor();await page.getByRole('button',{name:'pixel pixoo',exact:true}).waitFor();
    assert.equal(await page.getByText('Use a separately provisioned access token').count(),0,'no login form');
    assert.equal(f.hub.resources().browserSessions,1);
    if(output)await page.screenshot({path:output+'/trusted-signed-in.png',fullPage:true});
@@ -68,7 +69,7 @@ try{
    const page=await context.newPage();page.setDefaultTimeout(12000);
    await page.route('**/api/dashboard/v1/session',route=>route.fulfill({status:503,json:{error:{code:'capacity'}}}));
    await page.goto(f.hub.url);
-   await page.getByRole('alert').filter({hasText:'B.U.N.N.Y. couldn’t sign in automatically. Reload to try again, or use the launcher.'}).waitFor();
+   await page.getByRole('alert').filter({hasText:'B.U.N.N.Y. couldn’t sign you in. Reload to try again, or use the launcher.'}).waitFor();
    await page.getByText('Open B.U.N.N.Y. with the Hub launcher.',{exact:true}).waitFor();
    await axe(page);
    if(output)await page.screenshot({path:output+'/trusted-failed.png',fullPage:true});

@@ -280,7 +280,7 @@ on configured aliases and the playback source, no `ingest`, `admin` or MCP,
 eight hours, and the shared 16-session limit and retirement. There is no cookie
 or browser storage. A reload or a new tab signs in again, and a page logs its
 session out as it unloads. The route requires the page's Host, a matching
-Origin, same-origin fetch metadata, `X-Pixoo-Request: 1` and an empty JSON
+Origin, `Sec-Fetch-Site` absent or `same-origin`, `X-Pixoo-Request: 1` and an empty JSON
 object body. Without the field it answers 404, and any other value refuses
 startup with `invalid-configuration`. The launcher and token form keep working.
 
@@ -293,7 +293,7 @@ second-operator exposure.
 
 If the bookmark shows the login page, the option is off or the hub has not been
 restarted since it was added: the session route answers 404. If the page shows
-"couldn't sign in automatically", the hub refused or failed the request; reload,
+"couldn't sign you in", the hub refused or failed the request; reload,
 or use the launcher or token form. After an eviction or the eight-hour expiry,
 the dashboard offers **Sign in again**.
 

@@ -47,10 +47,13 @@ test('browserAccess accepts only trusted-loopback',async t=>{
 });
 
 test('a trusted-loopback session has the launcher grants and nothing more',async t=>{
- const {hub,signIn,raw,sign}=await fixture(t,{browserAccess:'trusted-loopback',mcp:true});
+ // The alias's endpoint is never contacted: the context and grants come from configuration.
+ const wall={id:'wall',kind:'nanoleaf',controllerId:'wall-controller',deviceId:'wall',endpoint:'http://127.0.0.1:9/controller/v1',token:'n'.repeat(43)};
+ const {hub,signIn,raw,sign}=await fixture(t,{browserAccess:'trusted-loopback',mcp:true,controllers:[wall]});
  const headers=await signIn();
  assert.equal(hub.resources().browserSessions,1);
- const context=await fetch(hub.url+'/api/dashboard/v1/context',{headers});assert.equal(context.status,200);assert.equal((await context.json()).control,true);
+ const context=await fetch(hub.url+'/api/dashboard/v1/context',{headers});assert.equal(context.status,200);
+ const value=await context.json();assert.equal(value.control,true);assert.deepEqual(value.components.map(c=>c.id),['wall'],'the session is granted every configured alias');
  const view=await fetch(hub.url+'/api/monitor/v1/sessions',{headers});assert.equal(view.status,200);
  const label=await fetch(hub.url+'/api/monitor/v1/commands',{method:'POST',headers:{...headers,'content-type':'application/json','x-pixoo-request':'1'},body:JSON.stringify({operation:'label',requestId:(await view.json()).nextRequestId,identity,label:'Chosen'})});
  assert.equal(label.status,200,'control scope admits a monitor command');
@@ -124,6 +127,18 @@ test('trusted-loopback and launcher sessions share the cap and the retirement pa
  try{Date.now=()=>start+8*60*60*1000+1;assert.equal(await read(expiring),401,'a trusted session expires after eight hours');}finally{Date.now=now;}
  const closing=await signIn();assert.equal(await read(closing),200);
  await hub.close();assert.equal(hub.resources().browserSessions,0,'shutdown retires trusted sessions');
+});
+
+test('a session request whose body arrives during shutdown issues nothing',async t=>{
+ const {hub,port,sign}=await fixture(t,{browserAccess:'trusted-loopback'});
+ const response=new Promise((resolve,reject)=>{
+  const req=request({host:'127.0.0.1',port,path:'/api/dashboard/v1/session',method:'POST',headers:{...sign,'content-length':2}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});
+  req.on('error',()=>resolve('closed'));req.flushHeaders();
+  (async()=>{const deadline=Date.now()+5000;while(hub.resources().requests<1){if(Date.now()>deadline)throw new Error('request-not-admitted');await new Promise(r=>setTimeout(r,5));}
+   const closing=hub.close();req.end('{}');await closing;})().catch(reject);
+ });
+ assert.notEqual(await response,200);
+ assert.equal(hub.resources().browserSessions,0,'shutdown leaves no browser session behind');
 });
 
 test('the CLI reads browserAccess from the private configuration and refuses other values',async t=>{

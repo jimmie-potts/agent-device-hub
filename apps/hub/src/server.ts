@@ -126,6 +126,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   };
   // The launch exchange and the trusted-loopback route issue the same session, so their grants, expiry and cap cannot drift.
   const openBrowserSession=()=>{
+    // A request admitted before shutdown may finish reading its body afterwards; it must not outlive the shutdown retirement.
+    if(closing)throw new HttpError('unavailable',503);
     if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
     const token=randomBytes(32).toString('base64url');
     const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};

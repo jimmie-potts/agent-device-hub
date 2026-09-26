@@ -22,7 +22,7 @@ second skin follows [guide section 4.4](../../docs/application-ui-style-guide.md
 Use Node 24 at the repository root. `npm ci` and `npm run build` produce the fixed
 HTML, JavaScript and CSS assets in `apps/hub/public`. `npm run package:hub` includes
 these assets in the reproducible offline-installable host archive. The configured
-hub serves them at its numeric-loopback origin. There is no separate frontend
+hub serves them at its loopback origin, `127.0.0.1` or `localhost`. There is no separate frontend
 server or CORS grant.
 
 The dashboard can command only the devices registered in the hub's `controllers`
