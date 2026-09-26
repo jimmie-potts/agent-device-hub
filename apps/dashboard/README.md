@@ -2,10 +2,54 @@
 
 The React/TypeScript frontend reads the shared hub and submits explicit integration
 commands to its existing services. It creates no collector or device writer.
-Activity, component and connection views remain useful without an active task.
+The home, component and connection pages remain useful without an active task.
 Hub #151 adds Pixoo general controls and Hub #153 adds Nanoleaf general
-controls to the same component view. Exact previews and full editor migration
-remain separate work.
+controls to the same component view. Hub #277 turns the pages into a dense
+control surface: a home of widgets, hash routes and one card per control.
+Exact previews and full editor migration remain separate work.
+
+## Pages, routes and widgets
+
+Every page has a hash address: `#/` (also `#/home` and `#/activity`) for the
+home, `#/component/<alias>` for a registered component, `#/music/<source>` for
+now playing and `#/connections`. `src/routes.ts` parses a hash into a
+discriminated route, so built-in pages and component aliases are distinct kinds
+and an alias of `activity` or `connections` opens only that component
+([#247](https://github.com/jimmie-potts/agent-device-hub/issues/247)). A
+navigation link applies its route in the click event, ahead of the browser's
+deferred `hashchange`, so two pages are never shown at once; the back button
+walks the history. An address that names nothing shows a not-found message and
+sends no command. The launcher's `#launch=` fragment is not a route; it is
+stripped before the dashboard mounts.
+
+The home is a widget grid. `src/widgets.ts` is the catalog: each widget declares
+an ID, a name, a description, its sizes, its source kind (a registered
+controller alias, a hub route or a read-only external source from
+[#287](https://github.com/jimmie-potts/agent-device-hub/issues/287)), the reads
+it needs and whether it offers command actions. `homeLayout` is the developer
+placement: one `component-status` widget per registered component (health, the
+status strip, and the same Mode and Power cards as the component page, with a
+link to it), then `attention`, `collector` and `sessions`. Sessions are compact
+rows with an inline label form and their retained notices under the row.
+[#366](https://github.com/jimmie-potts/agent-device-hub/issues/366) makes
+placement the owner's; graph widgets
+([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
+wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
+register in the same catalog. Home widgets mount only while the home is open;
+component pages stay mounted, so their drafts and focus survive navigation.
+
+A component page shows its identity and health, a one-line status strip (mode,
+power, brightness, observation age, pending commands, and the observed color for
+LIFX), the remaining facts behind a Details disclosure, and every available
+control as a card in a grid that fills the width: Mode with Reapply or Start
+Monitor, Power, Brightness, Media with the Media switch, Scenes with the Free
+switch, and Color and Color temperature for LIFX. Each card keeps one short
+visible line for its state; the longer guidance sits behind a Help disclosure.
+Nanoleaf's integration settings, element assignments, task mappings and project
+colors sit in one Assignments panel and the Pixoo view form in one Monitor
+panel. Connections is a two-card page; the login is one line and the token
+disclosure. At 1,280 px wide the wall page is under 2,000 px tall, down from
+3,624 px before this change.
 
 ## Visual foundation
 
@@ -65,10 +109,15 @@ one-click actions (`useCommand`) share: sending, blocked and failed
 preparation, results, the accepted-ticket watch, locks and explicit reload.
 Forms keep their drafts and configuration-revision conflicts; actions and forms
 build their own device requests and apply their own availability rules.
-`ComponentView` in `src/main.tsx` supplies the common navigation target, evidence,
-settings and unavailable-operation explanations. Nanoleaf and Pixoo use typed
-integration views over their delivered versioned extensions. Unknown component
-kinds receive a read-only view, with no invented controls.
+`controls.tsx` holds those primitives and the control cards. `deviceControls`
+computes one component's availability, supported modes and fresh reread from
+one device read, and `ModeCard`, `PowerCard`, `BrightnessCard`, `MediaCard`,
+`SceneCard`, `LightingCards`, `NanoAssignments` and `PixooMonitor` render from
+it, on the component page and in the home widget alike. `ComponentView` in
+`src/main.tsx` composes them with the identity, status strip and Details.
+Nanoleaf and Pixoo use typed integration views over their delivered versioned
+extensions. Unknown component kinds receive a read-only view, with no invented
+controls.
 
 Future frontend integrations join this registry and navigation pattern. Their
 owning issues supply the production API, permissions, typed settings/controls,
@@ -259,8 +308,11 @@ not copy wall geometry, physical Locate controls or animation rendering. This ne
 candidate requires its own explicit human approval. The Hub #151 and Hub #153
 general-control candidates require renewed approval, recorded in their PRs.
 
-`npm run test:dashboard` checks command guards and links, and every command
-lifecycle transition for both the form and the action wording.
+`npm run test:dashboard` checks command guards and links, every command
+lifecycle transition for both the form and the action wording, the route parser
+(home aliases, the `activity` and `connections` alias collision, round-trips and
+missing addresses), the widget catalog and home placement, and the token
+boundary of the authored styles.
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
 expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,
@@ -280,8 +332,15 @@ no-controls line, LIFX power, brightness, color and color temperature, one
 guarded lighting request per change with no power write, an unqualified bulb, a
 bulb read as off, a bulb with unknown power, an unreachable bulb, a read-only
 credential, phone width and automated accessibility. `tests/layout.mjs` fails
-any visited view whose text blocks overlap; the browser, Pixoo, wall and
-synthetic views use it too. `DASHBOARD_RECEIPTS` selects an external
+any visited view whose text blocks overlap, ignoring the content of closed
+disclosures, and measures how far a view's controls reach across the main
+column; the browser, Pixoo, wall and synthetic views use it too. The Hub #277
+checks in `tests/browser.mjs` assert that every component widget and the
+sessions widget start in the first screen at 1440 px, that the home, wall and
+pixel controls reach at least 70% of the main column, that the Connections
+cards sit side by side, that the wall and pixel pages are under 2,000 px tall at
+1280 px, and that routes, the back button, the alias collision and an unknown
+address behave as the README describes. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,

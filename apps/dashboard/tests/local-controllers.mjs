@@ -48,7 +48,7 @@ try {
  const none='No general controls: this controller declares no power, brightness, media or scenes.';
  // Tidbyt: status only; one line instead of four disabled forms, and no editor or integration settings.
  const control=await open(token);const {page}=control;
- await page.getByRole('button',{name:'tidbyt tidbyt',exact:true}).click();
+ await page.getByRole('link',{name:'tidbyt tidbyt',exact:true}).click();
  await section(page).getByText('The local controller host publishes the agent status and now-playing tiles to this Tidbyt.',{exact:false}).waitFor();
  await section(page).getByText(none,{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Apply|^Start|^Activate/}).count(),0,'Tidbyt shows no dead forms');
@@ -56,7 +56,7 @@ try {
  await axe(page);await capture(page,'tidbyt-desktop.png');
 
  // LIFX: the page's first read queues one bulb read; the next refresh shows the bulb is off, and Power starts there.
- await page.getByRole('button',{name:'desk lifx',exact:true}).click();
+ await page.getByRole('link',{name:'desk lifx',exact:true}).click();
  const form=name=>section(page).getByRole('form',{name,exact:true});
  const hue=section(page).getByLabel('Hue (°)'),saturation=section(page).getByLabel('Saturation (%)'),kelvin=section(page).getByLabel('Color temperature (K)');
  await hue.waitFor();
@@ -101,14 +101,14 @@ try {
  assert.deepEqual(control.posts.find(p=>p.body.command?.kind==='brightness.set').body.command,{kind:'brightness.set',percent:35});
 
  // An unqualified bulb declares nothing: one line for general controls and one for lighting, and no forms.
- await page.getByRole('button',{name:'shelf lifx',exact:true}).click();
+ await page.getByRole('link',{name:'shelf lifx',exact:true}).click();
  await section(page).getByText(none,{exact:true}).waitFor();
  await section(page).getByText('No lighting controls: this bulb’s model is not qualified for color or color temperature.',{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Apply|^Start|^Activate/}).count(),0);
  await capture(page,'lifx-unqualified.png');
 
  // A bulb whose reads fail keeps unknown power: Power starts empty, says so, and either choice is one explicit command.
- await page.getByRole('button',{name:'lamp lifx',exact:true}).click();
+ await page.getByRole('link',{name:'lamp lifx',exact:true}).click();
  const lampPower=section(page).getByRole('combobox',{name:'Power',exact:true});await lampPower.waitFor();
  assert.equal(await lampPower.inputValue(),'');
  await form('Power').getByText(/Current power is unknown/).waitFor();
@@ -121,17 +121,17 @@ try {
 
  // A read-only credential sees the controls disabled with its scope named.
  const viewer=await open(reader);
- await viewer.page.getByRole('button',{name:'desk lifx',exact:true}).click();
+ await viewer.page.getByRole('link',{name:'desk lifx',exact:true}).click();
  await section(viewer.page).getByLabel('Hue (°)').waitFor();
  assert.ok(await section(viewer.page).getByText('Unavailable: Your credential is read-only',{exact:false}).count()>=2);
  assert.equal(await section(viewer.page).getByLabel('Hue (°)').isDisabled(),true);
  const narrow=await open(token,{width:390,height:844});
- await narrow.page.getByRole('button',{name:'desk lifx',exact:true}).click();await section(narrow.page).getByLabel('Hue (°)').waitFor();
+ await narrow.page.getByRole('link',{name:'desk lifx',exact:true}).click();await section(narrow.page).getByLabel('Hue (°)').waitFor();
  assert.equal(await narrow.page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'no horizontal scroll at phone width');
  await capture(narrow.page,'lifx-phone.png');
  // An unreachable bulb shows both unavailable messages under their section labels without overlap.
  const unreachable=await open(token,{setup:page=>page.route('**/api/controllers/v1/lamp/lighting/snapshot',route=>route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}}))});
- await unreachable.page.getByRole('button',{name:'lamp lifx',exact:true}).click();
+ await unreachable.page.getByRole('link',{name:'lamp lifx',exact:true}).click();
  await section(unreachable.page).getByText('General controls unavailable: no controller snapshot.',{exact:true}).waitFor();
  await section(unreachable.page).getByText('Lighting controls unavailable: no lighting snapshot.',{exact:true}).waitFor();
  await capture(unreachable.page,'lifx-unreachable.png');

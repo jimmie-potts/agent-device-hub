@@ -1,8 +1,9 @@
 /* Neon Geometry Wars skin for the B.U.N.N.Y. dashboard: values for the section 4.1 role
-   tokens in docs/application-ui-style-guide.md section 4, plus private tokens for
-   component fills that section 4.1 gives no shared role. Views read only these names;
-   adding a skin means adding a file, not editing views. Dark only for v1 (Hub #182);
-   light values and a skin picker are deferred to guide section 4.4. */
+   tokens in docs/application-ui-style-guide.md section 4, including the spacing and type
+   scale, plus private tokens for component fills that section 4.1 gives no shared role.
+   Views read only these names; adding a skin means adding a file, not editing views.
+   Dark only for v1 (Hub #182); light values and a skin picker are deferred to guide
+   section 4.4. */
 :root{color-scheme:dark;
 --bg:#05070d;--panel:#080c16;--raised:#223048;--inset:#0d1420;
 --text:#d7e3ff;--muted-dense:#a6b4ca;
@@ -10,6 +11,8 @@
 --accent:#22d3ee;--accent-ink:#101724;--link:#b6cdff;--focus:#fff;--pending:#e879f9;
 --radius:2px;
 --font:Bahnschrift,"Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,monospace;
+--type-body:.92rem;--type-small:.78rem;--type-label:.68rem;--type-title:1.5rem;--type-heading:1.15rem;--type-value:1.1rem;
+--space-xs:4px;--space-s:8px;--space-m:12px;--space-l:20px;--space-xl:32px;
 --grid-image:linear-gradient(rgba(34,211,238,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.025) 1px,transparent 1px);
 --grid-size:32px 32px;
 --nav-selected:#103241;--nav-glow:0 0 14px rgba(34,211,238,.0706);

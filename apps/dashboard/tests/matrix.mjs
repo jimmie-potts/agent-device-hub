@@ -16,13 +16,13 @@ async function axe(page){const result=await new AxeBuilder({page}).withTags(['wc
 try {
  await scenario('empty sessions retain useful controls; keyboard and all view accessibility',async(f,page)=>{
   await page.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
-  const wall=page.getByRole('button',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);
+  const wall=page.getByRole('link',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);
   await page.getByLabel('Device mode').first().focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Tab');assert.ok(await page.getByRole('button',{name:'Apply mode',exact:true}).first().evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes.',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').count(),0,'the undeclared scene capability has no form');await axe(page);await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.getByRole('button',{name:'Connections',exact:true}).click();await axe(page);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes.',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').count(),0,'the undeclared scene capability has no form');await axe(page);await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.getByRole('link',{name:'Connections',exact:true}).click();await axe(page);
  },{empty:true});
  await scenario('slow device serializes explicit commands while another device remains responsive',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);const startCount=f.requests.length;
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);const startCount=f.requests.length;
   await until(()=>f.requests.slice(startCount).some(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot'));
   // The page's 5 s poll reads wall alongside pixel, and wall's one-slot client answers an overlapping read with capacity (429). Retry only that, timed from the first attempt, so a wall answer is still required within 700 ms, before the 800 ms pixel read can end.
   const start=performance.now(),read=()=>fetch(f.hub.url+'/api/controllers/v1/wall/snapshot',{headers:f.headers});let wall=await read();while(wall.status===429&&performance.now()-start<700){await wall.text();await new Promise(r=>setTimeout(r,10));wall=await read();}assert.equal(wall.status,200);independentDeviceReadMs=performance.now()-start;assert.ok(independentDeviceReadMs<700,'wall does not await pixel');
@@ -30,12 +30,12 @@ try {
   f.setDelay(0);await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Monitor'));assert.equal(await mode.inputValue(),'monitor','the applied form shows current values without a discard step');await mode.selectOption('media');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await until(()=>f.writes.at(-1).command.action.mode==='media');await page.getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();
  });
  await scenario('terminal integration failures, known evidence and external control are visible',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').waitFor();f.setQueued(true);await page.getByLabel('Layout style').selectOption('project');await page.getByRole('button',{name:'Apply integration settings',exact:true}).click();await page.getByText('Queued. The device hasn’t received it yet.',{exact:true}).waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').waitFor();f.setQueued(true);await page.getByLabel('Layout style').selectOption('project');await page.getByRole('button',{name:'Apply integration settings',exact:true}).click();await page.getByText('Queued. The device hasn’t received it yet.',{exact:true}).waitFor();
   const ticket=f.nano.pending[0].requestId;f.nano.pending=[];f.nano.outcomes=[{apiVersion:f.nano.apiVersion,requestId:ticket,outcome:'failed',priorEffects:'none',physicalOutcome:'unknown',failure:{code:'revision-conflict'}}];
-  await page.getByText('Not applied: another client changed this device first (revision-conflict). Nothing changed.',{exact:true}).waitFor();await page.getByText('failed · revision-conflict',{exact:true}).waitFor();
+  await page.getByText('Not applied: another client changed this device first (revision-conflict). Nothing changed.',{exact:true}).waitFor();await page.locator('section:visible details.details>summary').click();await page.getByText('failed · revision-conflict',{exact:true}).waitFor();
   f.pixoo.lastOutcome={generation:f.pixoo.generation,renditionGeneration:1,status:'failed',code:'transport-failure'};
   const state=f.states.pixel;state.state.externalControl={status:'known',owner:'external',clock:state.sampleClock};state.state.observation={status:'known',clock:state.sampleClock,evidenceAgeMs:10000,power:{status:'known',value:true},brightness:{status:'known',value:50}};state.state.lastSuccessfulSend={status:'known',requestId:state.nextRequestId,clock:state.sampleClock,operationIds:['mode']};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('failed · transport-failure',{exact:true}).waitFor();await page.getByText('Sent mode · physical result unknown',{exact:true}).waitFor();const observation=page.locator('dl>div').filter({has:page.getByText('Observation age',{exact:true})}).filter({visible:true});assert.match(await observation.locator('dd').innerText(),/^1[0-9]s$/);await page.getByText('Unavailable: Device is externally controlled',{exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).isDisabled(),true);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.locator('section:visible details.details>summary').click();await page.getByText('failed · transport-failure',{exact:true}).waitFor();await page.getByText('Sent mode · physical result unknown',{exact:true}).waitFor();const observation=page.locator('dl>div').filter({has:page.getByText('Observation age',{exact:true})}).filter({visible:true});assert.match(await observation.locator('dd').innerText(),/^1[0-9]s$/);await page.getByText('Unavailable: Device is externally controlled',{exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).isDisabled(),true);
  });
  await scenario('rejected older snapshots cannot refresh evidence; expired cursor resync preserves drafts',async(f,page)=>{
   const label=page.getByLabel('Chosen label');await label.fill('Keep my draft');const received=await page.locator('#main').getAttribute('data-received');let stale=true;
@@ -45,7 +45,7 @@ try {
   const response=await fetch(f.hub.url+'/api/monitor/v1/changes',{headers:{...f.headers,'last-event-id':'expired:999'},signal:AbortSignal.timeout(3000)});const reader=response.body.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/event: resync/);await reader.cancel();
  });
  await scenario('partial receipt preserves confirmed transmission in browser feedback',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Device mode').first().waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Device mode').first().waitFor();
   await page.route('**/api/controllers/v1/wall/commands',async route=>{const request=route.request().postDataJSON();const receipt={apiVersion:'1.0',controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId,configurationRevision:0,generation:request.expectedGeneration,outcome:'partially-applied',priorEffects:'confirmed-transmission',completedOperations:['mode'],uncertainOperations:['refresh'],failure:{code:'transport-failure'}};assert.equal(validate('receipt',receipt),true);f.states.wall.state.lastOutcome={status:'known',receipt};assert.equal(validate('snapshot',f.states.wall),true);await route.fulfill({status:503,json:receipt});});
   await page.getByLabel('Device mode').first().selectOption('Quiet');await page.getByRole('button',{name:'Apply mode',exact:true}).first().click();await page.locator('section:visible [role=status]').filter({hasText:'Partly applied: mode was sent; refresh is unknown (transport-failure). Check the device, then reload current values before trying again.'}).waitFor();assert.equal(await visible(page,'button','Reload current values').count(),1,'a partial result locks the form until an explicit reload');assert.equal(await page.getByText('Not applied:',{exact:false}).count(),0);
  });
@@ -53,7 +53,7 @@ try {
  const guard=f=>({requestId:structuredClone(f.states.pixel.nextRequestId),expectedConfigurationRevision:f.states.pixel.configurationRevision,expectedGeneration:structuredClone(f.states.pixel.generation)});
  const general=f=>f.writes.filter(w=>w.id==='pixel'&&!w.integration).map(w=>w.command);
  await scenario('general controls submit one guarded controller v1 command each in Media without changing the mode',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();assert.equal(await brightness.inputValue(),'60');
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();assert.equal(await brightness.inputValue(),'60');
   assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true,'an unchanged draft submits nothing');
   let expected=guard(f);await brightness.fill('30');await visible(page,'button','Apply brightness').click();await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
   assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:30}});
@@ -71,7 +71,7 @@ try {
   await axe(page);
  });
  await scenario('Monitor disables playlist and playback controls with the reason and a one-click explicit switch to Media',async(f,page)=>{
-  f.pixoo.configuration.mode='monitor';await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();
+  f.pixoo.configuration.mode='monitor';await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();
   await page.locator('section:visible').getByText('Unavailable: Pixoo is in Monitor',{exact:false}).waitFor();assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await page.getByLabel('Saved playlist').filter({visible:true}).isDisabled(),true);
   const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.fill('55');assert.equal(await visible(page,'button','Apply brightness').isDisabled(),false,'power and brightness stay available in Monitor');await visible(page,'button','Discard my edit').first().click();
   const revision=f.pixoo.configurationRevision;await visible(page,'button','Switch to Media').click();await until(()=>f.writes.length===1);assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'media'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);
@@ -84,7 +84,7 @@ try {
  await scenario('general control drafts survive concurrent edits; typed conflicts and uncertain results never retry',async(f,page)=>{
   // Serve the last observed Pixoo snapshot while frozen so the browser's guards are deterministically stale. A poll still in flight when the context closes is abandoned instead of crashing the runner.
   let frozen=null,freeze=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;await brightness.fill('45');
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;await brightness.fill('45');
   const external={apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...guard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
   const before=f.writes.length;await visible(page,'button','Pause').click();await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.equal(f.writes.length,before+1);
   // The external client consumed the same ticket; the refreshed snapshot carries its sent receipt, which must never be shown as this rejected Pause's outcome.
@@ -99,18 +99,18 @@ try {
  await scenario('read-only credentials and undeclared capabilities name their reasons',async(f,page)=>{
   await page.getByRole('button',{name:'Disconnect',exact:true}).click();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.reader);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();
   f.states.pixel.state.desired.brightness={status:'unknown'};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
   await page.locator('section:visible').getByText('Current brightness is unknown; the slider starts at a placeholder, not an observed value.',{exact:false}).waitFor();assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).inputValue(),'50');
   assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'power, brightness, media and mode name the missing scope');assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true);await axe(page);
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.locator('section:visible').getByText('Not declared by this controller: media.',{exact:true}).waitFor();assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'Nanoleaf power, brightness, scenes and mode name the missing scope');assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);assert.equal(await visible(page,'button','Switch to Free').isDisabled(),true,'a read-only credential sees the switch disabled with its reason');await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');await axe(page);
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.locator('section:visible').getByText('Not declared by this controller: media.',{exact:true}).waitFor();assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'Nanoleaf power, brightness, scenes and mode name the missing scope');assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);assert.equal(await visible(page,'button','Switch to Free').isDisabled(),true,'a read-only credential sees the switch disabled with its reason');await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');await axe(page);
   assert.equal(f.writes.length,0);
  },{empty:true});
  // Hub #153: Nanoleaf general controls on the declaration of Nanoleaf main 8062849 (#64).
  const wallGuard=f=>({requestId:structuredClone(f.states.wall.nextRequestId),expectedConfigurationRevision:f.states.wall.configurationRevision,expectedGeneration:structuredClone(f.states.wall.generation)});
  const wallGeneral=f=>f.writes.filter(w=>w.id==='wall'&&!w.integration).map(w=>w.command);
  await scenario('Nanoleaf power and brightness work in Work; scenes wait for the explicit Free switch and each control sends one guarded command',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();assert.equal(await brightness.inputValue(),'50');
   const scene=page.getByLabel('Saved scene').filter({visible:true});await scene.waitFor();assert.equal(await scene.isDisabled(),true);assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();
   assert.deepEqual(await scene.locator('option').allTextContents(),['Beach Waves',f.sceneB],'user-chosen names label scenes; IDs otherwise');
@@ -139,7 +139,7 @@ try {
  await scenario('a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry',async(f,page)=>{
   f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';
   let frozen=null,freeze=false;await page.route('**/api/controllers/v1/wall/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;
   // The controller left Free after the browser observed it: typed failure before any write, action stays available.
   f.states.wall.state.desired.mode={status:'known',value:'Work'};f.nano.mode='Work';
   await visible(page,'button','Activate scene').click();await page.locator('section:visible [role=status]').filter({hasText:'unsupported-capability'}).waitFor();assert.deepEqual(f.scenes.activated,[]);assert.equal(f.writes.length,1);
@@ -158,7 +158,7 @@ try {
  const form=(page,heading)=>page.locator('form.edit').filter({visible:true}).filter({has:page.getByRole('heading',{name:heading,exact:true})});
  const statusOf=(page,heading)=>form(page,heading).locator(':scope>[role=status]');
  await scenario('a generation advance between render and activation sends one command with current guards; a later race is shown and never resubmitted',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
   // Pixoo advances its controller v1 generation on every playlist item. The rendered snapshot is now behind; the configuration revision is unchanged.
   f.advance('pixel');let expected=guard(f);await visible(page,'button','Pause').click();await until(()=>general(f).length===1);
   assert.deepEqual(general(f)[0],{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'media.control',action:'pause'}},'the command carries the fresh read\'s ticket, revision and generation');
@@ -177,7 +177,7 @@ try {
   await page.unroute('**/api/controllers/v1/pixel/commands');await visible(page,'button','Next').click();await until(()=>f.media.actions.length===2);assert.deepEqual(f.media.actions,['pause','next'],'one explicit press tries again with current values');
  });
  await scenario('accepted brightness and power changes leave their forms ready for the next change without another action',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   await brightness.fill('30');await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===1);
   await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\. B\.U\.N\.N\.Y\. can’t see the device, so check it to confirm\.)$/}).waitFor();
   await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});
@@ -193,7 +193,7 @@ try {
   await axe(page);
  });
  await scenario('Reapply Work ends a Nanoleaf override with one mode command; nothing to reapply is shown as already in effect',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   await brightness.fill('40');await visible(page,'button','Apply brightness').click();await page.locator('section:visible').getByText('Brightness override active: 40%',{exact:false}).waitFor();
   const reapply=visible(page,'button','Reapply Work');const before=wallGeneral(f).length;const expected=wallGuard(f);await reapply.focus();await page.keyboard.press('Enter');await until(()=>wallGeneral(f).length===before+1);
   assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'mode.set',mode:'Work'}},'exactly one guarded mode command for the active mode');assert.equal(f.writes.filter(w=>w.integration).length,0);
@@ -207,7 +207,7 @@ try {
  });
  await scenario('Start Monitor starts an inactive Pixoo Monitor with one mode command and names the screen-off reason',async(f,page)=>{
   f.pixoo.configuration.mode='monitor';f.pixoo.participating=false;f.states.pixel.state.desired.power={status:'known',value:false};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
   // An initial device read can still carry the power state from before the fixture mutation.
   await page.locator('section:visible').getByText('Unavailable: The screen is off. Turn it on first; Monitor shows only while the screen is on.',{exact:false}).waitFor();assert.equal(await start.isDisabled(),true);
   f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();await axe(page);
@@ -215,7 +215,7 @@ try {
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
   await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');assert.equal(f.writes.length,1);
-  await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
+  await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');
   // A Pixoo integration draft ignores a presentation-generation advance, such as a suspend after a failed frame, and is sent with the fresh generation.
   const filter=page.getByLabel('Label / ID filter');await filter.fill('focus');const reads=f.requests.filter(r=>r.id==='pixel'&&r.url.includes('integration')).length;f.pixoo.generation++;
@@ -232,7 +232,7 @@ try {
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
  await scenario('forms and actions share one lifecycle: a failed fresh read sends nothing, a failed refresh keeps the result, and a double activation sends once',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
   // While failing, every Pixoo snapshot read answers 503. A poll still in flight when the context closes is abandoned instead of crashing the runner.
   let failing=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(failing){await route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}});return;}await route.continue();}catch{await route.abort().catch(()=>{});}});
   const status=page.locator('section:visible [role=status]'),enabled=name=>page.getByRole('button',{name,exact:true,disabled:false}).filter({visible:true});
@@ -264,7 +264,7 @@ try {
   const section=page.locator('section:visible'),status=section.locator('[role=status]').last();
   const buttons=async()=>(await section.getByRole('button').allTextContents()).filter(name=>['Play','Pause','Next','Previous'].includes(name));
   const fact=async label=>section.locator('dl>div').filter({has:page.getByText(label,{exact:true})}).locator('dd').innerText();
-  await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).click();
+  await page.getByRole('link',{name:'ht-a9 now playing',exact:true}).click();
   await section.getByRole('heading',{name:'Song',exact:true}).waitFor();
   assert.deepEqual([await fact('Artist'),await fact('Album'),await fact('Status'),await fact('Source')],['Artist','Album','Playing','ht-a9']);
   assert.deepEqual(await buttons(),['Pause','Next','Previous'],'only declared controls appear; Play is not declared');
@@ -291,7 +291,7 @@ try {
   f.sony.skew=31000;await section.getByRole('heading',{name:'No track information',exact:true}).waitFor();
   await section.getByText('Unavailable: The source is unavailable',{exact:true}).waitFor();assert.equal(await fact('Title'),'Not reported');await axe(page);
   // Without the source grant the view disappears and polling stops.
-  f.reconnect({granted:['wall','pixel']});await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
+  f.reconnect({granted:['wall','pixel']});await page.getByRole('link',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
   let reads=0;page.on('request',r=>{if(r.url().includes('/api/playback/'))reads++;});await page.waitForTimeout(2500);assert.equal(reads,0,'no playback reads without the grant');
   assert.deepEqual(f.sony.calls,['setPlayNextContent','setPlayPreviousContent','setPlayNextContent']);
  },{playback:true});
@@ -300,7 +300,7 @@ try {
   try{
    const launch=await requestBrowserLaunch(f.hub.directory);
    await page.goto(launch.url+'/#launch='+launch.code);
-   await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
+   await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
    assert.equal(new URL(page.url()).hash,'','the one-time launch code is removed from browser history');
    assert.equal(f.writes.length,0,'launch and inspection do not command devices');
    await page.reload();await page.getByText('Open B.U.N.N.Y. with the Hub launcher.').waitFor();

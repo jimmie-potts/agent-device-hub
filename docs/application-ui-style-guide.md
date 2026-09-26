@@ -142,8 +142,8 @@ layer; there is no cross-repository CSS package.
 | `--font` | UI face | `Bahnschrift, "Segoe UI", system-ui, sans-serif` | same |
 | `--mono` | Readouts, labels, identifiers | `"Cascadia Mono", Consolas, ui-monospace, monospace` | `"Cascadia Mono", Consolas, monospace` |
 | `--glow`, `--grid-image`, `--grid-size` | Decoration | skin-defined | grid only, `32px` |
-| `--type-body`, `--type-small`, `--type-label` | Type scale | skin-defined | `1rem`, `.78rem`, `.68rem` |
-| `--space-xs` to `--space-xl` | Spacing steps | skin-defined | raw pixel values |
+| `--type-body`, `--type-small`, `--type-label` | Type scale | skin-defined | `.92rem`, `.78rem`, `.68rem` in the application skin since Hub #277, plus private `--type-title`, `--type-heading` and `--type-value` |
+| `--space-xs` to `--space-xl` | Spacing steps | skin-defined | `4px`, `8px`, `12px`, `20px`, `32px` (`--space-xs`, `-s`, `-m`, `-l`, `-xl`) in the application skin since Hub #277; `style.css` reads only these |
 
 The Neon column lists the application reference values, taken from the wall
 map. The documentation skin file keeps its own dark values for reading
@@ -311,11 +311,20 @@ consistency needs no web font anywhere.
 - Shape: 2 px radius on buttons, fields, cards and badges in both apps; flat
   surfaces separated by 1 px borders; the wall map's selected cards add cyan
   corner brackets (`.card.selection::before/after`).
-- Dashboard shell: `232px` sidebar and a main column with `max-width: 1500px`
-  and `42px` side padding; session cards `24px` padding with `20px` gaps. At
-  `900px` the sidebar narrows to `180px` and main padding to `22px`. At `680px`
-  the shell becomes a single column, navigation becomes a wrapping row, dense
-  forms and definition lists become one column, and main padding is `18px`.
+- Dashboard shell (Hub #277): `220px` sidebar and a fluid main column with
+  `--space-xl` (`32px`) side padding. Widgets sit in a grid of
+  `minmax(300px, 1fr)` columns that fills the width (small widgets take one
+  column, medium two, large the row); control cards sit in a grid of
+  `minmax(260px, 1fr)` columns with `--space-m` (`12px`) gaps and padding, so a
+  component page shows four cards in one row at 1440 px and three at 1280 px.
+  A status strip is one wrapping line of label and value pairs; the rare facts
+  sit behind a Details disclosure and long guidance behind a Help disclosure.
+  At `900px` the sidebar narrows to `180px` and main padding to `20px`. At
+  `680px` the shell becomes a single column, navigation becomes a wrapping row,
+  every grid becomes one column, and main padding is `12px`. Measured on the
+  fake-controller fixture: the wall page is 1,566 px tall at 1280 px wide
+  (3,624 px before Hub #277) and the pixel page 1,051 px; at 1440 px every
+  component widget and the sessions widget start within the first 1000 px.
 - Wall map: on wide screens a three-column grid of `240px` projects rail,
   `minmax(320px, 1fr)` canvas and `440px` inspector; cards use `14px` padding
   and `12px` gaps. Below `1050px` (`max-width: 1049.98px`) the inspector
@@ -324,9 +333,13 @@ consistency needs no web font anywhere.
   the toolbar hides its captions for sighted users only.
 
 **Shared rule.** Keep a stable shell, consistent left alignment, clear groups
-and room around the main content. Use the dashboard's quieter spacing for
-forms and data; keep the wall map's denser composition where the live wall
-needs the area. Do not force one page's column widths onto the other.
+and room around the main content. Density comes from layout, not from more
+chrome: a page fills its width with cards and widgets, shows the everyday
+readouts in a strip, and keeps rare facts and long guidance behind disclosures.
+A component page shows its status and every control within about two screens
+at 1440 px, and the home shows every registered component in the first screen.
+Keep the wall map's denser composition where the live wall needs the area. Do
+not force one page's column widths onto the other.
 
 ## 8. Components and states
 
@@ -336,7 +349,9 @@ needs the area. Do not force one page's column widths onto the other.
 | Secondary button | Transparent surface, pale text, slate border. | Inspection, cancel, alternate and low-priority actions. |
 | Selected navigation | `aria-current="page"` on the nav button with a cyan border, an inset cyan bar and a filled background (`main.tsx`, `style.css`). | Mark the current location with `aria-current`. Selection stays visible without animation. |
 | Pending | Dashboard: status text in magenta while a command is queued; the mode switch block has a magenta left rule. Wall map: dashed magenta outline on pending Lines and the busy notice. | Say what is pending in text. The same cue never means success, failure or focus. |
-| Card or panel | Dark surface, thin border, compact heading, supporting text; definition lists with muted labels. | Related facts and controls together. Glow only for an active selection. |
+| Card or panel | Dark surface, thin border, compact heading, supporting text; definition lists with muted labels. Since Hub #277 every control is one card in a grid, and a device's rare, larger forms sit in one panel (Assignments, Monitor). | Related facts and controls together. One short visible line per card; longer guidance behind a Help disclosure. Glow only for an active selection. |
+| Widget | A titled block on the home from the widget catalog (`src/widgets.ts`): the component widget shows health, the status strip and the same Mode and Power cards as the component page, with a link to that page. | A widget renders identically wherever it is placed; moving one is a placement change. Read-only widgets offer no command. |
+| Status strip | One wrapping line of mono labels and values (`.strip`): mode, power, brightness, observation age, pending. | Everyday readouts in one line; the fact list stays behind Details. |
 | Form field | Dark input, pale text, visible label, white focus outline. | Labels stay visible; show the current or unknown value honestly; keep drafts and selection across a refresh. |
 | Badge or status | Text plus a small colored cue (`.badge`, `.badge.warning`); feed state reads "Feed connected", "Reconnecting" or "Connection stale". | Status in words, not color alone. Attention, stale observation and pending command stay distinct. |
 | Unavailable control | A declared control renders disabled with a named reason: "Unavailable: Your credential is read-only", "Settings unavailable: this component has no supported integration extension". An undeclared capability has no form; one line names them: "Not declared by this controller: media and scenes.", or "No general controls: …" when none is declared. | Explain what is absent or why. Missing data never implies a broken device. Never draw a form that cannot be used. |
@@ -458,6 +473,12 @@ Acceptance checklist for each new or restyled page:
       field labels.
 - [ ] Coherent at desktop, intermediate and 390 px widths without clipped
       controls or horizontal overflow.
+- [ ] Dense: a component page's status and every control fit within about two
+      screens at 1440 px (the wall page under 2,000 px tall at 1280 px), the
+      home's component widgets start in the first screen, and no view leaves its
+      right half empty (controls reach at least 70% of the main column). The
+      browser suite measures these on the fake-controller fixture.
+- [ ] Every page has a hash address and the back button walks the history.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
 - [ ] Ends decorative motion within 5 seconds and preserves meaning under reduced motion.
