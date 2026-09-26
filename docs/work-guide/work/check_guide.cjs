@@ -487,13 +487,15 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
        for(const available of ['claude','codex']){
          const absent=available==='claude'?'codex':'claude', partialKey=others.find(k=>!Object.values(cases).includes(k)&&k!==pick(5));
          await page.evaluate(([key,fixture,available])=>{const d=document.querySelector('#issue-recommendations'),j=JSON.parse(d.textContent);
-           j[key]={...fixture,cheaper:'One-host cheaper fixture.',prompts:{...fixture.prompts,cheaper:{[available]:fixture.prompts.cheaper[available]}}};
+           j[key]={...fixture,hosts:Object.fromEntries(Object.entries(fixture.hosts).map(([h,v])=>[h,{...v,session:'Investigate first',reviewers:'None'}])),cheaper:'One-host cheaper fixture.',prompts:{...fixture.prompts,cheaper:{[available]:'Investigate this fixture read-only; do not implement.'}}};
            d.textContent=JSON.stringify(j);},[partialKey,fixture,available]);
          await open(partialKey); await dialog.locator('[data-action="implement"]').click();
          await dialog.locator(`button[data-host="${available}"]`).click();
          assert(!(await dialog.locator('button[data-start="cheaper"]').isDisabled()));
          await dialog.locator('button[data-start="cheaper"]').click();
-         assert.equal(await prompt.inputValue(),fixture.prompts.cheaper[available]);
+         assert.equal(await prompt.inputValue(),'Investigate this fixture read-only; do not implement.');
+         assert(!(await hint.textContent()).includes('merged PR'),'Cheaper investigation must not promise delivery');
+         assert((await hint.textContent()).includes('read-only investigation'),'Cheaper investigation retains the read-only hint');
          await dialog.locator(`button[data-host="${absent}"]`).click();
          assert(await dialog.locator('button[data-start="cheaper"]').isDisabled());
          assert.equal(await dialog.locator('button[data-start="recommended"]').getAttribute('aria-pressed'),'true');

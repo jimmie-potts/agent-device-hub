@@ -602,7 +602,7 @@ JS = '''
    if (custom) {
      const session = rec.hosts[host].session;
      prompt.value = rec.prompts[begin][host];
-     hint.textContent = `Saved ${HOSTS[host]} prompt from the story's recommendation, ${rec.date}. ` + (session === 'Investigate first' && begin === 'recommended' ? 'It starts a read-only investigation; the story is reassessed before implementation.' : 'It runs to a merged PR and a closed issue unless it says otherwise.');
+     hint.textContent = `Saved ${HOSTS[host]} prompt from the story's recommendation, ${rec.date}. ` + (session === 'Investigate first' ? 'It starts a read-only investigation; the story is reassessed before implementation.' : 'It runs to a merged PR and a closed issue unless it says otherwise.');
    } else {
      prompt.value = build(issue.url, issue.title);
      hint.textContent = action === 'implement' ? `${rec.label}: generic prompt. ${text}` : text;
