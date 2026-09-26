@@ -27,10 +27,7 @@ an ID, a name, a description, its sizes, its source kind (a registered
 controller alias, a hub route or a read-only external source from
 [#287](https://github.com/jimmie-potts/agent-device-hub/issues/287)), the reads
 it needs and whether it offers command actions. `homeLayout` is the developer
-placement: one `component-status` widget per registered component (health, the
-status strip, and the same Mode and Power cards as the component page, with a
-link to it), then `attention`, `collector` and `sessions`. Sessions are compact
-rows with an inline label form and their retained notices under the row.
+placement: one `component-status` widget per registered component, with compact Mode and Power controls on the left and Sessions at the top right. The two columns grow independently. Sessions move first on narrow screens. Each session shows its title or label, project/provider and a named activity indicator; parent/child evidence, read evidence and label editing sit behind Details. Attention and retained notices stay visible. Empty attention occupies one line. Collector diagnostics move to a small feed indicator and remain on Connections. Status tooltips open on hover, focus or touch and dismiss with Escape or lost focus; their content is informational, with actions kept in Details. Known brightness uses a meter and numeric value; unknown values never become percentages.
 [#366](https://github.com/jimmie-potts/agent-device-hub/issues/366) makes
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the

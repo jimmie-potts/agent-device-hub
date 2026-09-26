@@ -154,3 +154,35 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:var(--space-m)}.brand{font-size:var(--type-subheading)}nav{display:flex;flex-wrap:wrap;gap:var(--space-xs)}nav a{font-size:var(--type-small)}.nav-label{display:none}.sidebar-foot{display:flex;gap:var(--space-m);align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:var(--type-label);padding:var(--space-xs) var(--space-s)}.shell>main{padding:0 var(--space-m)}.top{font-size:var(--type-brand-small);gap:var(--space-s)}.widgets,.cards,.cards.two,.facts,.edit.wide fieldset{grid-template-columns:1fr}.widget[data-size=medium],.widget[data-size=large]{grid-column:auto}.device-art{padding:var(--space-s)}.device-art-host svg{max-height:40vh}.filters{grid-template-columns:1fr}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:var(--space-l)}}
 @media(min-width:681px){.widget[data-size=medium]{grid-column:span 2}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Independent columns keep the session list alongside compact controls. */
+.home-columns{display:grid;grid-template-columns:minmax(280px,2fr) minmax(0,3fr);gap:var(--space-m);align-items:start}
+.home-devices,.home-sessions{display:grid;gap:var(--space-m);min-width:0}
+.home-status{display:flex;align-items:center;gap:var(--space-m);flex-wrap:wrap;font-size:var(--type-small);color:var(--muted-dense)}
+.device-glance{display:flex;gap:var(--space-m);align-items:center;justify-content:space-between;margin-bottom:var(--space-s)}
+.brightness-readout{display:flex;align-items:center;gap:var(--space-xs);font-size:var(--type-label)}
+.brightness-readout meter{width:64px;height:12px;accent-color:var(--accent)}
+.widget .quick-controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.quick-controls>.edit{border:0;padding:var(--space-s) 0;border-top:1px solid var(--edge-faint);gap:var(--space-xs)}
+.quick-controls .edit>h3{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.quick-controls .edit[role=group]>h3{position:static;width:auto;height:auto;margin:0;clip:auto;white-space:normal}
+.quick-controls .edit>fieldset{gap:var(--space-xs)}
+.session-head{justify-content:space-between;align-items:flex-start;gap:var(--space-s)}
+.session-details{margin:var(--space-xs) 0 0!important}
+.session-details>.strip{margin:var(--space-s) 0}
+.session-details .edit{margin-top:var(--space-s)}
+.session>.attention{font-size:var(--type-small);margin:var(--space-xs) 0}
+.info-tip{position:relative;display:inline-flex;flex-shrink:0;max-width:100%}
+button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(--space-xs) var(--space-s);border-color:var(--edge-dense);white-space:nowrap}
+.info-popover{position:absolute;right:0;top:100%;padding:var(--space-s) var(--space-m);width:280px;max-width:calc(100vw - 40px);background:var(--panel);border:1px solid var(--edge-strong);border-radius:var(--radius);color:var(--text);font-size:var(--type-small);line-height:1.5;overflow-wrap:anywhere;z-index:20}
+.tip-line{display:block}
+.device-glance .info-popover{right:auto;left:0}
+@media(max-width:1050px){.home-columns{grid-template-columns:minmax(240px,2fr) minmax(0,3fr)}.home-columns .filters{grid-template-columns:1fr}}
+@media(max-width:800px){.home-columns{display:flex;flex-direction:column}.home-sessions{order:-1;width:100%}.home-devices{width:100%}.session-head{flex-wrap:wrap}.home-status{gap:var(--space-s)}}
+
+.home-sessions>.widget{grid-column:1/-1}
+.quick-controls [role=status]:empty{min-height:0}
+.attention-summary{margin:0;padding:var(--space-xs) var(--space-m);font-size:var(--type-small);color:var(--muted-dense)}
+@media(max-width:380px){.widget .quick-controls{grid-template-columns:1fr}}
+
+@media(min-width:801px){.home-devices{grid-column:1;grid-row:1}.home-sessions{grid-column:2;grid-row:1}}
