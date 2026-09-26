@@ -66,7 +66,10 @@
 #146 [OPEN] Play custom animations for different events
 #149 [OPEN] Cap how fast animations can flash
 #150 [CLOSED] Stop an animation and restore the remembered scene through MCP
+#151 [CLOSED] Add a rotating spin direction and a faster speed for animations
 #152 [OPEN] Add a chase pattern that runs along connected Lines
+#153 [CLOSED] Offer a mood library of named animation presets
+#154 [CLOSED] Save and replay favorite animations by name
 #155 [OPEN] Save a requested animation as a Nanoleaf scene
 #156 [OPEN] Preview a requested animation on the wall map before playing it
 #157 [OPEN] Play requested animations on the NL22 Light Panels
@@ -86,3 +89,5 @@
 #178 [OPEN] Expose each element's task status read-only on the integration route
 #179 [OPEN] Use shared session titles and project names instead of local-only metadata
 #180 [OPEN] Say the hub dashboard now shows Panels controls in the controller guide
+#187 [OPEN] Install and verify the animation-control bundle on the approved Nanoleaf runtime
+#188 [OPEN] Check a saved animation against the current Lines layout before playing it

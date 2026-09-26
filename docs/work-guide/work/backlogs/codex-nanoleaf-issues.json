@@ -53,7 +53,7 @@
     "body": "## Shared-hub ownership\nKeep the reusable Nanoleaf visual renderer here. Future hub previews may consume this timeline after parity verification; [agent-device-hub#6](https://github.com/jimmie-potts/agent-device-hub/issues/6)'s overview does not depend on it. Do not add a device writer or status interpreter.\n\n## Desired outcome\n\nMake the regular app's wall visualization track bridge-controlled physical lights in real time, including animation rather than only one-second status-color updates.\n\n## Scope\n\nConsume #15's rendering contract in a reusable visual renderer for the current map. Match task pulses and waves, per-project halves, completion effects, Locate, and physical previews. Make the renderer reusable by the inspection-only wallpaper and future ambient view without requiring either deliverable to finish first.\n\nKeep on-screen effect demonstrations visibly separate from the live wall visualization. External Nanoleaf scenes are a separate investigation.\n\n## Acceptance criteria\n\n- AC1: For bridge-controlled output, the correct physical zones show the same encoded colors, relative brightness, frame transitions, looping, and timing as the worker output. Project/status halves and physical Line numbering remain correct after rotation and flips.\n- AC2: Verify a maximum visual phase difference of 250 ms in the agreed visible-app acceptance scenarios on the user's PC. Record actual measurements and the measurement method. This measures UI-versus-wall alignment, not the separate delay before a task-status event reaches the worker. A failure to meet the target remains an acceptance gap unless the user explicitly revises it.\n- AC3: Rendering follows successfully sent output and exposes pending, failed/uncertain, stale, and externally controlled states. Do not present requested-but-unsent settings or arbitrary scene guesses as current physical output.\n- AC4: Pause/resume, browser backgrounding, reconnect, server restart, and task interruption recover to current output without replaying expired waves or celebrations.\n- AC5: Selecting Lines/tasks and observing the live view do not mutate task state, mark tasks read, start animations, or send light writes. Existing editing actions remain explicit in the regular map; the wallpaper remains inspection-only.\n- AC6: An on-screen preview is labeled and separate from live output. A physical preview appears in the live view while the worker plays it, and normal current output returns afterward.\n- AC7: Physical comparison covers Work and Quiet, overlapping blocked/question alerts, split halves, an existing completion comet, and Locate. Extend frame-parity and device scenarios when the linked new palettes and effects become available. Free and idle external scenes display their known control state without claiming unverified per-zone mirroring.\n- AC8: Preserve keyboard focus and selection during updates, and record CPU/GPU/memory behavior while visible and paused. No second animation scheduler or light writer is introduced.\n\n## Verification approach\n\nUse deterministic frame/timing browser scenarios against #15, including failed/partial sends and restart/no-replay cases. Compare the visible UI with physical output using synchronized recording or another reproducible observation method with sufficient timing resolution. Include representative animation transitions and report observed maximum skew. Matching software frames alone does not establish physical synchronization.\n\nRun python3 scripts/check.py after Python changes, npm run test:browser after map/API changes, and npm run check:workflow plus npm run test:workflow after npm ci for OpenSpec/workflow changes. Validate PowerShell changes in Windows PowerShell.\n\nDeliver source changes through an isolated worktree and reviewed PR, using an issue-linked OpenSpec change for changed behavior. Use focused red/green checks, independent Standards and Specification reviews, all configured CI jobs, and main CI readback. UI changes require explicit human approval of the current candidate before merge. Keep revision-specific evidence in the PR.\n\n## Dependencies\n\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/15 - Expose authoritative light rendering state for display clients\n\nBlocked until #15 provides the rendering contract. Lively prototype evaluation is not a prerequisite. Coordinate future renderer use with #12 and #16 while preserving their scopes.\n\n## Delivery target\n\nSource delivery followed by explicitly authorized installed Windows/device verification. Keep this issue open until the required physical synchronization evidence is complete. Use bridge/install-modes.ps1 for an authorized upgrade, preserve live state, and identify the installation owner before a trial.\n\n## Follow-up work\n\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/18 - Configure project and status colors consistently\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/19 - Choose and preview completion celebrations\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/20 - Customize animation for each status\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/16 - Build the ambient view (deferred)\n\n## Related work\n\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/12 - Add an inspection-only display mode\n- https://github.com/jimmie-potts/codex-nanoleaf/issues/21 - Investigate mirroring externally controlled Nanoleaf scenes\n\nThe inspection-only wallpaper may reuse this renderer after both are available; it gains no configuration or physical-preview controls.\n\n## Execution recommendation\n\n**Status:** insufficient\n**Missing:** A re-read of the Windows-specific delivery text (bridge, tray, install-modes.ps1) against the Linux runtime, as the 2026-09-22 comment asks. A plan-work refresh is the next step.\n\n**Reassess when:** The story is refreshed for the Linux runtime.\n**Assessed:** 2026-09-25 · policy `agent-skills@3746fab` · evidence: story text, comments and dependencies read 2026-09-25 03:10 UTC; no ratings recorded · fingerprint: `e1c29f5fce41`\n\n## Guide\n\n**Topic:** nanoleaf-presentation\n**Note:** The rendering contract [[N15]] is delivered. Build the live app renderer on it; with the Lively track closed, it and [[N16]] own the persistent-display direction.\n",
     "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/17",
     "createdAt": "2026-09-07T00:23:47Z",
-    "updatedAt": "2026-09-25T06:44:38Z",
+    "updatedAt": "2026-09-26T05:47:40Z",
     "closedAt": null,
     "labels": [
       {
@@ -65,7 +65,7 @@
     ],
     "milestone": null,
     "comments": [],
-    "commentCount": 2,
+    "commentCount": 3,
     "commentsRefreshed": false
   },
   {
@@ -2054,6 +2054,26 @@
     "commentsRefreshed": false
   },
   {
+    "number": 151,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Add a rotating spin direction and a faster speed for animations",
+    "body": "## Outcome and real setup\n\nCodex can play a sweep that rotates around the wall's center, clockwise or counterclockwise, and can pick a speed one step faster than `fast`. On the owner's 15-Line wall the Lines surround the centroid (angles cover the full circle), so a rotation reads clearly.\n\n## Smallest useful implementation\n\n- `bridge/effects.py` `phases()` gains `clockwise` and `counterclockwise`, computed from each Line's angle around the centroid. The spatial patterns (`wave`, `gradient`) accept them.\n- A new speed, for example `faster`, uses a shorter keyframe step, still within 20 frames per zone and 8,192 bytes.\n- Validation, the TypeScript consumer and fixtures, and the MCP enums are updated. Specs and docs follow.\n\n## Behavior and protections to preserve\n\n- Existing directions and speeds keep their frames byte for byte.\n- Free-only gating, receipts and the single writer are unchanged.\n- The faster speed may go down to the device's one-decisecond keyframe step; no flash cap applies (owner decision in #149).\n\n## Observable acceptance and planned evidence\n\n- Encoder tests: crest order follows angle for both rotations on the 15-Line and two-Line fixtures; the faster speed produces a shorter cycle; every combination stays within the frame and byte bounds.\n- MCP tests list the new values.\n- Live, when requested: play a clockwise wave and confirm the rotation.\n\n## Meaningful deferrals\n\n- Choosing a custom rotation center is deferred. The centroid is used. Revisit if the owner's wall shape makes it look off-center.\n\n\n## Work assessment\n\nPlanning assessment, 2026-09-25, from #92's delivery and the live session. Source-only delivery unless stated.\n\n- **Complexity: low.** Encoder and enum changes.\n- **Uncertainty: low.**\n- **Impact: medium.** Physical output.\n- **Readiness:** ready. The owner relaxed the flash cap on 2026-09-25 (#149), so the faster speed is unblocked.\n\nFollows #92 and complements #146.\n\n## Guide\n\n**Topic:** nanoleaf-presentation\n**Highlight:** idea, A rotating spin direction and a faster speed.\n**Extends:** N92\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/151",
+    "createdAt": "2026-09-25T16:50:23Z",
+    "updatedAt": "2026-09-26T05:17:55Z",
+    "closedAt": "2026-09-26T05:17:55Z",
+    "labels": [
+      {
+        "name": "enhancement"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 3,
+    "commentsRefreshed": false
+  },
+  {
     "number": 152,
     "state": "OPEN",
     "stateReason": null,
@@ -2074,6 +2094,46 @@
     "milestone": null,
     "comments": [],
     "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 153,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Offer a mood library of named animation presets",
+    "body": "## Outcome and real setup\n\nWhen asked for something like \"cozy\", \"ocean\", \"sunset\", \"aurora\", \"campfire\" or \"forest\", Codex picks from a curated library of named presets (pattern, colors, speed, direction) instead of improvising palettes.\n\n## Smallest useful implementation\n\n- A static preset table in `bridge/effects.py`, reported by the animation options route and `nanoleaf_animations_list`.\n- `animation.play` accepts either explicit fields or `preset: <name>`, resolved server-side to the same encoded effect.\n- Start with about 8 presets.\n\n## Behavior and protections to preserve\n\n- Explicit animation requests keep working unchanged.\n- Presets must pass the frame and byte bounds. No flash cap applies (owner decision in #149).\n- The extension snapshot shape stays unchanged.\n\n## Observable acceptance and planned evidence\n\n- Every preset validates and renders within bounds.\n- A preset request produces the same frames as the equivalent explicit request.\n- MCP lists the presets.\n- The owner reviews the palettes live when requested.\n\n## Meaningful deferrals\n\n- User-defined presets belong to #154.\n\n\n## Work assessment\n\nPlanning assessment, 2026-09-25, from #92's delivery and the live session. Source-only delivery unless stated.\n\n- **Complexity: low.**\n- **Uncertainty: low** on mechanics. Palette taste needs owner input.\n- **Impact: low.**\n- **Readiness:** ready. The proposed defaults are below; the owner can adjust them in review.\n\n## Proposed defaults (2026-09-25)\n\nThe owner asked for proposed defaults. Each one below validates and renders within the bounds on the 15-Line fixture; the largest is 5,666 bytes.\n\n| Mood | Pattern | Speed | Direction | Colors |\n| --- | --- | --- | --- | --- |\n| cozy | breathe | slow | | `#ff8c1a` `#ff5a00` `#d93a1a` |\n| ocean | wave | slow | right | `#003f8a` `#0077b6` `#00b4d8` `#48cae4` `#2ec4b6` |\n| sunset | gradient | slow | up | `#ff4800` `#ff7b00` `#ff006e` `#8338ec` `#3a0ca3` |\n| aurora | wave | slow | right | `#00ff87` `#00c9a7` `#7b2ff7` `#2d00f7` |\n| campfire | sparkle | fast | | `#ff3c00` `#ff7a00` `#ffb000` |\n| forest | gradient | slow | up | `#0b3d0b` `#1f7a1f` `#6ab04c` `#b8e994` |\n| rain | sparkle | medium | | `#1e3a8a` `#3b82f6` `#93c5fd` |\n| focus | breathe | slow | | `#1d4ed8` `#0ea5e9` |\n| party | pulse | fast | | `#ff006e` `#fb5607` `#ffbe0b` `#3a86ff` `#8338ec` |\n| celebration | sparkle | fast | | `#ffd700` `#ffffff` `#ff4fd8` |\n\nCandidates once #151 lands: `radar` (green `wave` clockwise) and `vortex` (blue and purple `wave` counterclockwise, faster speed). Candidate once #152 lands: `electric` (white and cyan `chase`).\n\nFollows #92 and complements #146.\n\n## Guide\n\n**Topic:** nanoleaf-presentation\n**Highlight:** idea, A mood library of named animation presets.\n**Extends:** N92\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/153",
+    "createdAt": "2026-09-25T16:50:25Z",
+    "updatedAt": "2026-09-26T05:30:09Z",
+    "closedAt": "2026-09-26T05:30:09Z",
+    "labels": [
+      {
+        "name": "enhancement"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 4,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 154,
+    "state": "CLOSED",
+    "stateReason": "completed",
+    "title": "Save and replay favorite animations by name",
+    "body": "## Outcome and real setup\n\nAfter an animation the owner likes, Codex can save it under a name (for example, \"my ripple\") and replay it later by name.\n\n## Smallest useful implementation\n\n- The extension stores named favorites (validated `animation.play` fields) in the installation's private SQLite, bounded (for example, 32).\n- New extension commands save and delete favorites. They are configuration edits with `applied` receipts.\n- `animation.play` accepts `favorite: <name>`.\n- MCP adds `nanoleaf_animation_save` and `nanoleaf_animation_forget`, and the options listing includes favorites.\n\n## Behavior and protections to preserve\n\n- Favorites are local state and must survive upgrades.\n- Private data stays out of Git and the browser.\n- The frame and byte bounds apply at play time. No flash cap applies (owner decision in #149).\n- The snapshot shape stays unchanged.\n\n## Observable acceptance and planned evidence\n\n- Save, replay, rename collision, delete and bound tests.\n- A persistence test across a database reopen.\n- MCP save and replay tests.\n\n## Meaningful deferrals\n\n- Sharing favorites with the hub or across devices is deferred to the hub.\n\n\n## Work assessment\n\nPlanning assessment, 2026-09-25, from #92's delivery and the live session. Source-only delivery unless stated.\n\n- **Complexity: medium.** New persistent state and commands.\n- **Uncertainty: low.**\n- **Impact: medium.** User data integrity.\n- **Readiness:** backlog.\n\nFollows #92 and complements #146.\n\n## Guide\n\n**Topic:** nanoleaf-presentation\n**Highlight:** idea, Saved favorite animations by name.\n**Extends:** N92\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/154",
+    "createdAt": "2026-09-25T16:50:26Z",
+    "updatedAt": "2026-09-26T05:54:33Z",
+    "closedAt": "2026-09-26T05:41:27Z",
+    "labels": [
+      {
+        "name": "enhancement"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 5,
     "commentsRefreshed": false
   },
   {
@@ -2500,6 +2560,55 @@
     "labels": [
       {
         "name": "documentation"
+      },
+      {
+        "name": "status:backlog"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 187,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Install and verify the animation-control bundle on the approved Nanoleaf runtime",
+    "body": "### Outcome and real setup\n\nP2 follow-up from the 2026-09-26 animation-bundle archive sweep. Put the source-delivered #174, #150, #151, #153 and #154 features on the owner's selected Linux installation, then separately verify real-client and visible Lines behavior. The source finish line is complete; this issue owns the installation and physical evidence that was explicitly excluded.\n\nBaseline to include: `da5f9d3c8155b5a6ac25bc1f3e60f41fea2d2073` (PRs #182–#186). Device MCP 1.0.1 was published in jimmie-potts/agent-device-hub#407 and adopted in #174. Live GitHub readback on 2026-09-26 confirms all source issues are closed and all five exact merged-revision jobs passed for each PR. This sweep did not inspect or change the running installation, so its current revision must be established at pickup.\n\n### Smallest useful implementation\n\n1. Obtain an explicit installation request and identify the installation owner. Read current instructions and coordinate with any active runtime owner. Read the actual installed revision first; if another authorized session already installed the bundle, verify it instead of reinstalling.\n2. Select an exact approved committed revision containing the baseline, verify its applicable CI, and follow the existing guarded in-place upgrade procedure with backup and rollback receipts. Preserve the current private database; do not fresh-install over it. #140 owns an upgrade command and #162 owns procedure documentation; neither needs to be implemented merely to run an already supported manual upgrade.\n3. Verify installed MCP discovery and typed receipts from an explicitly selected real client. Permanent Codex registration remains #159; reuse an approved existing or per-run attachment when suitable rather than silently editing personal settings.\n4. Obtain a separate named Lines target/IP and permission for the precise playback/restoration sequence before physical commands. Record source, installed, client, transport and visible results separately.\n\n### Behavior and protections to preserve\n\nKeep one writer per device, Free-only playback, existing Work/Quiet behavior, task state, reservations, credentials, remembered scenes and brightness policy. Do not alter Panels output. Favorite saves are create-only; rename rejects occupied names atomically; supplied recipes and defaults are frozen. Preserve existing favorites through upgrade/restart. Do not restore an old database over newer favorites as an automatic rollback step; follow ADR 0017.\n\n### Observable acceptance and planned evidence\n\nDelivery target: authorized installation plus separately authorized client and physical acceptance; no new source feature.\n\n- Record installed revision, selected source revision, backup/rollback location privately, service and worker readiness, and the Device MCP archive checksum. Do not publish private state or credentials.\n- Real client discovers the expected tools; supplied-field and preset saves send no light command, collisions preserve both records, and a chosen favorite survives restart and replays with the same recipe. Preserve original request identities for receipt lookup/replay.\n- With explicit target permission, observe clockwise and counterclockwise waves, the faster setting, representative named moods and favorite replay. Record the owner's palette assessment separately from transport receipts; select the exact sequence with the owner before it runs.\n- Play an animation and invoke `nanoleaf_scene_restore`; observe the remembered scene return. Confirm Work/Quiet and missing-target failures remain typed without unintended light commands. This is scene restoration, not a new brightness-restoration promise.\n- Record persistence, restoration, unchanged unrelated device state, and any discrepancies. File a source bug if a reproducible mismatch appears; do not broaden this installation task silently.\n\n### Meaningful deferrals\n\nPermanent registration: #159. Flash-rate cap remains optional under the owner decision in #149. Panels animations: #157. Saved firmware scenes: #155. Source tests and loopback receipts do not establish physical output.\n\nReadiness: backlog until the owner selects the installation, owner, real client and authorized physical target/sequence. Filing this issue grants none of those permissions.\n\n## Guide\n\n**Topic:** hosting-migrations\n**Note:** Install and qualify the source-delivered animation bundle, preserving favorites and separating client receipts from visible Lines acceptance.\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/187",
+    "createdAt": "2026-09-26T05:52:00Z",
+    "updatedAt": "2026-09-26T05:52:00Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "maintenance"
+      },
+      {
+        "name": "status:backlog"
+      },
+      {
+        "name": "hardware"
+      }
+    ],
+    "milestone": null,
+    "comments": [],
+    "commentCount": 0,
+    "commentsRefreshed": false
+  },
+  {
+    "number": 188,
+    "state": "OPEN",
+    "stateReason": null,
+    "title": "Check a saved animation against the current Lines layout before playing it",
+    "body": "> Backlog placeholder, filed on 2026-09-26 during the animation-bundle archive sweep. It holds the idea until it is clarified and defined. It does not authorize implementation, installation or device changes.\n\n### Outcome and real setup\n\nFrom Codex, the owner can ask whether a saved favorite still fits the current Lines layout and see a concise explanation before requesting playback. The check changes no mode, favorite, queue or lights and does not claim physical success.\n\nObservation: #154 freezes recipes across database reopen and source upgrades, but ADR 0017 explicitly allows a later layout to make a saved recipe exceed current encoder bounds. Today the owner learns that when play is rejected. #151 and #153 already provide deterministic bounded encoding. A read-only check can reuse it.\n\n### Smallest useful implementation\n\nNot yet defined. Starting point: resolve one named favorite through the existing owner and run the same pure encoder/validation against the saved current layout, reporting a bounded summary or the existing typed reason for rejection. Settle whether this fits an existing options tool or needs a new tool before coding; the complete catalog is already 493,877 bytes against its 524,288-byte regression budget at `da5f9d3`.\n\nThis is distinct from #156's animated wall-map preview: no rendered browser playback or frame export is proposed. It does not replace play-time validation.\n\n### Behavior and protections to preserve\n\nPrivate favorite data stays behind the existing authenticated boundary and out of browser/Hub snapshots. Use the same recipe resolution and encoder; no parallel validation policy, ticket allocation, device request, mode switch or second writer. A successful check describes one layout revision and can become stale before play.\n\n### Observable acceptance and planned evidence\n\nNot yet defined. Delivery target: source-only first. Candidate evidence: a valid recipe, a favorite made too large by a layout change, zero state/queue/device writes, truthful stale-result behavior, and unchanged final playback admission. Resolve the returned summary and revision semantics during planning.\n\n### Meaningful deferrals\n\nLater idea. The work guide's Direction favors fixed desk presets (H67), boot availability (H356), and visible wall hold/completion fixes first. This small assistant interaction extends existing animation control without promoting it ahead of those priorities. Graphical preview stays #156; exporting favorites is separate and has no current delivery request.\n\n## Guide\n\n**Topic:** assistant-access\n**Highlight:** idea, Persistent favorites can outlive their layout; the existing pure encoder makes a no-write compatibility answer practical.\n**Extends:** N154, N151, N153\n",
+    "url": "https://github.com/jimmie-potts/codex-nanoleaf/issues/188",
+    "createdAt": "2026-09-26T05:52:01Z",
+    "updatedAt": "2026-09-26T05:52:01Z",
+    "closedAt": null,
+    "labels": [
+      {
+        "name": "enhancement"
       },
       {
         "name": "status:backlog"

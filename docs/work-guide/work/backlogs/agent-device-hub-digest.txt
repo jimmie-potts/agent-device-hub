@@ -134,7 +134,7 @@
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
 #272 [OPEN] Let devices join or leave one shared task pool
 #276 [CLOSED] Open B.U.N.N.Y. from a bookmark without a token or launcher step
-#277 [OPEN] Make the dashboard a dense control surface instead of long single-column pages
+#277 [CLOSED] Make the dashboard a dense control surface instead of long single-column pages
 #278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
 #279 [OPEN] Clear the visual-alignment leftovers in the style guide, atlas and system map
 #282 [OPEN] Record a private local history of tasks, devices, music and hub health for graphs
@@ -233,7 +233,7 @@
 #398 [OPEN] Keep a session's label when the same session resumes
 #399 [OPEN] Keep flourishes quiet automatically while a game runs
 #400 [OPEN] Derive device palettes from artwork as one hub service for games and music
-#401 [OPEN] Update the atlas's playback prose and overview card for installed shared playback
+#401 [CLOSED] Update the atlas's playback prose and overview card for installed shared playback
 #402 [OPEN] Show the guide's Build-next list as a widget on the B.U.N.N.Y. home
 #403 [OPEN] Show the six runtime services and their last start on the B.U.N.N.Y. home
 #405 [OPEN] Show live reachability for each device controller in B.U.N.N.Y.
@@ -255,4 +255,9 @@
 #432 [OPEN] Play a sent moment on the B.U.N.N.Y. device art
 #437 [OPEN] Show which speaker is playing in B.U.N.N.Y. and the playback snapshot
 #438 [OPEN] Change the volume of the presented speaker from B.U.N.N.Y. and the playback tools
-#439 [OPEN] Paint LIFX status from sessions with uncertain freshness
+#439 [CLOSED] Paint LIFX status from sessions with uncertain freshness
+#442 [OPEN] Verify installed Hub and Tidbyt fallback revisions include the early stop handlers
+#443 [OPEN] Preview desk preset participation and unavailable devices before applying
+#444 [OPEN] Release and install the hub with the dense control surface (#277) and check it in the installed dashboard
+#445 [OPEN] Undo the last device change from its card
+#446 [OPEN] Show observation freshness as the Eyes badge on every widget and card

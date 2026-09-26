@@ -1,15 +1,20 @@
 {
-  "fetchedAt": "2026-09-26T05:43:29.810394+00:00",
+  "fetchedAt": "2026-09-26T05:51:58.138474+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T05:42:41Z",
+      "pushedAt": "2026-09-26T05:44:10Z",
       "defaultBranch": "main",
-      "headSha": "9399df664a9a754511c90c496d92a52289dae320",
-      "mainCommitCount": 167,
+      "headSha": "490ad5ab3b8c47b2e82f1bbafd32b724e2b68f1f",
+      "mainCommitCount": 168,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "490ad5ab3b8c47b2e82f1bbafd32b724e2b68f1f",
+          "date": "2026-09-26T05:44:10Z",
+          "message": "Paint LIFX status from sessions with uncertain freshness (#439) (#441)"
+        },
         {
           "sha": "9399df664a9a754511c90c496d92a52289dae320",
           "date": "2026-09-26T05:42:41Z",
@@ -2158,17 +2163,17 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/440",
           "base": "main",
           "mergedAt": "2026-09-26T05:42:42Z"
-        }
-      ],
-      "openPRs": [
+        },
         {
           "number": 441,
           "title": "Paint LIFX status from sessions with uncertain freshness (#439)",
           "createdAt": "2026-09-26T05:24:42Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/441",
-          "base": "main"
+          "base": "main",
+          "mergedAt": "2026-09-26T05:44:10Z"
         }
       ],
+      "openPRs": [],
       "closedIssues": [
         {
           "number": 1,
@@ -2891,6 +2896,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/276"
         },
         {
+          "number": 277,
+          "title": "Make the dashboard a dense control surface instead of long single-column pages",
+          "closedAt": "2026-09-26T05:45:46Z",
+          "createdAt": "2026-09-25T07:19:42Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/277"
+        },
+        {
           "number": 289,
           "title": "Connect Tidbyt and LIFX to the hub through one local controller host",
           "closedAt": "2026-09-25T21:36:17Z",
@@ -3011,6 +3024,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/392"
         },
         {
+          "number": 401,
+          "title": "Update the atlas's playback prose and overview card for installed shared playback",
+          "closedAt": "2026-09-26T05:50:07Z",
+          "createdAt": "2026-09-26T01:34:36Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/401"
+        },
+        {
           "number": 407,
           "title": "Publish Device MCP 1.0.1 so vendored consumers get the smaller tool schemas",
           "closedAt": "2026-09-26T05:02:12Z",
@@ -3043,10 +3064,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/417"
         }
       ],
-      "openIssueCount": 165,
+      "openIssueCount": 168,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T05:18:24Z"
+        "2026-09-26T05:50:38Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -3060,7 +3081,7 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 45
+        "2026-09-26": 50
       }
     },
     "codex-nanoleaf": {
