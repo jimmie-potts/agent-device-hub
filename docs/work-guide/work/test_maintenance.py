@@ -266,15 +266,17 @@ class GuideMaintenance(unittest.TestCase):
             paths = candidate / 'work/guide_paths.py'
             text = paths.read_text()
             self.assertEqual(text.count("'P61']"), 1)
-            paths.write_text(text.replace("'P61']", ']'))
+            self.assertEqual(text.count("'H11']"), 1)
+            paths.write_text(text.replace("'P61']", ']').replace("'H11']", ']'))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(any('P61' in line.split(': ', 2)[-1].split(', ')
                                 for line in result.stderr.splitlines() if 'Track placement pending:' in line))
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
-            pending = document.split('Track placement pending</h3>', 1)[1].split('</table>', 1)[0]
-            self.assertIn('data-issue="P61"', pending)
+            pending = re.findall(r'Track placement pending</h3>(.*?)</table>', document, re.S)
+            self.assertEqual(sum('data-issue="P61"' in table for table in pending), 1)
+            self.assertEqual(sum('data-issue="H11"' in table for table in pending), 1)
 
     def test_refreshed_sequences_follow_native_prerequisites(self):
         import importlib.util
