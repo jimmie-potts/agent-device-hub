@@ -13,9 +13,9 @@ PREFIXES = {'agent-device-hub': 'H', 'codex-nanoleaf': 'N', 'divoom-app-upgrade'
 # Closed story states referenced by the guide are retained so regeneration can
 # move them from active work into the closed evidence section.
 GUIDE_STATUS_REFERENCES = {
-    'agent-device-hub': [10, 21, 85, 86, 87, 152, 154, 155, 175, 181, 182, 191, 195, 196, 197, 200, 207, 210, 212, 218, 220, 222, 225, 231, 237, 244, 245, 252, 264],
-    'codex-nanoleaf': [15, 31, 46, 75, 78, 84, 89, 91, 108, 117, 131, 132, 135, 139],
-    'divoom-app-upgrade': [38, 47, 68, 72, 77],
+    'agent-device-hub': [10, 21, 37, 38, 42, 85, 86, 87, 152, 154, 155, 175, 181, 182, 191, 195, 196, 197, 200, 207, 210, 212, 218, 220, 222, 225, 231, 237, 241, 242, 244, 245, 252, 259, 264, 289, 290, 291, 292, 308, 330],
+    'codex-nanoleaf': [15, 31, 44, 46, 75, 78, 84, 89, 91, 92, 108, 111, 113, 114, 117, 131, 132, 135, 139],
+    'divoom-app-upgrade': [38, 47, 67, 68, 72, 77, 89],
 }
 
 

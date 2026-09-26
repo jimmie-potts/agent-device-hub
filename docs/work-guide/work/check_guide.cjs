@@ -49,10 +49,10 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     const apiIssue=(key,overrides={})=>{const source=issueMap[key];return {number:source.number,state:source.state.toLowerCase(),state_reason:source.stateReason,title:source.title,html_url:source.url,created_at:source.createdAt,labels:source.labels,body:source.body,...overrides};};
     // A live-edited Note (#259): the mocked body carries a changed Note under the same Topic.
     const editedNote='Deferred Home Assistant and MQTT evaluation. Edited live for the check.';
-    // Live idea marks (#308): H11 is newly marked with Extends; H998 is a new story marked as an idea.
+    // Live idea marks (#308): H11 is a snapshot idea whose live body changes its reason and Extends; H998 is a new story marked as an idea.
     const ideaReason='Home Assistant could reach devices the hub does not speak to <b>yet</b>.', newIdeaReason='A brand-new live idea.';
     const hubBlocked=apiIssue('H11',{labels:issueMap.H11.labels.filter(l=>l.name!=='blocked'),issue_dependencies_summary:{blocked_by:1,total_blocked_by:2},
-      body:issueMap.H11.body.replace(/\*\*Note:\*\*[^\n]*/,`**Note:** ${editedNote}\n**Highlight:** idea, ${ideaReason}\n**Extends:** N47, H252`)});
+      body:issueMap.H11.body.replace(/\n\*\*(?:Highlight|Extends):\*\*[^\n]*/g,'').replace(/\*\*Note:\*\*[^\n]*/,`**Note:** ${editedNote}\n**Highlight:** idea, ${ideaReason}\n**Extends:** N47, H252`)});
     const hubClosed=apiIssue('H23',{state:'closed',state_reason:'completed'});
     const hubClosedOther=apiIssue('H17',{state:'closed',state_reason:'not_planned'});
     const nanoleafReview=apiIssue('N47',{labels:[...issueMap.N47.labels.filter(l=>!l.name.startsWith('status:')),{name:'status:review'}],issue_dependencies_summary:{blocked_by:0,total_blocked_by:0}});
@@ -89,7 +89,13 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     assert(await liveStatus('N17').evaluateAll(es=>es.every(e=>e.dataset.status==='in-progress'&&e.querySelector('.issue-status').textContent==='In progress · blocked'&&e.getAttribute('aria-label').includes('In progress · blocked'))),'In-progress issues keep the blocked qualifier');
     assert(await liveStatus('H25').evaluateAll(es=>es.every(e=>e.dataset.status==='open')),'Issues absent from both reads keep their snapshot status');
     const pixooAfterFailure=await page.locator('a.issue.repo-P[data-issue]').evaluateAll(es=>Object.fromEntries(es.map(e=>[e.dataset.issue,e.dataset.status])));
-    assert.deepEqual(pixooAfterFailure,pixooSnapshotStatuses,'A failed repository keeps every badge at its snapshot status');
+    // A Pixoo badge whose every occurrence sits inside another repository's idea row (an Extends link) leaves with
+    // that row when its repository's live read replaces the row. Every other Pixoo badge stays, at its snapshot status.
+    const ideaRowHtml=(sourceHtml.match(/<li class="idea"[\s\S]*?<\/li>/g)||[]).join('');
+    const countIn=(html,key)=>(html.match(new RegExp(`data-issue="${key}"`,'g'))||[]).length;
+    const ideaOnly=new Set(Object.keys(pixooSnapshotStatuses).filter(key=>countIn(sourceHtml,key)===countIn(ideaRowHtml,key)));
+    for(const [key,status] of Object.entries(pixooSnapshotStatuses)){if(!(key in pixooAfterFailure)){assert(ideaOnly.has(key),`A failed repository keeps ${key} on the page`);continue;} assert.equal(pixooAfterFailure[key],status,`A failed repository keeps ${key} at its snapshot status`);}
+    assert.deepEqual(Object.keys(pixooAfterFailure).filter(key=>!(key in pixooSnapshotStatuses)),[],'A failed repository adds no badge');
     assert((await page.locator('#github-status').textContent()).includes(`${snapshotDate} snapshot`));
     assert.equal(await page.locator('#newly-added [data-view-content] > .work-grid > .work-card').first().getAttribute('data-key'),'H999','New issue appears by creation date');
     assert.equal(await page.locator('#open-defects .work-card').first().getAttribute('data-key'),'H999','Explicit priority sorts before an unranked bug');
@@ -183,7 +189,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
     for(const key of openKeys){const label=new RegExp(`${{H:'Hub',N:'Nanoleaf',P:'Pixoo'}[key[0]]} #${key.slice(1)}(?!\\d)`); assert(label.test(roadmapIssues),`Roadmap lists ${key}`); assert.equal((roadmapIssues.match(new RegExp(label.source,'g'))||[]).length,1,`Roadmap lists ${key} exactly once`);}
     assert(await page.locator('.roadmap .node').evaluateAll(es=>es.every(e=>document.getElementById(e.getAttribute('href').slice(1))?.classList.contains('guide'))),'Roadmap nodes link to work guides');
     await page.locator('.history a.pr circle').first().hover(); assert(await page.locator('#timeline-tip').isVisible()); assert((await page.locator('#timeline-tip').textContent()).includes('PR #')); await page.locator('.history a.pr circle').first().focus(); assert(await page.locator('#timeline-tip').isVisible(),'Tooltip on keyboard focus');
-    await page.locator('.roadmap .node[data-node="n-codex"] rect').hover(); assert((await page.locator('#timeline-tip').textContent()).includes('B.U.N.N.Y. UI foundation')); assert(await page.locator('.roadmap .edge.lit').count()>0,'Prerequisite edges highlight');
+    await page.locator('.roadmap .node[data-node="n-codex"] rect').hover(); assert((await page.locator('#timeline-tip').textContent()).includes('UI foundation delivered')); assert(await page.locator('.roadmap .edge.lit').count()>0,'Prerequisite edges highlight');
     await page.locator('#timeline .repo-chip[data-repo="P"]').click(); assert(await page.locator('.history a.pr.dim').count()>0); assert.equal(await page.locator('.history a.pr[data-repo="P"].dim').count(),0); await page.locator('#timeline .repo-chip[data-repo="all"]').click(); assert.equal(await page.locator('#timeline .dim').count(),0);
     assert.deepEqual(await page.locator('.stats strong').allTextContents(),[String(openKeys.length),String(count),String(Object.keys(repos).length).padStart(2,'0')]);
     for(const [key,repo] of Object.entries(repos)) {
@@ -249,7 +255,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(await page.locator('.guide:not([hidden])').getAttribute('id'),id);
       assert.equal(await page.locator('nav a[data-guide]:not([hidden])').count(),1); assert.equal(await page.locator('#timeline').isVisible(),false,'Timeline hides during search');
       const visibleDiagrams=await page.locator('.diagram:not([hidden])').count(); assert.equal(await page.locator('#architecture').isVisible(),visibleDiagrams>0);
-      assert.equal(await page.locator('#result-count').textContent(),`1 guide · ${liveMembers(id).length} issues in these guides · ${visibleDiagrams} diagram${visibleDiagrams===1?'':'s'}`);
+      const members=liveMembers(id).length; assert.equal(await page.locator('#result-count').textContent(),`1 guide · ${members} issue${members===1?'':'s'} in these guides · ${visibleDiagrams} diagram${visibleDiagrams===1?'':'s'}`);
     }
     await page.locator('#search').press('Escape'); assert.deepEqual(await expansion(),beforeSearch); assert.deepEqual(await evidenceExpansion(),beforeEvidence,'Search restores nested evidence'); assert.equal(await page.locator('.diagram:not([hidden])').count(),diagramIds.length); assert(await page.locator('#timeline').isVisible());
     await page.locator('#search').fill('generation'); assert(await page.locator('.diagram:not([hidden])').count()>0); assert(await page.locator('#architecture').isVisible()); await page.locator('#search').press('Escape');
@@ -274,43 +280,43 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      await page.locator('#search').fill('no-such-topic-987'); assert.equal(await direction.isVisible(),false,'Direction hides without a match'); await page.locator('#search').press('Escape'); assert(await direction.isVisible(),'Clearing search restores the direction section');
      for(const width of [390,1440]){await page.setViewportSize({width,height:width===390?844:1000}); await direction.evaluate(e=>{e.open=true;}); await direction.scrollIntoViewIfNeeded(); assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No page overflow with the direction section at ${width}`); assert(await direction.evaluate(e=>e.scrollWidth<=e.clientWidth+1),`The direction section has no inner overflow at ${width}`); assert(await direction.locator('table.leverage').evaluate(e=>{const r=e.getBoundingClientRect();return r.right<=innerWidth&&r.left>=0;}),`The leverage table fits at ${width}`); await direction.screenshot({path:path.join(root,`work/guide-direction-${width}.png`)});}
      await page.setViewportSize({width:1440,height:1000});}
-    // Ideas (#308): the committed snapshot carries no idea marks, so every row here comes from the mocked
-    // live read. Pixoo's read failed (429), so its snapshot rows stay; Hub and Nanoleaf read successfully.
+    // Ideas (#308): the committed snapshot carries idea marks. After the mocked live reads, Hub and Nanoleaf keep
+    // only their live-assigned members (H11 and H998 for Hub; N47 for Nanoleaf), while Pixoo's read failed (429),
+    // so its snapshot rows stay. Expectations are computed from the snapshot's own marks.
     {const ideas=page.locator('#ideas'), keysIn=async locator=>locator.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key));
-     assert.deepEqual(meta.ideas.keys,[],'The committed snapshot carries no idea marks yet');
-     assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] .newly-added-since-snapshot')),['H11'],'A story newly marked since the snapshot lands in the Newly added block of its topic');
+     assert(meta.ideas.keys.includes('H11')&&meta.ideas.keys.includes('N47'),'The committed snapshot marks the fixture stories H11 and N47 as ideas');
+     const pixooIdeas=meta.ideas.keys.filter(k=>k.startsWith('P')), liveIdeas=['H998','H11','N47',...pixooIdeas];
+     assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] .newly-added-since-snapshot')),[],'A snapshot idea whose live body changes is patched in place, not listed as newly marked');
      assert.deepEqual(await keysIn(ideas.locator('.ideas-topic[data-topic="bunny-controls"] .newly-added-since-snapshot')),['H998'],'A new live story marked as an idea lands in its topic');
-     assert.deepEqual(await ideas.locator('.ideas-topic').evaluateAll(es=>es.map(e=>e.dataset.topic)),['bunny-controls','nanoleaf-devices'],'Topic groups follow guide order');
+     assert.deepEqual(await ideas.locator('.ideas-topic').evaluateAll(es=>es.map(e=>e.dataset.topic)),['bunny-controls','nanoleaf-devices',...(pixooIdeas.length?['pixoo-media']:[])],'Topic groups follow guide order');
      const h11=ideas.locator('li.idea[data-key="H11"]');
      assert.equal(await h11.locator('.idea-reason').textContent(),ideaReason,'The reason renders literally');
      assert.equal(await h11.locator('.idea-reason b').count(),0,'Hostile markup in a reason is text');
      assert.deepEqual(await h11.locator('.idea-extends a.issue').evaluateAll(es=>es.map(e=>[e.dataset.issue,e.dataset.status])),[['N47','review'],['H252','completed']],'Extends keys link with live status');
      assert.equal(await h11.locator('.idea-state').textContent(),'Blocked','The live scheduling state is shown, not promoted');
-     assert.equal(await ideas.locator('summary .guide-count').textContent(),'2 marked'); assert.equal(await page.locator('nav a[data-section="ideas"] .nav-count').textContent(),'02');
-     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['H998','H11'],'Direction Later ideas follows the live marked set');
+     assert.equal(await ideas.locator('summary .guide-count').textContent(),`${liveIdeas.length} marked`); assert.equal(await page.locator('nav a[data-section="ideas"] .nav-count').textContent(),String(liveIdeas.length).padStart(2,'0'));
+     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas,'Direction Later ideas follows the live marked set');
      assert.equal(await page.locator('#direction .direction-ideas-empty').isVisible(),false); assert.equal(await ideas.locator('.ideas-empty').isVisible(),false);
      assert((await page.locator('#overview-freshness').textContent()).includes('ideas and counts read from GitHub'),'The freshness line names the Ideas section among the live parts');
      await page.locator('#search').fill(newIdeaReason); assert(await ideas.isVisible(),'Ideas joins search, including live rows'); assert.equal(await ideas.getAttribute('open'),'','A search match opens the ideas section');
      await page.locator('#search').fill('no-such-topic-987'); assert.equal(await ideas.isVisible(),false,'Ideas hides without a match'); await page.locator('#search').press('Escape'); assert(await ideas.isVisible());
      for(const width of [390,1440]){await page.setViewportSize({width,height:width===390?844:1000}); await ideas.evaluate(e=>{e.open=true;}); await ideas.scrollIntoViewIfNeeded(); assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`No page overflow with the ideas section at ${width}`); assert(await ideas.evaluate(e=>e.scrollWidth<=e.clientWidth+1),`The ideas section has no inner overflow at ${width}`); await ideas.screenshot({path:path.join(root,`work/guide-ideas-${width}.png`)});}
      await page.setViewportSize({width:1440,height:1000});
-     // A snapshot row patches in place; a failed repository keeps its snapshot row. The committed snapshot has
-     // no marked rows, so these two are inserted in the snapshot's markup before the next live pass.
+     // A snapshot row patches in place; a failed repository keeps its snapshot row. The committed snapshot already
+     // marks H11 (Hub, read live) and the Pixoo ideas (read failed), so the built markup is restored and read again.
      const groupsBefore=await page.evaluate(()=>document.querySelector('#ideas .ideas-groups').innerHTML);
-     await page.evaluate(()=>{const groups=document.querySelector('#ideas .ideas-groups');
-       const row=(key,topic,link)=>`<section class="ideas-topic" data-topic="${topic}"><h3><a href="#${topic}">x</a></h3><ul class="ideas-list"><li class="idea" data-key="${key}" data-topic="${topic}"><p class="idea-head">${link}<span class="idea-title">t</span></p><p class="idea-reason">Snapshot reason.</p><p class="idea-meta"></p></li></ul></section>`;
-       groups.querySelector('.ideas-topic[data-topic="nanoleaf-devices"]').remove();
-       groups.insertAdjacentHTML('beforeend',row('H11','nanoleaf-devices',document.querySelector('a.issue[data-issue="H11"]').outerHTML)+row('P11','pixoo-media',document.querySelector('a.issue[data-issue="P11"]').outerHTML));});
+     const pixooReasonBefore=pixooIdeas.length?await ideas.locator(`li.idea[data-key="${pixooIdeas[0]}"] .idea-reason`).textContent():null;
+     await page.evaluate(html=>{document.querySelector('#ideas .ideas-groups').innerHTML=html;},groupsBefore);
      await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[blocked,guided,...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
      assert.equal(await ideas.locator('.ideas-topic[data-topic="nanoleaf-devices"] > .ideas-list li.idea[data-key="H11"] .idea-reason').textContent(),ideaReason,'A known row patches its reason in place');
      assert.equal(await ideas.locator('.newly-added-since-snapshot li.idea[data-key="H11"]').count(),0,'A known row is not duplicated in the Newly added block');
      assert.deepEqual(await h11.locator('.idea-extends a.issue').evaluateAll(es=>es.map(e=>e.dataset.issue)),['N47','H252'],'A known row patches its Extends in place');
-     assert.equal(await ideas.locator('li.idea[data-key="P11"] .idea-reason').textContent(),'Snapshot reason.','A failed repository keeps its snapshot row');
+     if(pixooIdeas.length) assert.equal(await ideas.locator(`li.idea[data-key="${pixooIdeas[0]}"] .idea-reason`).textContent(),pixooReasonBefore,'A failed repository keeps its snapshot row');
      // A story that closes live, or loses its mark, is removed from the section and from Later ideas.
      await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[{...blocked,body:blocked.body.replace(/\n\*\*Highlight:\*\*[^\n]*\n\*\*Extends:\*\*[^\n]*/,'')},...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
-     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['P11'],'Closed and unmarked stories leave the section');
-     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['P11']);
-     assert.equal(await ideas.locator('summary .guide-count').textContent(),'1 marked');
+     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['N47',...pixooIdeas],'Closed and unmarked stories leave the section');
+     assert.deepEqual(await page.locator('#direction .direction-ideas li').evaluateAll(es=>es.map(e=>e.dataset.key)),['N47',...pixooIdeas]);
+     assert.equal(await ideas.locator('summary .guide-count').textContent(),`${1+pixooIdeas.length} marked`);
      // The live parser rejects what the build rejects: Extends beside another kind, a lowercase key, a duplicate.
      const invalidIdeas=[['Highlight:** next step, r\n**Extends:** H11',995],['Highlight:** idea, r\n**Extends:** h11',994],['Highlight:** idea, r\n**Extends:** H11, H11',993]]
        .map(([lines,number])=>({number,state:'open',title:`Invalid idea ${number}`,created_at:snapshot.refreshedAt,labels:[],body:`## Guide\n\n**Topic:** bunny-controls\n**${lines}\n`}));
@@ -328,7 +334,7 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      // Restore the built markup and the full mocked reads for the checks that follow.
      await page.evaluate(html=>{document.querySelector('#ideas .ideas-groups').innerHTML=html;},groupsBefore);
      await page.evaluate(([blocked,guided,more])=>window.updateWorkOverview('H',[blocked,guided,...more]),[hubBlocked,hubNewGuided,hubPageTwo]);
-     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),['H998','H11'],'The page is back to the mocked live state');}
+     assert.deepEqual(await ideas.locator('li.idea').evaluateAll(es=>es.map(e=>e.dataset.key)),liveIdeas,'The page is back to the mocked live state');}
     for(const id of ['nanoleaf-devices','desktop-controls']) {await page.locator(`#${id} > summary`).scrollIntoViewIfNeeded();await screenshot(`${id}-desktop`);}
     await page.locator('#timeline').screenshot({path:path.join(root,'work/guide-timeline-desktop.png')});
     for(const id of ['arch-local-paths','arch-shared-system','arch-nanoleaf-linux','seq-nanoleaf-command']) await page.locator(`#${id}`).screenshot({path:path.join(root,`work/guide-${id}-desktop.png`)});

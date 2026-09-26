@@ -16,58 +16,63 @@ hand-written list beside it.
 import html
 
 AS_OF = '2026-09-25'
-REVISION = '15c9c2a'
+REVISION = '21583cd'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [
     ('Nanoleaf Lines and Panels',
      'Installed on the Linux runtime and following shared monitoring, with the Lines and the NL22 Panels as independent devices. '
-     'Codex titles, the compact inspector, configurable Work-mode colors and saved-scene playback are delivered; the Lines/Panels map selector is in progress.',
-     ['N46', 'N139', 'N91', 'N44']),
+     'Codex titles, the compact inspector, configurable Work-mode colors, saved-scene playback, the Lines/Panels map selector and Panels control through the controller and MCP are delivered. Installing the Panels in the controller, MCP host and hub is next.',
+     ['N46', 'N139', 'N91', 'N44', 'N113', 'N167']),
     ('Pixoo',
-     'Installed as a user service with hub settings; Monitor and Media controls are verified on the display. '
+     'Installed as a user service with hub settings; Monitor and Media controls are verified on the display, and now-playing cards are installed and checked. '
      'Two media defects remain visible on the device: extra GIF flashes and cloud content after screen-on or a reboot.',
-     ['P77', 'P34', 'P52', 'P76']),
+     ['P77', 'P34', 'P89', 'P52', 'P76']),
     ('Tidbyt',
-     'Agent status is installed and verified on the cloud-connected device. Now-playing cards and the Tronbyt connection stay later.',
-     ['H21', 'H38', 'H23']),
+     'Agent status and the now-playing card are installed and verified on the cloud-connected device, and the installed local controller host gives it a B.U.N.N.Y. page. The Tronbyt move waits on the dedicated server and is one of its triggers (ADR 0008).',
+     ['H21', 'H38', 'H289', 'H23', 'H44']),
     ('LIFX',
-     'The LAN controller source is delivered. Automatic status waits on the owner\'s behavior decisions before anything is installed.',
-     ['H18', 'H20', 'H22']),
+     'The LAN controller runs in the installed local controller host, and B.U.N.N.Y. shows real bulb power. Automatic status waits on the owner\'s behavior decisions; the Beam is its own story.',
+     ['H18', 'H289', 'H330', 'H20', 'H319']),
     ('PC lighting',
      'Later by the owner\'s choice. Every story waits on hardware qualification, so nothing here is scheduled.',
      ['H51', 'H53']),
     ('Playback',
-     'Shared Linux playback with the Sony HT-A9 source is installed. Now-playing UI with Sony-qualified controls is in progress; the Sonos Move is the next source.',
-     ['H175', 'H37', 'H233']),
+     'Shared Linux playback with the Sony HT-A9 source, now-playing with Sony-qualified controls in B.U.N.N.Y. and Codex tools, and now-playing cards on the Pixoo and Tidbyt are installed and checked. The Sony cannot resume from the hub, so the Sonos Move is the next source and the qualified route to play and resume.',
+     ['H175', 'H37', 'H38', 'H242', 'H233']),
     ('Hub and dashboard',
      'B.U.N.N.Y. carries the Neon skin, one-step device settings and one command lifecycle for forms and actions. '
-     'Shared monitoring runs as an installed service with Codex Desktop read state and 24-hour session expiry; consistent retirement across Codex and Claude is ready to start.',
-     ['H182', 'H231', 'H245', 'H191', 'H195', 'H241']),
+     'Shared monitoring runs as an installed service with Codex Desktop read state, 24-hour session expiry and consistent retirement across Codex and Claude. '
+     'The six services still start only with a WSL login; ADR 0008 chose linger, an idle timeout and one scheduled task on the PC, with a dedicated server behind a trigger.',
+     ['H182', 'H231', 'H245', 'H191', 'H195', 'H241', 'H356', 'H44']),
     ('Guide and atlas',
-     'Published in the Neon skin with task briefs, live GitHub status and a starting-session recommendation per story. Story-owned topic placement is the next guide change.',
-     ['H197', 'H252', 'H259']),
+     'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. Reconciling story text made stale today and recording recommendations for the new stories come next, then the nightly rolling refresh.',
+     ['H197', 'H252', 'H259', 'H308', 'H315']),
 ]
 
 # What it is becoming: (paragraph, direction keys).
 BECOMING = [
-    ('One interface. The Nanoleaf wall map grows into the B.U.N.N.Y. shell: a page per device and a group page that shows every device with shared art.',
-     ['H271']),
+    ('One interface. B.U.N.N.Y., the dashboard, is the shell (ADR 0007, 2026-09-25): a page per device and a group page drawn with shared device art ported from the wall map\'s Prism renderer. The wall map stays Nanoleaf\'s advanced editor until every operation has a shell home, then retires.',
+     ['H271', 'H355', 'N169', 'N170', 'N171']),
     ('One system of colors and looks. The same status and project colors on every device, and coordinated Free and Quiet looks started from the hub, building on the fixed desk-preset mappings.',
      ['H267', 'H67']),
     ('One task pool. In Work, devices join or leave a shared pool while each keeps its own writer and identity.',
      ['H272', 'N47']),
+    ('Moments. Events such as a merged pull request or a meeting soon play a short interlude on each device, arbitrated by the hub (ADR 0006).',
+     ['H358', 'H335', 'H297']),
+    ('Always on. The runtime starts at boot in WSL and moves to a dedicated Linux server when a trigger fires (ADR 0008).',
+     ['H356', 'H44']),
     ('The owner\'s test for new work: something visible on a device or in B.U.N.N.Y. that they can interact with, chosen as the least work that unblocks the most.',
      []),
 ]
 
 # What to build next, in order: (keys, why).
 SEQUENCE = [
-    (['H241'], 'Retire ended monitoring sessions consistently across Codex and Claude. It is ready, and it releases cross-device eviction and the Nanoleaf Work/Free switch on session presence.'),
     (['H20'], 'Decide the LIFX status behavior: bulbs, colors, brightness cap, quiet behavior and the manual-change policy. No code, and it releases the LIFX installation and LIFX in every cross-device story.'),
     (['H67'], 'Desk presets with fixed Work, Free and Quiet mappings across Nanoleaf and Pixoo: the smallest visible cross-device win and the base for coordinated modes. The tracker still marks it deferred until the owner selects it.'),
-    (['N44', 'N113'], 'Finish the Lines/Panels map selector and give the Panels their own controller and MCP access: the first device page.'),
-    (['H37', 'H233'], 'Land now-playing with Sony-qualified controls, then add the Sonos Move as the second playback source.'),
+    (['H356'], 'Start the WSL runtime at boot: linger, an idle timeout and one scheduled task, so the lights, map, Pixoo and hub are back after a restart without opening a terminal (ADR 0008).'),
+    (['N169', 'H355'], 'Read-only wall geometry and the Prism art in the dashboard: the first shared device art, used by the home miniature and the Nanoleaf pages (ADR 0007).'),
+    (['H233'], 'Add the Sonos Move as the second playback source: the qualified route to play and resume from the hub.'),
     (['N112', 'N81', 'N115'], 'Wall presentation the owner sees directly: show the Lines hold and how to resume it, queue the delayed completion comet, and keep comets and waves when the worker skips revisions.'),
 ]
 
@@ -76,11 +81,15 @@ IMPROVEMENTS = [
     ('Pixoo media: keep MCP status valid after dashboard uploads, and keep Divoom cloud content off the display after screen-on and reboots.', ['P79', 'P76']),
     ('Tidbyt: check stale-status readability with night mode enabled.', ['H227']),
     ('Dashboard: document connecting device controllers, and stop component aliases colliding with built-in pages.', ['H232', 'H247']),
-    ('Guide: mission-map navigation and signal playback build on the Neon restyle.', ['H201', 'H202']),
+    ('Guide: mission-map navigation and signal playback build on the delivered Neon restyle, once their stale blocked labels are cleared.', ['H201', 'H202']),
 ]
 
 # Keys moved out of SEQUENCE at a refresh: (date, keys, note).
-DELIVERED_SINCE = []
+DELIVERED_SINCE = [
+    ('2026-09-25', ['H241'], 'Consistent retirement across Codex and Claude merged; cross-device eviction and the Nanoleaf Work/Free switch no longer wait on it.'),
+    ('2026-09-25', ['N44', 'N113'], 'The Lines/Panels map selector and Panels control through the controller and MCP are delivered in source.'),
+    ('2026-09-25', ['H37'], 'Now-playing with Sony-qualified controls is installed and its installed acceptance passed; the Sonos Move follows as the second source.'),
+]
 
 SCHEDULING = {'candidate': 'Candidate', 'active': 'Active', 'blocked': 'Blocked', 'deferred': 'Deferred', 'closed': 'Closed'}
 TABLE_LIMIT = 10

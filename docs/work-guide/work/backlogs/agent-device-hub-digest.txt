@@ -26,15 +26,15 @@
 #32 [CLOSED] Deliver Codex-first shared monitoring and integration controls
 #35 [OPEN] Track future personal assistant, music and hosting work
 #36 [OPEN] Defer Windows Apple Music as an optional playback source
-#37 [OPEN] Add now-playing and music controls to the shared UI and Codex tools
-#38 [OPEN] Show Apple Music now-playing cards on Pixoo and Tidbyt
+#37 [CLOSED] Add now-playing and music controls to the shared UI and Codex tools
+#38 [CLOSED] Show Apple Music now-playing cards on Pixoo and Tidbyt
 #39 [OPEN] Add song-change lighting effects and qualify Nanoleaf music scenes
 #40 [OPEN] Configure music participation and alert interruption per device
 #41 [OPEN] Qualify audio capture and music visualizers for lights and displays
-#42 [OPEN] Package and qualify the hub for always-on Docker hosting on the PC
+#42 [CLOSED] Package and qualify the hub for always-on Docker hosting on the PC
 #43 [CLOSED] Adopt the Nanoleaf Linux runtime and update architecture documentation
 #44 [OPEN] Plan dedicated server hardware and migration from the PC
-#45 [OPEN] Run approved alert and device automation rules independently of conversation
+#45 [OPEN] Run approved event rules and scheduled routines independently of conversation
 #46 [OPEN] Add a conversational assistant using shared device and automation tools
 #47 [OPEN] Add phone access with tap-to-talk after local delivery
 #48 [OPEN] Explore ambient and wearable voice access after phone tap-to-talk
@@ -116,8 +116,8 @@
 #233 [OPEN] Add the Sonos Move as a second playback source
 #237 [CLOSED] Use personal-project scope defaults in story writing and pickup
 #240 [OPEN] Qualify enforceable Hub merge gates and guide-only CI handling
-#241 [OPEN] Retire ended monitoring sessions consistently across Codex and Claude
-#242 [OPEN] Qualify and add Sony HT-A9 play/resume when supported
+#241 [CLOSED] Retire ended monitoring sessions consistently across Codex and Claude
+#242 [CLOSED] Qualify and add Sony HT-A9 play/resume when supported
 #244 [CLOSED] Bound browser-session resources and centralize retirement cleanup
 #245 [CLOSED] Share the dashboard command lifecycle between forms and actions
 #246 [OPEN] Consolidate duplicated Pixoo and Nanoleaf integration-contract definitions
@@ -126,10 +126,100 @@
 #253 [OPEN] Qualify Codex Desktop idle and shutdown SessionEnd emission and reopen behavior
 #254 [OPEN] Add a trading-card skin to the guide and atlas, with art shared by issue label
 #258 [OPEN] Report documentation drift against pinned sources in CI
-#259 [OPEN] Move guide topic assignments and notes into the stories and read them live
+#259 [CLOSED] Move guide topic assignments and notes into the stories and read them live
 #262 [OPEN] Evict a task across devices through the shared owner
 #263 [OPEN] Make the slow-device browser isolation check deterministic
 #264 [CLOSED] Replace Pause motion with a one-shot circuit trace in the guide and atlas
 #267 [OPEN] Coordinate modes, colors and scenes across all devices from the hub
 #271 [OPEN] Show and control every device from B.U.N.N.Y. device pages and a group page
 #272 [OPEN] Let devices join or leave one shared task pool
+#276 [OPEN] Open B.U.N.N.Y. from a bookmark without a token or launcher step
+#277 [OPEN] Make the dashboard a dense control surface instead of long single-column pages
+#278 [OPEN] Reach every B.U.N.N.Y. surface from one shared places navigation
+#279 [OPEN] Clear the visual-alignment leftovers in the style guide, atlas and system map
+#282 [OPEN] Record a private local history of tasks, devices, music and hub health for graphs
+#283 [OPEN] Add a Status page with velocity and live graph widgets to the dashboard
+#285 [OPEN] Render playback artwork on the Pixoo and Tidbyt now-playing cards
+#286 [OPEN] Show a read-only wall miniature widget on the dashboard home
+#287 [OPEN] Inventory every UI component and rank what becomes a widget next
+#288 [OPEN] Add a command palette and D-pad widget navigation with the N30 as B.U.N.N.Y. controller
+#289 [CLOSED] Connect Tidbyt and LIFX to the hub through one local controller host
+#290 [CLOSED] Record the product direction and highest-leverage next work in the work guide
+#291 [CLOSED] Decide how hub moments and interludes work across devices
+#292 [CLOSED] Release a controller contract version with a moment command and conformance cases
+#293 [OPEN] Add a GitHub event source for pull requests and CI
+#294 [OPEN] Give agents a persona with a signature look and a flourish budget
+#295 [OPEN] Let agents propose moments through an MCP tool the hub arbitrates
+#296 [OPEN] Show a moment log that explains why a device just changed
+#297 [OPEN] Choreograph one moment across devices with a shared palette
+#298 [OPEN] Add a calendar event source for meeting reminders
+#303 [OPEN] Dashboard browser job flakes in the keyboard-submit brightness scenario
+#305 [OPEN] Carry observed model and thinking level in shared agent state and show it in B.U.N.N.Y.
+#306 [OPEN] Investigate host-observed model sources for Codex and the Claude Code model id
+#307 [OPEN] Read delivery execution records into the guide and show deliveries by model
+#308 [CLOSED] Show recommended creative and expansion stories in a guide Ideas section
+#309 [OPEN] Delete merged delivery branches on merge and prune the ones left behind
+#310 [OPEN] Record the 2026-09-25 delivery gotchas in the development and SDLC docs
+#311 [OPEN] Reconcile story text made stale by the 2026-09-25 deliveries
+#312 [OPEN] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
+#313 [OPEN] Show installed revisions beside merged ones in the work guide
+#314 [OPEN] Produce a daily cross-session closeout digest
+#315 [OPEN] Refresh the work guide nightly into one rolling pull request
+#316 [OPEN] Warn at guide refresh when an open story names a retired term
+#317 [OPEN] Merge and publish the nightly guide refresh automatically
+#319 [OPEN] Add the LIFX Beam to the LIFX controller and B.U.N.N.Y.
+#320 [OPEN] Install and verify the LIFX Beam in B.U.N.N.Y.
+#323 [OPEN] Show dashboard controls for a Nanoleaf device with a read-only integration snapshot
+#324 [OPEN] Refresh the work guide snapshot so idea marks and the stories filed since the morning of 2026-09-25 reach the static guide
+#325 [OPEN] Show which stories unlock the most ideas from their Extends marks
+#327 [OPEN] Show one run of LIFX Beam zones per agent session as a desk task strip
+#328 [OPEN] Generate a weekly what-changed page in the guide from nightly refresh reports
+#329 [OPEN] Show today's agent work on the dashboard from closeout records
+#330 [CLOSED] Show real LIFX power in B.U.N.N.Y. and stop presenting controls a device cannot use
+#331 [OPEN] Keep the now-playing displays working when the selected playback source changes
+#332 [OPEN] Show stale attention in B.U.N.N.Y. and retire it with one action
+#333 [OPEN] Set the Pixoo now-playing Media mode from B.U.N.N.Y.
+#334 [OPEN] Show the time on the Tidbyt now-playing card
+#335 [OPEN] Send moments from the hub through controller contract 1.1
+#336 [OPEN] Try a moment on a device from B.U.N.N.Y.
+#337 [OPEN] Play hub moments on the Tidbyt and LIFX through the local controller host
+#341 [OPEN] Record starting-session recommendations for the stories filed since the 2026-09-25 assessment pass
+#342 [OPEN] Show velocity and rework by model and thinking level on the Status page
+#343 [OPEN] Fill the delivery record's model and level from the hub's observed session settings
+#344 [OPEN] Show what changed in a story since its recommendation was assessed
+#345 [OPEN] Resume the HT-A9 AirPlay session with its remote's Play/Pause code
+#346 [OPEN] Add Spotify Connect as a hub-owned playback source on the HT-A9
+#347 [OPEN] Show what a story unblocks in its task brief
+#348 [OPEN] Name each topic guide's highest-leverage open story in its next-step box
+#349 [OPEN] Show now playing with its controls on the B.U.N.N.Y. home
+#350 [OPEN] Pause the music when an agent needs the owner, and offer resume
+#352 [OPEN] Add an email event source for message-arrived moments
+#353 [OPEN] Show Pixoo media and playlist previews on the B.U.N.N.Y. Pixoo page
+#355 [OPEN] Port the wall map's Prism renderer into the dashboard as shared device art
+#356 [OPEN] Start the WSL runtime at boot with linger, an idle timeout and one scheduled task
+#357 [OPEN] Keep the hub starting when its MCP tool catalog grows past the response limit
+#358 [OPEN] Store event rules and the interrupt set, and arbitrate the moments they trigger
+#359 [OPEN] Run weekly scheduled routines through typed device commands with content-mode preconditions
+#360 [OPEN] Add B.U.N.N.Y. Automation widgets and MCP tools for rules and routines
+#361 [OPEN] Install stop-signal handlers before the hub and the Tidbyt runner announce they are ready
+#362 [OPEN] Show when a LIFX bulb was changed outside B.U.N.N.Y.
+#363 [OPEN] Show what the Tidbyt last received, and its cloud state, on its B.U.N.N.Y. page
+#364 [OPEN] Give each session a short neutral alias in shared agent state so every device shows the same task code
+#365 [OPEN] Share one pixel-card renderer between the Pixoo and the Tidbyt
+#366 [OPEN] Let the owner arrange the B.U.N.N.Y. home from a widget catalog and keep the layout in the hub
+#367 [OPEN] Install the Claude Code producer on the WSL host so Claude sessions reach the shared owner
+#368 [OPEN] Show any B.U.N.N.Y. widget on the Pixoo as a rendered card
+#369 [OPEN] Offer routine templates with a solar trigger for sunset dim, good morning and bedtime
+#371 [OPEN] Add a hub command to install or remove a monitoring producer against the running service
+#372 [OPEN] Let an agent label its own session through the hub MCP label tool without knowing its identity
+#373 [OPEN] Give Codex and Claude one provider color pair on every device
+#374 [OPEN] Label delivery sessions with their story key so every device row names its task
+#376 [OPEN] Collect Roborock status and run history and show them in B.U.N.N.Y.
+#377 [OPEN] Estimate per-room coverage for each Roborock run from its map
+#378 [OPEN] Reach the hub from the Steam Deck through an SSH tunnel
+#379 [OPEN] Add a Steam event source that merges game sessions from several adapters, starting with the Web API
+#380 [OPEN] Read the PC's Steam client as a second game-session adapter
+#381 [OPEN] Run event-triggered routines so a game session sets the desk look and hands it back
+#382 [OPEN] Put B.U.N.N.Y. on the Steam Deck: a Decky overlay for agent attention and Deck-side game events
+#383 [OPEN] Let the Steam Deck play moments through rumble and an overlay toast
+#384 [OPEN] Drive agent sessions from the Steam Deck: a story launcher, tmux and a controller layout

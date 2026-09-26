@@ -155,7 +155,27 @@
         [
           "Completed / B.U.N.N.Y. UI foundation",
           "[[H181]]",
-          "Hub PR #250 merged as 873041a and #181 closed as completed on September 25, 2026: the application UI style guide defines the foundation, skin template and component glossary. Dashboard adoption continues in [[H182]]."
+          "Hub PR #250 merged as 873041a and #181 closed as completed on September 25, 2026: the application UI style guide defines the foundation, skin template and component glossary. Dashboard adoption followed in [[H182]] (Hub PR #269), closed as completed the same day."
+        ],
+        [
+          "Completed / Consistent retirement",
+          "[[H241]]",
+          "Hub PR #284 merged and #241 closed as completed on September 25, 2026: ended sessions retire by one rule across Codex and Claude. Installed qualification continues in [[H312]]."
+        ],
+        [
+          "Completed / Commit notifications",
+          "[[H222]]",
+          "Hub PR #268 pushes change notifications when state commits; the Nanoleaf worker wake-up continues in [[N90]]."
+        ],
+        [
+          "Completed / Undeclared-source feed",
+          "[[N111]]",
+          "Nanoleaf PR #148 keeps following the hub feed when it contains an undeclared source; #111 closed as completed on September 25, 2026."
+        ],
+        [
+          "Completed / Browser sessions and command lifecycle",
+          "[[H244]] [[H245]] [[H182]]",
+          "Hub PRs #270, #273 and #269: bounded browser-session resources, one command lifecycle for forms and actions, and the Neon skin with the B.U.N.N.Y. name on the dashboard."
         ]
       ],
       "notes": [
@@ -197,7 +217,12 @@
         [
           "Completed / Installed Lines + Panels trial",
           "[[N46]]",
-          "Nanoleaf #46 closed as completed on September 24, 2026. The operator confirmed a bounded Lines + NL22 trial on the installed Linux runtime: shared tasks appeared once per device, and the Panels’ saved scene and brightness were restored afterward. The map selector continues in [[N44]]."
+          "Nanoleaf #46 closed as completed on September 24, 2026. The operator confirmed a bounded Lines + NL22 trial on the installed Linux runtime: shared tasks appeared once per device, and the Panels’ saved scene and brightness were restored afterward. The map selector followed in [[N44]] (Nanoleaf PR #144), closed as completed on September 25, 2026."
+        ],
+        [
+          "Completed / Selector, Panels control and address change",
+          "[[N44]] [[N113]] [[N114]]",
+          "Nanoleaf PRs #144, #164 and #147, closed as completed on September 25, 2026; installation of the Panels in the controller, MCP host and hub continues in [[N167]]."
         ]
       ],
       "notes": [
@@ -220,7 +245,12 @@
         [
           "LIFX LAN",
           "[[H17]] → [[H18]] → [[H20]] → [[H22]]",
-          "Read-only LAN qualification [[H17]] is complete. Controller [[H18]] is source-delivered through PR #192, merged as 600d905 with all six merged-main checks passing. It uses configured targets, one serialized writer per bulb and fake transport tests. Automatic status [[H20]] and real-bulb acceptance [[H22]] remain separate."
+          "Read-only LAN qualification [[H17]] is complete. Controller [[H18]] is source-delivered through PR #192, merged as 600d905 with all six merged-main checks passing. It uses configured targets, one serialized writer per bulb and fake transport tests. The installed local controller host ([[H289]]) runs it, and B.U.N.N.Y. shows real bulb power ([[H330]]). Automatic status [[H20]] and real-bulb acceptance [[H22]] remain separate."
+        ],
+        [
+          "Completed / Local controller host",
+          "[[H289]] [[H330]]",
+          "Hub PRs #318, #340 and #351: one loopback host serves the Tidbyt and LIFX libraries as controllers, installed as agent-device-hub-local-controllers.service; B.U.N.N.Y. shows real bulb power."
         ]
       ],
       "notes": [
@@ -329,6 +359,11 @@
           "Completed / Work-mode colors",
           "[[N139]]",
           "Nanoleaf PR #141 merged as 31b6ef5 and #139 closed as completed on September 25, 2026: the operator can configure Work-mode light colors so unread tasks stand out. Live-view palette parity continues in [[N18]]."
+        ],
+        [
+          "Completed / Saved scenes and requested animations",
+          "[[N91]] [[N92]]",
+          "Nanoleaf PRs #142 and #143: Codex plays saved scenes and custom animations through the local MCP server, closed as completed on September 25, 2026."
         ]
       ],
       "notes": [
@@ -383,7 +418,7 @@
         [
           "Completed / Hub MCP media tools",
           "[[H152]]",
-          "Hub PR #224 merged as 33c99ba and #152 closed as completed on September 24, 2026. Each configured hub MCP alias gains guarded media start and playback tools that forward one controller v1 command through the owning controller. Pixoo playlists show IDs until [[P67]]."
+          "Hub PR #224 merged as 33c99ba and #152 closed as completed on September 24, 2026. Each configured hub MCP alias gains guarded media start and playback tools that forward one controller v1 command through the owning controller. Pixoo playlists show IDs; user-entered names ([[P67]]) closed as not planned."
         ],
         [
           "Completed / Shared playback, Sony source",
@@ -394,6 +429,11 @@
           "Completed / One-step device settings",
           "[[H231]]",
           "Hub PR #239 merged as 19a6230 and #231 closed as completed on September 24, 2026. A successful brightness or power change leaves its form ready for the next change, uncertain results still lock until current values are reloaded, stale-generation commands are never resubmitted, and a same-mode reapply appears as Reapply and Start Monitor. The owner approved the UI candidate, and all six PR and merged-main checks passed. No installation or device operation was part of the delivery."
+        ],
+        [
+          "Completed / Now-playing and display cards",
+          "[[H37]] [[H38]] [[P89]] [[H242]]",
+          "Hub PR #275 passed installed acceptance on September 25, 2026; the Tidbyt (Hub PR #280) and Pixoo (Pixoo PR #90) cards are installed and physically checked; the #242 qualification (Hub PR #302) found the Sony API rejects resume, so the Sonos Move is the route to play."
         ]
       ],
       "notes": [
@@ -421,7 +461,7 @@
         [
           "Completed / Runtime availability decision",
           "[[N133]]",
-          "Nanoleaf PR #136 merged as 9e2c413 and #133 closed as completed on September 24, 2026. ADR 0011 records the owner’s decision: no Windows launcher, scheduled task or Startup entry. The runtime stays available while WSL runs, until hub hosting ([[H42]] or [[H44]]) moves it."
+          "Nanoleaf PR #136 merged as 9e2c413 and #133 closed as completed on September 24, 2026. ADR 0011 records the owner’s decision: no Windows launcher, scheduled task or Startup entry. The runtime stays available while WSL runs, until hub hosting moves it. Hub ADR 0008 (September 25, 2026) keeps the runtime in WSL with a keep-alive ([[H356]]) and folds [[H42]] into the dedicated server [[H44]]."
         ],
         [
           "Completed / Windows runtime retired",
@@ -432,6 +472,11 @@
           "Completed / Pixoo user service",
           "[[P77]]",
           "Pixoo PR #84 merged as 690f14d and PR #85 (5004b35) recorded the installed user service; #77 closed as completed on September 25, 2026. The owner accepted the restart criterion on proxy evidence from earlier WSL boots instead of running wsl --shutdown, which would stop in-progress agents."
+        ],
+        [
+          "Decided / Hosting direction",
+          "[[H42]]",
+          "ADR 0008 (Hub PR #339, September 25, 2026): the runtime stays in WSL with a keep-alive ([[H356]]); Docker on the PC is not adopted, and #42 closed as a duplicate folded into [[H44]]."
         ]
       ],
       "notes": [
@@ -450,6 +495,11 @@
           "Closed planning reference / Personal services",
           "[[H49]]",
           "The tracker closed this placeholder on September 21. Closure alone does not establish a qualified connector or connected account; any future implementation needs its own accepted scope and evidence."
+        ],
+        [
+          "Completed / Moments decision and contract 1.1",
+          "[[H291]] [[H292]]",
+          "ADR 0006 (Hub PR #299) and controller contract 1.1 with a shared moment command (Hub PR #321), closed as completed on September 25, 2026."
         ]
       ],
       "notes": [
@@ -527,7 +577,7 @@
         [
           "Guide workspace design and release",
           "[[H85]] → [[H86]] → [[H87]]",
-          "Hub #85 remains open for the Neon/Prism presentation; #86 was closed as not planned. Mobile release #87 remains open and requires #85, delivered task briefs [[H196]] and current public status [[H197]]. This snapshot does not implement those features."
+          "Hub #85 (Neon restyle) and mobile release #87 closed as completed on September 25, 2026; #86 was closed as not planned. See the Neon restyle and mobile publication row."
         ],
         [
           "Completed / Mobile task briefs and status",
@@ -552,7 +602,7 @@
         [
           "Guide overview refresh",
           "[[H220]]",
-          "Hub PR #221 (ddeecd8) added current work, newly added issues, open defects and the eleven topic guides; public PR #13 published that revision. The Neon restyle [[H85]] and mobile publication [[H87]] remain separate."
+          "Hub PR #221 (ddeecd8) added current work, newly added issues, open defects and the eleven topic guides; public PR #13 published that revision. The Neon restyle [[H85]] and mobile publication [[H87]] followed and are complete."
         ],
         [
           "Completed / Personal-project scope defaults",
@@ -568,6 +618,11 @@
           "Completed / One-shot circuit trace",
           "[[H264]]",
           "Hub PR #265 merged as d85b8b3 and public PR agent-device-guide#17 published it; #264 closed as completed on September 25, 2026. The trace replaces the Pause motion control."
+        ],
+        [
+          "Completed / Recommendations, placement, direction and ideas",
+          "[[H252]] [[H259]] [[H290]] [[H308]]",
+          "Hub PRs #260/#266, #281, #300 and #322: starting-session recommendations, story-owned topic placement, the dated Direction section and the Ideas section."
         ]
       ],
       "notes": [

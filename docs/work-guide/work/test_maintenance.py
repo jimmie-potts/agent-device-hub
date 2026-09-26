@@ -148,9 +148,9 @@ class GuideMaintenance(unittest.TestCase):
         source = Path(__file__).resolve().parent.parent
         with tempfile.TemporaryDirectory(prefix='guide-blocker-') as directory:
             candidate = copy_guide(directory)
-            path = candidate / 'work/backlogs/device-native-deps.json'
+            path = candidate / 'work/backlogs/hub-native-deps.json'
             native = json.loads(path.read_text())
-            issue = next(row for row in native['data']['n']['issues']['nodes'] if row['number'] == 111)
+            issue = next(row for row in native['data']['repository']['issues']['nodes'] if row['number'] == 356)
             issue['blockedBy']['nodes'].append({
                 'number': 11, 'state': 'OPEN',
                 'repository': {'nameWithOwner': 'jimmie-potts/divoom-app-upgrade'}})
@@ -161,12 +161,12 @@ class GuideMaintenance(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
             baseline = (source / 'outputs/agent-device-work-guides.html').read_text()
-            self.assertIn('data-key="N111"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
+            self.assertIn('data-key="H356"', baseline.split('id="next-steps"', 1)[1].split('</section>', 1)[0])
             next_section = document.split('id="next-steps"', 1)[1].split('</section>', 1)[0]
-            self.assertNotIn('data-key="N111"', next_section)
+            self.assertNotIn('data-key="H356"', next_section)
             self.assertNotIn('data-key="P61"', next_section)
             blockers = document.split('id="work-blockers"', 1)[1].split('</section>', 1)[0]
-            self.assertIn('data-key="N111"', blockers)
+            self.assertIn('data-key="H356"', blockers)
             self.assertIn('Waiting for divoom-app-upgrade #11.', blockers)
 
     def test_issue_links_explain_completion_without_relying_on_color(self):
@@ -924,6 +924,21 @@ def mark_ideas(candidate, picks):
     return topics
 
 
+def marked_ideas(candidate):
+    """Open stories a guide copy already marks as ideas, keyed to their topics."""
+    import guide_section as GD
+    from guide_paths import ALIASES
+    topics = {}
+    for prefix, repo in (('H', 'agent-device-hub'), ('N', 'codex-nanoleaf'), ('P', 'divoom-app-upgrade')):
+        for row in json.loads((candidate / f'work/backlogs/{repo}-issues.json').read_text()):
+            if row['state'] != 'OPEN':
+                continue
+            state = GD.read(row['body'])
+            if state['state'] == 'assigned' and (state.get('highlight') or {}).get('kind') == 'idea':
+                topics[f'{prefix}{row["number"]}'] = ALIASES.get(state['topic'], state['topic'])
+    return topics
+
+
 def build(candidate):
     return subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')], capture_output=True, text=True)
 
@@ -1022,6 +1037,8 @@ class Ideas(unittest.TestCase):
             candidate = copy_guide(directory)
             topics = mark_ideas(candidate, picks)
             self.assertEqual(set(topics), set(picks))
+            # Stories the snapshot already marks as ideas stay in the section beside the fixture picks.
+            topics = {**marked_ideas(candidate), **topics}
             outputs = []
             for _ in range(2):
                 result = build(candidate)
@@ -1030,12 +1047,12 @@ class Ideas(unittest.TestCase):
             self.assertEqual(outputs[0], outputs[1], 'Two consecutive builds are identical')
             document = outputs[0]
         rank = {topic: index for index, (topic, *_) in enumerate(TOPICS)}
-        expected = sorted(picks, key=lambda key: (rank[topics[key]], key[0], int(key[1:])))
+        expected = sorted(topics, key=lambda key: (rank[topics[key]], key[0], int(key[1:])))
         section = document.split('<details class="reference ideas" id="ideas">', 1)[1].split('</details>', 1)[0]
         self.assertEqual(re.findall(r'<li class="idea" data-key="([HNP]\d+)"', section), expected)
         self.assertEqual(re.findall(r'<section class="ideas-topic" data-topic="([^"]+)"', section),
                          sorted(set(topics.values()), key=rank.get), 'One group per topic, in guide order')
-        self.assertIn(f'{len(picks)} marked', section)
+        self.assertIn(f'{len(topics)} marked', section)
         self.assertIn('ideas-empty" hidden', section)
         row = section.split('data-key="H11"', 1)[1].split('</li>', 1)[0]
         self.assertIn('&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot; [[H1]]', row)
@@ -1046,9 +1063,9 @@ class Ideas(unittest.TestCase):
         later = document.split('id="direction-ideas"', 1)[1].split('</section>', 1)[0]
         self.assertEqual(re.findall(r'<li data-key="([HNP]\d+)"', later), expected, 'Later ideas equals the marked set, in the same order')
         self.assertIn('href="#ideas"', later)
-        self.assertIn(f'<a href="#ideas" data-section="ideas"><span class="nav-number">I</span><span>Ideas</span><span class="nav-count" data-ideas-count aria-label="{len(picks)} marked ideas">{len(picks):02}</span></a>', document)
+        self.assertIn(f'<a href="#ideas" data-section="ideas"><span class="nav-number">I</span><span>Ideas</span><span class="nav-count" data-ideas-count aria-label="{len(topics)} marked ideas">{len(topics):02}</span></a>', document)
         meta = json.loads(document.split('<script id="snapshot-data" type="application/json">', 1)[1].split('</script>', 1)[0])
-        self.assertEqual(meta['ideas'], dict(count=len(picks), keys=expected, countedInIssueTotals=False))
+        self.assertEqual(meta['ideas'], dict(count=len(topics), keys=expected, countedInIssueTotals=False))
         self.assertNotIn('data-count', section.split('<div class="guide-body">', 1)[0], 'The section adds nothing to issue counts')
 
     def test_a_refresh_keeps_every_closed_extends_target(self):
