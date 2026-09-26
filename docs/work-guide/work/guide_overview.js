@@ -13,7 +13,10 @@
   const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
   // Recommendation labels stay on the snapshot; a live-only issue is not yet assessed.
   const recommendations = JSON.parse(document.querySelector('#issue-recommendations').textContent);
-  const recommendation = key => { const rec = recommendations[key] || {state:'unassessed',label:'Not yet assessed'}; return `<p class="rec" data-key="${escape(key)}" data-rec="${escape(rec.state)}"><span class="rec-key">Start</span> ${escape(rec.label)}</p>`; };
+  const recommendation = key => { const rec = recommendations[key] || {state:'unassessed',label:'Not yet assessed'};
+    const surface = rec.work_surface || null;
+    return `<p class="rec" data-key="${escape(key)}" data-rec="${escape(rec.state)}"><span class="rec-key">Start</span> ${escape(rec.label)}</p>`
+      + `<span class="surface-badge" data-key="${escape(key)}" data-surface="${escape(surface || 'none')}">${escape(surface || 'Not classified')}</span>`; };
 
   // --- Guide-section parsing: a small mirror of guide_section.py's grammar --
   function guideHeadings(lines) {
