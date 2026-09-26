@@ -185,7 +185,7 @@ test("transitions only: a manual app change survives repeated reads and is overw
   assert.equal(paints("desk").length, 2, "the transition paints, overwriting whatever the app left on the bulb");
 });
 
-test("stale input: an unavailable feed and an uncertain session both send no write; recovery paints only on a real difference", async t => {
+test("stale input: an unavailable feed sends no write; recovery paints only on a real difference", async t => {
   const o = await owner(t);
   const { controller, log } = fakeLifx([{ deviceId: "desk", address: "192.0.2.10", ...evidence }], { modeRoot: tempRoot(t) });
   let fail = false;
@@ -208,6 +208,63 @@ test("stale input: an unavailable feed and an uncertain session both send no wri
   await publisher.update(); // recovery: now reads "working", which differs from the idle key painted before the outage
   await flush();
   assert.equal(paints().length, 2, "recovery paints once the state is known again and differs from the last painted key");
+  controller.close();
+});
+
+test("stale input: a collector that is not running sends no write, like an unavailable feed", async t => {
+  const o = await owner(t);
+  const { controller, log } = fakeLifx([{ deviceId: "desk", address: "192.0.2.10", ...evidence }], { modeRoot: tempRoot(t) });
+  let collector = "running";
+  const publisher = new LifxStatusPublisher({
+    feed: { snapshot: async () => ({ ...(await o.snapshot()), collector }) },
+    controller, bulbs: [{ deviceId: "desk" }], pollMs: 30_000, feedTimeoutMs: 3_000,
+  });
+  t.after(() => publisher.stop());
+  const paints = () => log.filter(e => e.deviceId === "desk" && e.type === 102);
+  await setMode(controller, "desk", "Work");
+  await publisher.whenIdle();
+  await flush();
+  assert.equal(paints().length, 1, "Work-entry paints the current (idle) state once");
+  await o.ingest(hook("UserPromptSubmit", "s", "t1"));
+  for (const state of ["quiesced", "faulted"]) {
+    collector = state;
+    await publisher.update();
+    await flush();
+    assert.equal(paints().length, 1, `a ${state} collector paints nothing, even though the real state changed`);
+  }
+  collector = "running";
+  await publisher.update();
+  await flush();
+  assert.equal(paints().length, 2, "a running collector again paints the changed state");
+  controller.close();
+});
+
+test("uncertain freshness: a finished turn idle past five minutes still paints its reported state (#439)", async t => {
+  let offsetMs = 0;
+  const o = await createAgentState({ storage: new MemoryStorage(), ownerId: "owner", consumers: [], clock: () => Date.now() + offsetMs });
+  t.after(() => o.shutdown());
+  const { controller, log } = fakeLifx([{ deviceId: "desk", address: "192.0.2.10", ...evidence }], { modeRoot: tempRoot(t) });
+  const publisher = new LifxStatusPublisher({
+    feed: { snapshot: () => o.snapshot() }, controller, bulbs: [{ deviceId: "desk" }], pollMs: 30_000, feedTimeoutMs: 3_000,
+  });
+  t.after(() => publisher.stop());
+  const paints = () => log.filter(e => e.deviceId === "desk" && e.type === 102);
+  const hueDegrees = paint => Math.round(decodeColor(paint.payload).hue * 360 / 65535);
+  await o.ingest(hook("UserPromptSubmit", "s", "t1"));
+  await o.ingest(hook("Stop", "s", "t1"));
+  offsetMs = 6 * 60_000;
+  const aged = await o.snapshot();
+  assert.ok(aged.sessions.length > 0 && aged.sessions.every(s => s.freshness === "uncertain"), "the finished turn is idle past five minutes");
+  await setMode(controller, "desk", "Work");
+  await publisher.whenIdle();
+  await flush();
+  assert.equal(paints().length, 1, "Work entry paints the unacknowledged done state despite uncertain freshness");
+  assert.ok(hueDegrees(paints()[0]) >= 120 && hueDegrees(paints()[0]) <= 150, "done paints green");
+  await o.ingest(hook("UserPromptSubmit", "s", "t2"));
+  await publisher.update();
+  await flush();
+  assert.equal(paints().length, 2, "the next transition paints again");
+  assert.ok(hueDegrees(paints()[1]) >= 200 && hueDegrees(paints()[1]) <= 230, "working paints blue");
   controller.close();
 });
 
