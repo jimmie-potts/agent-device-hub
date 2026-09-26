@@ -8,7 +8,7 @@ The host supplies private SQLite ownership, the shared agent-state engine, authe
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
 
-Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop` and optional [`playback`](#playback). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
+Configuration is an owner-only regular JSON file with required `directory`, `ownerId`, `consumers`, `credentials`, `controllers` and `port`, plus optional boolean `mcp`, optional `codexDesktop`, optional [`playback`](#playback) and optional [`browserAccess`](#open-bunny-from-a-bookmark). The directory must already exist with mode 0700, outside a source checkout and outside `/mnt`. It belongs exclusively to this host. Normal startup refuses a persisted quiesce fence. `serve-staged` reopens it read-only for recovery; it cannot activate that old attempt. No automatic restart or fallback clears a fence.
 
 Optional `codexDesktop` is `{home, hostId, sourceId}`. `home` is the absolute, normalized Codex Desktop home, such as the Windows Codex home under `/mnt/c`. `hostId` and `sourceId` match the Desktop producer's source. The host then polls Desktop's unread marker read-only every two seconds and records `read.observed` for that source's top-level sessions. The [provider qualification](../../docs/provider-qualification.md#codex-desktop-read-marker) records the marker and read rule. The host never writes Codex files and never returns the path or marker contents. An unusable marker produces no read evidence.
 
@@ -65,7 +65,7 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
 
-`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead.
+`GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead. With [`browserAccess`](#open-bunny-from-a-bookmark) set, `POST /api/dashboard/v1/session` signs the page in without a code.
 
 When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read` and `control` scopes, ignores `ingest` and `admin`, and needs no `X-Pixoo-Request` header. A missing or unknown token gets HTTP 401. A tool the token's scopes or `devices` do not cover is left out of the tool list, and calling it anyway returns a tool error with code `forbidden` rather than HTTP 403. `<prefix>` is the per-device value that `hub_devices` returns.
 
@@ -92,13 +92,13 @@ When `mcp` is enabled, `/mcp` accepts configured tokens only. It uses the `read`
 
 ### Browser sessions
 
-The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file. It creates a temporary one with `read` and `control` on every configured controller alias and on the configured playback source for up to eight hours. That session has no `ingest` or `admin` scope, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
+The B.U.N.N.Y. launcher (see [Browser frontend](#browser-frontend)) does not use a credential from the file, and neither does the [trusted-loopback sign-in](#open-bunny-from-a-bookmark). Each creates a temporary one with `read` and `control` on every configured controller alias and on the configured playback source for up to eight hours. That session has no `ingest` or `admin` scope, and it cannot authenticate MCP. The token form at `/` instead accepts a configured token, and the page then has exactly that credential's grants.
 
 Each browser session owns its command tickets, its change streams and its retained replay results. Logout, the eight-hour expiry, eviction at the 16-session limit, credential replacement and shutdown all retire a session the same way. Its token and cached requests are refused, its streams close, and its ticket ledger and settled replay results are released. A command the session already submitted keeps running. It is not cancelled or sent again, and its replay entry stays charged until the command settles, then is released once. A retired session's late write, whose body arrives after retirement, is refused before it reaches the owner or a controller. After every browser session retires and its submitted commands settle, the host holds no browser ledger, stream or replay entry. Tickets for configured credentials are unaffected. Disconnecting a dashboard that was opened with a configured token ends no session: that credential keeps its streams, its ticket sequence and its retained results.
 
 ## HTTP boundary
 
-All routes authenticate before replay. Host must equal the actual numeric-loopback listener, supplied Origin must match, and cross-site fetch metadata is refused. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
+All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, a supplied Origin must name that same host, and cross-site fetch metadata is refused. MCP accepts only the numeric-loopback host. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
 
 | Route | Behavior |
 | --- | --- |
@@ -259,12 +259,49 @@ the oldest browser session. Existing machine and manual browser credentials
 remain configured separately. The private socket is removed on orderly
 shutdown. On restart, the host removes an unresponsive socket only when it is
 still the same owner-owned socket; a live socket blocks startup. Do not clear
-the state-owner database or start a second owner.
+the state-owner database or start a second owner. With
+[`browserAccess`](#open-bunny-from-a-bookmark) set, a bookmark replaces the
+launcher.
 
-This source command does not update the running installation. A named owner
-must install a reviewed Hub package and wire the shortcut to its actual private
-configuration. Browser handoff tests use disposable stores and fake controllers;
-they do not qualify a personal service or device result.
+### Open B.U.N.N.Y. from a bookmark
+
+Hub [#276](https://github.com/jimmie-potts/agent-device-hub/issues/276) adds an
+opt-in sign-in for the owner's own PC. Add this field to the private
+configuration and restart the hub:
+
+```json
+"browserAccess": "trusted-loopback"
+```
+
+Then bookmark `http://127.0.0.1:8788/` or `http://localhost:8788/`, using the
+configured `port`. On load the page posts `{}` to `POST /api/dashboard/v1/session`
+and receives the same browser session the launcher issues: `read` and `control`
+on configured aliases and the playback source, no `ingest`, `admin` or MCP,
+eight hours, and the shared 16-session limit and retirement. There is no cookie
+or browser storage. A reload or a new tab signs in again, and a page logs its
+session out as it unloads. The route requires the page's Host, a matching
+Origin, `Sec-Fetch-Site` absent or `same-origin`, `X-Pixoo-Request: 1` and an empty JSON
+object body. Without the field it answers 404, and any other value refuses
+startup with `invalid-configuration`. The launcher and token form keep working.
+
+The option removes one protection. Without it, a local program needs a
+configured token or the owner-only launch socket to command devices. With it,
+any program on the PC that can send a loopback request with the page's Host,
+Origin and custom header gets the same read and control. This matches the
+Nanoleaf wall map on port 8765. Reassess before any LAN, phone or
+second-operator exposure.
+
+If the bookmark shows the login page, the option is off or the hub has not been
+restarted since it was added: the session route answers 404. If the page shows
+"couldn't sign you in", the hub refused or failed the request; reload,
+or use the launcher or token form. After an eviction or the eight-hour expiry,
+the dashboard offers **Sign in again**.
+
+This source change does not update the running installation. A named owner
+must install a reviewed Hub package, and either wire the launcher shortcut or
+add `browserAccess` to its actual private configuration. Browser handoff tests
+use disposable stores and fake controllers; they do not qualify a personal
+service or device result.
 
 Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
 HTTP editor links without query/fragment. Existing API-only configurations remain

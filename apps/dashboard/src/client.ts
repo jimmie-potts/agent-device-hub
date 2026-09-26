@@ -129,6 +129,8 @@ export class Api {
    return value as T;
   }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(body===undefined?'connection-unavailable':'uncertain-result');}finally{if(body!==undefined)this.mutations.set(channel,(this.mutations.get(channel)??0)+1);}
  }
+ /** Ends this browser session as the page unloads. The request outlives the page, so its result is never observed. */
+ release(){void fetch('/api/dashboard/v1/logout',{method:'POST',keepalive:true,cache:'no-store',redirect:'error',headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json','x-pixoo-request':'1'},body:'{}'}).catch(()=>{});}
  async feed(signal:AbortSignal,onChange:()=>void,onStatus:(connected:boolean)=>void){
   let cursor='',delay=500;
   while(!signal.aborted){
