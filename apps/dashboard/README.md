@@ -101,7 +101,13 @@ saturation, so the light looks white only at 0% saturation. A bulb without
 qualified model evidence declares neither and shows one line for each section.
 
 Mode controls preserve Work/Quiet/Free and Monitor/Media. Nanoleaf settings include
-layout, coverage, element/project/task mapping and project colors. Pixoo controls
+layout, coverage, element/project/task mapping and project colors. Each form
+appears only when the `nanoleaf.integration/1.0` snapshot marks its operation
+supported. A read-only device, such as the NL22 Light Panels
+([codex-nanoleaf#113](https://github.com/jimmie-potts/codex-nanoleaf/issues/113)),
+marks all four unsupported. Its view shows one line naming them, plus the mode,
+power, brightness and scene controls
+([#323](https://github.com/jimmie-potts/agent-device-hub/issues/323)). Pixoo controls
 include monitor filters and cadence. Advanced editors remain links. The UI never
 translates these into a global mode or exposes raw commands.
 
@@ -282,7 +288,12 @@ add Nanoleaf power and brightness in Work with the override hint, Work gating
 with the explicit Free switch, one guarded scene command with a preserved
 selection and focus across reconnect, keyboard focus kept through the Free
 switch, a scene activation and a locked draft form, and a controller-side scene
-rejection, revision conflict and uncertain result with no retry. The Hub #289
+rejection, revision conflict and uncertain result with no retry. The Hub #323
+scenario adds a read-only Panels component next to the Lines. It checks the
+controls that remain, the absent configuration forms and their one line, one
+guarded scene and brightness command with no extension write, a configuration
+operation withdrawn before sending that sends nothing, phone width and automated
+accessibility. The Hub #289
 scenario (`tests/local-controllers.mjs`) runs the real local controller host with
 fake Tidbyt and LIFX transports behind the real hub. It checks the Tidbyt view's
 no-controls line, LIFX power, brightness, color and color temperature, one

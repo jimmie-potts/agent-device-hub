@@ -512,6 +512,12 @@ controller request. The fake Pixoo declares the capabilities of Pixoo `main`
 `c81bc31`, with controller v1 modes unsupported; the dashboard README records
 the mapping. Human UI approval of the candidate is recorded in its PR.
 
+Hub #323 adds a read-only Nanoleaf scenario to the same matrix, using the
+fixture's optional `panels` component. `apps/hub/tests/integration.test.mjs`
+checks that a read-only extension snapshot validates and passes through the
+integration route. The existing Hub and Dashboard jobs run both; no new CI job
+is needed.
+
 Hub #153 adds Nanoleaf scenarios to the same matrix: power and brightness in
 Work with the override hint, Work gating with the explicit Free switch through
 the controller v1 mode command, one guarded scene command with a preserved
