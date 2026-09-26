@@ -14,4 +14,4 @@
 
 - [x] 3.1 Run the shared build, type, dashboard, hub, contract and workflow checks; synchronize this delta and archive the change on the delivery branch. Independent reviews, current-head CI, the owner's UI approval, guarded merge and merged-main readback remain SDLC gates after archive.
 
-Evidence at the candidate: `npm run typecheck`, `npm run test:dashboard` (43 pass), `node apps/dashboard/tests/art.mjs` (7 checks), `npm run test:dashboard:browser` suites, `npm run test:hub:built` (126 pass), `npm run test:hub:package:built`, `npm run test:contracts`, `npm run check:workflow` and `npm run test:workflow` (15 pass) all exit 0 on Node 24.21.0. The owner's side-by-side UI approval is pending on the PR.
+Evidence at the candidate: `npm run typecheck`, `npm run test:dashboard` (43 pass), `node apps/dashboard/tests/art.mjs` (9 checks), `npm run test:dashboard:browser` suites, `npm run test:hub:built` (128 pass), `npm run test:hub:package:built`, `npm run test:contracts`, `npm run check:workflow` and `npm run test:workflow` (15 pass) all exit 0 on Node 24.21.0. The owner's side-by-side UI approval is pending on the PR.

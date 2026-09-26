@@ -46,11 +46,13 @@ focus and selection at the renderer's default offset.
 - Geometry: `GET /api/controllers/v1/<alias>/integration/geometry`
   (codex-nanoleaf#169). The Lines need the connector graph and every element's
   points; the Panels need three corners per element. A device without a saved
-  layout, an owner that predates the route (422) or an incompatible owner (502)
-  is final for the session; other failures are retried on the next poll. The
-  page reads the geometry once after a device's first poll, so the 5-second poll
-  and the one-slot device client are unchanged. Reload the page after a layout
-  change in the wall editor.
+  layout or an owner that predates the route (422) is final for the session;
+  any other failure is read again after the next successful poll. The page
+  reads the geometry once after a device's first successful poll, so the
+  5-second poll and the one-slot device client are unchanged. Reload the page
+  after a layout change in the wall editor. The hub validates the geometry's
+  shape, not the renderer's drawing rules; a layout the renderer rejects falls
+  back to the strip with the reason, or keeps the last drawn layout.
 - Snapshot: `mode`, `settings.style`, `projects[].color`, `elements[].projectId`
   and `.signature`, and `wallPending.elements` for pending marks. Colors follow
   the wall map's rule: the status color on both zones, and in the project

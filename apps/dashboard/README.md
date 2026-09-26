@@ -118,10 +118,12 @@ The page reads each Nanoleaf component's saved layout once from
 `GET /api/controllers/v1/<alias>/integration/geometry`
 ([codex-nanoleaf#169](https://github.com/jimmie-potts/codex-nanoleaf/issues/169))
 through the same per-device queue as the 5-second poll, after the component's
-first poll, and again only after a transport failure. A device without a saved
-layout or an owner that predates the route answers once for the session and the
-page draws a schematic strip, one cell per element, that says why. Reload the
-page after changing the layout in the wall editor.
+first successful poll, and again after the next successful poll only when that
+read failed. A device without a saved layout or an owner that predates the
+route answers once for the session and the page draws a schematic strip, one
+cell per element, that says why; so does a layout the hub accepts but the
+renderer cannot draw, naming the rule it broke. Reload the page after changing
+the layout in the wall editor.
 
 The `nanoleaf.integration/1.0` snapshot supplies mode, project colors, element
 reservations and pending wall edits. Colors follow the wall map: the status
@@ -341,9 +343,10 @@ checks do not establish installed-client or physical acceptance.
 layout with reservation colors, labels, keyboard selection and one geometry read
 per session, keeps the art marked stale while the controller is offline, draws
 the Panels from an 18-triangle fake, draws the schematic strip for a device
-without a saved layout and for an owner that predates the route, runs axe at
-1280 px and 390 px, and drives status, activity, mode, stale and reduced motion
-through a component harness. `tests/art.test.mjs` covers the adapter and the
+without a saved layout, for an owner that predates the route and for a layout
+the renderer rejects, retries a failed geometry read after the next poll, runs
+axe at 1280 px and 390 px, and drives status, activity, mode, stale, the
+opening assembly and reduced motion through a component harness. `tests/art.test.mjs` covers the adapter and the
 ported layout validator. The candidate needs the owner's side-by-side approval
 against the wall map on the same fixture before merge.
 

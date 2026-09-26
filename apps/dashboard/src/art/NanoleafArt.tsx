@@ -39,26 +39,34 @@ export function NanoleafArt({title, read, snapshot, stale, status, activity, sel
  const lines = useMemo(() => prismLayout(geometry), [geometry]), panels = useMemo(() => lines ? undefined : panelsLayout(geometry), [geometry, lines]);
  const layoutKey = useMemo(() => lines ? 'lines:' + JSON.stringify(lines) : panels ? 'panels:' + JSON.stringify(panels) : '', [lines, panels]);
  const elements = useMemo(() => lines ? lines.lines.map(l => ({id: String(l.id), number: l.number ?? l.id})) : panels ? panels.elements.map(e => ({id: e.id, number: e.number})) : [], [layoutKey]);
- const drawable = layoutKey !== '';
+ // The hub validates the geometry's shape, not the renderer's drawing rules (six-face joins, tube length, orphan connectors). A layout the renderer rejects falls back to the strip, or keeps the last drawn layout, instead of failing the page.
+ const [failure, setFailure] = useState<{key: string; message: string; kept: boolean}>();
+ const broken = failure !== undefined && failure.key === layoutKey;
+ const drawable = layoutKey !== '' && (!broken || failure.kept);
  useEffect(() => {
-  if (!host.current || !drawable) return;
+  if (!host.current || layoutKey === '') return;
   const pick = (_event: Event, element: {id: string}) => select.current?.(element.id);
-  if (lines) { if (art.current instanceof Renderer) art.current.setLayout(lines); else { art.current?.destroy(); art.current = new Renderer(host.current, lines, {animate: assemble, onSelect: pick}); } }
-  else if (panels) { if (art.current instanceof PanelsRenderer) art.current.setLayout(panels); else { art.current?.destroy(); art.current = new PanelsRenderer(host.current, panels, {onSelect: pick}); } }
+  try {
+   if (lines) { if (art.current instanceof Renderer) art.current.setLayout(lines); else { art.current?.destroy(); art.current = null; art.current = new Renderer(host.current, lines, {animate: assemble, onSelect: pick}); } }
+   else if (panels) { if (art.current instanceof PanelsRenderer) art.current.setLayout(panels); else { art.current?.destroy(); art.current = null; art.current = new PanelsRenderer(host.current, panels, {onSelect: pick}); } }
+  } catch (error) { setFailure({key: layoutKey, message: error instanceof Error ? error.message : String(error), kept: art.current !== null}); }
  }, [layoutKey]);
  useEffect(() => () => { art.current?.destroy(); art.current = null; }, []);
  const view = useMemo(() => drawable ? presentation({kind, elements, snapshot, status, activity, tokens}) : undefined, [kind, elements, snapshot, status, activity, tokens, drawable]);
  useEffect(() => {
   const current = art.current; if (!current || !view) return;
-  for (const [id, colors] of view.colors) current.setColors(id, colors);
-  current.setMode(view.mode); current.setActivity(view.activity); current.setPending(view.pending); current.setLineMetadata(view.metadata);
-  current.setSelection((selection ?? []).filter(id => view.colors.has(id)));
+  // A kept layout after a rejected replacement still receives only the ids it draws.
+  const known = new Set(current instanceof Renderer ? current.layout.lines.map(l => l.id) : current.layout.elements.map(e => e.id)), only = (ids: Iterable<string>) => [...ids].filter(id => known.has(id));
+  for (const [id, colors] of view.colors) if (known.has(id)) current.setColors(id, colors);
+  current.setMode(view.mode); current.setActivity(only(view.activity)); current.setPending(only(view.pending)); current.setLineMetadata(new Map([...view.metadata].filter(([id]) => known.has(id))));
+  current.setSelection(only(selection ?? []));
  }, [view, layoutKey, selection]);
  const cells = useMemo(() => drawable ? [] : strip({read, snapshot, status, tokens}), [drawable, read, snapshot, status, tokens]);
+ const undrawn = broken ? `the saved layout could not be drawn (${failure.message.replace(/\.$/, '')})` : '';
  const shown = Object.keys(status ?? {}).length > 0, style = snapshot?.settings.style;
  const count = drawable ? elements.length : cells.length, noun = kind === 'lines' ? (count === 1 ? 'Line' : 'Lines') : (count === 1 ? 'Panel' : 'Panels');
  const sentences = [
-  drawable ? `${count} ${noun} from the controller’s saved layout.` : `Physical layout unavailable: ${fallbackReason(read)}. Showing one cell per element.`,
+  drawable ? (broken ? `${count} ${noun} from the last drawn layout; ${undrawn}.` : `${count} ${noun} from the controller’s saved layout.`) : `Physical layout unavailable: ${broken ? undrawn : fallbackReason(read)}. Showing one cell per element.`,
   snapshot ? `Mode ${snapshot.mode}.` : 'Mode unknown: no integration snapshot.',
   snapshot ? (style === 'project' ? 'Signature zones show reservation colors.' : 'Classic layout: reservations are not drawn.') : '',
   shown ? '' : 'Task status isn’t in the hub snapshot, so no task is shown.',

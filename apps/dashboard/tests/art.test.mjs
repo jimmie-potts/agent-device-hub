@@ -56,10 +56,10 @@ try {
   assert.equal(fallbackReason(undefined),'the layout has not been read yet');assert.equal(fallbackReason({error:'unsupported-capability',final:true}),'the controller predates the geometry route');
   assert.equal(fallbackReason({error:'connection-unavailable',final:false}),'the layout could not be read (connection-unavailable)');assert.equal(fallbackReason(read),'the controller has no saved layout');assert.equal(fallbackReason({geometry:{...lines,elements:lines.elements.map(e=>({...e,points:null}))},final:true}),'the saved layout has no drawable shape');
  });
- test('a geometry read is final for a validated answer, an owner without the route or an incompatible owner, and retried otherwise',()=>{
+ test('a geometry read is final for a validated answer or an owner without the route, and retried otherwise',()=>{
   assert.deepEqual(geometryRead({geometry:lines}),{geometry:lines,final:true});
   assert.deepEqual(geometryRead({error:'unsupported-capability',status:422}),{error:'unsupported-capability',final:true});
-  assert.deepEqual(geometryRead({error:'incompatible-controller',status:502}),{error:'incompatible-controller',final:true});
+  assert.deepEqual(geometryRead({error:'incompatible-controller',status:502}),{error:'incompatible-controller',final:false},'an incompatible answer may be an owner mid-upgrade');
   assert.deepEqual(geometryRead({error:'capacity',status:429}),{error:'capacity',final:false});assert.deepEqual(geometryRead({error:'connection-unavailable',status:0}),{error:'connection-unavailable',final:false});
  });
  test('the ported validator keeps the wall map\'s layout rules',()=>{

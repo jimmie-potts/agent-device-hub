@@ -6,7 +6,7 @@ import {color, type LayoutInput, type Mode} from './prism';
 import type {PanelsLayoutInput} from './panels';
 
 export type Geometry = {apiVersion: string; identity: {controllerId: string; deviceId: string; sourceId: string; controllerEpoch: string}; kind: null | 'lines' | 'panels'; elements: {id: string; number: number; zones: number[]; points: [number, number][] | null}[]; connectors: null | {nodes: {id: string; x: number; y: number}[]; lines: {id: string; a: string; b: string}[]}};
-/** One geometry read. `final` means the answer will not change this session: a validated geometry, a device without a saved layout, or an owner that predates the route or answers incompatibly. */
+/** One geometry read. `final` means the answer will not change this session: a validated geometry, a device without a saved layout, or an owner that predates the route. Any other failure is read again after the next successful poll. */
 export type GeometryRead = {geometry?: Geometry; error?: string; final: boolean};
 export type ArtSnapshot = {mode: string; settings: {style?: string; coverage?: string}; projects: {id: string; color: string}[]; elements: {id: string; projectId: string | null; signature: number}[]; wallPending: unknown};
 export type ElementStatus = 'working' | 'question' | 'blocked' | 'unread';
@@ -75,5 +75,5 @@ export function strip({read, snapshot, status = {}, tokens}: {read: GeometryRead
 /** Classifies a geometry read for the page: which answers are final and how a failure is named. */
 export function geometryRead(result: {geometry: Geometry} | {error: string; status: number}): GeometryRead {
  if ('geometry' in result) return {geometry: result.geometry, final: true};
- return {error: result.error, final: result.status === 422 || result.status === 502};
+ return {error: result.error, final: result.status === 422};
 }

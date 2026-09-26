@@ -28,7 +28,7 @@ export function panelsGeometry(deviceId='panels'){
  const elements=triangles.map((t,i)=>({id:String(4001+i),number:i+1,zones:[4001+i],points:[0,1,2].map(k=>{const a=(90+t.o+120*k)*Math.PI/180;return [round(t.cx+r*Math.cos(a)),round(-(t.cy+r*Math.sin(a)))];})}));
  return {apiVersion:'nanoleaf.integration/1.0',identity:identityOf(deviceId),kind:'panels',elements,connectors:null};
 }
-/** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route. */
+/** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route, 'undrawable' serves a hub-valid Lines layout with a connector no Line joins, which the renderer rejects, and 'flaky' fails the first geometry read with a transport failure and serves the layout afterwards. */
 export async function fixture({empty=false,playback=false,panels=false,geometry='layout'}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
@@ -38,7 +38,8 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
  const sceneC='scene-'+'c'.repeat(64),sceneD='scene-'+'d'.repeat(64);
  const readOnly={...structuredClone(nano),identity:{...nano.identity,deviceId:'panels'},revision:'c'.repeat(64),mode:'Free',elements:[],nextRequestId:{epoch:'c'.repeat(32),sequence:0},scenes:[{id:sceneC,name:'Forest'},{id:sceneD,name:'Sunset'}],
   capabilities:{...Object.fromEntries(['settings.set','elements.assign','task.assign','project.color'].map(k=>[k,{supported:false,scope:'control'}])),'mode.set':nano.capabilities['mode.set']}};
- const geometries={wall:geometry==='none'?{apiVersion:nano.apiVersion,identity:identityOf('wall'),kind:null,elements:[],connectors:null}:linesGeometry(),panels:panelsGeometry()};
+ const undrawable=()=>{const g=linesGeometry();g.connectors.nodes.push({id:'99',x:900,y:900});return g;};
+ const geometries={wall:geometry==='none'?{apiVersion:nano.apiVersion,identity:identityOf('wall'),kind:null,elements:[],connectors:null}:geometry==='undrawable'?undrawable():linesGeometry(),panels:panelsGeometry()};let geometryReads=0;
  const pixoo=JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json','utf8')).snapshot;
  pixoo.identity={controllerId:'pixel-controller',deviceId:'pixel',sourceId:'pixel'};
  const ids=['wall','pixel',...(panels?['panels']:[])],nanoleaf=id=>id!=='pixel',states=Object.fromEntries(ids.map(id=>[id,structuredClone(template)]));
@@ -63,7 +64,7 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
    const send=(status,value)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
    const integration=req.url.includes('integration');const state=states[id],ext=id==='wall'?nano:id==='panels'?readOnly:pixoo;
    // The read-only geometry route (codex-nanoleaf#169): an older owner answers 404 like any unknown route.
-   if(req.method==='GET'&&req.url.startsWith('/controller/integration/v1/geometry')){if(geometry==='older'){send(404,{failure:{code:'invalid-request'}});return;}send(200,geometries[id]);return;}
+   if(req.method==='GET'&&req.url.startsWith('/controller/integration/v1/geometry')){if(geometry==='older'){send(404,{failure:{code:'invalid-request'}});return;}if(geometry==='flaky'&&geometryReads++===0){send(503,{failure:{code:'transport-failure'}});return;}send(200,geometries[id]);return;}
    if(req.method==='GET'){send(200,integration?ext:state);return;}
    const command=JSON.parse(body);writes.push({id,integration,command});
    if(uncertain){req.socket.destroy();return;}

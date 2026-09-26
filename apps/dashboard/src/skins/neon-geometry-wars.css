@@ -22,5 +22,5 @@
 /* Fixed-meaning wall status tokens (style guide section 4.2), moved here with the shared device art (Hub #355). Skins may shade them, never swap their meaning. */
 --wall-working:#00ff00;--wall-question:#ffff00;--wall-blocked:#ff0000;--wall-unread:#193cff;
 --chip-working:#2bff63;--chip-question:#ffe600;--chip-blocked:#ff4a4a;--chip-unread:#5b9bff;
-/* Device art canvas: the wall's near-black behind the crystal, and its number ink. */
+/* Device art figure: the wall's near-black canvas behind the crystal, and the figure's quiet edge. */
 --art-canvas:#05070d;--art-edge:rgba(34,211,238,.2)}

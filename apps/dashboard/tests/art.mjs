@@ -59,6 +59,9 @@ try {
   await art.locator('[data-control="4"]').click();assert.equal(await art.locator('[data-control="4"]').getAttribute('aria-pressed'),'true');
   assert.deepEqual(await textOverlaps(page),[]);await axe(page);assert.equal(f.writes.length,0);
   await page.screenshot({path:output+'/art-panels-desktop.png',fullPage:true});
+  // The Panels' controller goes away: the triangles stay, marked stale.
+  f.setOffline(true,'panels');await page.waitForFunction(()=>document.querySelector('figure.device-art[data-art-kind=panels]')?.dataset.artState==='stale');assert.equal(await art.locator('[data-control]').count(),18);await art.locator('figcaption').getByText('Stale: showing the last snapshot.').waitFor();f.setOffline(false);
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'the Panels page has no horizontal overflow at phone width');await axe(page);await page.setViewportSize({width:1280,height:900});
   // The Lines page in the same session draws its own device.
   await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.locator('figure.device-art[data-art-kind=lines] svg.prism-scene').waitFor();assert.equal(await page.locator('figure.device-art[data-art-kind=lines] [data-control]').count(),15);
  },{options:{panels:true}});
@@ -78,6 +81,18 @@ try {
   assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the controller predates the geometry route\./);
   await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),1,'a 422 is final for the session');assert.equal(f.writes.length,0);
  },{options:{geometry:'older'}});
+ await scenario('a hub-valid layout the renderer rejects falls back to the strip without failing the page',async(f,page)=>{
+  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the saved layout could not be drawn \(Remove connectors that have no Lines\)\. Showing one cell per element\./);
+  assert.equal(await art.locator('button.art-cell').count(),15);await page.getByLabel('Device mode').first().waitFor();assert.equal(await page.getByRole('button',{name:'Apply mode',exact:true}).first().isVisible(),true,'the rest of the page still renders');
+  await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),1,'a validated answer is final even when it cannot be drawn');assert.equal(f.writes.length,0);
+ },{options:{geometry:'undrawable'}});
+ await scenario('a transport failure on the geometry read is retried after the next successful poll, then final',async(f,page)=>{
+  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const art=page.locator('figure.device-art');await art.locator('ol.art-strip').waitFor();
+  assert.match(await art.locator('figcaption').innerText(),/Physical layout unavailable: the layout could not be read \(/);
+  await art.locator('svg.prism-scene').waitFor({timeout:12000});assert.equal(await art.locator('[data-control]').count(),15);assert.equal(geometryReads(f,'wall'),2,'one retry after the failed read');
+  await page.waitForTimeout(6000);assert.equal(geometryReads(f,'wall'),2,'the successful read is final');
+ },{options:{geometry:'flaky'}});
  // Component harness: status and activity are inputs the pages leave empty today; a consumer with a source drives the marks and the Work flow.
  const bundle=await build({entryPoints:['apps/dashboard/tests/art-harness.tsx'],bundle:true,write:false,format:'esm',target:'es2022',outdir:'out'});
  const js=bundle.outputFiles.find(x=>x.path.endsWith('.js')).text,css=bundle.outputFiles.find(x=>x.path.endsWith('.css')).text;
@@ -97,15 +112,22 @@ try {
    assert.equal(await art.locator('figcaption').innerText(),'15 Lines from the controller’s saved layout. Mode Work. Signature zones show reservation colors.');
    const packet=()=>page.locator('[data-packet="0"][data-zone="0"]').first().evaluate(el=>Number(el.getAttribute('opacity')));
    if(reducedMotion==='reduce'){await page.waitForTimeout(400);assert.equal(await packet(),0,'reduced motion stops the flow');}
-   else{await until(()=>true);let seen=false;const deadline=Date.now()+3000;while(Date.now()<deadline){if(await packet()>0){seen=true;break;}await page.waitForTimeout(50);}assert.ok(seen,'the Work flow runs on the active element');}
+   else{let seen=false;const deadline=Date.now()+3000;while(Date.now()<deadline){if(await packet()>0){seen=true;break;}await page.waitForTimeout(50);}assert.ok(seen,'the Work flow runs on the active element');}
    assert.equal(await page.locator('[data-packet="1"][data-zone="0"]').first().evaluate(el=>Number(el.getAttribute('opacity'))),0,'an inactive element has no packet');
    await page.evaluate(p=>window.mountArt(p),{...props,snapshot:{...snapshot,mode:'Quiet'}});await page.waitForFunction(()=>document.querySelector('figure.device-art svg')?.dataset.prismMode==='quiet');await page.waitForTimeout(100);assert.equal(await packet(),0,'Quiet stops the flow');
+   const bed=()=>page.locator('[data-bed="0"]').first().evaluate(el=>Number(el.getAttribute('opacity')));const quietBed=await bed();
    await page.evaluate(p=>window.mountArt(p),{...props,snapshot:{...snapshot,mode:'Free'}});await page.waitForFunction(()=>document.querySelector('figure.device-art svg')?.dataset.prismMode==='free');
+   assert.ok(await bed()<quietBed&&quietBed<.62,'Work, Quiet and Free stay distinguishable by the light bed, with or without motion');
    await page.evaluate(p=>window.mountArt(p),{...props,stale:true});await page.waitForFunction(()=>document.querySelector('figure.device-art')?.dataset.artState==='stale');
    // The Panels pulse on the same clock from the same inputs.
    await page.evaluate(p=>window.mountArt(p),{...props,read:{geometry:panelsGeometry(),final:true},snapshot:{...snapshot,elements:[]},status:{'4001':'working'},activity:['4001']});
    const panels=art.locator('svg.prism-panels');await panels.waitFor();assert.equal(await art.locator('[data-control]').count(),18);assert.equal(await panels.getAttribute('data-flow'),String(reducedMotion!=='reduce'));
    assert.equal(await art.locator('[data-part="light"][data-light="0"]').getAttribute('fill'),'#00ff00');assert.equal(await art.locator('[data-control="0"]').getAttribute('aria-label'),'Panel 1 · Shared pool · working, active');
+   // The opening assembly plays once on first draw and ends within two seconds; reduced motion skips it.
+   await page.evaluate(p=>window.mountArt(p),{...props,assemble:true,read:{geometry:{...linesGeometry(),identity:{...linesGeometry().identity,controllerEpoch:'assembly'}},final:true}});await page.locator('svg.prism-scene [data-charge]').waitFor({state:'attached'});
+   const charge=()=>page.locator('svg.prism-scene [data-charge]').first().getAttribute('visibility');
+   if(reducedMotion==='reduce')assert.equal(await charge(),'hidden','reduced motion skips the assembly');
+   else{assert.equal(await charge(),'visible','the assembly starts from the root connector');await page.waitForFunction(()=>document.querySelector('svg.prism-scene [data-charge]')?.getAttribute('visibility')==='hidden',null,{timeout:4000});}
    await axe(page);assert.deepEqual(errors,[]);
    if(reducedMotion==='no-preference')await page.screenshot({path:output+'/art-harness-status.png'});
    checks.push('harness status/activity ('+reducedMotion+')');

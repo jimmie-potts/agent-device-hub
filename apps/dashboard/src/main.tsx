@@ -1,4 +1,4 @@
-import React, {useEffect,useId,useReducer,useRef,useState} from 'react';
+import React, {useEffect,useId,useMemo,useReducer,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
@@ -112,7 +112,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  const snapshot=device.snapshot,integr=device.integration;
  const {disabled,reasons,pixooMode}=availability(component,device,context.control);
  // The shared device art keeps its own selection; picking an element there also selects it in the element mapping form below.
- const [pickedElement,setPickedElement]=useState<string>();
+ const [pickedElement,setPickedElement]=useState<string>(),artSelection=useMemo(()=>pickedElement?[pickedElement]:[],[pickedElement]);
  const path=`/api/controllers/v1/${encodeURIComponent(component.id)}`;
  const modes=snapshot?.capabilities.modes;
  const supportedModes=modes?.supported?modes.values.filter(m=>component.kind==='nanoleaf'?['Work','Quiet','Free'].includes(m):component.kind==='pixoo'?['Monitor','Media'].includes(m):false):[];
@@ -143,7 +143,7 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  const startMonitor=pixoo(integr)&&pixooMode?.mode==='monitor'&&(!pixooMode.participating||monitorCommand.status||monitorCommand.locked)?<div className="switch">{!pixooMode.participating&&<div className="actions"><button type="button" disabled={!!startReason||monitorCommand.busy||monitorCommand.locked} onClick={()=>void monitorCommand.run('Start Monitor',()=>reread((latest,a)=>{const i=latest.integration,s=latest.snapshot;return a.disabled??(!pixoo(i)||i.configuration.mode!=='monitor'?'Pixoo is no longer set to Monitor':i.participating?'Monitor is already showing':i.pendingMode?'a mode change is pending':s?.state.desired.power.status==='known'&&!s.state.desired.power.value?screenOff:{request:pixooRequest(i,component,{operation:'mode',mode:'monitor'})});}))}>Start Monitor</button></div>}{monitorCommand.locked&&<div className="actions"><button type="button" className="secondary" onClick={monitorCommand.unlock}>Reload current values</button></div>}{!pixooMode.participating&&<p className="hint">Pixoo is set to Monitor but isn’t showing agent status. Start Monitor sends one Monitor mode command and doesn’t start playback.{startReason?` Unavailable: ${startReason}.`:''}</p>}<p role="status" data-tone={monitorCommand.tone}>{monitorCommand.status}</p></div>:undefined;
  return <><header className="section-heading"><div><p className="eyebrow">COMPONENT / {component.kind}</p><h2>{component.id}</h2></div><Badge warning={!!device.error}>{device.error?'Stale / unavailable':snapshot?.serviceHealth??'Unknown'}</Badge></header>
  <p className="muted">{component.controllerId} / {component.deviceId}</p>
- {component.kind==='nanoleaf'&&<NanoleafArt title={component.id} read={device.geometry} snapshot={nano(integr)?integr:undefined} stale={!!device.error} selection={pickedElement?[pickedElement]:[]} onSelect={setPickedElement}/>}
+ {component.kind==='nanoleaf'&&<NanoleafArt title={component.id} read={device.geometry} snapshot={nano(integr)?integr:undefined} stale={!!device.error} selection={artSelection} onSelect={setPickedElement}/>}
  <Facts items={[
  ['Selected mode',nano(integr)?integr.mode:pixooMode?`${title(pixooMode.mode)}${pixooMode.pending?` (switching to ${title(pixooMode.pending)})`:''}`:snapshot?.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:'Unknown'],
  ['Desired state',snapshot?`Mode ${snapshot.state.desired.mode.status==='known'?snapshot.state.desired.mode.value:'unknown'} · Power ${snapshot.state.desired.power.status==='known'?(snapshot.state.desired.power.value?'on':'off'):'unknown'} · Brightness ${snapshot.state.desired.brightness.status==='known'?snapshot.state.desired.brightness.value+'%':'unknown'}`:'Unknown'],['Pending changes',snapshot?snapshot.state.pending.length?`${snapshot.state.pending.length} queued: ${snapshot.state.pending.map(p=>p.command.kind).join(', ')}`:'None':'Unknown'],
@@ -313,15 +313,15 @@ function Dashboard({api,disconnect}:{api:Api;disconnect:()=>void}){
   // Resolves with the device record after a read that started after this call, so a caller can build a command from authoritative guards.
   async function refreshDevice(c:Component):Promise<Device|undefined>{if(stop.signal.aborted)return latest.get(c.id);
    if(deviceBusy.has(c.id)){deviceAgain.add(c.id);return new Promise<Device|undefined>(resolve=>{const waiting=deviceWaiters.get(c.id)??[];waiting.push(()=>resolve(latest.get(c.id)));deviceWaiters.set(c.id,waiting);});}
-   deviceBusy.add(c.id);
+   deviceBusy.add(c.id);let polled=false;
    // A LIFX read is one lighting snapshot; its controller part guards the general and lighting controls alike.
-   try {if(c.kind==='lifx'){const lighting=await api.request<Lighting>(`/api/controllers/v1/${c.id}/lighting/snapshot`,undefined,stop.signal);update(c.id,{snapshot:lighting.controller,lighting,error:undefined,received:Date.now()});}
+   try {if(c.kind==='lifx'){const lighting=await api.request<Lighting>(`/api/controllers/v1/${c.id}/lighting/snapshot`,undefined,stop.signal);update(c.id,{snapshot:lighting.controller,lighting,error:undefined,received:Date.now()});polled=true;}
     else {const snapshot=await api.request<Snapshot>(`/api/controllers/v1/${c.id}/snapshot`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
     if(['nanoleaf','pixoo'].includes(c.kind))integration=await api.request<Nano|Pixoo>(`/api/controllers/v1/${c.id}/integration/snapshot`,undefined,stop.signal);
-    update(c.id,{snapshot,integration,error:undefined,received:Date.now()});}
+    update(c.id,{snapshot,integration,error:undefined,received:Date.now()});polled=true;}
    }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}
-   // The device art draws from the geometry route (codex-nanoleaf#169). One read per session, through the same per-device queue as the polls; a device without a layout or an owner without the route is final, a transport failure is retried on the next poll.
-   if(c.kind==='nanoleaf'&&!latest.get(c.id)?.geometry?.final&&!stop.signal.aborted){try{const geometry=await api.request<Geometry>(`/api/controllers/v1/${c.id}/integration/geometry`,undefined,stop.signal);update(c.id,{geometry:geometryRead({geometry})});}catch(e){update(c.id,{geometry:geometryRead(e instanceof ApiError?{error:e.code,status:e.status}:{error:'unavailable',status:0})});}}
+   // The device art draws from the geometry route (codex-nanoleaf#169). One read per session after a successful poll, through the same per-device queue; a device without a layout or an owner without the route is final, any other failure is retried after the next successful poll.
+   if(polled&&c.kind==='nanoleaf'&&!latest.get(c.id)?.geometry?.final&&!stop.signal.aborted){try{const geometry=await api.request<Geometry>(`/api/controllers/v1/${c.id}/integration/geometry`,undefined,stop.signal);update(c.id,{geometry:geometryRead({geometry})});}catch(e){update(c.id,{geometry:geometryRead(e instanceof ApiError?{error:e.code,status:e.status}:{error:'unavailable',status:0})});}}
    deviceBusy.delete(c.id);if(deviceAgain.delete(c.id)&&!stop.signal.aborted)void refreshDevice(c);else{const waiting=deviceWaiters.get(c.id)??[];deviceWaiters.delete(c.id);waiting.forEach(resolve=>resolve());}
    return latest.get(c.id);
   }
