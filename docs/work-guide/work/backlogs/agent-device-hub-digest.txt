@@ -223,3 +223,9 @@
 #382 [OPEN] Put B.U.N.N.Y. on the Steam Deck: a Decky overlay for agent attention and Deck-side game events
 #383 [OPEN] Let the Steam Deck play moments through rumble and an overlay toast
 #384 [OPEN] Drive agent sessions from the Steam Deck: a story launcher, tmux and a controller layout
+#385 [OPEN] Send selected hub events to IFTTT
+#386 [OPEN] Accept IFTTT triggers as a hub event source
+#387 [OPEN] Put the desk in Quiet when the owner leaves home and apply a chosen look on arrival
+#390 [OPEN] Show the Roborock on the B.U.N.N.Y. home as a widget
+#391 [OPEN] Add the Roborock as an event source so run end and stuck alerts become moments
+#392 [OPEN] Re-render the architecture viewers for ADR 0007, ADR 0008 and the retired Windows runtime

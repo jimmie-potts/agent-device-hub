@@ -51,18 +51,28 @@ TRACKS = [
     ]),
     ('Widget navigation', [
         dict(id='n-shell-nav', x=1, label='Palette · N30 · catalog', issues=['H288', 'H366'], guide='desktop-controls'),
+        dict(id='n-shell-roborock', x=2, label='Roborock home widget', issues=['H390'], guide='desktop-controls'),
     ]),
     ('Steam Deck', [
-        dict(id='n-deck-access', x=0, label='Deck tunnel · launcher', issues=['H378', 'H384'], guide='assistant-access'),
+        dict(id='n-deck-access', x=0, label='Deck tunnel · launcher', issues=['H378', 'H384'], guide='steam-deck'),
     ]),
     ('Steam events', [
-        dict(id='n-steam-events', x=2, label='Steam event source', issues=['H379', 'H380'], guide='assistant-access'),
+        dict(id='n-steam-events', x=2, label='Steam event source', issues=['H379', 'H380'], guide='steam-deck'),
     ]),
     ('Game-session routines', [
-        dict(id='n-game-routines', x=4, label='Game session sets the desk', issues=['H381'], guide='assistant-access'),
+        dict(id='n-game-routines', x=4, label='Game session sets the desk', issues=['H381'], guide='steam-deck'),
+    ]),
+    ('IFTTT', [
+        dict(id='n-ifttt', x=3, label='IFTTT out · IFTTT in', issues=['H385', 'H386'], guide='assistant-access'),
+    ]),
+    ('Presence looks', [
+        dict(id='n-presence-looks', x=4, label='Quiet away · look home', issues=['H387'], guide='assistant-access'),
+    ]),
+    ('Roborock moments', [
+        dict(id='n-roborock-events', x=4, label='Roborock moments', issues=['H391'], guide='assistant-access'),
     ]),
     ('Steam Deck client', [
-        dict(id='n-deck-client', x=3, label='Deck overlay · rumble', issues=['H382', 'H383'], guide='bunny-controls'),
+        dict(id='n-deck-client', x=3, label='Deck overlay · rumble', issues=['H382', 'H383'], guide='steam-deck'),
     ]),
     ('Hub startup capacity', [
         dict(id='n-hub-start', x=0, label='Hub start · 6 controllers', issues=['H357'], guide='assistant-access'),
@@ -301,6 +311,9 @@ TRACKS = [
     ('Guide overview', [
         dict(id='n-guide-overview', x=0, label='Overview refresh delivered', issues=[], guide='work-guide'),
     ]),
+    ('Architecture viewers', [
+        dict(id='n-guide-viewers', x=0, label='Re-render viewers · ADRs', issues=['H392'], guide='work-guide'),
+    ]),
     ('Guide refresh', [
         dict(id='n-guide-snapshot', x=0, label='Snapshot · text · recs', issues=['H324', 'H311', 'H341'], guide='work-guide'),
         dict(id='n-guide-nightly', x=1, label='Nightly refresh · warnings', issues=['H315', 'H316'], guide='work-guide'),
@@ -356,6 +369,7 @@ CROSS = [
     ('n-hub-start', 'n-nl-map', 'H357'), ('n-music', 'n-music-cards', 'H229'), ('n-hub-gates', 'n-guide-publish-auto', 'H240'),
     ('n-moments-rules', 'n-steam-events', 'H358'), ('n-moments-rules', 'n-game-routines', 'H358'), ('n-moments-routines', 'n-game-routines', 'H359'), ('n-desk-presets', 'n-game-routines', 'H67'),
     ('n-steam-events', 'n-deck-client', 'H379'), ('n-deck-access', 'n-deck-client', 'H378'),
+    ('n-ifttt', 'n-presence-looks', 'H386'), ('n-game-routines', 'n-presence-looks', 'H381'), ('n-moments-rules', 'n-roborock-events', 'H358'),
     ('n-guide-clipboard', 'n-guide-cleanup', 'H210'),
     ('n-guide-clipboard', 'n-hub-cache-docs', 'H210'),
     ('n-guide-mobile', 'n-guide-refresh', 'H197 only'),
