@@ -140,7 +140,7 @@ Placeholders below are `<...>` or `/absolute/private/...`. Replace them with the
 
 Each device controller must already be running and serve `/controller/v1` on numeric loopback (`http://127.0.0.1:<port>/controller/v1`):
 
-- **Pixoo:** the backend runs with `PIXOO_MODE=device` and `PIXOO_CONTROLLER_ENABLED=1`, on `PIXOO_PORT` (default 8787). See Pixoo's [shared controller API](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/hub-controller-api.md).
+- **Pixoo:** the backend runs with `PIXOO_MODE=device`, `PIXOO_CONTROLLER_ENABLED=1` and `PIXOO_MONITOR_ENABLED=1`, on `PIXOO_PORT` (default 8787). The monitor flag also serves the Pixoo integration extension that carries B.U.N.N.Y.'s Monitor/Media mode control. See Pixoo's [shared controller API](https://github.com/jimmie-potts/divoom-app-upgrade/blob/main/docs/hub-controller-api.md).
 - **Nanoleaf:** the installed controller user service runs `nanoleaf controller-serve` on its fixed port. See Nanoleaf's [local controller API](https://github.com/jimmie-potts/codex-nanoleaf/blob/main/docs/controller-api.md).
 
 You also need the hub's owner-only configuration path, its port, its service unit and a hub credential with `read` scope for the checks below.
@@ -157,7 +157,7 @@ nanoleaf controller-token --principal <hub-principal-id> > /absolute/private/nan
 npm run --silent mcp:credentials -- add /absolute/private/pixoo-data <hub-principal-id> control > /absolute/private/pixoo-hub.token
 ```
 
-Use a principal ID that is not already in use. Nanoleaf reissues an existing principal, which replaces that client's credential and cancels its unsent work. Pixoo refuses an existing ID.
+Check that each token file is not empty (`test -s <file>`); a failed command still creates the file. Use a principal ID that is not already in use. Nanoleaf reissues an existing principal, which replaces that client's credential and cancels its unsent work. Pixoo refuses an existing ID.
 
 ### Read the controller and device IDs
 
@@ -165,7 +165,7 @@ The entry's `controllerId` and `deviceId` must equal `identity.controllerId` and
 
 ```bash
 ids='let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const {controllerId,deviceId}=JSON.parse(s).identity;console.log(controllerId,deviceId)})'
-# Nanoleaf prints the snapshot for its first device; add --device-id <id> for another.
+# Nanoleaf prints the Lines snapshot; add --device-id <id> for another device, such as the Panels.
 nanoleaf controller-status | node -e "$ids"
 # Pixoo serves one device.
 curl -s -H "Authorization: Bearer $(cat /absolute/private/pixoo-hub.token)" http://127.0.0.1:<pixoo-port>/controller/v1/snapshot | node -e "$ids"
@@ -190,7 +190,8 @@ const fs = require("node:fs");
 const [config, entry, tokenFile] = process.argv.slice(1);
 const value = JSON.parse(fs.readFileSync(config, "utf8"));
 value.controllers.push({...JSON.parse(entry), token: fs.readFileSync(tokenFile, "utf8").trim()});
-fs.writeFileSync(config + ".next", JSON.stringify(value, null, 2) + "\n", {mode: 0o600});
+fs.rmSync(config + ".next", {force: true});
+fs.writeFileSync(config + ".next", JSON.stringify(value, null, 2) + "\n", {mode: 0o600, flag: "wx"});
 fs.renameSync(config + ".next", config);
 ' /absolute/private/config.json '{"id":"<alias>","kind":"<pixoo|nanoleaf>","controllerId":"<controllerId>","deviceId":"<deviceId>","endpoint":"http://127.0.0.1:<port>/controller/v1"}' /absolute/private/<device>-hub.token
 ```
@@ -208,7 +209,7 @@ systemctl --user restart <hub-unit>
 An invalid entry, such as a non-loopback endpoint, a token that is not 43 base64url characters or a duplicate alias, stops startup with `hub-start-failed`. Restore the backup and restart.
 
 1. Health lists each device. `curl -s -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/hub/v1/health` returns a `devices` array with each alias, kind, `controllerId` and `deviceId`. `health` is `unknown` until the hub's first request to that controller.
-2. Native snapshots validate. `curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/controllers/v1/<alias>/snapshot` prints `200`, and health then shows `ready` for that alias. Repeat with `.../integration/snapshot`, which the dashboard also loads for Pixoo and Nanoleaf. A `502` with `incompatible-controller` means the entry's IDs do not match the snapshot. A `503` with `controller-unavailable` means the hub cannot reach the controller.
+2. Native snapshots validate. `curl -s -w ' %{http_code}\n' -H "Authorization: Bearer $(cat /absolute/private/read-token)" http://127.0.0.1:<hub-port>/api/controllers/v1/<alias>/snapshot` prints the snapshot followed by `200`, and health then shows `ready` for that alias. Repeat with `.../integration/snapshot`, which the dashboard also loads, for Pixoo and the Nanoleaf Lines. On the v1 snapshot, `502` `incompatible-controller` means the entry's IDs do not match the controller's snapshot. `503` `controller-unavailable` means the hub cannot reach the controller or, on the Pixoo integration snapshot, that `PIXOO_MONITOR_ENABLED=1` is missing. `401` `unauthenticated` means the controller refused the entry's token; health then stays `unknown`. The Panels' integration snapshot always returns `502` `incompatible-controller` until [#323](https://github.com/jimmie-potts/agent-device-hub/issues/323), even with correct IDs, and marks the Panels `unavailable` until their next v1 read.
 3. The launcher session shows the controls. Run the hub's `open` command ([Open B.U.N.N.Y. without typing a token](README.md#open-bunny-without-typing-a-token)). Each component view shows the [general controls](../dashboard/README.md#general-controls) its controller declares.
 
 ### Roll back
@@ -219,6 +220,6 @@ An invalid entry, such as a non-loopback endpoint, a token that is not 43 base64
 
 ### Troubleshooting
 
-- **A registered device shows `unknown` health.** Health reports the last request outcome and never contacts the device itself. The first snapshot read, from the dashboard or the check above, sets `ready` or `unavailable`.
-- **Pixoo is in Monitor but does not present it.** After the Pixoo app starts, or the screen turns off and on, Monitor can be configured without being presented. Send an explicit mode command with **Start Monitor** in the Pixoo mode form. Nothing restores the presentation automatically.
+- **A registered device shows `unknown` health.** Health reports the last request outcome and never contacts the device itself. The first snapshot read, from the dashboard or the check above, sets `ready` or `unavailable`. A controller that refuses the entry's token answers `401` `unauthenticated` and leaves health `unknown`; reissue the principal and replace the entry's token.
+- **Pixoo is in Monitor but does not present it.** After the Pixoo app starts, or the screen turns off and on, Monitor can be configured without being presented. In device mode Pixoo resumes a saved Monitor selection with the screen on by itself, but a failed first upload, a retained screen-off request or simulator startup waits for an explicit command. Send it with **Start Monitor** in the Pixoo mode form. The hub never sends one on its own.
 - **A controller stopped mid-session.** Its reads fail with `controller-unavailable` and health shows `unavailable` until the controller returns; the next successful read shows `ready` again without a hub restart. A command in flight when it stopped is `uncertain-result`, not proof that nothing happened. Use **Reload current values** before sending again.
