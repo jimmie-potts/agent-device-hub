@@ -1,15 +1,35 @@
 {
-  "fetchedAt": "2026-09-26T06:49:24.372472+00:00",
+  "fetchedAt": "2026-09-26T16:39:37.520167+00:00",
   "source": "Paginated gh api read-only: pulls?state=all, issues?state=all, commits pinned to each observed default-branch head.",
   "repositories": {
     "agent-device-hub": {
       "createdAt": "2026-09-07T02:05:13Z",
-      "pushedAt": "2026-09-26T06:39:48Z",
+      "pushedAt": "2026-09-26T16:32:33Z",
       "defaultBranch": "main",
-      "headSha": "5de3a08cdfe59c204de88074eee1971ee7ea2d23",
-      "mainCommitCount": 170,
+      "headSha": "c5ae6af0d97819ba4f32974b1adc21cd01e27777",
+      "mainCommitCount": 174,
       "firstCommitAt": "2026-09-07T02:05:14Z",
       "mainCommits": [
+        {
+          "sha": "c5ae6af0d97819ba4f32974b1adc21cd01e27777",
+          "date": "2026-09-26T16:20:33Z",
+          "message": "Check pending track fixtures across all guide topics (#460)"
+        },
+        {
+          "sha": "6d5fb10f1044932661d0484fb4e8ad3230a82e26",
+          "date": "2026-09-26T16:17:06Z",
+          "message": "Point Nanoleaf #133 observations to a comment instead of a reopen (#454)"
+        },
+        {
+          "sha": "0a1af41d2d5440aa40ec6353116ff4d40d982fcf",
+          "date": "2026-09-26T16:14:23Z",
+          "message": "Allow nightly workflow to read repository issue inventory (#453)"
+        },
+        {
+          "sha": "7fea57c872bde52247771eede197653df4e899c4",
+          "date": "2026-09-26T16:02:50Z",
+          "message": "Refresh the guide nightly through one validated rolling PR (#448)"
+        },
         {
           "sha": "5de3a08cdfe59c204de88074eee1971ee7ea2d23",
           "date": "2026-09-26T06:39:48Z",
@@ -2191,22 +2211,47 @@
           "mergedAt": "2026-09-26T06:03:42Z"
         },
         {
+          "number": 448,
+          "title": "Refresh the guide nightly through one validated rolling PR",
+          "createdAt": "2026-09-26T06:03:07Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/448",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:02:51Z"
+        },
+        {
           "number": 451,
           "title": "Keep LIFX status paints out of lighting.pending (#450)",
           "createdAt": "2026-09-26T06:23:48Z",
           "url": "https://github.com/jimmie-potts/agent-device-hub/pull/451",
           "base": "main",
           "mergedAt": "2026-09-26T06:39:48Z"
+        },
+        {
+          "number": 453,
+          "title": "Allow nightly guide refresh to read repository issues",
+          "createdAt": "2026-09-26T16:07:26Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/453",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:14:23Z"
+        },
+        {
+          "number": 454,
+          "title": "Point Nanoleaf #133 observations to a comment instead of a reopen",
+          "createdAt": "2026-09-26T16:10:30Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/454",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:17:06Z"
+        },
+        {
+          "number": 460,
+          "title": "Keep pending-placement maintenance fixtures independent of table order",
+          "createdAt": "2026-09-26T16:18:27Z",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/460",
+          "base": "main",
+          "mergedAt": "2026-09-26T16:20:33Z"
         }
       ],
       "openPRs": [
-        {
-          "number": 448,
-          "title": "Add nightly guide refresh tooling and retired-term checks",
-          "createdAt": "2026-09-26T06:03:07Z",
-          "url": "https://github.com/jimmie-potts/agent-device-hub/pull/448",
-          "base": "main"
-        },
         {
           "number": 452,
           "title": "Share bounded session titles and project names across Hub metadata",
@@ -2367,6 +2412,14 @@
           "createdAt": "2026-09-07T05:54:19Z",
           "stateReason": "completed",
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/21"
+        },
+        {
+          "number": 22,
+          "title": "Install and verify LIFX agent status",
+          "closedAt": "2026-09-26T16:08:11Z",
+          "createdAt": "2026-09-07T05:54:20Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/22"
         },
         {
           "number": 30,
@@ -3017,6 +3070,14 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/312"
         },
         {
+          "number": 316,
+          "title": "Warn at guide refresh when an open story names a retired term",
+          "closedAt": "2026-09-26T16:10:54Z",
+          "createdAt": "2026-09-25T20:00:32Z",
+          "stateReason": "completed",
+          "url": "https://github.com/jimmie-potts/agent-device-hub/issues/316"
+        },
+        {
           "number": 323,
           "title": "Show dashboard controls for a Nanoleaf device with a read-only integration snapshot",
           "closedAt": "2026-09-26T02:48:39Z",
@@ -3129,10 +3190,10 @@
           "url": "https://github.com/jimmie-potts/agent-device-hub/issues/450"
         }
       ],
-      "openIssueCount": 167,
+      "openIssueCount": 170,
       "issueCreatedRange": [
         "2026-09-07T02:21:57Z",
-        "2026-09-26T06:20:14Z"
+        "2026-09-26T16:16:45Z"
       ],
       "issuesCreatedByDay": {
         "2026-09-07": 53,
@@ -3146,7 +3207,7 @@
         "2026-09-23": 27,
         "2026-09-24": 20,
         "2026-09-25": 96,
-        "2026-09-26": 52
+        "2026-09-26": 57
       }
     },
     "codex-nanoleaf": {
