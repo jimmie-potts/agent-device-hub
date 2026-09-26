@@ -655,7 +655,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 80,
-          "pattern": "^(?!.*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
+          "pattern": "^(?![\\s\\S]*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
         },
         "labelOrigin": {
           "enum": [
@@ -746,7 +746,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 160,
-      "pattern": "^(?!.*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
+      "pattern": "^(?![\\s\\S]*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+(?![\\s\\S])"
     }
   }
 }

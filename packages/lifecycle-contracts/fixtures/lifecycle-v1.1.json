@@ -549,6 +549,142 @@
         "response": "CONTENT_CANARY"
       },
       "valid": false
+    },
+    {
+      "id": "credential-after-0x2028-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss",
+          "source": "provider"
+        },
+        "project": "café-project"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2028-project",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "provider"
+        },
+        "project": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2029-title",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss",
+          "source": "provider"
+        },
+        "project": "café-project"
+      },
+      "valid": false,
+      "deduplication": null
+    },
+    {
+      "id": "credential-after-0x2029-project",
+      "input": {
+        "apiVersion": "1.1",
+        "identity": {
+          "provider": "codex",
+          "client": "cli",
+          "hostId": "host-a",
+          "sourceId": "source-a",
+          "sessionId": "session-a"
+        },
+        "turn": {
+          "status": "known",
+          "id": "turn-a"
+        },
+        "parent": {
+          "status": "unknown"
+        },
+        "event": {
+          "kind": "turn.started"
+        },
+        "observedAtMs": 1000,
+        "ordering": {
+          "status": "unknown"
+        },
+        "title": {
+          "value": "Edit prompts for café",
+          "source": "provider"
+        },
+        "project": "Title Bearer sssssssssssssssssssssssssssssssssssssssssss"
+      },
+      "valid": false,
+      "deduplication": null
     }
   ]
 }

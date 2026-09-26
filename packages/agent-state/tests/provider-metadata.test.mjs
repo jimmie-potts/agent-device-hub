@@ -23,7 +23,7 @@ test('Claude prefers latest custom-title over ai-title and never copies conversa
 });
 test('missing, malformed, secret-bearing and symlinked sources fail open; child metadata is not inherited',async t=>{
  const dir=await folder(t),path=join(dir,'session_index.jsonl');
- for(const text of [null,'not json\n',JSON.stringify({id:'session',thread_name:'Bearer '+'s'.repeat(43)})+'\n']){
+ for(const text of [null,'not json\n',JSON.stringify({id:'session',thread_name:'Bearer '+'s'.repeat(43)})+'\n',JSON.stringify({id:'session',thread_name:'Title\u2028Bearer '+'s'.repeat(43)})+'\n']){
   if(text!==null)await writeFile(path,text);
   const event=await providers.enrichHook(raw,source,1000,{codexHome:dir});assert.equal(event.event.kind,'turn.started');assert.equal(event.title,undefined);
  }
