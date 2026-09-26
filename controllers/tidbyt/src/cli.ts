@@ -3,11 +3,13 @@ import { loadRunnerConfig, startStatusRunner } from './runner.js';
 async function main(): Promise<void> {
   if (process.platform !== 'linux' || process.argv.length !== 3) throw new Error('invalid-runner-invocation');
   process.umask(0o077);
-  const runner = startStatusRunner(loadRunnerConfig(process.argv[2]!));
-  console.log('tidbyt-status-started');
+  // Install handlers before startup and readiness; release the lease through runner.stop().
+  let runner: ReturnType<typeof startStatusRunner> | undefined;
+  let requested = false;
   let stopping = false;
   const stop = () => {
-    if (stopping) return;
+    requested = true;
+    if (!runner || stopping) return;
     stopping = true;
     void runner.stop().then(() => {
       console.log('tidbyt-status-stopped');
@@ -16,5 +18,8 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+  runner = startStatusRunner(loadRunnerConfig(process.argv[2]!));
+  console.log('tidbyt-status-started');
+  if (requested) stop();
 }
 void main().catch(() => { console.error('tidbyt-status-start-failed'); process.exitCode = 1; });

@@ -26,8 +26,8 @@ async function readConfiguration(path:string):Promise<HubOptions> {
 
 try {
   if (process.argv.length !== 4 || !['serve','serve-staged','open'].includes(process.argv[2])) throw new Error('usage');
-  const configuration=await readConfiguration(process.argv[3]);
   if(process.argv[2]==='open'){
+    const configuration=await readConfiguration(process.argv[3]);
     const launch=await requestBrowserLaunch(configuration.directory);
     const url=launch.url+'/#launch='+launch.code;
     const command=process.env.WSL_DISTRO_NAME?'cmd.exe':'xdg-open';
@@ -35,15 +35,21 @@ try {
     await promisify(execFile)(command,args,{timeout:5000,windowsHide:true});
     process.stdout.write('B.U.N.N.Y. opened in the browser.\n');
   } else {
-  const hub = await startHub(configuration,process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
-  process.stdout.write(JSON.stringify({ready:true,url:hub.url}) + '\n');
+  // Remember signals during configuration/startup, then use the existing close path.
+  let hub:Awaited<ReturnType<typeof startHub>> | undefined;
+  let requested = false;
   let stopping = false;
   const stop = () => {
-    if (stopping) return;stopping = true;
+    requested = true;
+    if (!hub || stopping) return;stopping = true;
     const deadline = setTimeout(() => process.exit(1),5000);deadline.unref();
     void hub.close().then(() => {clearTimeout(deadline);process.exitCode = 0;},() => {clearTimeout(deadline);process.stderr.write('hub-shutdown-failed\n');process.exitCode = 1;});
   };
-  process.once('SIGTERM',stop);process.once('SIGINT',stop);
+  process.on('SIGTERM',stop);process.on('SIGINT',stop);
+  const configuration=await readConfiguration(process.argv[3]);
+  hub = await startHub(configuration,process.argv[2] === 'serve-staged' ? {staged:true} : undefined);
+  process.stdout.write(JSON.stringify({ready:true,url:hub.url}) + '\n');
+  if (requested) stop();
   }
 } catch (error) {
   // Name a stable cause, never a path or private value, so an operator can tell what to fix.

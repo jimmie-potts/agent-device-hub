@@ -8,8 +8,9 @@ import tempfile
 
 source=Path(sys.argv[1])
 sys.path.insert(0,str(source/'bridge'))
-import bridge as b
+import database
 import shared_input as s
+import shared_source
 
 packet=json.load(sys.stdin)
 # The Hub harness names the provider/client path under test; Nanoleaf qualifies exactly that source.
@@ -29,25 +30,25 @@ with tempfile.TemporaryDirectory(prefix='retirement-nano-') as temporary:
         config={'version':1,'ownerId':'owner','consumerId':'nanoleaf','endpoint':'http://127.0.0.1:1/api/monitor/v1',
                 'tokenFile':str(root/'unused-token'),'clearOnNewTurn':True,
                 'qualifiedSources':[source],'bindings':[]}
-        s.configure(directory,b,config)
-        s.select_source(directory,b,'shared',fetch=lambda *args,**kwargs:packet['initial'],now=lambda:1000)
-        with contextlib.closing(b.connect_state(directory)) as db,db:
+        shared_source.configure(directory,config)
+        shared_source.select_source(directory,'shared',fetch=lambda *args,**kwargs:packet['initial'],now=lambda:1000)
+        with contextlib.closing(database.connect_state(directory)) as db,db:
             assert db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]==1,'child folds into parent'
             db.execute("INSERT INTO projects VALUES ('kept','Kept project','#112233','[]')")
             db.execute("UPDATE task_info SET manual_project='kept'")
             db.execute('INSERT INTO slots (session,slot) VALUES (?,0)',(key,))
             generation=s.state(db)['generation']
-        s.failed(directory,b,generation)
-        with contextlib.closing(b.connect_state(directory)) as db:
+        shared_source.failed(directory,generation)
+        with contextlib.closing(database.connect_state(directory)) as db:
             assert db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]==1
         if not missed:
-            s.accept(directory,b,packet['removed'],now=lambda:1010)
-            with contextlib.closing(b.connect_state(directory)) as db:
+            shared_source.accept(directory,packet['removed'],now=lambda:1010)
+            with contextlib.closing(database.connect_state(directory)) as db:
                 for table in ('sessions','slots','activity','task_info','comets'):
                     assert db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0]==0,table
         # accept reopens the saved envelope; no in-memory task-generation cache.
-        s.accept(directory,b,packet['fresh'],now=lambda:1020)
-        with contextlib.closing(b.connect_state(directory)) as db:
+        shared_source.accept(directory,packet['fresh'],now=lambda:1020)
+        with contextlib.closing(database.connect_state(directory)) as db:
             assert db.execute('SELECT manual_project FROM task_info').fetchall()==[(None,)]
             assert db.execute('SELECT COUNT(*) FROM slots').fetchone()[0]==0
             assert db.execute('SELECT COUNT(*) FROM comets').fetchone()[0]==0

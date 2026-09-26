@@ -213,3 +213,38 @@ test('the cloud connection lists the now-playing installation only when it is co
   writeFileSync(s.configFile,JSON.stringify({...s.value,nowPlaying:{tokenFile:playbackTokenFile,sourceId:'ht-a9'}}));
   assert.deepEqual(runnerConnection(loadRunnerConfig(s.configFile)).additionalInstallations,['nowplaying']);
 });
+
+
+test('SIGTERM the instant the runner announces readiness closes cleanly ten times', async t=>{
+  const s=privateSetup(t);
+  for(let run=0;run<10;run++){
+    const child=spawn(process.execPath,['--experimental-test-module-mocks','--import',new URL('./cli-fixture.mjs',import.meta.url).href,new URL('../dist/cli.js',import.meta.url).pathname,s.configFile],{stdio:['ignore','pipe','pipe']});
+    const closed=once(child,'close');
+    const timer=setTimeout(()=>child.kill('SIGKILL'),7000);
+    let stdout='',signalled=false;
+    child.stdout.on('data',chunk=>{
+      stdout+=chunk;
+      if(!signalled&&stdout.includes('tidbyt-status-started')){signalled=true;child.kill('SIGTERM');}
+    });
+    try{
+      assert.deepEqual(await closed,[0,null],`run ${run}`);
+      assert.equal(signalled,true,`run ${run} reached readiness`);
+      assert.equal(stdout,'tidbyt-status-started\ntidbyt-status-stopped\n',`run ${run}`);
+      acquireWriterLease('device',join(s.dir,'locks'))();
+    }finally{clearTimeout(timer);if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await closed;}}
+  }
+});
+
+
+for(const signal of ['SIGINT','SIGTERM']) test(`${signal} during runner startup is honored after startup finishes`,async t=>{
+  const s=privateSetup(t);
+  const child=spawn(process.execPath,['--experimental-test-module-mocks','--import',new URL('./cli-fixture.mjs',import.meta.url).href,new URL('../dist/cli.js',import.meta.url).pathname,s.configFile],{env:{...process.env,TEST_START_SIGNAL:signal},stdio:['ignore','pipe','pipe']});
+  const closed=once(child,'close');
+  const timer=setTimeout(()=>child.kill('SIGKILL'),7000);
+  let stdout='';child.stdout.on('data',chunk=>{stdout+=chunk;});
+  try{
+    assert.deepEqual(await closed,[0,null]);
+    assert.equal(stdout,'tidbyt-status-started\ntidbyt-status-stopped\n');
+    acquireWriterLease('device',join(s.dir,'locks'))();
+  }finally{clearTimeout(timer);if(child.exitCode===null&&child.signalCode===null){child.kill('SIGKILL');await closed;}}
+});
