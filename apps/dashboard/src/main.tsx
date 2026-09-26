@@ -1,4 +1,4 @@
-import React, {useEffect,useId,useMemo,useRef,useState,useSyncExternalStore} from 'react';
+import React, {useEffect,useId,useLayoutEffect,useMemo,useRef,useState,useSyncExternalStore} from 'react';
 import {createRoot} from 'react-dom/client';
 import type {SessionSnapshot} from '../../../packages/agent-state/src/types';
 import type {Snapshot} from '../../../packages/contracts/src/types';
@@ -125,9 +125,10 @@ function PlaybackView({api,sourceId,control,now}:{api:Api;sourceId:string;contro
 }
 /** Noninteractive supporting information, available to pointer, keyboard and touch. */
 function InfoTip({label,children,warning=false}:{label:React.ReactNode;children:React.ReactNode;warning?:boolean}){
- const id=useId(),[open,setOpen]=useState(false),host=useRef<HTMLSpanElement>(null);
+ const id=useId(),[open,setOpen]=useState(false),[shift,setShift]=useState(0),host=useRef<HTMLSpanElement>(null),popup=useRef<HTMLSpanElement>(null);
+ useLayoutEffect(()=>{if(!open)return;const place=()=>{if(!host.current||!popup.current)return;const left=host.current.getBoundingClientRect().left+popup.current.offsetLeft,width=popup.current.getBoundingClientRect().width;setShift(Math.max(12-left,Math.min(0,window.innerWidth-12-left-width)));};place();window.addEventListener('resize',place);window.addEventListener('scroll',place,true);return()=>{window.removeEventListener('resize',place);window.removeEventListener('scroll',place,true);};},[open]);
  useEffect(()=>{if(!open)return;const dismiss=(e:KeyboardEvent)=>{if(e.key==='Escape')setOpen(false);};window.addEventListener('keydown',dismiss);return()=>window.removeEventListener('keydown',dismiss);},[open]);
- return <span ref={host} className="info-tip" onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>{if(!host.current?.contains(document.activeElement))setOpen(false);}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setOpen(false);}}><button type="button" className={'secondary status-indicator'+(warning?' warning':'')} aria-describedby={open?id:undefined} onFocus={()=>setOpen(true)} onClick={()=>setOpen(true)}>{label}</button>{open&&<span id={id} role="tooltip" className="info-popover">{children}</span>}</span>;
+ return <span ref={host} className="info-tip" onMouseEnter={()=>setOpen(true)} onMouseLeave={()=>{if(!host.current?.contains(document.activeElement))setOpen(false);}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setOpen(false);}}><button type="button" className={'secondary status-indicator'+(warning?' warning':'')} aria-describedby={open?id:undefined} onFocus={()=>setOpen(true)} onClick={()=>setOpen(true)}>{label}</button>{open&&<span ref={popup} id={id} role="tooltip" className="info-popover" style={{transform:`translateX(${shift}px)`}}>{children}</span>}</span>;
 }
 /** The name and activity stay visible; secondary evidence and label editing are optional. */
 function SessionRow({session:s,monitor,context,api,refresh,stale,elapsed}:{session:SessionSnapshot;monitor:Monitor;context:Context;api:Api;refresh:()=>Promise<void>;stale:boolean;elapsed:number}){
