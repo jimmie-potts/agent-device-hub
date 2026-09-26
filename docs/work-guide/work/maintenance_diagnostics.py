@@ -103,12 +103,17 @@ def run_suite(suite, result_path):
     document = {
         'completed': not result.shouldStop,
         'testsRun': result.testsRun,
-        'failures': records(result.failures),
-        'errors': records(result.errors),
-        'unrelatedSkips': result.unrelated_skips,
+        'failures': len(records(result.failures)),
+        'failureDetails': records(result.failures),
+        'errors': len(records(result.errors)),
+        'errorDetails': records(result.errors),
+        'unrelatedSkips': len(result.unrelated_skips),
+        'unrelatedSkipDetails': result.unrelated_skips,
         'directionBlocked': result.direction_blocked,
-        'unexpectedSuccesses': [test.id() for test in result.unexpectedSuccesses],
-        'expectedFailures': records(result.expectedFailures),
+        'unexpectedSuccesses': len([test.id() for test in result.unexpectedSuccesses]),
+        'unexpectedSuccessDetails': [test.id() for test in result.unexpectedSuccesses],
+        'expectedFailures': len(records(result.expectedFailures)),
+        'expectedFailureDetails': records(result.expectedFailures),
         'eligible': eligible,
     }
     if result.shouldStop:

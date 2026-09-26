@@ -47,9 +47,9 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(result['testsRun'], 1)
         self.assertEqual(len(result['directionBlocked']), 1)
         self.assertEqual(result['directionBlocked'][0]['diagnostic']['directionError'], 'H10 closed')
-        self.assertEqual(result['failures'], [])
-        self.assertEqual(result['errors'], [])
-        self.assertEqual(result['unrelatedSkips'], [])
+        self.assertEqual(result['failures'], 0)
+        self.assertEqual(result['errors'], 0)
+        self.assertEqual(result['unrelatedSkips'], 0)
 
     def test_unrelated_assertion_is_retained_alongside_direction_block(self):
         def regression():
@@ -57,8 +57,8 @@ class DiagnosticTests(unittest.TestCase):
         code, result = self.execute([self.build, regression])
         self.assertEqual(code, 1)
         self.assertEqual(len(result['directionBlocked']), 1)
-        self.assertEqual(len(result['failures']), 1)
-        self.assertIn('independent regression', result['failures'][0]['traceback'])
+        self.assertEqual(result['failures'], 1)
+        self.assertIn('independent regression', result['failureDetails'][0]['traceback'])
         self.assertFalse(result['eligible'])
 
     def test_non_direction_diagnostic_preserves_original_build_failure(self):
@@ -68,7 +68,7 @@ class DiagnosticTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 1)
         code, result = self.execute([self.build], non_direction)
         self.assertEqual(code, 1)
-        self.assertEqual(len(result['failures']), 1)
+        self.assertEqual(result['failures'], 1)
         self.assertEqual(result['directionBlocked'], [])
 
     def test_matching_stderr_without_typed_result_never_blocks(self):
@@ -84,14 +84,14 @@ class DiagnosticTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 1) if '--validate-inputs' in command else result
         code, result = self.execute([self.build], wrong_exit)
         self.assertEqual(code, 1)
-        self.assertEqual(len(result['failures']), 1)
+        self.assertEqual(result['failures'], 1)
 
     def test_subprocess_interrupt_and_errors_are_test_errors(self):
         for error in (KeyboardInterrupt(), OSError('unavailable builder')):
             with self.subTest(error=type(error).__name__):
                 code, result = self.execute([self.build], lambda *args, **kwargs: (_ for _ in ()).throw(error))
                 self.assertEqual(code, 1)
-                self.assertEqual(len(result['errors']), 1)
+                self.assertEqual(result['errors'], 1)
                 self.assertEqual(result['directionBlocked'], [])
 
     def test_ordinary_skip_is_ineligible(self):
@@ -99,7 +99,7 @@ class DiagnosticTests(unittest.TestCase):
             raise unittest.SkipTest('unrelated unavailable fixture')
         code, result = self.execute([skipped])
         self.assertEqual(code, 1)
-        self.assertEqual(len(result['unrelatedSkips']), 1)
+        self.assertEqual(result['unrelatedSkips'], 1)
         self.assertEqual(result['directionBlocked'], [])
 
     def test_nondefault_builder_call_is_not_intercepted(self):
@@ -109,7 +109,7 @@ class DiagnosticTests(unittest.TestCase):
         code, result = self.execute([explicit_validation])
         self.assertEqual(code, 1)
         self.assertEqual(len(self.calls), 1)
-        self.assertEqual(len(result['failures']), 1)
+        self.assertEqual(result['failures'], 1)
 
     def test_interrupted_suite_removes_stale_receipt_and_writes_no_completion(self):
         self.result_path.write_text('{"completed": true, "eligible": true}')
@@ -127,7 +127,7 @@ class DiagnosticTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 1)
         code, result = self.execute([self.build], interrupted_probe)
         self.assertEqual(code, 1)
-        self.assertEqual(len(result['errors']), 1)
+        self.assertEqual(result['errors'], 1)
         self.assertEqual(result['directionBlocked'], [])
 
     def test_empty_suite_cannot_authorize_publication(self):
@@ -147,7 +147,7 @@ class DiagnosticTests(unittest.TestCase):
         result = json.loads(self.result_path.read_text())
         self.assertEqual(code, 1)
         self.assertFalse(result['eligible'])
-        self.assertEqual(len(result['expectedFailures']), 1)
+        self.assertEqual(result['expectedFailures'], 1)
 
     def test_successful_build_is_not_probed(self):
         def succeeded(command, **kwargs):
