@@ -50,7 +50,7 @@ an issue a recommendation.
 Eleven topic guides own each open snapshot issue exactly once. The opening,
 roadmap and architecture links do not add to those totals. Completed milestones
 and retained evidence live in a separate expandable archive. Adding devices has separate Lines and Panels, wall map retirement, Tidbyt, LIFX,
-PC-lighting and other-integration tracks; deferred PC lighting starts
+PC-lighting, Roborock and other-integration tracks; deferred PC lighting starts
 collapsed. Engineering maintenance has separate Hub, Nanoleaf and Pixoo tracks. Earlier guide anchors remain reachable. Search, Expand all and print
 include archived evidence and the Direction and Ideas sections; printing restores
 the reader's prior expansion state.

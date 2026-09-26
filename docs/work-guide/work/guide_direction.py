@@ -16,7 +16,7 @@ hand-written list beside it.
 import html
 
 AS_OF = '2026-09-25'
-REVISION = 'c851541'
+REVISION = '21583cd'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [

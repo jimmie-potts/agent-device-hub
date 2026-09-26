@@ -40,6 +40,8 @@ TRACKS = [
         dict(id='n-shell-open', x=0, label='Bookmark · dense home', issues=['H276', 'H277'], guide='bunny-controls'),
         dict(id='n-shell-widgets', x=1, label='Widgets · Panels · wall art', issues=['H287', 'H286', 'H323', 'H355'], guide='bunny-controls'),
         dict(id='n-shell-status', x=2, label='Status page + histories', issues=['H282', 'H283', 'H329', 'H342'], guide='bunny-controls'),
+    ]),
+    ('Group page + task pool', [
         dict(id='n-shell-pages', x=4, label='Group page · task pool', issues=['H271', 'H272'], guide='bunny-controls'),
     ]),
     ('Device widgets', [
@@ -52,7 +54,10 @@ TRACKS = [
         dict(id='n-deck-access', x=0, label='Deck tunnel · launcher', issues=['H378', 'H384'], guide='assistant-access'),
     ]),
     ('Steam events', [
-        dict(id='n-steam-events', x=2, label='Steam events · routines', issues=['H379', 'H380', 'H381'], guide='assistant-access'),
+        dict(id='n-steam-events', x=2, label='Steam event source', issues=['H379', 'H380'], guide='assistant-access'),
+    ]),
+    ('Game-session routines', [
+        dict(id='n-game-routines', x=4, label='Game session sets the desk', issues=['H381'], guide='assistant-access'),
     ]),
     ('Steam Deck client', [
         dict(id='n-deck-client', x=3, label='Deck overlay · rumble', issues=['H382', 'H383'], guide='bunny-controls'),
@@ -63,8 +68,10 @@ TRACKS = [
     ('Hub moments', [
         dict(id='n-moments-send', x=0, label='Send moments · sources', issues=['H335', 'H293', 'H298', 'H352'], guide='assistant-access'),
         dict(id='n-moments-rules', x=1, label='Rules + interrupt set', issues=['H358'], guide='assistant-access'),
-        dict(id='n-moments-agents', x=2, label='Personas · proposals · log', issues=['H294', 'H295', 'H296', 'H297'], guide='assistant-access'),
         dict(id='n-moments-routines', x=3, label='Routines · automation UI', issues=['H359', 'H360', 'H369'], guide='assistant-access'),
+    ]),
+    ('Agent personas and proposals', [
+        dict(id='n-moments-agents', x=2, label='Personas · proposals · log', issues=['H294', 'H295', 'H296', 'H297'], guide='assistant-access'),
     ]),
     ('Now-playing follow-ups', [
         dict(id='n-music-cards', x=3, label='Artwork · source switch', issues=['H285', 'H331'], guide='controls-music'),
@@ -131,8 +138,10 @@ TRACKS = [
     ]),
     ('Wall map retirement', [
         dict(id='n-shell-geometry', x=0, label='Geometry · extension ops', issues=['N169', 'N170'], guide='nanoleaf-devices'),
-        dict(id='n-shell-scene-picker', x=1, label='Scene picker (parity list)', issues=['N168'], guide='nanoleaf-devices'),
         dict(id='n-shell-retire', x=4, label='Retire the wall map', issues=['N171'], guide='nanoleaf-devices'),
+    ]),
+    ('Wall map scene picker', [
+        dict(id='n-shell-scene-picker', x=1, label='Scene picker (parity list)', issues=['N168'], guide='nanoleaf-devices'),
     ]),
     ('LIFX Beam', [
         dict(id='n-beam-ctrl', x=2, label='Beam controller', issues=['H319'], guide='nanoleaf-devices'),
@@ -294,6 +303,8 @@ TRACKS = [
         dict(id='n-guide-snapshot', x=0, label='Snapshot · text · recs', issues=['H324', 'H311', 'H341'], guide='work-guide'),
         dict(id='n-guide-nightly', x=1, label='Nightly refresh · warnings', issues=['H315', 'H316'], guide='work-guide'),
         dict(id='n-guide-publish-auto', x=2, label='Auto publish', issues=['H317'], guide='work-guide'),
+    ]),
+    ('Guide ideas', [
         dict(id='n-guide-ideas', x=4, label='Guide ideas', issues=['H325', 'H328', 'H344', 'H347', 'H348'], guide='work-guide'),
     ]),
     ('Delivery records', [
@@ -341,6 +352,8 @@ CROSS = [
     ('n-shared-retire-all', 'n-shared-evict', 'H241'), ('n-nl-colors', 'n-np-custom', 'N139'),
     ('n-guide-mobile', 'n-guide-publish', 'H197'), ('n-shell-geometry', 'n-shell-widgets', 'N169'), ('n-host', 'n-tl-later', 'H44'),
     ('n-hub-start', 'n-nl-map', 'H357'), ('n-music', 'n-music-cards', 'H229'), ('n-hub-gates', 'n-guide-publish-auto', 'H240'),
+    ('n-moments-rules', 'n-steam-events', 'H358'), ('n-moments-rules', 'n-game-routines', 'H358'), ('n-moments-routines', 'n-game-routines', 'H359'), ('n-desk-presets', 'n-game-routines', 'H67'),
+    ('n-steam-events', 'n-deck-client', 'H379'), ('n-deck-access', 'n-deck-client', 'H378'), ('n-shell-scene-picker', 'n-shell-retire', 'N168'),
     ('n-guide-clipboard', 'n-guide-cleanup', 'H210'),
     ('n-guide-clipboard', 'n-hub-cache-docs', 'H210'),
     ('n-guide-mobile', 'n-guide-refresh', 'H197 only'),
