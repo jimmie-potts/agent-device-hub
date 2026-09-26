@@ -3,70 +3,21 @@ import { dirname, join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { validateSnapshot, type Snapshot } from '@jimmie-potts/agent-state';
+import { HubStatusFeed, hubJson, hubOrigin, hubToken, HUB_ID } from '@jimmie-potts/agent-status';
 import { INSTALLATION_ID, TidbytCloudConnection, type DisplayConnection } from './connection.js';
 import { parseTidbytCredentials, type TidbytCredentials } from './credentials.js';
 import { TidbytController } from './controller.js';
 import { parsePlaybackSnapshot, type PlaybackSnapshot } from './nowplaying.js';
 import { TidbytNowPlayingPublisher, type PlaybackFeed } from './nowplaying-publisher.js';
-import { TidbytStatusPublisher, type StatusFeed } from './publisher.js';
+import { TidbytStatusPublisher } from './publisher.js';
 
-const TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const HUB_ID = /^[A-Za-z0-9_.-]{1,128}$/;
-const MAX_FEED = 1024 * 1024;
 const MAX_PLAYBACK = 64 * 1024;
 export const DEFAULT_NOW_PLAYING_INSTALLATION_ID = 'nowplaying';
 const fail = (code: string): never => { throw new Error(code); };
 
-/** No redirect, remote host, URL credentials, query, fragment or alternate route. */
-function hubOrigin(value: unknown): string {
-  if (typeof value !== 'string' || !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}\/?$/.test(value)) return fail('invalid-runner-config');
-  try { return new URL(value).origin; } catch { return fail('invalid-runner-config'); }
-}
-
-function hubToken(value: unknown): string {
-  return typeof value === 'string' && TOKEN.test(value) ? value : fail('invalid-runner-config');
-}
-
-/** One authenticated GET within 2.5 s and `limit` bytes; anything else is `feed-unavailable`. */
-async function hubJson(url: string, token: string, limit: number): Promise<unknown> {
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 2500);
-  try {
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: abort.signal });
-    if (!response.ok || !response.body) return fail('feed-unavailable');
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      size += next.value.length;
-      if (size > limit) return fail('feed-unavailable');
-      chunks.push(next.value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch { return fail('feed-unavailable'); }
-  finally { clearTimeout(timer); abort.abort(); }
-}
-
-export class HubStatusFeed implements StatusFeed {
-  readonly #url: string;
-  readonly #owner: string;
-  readonly #token: string;
-  constructor(options: { hubUrl: string; ownerId: string; token: string }) {
-    this.#url = hubOrigin(options.hubUrl) + '/api/monitor/v1/sessions';
-    this.#token = hubToken(options.token);
-    if (typeof options.ownerId !== 'string' || !HUB_ID.test(options.ownerId)) fail('invalid-runner-config');
-    this.#owner = options.ownerId;
-  }
-  async snapshot(): Promise<Snapshot> {
-    const value = await hubJson(this.#url, this.#token, MAX_FEED) as Record<string, unknown> | null;
-    if (!value || value.apiVersion !== '1.0' || value.ownerId !== this.#owner || value.connection !== 'current') return fail('feed-unavailable');
-    const valid = validateSnapshot(value.snapshot);
-    return valid.ok ? valid.value : fail('feed-unavailable');
-  }
-}
+/** Re-exported for existing consumers: moved to `@jimmie-potts/agent-status` in hub #20, since the
+ * LIFX status publisher reads the same hub feed through the same class. */
+export { HubStatusFeed };
 
 /** The hub's shared playback snapshot for one configured source. */
 export class HubPlaybackFeed implements PlaybackFeed {

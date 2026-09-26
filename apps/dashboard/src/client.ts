@@ -53,11 +53,21 @@ export function observedColor(lighting:Lighting['lighting']):{hue:number;saturat
  const o=lighting.observation;if(o.status!=='known')return;
  return {hue:Math.round(o.color.hue*360/65535),saturation:Math.round(o.color.saturation*100/65535),kelvin:o.color.kelvin,ageMs:o.evidenceAgeMs};
 }
-/** A missing lighting capability is named before scope or stale evidence, like the general controls. */
+/** This bulb presents agent status in Work and Quiet (ADR 0005). Color and temperature wait for
+ * the observed Free mode from the same controller v1 snapshot that guards the lighting command. */
+export function lifxContentReason(snapshot:Pick<Snapshot,'state'>):string|undefined {
+ const pending=snapshot.state.pending.find(p=>p.command.kind==='mode.set');
+ if(pending&&pending.command.kind==='mode.set')return `This bulb is switching to ${pending.command.mode}; wait for the observed mode`;
+ const mode=snapshot.state.desired.mode;
+ if(mode.status!=='known')return 'This bulb’s mode is unknown; color and temperature need an observed Free mode';
+ return mode.value==='Free'?undefined:`This bulb is in ${mode.value} and presents agent status; color and temperature need Free`;
+}
+/** A missing lighting capability is named before scope, stale evidence or mode gating, like the general controls. */
 export function lightingReasons(lighting:Lighting|undefined,disabled?:string):{color?:string;temperature?:string}{
  if(!lighting)return {color:'No lighting snapshot',temperature:'No lighting snapshot'};
  const {color,temperature}=lighting.lighting.capabilities;
- return {color:color?disabled:'Color is not declared for this bulb’s qualified model',temperature:temperature?disabled:'Color temperature is not declared for this bulb’s qualified model'};
+ const gate=disabled??lifxContentReason(lighting.controller);
+ return {color:color?gate:'Color is not declared for this bulb’s qualified model',temperature:temperature?gate:'Color temperature is not declared for this bulb’s qualified model'};
 }
 export type GeneralReasons={power?:string;brightness?:string;media?:string;scenes?:string};
 /** Availability is declared capability times control scope. A missing capability is named before scope, stale evidence or mode gating. Content gating applies to media and scenes only. */

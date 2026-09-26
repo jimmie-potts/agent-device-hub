@@ -1,18 +1,27 @@
 import { validate } from '@jimmie-potts/device-contracts';
 import { LifxController, type BulbConfig } from '@jimmie-potts/lifx-controller';
+import { hubOrigin, hubToken, HUB_ID, HubStatusFeed } from '@jimmie-potts/agent-status';
 import { loadRunnerConfig, privateText, type RunnerConfig } from '@jimmie-potts/tidbyt-controller/runner';
 
 /** The Tidbyt runner's fixed device ID; every other configured device ID must differ from it. */
 export const TIDBYT_DEVICE_ID = 'tidbyt';
 export type Scope = 'read' | 'control';
 export type Credential = { id: string; digest: string; scopes: Scope[]; devices: string[] };
+/** Per-bulb painting caps for the automatic status publisher. Meaningless for an unqualified
+ * bulb, which never paints regardless of these values. */
+export type LifxBulbStatusConfig = { brightnessCapPercent?: number; quietCapPercent?: number };
+export type LifxBulbConfig = BulbConfig & { status?: LifxBulbStatusConfig };
+/** The hub feed the LIFX status publisher reads, resolved to a live token at load time. */
+export type LifxStatusFeedConfig = { hubUrl: string; ownerId: string; token: string };
 export type LifxConfig = {
   controllerId: string;
   sourceId: string;
-  bulbs: BulbConfig[];
+  bulbs: LifxBulbConfig[];
   timeoutMs?: number;
   retries?: number;
   maxPending?: number;
+  /** Present only when at least one bulb should paint automatic agent status. */
+  status?: LifxStatusFeedConfig;
 };
 export type HostConfig = { port: number; credentials: Credential[]; tidbyt?: RunnerConfig; lifx?: LifxConfig };
 
@@ -24,20 +33,41 @@ const integer = (value: unknown, minimum: number, maximum: number): value is num
   Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum;
 const unique = (values: unknown[]) => new Set(values).size === values.length;
 
+function lifxBulbStatusConfig(value: unknown): LifxBulbStatusConfig {
+  if (!plain(value) || !keysAre(value, [], ['brightnessCapPercent', 'quietCapPercent'])
+      || (value.brightnessCapPercent !== undefined && !integer(value.brightnessCapPercent, 1, 100))
+      || (value.quietCapPercent !== undefined && !integer(value.quietCapPercent, 1, 100))) return fail();
+  return structuredClone(value) as LifxBulbStatusConfig;
+}
+
+/** Validates the feed shape without a network call, mirroring `loadRunnerConfig`'s status feed check. */
+function lifxStatusFeedConfig(value: unknown): LifxStatusFeedConfig {
+  if (!plain(value) || !keysAre(value, ['hubUrl', 'ownerId', 'tokenFile'])) return fail();
+  const hubUrl = hubOrigin(value.hubUrl);
+  const token = hubToken(privateText(value.tokenFile).trim());
+  if (typeof value.ownerId !== 'string' || !HUB_ID.test(value.ownerId)) return fail();
+  const ownerId = value.ownerId;
+  new HubStatusFeed({ hubUrl, ownerId, token });
+  return { hubUrl, ownerId, token };
+}
+
 function lifxConfig(value: unknown): LifxConfig {
-  if (!plain(value) || !keysAre(value, ['controllerId', 'sourceId', 'bulbs'], ['timeoutMs', 'retries', 'maxPending'])
+  if (!plain(value) || !keysAre(value, ['controllerId', 'sourceId', 'bulbs'], ['timeoutMs', 'retries', 'maxPending', 'status'])
       || !Array.isArray(value.bulbs) || value.bulbs.length < 1 || value.bulbs.length > 32) return fail();
   const bulbs = (value.bulbs as unknown[]).map(bulb => {
-    if (!plain(bulb) || !keysAre(bulb, ['deviceId', 'address'], ['vendor', 'product', 'firmwareMajor', 'firmwareMinor'])
+    if (!plain(bulb) || !keysAre(bulb, ['deviceId', 'address'], ['vendor', 'product', 'firmwareMajor', 'firmwareMinor', 'status'])
         || typeof bulb.address !== 'string'
         || ['vendor', 'product', 'firmwareMajor', 'firmwareMinor'].some(key => bulb[key] !== undefined && !integer(bulb[key], 0, 0xffffffff))) return fail();
-    return structuredClone(bulb) as BulbConfig;
+    const status = bulb.status === undefined ? undefined : lifxBulbStatusConfig(bulb.status);
+    return { ...structuredClone(bulb), ...(status ? { status } : {}) } as LifxBulbConfig;
   });
+  const status = value.status === undefined ? undefined : lifxStatusFeedConfig(value.status);
   const config = structuredClone(value) as LifxConfig;
   config.bulbs = bulbs;
+  if (status) config.status = status; else delete config.status;
   // The controller owns the remaining checks: IDs, unicast IPv4 addresses, duplicates and bounds.
   // Construction opens no socket; this probe never sends.
-  try { new LifxController({ ...config, transportFactory: () => ({ exchange: fail, close() {} }) }).close(); } catch { return fail(); }
+  try { new LifxController({ ...config, bulbs: bulbs.map(({ status: _status, ...rest }) => rest), transportFactory: () => ({ exchange: fail, close() {} }) }).close(); } catch { return fail(); }
   return config;
 }
 

@@ -9,7 +9,7 @@ Status: source only, from [#289](https://github.com/jimmie-potts/agent-device-hu
 While it runs, the host is the only writer for its devices.
 
 - **Tidbyt.** The host loads your existing private Tidbyt runner JSON unchanged and starts the runner in-process. The runner brings its status and optional now-playing publishers, their feed reads and the cloud-device lease. The controller v1 identity stays `tidbyt-status` / `tidbyt`. The Tidbyt controller declares every controller v1 capability unsupported. The hub can read its status, but every Tidbyt command is refused as `unsupported-capability`, and the hub never pushes a frame. The standalone runner stays available for rollback; the shared lease stops it and the host from running at the same time.
-- **LIFX.** The host owns one `LifxController` for the configured bulbs and holds one writer lease per bulb address under `~/.local/state/agent-device-hub/lifx/`. It never discovers or paints a bulb on its own. A bulb changes only for an explicit admitted command, so a manual change in the LIFX app stays until the next one. When a qualified bulb's snapshot is read and its observation is missing or at least 30 s old, the host queues one read-only LightGet through the bulb's queue ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)). It starts at most one such read per bulb every 30 s, never reads an unqualified bulb, and sends nothing while no snapshot is read. The snapshot answers from memory, so the next read shows the result. Automatic LIFX status belongs to [#20](https://github.com/jimmie-potts/agent-device-hub/issues/20) and [#22](https://github.com/jimmie-potts/agent-device-hub/issues/22).
+- **LIFX.** The host owns one `LifxController` for the configured bulbs and holds one writer lease per bulb address under `~/.local/state/agent-device-hub/lifx/`. It also gives the controller a `modeStateRoot` of `<that same lease root>/modes`, so a qualified bulb's Work/Quiet/Free mode persists there; the `LifxController` package itself has no home-directory default, precisely so its source tests never touch a real one. A bulb changes only for an explicit admitted command, so a manual change in the LIFX app stays until the next one. When a qualified bulb's snapshot is read and its observation is missing or at least 30 s old, the host queues one read-only LightGet through the bulb's queue ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)). It starts at most one such read per bulb every 30 s, never reads an unqualified bulb, and sends nothing while no snapshot is read. The snapshot answers from memory, so the next read shows the result. Since [#20](https://github.com/jimmie-potts/agent-device-hub/issues/20), when the private configuration names a `lifx.status` feed and a bulb's own `status` block, the host also starts one `LifxStatusPublisher` alongside the Tidbyt runner: it paints that bulb's automatic agent status while its mode is Work or Quiet, through the controller's own internal, non-public paint operation, and never on its own for a bulb without a `status` block or while nothing configures the feed. Physical acceptance stays with [#22](https://github.com/jimmie-potts/agent-device-hub/issues/22).
 
 Every lease is taken before the listener opens. If any lease is already held, startup fails before any feed read or device request and releases the leases it had taken.
 
@@ -28,7 +28,11 @@ Create a mode-600 JSON file owned by the installation user, outside Git and outs
   "lifx": {
     "controllerId": "lifx",
     "sourceId": "lifx-lan",
-    "bulbs": [{"deviceId": "desk", "address": "192.168.1.40", "vendor": 1, "product": 27, "firmwareMajor": 2, "firmwareMinor": 90}]
+    "bulbs": [{
+      "deviceId": "desk", "address": "192.168.1.40", "vendor": 1, "product": 27, "firmwareMajor": 2, "firmwareMinor": 90,
+      "status": {"brightnessCapPercent": 50, "quietCapPercent": 20}
+    }],
+    "status": {"hubUrl": "http://127.0.0.1:8788", "ownerId": "your-configured-hub-owner", "tokenFile": "/absolute/private/hub-read-token"}
   }
 }
 ```
@@ -36,7 +40,9 @@ Create a mode-600 JSON file owned by the installation user, outside Git and outs
 - `port`: the loopback port. The host binds `127.0.0.1` only.
 - `credentials`: one to sixteen machine credentials. Each has an `id`, the lowercase SHA-256 hex `digest` of a 43-character base64url token, `scopes` (`read`, `control`) and the `devices` it may use. Create tokens the same way as [hub credentials](../hub/README.md#create-a-credential). Give each hub controller entry its own credential, following the pattern the installed hub already uses for the wall and the Pixoo.
 - `tidbyt.runnerConfig`: the absolute path of the existing Tidbyt runner JSON, validated by the runner's own rules, including the optional `nowPlaying` block. See [Run against an installed hub](../../controllers/tidbyt/README.md#run-against-an-installed-hub).
-- `lifx`: the `LifxController` options: `controllerId`, `sourceId` and one to thirty-two `bulbs` with neutral `deviceId`s and explicit unicast IPv4 addresses, plus optional `timeoutMs`, `retries` and `maxPending`. Only qualified model evidence enables power, brightness, color and color temperature. See the [LIFX guide](../../controllers/lifx/README.md#ownership-and-configuration).
+- `lifx`: the `LifxController` options: `controllerId`, `sourceId` and one to thirty-two `bulbs` with neutral `deviceId`s and explicit unicast IPv4 addresses, plus optional `timeoutMs`, `retries` and `maxPending`. Only qualified model evidence enables power, brightness, color, color temperature and modes. See the [LIFX guide](../../controllers/lifx/README.md#ownership-and-configuration).
+- `lifx.status` (optional): the hub feed for automatic agent status, in the same shape as the Tidbyt runner's own hub connection: `hubUrl`, `ownerId` and `tokenFile` (a dedicated read-only hub bearer, 43 base64url characters, whose `devices` include every bulb that opts in). Without it, no bulb paints, even if qualified and configured with a `status` block.
+- A bulb's own `status` block (optional): `brightnessCapPercent` and `quietCapPercent`, both integers 1-100 (defaults 50 and 20). A qualified bulb paints its automatic status only with both this block and `lifx.status` present; without either, it still advertises `mode.set` but is never painted. See [Automatic agent status](../../controllers/lifx/README.md#automatic-agent-status).
 
 At least one of `tidbyt` and `lifx` is required. Device IDs must be unique; with a Tidbyt configured, no bulb can use `tidbyt`. Unknown fields, symlinks, group- or world-readable files, files over 16 KiB and files inside a Git checkout fail with `local-controllers-start-failed`, which repeats nothing from the files. Bulb addresses, the Tidbyt key and tokens never appear in any response.
 
@@ -88,4 +94,4 @@ To roll back, stop the host, start the standalone runner with the same runner JS
 
 ## Development
 
-From the worktree root on Node 24, run `npm run build`, `npm run typecheck` and `npm run test:local-controllers`, plus the checks in [development](../../docs/development.md#local-controller-host-checks).
+From the worktree root on Node 24, run `npm run build`, `npm run typecheck`, `npm run test:local-controllers` and `npm run test:agent-status`, plus the checks in [development](../../docs/development.md#local-controller-host-checks).

@@ -412,6 +412,40 @@ Python check decodes the committed golden images with Pillow, independently of
 the encoder. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.
 
+Hub #20 moves the per-session ranking (`sessionState`/`RANK`), the whole-owner
+reduction, `HubStatusFeed` and its bounded hub GET helpers, and the generic
+feed-cadence machinery (`EvaluationLoop`, `BoundedReader`) into the new
+`packages/agent-status` workspace package, so the LIFX status publisher reads
+the same hub feed through the same classes. `controllers/tidbyt/src/runner.ts`
+re-exports `HubStatusFeed` unchanged for existing consumers, and
+`controllers/tidbyt/src/status.ts` builds its ASK/RUN/DONE display vocabulary
+on the shared `AgentState` values. Every existing Tidbyt test keeps passing
+unmodified; see "Agent status package checks" below for the moved code's own
+tests.
+
+## Agent status package checks
+
+Hub #20 adds `packages/agent-status`, a private workspace package with no
+device-specific display vocabulary: `sessionState`/`highestStatus` (the shared
+per-session ranking and whole-owner status reduction every automatic-status
+device consumes), `HubStatusFeed` and its bounded hub GET helpers
+(`hubOrigin`, `hubToken`, `hubJson`, `HUB_ID`), and the generic feed-cadence
+machinery (`EvaluationLoop`, `BoundedReader`, `systemTimers`). Use Node 24 and
+run `npm run build`, `npm run typecheck` and `npm run test:agent-status` from
+the worktree root. The combined contracts/state CI jobs run
+`test:agent-status:built` after their fresh build.
+
+Tests cover the ranking (attention over working over done, an active child
+making its root working, read evidence never retiring done), `highestStatus`
+(idle only when the feed is healthy and nothing is outstanding, `unknown` for
+an unavailable feed, a non-running collector or any shown session with
+uncertain freshness, even alongside an otherwise-current session), the hub
+feed against a real in-memory agent-state owner and a fake `fetch` (redirect,
+oversized, malformed, wrong-owner and slow responses), and the evaluation
+loop/bounded reader (coalescing, stop, a hung read blocking further reads
+until it settles). No check contacts the Tidbyt cloud, a LIFX bulb or a
+device.
+
 ## Agent state core checks
 
 Hub #3 adds the embeddable `packages/agent-state` owner and source provider emitters.
@@ -717,6 +751,54 @@ commands, unsupported capabilities and partial multi-bulb results. Tests validat
 common receipts/snapshots against controller v1 and never open a native socket.
 Installation and physical acceptance remain separate from these source checks.
 
+Hub #20 adds automatic agent status for qualified bulbs: a `modes` capability
+and `mode.set` (Work/Quiet/Free) the controller persists atomically, an
+internal `paintStatus`/`onModeChange` pair used only by the new
+`LifxStatusPublisher`, and that publisher itself
+(`controllers/lifx/src/status-publisher.ts`), which reads the shared
+`@jimmie-potts/agent-status` feed on the Tidbyt-style 30-second/3-second
+cadence and paints one absolute `LightSetColor` per shown-state transition
+through the bulb's existing queue. The package has no default mode-state
+directory: `modeStateRoot` must be supplied (the owning host derives one from
+its own lease root) or a qualified bulb advertises `modes: {supported: false}`
+and `mode.set` is `unsupported-capability`. Reading and writing that
+directory and its per-bulb files follow the same fail-closed rules as the
+existing private-file/lease checks elsewhere in this codebase: the directory
+must be a real, owner-only directory (created at 0700 if missing, otherwise
+required to already be one); the mode file is opened `O_NOFOLLOW` and must be
+a small, owner-only regular file to be trusted (anything else, including a
+symlink or a missing file, reads as Free); a write uses an exclusive,
+non-following 0600 temporary file and an atomic rename, and fails closed
+(receipt `failed`/`transport-failure`) rather than falling back to an unsafe
+location. `paintStatus` also rejects an unqualified bulb outright
+(`unsupported-capability`, no traffic, no pending entry) as defense in depth.
+`closeGracefully()` gives the controller (and each bulb) an orderly shutdown:
+it retires every queued job without aborting one already in flight, which
+settles on its own bound (`timeoutMs * (retries + 1)`) before the transport
+closes; the host uses it, after stopping the status publisher, in place of
+the abrupt `close()`.
+
+Tests cover: the internal paint command kind rejected by `parsed()`/`submit()`
+and the public lighting schema; a bulb with no configured mode-state root
+advertising no modes; a persisted mode surviving a reconstructed controller; a
+symlinked mode file and a group-readable mode directory both failing closed; a
+persistence failure reported as `transport-failure` without changing the mode
+or bulb health; an unqualified bulb rejecting `paintStatus`; `onModeChange`
+notifying only a successful `mode.set`; `closeGracefully` letting an in-flight
+paint finish (`sent`) while every queued one cancels with no further traffic;
+and the publisher's mapping, transitions-only (including new evidence for an
+unchanged state, and a manual app change surviving reads until the next real
+transition), stale-input, offline-bulb, mode and stop cases against a real
+in-memory agent-state owner with fake timers. `mode.set`'s receipt uses
+`outcome: "sent"` with `priorEffects: "confirmed-transmission"` because the
+contract's receipt schema ties those two together with no valid combination
+for "succeeded with certainty, nothing was transmitted"; a persisted mode
+change is its own point of effect, with no possibility of a lost transmission,
+so it reports the same pairing any completed write does. Painting never
+changes power. No test contacts a bulb, and every test that constructs a
+controller, publisher or host passes its own temporary mode/lease directory,
+never the real default under a developer's home.
+
 ## Local controller host checks
 
 Hub #289 adds `apps/local-controllers`, the loopback host that serves controller
@@ -745,6 +827,28 @@ not-declared lines, an unreachable bulb and the distinct disabled button colors.
 `apps/dashboard/tests/layout.mjs` fails any checked view whose text overlaps. No check contacts a
 device, the Tidbyt cloud or the LAN. Installation and the physical brightness
 check stay separate.
+
+Hub #20 adds an optional `lifx.status` feed block and a per-bulb `status`
+block (`brightnessCapPercent`, `quietCapPercent`, both 1-100) to the private
+host configuration; a qualified bulb paints automatic status only when both
+are present, through a `LifxStatusPublisher` the host starts and stops
+alongside the Tidbyt runner, reusing its `HubStatusFeed` from
+`@jimmie-potts/agent-status`. `apps/local-controllers/tests/config.test.mjs`
+covers the new fields' defaults and validation (bad hub URL, empty owner ID,
+out-of-range or fractional caps, unknown fields), and
+`apps/local-controllers/tests/host.test.mjs` drives one end-to-end paint
+through a real loopback hub and a bulb configured with a status block, while
+confirming a bulb without one never paints even though it is qualified. The
+host derives the controller's `modeStateRoot` from its own lease root
+(`<leaseRoot>/modes`) rather than relying on any package default; a dedicated
+test confirms a `mode.set` file lands there. Every LIFX status test that
+starts a real controller or host passes its own test-scoped `modeStateRoot`/
+lease directory; never the default path under the developer's home, which
+the source checks must not touch.
+`apps/dashboard/tests/local-controllers.mjs` extends its existing LIFX
+scenario with the mode control: Work disables color and temperature with the
+ADR 0005 reason and a one-click Switch to Free, which re-enables them, while
+power and brightness stay mode-independent throughout.
 
 ## Session retirement checks
 
