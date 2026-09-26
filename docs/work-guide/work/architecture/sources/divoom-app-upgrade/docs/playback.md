@@ -212,6 +212,5 @@ The optional [monitor presentation](agent-monitoring.md#monitor-panel-and-displa
 pauses the captured playlist before submitting a complete RGB picture through
 Player's current paused generation and sole adapter. Selecting Media leaves that
 context paused. Explicit start/show-media/restart/resume selects Media through
-ControlService, including existing MCP operations. Screen-on and simulator
-startup never resume either presentation; device-mode startup restores a saved
-Monitor selection but never resumes playback. Obsolete upload completions cannot reclaim ownership.
+ControlService, including existing MCP operations. Screen-on and startup never
+resume either presentation. Obsolete upload completions cannot reclaim ownership.

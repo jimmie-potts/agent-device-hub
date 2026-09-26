@@ -1,6 +1,7 @@
 """Fresh Linux installation using the existing bridge and controller processes."""
 import argparse
 import contextlib
+import getpass
 import hashlib
 import ipaddress
 import json
@@ -10,14 +11,13 @@ import re
 import secrets
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import venv
+import warnings
 
 import bridge as b
-import devices
-# The runtime copy of this reader serves device enrollment after installation.
-from enrollment import read_token
 
 
 @contextlib.contextmanager
@@ -65,7 +65,7 @@ def copy_runtime(directory):
     with private_files():
         bridge.mkdir(parents=True)
         for path in (source / 'bridge').glob('*.py'):
-            if path.name != 'install_linux.py':
+            if path.name not in {'install_linux.py', 'backup_install.py'}:
                 shutil.copyfile(path, bridge / path.name)
         for name in ('wall.html', 'prism.js', 'prism-adapters.js', 'prism-labels.js',
                      'requirements-controller.txt'):
@@ -148,18 +148,19 @@ def prepare_state(directory, ip, token, *, wall_port=8765, controller_port=41231
     layout = (request or b.light_request)(config, 'GET')['panelLayout']
     groups = b.pair_lines(layout)
     zones = {p['panelId']: p for p in layout['layout']['positionData']}
-    geometry = {'zone_geometry': {'orientation': layout['globalOrientation']['value'],
-                                  'positionData': [p for p in zones.values() if p['shapeType'] == 18]}}
+    saved = {
+        'line_groups': groups,
+        'line_positions': [[sum(zones[p]['x'] for p in pair) / 2,
+                            sum(zones[p]['y'] for p in pair) / 2] for pair in groups],
+        'zone_geometry': {'orientation': layout['globalOrientation']['value'],
+                          'positionData': [p for p in zones.values() if p['shapeType'] == 18]},
+    }
     try:
-        geometry['connector_geometry'], _ = b.wall.validated_connector_geometry({
+        saved['connector_geometry'], _ = b.wall.validated_connector_geometry({
             'orientation': layout['globalOrientation']['value'],
             'positionData': layout['layout']['positionData']}, groups)
     except (ValueError, TypeError, KeyError, OverflowError):
         pass  # Retain the existing standard-Line fallback for unsupported housings.
-    positions = [[sum(zones[p]['x'] for p in pair) / 2, sum(zones[p]['y'] for p in pair) / 2] for pair in groups]
-    saved = devices.serialized({devices.DEFAULT: devices.lines_entry(groups, positions, geometry)})
-    # The original Lines device keeps the controller identity; its credential stays under `token`.
-    config['devices'] = {devices.DEFAULT: {'kind': 'lines', 'ip': str(address), 'token_ref': 'token'}}
     config.update(wall_port=wall_port, controller_port=controller_port, mcp_port=mcp_port)
     for name, value in [('desktop_state_path', desktop_state_path),
                         ('metadata_path', metadata_path or desktop_state_path),
@@ -189,7 +190,8 @@ def provision_machine_credentials(directory):
         b.write_json(directory / 'mcp-config.json', {
             'enabled': True, 'port': ports['mcp_port'], 'controllerPort': ports['controller_port'],
             'controllerId': 'local-controller', 'deviceId': 'wall',
-            'transport': 'loopback-http', 'credentialsFile': str(directory / 'mcp-credentials.json')})
+            # Compatibility name: this transport is direct Linux HTTP as well.
+            'transport': 'windows-http', 'credentialsFile': str(directory / 'mcp-credentials.json')})
         (directory / 'mcp-client-token').write_text(client + '\n', encoding='ascii')
 
 
@@ -198,6 +200,26 @@ def native_tool(value, name):
     if not resolved or Path(resolved).suffix.lower() in {'.exe', '.cmd', '.bat', '.ps1'}:
         raise ValueError(f'Install a native Linux {name} executable and select its path.')
     return Path(resolved).resolve()
+
+
+def read_token(path):
+    if path is None:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', getpass.GetPassWarning)
+            try:
+                return getpass.getpass('Nanoleaf auth_token (hidden): ').strip()
+            except getpass.GetPassWarning:
+                raise ValueError('A hidden prompt is unavailable. Use a private --token-file.') from None
+    descriptor = os.open(Path(path).expanduser(), os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError('The token file must be a regular private text file.')
+        value = os.read(descriptor, 1025)
+        if len(value) > 1024:
+            raise ValueError('The token file exceeds 1024 bytes.')
+        return value.decode('ascii').strip()
+    finally:
+        os.close(descriptor)
 
 
 def install(args, request=None):
@@ -280,7 +302,7 @@ def main():
     print(f'Wall map: http://127.0.0.1:{arguments.wall_port}')
     print(f'MCP bearer is in the private file {launcher.parent / "mcp-client-token"}.')
     print('Review and trust the Nanoleaf hooks in Codex settings.')
-    print('Run from an ordinary WSL terminal:')
+    print('After retiring the Windows installation, run from ordinary WSL:')
     print('systemctl --user daemon-reload')
     print('systemctl --user enable --now codex-nanoleaf-wall codex-nanoleaf-controller codex-nanoleaf-mcp')
     return 0

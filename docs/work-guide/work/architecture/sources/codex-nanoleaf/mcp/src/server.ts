@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { once } from 'node:events';
 import { createMcpHandler } from '@jimmie-potts/device-mcp';
-import { CredentialStore, targets, type Config } from './config.js';
+import { CredentialStore, type Config } from './config.js';
 import { bindings } from './tools.js';
 export async function startHost(config: Config) {
     if (!config.enabled)
@@ -28,7 +28,7 @@ export async function startHost(config: Config) {
         throw new Error('Listener unavailable');
     const host = `127.0.0.1:${address.port}`;
     try {
-        handler = createMcpHandler({ enabled: true, registry, tools, authenticate: token => store.authenticate(token), allowedHosts: [host], allowedOrigins: [`http://${host}`], limits: { maxDevices: targets(config).length } });
+        handler = createMcpHandler({ enabled: true, registry, tools, authenticate: token => store.authenticate(token), allowedHosts: [host], allowedOrigins: [`http://${host}`], limits: { maxDevices: 1 } });
     }
     catch (error) {
         server.close();

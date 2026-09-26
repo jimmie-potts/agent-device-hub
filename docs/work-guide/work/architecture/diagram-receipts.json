@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-09-26T00:34:34.811931+00:00",
+  "renderedAt": "2026-09-26T00:46:28.626485+00:00",
   "archify": "/home/jimmie/.agents/skills/archify",
   "diagrams": [
     {
@@ -30,12 +30,12 @@
       "type": "architecture",
       "status": "implemented",
       "specification": {
-        "sha256": "4c5c901215cf3b4b85624dafc016937b1b46bc69949aabfc4548b3ff216a715d",
-        "bytes": 9359
+        "sha256": "bfe86550440cccdc8c1b3450506f853fa1536ccd11bdcc44b0a470f9a1ad8aef",
+        "bytes": 9356
       },
       "artifact": {
-        "sha256": "d5d0d57740b1b19bda54949ba2ea9878e8671a7e4fef20f629d58dfe3e1d4f33",
-        "bytes": 734896
+        "sha256": "3b448f1f4493ec451c48f33c9d41bff18a08da2afe1e38630b160e884d4ad493",
+        "bytes": 734887
       },
       "validation": {
         "checksPassed": 9,
@@ -46,7 +46,7 @@
         "warnings": 0
       },
       "viewer": "arch-shared-system.html",
-      "svgSha256": "e183f6d95c0999cbe5ee9538dd31a8a906d5657644ae384dfcbeb7766d4557d7"
+      "svgSha256": "0da70893c529530b93ae289a834d7542f85d3df48a64fd0706dc77cb52025df0"
     },
     {
       "id": "arch-nanoleaf-linux",
@@ -191,12 +191,12 @@
       "type": "sequence",
       "status": "future",
       "specification": {
-        "sha256": "93a1fad936790973399ead7c7cd5156f914ff58461f45d85d1d85b4754242b22",
-        "bytes": 3941
+        "sha256": "a5dc84502b8c48d715b113a201dba974edf60da082511db7c065df7fbb4cc1ab",
+        "bytes": 3942
       },
       "artifact": {
-        "sha256": "57ea3ca41591bfff03c135eeaacf6f380fed15ce591f30a718a32cdd7e421685",
-        "bytes": 713224
+        "sha256": "943c9757bf49b06ac69a0b03d7c8df982f16b497f450449ae21064d35481b755",
+        "bytes": 713225
       },
       "validation": {
         "checksPassed": 9,

@@ -8,7 +8,6 @@ import secrets
 import sqlite3
 import time
 import controller_state as state
-import devices
 
 ID=re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
 HTTP={'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,
@@ -42,28 +41,14 @@ def admission_transaction(directory,deadline):
 
 
 def configure(directory,b,controller_id,device_id,source_id):
-    """Create the original ledger, or add one for another registered device of the same controller."""
     if not all(isinstance(v,str) and ID.fullmatch(v) for v in (controller_id,device_id,source_id)):
         raise ValueError('Use neutral controller, device and source IDs.')
-    added=[device for device in b.registered_devices(directory) if device!=devices.DEFAULT]
     with contextlib.closing(b.connect_state(directory)) as db,db:
         db.execute('BEGIN IMMEDIATE')
         identity=dict(controllerId=controller_id,deviceId=device_id,sourceId=source_id)
-        if not state.present(db):
-            if device_id in added:
-                raise ValueError('Configure the original Lines identity before another device.')
-            state.init(db,identity)
-            return
-        if device_id in added and state.read(db)['identity']['deviceId']==device_id:
-            raise ValueError('The Lines already use this device ID; configure the device under its registered ID.')
-        existing=state.device_for(db,device_id)
-        if existing is not None:
-            if all(state.read(db,existing)['identity'][k]==v for k,v in identity.items()):return
+        if state.present(db) and any(state.read(db)['identity'][k]!=v for k,v in identity.items()):
             raise ValueError('Existing controller identity cannot be redirected.')
-        original=state.read(db)['identity']
-        if (original['controllerId'],original['sourceId'])!=(controller_id,source_id) or device_id not in added:
-            raise ValueError('Existing controller identity cannot be redirected.')
-        state.init(db,identity,device_id)
+        state.init(db,identity)
 
 
 def issue(directory,b,principal,scopes):
@@ -74,10 +59,10 @@ def issue(directory,b,principal,scopes):
         if not state.present(db):raise ValueError('Configure the controller first.')
         if db.execute('SELECT COUNT(*) FROM controller_credentials').fetchone()[0]>=32 and not db.execute('SELECT 1 FROM controller_credentials WHERE principal=?',(principal,)).fetchone():
             raise ValueError('Credential capacity reached.')
-        cancel(db,principal)
+        for sequence,revision in list(db.execute("SELECT sequence,mode_revision FROM controller_requests WHERE principal=? AND phase IN ('queued','attempting')",(principal,))):
+            state.finish(db,sequence,'cancelled','forbidden')
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('controller_hold_revision',?)",(str(revision),))
         db.execute('INSERT OR REPLACE INTO controller_credentials VALUES (?,?,?,1)',(principal,hashlib.sha256(token.encode()).hexdigest(),state.encoded(scopes)))
-        import integration_api
-        integration_api.recover(db,principal=principal,cancel=True)
     return token
 
 
@@ -85,18 +70,9 @@ def revoke(directory,b,principal):
     with contextlib.closing(b.connect_state(directory)) as db,db:
         db.execute('BEGIN IMMEDIATE')
         db.execute('UPDATE controller_credentials SET active=0 WHERE principal=?',(principal,))
-        import integration_api
-        integration_api.recover(db,principal=principal,cancel=True)
-        cancel(db,principal)
-
-
-def cancel(db,principal=None):
-    """Cancel queued or attempting native work on every device, holding each affected device."""
-    for device in state.ledgers(db):
-        for sequence,revision,owner in list(db.execute("SELECT sequence,mode_revision,principal FROM "+state.table('controller_requests',device)+" WHERE phase IN ('queued','attempting')")):
-            if principal is None or owner==principal:
-                state.finish(db,sequence,'cancelled','forbidden',device)
-                state.hold(db,device,revision)
+        for sequence,revision in list(db.execute("SELECT sequence,mode_revision FROM controller_requests WHERE principal=? AND phase IN ('queued','attempting')",(principal,))):
+            state.finish(db,sequence,'cancelled','forbidden')
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('controller_hold_revision',?)",(str(revision),))
 
 
 class App:
@@ -107,117 +83,67 @@ class App:
 
     def facts(self,db,token,device=None,scope='read',host=True,origin=True,metadata=True):
         data=state.read(db);identity=data['identity'];found=None if data.get('stopped') else state.credential(db,token)
-        # One credential covers every configured device of this installation.
-        configured=[state.read(db,ledger)['identity']['deviceId'] for ledger in state.ledgers(db)]
-        return dict(credential=None if not found else dict(kind='machine',status='active',declared=True,devices=configured,scopes=found[1]),
+        return dict(credential=None if not found else dict(kind='machine',status='active',declared=True,devices=[identity['deviceId']],scopes=found[1]),
                     deviceId=device or identity['deviceId'],scope=scope,hostAllowed=host,originPresent=True,originAllowed=origin,fetchMetadataAllowed=metadata)
 
     def authorize(self,token,device=None,scope='read',**checks):
         with contextlib.closing(state.readonly(self.directory)) as db:
             return self.contract.authorize(self.facts(db,token,device,scope,**checks))['decision']
 
-    @staticmethod
-    def ledger(db,device):
-        """The ledger for a public device ID; None addresses the original Lines device."""
-        target=devices.DEFAULT if device is None else state.device_for(db,device)
-        if target is None:
-            import integration_api
-            raise integration_api.Failure('unknown-device')
-        return target
-
-    def snapshot(self,device=None):
+    def snapshot(self):
         with contextlib.closing(state.readonly(self.directory)) as db:
-            snapshot=state.snapshot(db,self.ledger(db,device));snapshot['serviceHealth']='ready';return snapshot
+            snapshot=state.snapshot(db);snapshot['serviceHealth']='ready';return snapshot
 
-    def devices(self):
+    def feed(self,cursor):
         with contextlib.closing(state.readonly(self.directory)) as db:
-            snapshots=[state.snapshot(db,ledger) for ledger in state.ledgers(db)]
-        for snapshot in snapshots:snapshot['serviceHealth']='ready'
-        return snapshots
-
-    def integration_snapshot(self,token,device,**checks):
-        import integration_api
-        return integration_api.snapshot(self,token,device,**checks)
-
-    def integration_animations(self,token,device,**checks):
-        import integration_api
-        return integration_api.animations(self,token,device,**checks)
-
-    def integration_admit(self,token,request,body_bytes=None,deadline=None,**checks):
-        import integration_api
-        return integration_api.admit(self,token,request,body_bytes,deadline,**checks)
-
-    def integration_cancel(self,token,device,ticket,deadline=None,**checks):
-        import integration_api
-        return integration_api.cancel(self,token,device,ticket,deadline,**checks)
-
-    def feed(self,cursor,device=None):
-        with contextlib.closing(state.readonly(self.directory)) as db:
-            ledger=self.ledger(db,device)
-            events=[json.loads(r[0]) for r in db.execute('SELECT payload FROM '+state.table('controller_events',ledger)+' ORDER BY sequence')]
-            snapshot=state.snapshot(db,ledger);snapshot['serviceHealth']='ready'
+            events=[json.loads(r[0]) for r in db.execute('SELECT payload FROM controller_events ORDER BY sequence')]
+            snapshot=state.snapshot(db);snapshot['serviceHealth']='ready'
             return self.contract.evaluate(dict(operation='feed',cursor=cursor,snapshot=snapshot,events=events))['events']
 
     def admit(self,token,request,body_bytes=None,deadline=None,**checks):
         launch=False
         with admission_transaction(self.directory,deadline) as db:
-            # The named device's own ledger admits; an unknown device fails target authorization on the original.
-            named=request.get('deviceId') if type(request) is dict else None
-            device=(state.device_for(db,named) if type(named) is str else None) or devices.DEFAULT
-            key=lambda name:devices.meta_key(name,device);requests=state.table('controller_requests',device)
-            data=state.read(db,device)
-            auth=self.facts(db,token,data['identity']['deviceId'],scope='control',**checks)
-            rows=list(db.execute('SELECT request,receipt,phase FROM '+requests+' ORDER BY sequence'))
+            data=state.read(db)
+            auth=self.facts(db,token,scope='control',**checks)
+            rows=list(db.execute('SELECT request,receipt,phase FROM controller_requests ORDER BY sequence'))
             admission=dict(controllerId=data['identity']['controllerId'],deviceId=data['identity']['deviceId'],epoch=data['epoch'],nextSequence=data['nextSequence'],
-                           configurationRevision=data['revision'],generation=state.ticket(data,data['generation']),capabilities=state.capabilities(data),
+                           configurationRevision=data['revision'],generation=state.ticket(data,data['generation']),capabilities=state.CAPABILITIES,
                            maxBodyBytes=65536,maxInFlight=32,maxQueue=32,maxReceipts=256,inFlight=sum(r[2]!='done' for r in rows),queueDepth=sum(r[2]!='done' for r in rows),
                            cache=[dict(request=json.loads(r),receipt=json.loads(v)) for r,v,p in rows if p=='done'],pending=[dict(request=json.loads(r)) for r,v,p in rows if p!='done'])
             result=self.contract.admit(dict(state=admission,auth=auth,request=request,bodyBytes=body_bytes if body_bytes is not None else len(state.encoded(request).encode())))
             decision=result['decision']
             if decision in ('join','replay'):
-                receipt=json.loads(db.execute('SELECT receipt FROM '+requests+' WHERE sequence=?',(request['requestId']['sequence'],)).fetchone()[0])
+                receipt=json.loads(db.execute('SELECT receipt FROM controller_requests WHERE sequence=?',(request['requestId']['sequence'],)).fetchone()[0])
                 return (202 if receipt['outcome']=='queued' else 200),receipt
             if not result['reserved']:return HTTP.get(decision,400),{'failure':{'code':decision}}
             check_deadline(deadline)
             receipt=result['receipt'];sequence=request['requestId']['sequence']
-            command=request['command'];kind=command['kind']
-            control=self.b.control_state(db,device)
-            if result['scheduled'] and kind=='scene.activate' and control['mode']!='free':
-                # Scenes are content controls; Work and Quiet present agent status. Typed, retained, no write.
-                decision='unsupported-capability';result['scheduled']=0
-                receipt.update(outcome='failed',failure={'code':decision},configurationRevision=data['revision'])
-            data['nextSequence']=result['nextSequence'];data['revision']=receipt['configurationRevision'];state.save(db,data,device)
-            if result['scheduled'] and kind=='mode.set':
+            data['nextSequence']=result['nextSequence'];data['revision']=receipt['configurationRevision'];state.save(db,data)
+            control=self.b.control_state(db)
+            if result['scheduled']:
                 # A policy generation is distinct from the request's optimistic expectation.
-                state.changed(db,mode=True,native=True,device=device)
-                data=state.read(db,device);receipt['generation']=state.ticket(data,data['generation'])
-                self.b.change_mode(db,command['mode'].lower(),time.time(),notify=False,device=device)
-                control=self.b.control_state(db,device)
-                launch=True
-            elif result['scheduled']:
-                # A fresh native request authorizes another attempt; the override is desired state at once.
-                state.release(db,device)
-                if kind=='power.set':db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)',(key('controller_power'),'1' if command['on'] else '0'))
-                elif kind=='brightness.set':db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)',(key('controller_brightness'),str(command['percent'])))
-                self.b.mark_dirty(db)
+                state.changed(db,mode=True,native=True)
+                data=state.read(db);receipt['generation']=state.ticket(data,data['generation'])
+                self.b.change_mode(db,request['command']['mode'].lower(),time.time(),notify=False)
+                control=self.b.control_state(db)
                 launch=True
             principal=state.credential(db,token)[0]
-            db.execute('INSERT INTO '+requests+' VALUES (?,?,?,?,?,?,?)',
-                       (sequence,state.encoded(request),state.encoded(receipt),principal,'queued' if launch else 'done',time.time(),control['revision']))
-            if not launch:state.finish(db,sequence,'failed',decision,device)
-            elif kind=='mode.set' and control['revision']==control['applied'] and not control['error']:
-                state.finish(db,sequence,'cancelled',device=device);launch=False
-                receipt=json.loads(db.execute('SELECT receipt FROM '+requests+' WHERE sequence=?',(sequence,)).fetchone()[0])
-            else:state.event(db,device)
+            db.execute('INSERT INTO controller_requests VALUES (?,?,?,?,?,?,?)',(sequence,state.encoded(request),state.encoded(receipt),principal,'queued' if launch else 'done',time.time(),control['revision']))
+            if not launch:state.finish(db,sequence,'failed',decision)
+            elif control['revision']==control['applied'] and not control['error']:
+                state.finish(db,sequence,'cancelled');launch=False
+                receipt=json.loads(db.execute('SELECT receipt FROM controller_requests WHERE sequence=?',(sequence,)).fetchone()[0])
+            else:state.event(db)
         if launch:
             try:self.launch(self.directory)
             except Exception:
                 with contextlib.closing(self.b.connect_state(self.directory)) as db,db:
-                    db.execute('BEGIN IMMEDIATE');state.finish(db,sequence,'failed','transport-failure',device)
-                    state.hold(db,device,control['revision'])
-                    receipt=json.loads(db.execute('SELECT receipt FROM '+requests+' WHERE sequence=?',(sequence,)).fetchone()[0])
+                    db.execute('BEGIN IMMEDIATE');state.finish(db,sequence,'failed','transport-failure')
+                    db.execute("INSERT OR REPLACE INTO meta VALUES ('controller_hold_revision',?)",(str(control['revision']),))
+                    receipt=json.loads(db.execute('SELECT receipt FROM controller_requests WHERE sequence=?',(sequence,)).fetchone()[0])
                 return 503,receipt
         return (202 if launch else HTTP.get(decision,200)),receipt
+
 
 def strict_json(body):
     def pairs(items):
@@ -284,7 +210,7 @@ def make_server(app,port=0):
                 if any(len(v)!=1 for v in query.values()):raise ValueError('Repeated query.')
                 query={k:v[0] for k,v in query.items()}
                 if write:
-                    if parts.path not in ('/controller/v1/commands','/controller/integration/v1/commands','/controller/integration/v1/cancel') or query:return self.respond(404,{'failure':{'code':'invalid-request'}})
+                    if parts.path!='/controller/v1/commands' or query:return self.respond(404,{'failure':{'code':'invalid-request'}})
                     lengths=self.headers.get_all('Content-Length',[])
                     if len(lengths)!=1 or not re.fullmatch(r'[0-9]{1,8}',lengths[0]) or self.headers.get_all('Transfer-Encoding'):raise ValueError('Invalid framing.')
                     length=int(lengths[0])
@@ -293,33 +219,16 @@ def make_server(app,port=0):
                     raw=self.rfile.read(length)
                     if len(raw)!=length:raise ValueError('Incomplete body.')
                     body=strict_json(raw)
-                    if parts.path=='/controller/integration/v1/commands':
-                        code,result=app.integration_admit(token,body,length,deadline=self.admission_deadline,**checks)
-                        return self.respond(code,result)
-                    if parts.path=='/controller/integration/v1/cancel':
-                        import integration_api
-                        if type(body) is not dict or set(body)!={'apiVersion','deviceId','requestId'} or body['apiVersion']!=integration_api.VERSION:
-                            raise ValueError('Invalid cancellation.')
-                        code,result=app.integration_cancel(token,body['deviceId'],body['requestId'],deadline=self.admission_deadline,**checks)
-                        return self.respond(code,result)
                     code,result=app.admit(token,body,length,deadline=self.admission_deadline,**checks)
                     return self.respond(code,result)
                 if parts.path=='/controller/v1/devices' and not query:
-                    return self.respond(200,dict(apiVersion='1.0',devices=app.devices()))
+                    return self.respond(200,dict(apiVersion='1.0',devices=[app.snapshot()]))
                 device=query.get('deviceId')
                 if device is None:raise ValueError('Explicit target required.')
                 permitted=app.authorize(token,device,**checks)
                 if permitted!='allowed':return self.failure(permitted)
-                if parts.path=='/controller/integration/v1/snapshot' and set(query)=={'deviceId'}:
-                    return self.respond(200,app.integration_snapshot(token,device,**checks))
-                if parts.path=='/controller/integration/v1/animations' and set(query)=={'deviceId'}:
-                    return self.respond(200,app.integration_animations(token,device,**checks))
-                if parts.path=='/controller/integration/v1/receipt' and set(query)=={'deviceId','epoch','sequence'}:
-                    import integration_api
-                    ticket=dict(epoch=query['epoch'],sequence=int(query['sequence']))
-                    return self.respond(200,integration_api.receipt(app,token,device,ticket,**checks))
                 if parts.path=='/controller/v1/snapshot' and set(query)=={'deviceId'}:
-                    return self.respond(200,app.snapshot(device))
+                    return self.respond(200,app.snapshot())
                 if parts.path=='/controller/v1/feed' and set(query)<= {'deviceId','epoch','sequence'}:
                     if not self.server.feed_slots.acquire(False):return self.failure('capacity')
                     try:
@@ -327,12 +236,10 @@ def make_server(app,port=0):
                         if 'epoch' in query and 'sequence' in query:
                             try:cursor=dict(epoch=query['epoch'],sequence=int(query['sequence']))
                             except ValueError:pass
-                        return self.respond(200,app.feed(cursor,device))
+                        return self.respond(200,app.feed(cursor))
                     finally:self.server.feed_slots.release()
                 return self.respond(404,{'failure':{'code':'invalid-request'}})
-            except (ValueError,TypeError,KeyError,RecursionError,UnicodeError) as error:
-                import integration_api
-                self.failure(error.code if isinstance(error,integration_api.Failure) else 'invalid-request')
+            except (ValueError,TypeError,KeyError,RecursionError,UnicodeError):self.failure('invalid-request')
             except (BrokenPipeError,ConnectionError,TimeoutError):pass
             except Exception:self.failure('transport-failure')
 
@@ -376,11 +283,9 @@ def serve(directory,b,port=0):
             if getattr(error,'sqlite_errorcode',None)==sqlite3.SQLITE_BUSY:
                 raise ListenerUnavailable('A controller is already running for this installation.') from None
             raise
-        with contextlib.closing(b.connect_state(directory)) as db,db:
-            db.execute('BEGIN IMMEDIATE');clock=secrets.token_hex(16)
-            for ledger in state.ledgers(db):
-                data=state.read(db,ledger);data['clockEpoch']=clock;data['stopped']=False;state.save(db,data,ledger);state.event(db,ledger)
         app=App(directory,b)
+        with contextlib.closing(b.connect_state(directory)) as db,db:
+            db.execute('BEGIN IMMEDIATE');data=state.read(db);data['clockEpoch']=secrets.token_hex(16);data['stopped']=False;state.save(db,data);state.event(db)
         try:server=make_server(app,port)
         except OSError as error:
             if error.errno==errno.EADDRINUSE:
@@ -395,8 +300,6 @@ def serve(directory,b,port=0):
                 try:
                     with contextlib.closing(b.connect_state(directory)) as db,db:
                         db.execute('BEGIN IMMEDIATE');state.recover(db)
-                        import integration_api
-                        integration_api.recover(db)
                         disabled=state.read(db).get('stopped')
                     if disabled:
                         server.shutdown();return
@@ -432,15 +335,13 @@ def command(argv,b):
             if not 0<=args.port<=65535:raise ValueError('Invalid loopback port.')
             serve(directory,b,args.port)
         elif args.action=='controller-status':
-            with contextlib.closing(state.readonly(directory)) as db:print(state.encoded(state.snapshot(db,App.ledger(db,args.device_id))))
+            with contextlib.closing(state.readonly(directory)) as db:print(state.encoded(state.snapshot(db)))
         elif args.action=='controller-disable':
             with contextlib.closing(b.connect_state(directory)) as db,db:
-                db.execute('BEGIN IMMEDIATE')
-                for ledger in state.ledgers(db):
-                    data=state.read(db,ledger);data['stopped']=True;state.save(db,data,ledger)
-                import integration_api
-                integration_api.recover(db,cancel=True)
-                cancel(db)
+                db.execute('BEGIN IMMEDIATE');data=state.read(db);data['stopped']=True;state.save(db,data)
+                for sequence,revision in list(db.execute("SELECT sequence,mode_revision FROM controller_requests WHERE phase IN ('queued','attempting')")):
+                    state.finish(db,sequence,'cancelled','forbidden')
+                    db.execute("INSERT OR REPLACE INTO meta VALUES ('controller_hold_revision',?)",(str(revision),))
     except ListenerUnavailable as error:
         parser.exit(1,f'Controller: {error}\n')
     except Exception:
