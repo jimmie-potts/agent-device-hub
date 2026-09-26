@@ -25,6 +25,11 @@ these assets in the reproducible offline-installable host archive. The configure
 hub serves them at its numeric-loopback origin. There is no separate frontend
 server or CORS grant.
 
+The dashboard can command only the devices registered in the hub's `controllers`
+list. To wire an installed Pixoo or Nanoleaf controller in, follow
+[Connect device controllers for B.U.N.N.Y.](../hub/SETUP.md#connect-device-controllers-for-bunny)
+in the hub setup guide.
+
 The normal installed opening path uses the Hub owner's `open` command. It passes
 one short-lived code through a
 URL fragment, removes the fragment before exchange, and returns a memory-only
