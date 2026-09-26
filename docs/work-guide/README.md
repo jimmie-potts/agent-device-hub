@@ -445,6 +445,9 @@ before any push. Identical inputs and output leave a complete existing PR alone;
 a retry repairs a missing PR or validation result after an interrupted publish.
 The workflow has `contents: write`, `pull-requests: write` and owner-authorized
 `checks: write`, the last solely for validation on the exact rolling commit.
+It also needs `issues: read` for the REST issue inventory; without it, the
+workflow token can return only pull requests from that endpoint. Issue writes
+remain disabled.
 Repository Actions settings must allow PR creation. No personal token is used.
 
 The workflow never merges, publishes, edits issues, renders diagrams or rewrites
