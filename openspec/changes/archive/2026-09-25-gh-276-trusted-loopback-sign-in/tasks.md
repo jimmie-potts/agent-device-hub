@@ -9,5 +9,5 @@
 
 ## 3. Delivery
 
-- [x] 3.1 Bump the hub to 0.3.9 and document the field, the bookmark URL, `localhost` and the reduced assurance in the hub README, `apps/hub/SETUP.md`, the dashboard README and `docs/development.md`. Verify by inspection.
+- [x] 3.1 Bump the hub to 0.3.10 (0.3.9 was released for #412 while this change was in review) and document the field, the bookmark URL, `localhost` and the reduced assurance in the hub README, `apps/hub/SETUP.md`, the dashboard README and `docs/development.md`. Verify by inspection.
 - [x] 3.2 Run build, typecheck, contract, hub, hub package, setup, MCP, dashboard and workflow checks. Then synchronize the spec deltas and archive this change.

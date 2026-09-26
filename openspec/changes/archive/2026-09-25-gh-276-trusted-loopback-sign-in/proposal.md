@@ -11,7 +11,7 @@ The owner chose Option 1 on 2026-09-25: an opt-in trusted-loopback sign-in. Opti
 - The hub accepts `localhost:<port>` as well as `127.0.0.1:<port>` as the Host of the page, its assets and its API. The Origin, when present, must name the same host as the Host header. MCP keeps its numeric-loopback origin.
 - The dashboard asks for a session on load when the page has no launch code. On success it opens the dashboard directly; a reload or new tab asks again. There is no cookie or storage. `pagehide` logs the page's session out, and a page restored from the back-forward cache signs in again. A refused route (404) shows today's login page unchanged. Any other failure shows the same page with an alert. After Disconnect, or when the session has ended, the page offers one explicit sign-in button.
 - The launcher and the manual-token form keep working, with or without the field.
-- The hub is bumped to 0.3.9 because the bundled dashboard and routes change.
+- The hub is bumped to 0.3.10 because the bundled dashboard and routes change.
 
 Assurance lost, stated plainly and accepted by the owner in #276: with the field on, any program on the PC that can send a same-origin-looking loopback request with the custom header gets the same read and control a launcher session has. This matches the Nanoleaf wall map on port 8765. Reassess before any LAN, phone or second-operator exposure.
 
