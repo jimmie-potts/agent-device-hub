@@ -37,6 +37,15 @@ browser session with read/control on configured aliases. Reload requires another
 launcher invocation. A direct URL still shows the manual-token option. See
 [the Hub launcher procedure](../hub/README.md#open-bunny-without-typing-a-token).
 
+When the hub's configuration sets `browserAccess` to `trusted-loopback`, a direct
+visit or bookmark signs in on load instead, with the same session and no stored
+token. A reload or second tab signs in again, and a page logs its session out
+as it unloads. After Disconnect the page shows **Sign in**; after an eviction or
+expiry the sidebar shows **Sign in again**. Neither signs in on its own. If the
+request fails, the page shows an alert with the launcher and token options.
+Without the setting the hub answers 404 and the login page is unchanged. See
+[Open B.U.N.N.Y. from a bookmark](../hub/README.md#open-bunny-from-a-bookmark).
+
 For manual access, provision a dedicated hub browser credential with `read`,
 optional `control`, and only the intended registered device aliases. Give the
 user its token through the existing private provisioning process. Never use a

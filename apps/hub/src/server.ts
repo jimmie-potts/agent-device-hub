@@ -17,7 +17,7 @@ import {createSonySource,sonyConfiguration} from './sony.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; clock?:()=>number; feedIntervalMs?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{selected:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -66,6 +66,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   let activating = false;
   let preparingConsumers = false;
   if (options.mcp !== undefined && typeof options.mcp !== 'boolean') throw new Error('invalid-configuration');
+  // Hub #276: the owner's opt-in to sign any same-origin loopback page in without a launch code.
+  if (options.browserAccess !== undefined && options.browserAccess !== 'trusted-loopback') throw new Error('invalid-configuration');
   const codexDesktop = options.codexDesktop === undefined ? undefined : codexDesktopOptions(options.codexDesktop);
   let currentCredentials = credentials(options.credentials);
   if (!Array.isArray(options.controllers) || options.controllers.length > 16 || new Set(options.controllers.map(c => c.id)).size !== options.controllers.length ||
@@ -104,7 +106,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const streams = new Set<ServerResponse>();
   const streamOwners = new Map<ServerResponse,string>();
   let active = 0, rejected = 0, closing = false;
-  let origin = '';
+  let origin = '', hosts: string[] = [];
   let mcp: HubMcp | undefined;
   let playback: ReturnType<typeof createPlayback> | undefined;
   let closeBrowserLaunch: (()=>Promise<void>) | undefined;
@@ -122,6 +124,18 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     for(const [code,expiry] of launchCodes)if(expiry<=now)launchCodes.delete(code);
     for(const [hash,session] of browserSessions)if(session.expires<=now)retireBrowser(hash);
   };
+  // The launch exchange and the trusted-loopback route issue the same session, so their grants, expiry and cap cannot drift.
+  const openBrowserSession=()=>{
+    if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
+    const token=randomBytes(32).toString('base64url');
+    const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};
+    browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
+    return {token,expiresInSeconds:8*60*60};
+  };
+  // Host is one of the loopback names and any Origin names that same host, so a rebinding page, or a page on the other loopback name, is refused.
+  const sameOrigin=(req:IncomingMessage,{requireOrigin=false,sites=[undefined,'none','same-origin']}:{requireOrigin?:boolean;sites?:(string|undefined)[]}={})=>
+    hosts.includes(req.headers.host ?? '') && (req.headers.origin === undefined ? !requireOrigin : req.headers.origin === 'http://' + req.headers.host) &&
+    sites.includes(req.headers['sec-fetch-site'] as string | undefined);
   const issueLaunch=()=>{
     if(closing)throw new Error('host-closing');
     pruneBrowser();if(launchCodes.size>=8)throw new Error('launch-capacity');
@@ -190,9 +204,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     const token = req.headers.authorization;
     const principal = typeof token === 'string' && token.startsWith('Bearer ') ? authenticate(token.slice(7)) : null;
     if (!principal) throw new HttpError('unauthenticated',401);
-    if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) ||
-        ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined) ||
-        !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
+    if (!sameOrigin(req) || !principal.scopes.includes(scope) || (device !== undefined && !principal.devices.includes(device))) throw new HttpError('forbidden',403);
     if (req.method !== 'GET' && req.headers['x-pixoo-request'] !== '1') throw new HttpError('forbidden',403);
     return principal;
   };
@@ -234,7 +246,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         if (req.method === 'GET' && !url.search && ['/', '/dashboard.js', '/dashboard.css'].includes(path)) {
-          if (req.headers.host !== origin.slice(7) || (req.headers.origin !== undefined && req.headers.origin !== origin) || ![undefined,'none','same-origin'].includes(req.headers['sec-fetch-site'] as string | undefined)) throw new HttpError('forbidden',403);
+          if (!sameOrigin(req)) throw new HttpError('forbidden',403);
           const asset = path === '/' ? 'index.html' : path.slice(1);
           const bytes = await readFile(new URL('../public/' + asset,import.meta.url)).catch(()=>null);
           if (!bytes) throw new HttpError('not-found',404);
@@ -246,16 +258,19 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           await mcp.handle(req,res);return;
         }
         if(req.method==='POST'&&path==='/api/dashboard/v1/launch'&&!url.search){
-          if(req.headers.host!==origin.slice(7)||req.headers.origin!==origin||![undefined,'same-origin'].includes(req.headers['sec-fetch-site'] as string|undefined)||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
+          if(!sameOrigin(req,{requireOrigin:true,sites:[undefined,'same-origin']})||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
           const input=await body(req,128);
           if(!object(input)||!exact(input,['code'])||typeof input.code!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.code))throw new HttpError('unauthenticated',401);
           pruneBrowser();const expiry=launchCodes.get(input.code);if(!expiry||expiry<=Date.now())throw new HttpError('unauthenticated',401);
           launchCodes.delete(input.code);
-          if(browserSessions.size>=16)retireBrowser(browserSessions.keys().next().value!);
-          const token=randomBytes(32).toString('base64url');
-          const credential:Credential={id:'browser-'+randomUUID(),digest:createHash('sha256').update(token).digest('hex'),scopes:['read','control'],devices:[...clients.keys(),...(source ? [source.id] : [])]};
-          browserSessions.set(credential.digest,{credential,expires:Date.now()+8*60*60*1000});
-          json(res,200,{token,expiresInSeconds:8*60*60});return;
+          json(res,200,openBrowserSession());return;
+        }
+        if(req.method==='POST'&&path==='/api/dashboard/v1/session'&&!url.search){
+          // Off unless configured, like MCP. On, any same-origin loopback page gets a launcher-equivalent session (Hub #276).
+          if(options.browserAccess!=='trusted-loopback')throw new HttpError('not-found',404);
+          if(!sameOrigin(req,{requireOrigin:true,sites:[undefined,'same-origin']})||req.headers['x-pixoo-request']!=='1')throw new HttpError('forbidden',403);
+          const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
+          pruneBrowser();json(res,200,openBrowserSession());return;
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
@@ -334,7 +349,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   try {
     await new Promise<void>((resolve,reject) => {server.once('error',reject);server.listen(options.port ?? 0,'127.0.0.1',() => {server.off('error',reject);resolve();});});
   } catch (error) { await owner.shutdown();throw error; }
-  origin = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
+  const port = (server.address() as {port:number}).port;
+  origin = `http://127.0.0.1:${port}`;hosts = [`127.0.0.1:${port}`,`localhost:${port}`];
   try {
     if (options.mcp) mcp = createHubMcp({origin,clients,authenticate:authenticateConfigured,principal:(id,scope,device) => {
       const value=currentCredentials.find(c=>c.id===id);

@@ -482,6 +482,15 @@ read/control alias bounds without ingest/admin/MCP access, disconnect, reload
 and inspection without device writes. The existing Dashboard CI job and shared
 Hub/package jobs run these checks on Node 24. They do not use the installed Hub.
 
+Hub #276 adds `apps/hub/tests/trusted-loopback.test.mjs` to `npm run test:hub`
+and `apps/dashboard/tests/trusted.mjs` to `npm run test:dashboard:browser`.
+They cover the session route off by default, invalid `browserAccess` values,
+refused Host, Origin, fetch-metadata, header and body cases, the `localhost`
+alias, launcher-equivalent grants without ingest/admin/MCP, the shared session
+limit and retirement, and in Chromium sign-in on load, reload, second tab,
+`pagehide` logout, eviction recovery, Disconnect, a failed request and the
+unchanged page without the option. They do not use the installed Hub.
+
 Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
 `apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
 tests. They repeat launch, monitor read, command and logout, then cover expiry

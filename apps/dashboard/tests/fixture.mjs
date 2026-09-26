@@ -8,7 +8,7 @@ import {validate} from '@jimmie-potts/device-contracts';
 import {validateRequest} from '../../hub/dist/vendor/nanoleaf-integration.js';
 import {validatePixooRequest} from '../../hub/dist/pixoo-integration.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
-export async function fixture({empty=false,playback=false}={}){
+export async function fixture({empty=false,playback=false,browserAccess}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64),sceneA='scene-'+'a'.repeat(64),sceneB='scene-'+'b'.repeat(64);
@@ -85,7 +85,7 @@ export async function fixture({empty=false,playback=false}={}){
  }
  const devices=['wall','pixel',...(playback?['ht-a9']:[])];
  const directory=await mkdtemp(join(tmpdir(),'dashboard-browser-')),token='d'.repeat(43),reader='r'.repeat(43),native='n'.repeat(43);
- const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices},{id:'reader',digest:hash(reader),scopes:['read'],devices}],...(playback?{clock:()=>Date.now()+sony.skew,playback:{selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:`http://127.0.0.1:${receiver.address().port}/sony`}]}}:{}),controllers:controllers.map(({id,server})=>({id,kind:id==='wall'?'nanoleaf':'pixoo',controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'}});
+ const hub=await startHub({directory,ownerId:'fixture-owner',consumers:[{id:'dashboard',clearOnNewTurn:false}],credentials:[{id:'browser',digest:hash(token),scopes:['read','control','ingest'],devices},{id:'reader',digest:hash(reader),scopes:['read'],devices}],...(playback?{clock:()=>Date.now()+sony.skew,playback:{selected:'ht-a9',sources:[{id:'ht-a9',kind:'sony',endpoint:`http://127.0.0.1:${receiver.address().port}/sony`}]}}:{}),controllers:controllers.map(({id,server})=>({id,kind:id==='wall'?'nanoleaf':'pixoo',controllerId:id==='wall'?'wall-controller':'pixel-controller',deviceId:id,endpoint:`http://127.0.0.1:${server.address().port}/controller/v1`,token:native})),editorLinks:{wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'},...(browserAccess?{browserAccess}:{})});
  const headers={authorization:`Bearer ${token}`,'content-type':'application/json','x-pixoo-request':'1'};
  const identity={provider:'codex',client:'cli',hostId:'local',sourceId:'codex',sessionId:'task-one'};
  let seq=0;
