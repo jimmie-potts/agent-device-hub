@@ -56,7 +56,13 @@ def update_pr(root, prs, report_path):
     common = ['--repo', REPOSITORY, '--title', 'Nightly guide refresh',
               '--body-file', str(report_path)]
     if prs:
-        gh(root, ['pr', 'edit', str(prs[0]['number']), *common, '--add-label', 'documentation'])
+        number = str(prs[0]['number'])
+        gh(root, ['api', '--method', 'PATCH', 'repos/' + REPOSITORY + '/pulls/' + number], {
+            'title': 'Nightly guide refresh', 'body': report_path.read_text(encoding='utf-8'),
+        })
+        # POST adds labels while preserving labels applied by the PR owner.
+        gh(root, ['api', '--method', 'POST', 'repos/' + REPOSITORY + '/issues/' + number + '/labels'],
+           {'labels': ['documentation']})
         return prs[0]['url']
     return gh(root, ['pr', 'create', *common, '--head', BRANCH,
                     '--base', 'main', '--label', 'documentation']).strip()

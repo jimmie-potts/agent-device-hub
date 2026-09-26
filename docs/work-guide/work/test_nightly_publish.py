@@ -39,6 +39,8 @@ class PublishTests(unittest.TestCase):
         self.calls = []
         self.prs = []
         self.checks = []
+        self.labels = {'existing-label'}
+        self.fail_labels = False
         self.fail_edit = False
         self.fail_create = False
         self.fail_check = False
@@ -46,14 +48,23 @@ class PublishTests(unittest.TestCase):
             self.calls.append((args, payload))
             if args[:2] == ['pr', 'list']:
                 return json.dumps(self.prs)
-            if args[:2] == ['pr', 'edit'] and self.fail_edit:
-                raise RuntimeError('interrupted PR report update')
+            if args[:2] == ['pr', 'edit']:
+                raise RuntimeError('GraphQL deprecated projectCards')
+            if args[:3] == ['api', '--method', 'PATCH']:
+                if self.fail_edit:
+                    raise RuntimeError('interrupted PR report update')
+                self.assertTrue(args[-1].endswith('/pulls/900'))
+            if args[:3] == ['api', '--method', 'POST'] and args[-1].endswith('/labels'):
+                if self.fail_labels:
+                    raise RuntimeError('interrupted label update')
+                self.assertEqual(payload, {'labels': ['documentation']})
+                self.labels.update(payload['labels'])
             if args[:2] == ['pr', 'create']:
                 if self.fail_create:
                     raise RuntimeError('interrupted PR creation')
                 self.prs = [{'number': 900, 'url': 'https://github.com/jimmie-potts/agent-device-hub/pull/900'}]
                 return 'https://github.com/jimmie-potts/agent-device-hub/pull/900\n'
-            if args[:3] == ['api', '--method', 'POST']:
+            if args[:3] == ['api', '--method', 'POST'] and args[-1].endswith('/check-runs'):
                 if self.fail_check:
                     raise RuntimeError('interrupted check creation')
                 self.checks.append(dict(payload, id=len(self.checks) + 1, app={'slug': 'github-actions'}))
@@ -87,7 +98,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.git('diff', '--cached'), before)
         self.assertEqual(self.git('show', result['sha'] + ':source.py'), 'source before')
         self.assertEqual(self.git('rev-parse', result['sha'] + '^'), self.base)
-        check = next(payload for args, payload in self.calls if args[0] == 'api')
+        check = next(payload for args, payload in self.calls if payload is not None and 'head_sha' in payload)
         self.assertEqual(check['head_sha'], result['sha'])
         self.assertEqual(check['conclusion'], 'success')
         self.assertEqual(sum(args[:2] == ['pr', 'create'] for args, _ in self.calls), 1)
@@ -111,10 +122,10 @@ class PublishTests(unittest.TestCase):
         self.calls.clear()
         (self.root / publisher.ALLOWLIST[1]).write_text('history after\n')
         result = self.publish(first['sha'], 'failure')
-        check = next(payload for args, payload in self.calls if args[0] == 'api')
+        check = next(payload for args, payload in self.calls if payload is not None and 'head_sha' in payload)
         self.assertEqual(check['head_sha'], result['sha'])
         self.assertEqual(check['conclusion'], 'failure')
-        self.assertTrue(any(args[:2] == ['pr', 'edit'] for args, _ in self.calls))
+        self.assertTrue(any(args[:3] == ['api', '--method', 'PATCH'] for args, _ in self.calls))
         self.assertFalse(any(args[:2] == ['pr', 'create'] for args, _ in self.calls))
 
     def test_duplicate_prs_refused_before_push(self):
@@ -161,15 +172,15 @@ class PublishTests(unittest.TestCase):
         self.calls.clear()
         result = self.publish(first['sha'], 'failure')
         self.assertFalse(result['changed'])
-        writes = [(args, payload) for args, payload in self.calls if payload is not None]
+        writes = [(args, payload) for args, payload in self.calls if payload is not None and 'head_sha' in payload]
         self.assertEqual(len(writes), 1)
         args, check = writes[0]
         self.assertEqual(args[0], 'api')
         self.assertEqual(check['head_sha'], first['sha'])
         self.assertEqual(check['conclusion'], 'failure')
-        edits = [args for args, _ in self.calls if args[:2] == ['pr', 'edit']]
+        edits = [payload for args, payload in self.calls if args[:3] == ['api', '--method', 'PATCH']]
         self.assertEqual(len(edits), 1)
-        self.assertIn(str(self.report), edits[0])
+        self.assertEqual(edits[0], {'title': 'Nightly guide refresh', 'body': self.report.read_text()})
         self.assertTrue(self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).startswith(first['sha']))
 
     def test_interrupted_publish_retries_missing_check_and_pr_without_push(self):
@@ -222,9 +233,9 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(result['changed'])
         self.assertEqual(self.checks[-1]['conclusion'], 'success')
         self.assertFalse(any(args[:2] == ['pr', 'create'] for args, _ in self.calls))
-        edits = [args for args, _ in self.calls if args[:2] == ['pr', 'edit']]
+        edits = [payload for args, payload in self.calls if args[:3] == ['api', '--method', 'PATCH']]
         self.assertEqual(len(edits), 1)
-        self.assertIn(str(self.report), edits[0])
+        self.assertEqual(edits[0], {'title': 'Nightly guide refresh', 'body': self.report.read_text()})
 
     def test_main_advance_blocks_unchanged_validation_repair(self):
         self.change()
@@ -261,7 +272,7 @@ class PublishTests(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', result['sha'] + '^'), self.base)
         self.assertEqual(self.git('show', result['sha'] + ':docs/work-guide/work/guide_direction.py'), 'owner corrected Direction')
         self.assertEqual(self.git('diff', '--name-only', self.base, result['sha']), publisher.ALLOWLIST[0] + '/fixture.json')
-        checks = [payload for _, payload in self.calls if payload is not None]
+        checks = [payload for _, payload in self.calls if payload is not None and 'head_sha' in payload]
         self.assertEqual(len(checks), 1)
         self.assertEqual(checks[0]['head_sha'], result['sha'])
         self.assertEqual(checks[0]['conclusion'], 'success')
@@ -312,9 +323,44 @@ class PublishTests(unittest.TestCase):
         self.assertFalse(result['changed'])
         self.assertTrue(result['repaired'])
         self.assertFalse(any(call.args[1][:2] == ['git', 'push'] for call in commands.call_args_list))
-        self.assertTrue(any(args[:2] == ['pr', 'edit'] for args, _ in self.calls))
+        self.assertTrue(any(args[:3] == ['api', '--method', 'PATCH'] for args, _ in self.calls))
         self.assertEqual(self.checks[-1]['head_sha'], pushed_sha)
         self.assertEqual(self.checks[-1]['conclusion'], 'success')
+
+    def test_rest_updates_report_and_adds_label_before_exact_sha_check(self):
+        self.change()
+        first = self.publish()
+        (self.root / publisher.ALLOWLIST[1]).write_text('new history\n')
+        self.report.write_text('Needs owner rewrite\n\nQuoted "Direction" and Unicode é\n')
+        self.calls.clear()
+        result = self.publish(first['sha'], 'failure')
+        writes = [(args, payload) for args, payload in self.calls if payload is not None]
+        self.assertEqual([args[2] for args, _ in writes], ['PATCH', 'POST', 'POST'])
+        self.assertTrue(writes[0][0][-1].endswith('/pulls/900'))
+        self.assertEqual(writes[0][1], {'title': 'Nightly guide refresh', 'body': self.report.read_text()})
+        self.assertTrue(writes[1][0][-1].endswith('/issues/900/labels'))
+        self.assertEqual(self.labels, {'existing-label', 'documentation'})
+        self.assertEqual(writes[2][1]['head_sha'], result['sha'])
+        self.assertEqual(writes[2][1]['conclusion'], 'failure')
+
+    def test_label_failure_retries_without_pushing_or_losing_other_labels(self):
+        self.change()
+        first = self.publish()
+        (self.root / publisher.ALLOWLIST[1]).write_text('new history\n')
+        self.fail_labels = True
+        with self.assertRaisesRegex(RuntimeError, 'interrupted label update'):
+            self.publish(first['sha'])
+        pushed_sha = self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).split()[0]
+        self.assertFalse(any(check['head_sha'] == pushed_sha for check in self.checks))
+        self.fail_labels = False
+        self.calls.clear()
+        with patch.object(publisher, 'run', wraps=publisher.run) as commands:
+            result = self.publish(pushed_sha)
+        self.assertFalse(result['changed'])
+        self.assertTrue(result['repaired'])
+        self.assertFalse(any(call.args[1][:2] == ['git', 'push'] for call in commands.call_args_list))
+        self.assertEqual(self.labels, {'existing-label', 'documentation'})
+        self.assertEqual(self.checks[-1]['head_sha'], pushed_sha)
 
     def test_invalid_conclusion_has_no_mutations(self):
         with self.assertRaises(ValueError):
