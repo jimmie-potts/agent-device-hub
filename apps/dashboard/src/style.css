@@ -1,5 +1,5 @@
 @import "./skins/neon-geometry-wars.css";
-/* Layout reads the skin's role, spacing and type tokens only; no raw color or pixel scale of its own (style guide section 4). */
+/* Layout reads its colors, spacing steps and type sizes only through the skin's tokens (style guide section 4). Structural sizes such as column tracks and control heights are layout, not skin. */
 :root{font-family:var(--font);font-size:var(--type-body);color:var(--text);background:var(--bg);font-synthesis:none;color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0}
@@ -17,15 +17,15 @@ a{color:var(--link)}
 h1,h2,h3,h4,p,dl,ul{margin-top:0}
 h1{font-size:var(--type-title);letter-spacing:-.03em;font-weight:550;line-height:1.15;margin-bottom:0}
 h2{font-size:var(--type-heading);letter-spacing:-.02em;margin-bottom:var(--space-xs);overflow-wrap:anywhere}
-h3{font-size:1rem;margin-bottom:var(--space-xs)}
+h3{font-size:var(--type-subheading);margin-bottom:var(--space-xs)}
 h4{font-size:var(--type-small);letter-spacing:.08em;text-transform:uppercase;color:var(--muted-dense);margin:var(--space-m) 0 var(--space-xs)}
 p{line-height:1.5;margin-bottom:var(--space-s)}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:100vh}
 .shell>aside{background:var(--panel);border-right:1px solid var(--edge-dense);padding:var(--space-l) var(--space-m);display:flex;flex-direction:column;gap:var(--space-l)}
-.brand{display:flex;align-items:center;gap:var(--space-m);font-weight:750;letter-spacing:.16em;font-size:1.2rem;color:var(--accent)}
-.brand small{display:block;font-size:.55rem;letter-spacing:.18em;color:var(--muted-dense);margin-top:var(--space-xs)}
-.rabbit{font-size:1.8rem;color:var(--accent)}
+.brand{display:flex;align-items:center;gap:var(--space-m);font-weight:750;letter-spacing:.16em;font-size:var(--type-brand);color:var(--accent)}
+.brand small{display:block;font-size:var(--type-brand-small);letter-spacing:.18em;color:var(--muted-dense);margin-top:var(--space-xs)}
+.rabbit{font-size:var(--type-glyph);color:var(--accent)}
 nav{display:grid;gap:var(--space-xs)}
 nav a{border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted-dense);text-decoration:none;display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);padding:var(--space-s) var(--space-m);font-weight:500;overflow-wrap:anywhere}
 nav a small{font-size:var(--type-label);color:var(--muted-dense);flex-shrink:0}
@@ -52,7 +52,7 @@ section[hidden]{display:none}
 /* A strip is one wrapping line of label and value pairs: the everyday readouts. */
 .strip{display:flex;flex-wrap:wrap;gap:var(--space-xs) var(--space-l);margin:0 0 var(--space-m);font-size:var(--type-small)}
 .strip>div{min-width:0}
-.strip dt{color:var(--muted-dense);font-size:var(--type-label);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+.strip dt{color:var(--muted-dense);font-size:var(--type-label);font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:var(--space-xxs)}
 .strip dd{margin:0;overflow-wrap:anywhere}
 .stats{border:1px solid var(--edge-dense);border-radius:var(--radius);background:linear-gradient(130deg,var(--stats-gradient-1),var(--stats-gradient-2));padding:var(--space-s) var(--space-m)}
 .stats dd{font-size:var(--type-value);font-weight:500}
@@ -123,11 +123,11 @@ footer{border-top:1px solid var(--edge-dense);padding:var(--space-l) 0;font-size
 .login h1{margin-bottom:var(--space-l)}
 .login form{display:grid;gap:var(--space-m);margin:var(--space-m) 0}
 .login summary{cursor:pointer}
-.skip{position:fixed;top:-80px;left:20px;background:var(--text);color:var(--accent-ink);padding:var(--space-m);z-index:10}
-.skip:focus{top:12px}
+.skip{position:fixed;top:-80px;left:var(--space-l);background:var(--text);color:var(--accent-ink);padding:var(--space-m);z-index:10}
+.skip:focus{top:var(--space-m)}
 input[type=color]{height:42px}
 input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(max-width:900px){.shell{grid-template-columns:180px minmax(0,1fr)}.shell>main{padding:0 var(--space-l)}.shell>aside{padding:var(--space-l) var(--space-s)}}
-@media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:var(--space-m)}.brand{font-size:1rem}nav{display:flex;flex-wrap:wrap;gap:var(--space-xs)}nav a{font-size:var(--type-small)}.nav-label{display:none}.sidebar-foot{display:flex;gap:var(--space-m);align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:var(--type-label);padding:var(--space-xs) var(--space-s)}.shell>main{padding:0 var(--space-m)}.top{font-size:.55rem;gap:var(--space-s)}.widgets,.cards,.cards.two,.facts,.edit.wide fieldset{grid-template-columns:1fr}.widget[data-size=medium],.widget[data-size=large]{grid-column:auto}.filters{grid-template-columns:1fr}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:var(--space-l)}}
+@media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:var(--space-m)}.brand{font-size:1rem}nav{display:flex;flex-wrap:wrap;gap:var(--space-xs)}nav a{font-size:var(--type-small)}.nav-label{display:none}.sidebar-foot{display:flex;gap:var(--space-m);align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:var(--type-label);padding:var(--space-xs) var(--space-s)}.shell>main{padding:0 var(--space-m)}.top{font-size:var(--type-brand-small);gap:var(--space-s)}.widgets,.cards,.cards.two,.facts,.edit.wide fieldset{grid-template-columns:1fr}.widget[data-size=medium],.widget[data-size=large]{grid-column:auto}.filters{grid-template-columns:1fr}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:var(--space-l)}}
 @media(min-width:681px){.widget[data-size=medium]{grid-column:span 2}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

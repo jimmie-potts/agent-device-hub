@@ -3,7 +3,7 @@ export function textOverlaps(page){
  return page.evaluate(()=>{
   // Content of a closed disclosure is not rendered; only its summary is.
   const folded=el=>{const details=el.closest('details:not([open])');return !!details&&!details.querySelector(':scope>summary')?.contains(el);};
-  const blocks=[...document.querySelectorAll('main section p, main section h2, main section h3, main section dt, main section dd, main section label, main section button, main section a')]
+  const blocks=[...document.querySelectorAll('main section p, main section h2, main section h3, main section dt, main section dd, main section label, main section button, main section a, main section summary')]
    .filter(el=>el.offsetParent!==null&&!folded(el)&&el.getBoundingClientRect().height>1&&el.textContent.trim());
   const found=[];
   for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){

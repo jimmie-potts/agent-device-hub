@@ -18,11 +18,11 @@ The dashboard SHALL expose provider/source identity, attributable parent/childre
 - **THEN** component status and authorized integration controls remain available
 
 ### Requirement: Protected explicit integration commands
-The dashboard SHALL submit only explicit supported integration operations through the protected owning services, retaining identity, request IDs and controller revision guards. It MUST preserve Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media meanings, show unsupported operations with reasons, and retain user drafts on conflict or uncertain results. Native controller credentials MUST remain server-side.
+The dashboard SHALL submit only explicit supported integration operations through the protected owning services, retaining identity, request IDs and controller revision guards. It MUST preserve Nanoleaf Work/Quiet/Free and Pixoo Monitor/Media meanings, show unsupported operations with reasons, and lock a control after an uncertain result until an explicit reload. Native controller credentials MUST remain server-side.
 
 #### Scenario: Concurrent controller edits
-- **WHEN** another client changes a controller after a draft begins
-- **THEN** the draft remains visible and its stale revision cannot silently overwrite the new state
+- **WHEN** another client changes a controller before the user's next change is sent
+- **THEN** that change carries the guards of a read taken just before sending, and a guard the controller still rejects is shown as a typed rejection with nothing changed and nothing resent
 
 #### Scenario: Lost command result
 - **WHEN** a submitted command loses its response
@@ -40,7 +40,7 @@ Each user-facing component SHALL use common identity, navigation, status, settin
 - **THEN** each appears in common navigation with only supported authorized actions and explanations for unavailable operations
 
 ### Requirement: General device controls
-The dashboard SHALL offer power, brightness, saved-playlist selection, the declared playback actions and saved-scene activation inside a component's existing view when the controller v1 snapshot declares that capability and the credential has control scope. Each control MUST submit exactly one valid controller v1 command through the existing hub route. The command MUST carry the request ticket, configuration revision and generation from a controller read taken immediately before sending, and it MUST be sent only when that read still allows the control. The control MUST show the receipt or typed failure with pending, conflict and uncertain states in plain wording that says whether anything changed and never presents transport success as a physical result. A power or brightness draft MUST conflict only when the controller's configuration revision changed after the draft began, not when only the generation advanced. After an accepted result that is not uncertain, the draft MUST clear and the control MUST unlock once the refreshed snapshot arrives, with no further action. A form appears only for a capability the snapshot declares; the undeclared ones MUST be named together in one line. A declared control that is unavailable MUST be disabled with the missing scope or mode named. The dashboard MUST NOT change a mode as a side effect of another command, submit compound writes, restore a previous state automatically, resubmit a rejected command or retry an uncertain command. For a controller whose brightness command is a persisting override, the view MUST present the desired brightness as an override that lasts until the next explicit mode command and MUST show no override as unknown rather than as a value.
+The dashboard SHALL offer power, brightness, saved-playlist selection, the declared playback actions and saved-scene activation inside a component's existing view when the controller v1 snapshot declares that capability and the credential has control scope. No control has an Apply button (owner decision, 2026-09-25): a select or toggle sends when it is changed, a slider sends once when it is released or after a short pause following a keyboard step, a text field sends when it is left or submitted, and a button sends when it is pressed. Each such gesture MUST submit exactly one valid controller v1 command through the existing hub route. The command MUST carry the request ticket, configuration revision and generation from a controller read taken immediately before sending, and it MUST be sent only when that read still allows the control. The control MUST show the receipt or typed failure with pending, rejected and uncertain states in plain wording that says whether anything changed and never presents transport success as a physical result. Once a result and the refreshed snapshot arrive, the control MUST show the current value again, so a rejected change is visible as the unchanged value plus its status, and MUST unlock with no further action unless the result was uncertain. A form appears only for a capability the snapshot declares; the undeclared ones MUST be named together in one line. A declared control that is unavailable MUST be disabled with the missing scope or mode named. The dashboard MUST NOT change a mode as a side effect of another command, submit compound writes, restore a previous state automatically, resubmit a rejected command or retry an uncertain command. For a controller whose brightness command is a persisting override, the view MUST present the desired brightness as an override that lasts until the next explicit mode command and MUST show no override as unknown rather than as a value.
 
 #### Scenario: Declared capability with control scope
 - **WHEN** the Pixoo snapshot declares power, brightness and media and the credential has control scope
@@ -51,12 +51,12 @@ The dashboard SHALL offer power, brightness, saved-playlist selection, the decla
 - **THEN** the power and brightness controls are enabled, each submits one guarded controller v1 command without a mode command, and an accepted brightness is shown as an override that persists until the next explicit mode command
 
 #### Scenario: One-step settings
-- **WHEN** a brightness or power change is accepted with an outcome that is not uncertain
-- **THEN** once the refreshed snapshot arrives the form shows current values, is unlocked and accepts the next change without another action, and the status says the change was queued, sent or saved without claiming a physical result
+- **WHEN** a brightness slider is released or a power button is pressed and the change is accepted with an outcome that is not uncertain
+- **THEN** exactly one command is sent, once the refreshed snapshot arrives the control shows the current value, is unlocked and accepts the next change without another action, and the status says the change was queued, sent or saved without claiming a physical result
 
 #### Scenario: Generation advance between read and send
-- **WHEN** the controller generation advances after the view rendered its snapshot but before the user activates a control, while the configuration revision is unchanged
-- **THEN** the dashboard reads the controller again, sends exactly one command with the current ticket, configuration revision and generation, and shows no conflict for an open draft
+- **WHEN** the controller generation advances after the view rendered its snapshot but before the user's gesture settles, while the configuration revision is unchanged
+- **THEN** the dashboard reads the controller again and sends exactly one command with the current ticket, configuration revision and generation
 
 #### Scenario: Generation advance after the fresh read
 - **WHEN** the controller rejects a command as `stale-generation` because the generation advanced after the dashboard's fresh read
@@ -66,23 +66,23 @@ The dashboard SHALL offer power, brightness, saved-playlist selection, the decla
 - **WHEN** a component does not declare a capability or the credential lacks control scope
 - **THEN** the undeclared capability has no form and is named in the component's one not-declared line, a declared control is disabled with the missing scope named, and the view remains usable with no observed sessions
 
-#### Scenario: Stale revision and uncertain result
-- **WHEN** another client changes the controller's configuration after a draft begins, or a submitted command loses its response
-- **THEN** the draft is retained, the conflict or uncertainty is shown, the control stays locked after an uncertain result until the user explicitly reloads current values, and reconnect or resync replays no command
+#### Scenario: Stale guard and uncertain result
+- **WHEN** a command reaches the controller with a guard it rejects, or a submitted command loses its response
+- **THEN** the typed rejection or the uncertainty is shown, the control shows the current value again after a rejection, stays locked after an uncertain result until the user explicitly reloads current values, and reconnect or resync replays no command
 
 #### Scenario: Screen power semantics
-- **WHEN** the user turns the Pixoo screen off or on
-- **THEN** the command is submitted in Monitor or Media without changing the mode, and the view explains that screen-off pauses playback and screen-on does not resume it
+- **WHEN** the user presses Turn off or Turn on for the Pixoo screen
+- **THEN** one command is submitted in Monitor or Media without changing the mode, and the view explains that screen-off pauses playback and screen-on does not resume it
 
 ### Requirement: Content controls gated by status presentation
-The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, and SHALL disable Nanoleaf scene activation while the wall presents agent status in Work or Quiet, while a mode change is pending or while the mode is unknown. In each case the view MUST show the reason and offer a one-click explicit switch to Media or Free through the existing mode control. Returning to Monitor, Work or Quiet MUST use the existing mode control. Because the Pixoo controller does not declare controller v1 modes, the Pixoo mode control and the explicit switch SHALL submit the device-owned Pixoo integration extension's mode operation through the hub's existing integration route with that extension's request ID, configuration revision and generation guards; controllers that declare controller v1 modes, including Nanoleaf, keep the controller v1 mode command for both the mode control and the explicit switch. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed. Scenes SHALL be listed only from the controller v1 `scenes` capability, labelled by the user-chosen names the device-owned integration extension supplies and by ID otherwise; browser and hub configuration MUST contribute no scene identities or names.
+The dashboard SHALL disable Pixoo playlist selection and playback actions while Pixoo presents agent status in Monitor or a mode change is pending, and SHALL disable Nanoleaf scene activation while the wall presents agent status in Work or Quiet, while a mode change is pending or while the mode is unknown. In each case the view MUST show the reason and offer a one-click explicit switch to Media or Free through the existing mode control. Returning to Monitor, Work or Quiet MUST use the existing mode control. Because the Pixoo controller does not declare controller v1 modes, the Pixoo mode control and the explicit switch SHALL submit the device-owned Pixoo integration extension's mode operation through the hub's existing integration route with that extension's request ID, configuration revision and generation guards; controllers that declare controller v1 modes, including Nanoleaf, keep the controller v1 mode command for both the mode control and the explicit switch. Playlists SHALL be listed by controller-declared ID until the device-owned naming extension is consumed, and choosing a playlist SHALL start it. Scenes SHALL be listed only from the controller v1 `scenes` capability, labelled by the user-chosen names the device-owned integration extension supplies and by ID otherwise, and choosing a scene SHALL activate it; the choice clears once the command settles so the same item can be chosen again. Browser and hub configuration MUST contribute no scene identities or names.
 
 #### Scenario: Monitor gating with explicit switch
 - **WHEN** Pixoo is in Monitor and the user activates the explicit switch
 - **THEN** one mode command to Media is submitted, no playlist or playback command is sent, and the content controls become available only after the Media mode is observed
 
 #### Scenario: Playback in Media
-- **WHEN** Pixoo is in Media and the user selects a declared playlist ID or activates a declared playback action
+- **WHEN** Pixoo is in Media and the user chooses a declared playlist ID or presses a declared playback action
 - **THEN** exactly one media command for that ID or action is submitted and its receipt is shown without a mode change
 
 #### Scenario: Work or Quiet gating with explicit Free switch
@@ -90,7 +90,7 @@ The dashboard SHALL disable Pixoo playlist selection and playback actions while 
 - **THEN** one controller v1 mode command to Free is submitted, no scene command is sent, and scene activation becomes available only after the Free mode is observed with no pending mode change
 
 #### Scenario: Scene activation in Free
-- **WHEN** the wall is in Free and the user activates a declared scene
+- **WHEN** the wall is in Free and the user chooses a declared scene
 - **THEN** exactly one scene command for that scene ID is submitted, its receipt is shown without a mode change, and the scene is labelled by its user-chosen name when the integration snapshot supplies one and by ID otherwise
 
 #### Scenario: Scene rejected by the controller
@@ -98,16 +98,16 @@ The dashboard SHALL disable Pixoo playlist selection and playback actions while 
 - **THEN** the typed failure is shown, no command is repeated, and the control stays available for a fresh explicit action
 
 ### Requirement: Reconnect without losing intent
-The dashboard SHALL obtain authoritative snapshots on resync or expired cursors, reject superseded results, bound reconnect work, preserve focus and drafts for the same session generation, and keep slow/offline device status independent.
+The dashboard SHALL obtain authoritative snapshots on resync or expired cursors, reject superseded results, bound reconnect work, preserve focus and an unsent text draft for the same session generation, and keep slow/offline device status independent.
 
 #### Scenario: Reconnect during editing
-- **WHEN** the stream disconnects or resyncs while a user edits a field and the session generation is unchanged
+- **WHEN** the stream disconnects or resyncs while a user is typing in a text field or has focus on a control and the session generation is unchanged
 - **THEN** updated evidence appears without resetting the field or focus or replaying commands
 
 #### Scenario: Missed retirement while editing a task
 - **WHEN** a current snapshot replaces a session with a different generation under the same identity
-- **THEN** the old task label and acknowledgment drafts are discarded, the new task uses fresh defaults, and no command is submitted
-- **AND** unrelated controller drafts and tasks remain intact
+- **THEN** the old task label draft is discarded, the new task uses fresh defaults, and no command is submitted
+- **AND** unrelated controls and tasks remain intact
 
 ### Requirement: Accessible verified candidate
 The dashboard SHALL support keyboard navigation, readable contrast, reduced motion and narrow layouts. Verification SHALL use synthetic task bursts, two controller fixtures, concurrent frontend/MCP-equivalent commands and reconnect, retain latency measurements for Hub #30, and require explicit approval of the actual UI before merge.
@@ -147,11 +147,11 @@ The dashboard SHALL offer one explicit action to send the active mode again thro
 - **THEN** Start Monitor is disabled and names the screen-off reason
 
 ### Requirement: Shared command lifecycle
-Draft forms and one-click actions SHALL follow one command lifecycle. Each deliberate activation MUST send at most one request, and a second activation while a command is running MUST send nothing. A device control MUST build its request from a fresh device read; session label and acknowledgment forms keep building from the monitor snapshot their draft started from. A blocked, failed or throwing preparation MUST send nothing, MUST say that nothing changed and MUST leave the control usable. Only an accepted ticket SHALL be watched for a later terminal receipt. A refresh that fails after a command result MUST keep that result, MUST NOT imply that nothing was sent and MUST NOT resend the command. The next explicit activation of a device control MUST read current guards again. No transition SHALL retry a command automatically.
+Forms and one-click actions SHALL follow one command lifecycle. Each settled gesture MUST send at most one request, and a second activation while a command is running MUST send nothing, including from another instance of the same control on another page. A device control MUST build its request from a fresh device read; session label and acknowledgment forms keep building from the monitor snapshot their draft started from. A blocked, failed or throwing preparation MUST send nothing, MUST say that nothing changed and MUST leave the control usable. Only an accepted ticket SHALL be watched for a later terminal receipt. A refresh that fails after a command result MUST keep that result, MUST NOT imply that nothing was sent and MUST NOT resend the command. The next explicit activation of a device control MUST read current guards again. No transition SHALL retry a command automatically.
 
 #### Scenario: Failed fresh read before sending
 - **WHEN** the device read taken just before sending a device form or action fails
-- **THEN** nothing is sent, the status says nothing changed, a form keeps its draft, and once reads recover one explicit activation sends with current guards
+- **THEN** nothing is sent, the status says nothing changed, the control shows the current value again, and once reads recover the next gesture sends with current guards
 
 #### Scenario: Failed refresh after a result
 - **WHEN** a form's or an action's command is accepted and the refresh that follows it fails
@@ -212,7 +212,7 @@ The dashboard SHALL show `tidbyt` and `lifx` components in the common navigation
 - **THEN** the Tidbyt view shows one line naming the missing general capabilities and no general-control forms, and the LIFX power, brightness, color and temperature controls are enabled
 
 #### Scenario: LIFX color change
-- **WHEN** the user submits a new hue and saturation
+- **WHEN** the user releases the hue or saturation slider at a new value
 - **THEN** the dashboard reads the lighting snapshot again, sends one `lifx.color.set` with that read's guards, and shows the receipt without claiming the bulb's visible color
 
 #### Scenario: Unqualified bulb or read-only credential
@@ -221,15 +221,15 @@ The dashboard SHALL show `tidbyt` and `lifx` components in the common navigation
 
 ### Requirement: Power control starting value
 
-The Power control SHALL start from the controller's desired power when it is known. Otherwise it SHALL start from the observed power when the snapshot has one, and its hint SHALL show that reading and its age. Otherwise it SHALL start with no selection and a hint that the current power is unknown, so that either On or Off can be sent as one explicit command. The no-selection state SHALL NOT be submittable.
+The Power control SHALL be a button that names the one action left: Turn off while the controller's desired power is known to be on, Turn on while it is known to be off. When desired power is unknown it SHALL use the observed power when the snapshot has one, and its line SHALL show that reading and its age. When both are unknown it SHALL offer both Turn on and Turn off and say that the current power is unknown, so that either can be sent as one explicit command and no guessed value is ever sent.
 
 #### Scenario: Unknown power
 - **WHEN** a component's desired and observed power are both unknown
-- **THEN** the Power control has no selection, says the current power is unknown, and choosing On sends one `power.set` with `on: true`
+- **THEN** the Power control offers Turn on and Turn off, says the current power is unknown, and pressing Turn on sends one `power.set` with `on: true`
 
 #### Scenario: Observed off
 - **WHEN** desired power is unknown and the observation says the device is off
-- **THEN** the Power control starts at Off with the reading's age, and choosing On sends one `power.set` with `on: true`
+- **THEN** the Power control offers only Turn on with the reading's age, and pressing it sends one `power.set` with `on: true`
 
 ### Requirement: No dead controls and distinct disabled buttons
 
@@ -278,18 +278,18 @@ Every built-in page and every registered component SHALL have a hash address, an
 - **THEN** the page says no such component exists and links to the home
 
 ### Requirement: Home widget grid
-The home SHALL be a grid of widgets drawn from a catalog. Each catalog entry SHALL declare an ID, a name, a description, its supported sizes, its source kind (a registered controller alias, a hub route or a read-only external source), the reads it needs and whether it offers command actions; a read-only widget has none. The home SHALL show one component widget per registered component with its health, mode, power, brightness and the everyday mode and power actions, rendered by the same controls as the component page, and a link to that page. Attention, collector health and the observed sessions SHALL be widgets in the same grid, and every component widget SHALL start within the first screen at 1,440 px wide. Placement on the home is fixed in this version.
+The home SHALL be a grid of widgets drawn from a catalog. Each catalog entry SHALL declare an ID, a name, a description, its supported sizes, its source kind (a registered controller alias, a hub route or a read-only external source), the reads it needs and whether it offers command actions; a read-only widget has none. The home SHALL show one component widget per registered component with its health, mode, power, brightness and the everyday mode and power actions, rendered by the same controls as the component page and sharing their lifecycle state with it, and a link to that page. Attention, collector health and the observed sessions SHALL be widgets in the same grid, and every component widget SHALL start within the first screen at 1,440 px wide. Placement on the home is fixed in this version.
 
 #### Scenario: Whole installation on the first screen
 - **WHEN** the owner opens the home at 1,440 px wide with the wall and pixel components registered
 - **THEN** each component widget and the sessions widget begin within the viewport, and the widgets reach across the width of the main column
 
 #### Scenario: Quick action from the home
-- **WHEN** the owner applies a mode or power change from a component widget
-- **THEN** one guarded command is sent with the same guards, wording and lifecycle as the component page's control
+- **WHEN** the owner changes the mode or presses a power button on a component widget
+- **THEN** one guarded command is sent with the same guards, wording and lifecycle as the component page's control, a running command or an uncertain lock on either instance is the same on the other, and one explicit reload unlocks both
 
 ### Requirement: Dense component page
-A component page SHALL show a one-line status strip with mode, power, brightness, observation age and pending commands, keep its remaining facts behind a Details disclosure, and render every available control as a card in a grid that fills the width. Each card SHALL keep one short visible line, and longer guidance SHALL sit behind a disclosure. Nanoleaf's integration settings and mappings SHALL sit in one Assignments panel and the Pixoo view form in one Monitor panel. At 1,280 px wide the wall page SHALL be under 2,000 px tall. Every control's accessible name, explicit apply action, status sentences, availability reasons and lifecycle states MUST be unchanged by the layout.
+A component page SHALL show a one-line status strip with mode, power, brightness, observation age and pending commands, keep its remaining facts behind a Details disclosure, and render every available control as a card in a grid that fills the width. Each card SHALL keep one short visible line, and longer guidance SHALL sit behind a disclosure. Nanoleaf's integration settings and mappings SHALL sit in one Assignments panel and the Pixoo view form in one Monitor panel. At 1,280 px wide the wall page SHALL be under 2,000 px tall. Every control's status sentences, availability reasons and lifecycle states MUST be unchanged by the layout; the send gestures are the ones the general device controls define.
 
 #### Scenario: Wall page height
 - **WHEN** the wall component page is opened at 1,280 px wide
@@ -300,11 +300,11 @@ A component page SHALL show a one-line status strip with mode, power, brightness
 - **THEN** the desired state, pending changes, last transmission, last outcome, external control, fetch age and integration outcomes are shown
 
 #### Scenario: Unchanged control behavior
-- **WHEN** the existing browser, matrix, retirement and local-controllers checks run against the dense layout
-- **THEN** every command, gating, conflict, uncertain, focus, keyboard, reduced-motion and accessibility check passes with the same status sentences
+- **WHEN** the browser, matrix, retirement and local-controllers checks run against the dense layout
+- **THEN** every command, gating, rejection, uncertain, focus, keyboard, reduced-motion and accessibility check passes with the same status sentences
 
 ### Requirement: Skin-owned scale
-The application skin SHALL define the spacing and type scale as tokens alongside its color roles, and the layout SHALL read only tokens, so a skin changes values while the layout keeps its semantics.
+The application skin SHALL define the spacing steps and type sizes as tokens alongside its color roles, and the layout SHALL read its colors, spacing steps and type sizes only through tokens, so a skin changes values while the layout keeps its semantics. Structural sizes such as column tracks, control heights and breakpoints are layout, not skin.
 
 #### Scenario: Token boundary
 - **WHEN** the dashboard's authored styles are checked

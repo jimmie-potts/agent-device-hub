@@ -35,8 +35,11 @@ rows with an inline label form and their retained notices under the row.
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
 wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
-register in the same catalog. Home widgets mount only while the home is open;
-component pages stay mounted, so their drafts and focus survive navigation.
+register in the same catalog. Every page stays mounted and hidden, so an unsent text draft, the session filter
+and focus survive navigation. A control that appears on the home and on its
+component page shares one lifecycle state (`useCommandLifecycle` takes a key per
+component and control): a running command or an uncertain lock on either
+instance is the same on the other, and one reload unlocks both.
 
 A component page shows its identity and health, a one-line status strip (mode,
 power, brightness, observation age, pending commands, and the observed color for
@@ -45,6 +48,14 @@ control as a card in a grid that fills the width: Mode with Reapply or Start
 Monitor, Power, Brightness, Media with the Media switch, Scenes with the Free
 switch, and Color and Color temperature for LIFX. Each card keeps one short
 visible line for its state; the longer guidance sits behind a Help disclosure.
+No control has an Apply button (owner decision on the design candidate,
+2026-09-25): a select or toggle sends when it is changed, a slider sends once
+when it is released or after a short pause following a keyboard step, a text
+field sends when it is left or submitted, and Power is a button that names the
+one action left (Turn on or Turn off; both when power is unknown). Choosing a
+playlist starts it and choosing a scene activates it; the choice clears once
+the command settles. Every send is still one guarded command from a fresh
+read, and a rejected change shows the current value again with its status.
 Nanoleaf's integration settings, element assignments, task mappings and project
 colors sit in one Assignments panel and the Pixoo view form in one Monitor
 panel. Connections is a two-card page; the login is one line and the token
@@ -190,10 +201,12 @@ Only declared capabilities get a form; one line names the undeclared ones, such
 as "Not declared by this controller: media and scenes." A component that declares
 none of them, such as the Tidbyt or the synthetic sensor fixture, shows only "No
 general controls" ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)).
-Power starts from the desired value, then from the last observed value with its
-age, and otherwise from no selection with "Current power is unknown", so an
-unknown state is never presented as On or Off. Disabled buttons use their own
-skin tokens rather than transparency.
+Power is one button that names the action left: Turn off while the desired
+power is on, Turn on while it is off; with desired power unknown it uses the
+last observed value with its age, and with both unknown it offers both buttons
+and says "Current power is unknown", so an unknown state is never presented as
+On or Off and no guessed value is sent. Disabled buttons use their own skin
+tokens rather than transparency.
 
 Pixoo declares screen power, brightness 0–100 and media with pause, resume, stop,
 next, previous and clear plus discovered playlist IDs, checked at Pixoo `main`
@@ -210,10 +223,10 @@ screen on does not resume it. Playlists are listed by ID until
 [Pixoo #67](https://github.com/jimmie-potts/divoom-app-upgrade/issues/67)
 supplies user-entered names.
 
-Power and brightness use the draft pattern below. The brightness slider starts
-from desired evidence, then observed evidence, and says when the current
-brightness is unknown. Playlist start, playback actions and the Media switch are
-one-click commands. Like every command, they read the device again just before
+The brightness slider starts from desired evidence, then observed evidence,
+says when the current brightness is unknown, and sends once when released.
+Choosing a playlist, the playback actions and the Media switch are one-click
+commands. Like every command, they read the device again just before
 sending (see below) and stay busy until the refreshed snapshot arrives. Only an
 accepted ticket is watched for its terminal outcome; a rejected ticket may be
 consumed by another client. A typed rejection is shown and the action stays
@@ -261,31 +274,30 @@ Physical acceptance on the installed wall is
 
 ## Intent and observation
 
-Drafts pin the revision they started from. Just before sending, every command
-reads the device again through the same per-device queue. It uses that read's
-server-issued ticket, configuration revision and generation, and re-checks the
-control's availability. A failed read or a control that is no longer available
-sends nothing and names the reason. General-control, controller v1 mode and
-Pixoo integration drafts conflict only on the configuration revision. A
-generation retires output work and advances without any client edit, for
-example on every Pixoo playlist item or when Pixoo suspends its presentation.
-The Nanoleaf integration forms keep their content revision guard.
-A `stale-generation` race after the fresh read has no effects. It is shown with
-an invitation to press the control again, and nothing is resubmitted.
+Just before sending, every command reads the device again through the same
+per-device queue. It uses that read's server-issued ticket, configuration
+revision and generation, and re-checks the control's availability. A failed
+read or a control that is no longer available sends nothing and names the
+reason. A generation retires output work and advances without any client edit,
+for example on every Pixoo playlist item or when Pixoo suspends its
+presentation. The Nanoleaf integration forms keep their content revision guard.
+A `stale-generation` or `revision-conflict` after the fresh read has no
+effects. It is shown with an invitation to change the control again, and
+nothing is resubmitted.
 
-Refreshes preserve focus, selection and drafts. A submitted control keeps
-keyboard focus: while a command runs its group is disabled, and once the command
-settles focus returns to that control, or to the group's first enabled control
-when the control is locked or no longer rendered. An accepted result that is not
-uncertain clears the draft once the refreshed snapshot arrives, so the form is
-ready for the next change. A changed revision blocks stale submission, and a
-rejection keeps the edit. An uncertain or partly applied result, including one
-observed later, locks the form or group and is never retried. "Reload current
-values" is the separate explicit action that unlocks it. A failed fresh device
-read before sending sends nothing and frees the control. A failed refresh after
-a result keeps that result and resends nothing; the next explicit device command
-reads current guards again. A second activation while a command is running sends
-nothing. Status text says
+Refreshes preserve focus, selection and an unsent text draft. A control that
+sent keeps keyboard focus: while a command runs its group is disabled, and once
+the command settles focus returns to that control, or to the group's first
+enabled control when the control is locked or no longer rendered. Once the
+result and the refreshed snapshot arrive the control shows the current value
+again, so it is ready for the next change and a rejection is visible as the
+unchanged value plus its status. An uncertain or partly applied result,
+including one observed later, locks the form or group and is never retried.
+"Reload current values" is the separate explicit action that unlocks it. A
+failed fresh device read before sending sends nothing and frees the control. A
+failed refresh after a result keeps that result and resends nothing; the next
+gesture reads current guards again. A second activation while a command is
+running sends nothing, including from the other instance of the same control. Status text says
 whether a command was queued, sent, saved, already in effect, not applied or
 unknown, names the typed code, and never presents transport success or a saved
 setting as physical output.
@@ -346,12 +358,15 @@ credential, phone width and automated accessibility. `tests/layout.mjs` fails
 any visited view whose text blocks overlap, ignoring the content of closed
 disclosures, and measures how far a view's controls reach across the main
 column; the browser, Pixoo, wall and synthetic views use it too. The Hub #277
-checks in `tests/browser.mjs` assert that every component widget and the
-sessions widget start in the first screen at 1440 px, that the home, wall and
+checks in `tests/browser.mjs` assert that every component widget, its quick
+actions and the sessions widget start in the first screen at 1440 px, that the home, wall and
 pixel controls reach at least 70% of the main column, that the Connections
 cards sit side by side, that the wall and pixel pages are under 2,000 px tall at
 1280 px, and that routes, the back button, the alias collision and an unknown
-address behave as the README describes. `DASHBOARD_RECEIPTS` selects an external
+address behave as the README describes. A matrix scenario sends a mode and a
+power change from the wall widget with fresh guards, shares an uncertain lock
+and a running command between the widget and the page, keeps a session label
+draft and the filter across navigation, and checks the skip link. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,
