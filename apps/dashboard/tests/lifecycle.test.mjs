@@ -13,7 +13,7 @@ try {
  const ticket={epoch:'e',sequence:4};
  // Both consumers drive the same lifecycle; they differ only in wording.
  const consumers=[
-  {name:'form',wording:formWording,prefix:'',kept:' Your edit is kept.',retry:' Your edit is kept.'},
+  {name:'form',wording:formWording,prefix:'',kept:'',retry:' Change it again to try with current values.'},
   {name:'action',wording:actionWording('Pause'),prefix:'Pause: ',kept:'',retry:' Press Pause to try again with current values.'},
  ];
  /** A consumer harness: the reducer state, every request sent and every refresh requested. */

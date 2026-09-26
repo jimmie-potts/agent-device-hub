@@ -20,11 +20,11 @@ export function observedResult(source:unknown,ticket:unknown,options:ResultOptio
  if(result&&result.outcome!=='queued')return resultMessage(result,options);
 }
 
-/** How a consumer words its status: actions name themselves; forms say that the draft is kept. */
+/** How a consumer words its status: actions name themselves; a form's control shows the current value again, so a rejection invites another change. */
 export type Wording={prefix:string;blocked:string;result:(result:ResultMessage)=>string};
 const retryable=['stale-generation','revision-conflict'];
 export const actionWording=(label:string):Wording=>({prefix:`${label}: `,blocked:'',result:r=>r.settled==='rejected'&&r.code&&retryable.includes(r.code)?` Press ${label} to try again with current values.`:''});
-export const formWording:Wording={prefix:'',blocked:' Your edit is kept.',result:r=>r.settled==='rejected'?' Your edit is kept.':''};
+export const formWording:Wording={prefix:'',blocked:'',result:r=>r.settled==='rejected'&&r.code&&retryable.includes(r.code)?' Change it again to try with current values.':''};
 
 /** watching holds only an accepted ticket: a rejected ticket may be consumed by another client, whose receipt must never be shown as this command's outcome. */
 export type CommandState={status:string;tone?:Tone;busy:boolean;locked:boolean;watching?:{ticket:unknown;prefix:string}};

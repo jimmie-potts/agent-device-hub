@@ -14,194 +14,265 @@ const visible=(page,role,name)=>page.getByRole(role,{name,exact:true}).filter({v
 const settled=async(page,text)=>{await page.waitForFunction(t=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent.includes(t)),text);await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));};
 async function scenario(name,run,options,prepare){if(process.env.DASHBOARD_SCENARIO&&!name.includes(process.env.DASHBOARD_SCENARIO))return;const f=await fixture(options),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>errors.push(e.message));try{await prepare?.(f,page);await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();await run(f,page);assert.deepEqual(errors,[]);checks.push(name);}catch(error){console.error(name,await page.locator('section:visible').innerText());throw error;}finally{await context.close();await f.close();}}
 async function until(condition){const deadline=Date.now()+10000;while(!condition()){if(Date.now()>deadline)throw new Error('condition-timeout');await new Promise(r=>setTimeout(r,25));}}
+const form=(page,heading)=>page.locator('form.edit').filter({visible:true}).filter({has:page.getByRole('heading',{name:heading,exact:true})});
+const statusOf=(page,heading)=>form(page,heading).locator(':scope>[role=status]');
 async function axe(page){const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>`${n.target.join(' ')}: ${n.failureSummary}`)})),[]);}
 try {
  await scenario('empty sessions retain useful controls; keyboard and all view accessibility',async(f,page)=>{
   await page.getByRole('heading',{name:'No sessions observed',exact:true}).waitFor();
-  const wall=page.getByRole('button',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);
-  await page.getByLabel('Device mode').first().focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Tab');assert.ok(await page.getByRole('button',{name:'Apply mode',exact:true}).first().evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes.',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').count(),0,'the undeclared scene capability has no form');await axe(page);await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
-  await page.getByRole('button',{name:'Connections',exact:true}).click();await axe(page);
+  const wall=page.getByRole('link',{name:'wall nanoleaf',exact:true});await wall.focus();await page.keyboard.press('Enter');await page.getByLabel('Device mode').first().waitFor();assert.equal(await visible(page,'button','Switch to Free').isDisabled(),false,'Nanoleaf general controls need no observed session');await axe(page);
+  await page.getByLabel('Device mode').first().focus();await page.keyboard.press('ArrowDown');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Monitor provider').waitFor();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Pause',exact:true}).filter({visible:true}).isDisabled(),false,'general controls need no observed session');assert.deepEqual(await page.locator('section:visible').getByText('Unavailable:',{exact:false}).allTextContents(),[],'every declared Pixoo control is available');await page.locator('section:visible').getByText('Not declared by this controller: scenes.',{exact:true}).waitFor();assert.equal(await page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true}).count(),0,'the undeclared scene capability has no form');await axe(page);await page.setViewportSize({width:390,height:844});await axe(page);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.getByRole('link',{name:'Connections',exact:true}).click();await axe(page);
  },{empty:true});
  for(const order of ['wall-drained','wall-parked-first','pixel-first'])await scenario(`slow device serializes explicit commands while another device remains responsive (${order})`,async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);await f.wallReads.arm(order);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();f.setDelay(800);await f.wallReads.arm(order);
   try{const pixel=await f.wallReads.pendingPixel();independentDeviceReadMs=await independentWallRead(f,pixel);console.log(JSON.stringify({isolationOrder:order,independentDeviceReadMs,pixelPending:!pixel.finished}));}finally{await f.wallReads.release();}
-  await mode.selectOption('monitor');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await page.getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();assert.equal(f.writes.at(-1).integration,true);assert.equal(f.writes.at(-1).command.action.mode,'monitor');assert.equal(await page.getByText('Not applied: capacity.',{exact:false}).count(),0);
-  f.setDelay(0);await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Monitor'));assert.equal(await mode.inputValue(),'monitor','the applied form shows current values without a discard step');await mode.selectOption('media');await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).click();await until(()=>f.writes.at(-1).command.action.mode==='media');await page.getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();
+  await mode.selectOption('monitor');await page.locator('section:visible').getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();assert.equal(f.writes.at(-1).integration,true);assert.equal(f.writes.at(-1).command.action.mode,'monitor');assert.equal(await page.getByText('Not applied: capacity.',{exact:false}).count(),0);
+  f.setDelay(0);await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Monitor'));assert.equal(await mode.inputValue(),'monitor','the applied form shows current values without a discard step');await mode.selectOption('media');await until(()=>f.writes.at(-1).command.action.mode==='media');await page.locator('section:visible').getByText('Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.',{exact:true}).waitFor();
   assert.deepEqual(f.writes.map(({id,integration,command})=>({id,integration,action:command.action})),[{id:'pixel',integration:true,action:{operation:'mode',mode:'monitor'}},{id:'pixel',integration:true,action:{operation:'mode',mode:'media'}}],'two explicit actions send exactly two integration writes');
  },undefined,async(f,page)=>{f.wallReads=await isolateWallReads(page,f);});
  await scenario('terminal integration failures, known evidence and external control are visible',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').waitFor();f.setQueued(true);await page.getByLabel('Layout style').selectOption('project');await page.getByRole('button',{name:'Apply integration settings',exact:true}).click();await page.getByText('Queued. The device hasn’t received it yet.',{exact:true}).waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').waitFor();f.setQueued(true);await page.getByLabel('Layout style').selectOption('project');await page.getByText('Queued. The device hasn’t received it yet.',{exact:true}).waitFor();
   const ticket=f.nano.pending[0].requestId;f.nano.pending=[];f.nano.outcomes=[{apiVersion:f.nano.apiVersion,requestId:ticket,outcome:'failed',priorEffects:'none',physicalOutcome:'unknown',failure:{code:'revision-conflict'}}];
-  await page.getByText('Not applied: another client changed this device first (revision-conflict). Nothing changed.',{exact:true}).waitFor();await page.getByText('failed · revision-conflict',{exact:true}).waitFor();
+  await page.getByText('Not applied: another client changed this device first (revision-conflict). Nothing changed.',{exact:true}).waitFor();await page.locator('section:visible details.details>summary').click();await page.getByText('failed · revision-conflict',{exact:true}).waitFor();
   f.pixoo.lastOutcome={generation:f.pixoo.generation,renditionGeneration:1,status:'failed',code:'transport-failure'};
   const state=f.states.pixel;state.state.externalControl={status:'known',owner:'external',clock:state.sampleClock};state.state.observation={status:'known',clock:state.sampleClock,evidenceAgeMs:10000,power:{status:'known',value:true},brightness:{status:'known',value:50}};state.state.lastSuccessfulSend={status:'known',requestId:state.nextRequestId,clock:state.sampleClock,operationIds:['mode']};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('failed · transport-failure',{exact:true}).waitFor();await page.getByText('Sent mode · physical result unknown',{exact:true}).waitFor();const observation=page.locator('dl>div').filter({has:page.getByText('Observation age',{exact:true})}).filter({visible:true});assert.match(await observation.locator('dd').innerText(),/^1[0-9]s$/);await page.getByText('Unavailable: Device is externally controlled',{exact:true}).first().waitFor();assert.equal(await page.getByRole('button',{name:'Apply mode',exact:true}).filter({visible:true}).isDisabled(),true);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.locator('section:visible details.details>summary').click();await page.getByText('failed · transport-failure',{exact:true}).waitFor();await page.getByText('Sent mode · physical result unknown',{exact:true}).waitFor();const observation=page.locator('dl>div').filter({has:page.getByText('Observation age',{exact:true})}).filter({visible:true});assert.match(await observation.locator('dd').innerText(),/^1[0-9]s$/);await page.getByText('Unavailable: Device is externally controlled',{exact:true}).first().waitFor();assert.equal(await page.getByLabel('Device mode').filter({visible:true}).isDisabled(),true);
  });
  await scenario('rejected older snapshots cannot refresh evidence; expired cursor resync preserves drafts',async(f,page)=>{
   const label=page.getByLabel('Chosen label');await label.fill('Keep my draft');const received=await page.locator('#main').getAttribute('data-received');let stale=true;
   await page.route('**/api/monitor/v1/sessions*',async route=>{const response=await route.fetch();const value=await response.json();if(stale)value.snapshot.revision=0;await route.fulfill({response,json:value});});f.reconnect();
-  await page.getByRole('alert').filter({hasText:'stale-snapshot'}).waitFor();assert.equal(await page.locator('#main').getAttribute('data-received'),received);assert.equal(await label.inputValue(),'Keep my draft');assert.equal(await page.getByRole('button',{name:'Apply label',exact:true}).isDisabled(),true);
+  await page.getByRole('alert').filter({hasText:'stale-snapshot'}).waitFor();assert.equal(await page.locator('#main').getAttribute('data-received'),received);assert.equal(await label.inputValue(),'Keep my draft');assert.equal(await label.isDisabled(),true,'edits are disabled while the snapshot is stale');
   let expired=false;await page.route('**/api/monitor/v1/changes',async route=>{expired=true;await route.continue({headers:{...route.request().headers(),'last-event-id':'expired:999'}});});stale=false;f.reconnect();await until(()=>expired);await page.waitForFunction(()=>!document.querySelector('[role=alert]'));assert.equal(await label.inputValue(),'Keep my draft');assert.equal(f.writes.length,0);
   const response=await fetch(f.hub.url+'/api/monitor/v1/changes',{headers:{...f.headers,'last-event-id':'expired:999'},signal:AbortSignal.timeout(3000)});const reader=response.body.getReader();assert.match(new TextDecoder().decode((await reader.read()).value),/event: resync/);await reader.cancel();
  });
  await scenario('partial receipt preserves confirmed transmission in browser feedback',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Device mode').first().waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Device mode').first().waitFor();
   await page.route('**/api/controllers/v1/wall/commands',async route=>{const request=route.request().postDataJSON();const receipt={apiVersion:'1.0',controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId,configurationRevision:0,generation:request.expectedGeneration,outcome:'partially-applied',priorEffects:'confirmed-transmission',completedOperations:['mode'],uncertainOperations:['refresh'],failure:{code:'transport-failure'}};assert.equal(validate('receipt',receipt),true);f.states.wall.state.lastOutcome={status:'known',receipt};assert.equal(validate('snapshot',f.states.wall),true);await route.fulfill({status:503,json:receipt});});
-  await page.getByLabel('Device mode').first().selectOption('Quiet');await page.getByRole('button',{name:'Apply mode',exact:true}).first().click();await page.locator('section:visible [role=status]').filter({hasText:'Partly applied: mode was sent; refresh is unknown (transport-failure). Check the device, then reload current values before trying again.'}).waitFor();assert.equal(await visible(page,'button','Reload current values').count(),1,'a partial result locks the form until an explicit reload');assert.equal(await page.getByText('Not applied:',{exact:false}).count(),0);
+  await page.getByLabel('Device mode').first().selectOption('Quiet');await page.locator('section:visible [role=status]').filter({hasText:'Partly applied: mode was sent; refresh is unknown (transport-failure). Check the device, then reload current values before trying again.'}).waitFor();assert.equal(await visible(page,'button','Reload current values').count(),1,'a partial result locks the form until an explicit reload');assert.equal(await page.getByText('Not applied:',{exact:false}).count(),0);
  });
  // Hub #151: general controls. The fake Pixoo declares the real controller's capabilities and modes are unsupported on controller v1.
  const guard=f=>({requestId:structuredClone(f.states.pixel.nextRequestId),expectedConfigurationRevision:f.states.pixel.configurationRevision,expectedGeneration:structuredClone(f.states.pixel.generation)});
  const general=f=>f.writes.filter(w=>w.id==='pixel'&&!w.integration).map(w=>w.command);
  await scenario('general controls submit one guarded controller v1 command each in Media without changing the mode',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();assert.equal(await brightness.inputValue(),'60');
-  assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true,'an unchanged draft submits nothing');
-  let expected=guard(f);await brightness.fill('30');await visible(page,'button','Apply brightness').click();await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();assert.equal(await brightness.inputValue(),'60');
+  assert.equal(general(f).length,0,'rendering sends nothing');
+  let expected=guard(f);await brightness.fill('30');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
   assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:30}});
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent.includes('Brightness 30%')));
-  expected=guard(f);await page.getByRole('combobox',{name:'Screen power',exact:true}).filter({visible:true}).selectOption('off');await visible(page,'button','Apply screen power').click();await until(()=>general(f).length===2);assert.deepEqual(general(f).at(-1).command,{kind:'power.set',on:false});assert.deepEqual(general(f).at(-1).requestId,expected.requestId);assert.equal(general(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);
+  expected=guard(f);await visible(page,'button','Turn off').click();await until(()=>general(f).length===2);assert.deepEqual(general(f).at(-1).command,{kind:'power.set',on:false});assert.deepEqual(general(f).at(-1).requestId,expected.requestId);assert.equal(general(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent.includes('Power off')));
-  expected=guard(f);await page.getByLabel('Saved playlist').filter({visible:true}).selectOption('playlist-evening');await visible(page,'button','Start playlist').click();await until(()=>general(f).length===3);assert.deepEqual(general(f).at(-1).command,{kind:'media.start',playlistId:'playlist-evening'});assert.equal(general(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);assert.equal(f.media.playlistId,'playlist-evening');
+  expected=guard(f);await page.getByLabel('Saved playlist').filter({visible:true}).selectOption('playlist-evening');await until(()=>general(f).length===3);assert.deepEqual(general(f).at(-1).command,{kind:'media.start',playlistId:'playlist-evening'});assert.equal(general(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);assert.equal(f.media.playlistId,'playlist-evening');
   await page.locator('section:visible [role=status]').filter({hasText:/Start playlist: (Queued|Sent to the device)/}).waitFor();
   // Actions stay busy until the refreshed snapshot lands; the next click therefore carries fresh guards. Playwright waits for each button to be enabled.
   for(const [label,action] of [['Pause','pause'],['Next','next'],['Clear','clear']]){const before=general(f).length;await page.getByRole('button',{name:label,exact:true,disabled:false}).filter({visible:true}).waitFor();expected=guard(f);await visible(page,'button',label).click();await until(()=>general(f).length===before+1);assert.deepEqual(general(f).at(-1).command,{kind:'media.control',action});assert.deepEqual(general(f).at(-1).requestId,expected.requestId);assert.equal(general(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);}
   assert.deepEqual(f.media.actions,['pause','next','clear'],'every rapid successive action was applied with a fresh ticket');assert.equal(await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).count(),0);assert.equal(f.writes.filter(w=>w.integration).length,0,'no mode command was sent as a side effect');assert.equal(f.pixoo.configuration.mode,'media');assert.equal(f.writes.length,6);
   // Keyboard: the applied brightness form is ready without a discard step; the range input and the apply button submit one command.
   assert.equal(await brightness.inputValue(),'30');
-  await brightness.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('Tab');assert.ok(await visible(page,'button','Apply brightness').evaluate(el=>el===document.activeElement));await page.keyboard.press('Enter');await until(()=>f.writes.length===7);assert.deepEqual(general(f).at(-1).command,{kind:'brightness.set',percent:29});
+  await brightness.focus();await page.keyboard.press('ArrowDown');await until(()=>f.writes.length===7);assert.deepEqual(general(f).at(-1).command,{kind:'brightness.set',percent:29});
   await axe(page);
  });
  await scenario('Monitor disables playlist and playback controls with the reason and a one-click explicit switch to Media',async(f,page)=>{
-  f.pixoo.configuration.mode='monitor';await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();
+  f.pixoo.configuration.mode='monitor';await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();
   await page.locator('section:visible').getByText('Unavailable: Pixoo is in Monitor',{exact:false}).waitFor();assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await page.getByLabel('Saved playlist').filter({visible:true}).isDisabled(),true);
-  const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.fill('55');assert.equal(await visible(page,'button','Apply brightness').isDisabled(),false,'power and brightness stay available in Monitor');await visible(page,'button','Discard my edit').first().click();
+  const brightness=page.getByLabel('Brightness (%)').filter({visible:true});assert.equal(await brightness.isDisabled(),false,'power and brightness stay available in Monitor');
   const revision=f.pixoo.configurationRevision;await visible(page,'button','Switch to Media').click();await until(()=>f.writes.length===1);assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'media'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Media'));assert.equal(await visible(page,'button','Pause').isDisabled(),false);assert.equal(await visible(page,'button','Switch to Media').count(),0);assert.equal(f.writes.length,1,'the switch sends exactly one mode command and no media command');
-  const mode=page.getByLabel('Device mode').filter({visible:true});await mode.selectOption('monitor');await visible(page,'button','Apply mode').click();await until(()=>f.writes.length===2);assert.deepEqual(f.writes[1].command.action,{operation:'mode',mode:'monitor'});
+  const mode=page.getByLabel('Device mode').filter({visible:true});await mode.selectOption('monitor');await until(()=>f.writes.length===2);assert.deepEqual(f.writes[1].command.action,{operation:'mode',mode:'monitor'});
   await page.locator('section:visible').getByText('Unavailable: Pixoo is in Monitor',{exact:false}).waitFor();assert.equal(await visible(page,'button','Pause').isDisabled(),true);
   f.pixoo.pendingMode='media';await page.locator('section:visible').getByText('Pixoo is switching to Media',{exact:false}).waitFor();assert.equal(await visible(page,'button','Switch to Media').count(),0);assert.equal(await visible(page,'button','Pause').isDisabled(),true);
   assert.equal(general(f).length,0,'no general command was sent by mode changes');
  });
- await scenario('general control drafts survive concurrent edits; typed conflicts and uncertain results never retry',async(f,page)=>{
+ await scenario('a stale guard is a typed conflict whose ticket adopts no other client’s receipt; uncertain results never retry',async(f,page)=>{
   // Serve the last observed Pixoo snapshot while frozen so the browser's guards are deterministically stale. A poll still in flight when the context closes is abandoned instead of crashing the runner.
   let frozen=null,freeze=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;await brightness.fill('45');
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;
   const external={apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...guard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
   const before=f.writes.length;await visible(page,'button','Pause').click();await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.equal(f.writes.length,before+1);
   // The external client consumed the same ticket; the refreshed snapshot carries its sent receipt, which must never be shown as this rejected Pause's outcome.
   assert.equal(JSON.stringify(f.states.pixel.state.lastOutcome.receipt.requestId),JSON.stringify(general(f).at(-1).requestId));
-  freeze=false;await page.locator('section:visible').getByText('Another client changed this setting while you were editing.',{exact:false}).waitFor();await page.getByRole('button',{name:'Pause',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Pause: (Queued|Sent)/}).count(),0,'a rejected ticket does not adopt another client\'s receipt');await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();
-  assert.equal(await brightness.inputValue(),'45');assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true);
-  await brightness.focus();f.reconnect();await page.waitForTimeout(1500);assert.equal(await brightness.inputValue(),'45');assert.ok(await brightness.evaluate(el=>el===document.activeElement),'focus survives reconnect');assert.equal(f.writes.length,before+1,'reconnect replays nothing');
-  await visible(page,'button','Discard my edit').first().click();assert.equal(await brightness.inputValue(),'70');
+  freeze=false;await page.getByRole('button',{name:'Pause',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Pause: (Queued|Sent)/}).count(),0,'a rejected ticket does not adopt another client\'s receipt');await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();
+  await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&input.value==='70';});assert.equal(await brightness.inputValue(),'70','the control shows the other client’s value; there is no draft to keep');
+  await brightness.focus();f.reconnect();await page.waitForTimeout(1500);assert.ok(await brightness.evaluate(el=>el===document.activeElement),'focus survives reconnect');assert.equal(f.writes.length,before+1,'reconnect replays nothing');
   f.setUncertain(true);await visible(page,'button','Resume').click();await page.locator('section:visible [role=status]').filter({hasText:'Resume: Result unknown: this may have reached the device'}).waitFor();await page.waitForTimeout(5500);assert.equal(f.writes.length,before+2,'uncertain action is not retried');assert.equal(await visible(page,'button','Resume').isDisabled(),true,'uncertain result stays locked');f.setUncertain(false);
   await visible(page,'button','Reload current values').click();await page.getByRole('button',{name:'Resume',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(f.writes.length,before+2);
  });
  await scenario('read-only credentials and undeclared capabilities name their reasons',async(f,page)=>{
   await page.getByRole('button',{name:'Disconnect',exact:true}).click();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.reader);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.locator('#main[data-received]:not([data-received="0"])').waitFor();
   f.states.pixel.state.desired.brightness={status:'unknown'};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Brightness (%)').filter({visible:true}).waitFor();
   await page.locator('section:visible').getByText('Current brightness is unknown; the slider starts at a placeholder, not an observed value.',{exact:false}).waitFor();assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).inputValue(),'50');
-  assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'power, brightness, media and mode name the missing scope');assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true);await axe(page);
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.locator('section:visible').getByText('Not declared by this controller: media.',{exact:true}).waitFor();assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'Nanoleaf power, brightness, scenes and mode name the missing scope');assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);assert.equal(await visible(page,'button','Switch to Free').isDisabled(),true,'a read-only credential sees the switch disabled with its reason');await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();
-  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');await axe(page);
+  assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'power, brightness, media and mode name the missing scope');assert.equal(await visible(page,'button','Pause').isDisabled(),true);assert.equal(await page.getByLabel('Brightness (%)').filter({visible:true}).isDisabled(),true);await axe(page);
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.locator('section:visible').getByText('Not declared by this controller: media.',{exact:true}).waitFor();assert.ok(await page.locator('section:visible').getByText('Unavailable: Your credential is read-only',{exact:true}).count()>=4,'Nanoleaf power, brightness, scenes and mode name the missing scope');assert.equal(await page.getByLabel('Saved scene').filter({visible:true}).isDisabled(),true);assert.equal(await visible(page,'button','Switch to Free').isDisabled(),true,'a read-only credential sees the switch disabled with its reason');await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'narrow layout has no horizontal overflow');await axe(page);
   assert.equal(f.writes.length,0);
  },{empty:true});
  // Hub #153: Nanoleaf general controls on the declaration of Nanoleaf main 8062849 (#64).
  const wallGuard=f=>({requestId:structuredClone(f.states.wall.nextRequestId),expectedConfigurationRevision:f.states.wall.configurationRevision,expectedGeneration:structuredClone(f.states.wall.generation)});
  const wallGeneral=f=>f.writes.filter(w=>w.id==='wall'&&!w.integration).map(w=>w.command);
  await scenario('Nanoleaf power and brightness work in Work; scenes wait for the explicit Free switch and each control sends one guarded command',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();assert.equal(await brightness.inputValue(),'50');
-  const scene=page.getByLabel('Saved scene').filter({visible:true});await scene.waitFor();assert.equal(await scene.isDisabled(),true);assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();
-  assert.deepEqual(await scene.locator('option').allTextContents(),['Beach Waves',f.sceneB],'user-chosen names label scenes; IDs otherwise');
+  const scene=page.getByLabel('Saved scene').filter({visible:true});await scene.waitFor();assert.equal(await scene.isDisabled(),true);await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();
+  assert.deepEqual(await scene.locator('option').allTextContents(),['Choose a scene to activate','Beach Waves',f.sceneB],'user-chosen names label scenes; IDs otherwise');
   const observation=page.locator('dl>div').filter({has:page.getByText('Observation age',{exact:true})}).filter({visible:true});assert.equal(await observation.locator('dd').innerText(),'Unknown','unknown observation stays unknown');
-  let expected=wallGuard(f);await brightness.fill('40');await visible(page,'button','Apply brightness').click();await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
+  let expected=wallGuard(f);await brightness.fill('40');await page.locator('section:visible [role=status]').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();
   assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'brightness.set',percent:40}});
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent.includes('Brightness 40%')));
   await page.locator('section:visible').getByText('Brightness override active: 40% until the next explicit mode command',{exact:false}).waitFor();assert.equal(await brightness.inputValue(),'40','the applied form shows the override without a discard step');
-  expected=wallGuard(f);await page.getByRole('combobox',{name:'Power',exact:true}).filter({visible:true}).selectOption('off');await visible(page,'button','Apply power').click();await until(()=>wallGeneral(f).length===2);assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'power.set',on:false});assert.deepEqual(wallGeneral(f).at(-1).requestId,expected.requestId);assert.equal(wallGeneral(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);
+  expected=wallGuard(f);await visible(page,'button','Turn off').click();await until(()=>wallGeneral(f).length===2);assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'power.set',on:false});assert.deepEqual(wallGeneral(f).at(-1).requestId,expected.requestId);assert.equal(wallGeneral(f).at(-1).expectedConfigurationRevision,expected.expectedConfigurationRevision);
   await settled(page,'Power off');assert.equal(f.nano.mode,'Work','power and brightness never change the mode');assert.equal(await scene.isDisabled(),true);
   // Keyboard: the switch is activated with Enter; once Free is observed the switch unmounts, so focus moves to the scene controls instead of the document body.
   expected=wallGuard(f);await visible(page,'button','Switch to Free').focus();await page.keyboard.press('Enter');await until(()=>wallGeneral(f).length===3);assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'mode.set',mode:'Free'}});assert.equal(f.writes.filter(w=>w.integration).length,0,'the switch uses the controller v1 mode command');
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Free'));await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await visible(page,'button','Switch to Free').count(),0);assert.deepEqual(f.scenes.activated,[],'the switch sends no scene command');
   assert.ok(await scene.evaluate(el=>el===document.activeElement),'keyboard focus moves to the scene controls after the switch unmounts');
-  await scene.selectOption(f.sceneB);await scene.focus();const before=f.writes.length;f.reconnect();await page.waitForTimeout(1500);assert.equal(await scene.inputValue(),f.sceneB,'scene selection survives reconnect');assert.ok(await scene.evaluate(el=>el===document.activeElement),'focus survives reconnect');assert.equal(f.writes.length,before,'reconnect replays nothing');
-  expected=wallGuard(f);await visible(page,'button','Activate scene').focus();await page.keyboard.press('Enter');await until(()=>wallGeneral(f).length===4);assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'scene.activate',sceneId:f.sceneB}});assert.deepEqual(f.scenes.activated,[f.sceneB]);
+  // Choosing a scene activates it: one guarded command, sent from the select itself.
+  expected=wallGuard(f);await scene.focus();await scene.selectOption(f.sceneB);await until(()=>wallGeneral(f).length===4);assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'scene.activate',sceneId:f.sceneB}});assert.deepEqual(f.scenes.activated,[f.sceneB]);
   await page.locator('section:visible [role=status]').filter({hasText:/Activate scene: (Queued|Sent to the device)/}).waitFor();assert.equal(f.nano.mode,'Free','scene activation never changes the mode');
   // Returning to Work is the existing mode control, never a side effect.
-  await page.getByRole('button',{name:'Activate scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.ok(await visible(page,'button','Activate scene').evaluate(el=>el===document.activeElement),'keyboard focus returns to the activated control once it re-enables');
+  await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.ok(await scene.evaluate(el=>el===document.activeElement),'keyboard focus returns to the scene control once it re-enables');assert.equal(await scene.inputValue(),'','the choice clears so the same scene can be activated again');
+  const afterScene=f.writes.length;f.reconnect();await page.waitForTimeout(1500);assert.ok(await scene.evaluate(el=>el===document.activeElement),'focus survives reconnect');assert.equal(f.writes.length,afterScene,'reconnect replays nothing');
   // An applied draft form settles unlocked; focus returns to its first enabled control instead of the document body, ready for the next change.
-  await brightness.focus();await brightness.fill('35');await page.keyboard.press('Tab');await page.keyboard.press('Enter');await until(()=>wallGeneral(f).length===5);await settled(page,'Brightness 35%');await page.waitForFunction(()=>document.activeElement?.matches('input[type=range]'));assert.ok(await brightness.evaluate(el=>el===document.activeElement),'an applied form returns keyboard focus to its slider');
-  const mode=page.getByLabel('Device mode').filter({visible:true});await mode.selectOption('Work');await visible(page,'button','Apply mode').click();await until(()=>wallGeneral(f).length===6);assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'mode.set',mode:'Work'});
-  await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').isDisabled(),true);assert.deepEqual(f.scenes.activated,[f.sceneB]);
+  await brightness.focus();await brightness.fill('35');await until(()=>wallGeneral(f).length===5);await settled(page,'Brightness 35%');await page.waitForFunction(()=>document.activeElement?.matches('input[type=range]'));assert.ok(await brightness.evaluate(el=>el===document.activeElement),'an applied form returns keyboard focus to its slider');
+  const mode=page.getByLabel('Device mode').filter({visible:true});await mode.selectOption('Work');await until(()=>wallGeneral(f).length===6);assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'mode.set',mode:'Work'});
+  await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await scene.isDisabled(),true);assert.deepEqual(f.scenes.activated,[f.sceneB]);
   await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
+ // Hub #277, owner decision: no Apply button. A dragged slider sends once on release, a keyboard step through a select sends once, Enter submits a text field, an invalid field is not sent, and a color picker sends when it closes.
+ await scenario('gestures send once: a dragged slider on release, keyboard steps on a select after a pause, Enter and blur on valid text fields, and a picker on close',async(f,page)=>{
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  // Drag with a pause longer than the keyboard settle delay: nothing is sent until the pointer releases, and the command carries the released value.
+  const box=await brightness.boundingBox();const at=fraction=>page.mouse.move(box.x+box.width*fraction,box.y+box.height/2,{steps:4});
+  await at(0.6);await page.mouse.down();await at(0.3);await page.waitForTimeout(500);assert.equal(general(f).length,0,'a pause mid-drag sends nothing');
+  await at(0.85);const released=await brightness.inputValue();await page.mouse.up();await until(()=>general(f).length===1);
+  assert.equal(general(f)[0].command.kind,'brightness.set');assert.equal(String(general(f)[0].command.percent),released,'the command carries the released value');
+  await page.waitForTimeout(500);assert.equal(general(f).length,1,'the release sends once');
+  await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
+  // Enter submits a text field of the multi-field Monitor view; an invalid value is kept in the field and not sent.
+  const filter=page.getByLabel('Label / ID filter').filter({visible:true});await filter.fill('enter');await filter.press('Enter');await until(()=>f.writes.some(w=>w.integration&&w.command.action.operation==='view'));
+  assert.equal(f.pixoo.configuration.filter.q,'enter');await statusOf(page,'Monitor view').filter({hasText:/^Saved\./}).waitFor();await page.getByLabel('Project ID').filter({visible:true}).and(page.locator(':enabled')).waitFor();const sent=f.writes.length;
+  const projectId=page.getByLabel('Project ID').filter({visible:true});await projectId.fill('not valid!');await projectId.press('Enter');await projectId.press('Tab');await page.waitForTimeout(400);
+  assert.equal(f.writes.length,sent,'an invalid value is not sent');assert.equal(await projectId.inputValue(),'not valid!','the invalid value stays in the field for correction');
+  await statusOf(page,'Monitor view').locator('xpath=..').getByText(/^Not sent: Project ID is not valid/).waitFor();
+  // A sibling select in the same form does not send the invalid value either.
+  await page.getByLabel('Monitor provider').filter({visible:true}).selectOption('codex');await page.waitForTimeout(400);assert.equal(f.writes.length,sent,'a sibling field cannot send an invalid value');
+  await projectId.fill('project-ok');await projectId.press('Tab');await until(()=>f.writes.length===sent+1);assert.equal(f.pixoo.configuration.filter.projectId,'project-ok');assert.equal(f.pixoo.configuration.filter.provider,'codex','the corrected form sends every field');
+  // Keyboard steps on a select send once, with the option the user stops on.
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();
+  const before=wallGeneral(f).length;await mode.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');
+  assert.equal(await mode.inputValue(),'Free','the select shows the stepped value at once');assert.equal(wallGeneral(f).length,before,'no command before the pause');
+  await until(()=>wallGeneral(f).length===before+1);await page.waitForTimeout(400);assert.equal(wallGeneral(f).length,before+1,'two steps send once');assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'mode.set',mode:'Free'});
+  await settled(page,'Free');
+  // A color picker sends only on its native change, which fires when the picker closes.
+  const color=page.locator('input[type=color]:visible');await color.waitFor();const nanoWrites=()=>f.writes.filter(w=>w.id==='wall'&&w.integration).length;const colorBefore=nanoWrites();
+  await color.evaluate(el=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(el,'#224466');el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.waitForTimeout(500);assert.equal(nanoWrites(),colorBefore,'picking sends nothing until the picker closes');
+  await color.evaluate(el=>el.dispatchEvent(new Event('change',{bubbles:true})));await until(()=>nanoWrites()===colorBefore+1);
+  assert.deepEqual(f.writes.filter(w=>w.id==='wall'&&w.integration).at(-1).command.command,{kind:'project.color',projectId:f.nano.projects[0].id,color:'#224466'});
+  await axe(page);
+ });
+ // Hub #277: a home widget renders the same control as the component page, sharing its guards, wording, running state and locks.
+ await scenario('home quick actions send guarded commands, share their lifecycle with the component page, and the home keeps drafts across navigation',async(f,page)=>{
+  const widget=page.locator('article[data-widget=component-status]').filter({has:page.getByRole('heading',{name:'wall',exact:true})});
+  const mode=widget.getByLabel('Device mode'),status=widget.locator('form.edit').filter({has:page.getByRole('heading',{name:'Mode',exact:true})}).locator(':scope>[role=status]');
+  await mode.waitFor();
+  let expected=wallGuard(f);await mode.selectOption('Quiet');
+  await status.filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
+  assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'mode.set',mode:'Quiet'}},'the widget sends one guarded mode command');
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('dd')).some(el=>el.textContent==='Quiet'));
+  expected=wallGuard(f);await widget.getByRole('button',{name:'Turn on',exact:true}).click();await until(()=>wallGeneral(f).length===2);
+  assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'power.set',on:true}},'the widget sends one guarded power command');
+  await settled(page,'Power on');assert.equal(f.writes.length,2,'nothing was sent from the page instance');
+  // An uncertain result on the widget is the same lock on the page, and stays until one explicit reload.
+  await widget.getByRole('combobox',{name:'Device mode',exact:true,disabled:false}).waitFor();
+  f.setUncertain(true);await mode.selectOption('Free');
+  await status.filter({hasText:'Result unknown: this may have reached the device'}).waitFor();f.setUncertain(false);const sent=f.writes.length;
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();
+  const pageMode=form(page,'Mode');await statusOf(page,'Mode').filter({hasText:'Result unknown: this may have reached the device'}).waitFor();
+  assert.equal(await pageMode.getByLabel('Device mode').isDisabled(),true,'the page shares the widget\'s lock');assert.equal(await pageMode.getByRole('button',{name:'Reload current values',exact:true}).count(),1);
+  await page.getByRole('link',{name:/^Home/}).click();await widget.getByRole('button',{name:'Reload current values',exact:true}).waitFor();
+  assert.equal(await mode.isDisabled(),true,'the lock survives the round trip');assert.equal(f.writes.length,sent,'nothing was retried');
+  await widget.getByRole('button',{name:'Reload current values',exact:true}).click();await widget.getByRole('combobox',{name:'Device mode',exact:true,disabled:false}).waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await pageMode.getByRole('combobox',{name:'Device mode',exact:true,disabled:false}).waitFor();
+  assert.equal(await pageMode.getByRole('button',{name:'Reload current values',exact:true}).count(),0,'one reload unlocks both instances');
+  // A running command on the widget blocks the page instance too.
+  await page.getByRole('link',{name:/^Home/}).click();f.setDelay(0);
+  await page.route('**/api/controllers/v1/wall/commands',async route=>{await new Promise(r=>setTimeout(r,700));await route.continue();});
+  await mode.selectOption('Work');await status.filter({hasText:'Sending…'}).waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();assert.equal(await pageMode.getByLabel('Device mode').isDisabled(),true,'the page is busy while the widget\'s command runs');
+  await statusOf(page,'Mode').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();await page.unroute('**/api/controllers/v1/wall/commands');
+  // Session drafts and the filter survive a trip to a component page; the skip link moves focus without changing the page.
+  await page.getByRole('link',{name:/^Home/}).click();const label=page.getByLabel('Chosen label');await label.fill('Keep me');assert.equal(await page.getByRole('heading',{name:'Keep me',exact:true}).count(),0,'typing sends nothing');
+  await page.getByLabel('Find a session').fill('Keep');await page.getByRole('heading',{name:'Keep me',exact:true}).waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Label / ID filter').waitFor();await page.getByRole('link',{name:/^Home/}).click();
+  assert.equal(await page.getByLabel('Find a session').inputValue(),'Keep','the filter survives navigation');await page.getByRole('heading',{name:'Keep me',exact:true}).filter({visible:true}).waitFor();assert.equal(await label.inputValue(),'Keep me','leaving the label field sent it');
+  await page.locator('a.skip').focus();await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>document.activeElement?.id),'main','the skip link moves focus to the main column');assert.equal(new URL(page.url()).hash,'#/','the skip link changes no route');
+  await page.getByRole('heading',{name:'Home',exact:true}).filter({visible:true}).waitFor();
+  await axe(page);
+ });
  await scenario('a read-only Nanoleaf device shows mode, power, brightness and scenes without configuration edit forms',async(f,page)=>{
-  await page.getByRole('button',{name:'panels nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await page.getByRole('link',{name:'panels nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
   const view=page.locator('section:visible');
-  for(const label of ['Device mode','Power','Saved scene'])assert.equal(await page.getByRole('combobox',{name:label,exact:true}).filter({visible:true}).count(),1,label);
+  for(const label of ['Device mode','Saved scene'])assert.equal(await page.getByRole('combobox',{name:label,exact:true}).filter({visible:true}).count(),1,label);assert.equal(await page.getByRole('button',{name:/^Turn (on|off)$/}).filter({visible:true}).count(),2,'unknown power offers both choices');
   const scene=page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true});await scene.waitFor();
-  assert.deepEqual(await scene.locator('option').allTextContents(),['Forest','Sunset'],'the Panels label scenes with their own user-chosen names');
+  assert.deepEqual(await scene.locator('option').allTextContents(),['Choose a scene to activate','Forest','Sunset'],'the Panels label scenes with their own user-chosen names');
   await view.getByText('Not supported by this device’s integration: integration settings, element mapping, task mapping and project colors.',{exact:true}).waitFor();
   for(const label of ['Layout style','Coverage','Element','Element project','Task','Task project','Color project','Color'])assert.equal(await page.getByLabel(label,{exact:true}).filter({visible:true}).count(),0,label);
-  for(const heading of ['Integration settings','Element assignments','Task assignments','Project appearance'])assert.equal(await page.getByRole('heading',{name:heading,exact:true}).filter({visible:true}).count(),0,heading);
+  assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),0);
   assert.equal(await view.getByText('General controls unavailable',{exact:false}).count(),0);assert.equal(await view.getByText('Mappings use controller-declared',{exact:false}).count(),0);
   assert.deepEqual(await textOverlaps(page),[]);
   const panels=()=>f.writes.filter(w=>w.id==='panels');const guard=()=>({requestId:structuredClone(f.states.panels.nextRequestId),expectedConfigurationRevision:f.states.panels.configurationRevision,expectedGeneration:structuredClone(f.states.panels.generation)});
-  let expected=guard();await scene.selectOption(f.sceneD);await visible(page,'button','Activate scene').click();await until(()=>panels().length===1);
+  let expected=guard();await scene.selectOption(f.sceneD);await until(()=>panels().length===1);
   assert.deepEqual(panels()[0],{id:'panels',integration:false,command:{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'panels',...expected,command:{kind:'scene.activate',sceneId:f.sceneD}}});
   await view.locator('[role=status]').filter({hasText:/Activate scene: (Queued|Sent to the device)/}).waitFor();
-  expected=guard();await brightness.fill('30');await visible(page,'button','Apply brightness').click();await until(()=>panels().length===2);
+  expected=guard();await brightness.fill('30');await until(()=>panels().length===2);
   assert.deepEqual(panels()[1].command,{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'panels',...expected,command:{kind:'brightness.set',percent:30}});
   await settled(page,'Brightness 30%');assert.equal(f.writes.filter(w=>w.integration).length,0,'a read-only device receives no extension command');assert.equal(f.writes.filter(w=>w.id==='wall').length,0,'the Lines receive nothing');
   if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only.png',fullPage:true});
   await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(await textOverlaps(page),[]);await axe(page);
   if(process.env.DASHBOARD_RECEIPTS)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/panels-read-only-mobile.png',fullPage:true});
   // The Lines keep every configuration edit alongside the Panels.
-  await page.setViewportSize({width:1280,height:900});await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').filter({visible:true}).waitFor();
-  for(const heading of ['Integration settings','Element assignments','Task assignments','Project appearance'])assert.equal(await page.getByRole('heading',{name:heading,exact:true}).filter({visible:true}).count(),1,heading);
+  await page.setViewportSize({width:1280,height:900});await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByLabel('Layout style').filter({visible:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),1);for(const label of ['Element','Task','Color project'])assert.equal(await page.getByRole('combobox',{name:label,exact:true}).filter({visible:true}).count(),1,label);
   assert.equal(await page.locator('section:visible').getByText('Not supported by this device’s integration',{exact:false}).count(),0);
   await page.locator('section:visible').getByText('Session source: shared. Mappings use controller-declared neutral identifiers.',{exact:true}).waitFor();
   // An operation withdrawn after the form rendered: the fresh read just before sending applies the same rule and sends nothing. A poll that re-renders first also sends nothing.
-  await page.getByLabel('Layout style').filter({visible:true}).selectOption('project');const sent=f.writes.length;
-  f.nano.capabilities['settings.set']={supported:false,scope:'control'};
-  await page.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Apply integration settings'&&b.offsetParent!==null)?.click());
+  const sent=f.writes.length;f.nano.capabilities['settings.set']={supported:false,scope:'control'};
+  await page.getByLabel('Layout style').filter({visible:true}).selectOption('project');
   await page.locator('section:visible').getByText('Not supported by this device’s integration: integration settings.',{exact:true}).waitFor();
   await page.waitForTimeout(300);assert.equal(f.writes.length,sent,'a withdrawn operation sends no extension command');assert.equal(await page.getByRole('heading',{name:'Integration settings',exact:true}).filter({visible:true}).count(),0);
  },{panels:true});
  await scenario('a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry',async(f,page)=>{
   f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';
   let frozen=null,freeze=false;await page.route('**/api/controllers/v1/wall/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;const scene=page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true});
   // The controller left Free after the browser observed it: typed failure before any write, action stays available.
   f.states.wall.state.desired.mode={status:'known',value:'Work'};f.nano.mode='Work';
-  await visible(page,'button','Activate scene').click();await page.locator('section:visible [role=status]').filter({hasText:'unsupported-capability'}).waitFor();assert.deepEqual(f.scenes.activated,[]);assert.equal(f.writes.length,1);
-  freeze=false;await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await visible(page,'button','Activate scene').isDisabled(),true,'the refreshed snapshot shows the observed mode');
+  await scene.selectOption(f.sceneA);await page.locator('section:visible [role=status]').filter({hasText:'unsupported-capability'}).waitFor();assert.deepEqual(f.scenes.activated,[]);assert.equal(f.writes.length,1);
+  freeze=false;await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await scene.isDisabled(),true,'the refreshed snapshot shows the observed mode');
   // A pending mode change disables scenes with the reason and hides the switch.
   f.states.wall.state.pending=[{requestId:structuredClone(f.states.wall.nextRequestId),command:{kind:'mode.set',mode:'Free'},generation:structuredClone(f.states.wall.generation)}];await page.locator('section:visible').getByText('Unavailable: Nanoleaf is switching to Free; wait for the observed mode',{exact:true}).waitFor();assert.equal(await visible(page,'button','Switch to Free').count(),0);
-  f.states.wall.state.pending=[];f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';await page.getByRole('button',{name:'Activate scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen.state.desired.mode.value==='Free');freeze=true;
+  f.states.wall.state.pending=[];f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen.state.desired.mode.value==='Free');freeze=true;
   // Another client consumes the ticket: typed conflict, nothing repeated, action available after the refreshed snapshot.
   const external={apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...wallGuard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/wall/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
-  await visible(page,'button','Activate scene').click();await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.deepEqual(f.scenes.activated,[]);
-  freeze=false;await page.getByRole('button',{name:'Activate scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Activate scene: (Queued|Sent)/}).count(),0,'a rejected ticket does not adopt another client\'s receipt');
-  const submitted=f.writes.length;f.setUncertain(true);await visible(page,'button','Activate scene').click();await page.locator('section:visible [role=status]').filter({hasText:'Activate scene: Result unknown: this may have reached the device'}).waitFor();await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted+1,'uncertain scene command is not retried');assert.equal(await visible(page,'button','Activate scene').isDisabled(),true,'uncertain result stays locked');f.setUncertain(false);
-  await visible(page,'button','Reload current values').click();await page.getByRole('button',{name:'Activate scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(f.writes.length,submitted+1);assert.equal(f.writes.filter(w=>w.integration).length,0);
+  await scene.selectOption(f.sceneA);await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.deepEqual(f.scenes.activated,[]);
+  freeze=false;await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Activate scene: (Queued|Sent)/}).count(),0,'a rejected ticket does not adopt another client\'s receipt');
+  const submitted=f.writes.length;f.setUncertain(true);await scene.selectOption(f.sceneA);await page.locator('section:visible [role=status]').filter({hasText:'Activate scene: Result unknown: this may have reached the device'}).waitFor();await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted+1,'uncertain scene command is not retried');assert.equal(await scene.isDisabled(),true,'uncertain result stays locked');f.setUncertain(false);
+  await visible(page,'button','Reload current values').click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(f.writes.length,submitted+1);assert.equal(f.writes.filter(w=>w.integration).length,0);
  });
  // Hub #231: fresh guards, one-step settings and explicit same-mode reapply.
- const form=(page,heading)=>page.locator('form.edit').filter({visible:true}).filter({has:page.getByRole('heading',{name:heading,exact:true})});
- const statusOf=(page,heading)=>form(page,heading).locator(':scope>[role=status]');
  await scenario('a generation advance between render and activation sends one command with current guards; a later race is shown and never resubmitted',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
   // Pixoo advances its controller v1 generation on every playlist item. The rendered snapshot is now behind; the configuration revision is unchanged.
   f.advance('pixel');let expected=guard(f);await visible(page,'button','Pause').click();await until(()=>general(f).length===1);
   assert.deepEqual(general(f)[0],{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'media.control',action:'pause'}},'the command carries the fresh read\'s ticket, revision and generation');
   await page.locator('section:visible [role=status]').filter({hasText:/^Pause: (Queued|Sent to the device)/}).waitFor();assert.deepEqual(f.media.actions,['pause']);
-  // An open draft is not a conflict when only the generation advances.
-  await page.getByRole('button',{name:'Pause',exact:true,disabled:false}).filter({visible:true}).waitFor();await brightness.fill('35');const reads=f.requests.filter(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot').length;f.advance('pixel');
+  // A generation advance before a slider settles is not a conflict: the send carries the fresh generation.
+  await page.getByRole('button',{name:'Pause',exact:true,disabled:false}).filter({visible:true}).waitFor();const reads=f.requests.filter(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot').length;f.advance('pixel');
   await until(()=>f.requests.filter(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot').length>reads);await page.waitForTimeout(300);
-  assert.equal(await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).count(),0,'a generation advance alone is not a conflict');
-  expected=guard(f);await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===2);assert.deepEqual(general(f)[1],{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:35}});
+  expected=guard(f);await brightness.fill('35');await until(()=>general(f).length===2);assert.deepEqual(general(f)[1],{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:35}});
   // The generation advances after B.U.N.N.Y.'s fresh read but before the controller admits the command: typed, no effects, nothing resubmitted.
   await page.getByRole('button',{name:'Next',exact:true,disabled:false}).filter({visible:true}).waitFor();
   await page.route('**/api/controllers/v1/pixel/commands',async route=>{f.advance('pixel');await route.continue();});
@@ -211,24 +282,24 @@ try {
   await page.unroute('**/api/controllers/v1/pixel/commands');await visible(page,'button','Next').click();await until(()=>f.media.actions.length===2);assert.deepEqual(f.media.actions,['pause','next'],'one explicit press tries again with current values');
  });
  await scenario('accepted brightness and power changes leave their forms ready for the next change without another action',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
-  await brightness.fill('30');await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===1);
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await brightness.fill('30');await until(()=>general(f).length===1);
   await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\. B\.U\.N\.N\.Y\. can’t see the device, so check it to confirm\.)$/}).waitFor();
   await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});
-  assert.equal(await brightness.inputValue(),'30','the form shows the refreshed value');assert.equal(await form(page,'Brightness').getByRole('button').count(),1,'no discard or reload step remains');assert.equal(await visible(page,'button','Apply brightness').isDisabled(),true,'an unchanged form submits nothing');
-  await brightness.fill('20');await visible(page,'button','Apply brightness').click();await until(()=>general(f).length===2);assert.deepEqual(general(f)[1].command,{kind:'brightness.set',percent:20},'the next change needs only its own apply');
-  const power=page.getByRole('combobox',{name:'Screen power',exact:true}).filter({visible:true});await power.selectOption('off');await visible(page,'button','Apply screen power').click();await until(()=>general(f).length===3);
-  await page.waitForFunction(()=>Array.from(document.querySelectorAll('select')).some(el=>el.offsetParent&&!el.disabled&&el.value==='off'));assert.equal(await power.inputValue(),'off');await power.selectOption('on');await visible(page,'button','Apply screen power').click();await until(()=>general(f).length===4);assert.deepEqual(general(f)[3].command,{kind:'power.set',on:true});
+  assert.equal(await brightness.inputValue(),'30','the form shows the refreshed value');assert.equal(await form(page,'Brightness').getByRole('button').count(),0,'no apply, discard or reload step remains');
+  await brightness.fill('20');await until(()=>general(f).length===2);assert.deepEqual(general(f)[1].command,{kind:'brightness.set',percent:20},'the next change needs no other step');
+  await visible(page,'button','Turn off').click();await until(()=>general(f).length===3);
+  await page.getByRole('button',{name:'Turn on',exact:true,disabled:false}).filter({visible:true}).waitFor();assert.equal(await visible(page,'button','Turn off').count(),0,'the button names the one action left');await visible(page,'button','Turn on').click();await until(()=>general(f).length===4);assert.deepEqual(general(f)[3].command,{kind:'power.set',on:true});
   assert.equal(await page.locator('section:visible [role=status]').filter({hasText:/Physical result|Result updated/}).count(),0,'old wording is gone');
   // Uncertain results still lock the form until an explicit reload, and nothing retries.
-  f.setUncertain(true);await brightness.fill('25');await brightness.focus();await page.keyboard.press('Tab');await page.keyboard.press('Enter');await statusOf(page,'Brightness').filter({hasText:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.'}).waitFor();
+  f.setUncertain(true);await brightness.fill('25');await statusOf(page,'Brightness').filter({hasText:'Result unknown: this may have reached the device (uncertain-result). Check the device, then reload current values before trying again.'}).waitFor();
   const submitted=f.writes.length;await page.waitForTimeout(5500);assert.equal(f.writes.length,submitted,'an uncertain change is not retried');assert.equal(await brightness.isDisabled(),true,'uncertain results keep the lock');assert.ok(await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).evaluate(el=>el===document.activeElement),'a locked form keeps keyboard focus on its enabled reload button');f.setUncertain(false);
   await form(page,'Brightness').getByRole('button',{name:'Reload current values',exact:true}).click();await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});assert.equal(await brightness.inputValue(),'20','reload shows the controller\'s current desired value; the lost command never reached it');
   await axe(page);
  });
  await scenario('Reapply Work ends a Nanoleaf override with one mode command; nothing to reapply is shown as already in effect',async(f,page)=>{
-  await page.getByRole('button',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
-  await brightness.fill('40');await visible(page,'button','Apply brightness').click();await page.locator('section:visible').getByText('Brightness override active: 40%',{exact:false}).waitFor();
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  await brightness.fill('40');await page.locator('section:visible').getByText('Brightness override active: 40%',{exact:false}).waitFor();
   const reapply=visible(page,'button','Reapply Work');const before=wallGeneral(f).length;const expected=wallGuard(f);await reapply.focus();await page.keyboard.press('Enter');await until(()=>wallGeneral(f).length===before+1);
   assert.deepEqual(wallGeneral(f).at(-1),{apiVersion:'1.0',controllerId:'wall-controller',deviceId:'wall',...expected,command:{kind:'mode.set',mode:'Work'}},'exactly one guarded mode command for the active mode');assert.equal(f.writes.filter(w=>w.integration).length,0);
   await page.locator('section:visible').getByText('No brightness override is active',{exact:false}).waitFor();assert.equal(f.nano.mode,'Work');
@@ -241,7 +312,7 @@ try {
  });
  await scenario('Start Monitor starts an inactive Pixoo Monitor with one mode command and names the screen-off reason',async(f,page)=>{
   f.pixoo.configuration.mode='monitor';f.pixoo.participating=false;f.states.pixel.state.desired.power={status:'known',value:false};
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const start=visible(page,'button','Start Monitor');await start.waitFor();
   // An initial device read can still carry the power state from before the fixture mutation.
   await page.locator('section:visible').getByText('Unavailable: The screen is off. Turn it on first; Monitor shows only while the screen is on.',{exact:false}).waitFor();assert.equal(await start.isDisabled(),true);
   f.states.pixel.state.desired.power={status:'known',value:true};await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();await axe(page);
@@ -249,32 +320,31 @@ try {
   assert.equal(f.writes[0].integration,true);assert.deepEqual(f.writes[0].command.action,{operation:'mode',mode:'monitor'});assert.equal(f.writes[0].command.expectedConfigurationRevision,revision);assert.equal(f.writes[0].command.expectedGeneration,generation);
   await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Saved. B.U.N.N.Y. can’t see the device, so check it to confirm.'}).waitFor();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await start.count(),0,'Start Monitor disappears once participation is observed');assert.equal(f.writes.length,1);
-  await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
+  await page.reload();await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByText('Participation: yes',{exact:false}).waitFor();
   assert.equal(await form(page,'Mode').locator('.switch').count(),0,'a presenting Monitor shows no empty Start Monitor block');
   // A Pixoo integration draft ignores a presentation-generation advance, such as a suspend after a failed frame, and is sent with the fresh generation.
   const filter=page.getByLabel('Label / ID filter');await filter.fill('focus');const reads=f.requests.filter(r=>r.id==='pixel'&&r.url.includes('integration')).length;f.pixoo.generation++;
   await until(()=>f.requests.filter(r=>r.id==='pixel'&&r.url.includes('integration')).length>reads);await page.waitForTimeout(300);
-  assert.equal(await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).count(),0,'a presentation-generation advance alone is not a conflict');
-  const presentation=f.pixoo.generation;await visible(page,'button','Apply monitor view').click();await until(()=>f.writes.length===2);assert.equal(f.writes[1].command.expectedGeneration,presentation,'the view command carries the fresh presentation generation');assert.equal(f.pixoo.configuration.filter.q,'focus');
-  // A configuration change from another client still conflicts.
-  await page.getByRole('button',{name:'Apply monitor view',exact:true,disabled:true}).filter({visible:true}).waitFor();await filter.fill('other');f.pixoo.configurationRevision++;await page.locator('section:visible').getByText('Another client changed this setting',{exact:false}).waitFor();assert.equal(await visible(page,'button','Apply monitor view').isDisabled(),true);
+  const presentation=f.pixoo.generation;await filter.press('Tab');await until(()=>f.writes.length===2);assert.equal(f.writes[1].command.expectedGeneration,presentation,'the view command carries the fresh presentation generation');assert.equal(f.pixoo.configuration.filter.q,'focus');
+  // A configuration change from another client is not a conflict for a later change: the send carries the fresh revision.
+  await page.getByLabel('Label / ID filter').filter({visible:true}).waitFor();f.pixoo.configurationRevision++;await filter.fill('other');await filter.press('Tab');await until(()=>f.writes.length===3);assert.equal(f.writes[2].command.expectedConfigurationRevision,f.pixoo.configurationRevision-1,'the change carries the revision read after the other client’s edit');assert.equal(f.pixoo.configuration.filter.q,'other');
   // An uncertain Start Monitor keeps its explicit reload even when the refreshed read shows Monitor presenting.
-  await visible(page,'button','Discard my edit').click();f.pixoo.participating=false;await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();
+  f.pixoo.participating=false;await page.getByRole('button',{name:'Start Monitor',exact:true,disabled:false}).filter({visible:true}).waitFor();
   f.setUncertain(true);await visible(page,'button','Start Monitor').click();await page.locator('section:visible [role=status]').filter({hasText:'Start Monitor: Result unknown'}).waitFor();f.setUncertain(false);f.pixoo.participating=true;
   await page.getByText('Participation: yes',{exact:false}).waitFor();await form(page,'Mode').getByRole('button',{name:'Reload current values',exact:true}).click();
-  await form(page,'Mode').locator('.switch').waitFor({state:'detached'});assert.equal(f.writes.length,3,'nothing was retried');assert.equal(general(f).length,0,'no media or other command is sent across Start Monitor, the view edit and the uncertain retry check');
+  await form(page,'Mode').locator('.switch').waitFor({state:'detached'});assert.equal(f.writes.length,4,'nothing was retried');assert.equal(general(f).length,0,'no media or other command is sent across Start Monitor, the view edits and the uncertain retry check');
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
  await scenario('forms and actions share one lifecycle: a failed fresh read sends nothing, a failed refresh keeps the result, and a double activation sends once',async(f,page)=>{
-  await page.getByRole('button',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
   // While failing, every Pixoo snapshot read answers 503. A poll still in flight when the context closes is abandoned instead of crashing the runner.
   let failing=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(failing){await route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}});return;}await route.continue();}catch{await route.abort().catch(()=>{});}});
   const status=page.locator('section:visible [role=status]'),enabled=name=>page.getByRole('button',{name,exact:true,disabled:false}).filter({visible:true});
   // The fresh read taken just before sending fails: nothing is sent and the draft is kept. Once reads recover, one explicit apply sends with current guards.
-  await brightness.fill('40');let before=f.writes.length;failing=true;await visible(page,'button','Apply brightness').click();
-  await status.filter({hasText:'Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed. Your edit is kept.'}).waitFor();
-  assert.equal(f.writes.length,before,'a failed fresh read sends nothing');assert.equal(await brightness.inputValue(),'40');
-  failing=false;await enabled('Apply brightness').waitFor();let expected=guard(f);await visible(page,'button','Apply brightness').click();await until(()=>f.writes.length===before+1);
+  let before=f.writes.length;failing=true;await brightness.fill('40');
+  await status.filter({hasText:'Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed.'}).waitFor();
+  assert.equal(f.writes.length,before,'a failed fresh read sends nothing');assert.equal(await brightness.inputValue(),'60','the control shows the current value again');
+  failing=false;await page.waitForFunction(()=>{const input=Array.from(document.querySelectorAll('input[type=range]')).find(el=>el.offsetParent);return input&&!input.disabled;});let expected=guard(f);await brightness.fill('40');await until(()=>f.writes.length===before+1);
   assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'brightness.set',percent:40}});
   await enabled('Pause').waitFor();before=f.writes.length;failing=true;await visible(page,'button','Pause').click();
   await status.filter({hasText:'Pause: Not sent: B.U.N.N.Y. couldn’t read the device’s current state. Nothing changed.'}).waitFor();assert.equal(f.writes.length,before);
@@ -285,8 +355,8 @@ try {
   await status.filter({hasText:/^Pause: (Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();assert.equal(f.writes.length,before+1);
   assert.deepEqual(general(f).at(-1),{apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...expected,command:{kind:'media.control',action:'pause'}},'the action recovers with current guards after the failed read');
   failing=false;await enabled('Pause').waitFor();
-  await brightness.fill('20');await enabled('Apply brightness').waitFor();await visible(page,'button','Apply brightness').click();
-  await status.filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).first().waitFor();assert.equal(f.writes.length,before+2);
+  await brightness.fill('20');await until(()=>f.writes.length===before+2);
+  await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
   assert.equal(await status.filter({hasText:/Not applied|Nothing changed|Result unknown/}).count(),0,'a failed refresh never turns an accepted command into a failure');
   failing=false;await page.unroute('**/api/controllers/v1/pixel/commands');await page.waitForTimeout(5500);assert.equal(f.writes.length,before+2,'nothing is resent after a failed refresh');
   // A double activation of one action is one deliberate command.
@@ -298,7 +368,7 @@ try {
   const section=page.locator('section:visible'),status=section.locator('[role=status]').last();
   const buttons=async()=>(await section.getByRole('button').allTextContents()).filter(name=>['Play','Pause','Next','Previous'].includes(name));
   const fact=async label=>section.locator('dl>div').filter({has:page.getByText(label,{exact:true})}).locator('dd').innerText();
-  await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).click();
+  await page.getByRole('link',{name:'ht-a9 now playing',exact:true}).click();
   await section.getByRole('heading',{name:'Song',exact:true}).waitFor();
   assert.deepEqual([await fact('Artist'),await fact('Album'),await fact('Status'),await fact('Source')],['Artist','Album','Playing','ht-a9']);
   assert.deepEqual(await buttons(),['Pause','Next','Previous'],'only declared controls appear; Play is not declared');
@@ -325,7 +395,7 @@ try {
   f.sony.skew=31000;await section.getByRole('heading',{name:'No track information',exact:true}).waitFor();
   await section.getByText('Unavailable: The source is unavailable',{exact:true}).waitFor();assert.equal(await fact('Title'),'Not reported');await axe(page);
   // Without the source grant the view disappears and polling stops.
-  f.reconnect({granted:['wall','pixel']});await page.getByRole('button',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
+  f.reconnect({granted:['wall','pixel']});await page.getByRole('link',{name:'ht-a9 now playing',exact:true}).waitFor({state:'detached',timeout:8000});
   let reads=0;page.on('request',r=>{if(r.url().includes('/api/playback/'))reads++;});await page.waitForTimeout(2500);assert.equal(reads,0,'no playback reads without the grant');
   assert.deepEqual(f.sony.calls,['setPlayNextContent','setPlayPreviousContent','setPlayNextContent']);
  },{playback:true});
@@ -334,7 +404,7 @@ try {
   try{
    const launch=await requestBrowserLaunch(f.hub.directory);
    await page.goto(launch.url+'/#launch='+launch.code);
-   await page.getByRole('heading',{name:'Your work, at a glance.'}).waitFor();
+   await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
    assert.equal(new URL(page.url()).hash,'','the one-time launch code is removed from browser history');
    assert.equal(f.writes.length,0,'launch and inspection do not command devices');
    await page.reload();await page.getByText('Open B.U.N.N.Y. with the Hub launcher.').waitFor();
