@@ -256,12 +256,21 @@ def build(check=False):
     for item in data["components"]:
         outputs[ROOT / "components" / f'{item["id"]}.html'] = frame(data, item["name"], component_body(item, data), "component", item["id"])
     for path, content in outputs.items():
+        content = SKIN.inject_places(content, 'atlas', path)
         if check:
             if not path.is_file() or path.read_text(encoding="utf-8") != content:
                 raise ValueError(f"Generated document drift: {path.relative_to(ROOT)}")
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
+    state_viewer = ROOT / 'diagrams/state-and-actions.html'
+    original = state_viewer.read_text(encoding='utf-8')
+    with_places = SKIN.inject_places(original, 'atlas', state_viewer)
+    if check:
+        if original != with_places:
+            raise ValueError('State and actions viewer Places navigation drift')
+    elif original != with_places:
+        state_viewer.write_text(with_places, encoding='utf-8')
     print(f'{"Verified" if check else "Built"} {len(outputs)} HTML documents from {len(data["components"])} component sources.')
 
 

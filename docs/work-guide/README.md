@@ -558,6 +558,7 @@ No product service or hardware test is needed for this document.
 python3 docs/work-guide/work/build_guide.py
 python3 docs/work-guide/work/test_maintenance.py
 node docs/work-guide/work/check_guide.cjs
+node docs/skins/check_places.cjs
 # After committing intended generated output, rebuild and require no drift:
 python3 docs/work-guide/work/build_guide.py
 git diff --exit-code -- docs/work-guide/outputs

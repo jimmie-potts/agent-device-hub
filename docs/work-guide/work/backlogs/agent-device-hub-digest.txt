@@ -164,7 +164,7 @@
 #312 [CLOSED] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
-#315 [OPEN] Refresh the work guide nightly into one rolling pull request
+#315 [CLOSED] Refresh the work guide nightly into one rolling pull request
 #316 [CLOSED] Warn at guide refresh when an open story names a retired term
 #317 [OPEN] Merge and publish the nightly guide refresh automatically
 #319 [OPEN] Add the LIFX Beam to the LIFX controller and B.U.N.N.Y.
@@ -242,12 +242,11 @@
 #409 [OPEN] Draw every device page from a shape its owner publishes
 #415 [OPEN] Add the LIFX bulb to the Work, Free and Quiet desk presets
 #416 [OPEN] Fade LIFX status changes and pulse once when attention starts
-#417 [CLOSED] Install the hub with #323 and check the Panels page in the installed dashboard
 #418 [OPEN] Offer to register each device a connected controller lists, as one explicit setup step
 #424 [OPEN] Carry session titles and project names in shared agent state
 #425 [OPEN] Carry the latest prompt and agent response in shared agent state for devices
 #426 [OPEN] Use real titles in the Tidbyt tile, moments and device controls
-#427 [OPEN] Document upgrading the installed hub with a backup, receipt and rollback
+#427 [OPEN] Upgrade and roll back the installed hub with one command under the install contract
 #428 [OPEN] Report the running hub version and source revision in health and on the Connections page
 #429 [OPEN] Install B.U.N.N.Y. as its own app window from the browser
 #430 [OPEN] See and end open B.U.N.N.Y. browser sessions from the Connections page
@@ -267,3 +266,4 @@
 #457 [OPEN] Show what automatic status is painting on the LIFX page
 #458 [OPEN] Publish one overall agent status from the hub for B.U.N.N.Y. and every device
 #459 [OPEN] Show finding causes beside deliveries by model in the work guide
+#465 [OPEN] Define the shared install contract and receipt schema for installed runtimes

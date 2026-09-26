@@ -802,7 +802,8 @@ assert document.count('</dialog><script>') == 1, 'Page script anchor missing'
 document = document.replace('</dialog><script>', f'</dialog><script id="snapshot-data" type="application/json">{metadata_json}</script><script id="issue-briefs" type="application/json">{briefs_json}</script><script id="issue-recommendations" type="application/json">{recommendations_json}</script><script>')
 assert set(all_primary) <= referenced
 assert document.count('class="diagram"') == len(AD.DIAGRAMS) and document.count('<details class="guide"') == len(GUIDES)
-assert 'src="http' not in document and 'href="http' not in re.sub(r'href="https://github\.com/[^"]*"', '', document), 'Only GitHub links may leave the document'
+assert 'src="http' not in document and 'href="http' not in re.sub(r'href="https://github\.com/[^"]*"', '', document), 'Only GitHub links may leave the guide body'
+document = SKIN.inject_places(document, 'guide', OUT)
 if args.validate_inputs:
     result = {'status': 'direction-stale' if direction_error else 'passed',
               'directionError': str(direction_error) if direction_error else None,

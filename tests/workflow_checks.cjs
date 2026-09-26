@@ -354,11 +354,14 @@ test('guide CI retains its validation and review artifacts', () => {
           { name: 'Check system design navigation and print output',
             run:
              'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_DESIGN_RECEIPTS="$RUNNER_TEMP/bunny-design-review" node docs/system-design/check.cjs' },
+          { name: 'Check shared Places on mobile',
+            run:
+             'GUIDE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/guide-browser/node_modules/playwright" BUNNY_PLACES_RECEIPTS="$RUNNER_TEMP/bunny-places-review" node docs/skins/check_places.cjs' },
           { uses: 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
             with:
              { name: 'work-guide-review',
                path:
-                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-design-review\n',
+                'docs/work-guide/work/guide-*.png\ndocs/work-guide/work/guide-print-check.pdf\ndocs/work-guide/work/guide-verification.json\n${{ runner.temp }}/bunny-places-review/\n${{ runner.temp }}/bunny-design-review\n',
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });

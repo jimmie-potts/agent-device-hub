@@ -7,8 +7,11 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path, PurePosixPath
 import re
-import shutil
+import sys
 from urllib.parse import unquote, urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skins'))
+import skin as SKIN  # noqa: E402
 
 
 ALLOWED_DATABASE_SUFFIXES = {
@@ -55,6 +58,15 @@ def public_files(atlas):
 
 
 def public_html(name, content):
+    if '<!-- places:start -->' in content:
+        match = re.search(r'data-current="([a-z]+)"', content)
+        if not match:
+            raise ValueError(f'Missing Places identity in {name}')
+        content = SKIN.inject_places(content, match.group(1), Path(name), public=True)
+    elif name.startswith('reference/database/'):
+        content = SKIN.inject_places(content, 'reference', Path(name), public=True)
+    else:
+        raise ValueError(f'Missing source Places navigation in {name}')
     # The authored atlas uses a sibling path inside the private Hub repository.
     # Pages places the nine reviewed viewers directly under /architecture/.
     if "../work-guide/outputs/architecture/" in content:
@@ -138,7 +150,7 @@ def export(source, site):
     manifest = {}
     for name in files:
         content = (atlas / name).read_bytes()
-        if name.endswith(".html") and not name.startswith("reference/database/"):
+        if name.endswith(".html"):
             content = public_html(name, content.decode("utf-8")).encode("utf-8")
         elif name.endswith(".css"):
             content = public_css(name, content.decode("utf-8")).encode("utf-8")
@@ -147,23 +159,34 @@ def export(source, site):
         output.write_bytes(content)
         manifest[name] = digest(content)
     check_links(target, files)
-    (target / "manifest.json").write_text(
-        json.dumps({"version": 1, "publicRoot": PUBLIC_ROOT + "atlas/", "files": manifest},
-                   indent=2, sort_keys=True) + "\n", encoding="utf-8")
     guide_root = source / "docs/work-guide/outputs"
     guide = (guide_root / "agent-device-work-guides.html").read_text(encoding="utf-8")
-    local_link = 'href="../../system-design/index.html"'
+    local_link = 'class="atlas-link" href="../../system-design/index.html"'
     if guide.count(local_link) != 1:
         raise ValueError("Missing local atlas link in generated work guide")
     (site / "index.html").write_text(
-        guide.replace(local_link, 'href="atlas/index.html"'), encoding="utf-8")
+        SKIN.inject_places(guide.replace(local_link, 'class="atlas-link" href="atlas/index.html"'), 'guide', site / 'index.html', public=True), encoding="utf-8")
     viewers = sorted((guide_root / "architecture").glob("*.html"))
     if len(viewers) != 9 or any(path.is_symlink() for path in viewers):
         raise ValueError("Expected nine regular architecture viewers")
     architecture = site / "architecture"
     architecture.mkdir()
     for viewer in viewers:
-        shutil.copyfile(viewer, architecture / viewer.name)
+        document = viewer.read_text(encoding='utf-8')
+        (architecture / viewer.name).write_text(
+            SKIN.inject_places(document, 'architecture', architecture / viewer.name, public=True), encoding='utf-8')
+    places_pages = {}
+    for page in sorted(site.rglob('*.html')):
+        document = page.read_text(encoding='utf-8')
+        match = re.search(r'data-current="([a-z]+)"', document)
+        if not match or document.count('<!-- places:start -->') != 1:
+            raise ValueError(f'Missing exported Places navigation: {page.relative_to(site)}')
+        if SKIN.inject_places(document, match.group(1), page, public=True) != document:
+            raise ValueError(f'Non-public Places destination: {page.relative_to(site)}')
+        places_pages[page.relative_to(site).as_posix()] = digest(page.read_bytes())
+    (target / "manifest.json").write_text(
+        json.dumps({"version": 1, "publicRoot": PUBLIC_ROOT + "atlas/", "files": manifest,
+                    "placesPages": places_pages}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"Exported guide, {len(viewers)} viewers, {len(files)} atlas files and manifest to {site}")
 
 

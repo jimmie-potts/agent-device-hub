@@ -94,7 +94,7 @@ def check():
         for href in document.targets:
             url = urlsplit(href)
             if url.scheme:
-                assert url.scheme in {'https','data'}, f'Unexpected URL: {href}'
+                assert url.scheme in {'https','data'} or href in {'http://127.0.0.1:8788/', 'http://127.0.0.1:8765/'}, f'Unexpected URL: {href}'
                 continue
             assert not url.netloc and not url.path.startswith('/'), f'Nonportable reference: {href}'
             target = (path.parent/unquote(url.path)).resolve() if url.path else path

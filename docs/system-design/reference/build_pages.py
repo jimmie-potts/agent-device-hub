@@ -4,8 +4,11 @@ import argparse
 import html
 import json
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parent.parent / 'skins'))
+import skin as SKIN  # noqa: E402
 SERVICES = (
     ('pixoo', 'Pixoo', '25 operations', 'Media, playlists, player, device settings and the event stream.'),
     ('nanoleaf-controller', 'Nanoleaf controller', '4 operations', 'Machine discovery, snapshots, change polling and mode commands.'),
@@ -20,6 +23,7 @@ DATABASES = (
 
 def write(path, content, check):
     path = ROOT/path
+    content = SKIN.inject_places(content, 'reference', path)
     if check:
         assert path.read_text() == content, f'Generated page drift: {path}'
     else:
