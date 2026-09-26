@@ -42,13 +42,55 @@ def post_check(root, sha, conclusion, check_summary):
     })
 
 
+
+def open_prs(root):
+    prs = json.loads(gh(root, ['pr', 'list', '--repo', REPOSITORY,
+                              '--head', BRANCH, '--base', 'main', '--state', 'open',
+                              '--json', 'number,url', '--limit', '100']))
+    if len(prs) > 1:
+        raise RuntimeError('Multiple open rolling PRs; owner must reconcile them')
+    return prs
+
+
+def update_pr(root, prs, report_path):
+    common = ['--repo', REPOSITORY, '--title', 'Nightly guide refresh',
+              '--body-file', str(report_path)]
+    if prs:
+        gh(root, ['pr', 'edit', str(prs[0]['number']), *common, '--add-label', 'documentation'])
+        return prs[0]['url']
+    return gh(root, ['pr', 'create', *common, '--head', BRANCH,
+                    '--base', 'main', '--label', 'documentation']).strip()
+
+
+def reconcile_unchanged(root, sha, report_path, conclusion, check_summary):
+    prs = open_prs(root)
+    pages = json.loads(gh(root, ['api', '--method', 'GET',
+        'repos/' + REPOSITORY + '/commits/' + sha +
+        '/check-runs?check_name=Nightly%20guide%20validation&per_page=100',
+        '--paginate', '--slurp']))
+    checks = [check for page in pages for check in page['check_runs']
+              if check['name'] == 'Nightly guide validation'
+              and check['head_sha'] == sha
+              and check.get('app', {}).get('slug') == 'github-actions']
+    latest = max(checks, key=lambda check: check['id']) if checks else None
+    repaired = not latest or latest['status'] != 'completed' or latest['conclusion'] != conclusion
+    if repaired:
+        post_check(root, sha, conclusion, check_summary)
+    if prs:
+        url = prs[0]['url']
+    else:
+        url = update_pr(root, [], report_path)
+        repaired = True
+    return {'changed': False, 'repaired': repaired, 'sha': sha, 'pr_url': url}
+
+
 def publish(root, report_path, conclusion, check_summary, base_sha, expected_rolling_sha):
     """Return changed, sha and pr_url; errors propagate without claiming success.
 
     expected_rolling_sha is the fetched rolling head, or an empty string when
     the caller observed no branch. The push lease rejects concurrent writers.
-    Unchanged artifacts cause no branch or PR writes. A current failure is still
-    reported on an existing rolling SHA, so an old green check cannot hide it.
+    Unchanged artifacts never push. Missing PRs and missing or outdated checks
+    are repaired after interrupted writes; a complete matching result is read-only.
     """
     root = Path(root).resolve()
     report_path = Path(report_path).resolve()
@@ -87,17 +129,13 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
         previous = expected_rolling_sha or base_sha
         changed = git('diff', '--name-only', previous, tree, '--', *ALLOWLIST)
         if not changed:
-            if expected_rolling_sha and conclusion == 'failure':
-                post_check(root, previous, conclusion, check_summary)
+            if expected_rolling_sha:
+                return reconcile_unchanged(root, previous, report_path, conclusion, check_summary)
             return {'changed': False, 'sha': previous, 'pr_url': None}
         paths = git('diff', '--name-only', base_sha, tree).splitlines()
         if any(not any(path.startswith(prefix + '/') for prefix in ALLOWLIST) for path in paths):
             raise RuntimeError('Snapshot commit includes a path outside the allowlist')
-        prs = json.loads(gh(root, ['pr', 'list', '--repo', REPOSITORY,
-                                  '--head', BRANCH, '--base', 'main', '--state', 'open',
-                                  '--json', 'number,url', '--limit', '100']))
-        if len(prs) > 1:
-            raise RuntimeError('Multiple open rolling PRs; owner must reconcile them')
+        prs = open_prs(root)
         remote_main = git('ls-remote', 'origin', 'refs/heads/main').split()
         if not remote_main or remote_main[0] != base_sha:
             raise RuntimeError('Main advanced during validation; rerun the refresh')
@@ -109,14 +147,7 @@ def publish(root, report_path, conclusion, check_summary, base_sha, expected_rol
         git('push', '--force-with-lease=refs/heads/' + BRANCH + ':' + expected_rolling_sha,
             'origin', sha + ':refs/heads/' + BRANCH)
         post_check(root, sha, conclusion, check_summary)
-        common = ['--repo', REPOSITORY, '--title', 'Nightly guide refresh',
-                  '--body-file', str(report_path)]
-        if prs:
-            gh(root, ['pr', 'edit', str(prs[0]['number']), *common, '--add-label', 'documentation'])
-            url = prs[0]['url']
-        else:
-            url = gh(root, ['pr', 'create', *common, '--head', BRANCH,
-                            '--base', 'main', '--label', 'documentation'])
+        url = update_pr(root, prs, report_path)
         return {'changed': True, 'sha': sha, 'pr_url': url.strip()}
 
 

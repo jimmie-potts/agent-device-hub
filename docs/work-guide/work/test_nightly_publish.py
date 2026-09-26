@@ -34,12 +34,24 @@ class PublishTests(unittest.TestCase):
         self.report.write_text('Verified refresh report\n')
         self.calls = []
         self.prs = []
+        self.checks = []
+        self.fail_create = False
+        self.fail_check = False
         def gh(root, args, payload=None):
             self.calls.append((args, payload))
             if args[:2] == ['pr', 'list']:
                 return json.dumps(self.prs)
             if args[:2] == ['pr', 'create']:
+                if self.fail_create:
+                    raise RuntimeError('interrupted PR creation')
+                self.prs = [{'number': 900, 'url': 'https://github.com/jimmie-potts/agent-device-hub/pull/900'}]
                 return 'https://github.com/jimmie-potts/agent-device-hub/pull/900\n'
+            if args[:3] == ['api', '--method', 'POST']:
+                if self.fail_check:
+                    raise RuntimeError('interrupted check creation')
+                self.checks.append(dict(payload, id=len(self.checks) + 1, app={'slug': 'github-actions'}))
+            if args[:3] == ['api', '--method', 'GET']:
+                return json.dumps([{'check_runs': self.checks}])
             return '{}'
         self.mock = patch.object(publisher, 'gh', side_effect=gh)
         self.mock.start()
@@ -78,7 +90,8 @@ class PublishTests(unittest.TestCase):
         result = self.publish()
         self.calls.clear()
         self.assertFalse(self.publish(result['sha'])['changed'])
-        self.assertEqual(self.calls, [])
+        self.assertTrue(self.calls)
+        self.assertTrue(all(args[:2] == ['pr', 'list'] or args[:3] == ['api', '--method', 'GET'] for args, _ in self.calls))
 
     def test_failure_updates_existing_pr_and_posts_red_exact_head(self):
         self.change()
@@ -137,12 +150,64 @@ class PublishTests(unittest.TestCase):
         self.calls.clear()
         result = self.publish(first['sha'], 'failure')
         self.assertFalse(result['changed'])
-        self.assertEqual(len(self.calls), 1)
-        args, check = self.calls[0]
+        writes = [(args, payload) for args, payload in self.calls if payload is not None]
+        self.assertEqual(len(writes), 1)
+        args, check = writes[0]
         self.assertEqual(args[0], 'api')
         self.assertEqual(check['head_sha'], first['sha'])
         self.assertEqual(check['conclusion'], 'failure')
         self.assertTrue(self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).startswith(first['sha']))
+
+    def test_interrupted_publish_retries_missing_check_and_pr_without_push(self):
+        self.change()
+        self.fail_check = True
+        with self.assertRaisesRegex(RuntimeError, 'interrupted check'):
+            self.publish()
+        sha = self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).split()[0]
+        self.fail_check = False
+        self.calls.clear()
+        with patch.object(publisher, 'run', wraps=publisher.run) as commands:
+            result = self.publish(sha)
+        self.assertFalse(any(call.args[1][:2] == ['git', 'push'] for call in commands.call_args_list))
+        self.assertFalse(result['changed'])
+        self.assertTrue(result['repaired'])
+        self.assertEqual(result['sha'], sha)
+        self.assertEqual(self.checks[-1]['head_sha'], sha)
+        self.assertEqual(len(self.prs), 1)
+        self.assertEqual(self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).split()[0], sha)
+
+    def test_interrupted_pr_creation_retries_only_missing_pr(self):
+        self.change()
+        self.fail_create = True
+        with self.assertRaisesRegex(RuntimeError, 'interrupted PR'):
+            self.publish()
+        sha = self.git('ls-remote', 'origin', 'refs/heads/' + publisher.BRANCH).split()[0]
+        self.fail_create = False
+        self.calls.clear()
+        result = self.publish(sha)
+        self.assertTrue(result['repaired'])
+        self.assertEqual(len(self.checks), 1)
+        self.assertEqual(len(self.prs), 1)
+        self.assertFalse(any(payload is not None for _, payload in self.calls))
+
+    def test_unchanged_duplicate_prs_refused_without_writes(self):
+        self.change()
+        first = self.publish()
+        self.prs.append({'number': 901, 'url': 'duplicate'})
+        self.calls.clear()
+        with self.assertRaisesRegex(RuntimeError, 'Multiple'):
+            self.publish(first['sha'])
+        self.assertTrue(all(args[:2] == ['pr', 'list'] for args, _ in self.calls))
+
+    def test_unchanged_success_replaces_previous_failed_check_with_measured_success(self):
+        self.change()
+        first = self.publish(conclusion='failure')
+        self.calls.clear()
+        result = self.publish(first['sha'])
+        self.assertTrue(result['repaired'])
+        self.assertFalse(result['changed'])
+        self.assertEqual(self.checks[-1]['conclusion'], 'success')
+        self.assertFalse(any(args[:2] in (['pr', 'create'], ['pr', 'edit']) for args, _ in self.calls))
 
     def test_invalid_conclusion_has_no_mutations(self):
         with self.assertRaises(ValueError):
