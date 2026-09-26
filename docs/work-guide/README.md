@@ -114,6 +114,18 @@ freshness line under the opening names which parts, including the ideas, are
 live for which repositories and which parts (topic outcomes, next-step boxes,
 history and the roadmap) stay dated regardless.
 
+Retired phrases are maintained in `work/guide_retired.py` as exact,
+case-insensitive terms with a retirement story, date and note. The build warns
+for every matching open story; closed stories are excluded. A match in a rendered
+Guide note, workaround or highlight fails, as does a retirement key missing from
+the saved snapshot. The nightly report includes these warnings. Add a term when
+a delivery retires it; the scanner never edits stories or guesses intent.
+
+A story with a valid topic but no authored roadmap or subtrack position remains
+visible under "Roadmap placement pending" or "Track placement pending". Those
+lists assign no priority, stage or prerequisite. Duplicate authored placements
+still fail validation; invalid Guide sections retain their existing failure.
+
 ## Direction section
 
 Beside the timeline's "Where we've been" and "Where we're going" panels, one
@@ -423,6 +435,46 @@ An unchanged source output can still have a stale public copy. If all required
 public revision, content and deployment evidence already matches, record that
 no-change result instead of creating an empty publication PR.
 
+## Nightly refresh
+
+`.github/workflows/guide-refresh.yml` runs at 03:00 `America/New_York`, including
+daylight-saving changes, and accepts manual dispatches. It collects complete
+backlog/history inputs in a disposable directory, validates them, and creates or
+updates one `documentation` PR from `guide/nightly-refresh`. A failed read stops
+before any push. Identical inputs and output leave a complete existing PR alone;
+a retry repairs a missing PR or validation result after an interrupted publish.
+The workflow has `contents: write`, `pull-requests: write` and owner-authorized
+`checks: write`, the last solely for validation on the exact rolling commit.
+Repository Actions settings must allow PR creation. No personal token is used.
+
+The workflow never merges, publishes, edits issues, renders diagrams or rewrites
+Direction. The existing Direction checker and normal build still fail on stale
+prose. `build_guide.py --validate-inputs --validation-result <path>` checks the
+remaining inputs without writing output; it returns a distinct Direction-only
+failure only when those checks pass. Such a candidate retains the previous HTML,
+opens a red PR naming `needs owner rewrite of guide_direction.py`, and explicitly
+reports fresh generation/browser validation as blocked. Baseline maintenance
+checks are evidence for the source code, not fresh output. Fresh maintenance
+then runs with a structured result: only a default build failure confirmed by
+the typed input-only Direction diagnostic can block a dependent test. Every
+other failure, skip, interruption or missing completion receipt prevents a push.
+Blocked test identities are recorded; they are not reported as passing.
+
+The manual `replay` mode reuses the rolling snapshot to exercise no-change
+handling. `direction-failure` closes one cited key only in saved fixture data,
+marks the PR as a non-live validation fixture that must not merge, and exercises
+the red-check path. These modes require an explicit dispatch. Restore the branch
+with a successful `live` dispatch after the failure exercise. Run logs, reports
+and browser receipts are retained as workflow artifacts; publication remains a
+separate owner-authorized procedure.
+
+History generation uses paginated read-only queries and stable ordering. The
+first conversion reports any changed, removed or reordered historical entries.
+The rolling PR itself and incidental repository push metadata cannot keep the
+refresh changing its own inputs. An unchanged read retains the previous dated
+observation rather than advancing the guide's freshness line without a new
+snapshot.
+
 ## Refresh and validate a guide revision
 
 An intentional guide update refreshes the relevant issue, history and diagram
@@ -433,7 +485,9 @@ the former per-delivery `updates.md` ledger is retired. Read-only questions and
 reviews do not independently authorize document writes. Device-repository work
 needs a linked Hub PR only when its authorized scope includes a guide update.
 
-1. Read current issue states and acceptance evidence. Refresh the backlog using
+1. Start from the rolling "Nightly guide refresh" PR when one exists, inspect its
+   report and exact-commit check, and resolve any owner-written Direction update.
+   Read current issue states and acceptance evidence. Refresh the backlog using
    the helper below when status or scope changes, then reconcile primary coverage
    and narrative in `work/build_guide.py`. Review `work/guide_direction.py`:
    move delivered keys to `DELIVERED_SINCE`, rewrite the sequence, and update
@@ -442,8 +496,9 @@ needs a linked Hub PR only when its authorized scope includes a guide update.
    write files on failure; discard or complete that candidate before publishing
    it. Every open issue must have exactly one primary guide. Reference links do
    not own issues or increase counts.
-2. Update history inputs in `work/history/github-history.json` from paginated
-   read-only GitHub queries when recording merged work. Keep PR creation, source
+2. Run `python3 docs/work-guide/work/refresh_history.py` to update
+   `work/history/github-history.json` from paginated read-only GitHub queries
+   when recording merged work. Inspect the reported historical differences. Keep PR creation, source
    merge, installation and physical acceptance distinct. Never predict a merge
    date or close an issue in the guide before its authoritative source does.
 3. When ownership or command flows change, update pinned architecture sources,
