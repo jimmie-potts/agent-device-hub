@@ -577,7 +577,8 @@ def build(history, snapshot_iso, issues, guides_by_id, coverage):
     all_keys = [k for _, items in TRACKS for item in items for k in item['issues']]
     open_keys = {k for k, v in issues.items() if v['state'] == 'OPEN'}
     assert len(all_keys) == len(set(all_keys)), 'Roadmap lists an issue twice'
-    assert set(all_keys) == open_keys, f'Roadmap coverage mismatch: {set(all_keys) ^ open_keys}'
+    assert set(all_keys) <= open_keys, f'Roadmap cites non-open issues: {set(all_keys) - open_keys}'
+    unplaced = sorted(open_keys - set(all_keys), key=lambda key: (key[0], int(key[1:])))
     for _, items in TRACKS:
         for item in items:
             assert set(item['issues']) <= set(coverage[item['guide']]), f'{item["id"]} lists issues outside its guide'
@@ -590,9 +591,9 @@ def build(history, snapshot_iso, issues, guides_by_id, coverage):
     roadmap, nodes, listed = roadmap_map(issues, guides_by_id)
     fetched = local(history['fetchedAt'])
     meta = dict(historyFetchedAt=history['fetchedAt'], mergedPRs=totals['merged'], closedIssues=totals['closed'], mainCommits=totals['commits'],
-                roadmapNodes=len(nodes), roadmapTracks=len(TRACKS), roadmapSlots=SLOTS,
+                roadmapNodes=len(nodes), roadmapTracks=len(TRACKS), roadmapSlots=SLOTS, unplacedIssues=unplaced,
                 headRevisions={repo: value['headSha'] for repo, value in history['repositories'].items()})
-    return dict(history=chart, roadmap=roadmap, totals=totals, fetched=fetched, meta=meta, nodes=nodes, listed=listed)
+    return dict(history=chart, roadmap=roadmap, totals=totals, fetched=fetched, meta=meta, nodes=nodes, listed=listed, unplaced=unplaced)
 
 
 def reconcile(issues, coverage, aliases):

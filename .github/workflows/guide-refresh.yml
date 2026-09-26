@@ -1,0 +1,51 @@
+name: Nightly guide refresh
+on:
+  schedule:
+    - cron: '0 3 * * *'
+      timezone: America/New_York
+  workflow_dispatch:
+    inputs:
+      validation-mode:
+        description: 'live reads, replay the rolling snapshot, or exercise a synthetic Direction failure'
+        type: choice
+        default: live
+        options: [live, replay, direction-failure]
+concurrency:
+  group: guide-nightly-refresh
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+jobs:
+  refresh:
+    name: Refresh and validate the rolling guide PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Prepare the pinned browser checker
+        run: |
+          npm install --prefix "$RUNNER_TEMP/guide-browser" --no-save --no-package-lock playwright@1.63.0
+          node "$RUNNER_TEMP/guide-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Refresh inputs, validate, and update the rolling PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REFRESH_MODE: ${{ inputs['validation-mode'] || 'live' }}
+          GUIDE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/guide-browser/node_modules/playwright
+        run: python3 docs/work-guide/work/nightly_run.py --mode "$REFRESH_MODE" --evidence "$RUNNER_TEMP/guide-refresh"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: nightly-guide-refresh-evidence
+          path: ${{ runner.temp }}/guide-refresh
+          if-no-files-found: warn
+          retention-days: 14

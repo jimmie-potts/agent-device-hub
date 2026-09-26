@@ -56,5 +56,5 @@ MAINTENANCE_TRACKS = {
     'Nanoleaf': ['N127', 'N121', 'N119', 'N122', 'N128', 'N129', 'N130', 'N162', 'N163'],
     'Pixoo': ['P112', 'P61'],
 }
-# Guides whose remaining work is split under track headings; tracks cover each guide exactly.
+# Reviewed subtracks; unmatched open stories remain visible with placement pending.
 GUIDE_TRACKS = {'nanoleaf-devices': DEVICE_TRACKS, 'development-workflow': MAINTENANCE_TRACKS}

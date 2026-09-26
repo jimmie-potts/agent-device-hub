@@ -243,7 +243,7 @@ class GuideMaintenance(unittest.TestCase):
             self.assertIn(f'H{row["number"]}', result.stderr)
             self.assertIn('unknown topic', result.stderr)
 
-    def test_guide_tracks_must_cover_their_guide(self):
+    def test_unplaced_track_row_remains_visible_without_guessing(self):
         with tempfile.TemporaryDirectory(prefix='guide-tracks-') as directory:
             candidate = copy_guide(directory)
             # A row left out of every track would otherwise vanish from its guide.
@@ -253,8 +253,11 @@ class GuideMaintenance(unittest.TestCase):
             paths.write_text(text.replace("'P61']", ']'))
             result = subprocess.run([sys.executable, str(candidate / 'work/build_guide.py')],
                                     capture_output=True, text=True)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('Tracks must cover development-workflow exactly once', result.stderr)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Track placement pending: P61', result.stderr)
+            document = (candidate / 'outputs/agent-device-work-guides.html').read_text()
+            pending = document.split('Track placement pending</h3>', 1)[1].split('</table>', 1)[0]
+            self.assertIn('data-issue="P61"', pending)
 
     def test_refreshed_sequences_follow_native_prerequisites(self):
         import importlib.util
@@ -1125,6 +1128,13 @@ class Ideas(unittest.TestCase):
         document = (Path(__file__).resolve().parent.parent / 'outputs/agent-device-work-guides.html').read_text()
         self.assertEqual(document.count('<details class="reference ideas" id="ideas">'), 1)
         self.assertLess(document.index('id="direction"'), document.index('id="ideas"'), 'Ideas follows Direction')
+
+
+def load_tests(loader, tests, pattern):
+    for module in ('test_retired', 'test_refresh', 'test_backlog_refresh', 'test_nightly_inputs',
+                   'test_nightly_publish', 'test_nightly_run', 'test_nightly_validation', 'test_unplaced'):
+        tests.addTests(loader.loadTestsFromName(module))
+    return tests
 
 
 if __name__ == '__main__':

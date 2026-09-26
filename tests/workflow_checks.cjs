@@ -362,3 +362,25 @@ test('guide CI retains its validation and review artifacts', () => {
                'if-no-files-found': 'error',
                'retention-days': 14 } } ] } });
 });
+
+
+test('nightly guide refresh has bounded triggers, permissions and one serialized writer', () => {
+  const workflow = YAML.parse(fs.readFileSync(path.join(root, '.github/workflows/guide-refresh.yml'), 'utf8'));
+  assert.deepEqual(Object.keys(workflow.on).sort(), ['schedule', 'workflow_dispatch']);
+  assert.deepEqual(workflow.on.schedule, [{ cron: '0 3 * * *', timezone: 'America/New_York' }]);
+  assert.deepEqual(workflow.permissions, { contents: 'write', 'pull-requests': 'write', checks: 'write' });
+  assert.equal(workflow.concurrency['cancel-in-progress'], false);
+  assert.equal(workflow.concurrency.group, 'guide-nightly-refresh');
+  assert.deepEqual(Object.keys(workflow.jobs), ['refresh']);
+  const steps = workflow.jobs.refresh.steps;
+  for (const step of steps.filter(step => step.uses)) {
+    assert.match(step.uses, /@[a-f0-9]{40}$/, 'Remote actions must remain pinned');
+  }
+  const runner = steps.find(step => step.run?.includes('nightly_run.py'));
+  assert.ok(runner);
+  assert.equal(runner.env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(workflow.on.workflow_dispatch.inputs['validation-mode'].default, 'live');
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs['validation-mode'].options, ['live', 'replay', 'direction-failure']);
+  const commands = steps.map(step => step.run || '').join('\n');
+  assert.doesNotMatch(commands, /gh (?:pr merge|issue)|export_public|architecture_diagrams\.py/);
+});

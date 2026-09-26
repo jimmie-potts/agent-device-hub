@@ -179,14 +179,18 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
       assert.equal(issueMap[unit].state,'OPEN');
       assert(!issueMap[unit].labels.some(l=>['blocked','deferred','status:in-progress','status:review'].includes(l.name)));
     }
-    // Timeline: history marks link to GitHub, roadmap covers every open issue once, tooltips and filters work.
+    // Timeline: every open issue is placed once or explicitly pending; tooltips and filters work.
     const overlaps=await page.locator('.history').evaluate(svg=>{const hit=(a,b)=>a.x<b.x+b.width&&b.x<a.x+a.width&&a.y<b.y+b.height&&b.y<a.y+a.height;const count=sel=>{const boxes=[...svg.querySelectorAll(sel)].map(t=>t.getBBox());return boxes.reduce((n,a,i)=>n+boxes.slice(i+1).filter(b=>hit(a,b)).length,0);};return {axis:count('.tick-label'),captions:count('.milestone-label'),axisLabels:svg.querySelectorAll('.tick-label').length};});
     assert(overlaps.axisLabels>0&&overlaps.axis===0&&overlaps.captions===0,`History labels overlap: ${JSON.stringify(overlaps)}`);
     const overflowing=await page.locator('.roadmap').evaluate(svg=>[...svg.querySelectorAll('.node')].filter(n=>n.querySelector('.node-label').getBBox().width>n.querySelector('rect').getBBox().width-4).map(n=>n.dataset.node));
     assert.deepEqual(overflowing,[],'Roadmap labels fit their nodes');
     const prs=Object.values(history.repositories).reduce((n,r)=>n+r.mergedPRs.length,0); assert.equal(await page.locator('.history a.pr').count(),prs); assert.equal(Number(await page.locator('#timeline .stats-row .stat strong').first().textContent()),prs);
     const roadmapIssues=(await page.locator('.roadmap .node').evaluateAll(es=>es.map(e=>e.getAttribute('aria-label')))).join(' ');
-    for(const key of openKeys){const label=new RegExp(`${{H:'Hub',N:'Nanoleaf',P:'Pixoo'}[key[0]]} #${key.slice(1)}(?!\\d)`); assert(label.test(roadmapIssues),`Roadmap lists ${key}`); assert.equal((roadmapIssues.match(new RegExp(label.source,'g'))||[]).length,1,`Roadmap lists ${key} exactly once`);}
+    const pendingKeys=await page.locator('[aria-labelledby="roadmap-pending"] [data-key]').evaluateAll(es=>es.map(e=>e.dataset.key));
+    assert.deepEqual([...pendingKeys].sort(),[...meta.history.unplacedIssues].sort(),'Pending roadmap keys match the saved metadata');
+    assert.equal(new Set(pendingKeys).size,pendingKeys.length,'Pending stories appear exactly once');
+    assert(pendingKeys.every(key=>openKeys.includes(key)),'Pending roadmap stories are open');
+    for(const key of openKeys){const label=new RegExp(`${{H:'Hub',N:'Nanoleaf',P:'Pixoo'}[key[0]]} #${key.slice(1)}(?!\\d)`); assert.equal((roadmapIssues.match(new RegExp(label.source,'g'))||[]).length,pendingKeys.includes(key)?0:1,`Roadmap places ${key} exactly once or lists it as pending`);}
     assert(await page.locator('.roadmap .node').evaluateAll(es=>es.every(e=>document.getElementById(e.getAttribute('href').slice(1))?.classList.contains('guide'))),'Roadmap nodes link to work guides');
     await page.locator('.history a.pr circle').first().hover(); assert(await page.locator('#timeline-tip').isVisible()); assert((await page.locator('#timeline-tip').textContent()).includes('PR #')); await page.locator('.history a.pr circle').first().focus(); assert(await page.locator('#timeline-tip').isVisible(),'Tooltip on keyboard focus');
     await page.locator('.roadmap .node[data-node="n-codex"] rect').hover(); assert((await page.locator('#timeline-tip').textContent()).includes('UI foundation delivered')); assert(await page.locator('.roadmap .edge.lit').count()>0,'Prerequisite edges highlight');
