@@ -80,7 +80,8 @@ try {
 
  // One color change: a fresh lighting read supplies the guards, and exactly one profile request is sent.
  const before=await (await fetch(hub.url+'/api/controllers/v1/desk/lighting/snapshot',{headers:{authorization:`Bearer ${token}`}})).json();const traffic=lifx.log.length;
- await hue.fill('200');await saturation.fill('80');
+ // Both sliders change in one task, as one hand adjusting a picker would; a script change sends after the settle pause, once for both.
+ await page.evaluate(()=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;for(const [label,value] of [['Hue (°)','200'],['Saturation (%)','80']]){const input=[...document.querySelectorAll('label')].find(l=>l.textContent.startsWith(label)&&l.offsetParent!==null).querySelector('input');set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));}});
  await form('Color').getByRole('status').filter({hasText:/^Sent to the device\./}).waitFor();
  const lighting=control.posts.filter(p=>p.path==='/api/controllers/v1/desk/lighting/commands');
  assert.equal(lighting.length,1);

@@ -139,6 +139,36 @@ try {
   await page.locator('section:visible').getByText('Unavailable: Nanoleaf is in Work and presents agent status; scene activation needs Free',{exact:true}).waitFor();assert.equal(await scene.isDisabled(),true);assert.deepEqual(f.scenes.activated,[f.sceneB]);
   await axe(page);await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await axe(page);
  });
+ // Hub #277, owner decision: no Apply button. A dragged slider sends once on release, a keyboard step through a select sends once, Enter submits a text field, an invalid field is not sent, and a color picker sends when it closes.
+ await scenario('gestures send once: a dragged slider on release, keyboard steps on a select after a pause, Enter and blur on valid text fields, and a picker on close',async(f,page)=>{
+  await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();
+  // Drag with a pause longer than the keyboard settle delay: nothing is sent until the pointer releases, and the command carries the released value.
+  const box=await brightness.boundingBox();const at=fraction=>page.mouse.move(box.x+box.width*fraction,box.y+box.height/2,{steps:4});
+  await at(0.6);await page.mouse.down();await at(0.3);await page.waitForTimeout(500);assert.equal(general(f).length,0,'a pause mid-drag sends nothing');
+  await at(0.85);const released=await brightness.inputValue();await page.mouse.up();await until(()=>general(f).length===1);
+  assert.equal(general(f)[0].command.kind,'brightness.set');assert.equal(String(general(f)[0].command.percent),released,'the command carries the released value');
+  await page.waitForTimeout(500);assert.equal(general(f).length,1,'the release sends once');
+  await statusOf(page,'Brightness').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
+  // Enter submits a text field of the multi-field Monitor view; an invalid value is kept in the field and not sent.
+  const filter=page.getByLabel('Label / ID filter').filter({visible:true});await filter.fill('enter');await filter.press('Enter');await until(()=>f.writes.some(w=>w.integration&&w.command.action.operation==='view'));
+  assert.equal(f.pixoo.configuration.filter.q,'enter');await statusOf(page,'Monitor view').filter({hasText:/^Saved\./}).waitFor();await page.getByLabel('Project ID').filter({visible:true}).and(page.locator(':enabled')).waitFor();const sent=f.writes.length;
+  const projectId=page.getByLabel('Project ID').filter({visible:true});await projectId.fill('not valid!');await projectId.press('Enter');await projectId.press('Tab');await page.waitForTimeout(400);
+  assert.equal(f.writes.length,sent,'an invalid value is not sent');assert.equal(await projectId.inputValue(),'not valid!','the invalid value stays in the field for correction');
+  await projectId.fill('project-ok');await projectId.press('Tab');await until(()=>f.writes.length===sent+1);assert.equal(f.pixoo.configuration.filter.projectId,'project-ok');
+  // Keyboard steps on a select send once, with the option the user stops on.
+  await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();const mode=page.getByLabel('Device mode').filter({visible:true});await mode.waitFor();
+  const before=wallGeneral(f).length;await mode.focus();await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');
+  assert.equal(await mode.inputValue(),'Free','the select shows the stepped value at once');assert.equal(wallGeneral(f).length,before,'no command before the pause');
+  await until(()=>wallGeneral(f).length===before+1);await page.waitForTimeout(400);assert.equal(wallGeneral(f).length,before+1,'two steps send once');assert.deepEqual(wallGeneral(f).at(-1).command,{kind:'mode.set',mode:'Free'});
+  await settled(page,'Free');
+  // A color picker sends only on its native change, which fires when the picker closes.
+  const color=page.locator('input[type=color]:visible');await color.waitFor();const nanoWrites=()=>f.writes.filter(w=>w.id==='wall'&&w.integration).length;const colorBefore=nanoWrites();
+  await color.evaluate(el=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(el,'#224466');el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.waitForTimeout(500);assert.equal(nanoWrites(),colorBefore,'picking sends nothing until the picker closes');
+  await color.evaluate(el=>el.dispatchEvent(new Event('change',{bubbles:true})));await until(()=>nanoWrites()===colorBefore+1);
+  assert.deepEqual(f.writes.filter(w=>w.id==='wall'&&w.integration).at(-1).command.command,{kind:'project.color',projectId:f.nano.projects[0].id,color:'#224466'});
+  await axe(page);
+ });
  // Hub #277: a home widget renders the same control as the component page, sharing its guards, wording, running state and locks.
  await scenario('home quick actions send guarded commands, share their lifecycle with the component page, and the home keeps drafts across navigation',async(f,page)=>{
   const widget=page.locator('article[data-widget=component-status]').filter({has:page.getByRole('heading',{name:'wall',exact:true})});
@@ -170,9 +200,10 @@ try {
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();assert.equal(await pageMode.getByLabel('Device mode').isDisabled(),true,'the page is busy while the widget\'s command runs');
   await statusOf(page,'Mode').filter({hasText:/^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();await page.unroute('**/api/controllers/v1/wall/commands');
   // Session drafts and the filter survive a trip to a component page; the skip link moves focus without changing the page.
-  await page.getByRole('link',{name:/^Home/}).click();const label=page.getByLabel('Chosen label');await label.fill('Keep me');await page.getByLabel('Find a session').fill('Build');
+  await page.getByRole('link',{name:/^Home/}).click();const label=page.getByLabel('Chosen label');await label.fill('Keep me');assert.equal(await page.getByRole('heading',{name:'Keep me',exact:true}).count(),0,'typing sends nothing');
+  await page.getByLabel('Find a session').fill('Keep');await page.getByRole('heading',{name:'Keep me',exact:true}).waitFor();
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();await page.getByLabel('Label / ID filter').waitFor();await page.getByRole('link',{name:/^Home/}).click();
-  assert.equal(await label.inputValue(),'Keep me','the label draft survives navigation');assert.equal(await page.getByLabel('Find a session').inputValue(),'Build');
+  assert.equal(await page.getByLabel('Find a session').inputValue(),'Keep','the filter survives navigation');await page.getByRole('heading',{name:'Keep me',exact:true}).filter({visible:true}).waitFor();assert.equal(await label.inputValue(),'Keep me','leaving the label field sent it');
   await page.locator('a.skip').focus();await page.keyboard.press('Enter');
   assert.equal(await page.evaluate(()=>document.activeElement?.id),'main','the skip link moves focus to the main column');assert.equal(new URL(page.url()).hash,'#/','the skip link changes no route');
   await page.getByRole('heading',{name:'Home',exact:true}).filter({visible:true}).waitFor();

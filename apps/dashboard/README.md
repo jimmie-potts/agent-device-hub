@@ -35,8 +35,9 @@ rows with an inline label form and their retained notices under the row.
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
 wall miniature ([#286](https://github.com/jimmie-potts/agent-device-hub/issues/286))
-register in the same catalog. Every page stays mounted and hidden, so an unsent text draft, the session filter
-and focus survive navigation. A control that appears on the home and on its
+register in the same catalog. Every page stays mounted and hidden, so the session filter, selection and
+focus survive navigation; a text field still being edited is sent when the
+user leaves it, and a click on a navigation link leaves it. A control that appears on the home and on its
 component page shares one lifecycle state (`useCommandLifecycle` takes a key per
 component and control): a running command or an uncertain lock on either
 instance is the same on the other, and one reload unlocks both.
@@ -49,10 +50,14 @@ Monitor, Power, Brightness, Media with the Media switch, Scenes with the Free
 switch, and Color and Color temperature for LIFX. Each card keeps one short
 visible line for its state; the longer guidance sits behind a Help disclosure.
 No control has an Apply button (owner decision on the design candidate,
-2026-09-25): a select or toggle sends when it is changed, a slider sends once
-when it is released or after a short pause following a keyboard step, a text
-field sends when it is left or submitted, and Power is a button that names the
-one action left (Turn on or Turn off; both when power is unknown). Choosing a
+2026-09-25): a select sends a pointer choice at once and a keyboard step after a
+short pause, on Enter or when it is left, so arrowing through options sends
+only the one the user stops on; a slider sends once when the pointer releases
+it or after a pause following a keyboard step, never mid-drag; a color picker
+sends when it closes; a text field sends when it is left or on Enter, and only
+while the browser's own constraints (pattern, range, required) hold; Power is a
+button that names the one action left (Turn on or Turn off; both when power is
+unknown). The shared control state is forgotten on disconnect. Choosing a
 playlist starts it and choosing a scene activates it; the choice clears once
 the command settles. Every send is still one guarded command from a fresh
 read, and a rejected change shows the current value again with its status.
@@ -363,10 +368,15 @@ actions and the sessions widget start in the first screen at 1440 px, that the h
 pixel controls reach at least 70% of the main column, that the Connections
 cards sit side by side, that the wall and pixel pages are under 2,000 px tall at
 1280 px, and that routes, the back button, the alias collision and an unknown
-address behave as the README describes. A matrix scenario sends a mode and a
+address behave as the README describes. One matrix scenario sends a mode and a
 power change from the wall widget with fresh guards, shares an uncertain lock
-and a running command between the widget and the page, keeps a session label
-draft and the filter across navigation, and checks the skip link. `DASHBOARD_RECEIPTS` selects an external
+and a running command between the widget and the page, sends a session label by
+leaving its field while the filter survives navigation, and checks the skip
+link. Another drags the brightness slider with a pause and asserts one command
+carrying the released value, steps a select twice from the keyboard and asserts
+one command with the option stopped on, submits a Monitor view field with Enter,
+keeps an invalid Project ID unsent, and sends a project color only when the
+picker closes. `DASHBOARD_RECEIPTS` selects an external
 receipt/screenshot directory. Samples include event-to-rendered-snapshot latency
 for Hub #30; a small synthetic sample is not full performance qualification.
 Hub tests additionally check protected context, native credential exclusion,
