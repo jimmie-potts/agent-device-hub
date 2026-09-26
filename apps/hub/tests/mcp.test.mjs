@@ -433,3 +433,20 @@ test('tidbyt and lifx aliases bind only the tools their kind can use',async t=>{
  assert.equal(lost.isError,true);assert.deepEqual([lost.structuredContent.data.code,lost.structuredContent.data.priorEffects,lost.structuredContent.data.retry],['uncertain-result','possible','never-automatically']);
  assert.equal(seen.filter(([method])=>method==='POST').length,3);
 });
+
+// Hub #357: a sixth controller used to push the tool catalog past the 1 MiB response limit and stop the hub.
+test('MCP starts with the owner controller set and at the controller maximum',async t=>{
+ const at=(id,kind,deviceId,controllerId=id+'-controller')=>({id,kind,controllerId,deviceId,endpoint:'http://127.0.0.1:9/controller/v1',token:'n'.repeat(43)});
+ const owner=[at('nanoleaf-wall','nanoleaf','wall','local-controller'),at('nanoleaf-panels','nanoleaf','panels','local-controller'),at('pixoo','pixoo','pixoo-local'),
+  at('tidbyt','tidbyt','tidbyt'),at('beam','lifx','beam','lifx'),at('pendant-1','lifx','pendant-1','lifx')];
+ const maximum=Array.from({length:16},(_,i)=>at('nanoleaf-'+i,'nanoleaf','device-'+i,'local-controller'));
+ for(const controllers of [owner,maximum]){
+  const hub=await fixture(t,{controllers,credentials:[{...credential,devices:controllers.map(c=>c.id)}]});
+  const c=client(hub);assert.equal((await c.initialize()).status,200);
+  const list=await c.rpc('tools/list',{});
+  assert.equal(list.status,200);
+  const bytes=Buffer.byteLength(JSON.stringify(list.body.result));
+  assert.ok(bytes<512*1024,`${controllers.length} controllers publish a ${bytes}-byte catalog`);
+  for(const controller of controllers)assert.ok(list.body.result.tools.some(tool=>tool.name.startsWith('device_'+controller.id.replace(/-/g,'_'))),controller.id);
+ }
+});

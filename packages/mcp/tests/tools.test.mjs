@@ -205,3 +205,36 @@ test('review embedded extension output preserves local schema references', async
   assert.equal(validate(result.structuredContent), true, JSON.stringify(validate.errors));
   assert.equal(validate({ kind: 'extension', data: { count: -1 } }), false);
 });
+
+// Hub #357: every definition a tool publishes must be one it references, and an extension tool
+// describes only the results it can return, so the catalog stays small as devices are added.
+function referencedDefs(schema) {
+  const text = JSON.stringify({ ...schema, $defs: undefined });
+  const defs = schema.$defs ?? {};
+  const seen = new Set(); const queue = [...text.matchAll(/"#\/\$defs\/([^"]+)"/g)].map(m => m[1]);
+  while (queue.length) { const name = queue.pop(); if (seen.has(name) || !defs[name]) continue; seen.add(name);
+    for (const m of JSON.stringify(defs[name]).matchAll(/"#\/\$defs\/([^"]+)"/g)) queue.push(m[1]); }
+  return seen;
+}
+test('published schemas carry only referenced definitions and extension tools stay small', async () => {
+  const { Ajv2020 } = await import('ajv/dist/2020.js');
+  const f = fixture();
+  const registry = api.createDeviceRegistry([{ controllerId: 'controller', deviceId: 'light', extensions: { catalog: {
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    outputSchema: { type: 'object', additionalProperties: false, properties: { items: { type: 'array', items: { type: 'string' } } }, required: ['items'] },
+    scope: 'read', description: 'Read items.', annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    invoke: async () => ({ data: { items: [] } }) } } }]);
+  const [extension] = api.bindServiceTools(registry, { deviceId: 'light', bindings: [{ extension: 'catalog', name: 'catalog' }] });
+  for (const tool of [...f.tools, extension]) for (const schema of [tool.inputSchema, tool.outputSchema]) {
+    assert.deepEqual(Object.keys(schema.$defs ?? {}).sort(), [...referencedDefs(schema)].sort(), tool.name);
+  }
+  assert.deepEqual(extension.outputSchema.properties.kind, { enum: ['extension', 'gateway-error'] });
+  for (const key of ['snapshot', 'receipt', 'devices']) assert.equal(key in extension.outputSchema.properties, false, key);
+  assert.ok(Buffer.byteLength(JSON.stringify(extension)) < 4096, `extension tool is ${Buffer.byteLength(JSON.stringify(extension))} bytes`);
+  const validate = new Ajv2020({ strict: true }).compile(extension.outputSchema);
+  assert.equal(validate((await api.invokeDeviceTool(registry, extension, {}, principal())).structuredContent), true, JSON.stringify(validate.errors));
+  assert.equal(validate((await api.invokeDeviceTool(registry, extension, { extra: 1 }, principal())).structuredContent), true, JSON.stringify(validate.errors));
+  const status = f.tools.find(t => t.name.endsWith('_status'));
+  const validateStatus = new Ajv2020({ strict: true }).compile(status.outputSchema);
+  assert.equal(validateStatus((await api.invokeDeviceTool(f.registry, status, {}, principal())).structuredContent), true, JSON.stringify(validateStatus.errors));
+});
