@@ -96,6 +96,44 @@ layout, coverage, element/project/task mapping and project colors. Pixoo control
 include monitor filters and cadence. Advanced editors remain links. The UI never
 translates these into a global mode or exposes raw commands.
 
+## Device art
+
+[Hub #355](https://github.com/jimmie-potts/agent-device-hub/issues/355) adds
+the first hub-owned shared device art under
+[ADR 0007](../../docs/decisions/0007-bunny-shell.md): the Nanoleaf component
+pages draw the wall above the device facts with the wall map's Prism crystal
+material, ported into [`src/art/`](src/art/README.md) with its provenance. The
+Lines are crystal tubes between hexagonal connectors and the NL22 Panels are
+triangles in the same material. The component sends nothing and opens no device
+state; it keeps its own animation clock and selection state, and every animation
+derives from its inputs, never from device frames.
+
+The page reads each Nanoleaf component's saved layout once from
+`GET /api/controllers/v1/<alias>/integration/geometry`
+([codex-nanoleaf#169](https://github.com/jimmie-potts/codex-nanoleaf/issues/169))
+through the same per-device queue as the 5-second poll, after the component's
+first poll, and again only after a transport failure. A device without a saved
+layout or an owner that predates the route answers once for the session and the
+page draws a schematic strip, one cell per element, that says why. Reload the
+page after changing the layout in the wall editor.
+
+The `nanoleaf.integration/1.0` snapshot supplies mode, project colors, element
+reservations and pending wall edits. Colors follow the wall map: the status
+color on both zones, and in the project layout style the signature zone takes
+the reservation's project color. The snapshot carries neither which Line shows
+which task nor that task's status, so the page passes no status or activity, no
+Line pulses, and the caption says that no task is shown. The component takes
+both as inputs for consumers that have a source; `tests/art.mjs` drives them in
+a harness. A stale or unavailable snapshot keeps the last art with a stale mark
+rather than an empty device. Selecting an element in the art also selects it in
+the element mapping form; nothing is sent. Reduced motion skips the opening
+assembly and stops the flow while Work, Quiet and Free stay distinguishable.
+The wall status tokens `--wall-*` and `--chip-*` now live in the application
+skin as fixed-meaning tokens. Locate, reservations and other controls on the
+art stay on the wall map until their integration operations exist; measured
+number placement stays there too, so numerals show on hover, focus and
+selection only.
+
 ## Now playing
 
 [Hub #37](https://github.com/jimmie-potts/agent-device-hub/issues/37) adds a
@@ -288,5 +326,14 @@ Hub tests additionally check protected context, native credential exclusion,
 static-asset protections, invalid links, packaged installation and that general
 commands are validated and scoped before any controller request. Source/browser
 checks do not establish installed-client or physical acceptance.
+`tests/art.mjs` (Hub #355) draws the Lines from a 15-Line, 12-connector fake
+layout with reservation colors, labels, keyboard selection and one geometry read
+per session, keeps the art marked stale while the controller is offline, draws
+the Panels from an 18-triangle fake, draws the schematic strip for a device
+without a saved layout and for an owner that predates the route, runs axe at
+1280 px and 390 px, and drives status, activity, mode, stale and reduced motion
+through a component harness. `tests/art.test.mjs` covers the adapter and the
+ported layout validator. The candidate needs the owner's side-by-side approval
+against the wall map on the same fixture before merge.
 
 The activity view requests snapshot 1.1 and keys each task form by identity and generation. A recreated task discards the old label and acknowledgment drafts, even after a missed removal. Ordinary reconnects retain drafts and focus. The retirement browser scenario covers parent/child removal, empty reconnect and missed-removal draft reset. This UI behavior requires human approval of the current candidate in addition to automated checks.

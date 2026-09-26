@@ -18,4 +18,9 @@
 --stats-gradient-1:#0d202b;--stats-gradient-2:#100d22;
 --badge-bg:#1b2940;--badge-edge:#476086;--warning-badge-bg:#28172e;--warning-badge-edge:#9f5baa;
 --notice-edge:#5977a7;--empty-edge:#40516b;
---disabled-bg:#151d2b;--disabled-text:#7f8ca3;--disabled-edge:#2a3549}
+--disabled-bg:#151d2b;--disabled-text:#7f8ca3;--disabled-edge:#2a3549;
+/* Fixed-meaning wall status tokens (style guide section 4.2), moved here with the shared device art (Hub #355). Skins may shade them, never swap their meaning. */
+--wall-working:#00ff00;--wall-question:#ffff00;--wall-blocked:#ff0000;--wall-unread:#193cff;
+--chip-working:#2bff63;--chip-question:#ffe600;--chip-blocked:#ff4a4a;--chip-unread:#5b9bff;
+/* Device art canvas: the wall's near-black behind the crystal, and its number ink. */
+--art-canvas:#05070d;--art-edge:rgba(34,211,238,.2)}

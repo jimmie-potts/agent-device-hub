@@ -516,6 +516,19 @@ the scene availability order, name-or-ID labelling from the integration snapshot
 and the Work/Quiet/pending/unknown gating. Human UI approval of the candidate is
 recorded in its PR.
 
+Hub #355 adds `apps/dashboard/tests/art.test.mjs` to `npm run test:dashboard`
+and `apps/dashboard/tests/art.mjs` to `npm run test:dashboard:browser`. The fake
+Nanoleaf controller serves a 15-Line, 12-connector layout and, with the
+`panels` option, an 18-triangle NL22 layout on the read-only geometry route, or
+an explicit empty layout or a 404 like an owner that predates the route. The
+browser check covers the drawn Lines with reservation colors and labels, keyboard
+selection shared with the mapping form, pending marks, one geometry read per
+session, a stale controller, the Panels, both schematic fallbacks, reads only
+and axe at 1280 px and 390 px, then drives status, activity, mode and reduced
+motion through a component harness bundled from `tests/art-harness.tsx`. The
+existing Dashboard CI job runs both; no new job is needed. Human UI approval of
+the candidate, compared side by side with the wall map, is recorded in its PR.
+
 Hub #231 adds matrix scenarios for fresh guards and one-step settings:
 - A controller generation advance between render and activation sends one
   command with current guards, and an open draft shows no conflict.

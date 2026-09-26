@@ -83,6 +83,27 @@ input[type=range]{padding:0;height:42px;accent-color:var(--accent)}
 .switch{border-left:2px solid var(--pending);padding-left:16px;margin:12px 0}
 .switch .actions{margin:8px 0}
 .edit fieldset:disabled label{color:var(--muted-dense)}
+/* Shared device art (Hub #355): the figure keeps the wall's canvas; the SVG scales to the column and never grows past the viewport. */
+.device-art{margin:18px 0 6px;border:1px solid var(--art-edge);border-radius:var(--radius);background:var(--art-canvas);padding:10px 12px 8px}
+.device-art-host svg{display:block;width:100%;height:auto;max-height:min(46vh,440px)}
+.device-art[data-art-state=stale] .device-art-host,.device-art[data-art-state=stale] .art-strip{opacity:.55}
+.device-art figcaption{font-size:.78rem;color:var(--muted-dense);line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
+.device-art figcaption .warning{color:var(--pending-text)}
+.prism-scene .wall-line .outline{stroke:var(--focus);stroke-width:2;pointer-events:none}
+.prism-scene .wall-line.selected .outline{stroke:var(--accent)}
+.prism-scene .wall-line:focus-visible:not(.selected) .outline{stroke:var(--focus);stroke-width:2}
+.prism-scene .wall-line:focus,.prism-scene .wall-line:focus-visible{outline:none}
+.prism-scene .wall-line.pending .outline{stroke:var(--accent);stroke-dasharray:12 8}
+.prism-scene .pending-ring{stroke:var(--pending);stroke-width:2;stroke-dasharray:7 5;pointer-events:none}
+.prism-scene .highlight-ring{stroke:var(--focus);stroke-width:1.5;pointer-events:none}
+.prism-scene .wall-line{cursor:pointer}
+.art-strip{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.art-cell{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:14px auto;gap:0 1px;padding:3px;width:52px;background:var(--inset);border:1px solid var(--edge-dense);border-radius:var(--radius);color:var(--muted-dense);font-family:var(--mono);font-size:.62rem;font-weight:500;cursor:pointer}
+.art-cell>span{display:block;height:14px;border-radius:1px;opacity:.85}
+.art-cell>small{grid-column:1/-1;font-size:.62rem;text-align:center;margin-top:3px}
+.art-cell:hover:not(:disabled){background:var(--raised);color:var(--text)}
+.art-cell.selected{border-color:var(--edge-strong);color:var(--emphasis-text)}
+.art-cell.pending{border-style:dashed;border-color:var(--pending)}
 @media(max-width:900px){.shell{grid-template-columns:180px minmax(0,1fr)}.shell>main{padding:0 22px}.shell>aside{padding:25px 12px}.stats>div{padding:16px}}
-@media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:18px}.brand{font-size:1rem}nav{display:flex;flex-wrap:wrap;gap:6px}nav button{font-size:.8rem}.nav-label{display:none}.sidebar-foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:.7rem;padding:7px}.shell>main{padding:0 18px}.top{font-size:.55rem;gap:10px}.hero{padding-top:0}.stats{grid-template-columns:1fr 1fr}.stats>div{border-bottom:1px solid var(--edge-dense)}.stats>div:nth-child(2){border-right:0}.filters{grid-template-columns:1fr}.session{padding:16px}dl,.edit fieldset{grid-template-columns:1fr}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:24px}}
+@media(max-width:680px){.shell{display:block}.shell>aside{border-right:0;border-bottom:1px solid var(--edge-dense);gap:18px}.brand{font-size:1rem}nav{display:flex;flex-wrap:wrap;gap:6px}nav button{font-size:.8rem}.nav-label{display:none}.sidebar-foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.sidebar-foot p{display:none}.sidebar-foot button{font-size:.7rem;padding:7px}.shell>main{padding:0 18px}.top{font-size:.55rem;gap:10px}.hero{padding-top:0}.stats{grid-template-columns:1fr 1fr}.stats>div{border-bottom:1px solid var(--edge-dense)}.stats>div:nth-child(2){border-right:0}.filters{grid-template-columns:1fr}.session{padding:16px}dl,.edit fieldset{grid-template-columns:1fr}.device-art{padding:8px}.device-art-host svg{max-height:40vh}.section-heading{align-items:flex-start}.badge{white-space:normal}.login{margin:4vh auto;padding:24px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
