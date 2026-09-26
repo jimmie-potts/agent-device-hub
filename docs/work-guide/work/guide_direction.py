@@ -16,7 +16,7 @@ hand-written list beside it.
 import html
 
 AS_OF = '2026-09-26'
-REVISION = 'a8f85a2'
+REVISION = '490ad5a'
 
 # Where B.U.N.N.Y. stands on each surface: (surface, one or two sentences, evidence keys).
 STANDING = [
@@ -32,26 +32,26 @@ STANDING = [
      'Agent status and the now-playing card are installed and verified on the cloud-connected device, and the installed local controller host gives it a B.U.N.N.Y. page. The Tronbyt move waits on the dedicated server and is one of its triggers (ADR 0008).',
      ['H21', 'H38', 'H289', 'H23', 'H44']),
     ('LIFX',
-     'The LAN controller runs in the installed local controller host, and B.U.N.N.Y. shows real bulb power. Automatic status for the qualified A19 is delivered in source; installation and physical acceptance remain with #22. The Beam is its own story.',
-     ['H18', 'H289', 'H330', 'H20', 'H22', 'H319']),
+     'The LAN controller runs in the installed local controller host, and B.U.N.N.Y. shows real bulb power. Automatic status for the qualified A19 is delivered in source; the #22 trial found an uncertain-session painting issue. Its #439 fix has merged; #22 retains installation and physical acceptance. The Beam is its own story.',
+     ['H18', 'H289', 'H330', 'H20', 'H22', 'H439', 'H319']),
     ('PC lighting',
      'Later by the owner\'s choice. Every story waits on hardware qualification, so nothing here is scheduled.',
      ['H51', 'H53']),
     ('Playback',
-     'Shared playback with both the Sony HT-A9 and Sonos Move sources is installed and checked on hub 0.3.11, alongside now-playing in B.U.N.N.Y., Codex tools, Pixoo and Tidbyt. The Move supplies play and resume. Sources rank by session presence, freshness class, then configured order, under one stable playback ID. The Windows connector stays deferred and PC-local, with a relay after the server move.',
+     'Shared playback with both the Sony HT-A9 and Sonos Move sources is installed, with the #233 playback check recorded on hub 0.3.11, alongside now-playing in B.U.N.N.Y., Codex tools, Pixoo and Tidbyt. The Move supplies play and resume. Sources rank by session presence, freshness class, then configured order, under one stable playback ID. The Windows connector stays deferred and PC-local, with a relay after the server move.',
      ['H175', 'H37', 'H38', 'H242', 'H233']),
     ('Hub and dashboard',
-     'B.U.N.N.Y. carries the Neon skin, one-step device settings and one command lifecycle for forms and actions. '
+     'B.U.N.N.Y. carries the Neon skin, one-step device settings and one command lifecycle for forms and actions. The dense widget home, gesture-driven controls, shared Prism art and hash routes are delivered in source. '
      'Shared monitoring runs as an installed service with Codex Desktop read state, 24-hour session expiry and consistent retirement across Codex and Claude. '
      'The six services still start only with a WSL login; ADR 0008 chose linger, an idle timeout and one scheduled task on the PC, with a dedicated server behind a trigger.',
-     ['H182', 'H231', 'H245', 'H191', 'H195', 'H241', 'H356', 'H44']),
+     ['H182', 'H231', 'H245', 'H277', 'H191', 'H195', 'H241', 'H356', 'H44']),
     ('Steam Deck',
      'Planned only: seven stories filed on 2026-09-25 make the Deck a couch control for agents and B.U.N.N.Y. and a Steam event source for the room. '
      'The route to the loopback hub is the owner\'s first decision; the story launcher on WSL is ready now.',
      ['H378', 'H384', 'H379', 'H382']),
     ('Guide and atlas',
-     'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. Reconciling story text made stale today and recording recommendations for the new stories come next, then the nightly rolling refresh.',
-     ['H197', 'H252', 'H259', 'H308', 'H315']),
+     'Published in the Neon skin with task briefs, live GitHub status, a starting-session recommendation per story, story-owned topic placement and an Ideas section. The atlas playback prose now matches the installed speaker sources. Reconciling story text made stale today and recording recommendations for the new stories come next, then the nightly rolling refresh.',
+     ['H197', 'H252', 'H259', 'H308', 'H401', 'H315']),
 ]
 
 # What it is becoming: (paragraph, direction keys).
@@ -87,6 +87,7 @@ IMPROVEMENTS = [
 
 # Keys moved out of SEQUENCE at a refresh: (date, keys, note).
 DELIVERED_SINCE = [
+    ('2026-09-26', ['H277'], 'The dense dashboard home, gesture-driven controls and hash routes are delivered in source; #444 owns installation and the installed dashboard check.'),
     ('2026-09-26', ['H20'], 'LIFX automatic status is delivered in source; #22 retains installation and physical acceptance.'),
     ('2026-09-26', ['H355'], 'Shared Prism device art is delivered in the dashboard source.'),
     ('2026-09-26', ['H233'], 'The Sonos Move source is installed and checked on hub 0.3.11, including paused track changes and Sony-only presentation.'),
