@@ -53,7 +53,10 @@ export function fakeTidbyt() {
 /** A loopback hub serving a healthy idle shared owner, so the Tidbyt publisher has nothing to write. */
 export async function fakeHub(t) {
   const owner = await createAgentState({ storage: new MemoryStorage(), ownerId: 'owner', consumers: [] });
-  const server = createServer((_req, res) => res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot: owner.snapshot() })));
+  const server = createServer((req, res) => {
+    const version = new URL(req.url, 'http://127.0.0.1').searchParams.get('snapshotVersion') ?? '1.0';
+    res.end(JSON.stringify({ apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot: owner.snapshot(version) }));
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => { server.closeAllConnections(); server.close(); await owner.shutdown(); });

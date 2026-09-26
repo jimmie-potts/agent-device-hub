@@ -136,9 +136,14 @@ hold the details.
   `RUN`, `DONE`, then newest evidence first. With more than four sessions,
   three rows are drawn and the fourth reads `+N MORE`. Child sessions and
   sessions with nothing outstanding are not shown.
-- **Labels.** The session's user label, then its user-chosen project ID, then a
-  neutral ID: `C` (Claude) or `X` (Codex) and four hex digits of the identity
-  hash. No title, prompt or other agent content is drawn.
+- **Labels.** The session's owner-resolved label, then its title, project display
+  name, legacy project ID, then a neutral ID: `C` (Claude) or `X` (Codex), a
+  hyphen and four hex digits of the identity hash. The label uses the existing
+  ten-character area beside the state word within fourteen text columns.
+  Titles and project names come from bounded snapshot 1.2 fields; credentials
+  and tokens remain excluded. The runner requests snapshot 1.2 explicitly and
+  treats a failed or mismatched response as unavailable, using the same stale
+  presentation below. It requires a hub with snapshot 1.2 support.
 - **Uncertainty.** A session with uncertain freshness is dimmed and its marker
   becomes `?`. If the feed can't be read within 3 s or its collector isn't
   running, every row from the last good snapshot is marked that way, or the

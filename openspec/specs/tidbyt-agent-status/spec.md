@@ -1,7 +1,7 @@
 # tidbyt-agent-status Specification
 
 ## Purpose
-Define automatic agent status on the Tidbyt from [Hub #19](https://github.com/jimmie-potts/agent-device-hub/issues/19): a pure four-row view of the shared agent-state snapshot with private labels and visible uncertainty, drawn as a 64×32 frame and published only through the Tidbyt controller queue with bounded cadence and idle removal.
+Define automatic agent status on the Tidbyt from [Hub #19](https://github.com/jimmie-potts/agent-device-hub/issues/19): a pure four-row view of the shared agent-state snapshot with bounded display labels and visible uncertainty, drawn as a 64×32 frame and published only through the Tidbyt controller queue with bounded cadence and idle removal.
 
 ## Requirements
 
@@ -29,11 +29,27 @@ The Tidbyt status view SHALL be a pure function of one shared agent-state snapsh
 - **THEN** it is not shown as `DONE`
 
 ### Requirement: Private labels
-Each row SHALL be labelled with the session's user label, otherwise its user-chosen project ID, otherwise a neutral ID derived by hashing its identity. The view MUST NOT draw any other snapshot text.
+Each row SHALL be labelled with the session's explicit label, otherwise `title.value`, otherwise the project display name, otherwise its legacy project ID, otherwise a neutral ID derived by hashing its identity. The label SHALL use the existing font normalization and ten-character bound beside the state word within fourteen text columns. The view MUST NOT draw credentials, tokens, contact details or arbitrary snapshot text. The Tidbyt runner SHALL explicitly request snapshot 1.2 through the shared feed and validate that version; existing shared-feed consumers SHALL retain their default request unless they select a version.
+
+#### Scenario: Titled session
+- **WHEN** a working snapshot 1.2 session has a title and project but no explicit label
+- **THEN** its row shows the normalized title within ten characters and preserves the state word
+
+#### Scenario: Explicit label
+- **WHEN** a session has a label, title and project
+- **THEN** the row shows the label
+
+#### Scenario: Project fallback
+- **WHEN** a session has no label or title but has a project display name and legacy project ID
+- **THEN** the row shows the project display name
 
 #### Scenario: Neutral ID
-- **WHEN** a session has no label and no project ID
+- **WHEN** a session has no label, title, project display name or project ID
 - **THEN** its row shows `C` for Claude or `X` for Codex and four hex digits of the identity hash, and none of its identity fields appear in the frame text
+
+#### Scenario: Versioned feed
+- **WHEN** Tidbyt reads the selected owner's shared feed
+- **THEN** it requests snapshot 1.2 and validates the returned title/project metadata, treating a failed or mismatched response as unavailable without sending commands during the read
 
 ### Requirement: Visible uncertainty
 The view SHALL dim and mark with `?` every session whose freshness is uncertain. When the feed cannot be read or its collector is not running, it SHALL mark every row from the last good snapshot the same way, or show `FEED ?` when there is none. An unavailable feed MUST NOT remove the installation.

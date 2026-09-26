@@ -1,5 +1,6 @@
 // Deterministic 64×32 RGB frames shared by the renderer tests and golden fixtures.
-import { nowPlayingFrame, nowPlayingView } from '../dist/index.js';
+import { readFileSync } from 'node:fs';
+import { nowPlayingFrame, nowPlayingView, statusFrame, statusView } from '../dist/index.js';
 
 export const WIDTH = 64;
 export const HEIGHT = 32;
@@ -18,7 +19,10 @@ function noise(seed) {
   return () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0) >>> 24;
 }
 
+export const titleSnapshot = JSON.parse(readFileSync(new URL('../fixtures/status-titles.json', import.meta.url), 'utf8'));
+
 export const goldenFrames = {
+  'status-titles': () => statusFrame(statusView(titleSnapshot)).rgb,
   black: () => frame(() => [0, 0, 0]),
   'two-tone': () => frame((x, y) => ((x + y) % 2 ? [255, 0, 12] : [0, 0, 200])),
   'red-gradient': () => frame((x, y) => [(x * 4 + y) & 255, 7, 7]),
