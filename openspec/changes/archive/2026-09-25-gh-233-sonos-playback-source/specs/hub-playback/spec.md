@@ -1,9 +1,4 @@
-# hub-playback Specification
-
-## Purpose
-Provide the standalone hub's shared playback snapshot, observation freshness and source-bound commands, with protocol-specific sources kept in separate modules. The Sony HT-A9 AirPlay receiver is the first source.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Source-independent shared playback
 The hub SHALL keep shared playback separate from any source protocol. The shared module SHALL accept normalized observations and delegate commands only through the typed source interface, SHALL NOT import source-specific code or interpret source response fields, and SHALL expose snapshots and commands bound to one stable neutral playback ID configured as `playback.id`, which is never derived from a receiver address and never changes with the presented source. Configuration SHALL list one or two sources in preference order, at most one of each kind, without per-source IDs; the hub SHALL poll every configured source.
@@ -39,29 +34,6 @@ Each source SHALL keep its own observation record. The snapshot SHALL report the
 - **WHEN** one source stops answering while another keeps reporting
 - **THEN** only the silent source's record ages, and the other source's observation time keeps advancing
 
-### Requirement: Sony HT-A9 source
-The Sony source SHALL read `getPlayingContentInfo` from the configured receiver immediately and about every two seconds, with a 1.5-second timeout and no overlapping reads. It SHALL normalize the AirPlay entry's title, artist, optional album and playback status. It SHALL declare pause, next and previous while AirPlay is playing, SHALL declare only next and previous while AirPlay is paused, SHALL declare no controls in any other status and SHALL NOT declare play. It SHALL report a non-AirPlay input as inactive and SHALL NOT copy other receiver fields, including artwork URLs.
-
-#### Scenario: AirPlay track playing
-- **WHEN** the receiver reports AirPlay playing with title, artist and album
-- **THEN** the snapshot shows those values, status `playing` and controls pause, next and previous
-
-#### Scenario: Missing fields and paused playback
-- **WHEN** the AirPlay entry lacks an album or reports `PAUSED`
-- **THEN** the album is absent rather than empty, and a paused source declares only next and previous
-
-#### Scenario: Stopped or unknown playback
-- **WHEN** the AirPlay entry reports `STOPPED` or an unrecognized state
-- **THEN** the source declares no controls
-
-#### Scenario: Another input
-- **WHEN** the receiver reports no AirPlay entry
-- **THEN** the source is available with status `inactive`, no metadata and no controls
-
-#### Scenario: Receiver error
-- **WHEN** the receiver returns a JSON-RPC error, an unexpected status or a malformed body
-- **THEN** the read counts as failed and reports nothing
-
 ### Requirement: Source-bound playback commands
 The hub SHALL accept a command only when its `sourceId` equals the playback ID, the caller has control scope and that ID in its devices, the presented source is available and the action is among the presented source's current controls. It SHALL run one command at a time across all sources, SHALL send an admitted command to the presented source exactly once, SHALL return a receipt with the request ID, the playback ID and a `sent`, `failed` or `uncertain` outcome, and SHALL NOT redirect, retry or replay a command. Repeating a retained request ID with the same body SHALL return the original receipt without contacting any source; a different body SHALL be rejected.
 
@@ -96,6 +68,8 @@ The hub SHALL accept a command only when its `sourceId` equals the playback ID, 
 #### Scenario: Command after the presented source changed
 - **WHEN** a client read the Sonos controls, the rule then presents the Sony, and the client sends play
 - **THEN** the hub answers `unsupported-control` and sends nothing to either source
+
+## ADDED Requirements
 
 ### Requirement: Source preference
 The hub SHALL present, for each snapshot and command, the first source in configured order with the highest rank, where a source ranks first by reporting a session (a retained observation with status `playing` or `paused`), then by freshness class (`available` over `stale` over `unavailable`), then by configured order. The hub SHALL NOT expose which source is presented in the 1.0 snapshot and SHALL NOT change the playback ID when the presented source changes.

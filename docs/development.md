@@ -437,16 +437,22 @@ devices. The source includes supervised child release, fenced import, route read
 interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
 
-Playback for #175 is covered by `apps/hub/tests/playback.test.mjs`, which
+Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
-shared playback module against a non-Sony fake source and the Sony module
-against a fake loopback receiver. Freshness checks use a controlled clock; route
-checks cover authentication, the configured target, unsupported controls,
-duplicate and concurrent commands and failed/uncertain results. These tests do
-not contact a receiver or phone. Installed playback acceptance with a real
-iPhone and HT-A9 needs a separately authorized receiver address and is recorded
-on the issue.
+shared playback module against fake sources with no speaker code, the Sony
+module against a fake loopback receiver and the Sonos module against a fake
+loopback AVTransport service. Freshness checks use a controlled clock. The #233
+cases cover two sources under one playback ID: independent freshness, the
+preference rule (Move alone, grouped, Sony alone, a Move that goes silent
+mid-song staying stale and then yielding to the Sony), a command checked after
+the presented source changed, and the rejected `selected` configuration form.
+Route checks cover authentication, the configured target, unsupported controls,
+duplicate and concurrent commands, failed/uncertain results and a hub with both
+sources. The dashboard browser fixture and `mcp.test.mjs` use the same
+configuration shape. These tests do not contact a speaker or phone. Installed
+playback acceptance with a real iPhone, HT-A9 and Move needs separately
+authorized speaker addresses and is recorded on the issue.
 
 For owning-service acceptance, prepare the immutable revisions in
 `apps/hub/fixtures/pixoo-source.json` and `nanoleaf-source.json` in disposable
