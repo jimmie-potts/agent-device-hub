@@ -1,16 +1,29 @@
 // The only place the core talks to systemd. Everything is addressed by unit name;
 // nothing is found or killed by port, process name or remembered PID.
-import {exec, pause} from './util.js';
+import {readFile} from 'node:fs/promises';
+import {exec, pause, which} from './util.js';
+
+/** Manager states that accept transient units; the same list the docs give. */
+export const USABLE_MANAGER_STATES = ['running', 'degraded', 'starting', 'initializing'];
 
 export const unitName = (runId: string) => `app-verify-${runId}.service`;
 export const leaseBase = (runId: string, generation = 1) => `app-verify-${runId}-lease${generation > 1 ? `-${generation}` : ''}`;
 export const leaseGeneration = (timer: string) => Number(/-lease-(\d+)\.timer$/.exec(timer)?.[1] ?? 1);
 
+/**
+ * The systemctl the lease runs when it fires, resolved from a fixed system
+ * PATH, never the caller's: a shim or a removed tool on the caller's PATH
+ * must not silently disarm a lease.
+ */
+export function leaseSystemctl(): string | undefined {
+  return which('systemctl', '/usr/bin:/bin', '/');
+}
+
 /** `running`/`degraded` managers can run units; anything else is unavailable. */
 export async function supervisor(): Promise<{available: true} | {available: false; reason: string}> {
   const result = await exec('systemctl', ['--user', 'is-system-running'], {timeoutMs: 10000});
   const state = result.stdout.trim();
-  if (['running', 'degraded', 'starting', 'initializing'].includes(state)) return {available: true};
+  if (USABLE_MANAGER_STATES.includes(state)) return {available: true};
   return {available: false, reason: `systemctl --user is-system-running answered ${state || result.error || result.stderr.trim().split('\n')[0] || `exit ${result.code}`}`};
 }
 
@@ -99,7 +112,8 @@ export async function startService(spec: ServiceSpec): Promise<{ok: true} | {ok:
  * `expiresAt`, including after the host sleeps.
  */
 export async function startLease(base: string, unit: string, expiresAt: number, description: string): Promise<{ok: true} | {ok: false; reason: string}> {
-  const systemctl = (await exec('sh', ['-c', 'command -v systemctl'])).stdout.trim() || '/usr/bin/systemctl';
+  const systemctl = leaseSystemctl();
+  if (!systemctl) return {ok: false, reason: 'systemctl was not found in /usr/bin or /bin'};
   const result = await exec('systemd-run', [
     '--user', `--unit=${base}`, '--collect', '--quiet',
     `--on-calendar=@${expiresAt}`, '--timer-property=AccuracySec=1s',
@@ -108,8 +122,11 @@ export async function startLease(base: string, unit: string, expiresAt: number, 
   ], {timeoutMs: 30000});
   if (result.code !== 0) return {ok: false, reason: (result.stderr.trim() || result.error || `systemd-run exit ${result.code}`).split('\n')[0]!};
   const state = await timerState(`${base}.timer`);
-  if (!state?.loaded || state.active !== 'active') return {ok: false, reason: 'lease timer did not become active'};
-  if (state.nextElapse !== expiresAt) return {ok: false, reason: `lease timer elapses at ${state.nextElapse}, expected ${expiresAt}`};
+  if (!state?.loaded || state.active !== 'active' || state.nextElapse !== expiresAt) {
+    // Never leave a timer the receipt does not name: it could stop the unit at an unrecorded time.
+    await stopUnit(`${base}.timer`);
+    return {ok: false, reason: !state?.loaded || state.active !== 'active' ? 'lease timer did not become active' : `lease timer elapses at ${state.nextElapse}, expected ${expiresAt}`};
+  }
   return {ok: true};
 }
 
@@ -137,4 +154,25 @@ export async function stopUnit(unit: string, timeoutMs = 20000): Promise<'remove
     if (Date.now() > deadline) return 'left';
     await pause(100);
   }
+}
+
+/**
+ * Loopback TCP ports the unit's processes listen on, read from `ss` and the
+ * unit's cgroup; `undefined` when either cannot be read.
+ */
+export async function listeningPorts(unit: string): Promise<number[] | undefined> {
+  const group = (await show(unit, ['ControlGroup']))?.ControlGroup;
+  if (!group) return undefined;
+  const procs = await readFile(`/sys/fs/cgroup${group}/cgroup.procs`, 'utf8').catch(() => undefined);
+  if (procs === undefined) return undefined;
+  const pids = new Set(procs.split('\n').filter(Boolean));
+  const listed = await exec('ss', ['-ltnpH'], {timeoutMs: 10000});
+  if (listed.code !== 0) return undefined;
+  const ports = new Set<number>();
+  for (const line of listed.stdout.split('\n')) {
+    const local = /\s(127\.0\.0\.1|\[::ffff:127\.0\.0\.1\]):(\d+)\s/.exec(line);
+    const owners = [...line.matchAll(/pid=(\d+)/g)].map(m => m[1]!);
+    if (local && owners.some(pid => pids.has(pid))) ports.add(Number(local[2]));
+  }
+  return [...ports].sort((a, b) => a - b);
 }

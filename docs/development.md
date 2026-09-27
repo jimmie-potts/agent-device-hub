@@ -151,7 +151,7 @@ Python commands are unchanged. Python setup caches pip downloads by runtime,
 platform and `requirements-contracts.txt`; dependency installation still runs.
 No installed dependencies or compiled output are shared between jobs.
 
-Normal Depot CI has six Linux jobs:
+Normal Depot CI has seven Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |
@@ -161,9 +161,10 @@ Normal Depot CI has six Linux jobs:
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
 | Work guide | Python 3.12 generation/maintenance and Node 24 browser checks with review artifacts |
 | Dashboard | Node 24 build/type, controller-backed browser fixtures and accessibility |
+| App verification | Node 24 build, Chromium, the app-verify core's receipt and unsupervised capture tests and its isolated archive consumer; lifecycle tests skip because the runner has no systemd |
 
 Each combined contracts/state job installs dependencies, builds and typechecks
-once before running its suites. The core workflow performs four full builds
+once before running its suites. The core workflow performs five full builds
 across its jobs. Local validation runs the same commands. Later runtime and
 browser changes must add their own issue-appropriate checks.
 
@@ -948,27 +949,44 @@ Hub #494 implements the lifecycle once in the private workspace package
 consume through one plug-in each. Use Node 24 from the worktree root and run
 `npm run build`, `npm run typecheck` (which also type-checks the package's
 caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
-The suite needs a Linux user manager (`systemctl --user is-system-running`
-answering `running` or `degraded`) and the repository's Playwright Chromium.
-Its lifecycle tests start real transient units named `app-verify-avt-*` with
-leases of seconds and a fixture counter application, and stop every unit they
-created. Without a user manager they skip, each with the printed reason, unless
-`APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The unsupervised capture
-tests, including the negative controls, run either way. The package check
-installs the packed archive into an isolated consumer that supplies its own
-Playwright, verifies every file hash, runs the packaged suite and repeats any
-skip reason. Neither check touches installed services, personal state or
-devices, and neither contacts Windows: the tests set
+Set `TMPDIR` outside every Git checkout, for example
+`~/.cache/agent-device-hub/<task>-tmp`: the tests' runtime roots live under
+it, and the core refuses runtime state inside a checkout.
+
+The suite has two parts:
+
+- **Everywhere, including CI:** receipt validation, `help`, `start` refusing
+  without a user manager (exit 3, nothing created; forced locally by hiding
+  the user bus), and `tests/unsupervised.test.mjs`. That file judges capture
+  steps through `runCaptureStep`: the reference passes, and a `control-*`
+  wrong expectation, predicates that return `false`, a known-broken app and a
+  step without assertions fail. Missing Playwright, Chromium or ffmpeg is
+  `unavailable`, and an encoder that writes nothing or a truncated WebM is
+  `failed`.
+- **Only on a host with a user manager** (`systemctl --user
+  is-system-running` answering `running`, `degraded`, `starting` or
+  `initializing`): every lifecycle test. These start real transient units
+  named `app-verify-avt-*` with leases of seconds and a fixture counter
+  application, and stop every unit they created. They cover start order,
+  failed and interrupted starts, concurrency and reseeds, extend (including a
+  refused timer and a stray one), expiry, doctor staleness, restart, frozen
+  proof, attachments, interrupted captures and receipt-less stop. Without a
+  manager they skip, each with the printed reason, unless
+  `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
+  records them from the owner's WSL host.
+
+The package check installs the packed archive into an isolated consumer that
+supplies its own Playwright, verifies every file hash, runs the packaged suite
+and repeats any skip reason. Neither check touches installed services,
+personal state or devices, and neither contacts Windows: the tests set
 `APP_VERIFY_WINDOWS_CHECK=off`.
 
 The App verification CI job runs both after a fresh build and Chromium
 install. Depot's Ubuntu runner is not booted with systemd: on PR #552,
 `systemctl --user is-system-running` answered `offline` and
 `loginctl enable-linger` failed with "System has not been booted with systemd
-as init system (PID 1)". CI therefore runs the receipt, help and unsupervised
-capture tests (reference passes, `control-*` and a broken app fail) and skips
-the lifecycle tests with that reason; they run locally on WSL, where the
-delivery evidence records them. `npm run package:app-verify` writes
+as init system (PID 1)". CI therefore proves the first part only.
+`npm run package:app-verify` writes
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
 

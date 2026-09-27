@@ -1,14 +1,14 @@
 // start, scenario, extend, stop, restart and doctor: the run lifecycle of
 // docs/app-verification.md, identical for every application.
 import {existsSync} from 'node:fs';
-import {chmod, mkdir, open, readdir, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, open, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {delimiter, dirname, join} from 'node:path';
 import {card, windowsLoopback} from './card.js';
 import {ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunState} from './types.js';
-import {ANY_RUN_ID, errorText, hex256, iso, newRunId, pause, runIdPattern, which} from './util.js';
+import {errorText, hex256, iso, newRunId, pause, runIdPattern, which} from './util.js';
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -20,12 +20,15 @@ export interface Io {
   progress(line: string): void;
 }
 
-export interface Outcome {
-  code: number;
-}
-
 export const EXIT = {ok: 0, failed: 1, usage: 2, unavailable: 3} as const;
 export const DEFAULT_LEASE_MINUTES = 120;
+/** The installed services' ports (docs/app-verification.md). A run never serves on them. */
+export const INSTALLED_PORTS: readonly number[] = [8788, 8765, 8787, 8791, 41230, 41231];
+
+/** An own key of a plug-in record: `toString` or `__proto__` never names a scenario or step. */
+export function has(record: Readonly<Record<string, unknown>>, key: string): boolean {
+  return Object.hasOwn(record, key);
+}
 
 /** A lifecycle failure with a receipt cause. */
 export class Failure extends Error {
@@ -48,6 +51,9 @@ export class Run {
   get tmpDir() {
     return join(this.runtimeDir, 'tmp');
   }
+  get homeDir() {
+    return join(this.runtimeDir, 'home');
+  }
   get stdoutLog() {
     return join(this.runtimeDir, 'stdout.log');
   }
@@ -62,10 +68,6 @@ export class Run {
   }
 }
 
-export async function roots(plugin: AppPlugin, io: Io): Promise<Roots> {
-  return resolveRoots(plugin, io.env);
-}
-
 function probeContext(run: Run, scenario: string, url: string, port: number, signal: AbortSignal): ProbeContext {
   return {...run.paths(), scenario, url, port, signal};
 }
@@ -75,14 +77,14 @@ function probeContext(run: Run, scenario: string, url: string, port: number, sig
 
 /** Empty the application's state and seed a scenario into it. */
 async function seed(run: Run, scenario: string): Promise<void> {
-  await rm(run.dataDir, {recursive: true, force: true});
-  await rm(run.tmpDir, {recursive: true, force: true});
-  await mkdir(run.dataDir, {mode: 0o700});
-  await mkdir(run.tmpDir, {mode: 0o700});
+  for (const dir of [run.dataDir, run.tmpDir, run.homeDir]) {
+    await rm(dir, {recursive: true, force: true});
+    await mkdir(dir, {mode: 0o700});
+  }
   await writeFile(run.stdoutLog, '', {mode: 0o600});
   await writeFile(run.stderrLog, '', {mode: 0o600});
-  const definition = run.plugin.scenarios[scenario];
-  if (!definition) throw new Failure('seed-failed', `unknown scenario ${scenario}`);
+  if (!has(run.plugin.scenarios, scenario)) throw new Failure('seed-failed', `unknown scenario ${scenario}`);
+  const definition = run.plugin.scenarios[scenario]!;
   try {
     await definition.seed({...run.paths(), scenario});
   } catch (error) {
@@ -109,7 +111,8 @@ async function launch(run: Run, scenario: string, port: number, env: Env): Promi
     unit: run.unit,
     argv: [program, ...spec.argv.slice(1)],
     cwd,
-    env: {...spec.env, PATH: path, HOME: env.HOME ?? '', TMPDIR: run.tmpDir},
+    // A private HOME keeps the app away from the caller's personal files unless the plug-in opts out.
+    env: {PATH: path, HOME: run.homeDir, TMPDIR: run.tmpDir, ...spec.env},
     stdout: run.stdoutLog,
     stderr: run.stderrLog,
     description: `app-verify ${run.runId}`,
@@ -154,6 +157,7 @@ async function ready(run: Run, scenario: string, expectedPort: number): Promise<
           url = parsed.href;
           port = Number(parsed.port);
           if (expectedPort && port !== expectedPort) throw new Failure('port-changed', `relaunched on port ${port}, expected ${expectedPort}`);
+          if ([...INSTALLED_PORTS, ...(run.plugin.reservedPorts ?? [])].includes(port)) throw new Failure('port-reserved', `the application announced reserved port ${port}`);
           break;
         }
       }
@@ -205,6 +209,40 @@ async function identity(run: Run): Promise<{mainPid: number; mainStartMonotonic:
   if (!unit?.loaded || unit.active !== 'active' || !unit.mainPid || !unit.mainStartMonotonic) throw new Failure('unit-exited', 'the application unit is not active after readiness');
   return {mainPid: unit.mainPid, mainStartMonotonic: unit.mainStartMonotonic};
 }
+
+/**
+ * The plug-in's own one-line cause for a failed start or reseed, from the last
+ * 4 KB of the app's stderr. The tail stays in memory; only a validated single
+ * line the plug-in chose to return is recorded.
+ */
+async function appCause(run: Run): Promise<string | undefined> {
+  const name = run.plugin.readiness.failureCause;
+  if (!name) return undefined;
+  let tail = '';
+  try {
+    const handle = await open(run.stderrLog, 'r');
+    try {
+      const size = (await handle.stat()).size, length = Math.min(size, 4096);
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, size - length);
+      tail = buffer.toString('utf8');
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return undefined;
+  }
+  if (!tail) return undefined;
+  try {
+    const cause = name.call(run.plugin.readiness, tail);
+    if (typeof cause === 'string' && cause.length > 0 && cause.length <= 200 && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(cause)) return cause;
+  } catch {
+    // A plug-in that throws never masks the core's own cause.
+  }
+  return undefined;
+}
+
+const withCause = (detail: string, cause: string | undefined) => (cause ? `${detail}; app: ${cause}` : detail);
 
 // ---------------------------------------------------------------------------
 // Cleanup through unit names only.
@@ -333,7 +371,9 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
     for (const line of lines) io.progress(line);
     return {code: EXIT.ok, receipt, value: {...operation, runId, state: 'running', url: announced.url, port, scenario: options.scenario, build: receipt.build, expiresAt: receipt.preview!.expiresAt, proofDir: run.store.dir, card: lines}};
   } catch (error) {
-    const failure = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
+    const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
+    const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
+    (failure as Failure & {checks?: CheckRecord[]}).checks = (caught as Failure & {checks?: CheckRecord[]}).checks;
     io.progress(`${runId}: start failed: ${failure.message}`);
     const cleaned = await cleanup(run, receipt, false);
     const checks = (failure as Failure & {checks?: CheckRecord[]}).checks;
@@ -404,7 +444,8 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
     io.progress(`${run.runId}: reseeded to ${scenario} on port ${announced.port}`);
     return {code: EXIT.ok, value: {runId: run.runId, state: 'running', scenario, port: announced.port, url: announced.url, seededAt, receipt: updated}};
   } catch (error) {
-    const failure = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
+    const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
+    const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
     io.progress(`${run.runId}: reseed failed, stopping the run: ${failure.message}`);
     const cleaned = await cleanup(run, receipt, false);
     await run.store.update(current => {
@@ -417,7 +458,7 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
 
 export async function scenario(plugin: AppPlugin, io: Io, runId: string | undefined, name: string | undefined) {
   const run = await load(plugin, io, runId);
-  if (!name || !plugin.scenarios[name]) throw new Failure('unknown-scenario', `the fixtures define no scenario ${name ?? '(none)'}`);
+  if (!name || !has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name ?? '(none)'}; see help`);
   const receipt = await requireRunning(run);
   const result = await reseed(run, io, receipt, name);
   const {receipt: _unused, ...value} = result.value;
@@ -431,23 +472,27 @@ export async function extend(plugin: AppPlugin, io: Io, runId: string | undefine
   const run = await load(plugin, io, runId);
   const receipt = await requireRunning(run);
   const old = receipt.owned.leaseTimer;
-  const next = systemd.leaseBase(run.runId, systemd.leaseGeneration(old) + 1);
+  // The next generation is above every lease timer that exists, including one a killed extend left behind.
+  const leases = ((await systemd.listUnits(`app-verify-${run.runId}-lease`)) ?? []).filter(name => name.endsWith('.timer'));
+  const next = systemd.leaseBase(run.runId, Math.max(systemd.leaseGeneration(old), ...leases.map(systemd.leaseGeneration)) + 1);
   const expiresAt = Math.ceil((Date.now() + leaseMinutes * 60000) / 1000);
   const lease = await systemd.startLease(next, run.unit, expiresAt, `app-verify lease ${run.runId}`);
   if (!lease.ok) {
     await run.store.event('extend-failed', {timer: `${next}.timer`, reason: lease.reason});
     throw new Failure('lease-failed', `the new lease timer could not be started; ${old} still holds the old expiry (${lease.reason})`);
   }
-  const retired = await systemd.stopUnit(old);
+  // Only the new lease may remain: an older or stray timer could stop the run before the recorded expiry.
+  const retired: Record<string, string> = {};
+  for (const timer of new Set([old, ...leases])) retired[timer] = await systemd.stopUnit(timer);
   const updated = await run.store.update(current => {
     current.owned.leaseTimer = `${next}.timer`;
     current.preview = {...current.preview!, expiresAt: iso(expiresAt * 1000), leaseMinutes};
   });
-  await run.store.event('extended', {timer: `${next}.timer`, replaced: old, replacedOutcome: retired, expiresAt: updated.preview!.expiresAt});
+  await run.store.event('extended', {timer: `${next}.timer`, replaced: retired, expiresAt: updated.preview!.expiresAt});
   const lines = card(updated, plugin.command);
   for (const line of lines) io.progress(line);
-  const ok = retired === 'removed' || retired === 'absent';
-  return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'extend', runId: run.runId, state: 'running', expiresAt: updated.preview!.expiresAt, leaseTimer: `${next}.timer`, ...(ok ? {} : {left: old}), card: lines}};
+  const left = Object.entries(retired).filter(([, outcome]) => outcome !== 'removed' && outcome !== 'absent').map(([timer]) => timer);
+  return {code: left.length ? EXIT.failed : EXIT.ok, value: {operation: 'extend', runId: run.runId, state: 'running', expiresAt: updated.preview!.expiresAt, leaseTimer: `${next}.timer`, ...(left.length ? {left} : {}), card: lines}};
 }
 
 // ---------------------------------------------------------------------------
@@ -455,7 +500,24 @@ export async function extend(plugin: AppPlugin, io: Io, runId: string | undefine
 
 export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined) {
   const run = await load(plugin, io, runId);
-  const receipt = run.store.exists() ? await run.store.read() : undefined;
+  // Unit names come from the run id, so an unreadable receipt never blocks cleanup; the file is left as found.
+  let receipt: Receipt | undefined, unreadable: string | undefined;
+  if (run.store.exists()) {
+    try {
+      const value = await run.store.read();
+      const checked = validateReceipt(value);
+      if (checked.ok) receipt = value;
+      else unreadable = checked.errors[0];
+    } catch (error) {
+      unreadable = errorText(error);
+    }
+  }
+  if (unreadable !== undefined) {
+    const cleaned = await cleanup(run, undefined, false);
+    await run.store.event('stopped', {state: 'stale', receipt: 'unreadable', cleanup: cleaned.result, items: cleaned.items}).catch(() => undefined);
+    const ok = cleaned.items.every(i => i.outcome !== 'left' && i.outcome !== 'unknown');
+    return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'stop', runId: run.runId, state: 'stale', receipt: 'unreadable', detail: unreadable, cleanup: cleaned}};
+  }
   const live = receipt ? receipt.state === 'starting' || receipt.state === 'running' : false;
   const unitBefore = await systemd.unitState(run.unit);
   const leases = await systemd.listUnits(`app-verify-${run.runId}-lease`);
@@ -511,7 +573,9 @@ export async function sums(directory: string): Promise<Map<string, string>> {
     for (const entry of (await readdir(join(directory, prefix), {withFileTypes: true})).sort((a, b) => a.name.localeCompare(b.name))) {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile() && path !== 'SHA256SUMS') {
+      // A frozen set holds regular files only; a link or device could change what a sum covers.
+      else if (!entry.isFile()) throw new Failure('proof-irregular', `${path} is not a regular file`);
+      else if (path !== 'SHA256SUMS') {
         const handle = await open(join(directory, path), 'r');
         try {
           found.set(path, hex256(await handle.readFile()));
@@ -525,22 +589,45 @@ export async function sums(directory: string): Promise<Map<string, string>> {
   return found;
 }
 
-export async function verifySums(proofDir: string): Promise<'ok' | 'tampered' | 'not-frozen'> {
+/** The manifest digest the `frozen` event recorded at handoff, if any. */
+async function frozenManifest(proofDir: string): Promise<string | undefined> {
+  const text = await readFile(join(proofDir, 'events.jsonl'), 'utf8').catch(() => '');
+  let digest: string | undefined;
+  for (const line of text.split('\n')) {
+    try {
+      const event = JSON.parse(line) as {event?: string; manifest?: string};
+      if (event.event === 'frozen' && typeof event.manifest === 'string') digest = event.manifest;
+    } catch {
+      // A torn last line is not evidence either way.
+    }
+  }
+  return digest;
+}
+
+/**
+ * The frozen set's integrity: `ok`, `tampered` (a file, the manifest or its
+ * recorded digest differs, or an entry is not a regular file), `missing`
+ * (the receipt says frozen but `verified/` or `SHA256SUMS` is gone) or
+ * `not-frozen`.
+ */
+export async function verifySums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'not-frozen'> {
   const verified = join(proofDir, 'verified');
   const manifest = join(verified, 'SHA256SUMS');
-  if (!existsSync(manifest)) return 'not-frozen';
-  const handle = await open(manifest, 'r');
-  let text: string;
-  try {
-    text = (await handle.readFile()).toString('utf8');
-  } finally {
-    await handle.close();
-  }
+  if (!existsSync(manifest)) return frozenAt ? 'missing' : existsSync(verified) ? 'tampered' : 'not-frozen';
+  const text = await readFile(manifest, 'utf8');
+  const recorded = await frozenManifest(proofDir);
+  if (recorded !== undefined && recorded !== 'sha256:' + hex256(text)) return 'tampered';
   const expected = new Map(text.trim().split('\n').filter(Boolean).map(line => {
     const [sum, ...path] = line.split('  ');
     return [path.join('  '), sum ?? ''] as [string, string];
   }));
-  const actual = await sums(verified);
+  let actual: Map<string, string>;
+  try {
+    actual = await sums(verified);
+  } catch (error) {
+    if (error instanceof Failure && error.code === 'proof-irregular') return 'tampered';
+    throw error;
+  }
   if (expected.size !== actual.size) return 'tampered';
   for (const [path, sum] of expected) if (actual.get(path) !== sum) return 'tampered';
   return 'ok';
@@ -638,6 +725,7 @@ async function assess(run: Run, io: Io) {
   }
   let health: CheckRecord | null = null, artifact: string | null = null, windows: CheckRecord | null = null;
   const checks: CheckRecord[] = [];
+  let listener: {recorded: number; ports: number[] | null; outcome: 'matches' | 'mismatch' | 'unread'} | null = null;
   if (receipt?.preview && receipt.owned.port && active) {
     const url = receipt.preview.url, port = receipt.owned.port;
     try {
@@ -654,6 +742,13 @@ async function assess(run: Run, io: Io) {
     if (artifact === 'changed') {
       state = 'stale';
       reasons.push('artifact-changed');
+    }
+    // The actual listener: the recorded port must be one the unit's own processes listen on.
+    const ports = await systemd.listeningPorts(run.unit);
+    listener = ports === undefined ? {recorded: port, ports: null, outcome: 'unread'} : {recorded: port, ports, outcome: ports.includes(port) ? 'matches' : 'mismatch'};
+    if (listener.outcome === 'mismatch') {
+      state = 'stale';
+      reasons.push('listener-mismatch');
     }
     windows = await windowsLoopback(port, io.env);
     for (const check of run.plugin.checks ?? []) {
@@ -680,11 +775,11 @@ async function assess(run: Run, io: Io) {
     preview: receipt?.preview ? {...receipt.preview, remainingMinutes: Math.max(0, Math.round((Date.parse(receipt.preview.expiresAt) - Date.now()) / 60000))} : null,
     health,
     artifact,
+    listener,
     checks,
     failure: receipt?.failure ?? null,
-    proof: {frozenAt: receipt?.proof.frozenAt ?? null, sums: existsSync(run.store.dir) ? await verifySums(run.store.dir) : 'not-frozen'},
+    proof: {frozenAt: receipt?.proof.frozenAt ?? null, sums: existsSync(run.store.dir) ? await verifySums(run.store.dir, receipt?.proof.frozenAt ?? null) : receipt?.proof.frozenAt ? 'missing' : 'not-frozen'},
     windows,
   };
 }
 
-export {ANY_RUN_ID};

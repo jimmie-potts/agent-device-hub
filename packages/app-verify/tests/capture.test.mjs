@@ -3,8 +3,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {chmod, mkdir, mkdtemp, readdir, readFile, stat, symlink, writeFile} from 'node:fs/promises';
-import {homedir, tmpdir} from 'node:os';
+import {chmod, readdir, readFile, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import test from 'node:test';
 import {validateReceipt} from '@jimmie-potts/app-verify';
@@ -64,11 +63,20 @@ test('a stateful step passes with screenshot, video and assertion log; known-wro
 
     const receipt = await box.receipt(runId);
     assert.deepEqual(validateReceipt(receipt), {ok: true});
-    assert.deepEqual(receipt.captures.map(c => [c.n, c.step, c.outcome]), [[1, 'count-twice', 'passed'], [2, 'control-wrong-expectation', 'failed'], [3, 'no-assertions', 'failed'], [4, 'count-twice', 'failed'], [5, 'read-only', 'passed'], [6, 'command-once', 'passed']]);
+    assert.deepEqual(receipt.captures.map(c => [c.n, c.step, c.scenario, c.outcome]), [[1, 'count-twice', 'reference', 'passed'], [2, 'control-wrong-expectation', 'reference', 'failed'], [3, 'no-assertions', 'reference', 'failed'], [4, 'count-twice', 'broken', 'failed'], [5, 'read-only', 'reference', 'passed'], [6, 'command-once', 'reference', 'passed']], 'each record names the scenario its step ran under');
     assert.ok(receipt.captures.every(c => c.log === `capture-${c.n}/assertions.json`));
 
     const unknown = await box.cli(['capture', runId, 'nope']);
     assert.equal(unknown.code, 2);
+    // Inherited object keys name no step or scenario: usage errors that leave the run and its receipt alone.
+    const before = await box.receipt(runId);
+    for (const args of [['capture', runId, 'constructor'], ['scenario', runId, 'toString'], ['handoff', runId, '--reset', '__proto__']]) {
+      const refused = await box.cli(args);
+      assert.equal(refused.code, 2, args.join(' '));
+      assert.equal(refused.result.error, 'usage');
+    }
+    assert.deepEqual(await box.receipt(runId), before);
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].state, 'running');
     await box.cli(['stop', runId]);
     const stopped = await box.cli(['capture', runId, 'count-twice']);
     assert.equal(stopped.code, 1);
@@ -108,6 +116,7 @@ test('an interrupted capture is failed, never passed', {skip}, async () => {
     assert.deepEqual(receipt.captures.map(c => [c.outcome, c.reason.split(':')[0]]), [['failed', 'interrupted by SIGTERM before the capture completed'], ['failed', 'interrupted']], 'the write-ahead record keeps a killed capture failed');
     assert.equal(receipt.captures[1].video, null);
     assert.equal(receipt.captures[1].finishedAt, null);
+    assert.equal(receipt.captures[1].scenario, 'reference', 'the write-ahead record names its scenario');
     // The run itself continues.
     assert.equal((await box.cli(['doctor', runId])).result.runs[0].state, 'running');
     await box.cli(['stop', runId]);
@@ -116,64 +125,22 @@ test('an interrupted capture is failed, never passed', {skip}, async () => {
   }
 });
 
-test('missing Playwright, Chromium or ffmpeg is unavailable, and an unfinalized video is failed', {skip}, async () => {
+test('an unavailable capture is recorded, and start, extend, handoff and stop still work without browser tooling', {skip}, async () => {
+  // The Chromium, ffmpeg and video-finalization cases run without a supervisor in tests/unsupervised.test.mjs.
   const box = await sandbox({playwright: ['app-verify-no-such-playwright']});
-  const empty = await mkdtemp(join(tmpdir(), 'app-verify-browsers-'));
   try {
     const {runId} = (await box.cli(['start', '--lease', '10'])).result;
     const noModule = await box.cli(['capture', runId, 'count-twice']);
     assert.equal(noModule.code, 3);
     assert.equal(noModule.result.outcome, 'unavailable');
     assert.match(noModule.result.reason, /Playwright is not installed/);
-
-    // The real Playwright with an empty browser cache: Chromium is missing.
-    const real = await box.wrapper(box.repo, 'verify-real.mjs');
-    await writeFile(real, (await readFile(real, 'utf8')).replace(',"playwright":["app-verify-no-such-playwright"]', ''));
-    const noChromium = await box.cli(['capture', runId, 'count-twice'], {entry: real, extraEnv: {PLAYWRIGHT_BROWSERS_PATH: empty}});
-    assert.equal(noChromium.code, 3, noChromium.stdout + noChromium.stderr);
-    assert.match(noChromium.result.reason, /Chromium build .* is not installed/);
-
-    // Chromium present, ffmpeg absent: video recording is unavailable.
-    const cache = process.env.PLAYWRIGHT_BROWSERS_PATH || join(homedir(), '.cache/ms-playwright');
-    const browsers = join(empty, 'no-ffmpeg');
-    await mkdir(browsers);
-    for (const name of await readdir(cache)) if (!name.startsWith('ffmpeg') && !name.startsWith('.')) await symlink(join(cache, name), join(browsers, name));
-    const noFfmpeg = await box.cli(['capture', runId, 'count-twice'], {entry: real, extraEnv: {PLAYWRIGHT_BROWSERS_PATH: browsers}});
-    assert.equal(noFfmpeg.code, 3, noFfmpeg.stdout + noFfmpeg.stderr);
-    assert.match(noFfmpeg.result.reason, /ffmpeg/);
-
-    // An ffmpeg that writes nothing: every assertion passes, but the video is never finalized.
-    const stubbed = join(empty, 'stub-ffmpeg');
-    await mkdir(stubbed);
-    for (const name of await readdir(cache)) {
-      if (name.startsWith('.')) continue;
-      if (!name.startsWith('ffmpeg')) await symlink(join(cache, name), join(stubbed, name));
-      else {
-        await mkdir(join(stubbed, name));
-        for (const file of await readdir(join(cache, name))) {
-          await writeFile(join(stubbed, name, file), '#!/bin/sh\ncat > /dev/null\nexit 0\n');
-          await chmod(join(stubbed, name, file), 0o755);
-        }
-      }
-    }
-    const unfinished = await box.cli(['capture', runId, 'count-twice'], {entry: real, extraEnv: {PLAYWRIGHT_BROWSERS_PATH: stubbed}});
-    assert.equal(unfinished.code, 1, unfinished.stdout + unfinished.stderr);
-    assert.equal(unfinished.result.outcome, 'failed');
-    assert.equal(unfinished.result.reason, 'the video was not finalized');
-    assert.equal(unfinished.result.video, null);
-    const unfinishedLog = JSON.parse(await readFile(unfinished.result.log, 'utf8'));
-    assert.deepEqual(unfinishedLog.assertions.map(a => a.outcome), ['passed'], 'the assertions passed and the capture still failed');
-
     const receipt = await box.receipt(runId);
-    assert.deepEqual(receipt.captures.map(c => c.outcome), ['unavailable', 'unavailable', 'unavailable', 'failed']);
-    // Everything else still works without browser tooling.
+    assert.deepEqual(receipt.captures.map(c => [c.outcome, c.scenario]), [['unavailable', 'reference']]);
     assert.equal((await box.cli(['extend', runId, '--lease', '10'])).code, 0);
     assert.equal((await box.cli(['handoff', runId])).code, 0);
     assert.equal((await box.cli(['stop', runId])).code, 0);
   } finally {
     await box.close();
-    await chmod(empty, 0o700);
-    spawnSync('rm', ['-rf', empty]);
   }
 });
 
@@ -183,6 +150,8 @@ test('handoff freezes the verified set; reset, extend and later captures never c
     const {runId, url} = (await box.cli(['start', '--lease', '10'])).result;
     assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
     assert.equal((await box.cli(['capture', runId, 'control-wrong-expectation'])).code, 1);
+    // A marker left by a killed capture whose PID now belongs to another process (this test) is not a live capture.
+    await writeFile(join(box.proofRoot, runId, 'capture-2', '.in-progress'), `${process.pid} 1\n`);
     const handoff = await box.cli(['handoff', runId, '--reset', 'second']);
     assert.equal(handoff.code, 0, handoff.stderr);
     const proof = join(box.proofRoot, runId), verified = join(proof, 'verified');
@@ -200,6 +169,7 @@ test('handoff freezes the verified set; reset, extend and later captures never c
 
     // The frozen set: moved captures, the receipt of that moment and checksums, read-only.
     assert.deepEqual((await readdir(verified)).sort(), ['SHA256SUMS', 'capture-1', 'capture-2', 'receipt.json']);
+    assert.equal(existsSync(join(verified, 'capture-2', '.in-progress')), false, 'the stale marker was cleared, not frozen');
     assert.equal(existsSync(join(proof, 'capture-1')), false);
     const manifest = await readFile(join(verified, 'SHA256SUMS'), 'utf8');
     assert.match(manifest, /^[0-9a-f]{64} {2}capture-1\/after\.png$/m);
@@ -282,6 +252,8 @@ test('a fresh step reseeds before it runs and records that in its log', {skip}, 
     assert.equal(fresh.code, 0, fresh.stderr);
     const log = JSON.parse(await readFile(fresh.result.log, 'utf8'));
     assert.equal(log.fresh.scenario, 'reference');
+    const records = (await box.receipt(runId)).captures;
+    assert.deepEqual(records.map(c => [c.step, c.scenario, c.fresh]), [['count-twice', 'second', undefined], ['fresh-count', 'reference', true]]);
     assert.match(log.fresh.seededAt, /Z$/);
     const receipt = await box.receipt(runId);
     assert.equal(receipt.scenario.name, 'reference');
@@ -318,6 +290,37 @@ test('attachments are listed, frozen with the verified set, and tampering with o
     await chmod(join(verified, 'capture-1/label.txt'), 0o644);
     await writeFile(join(verified, 'capture-1/label.txt'), 'physical evidence\n');
     assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'tampered');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('doctor reports a frozen set as tampered or missing when its manifest, entries or recorded digest change', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['handoff', runId])).code, 0);
+    const verified = join(box.proofRoot, runId, 'verified');
+    const sums = async () => (await box.cli(['doctor', runId])).result.runs[0].proof.sums;
+    assert.equal(await sums(), 'ok');
+    await chmod(verified, 0o755);
+    await symlink('/etc/hostname', join(verified, 'extra-link'));
+    assert.equal(await sums(), 'tampered', 'a non-regular entry is tampering');
+    await rm(join(verified, 'extra-link'));
+    assert.equal(await sums(), 'ok');
+    // Tamper with a file and rewrite the manifest to match: the digest recorded at handoff still differs.
+    await chmod(join(verified, 'capture-1'), 0o755);
+    await chmod(join(verified, 'capture-1/assertions.json'), 0o644);
+    await writeFile(join(verified, 'capture-1/assertions.json'), '{}');
+    await chmod(join(verified, 'SHA256SUMS'), 0o644);
+    const rewritten = spawnSync('sh', ['-c', 'find . -type f ! -name SHA256SUMS | sed "s#^./##" | sort | xargs sha256sum'], {cwd: verified, encoding: 'utf8'}).stdout;
+    await writeFile(join(verified, 'SHA256SUMS'), rewritten);
+    assert.equal(spawnSync('sha256sum', ['-c', 'SHA256SUMS'], {cwd: verified}).status, 0, 'the rewritten manifest matches the files');
+    assert.equal(await sums(), 'tampered', 'the manifest no longer matches the digest recorded at handoff');
+    await rm(join(verified, 'SHA256SUMS'));
+    assert.equal(await sums(), 'missing', 'a frozen run without its manifest is missing proof, not unfrozen');
     await box.cli(['stop', runId]);
   } finally {
     await box.close();

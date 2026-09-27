@@ -64,6 +64,8 @@ export default definePlugin({
       const response = await fetch(new URL('/api/hub/v1/health', url), {signal});
       return response.ok ? {ok: true} : {ok: false, reason: `health answered ${response.status}`};
     },
+    // The hub CLI prints one stable cause line, never a path or value, when it refuses to start.
+    failureCause: tail => /^hub-start-failed: [a-z0-9-]+$/im.exec(tail)?.[0],
   },
   components: [
     {id: 'hub', kind: 'actual'},

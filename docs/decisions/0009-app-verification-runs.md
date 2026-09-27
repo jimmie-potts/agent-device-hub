@@ -25,8 +25,12 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
 1. **One transient systemd user unit per run**, `app-verify-<run-id>.service`,
    created with `systemd-run --user --collect` and `KillMode=control-group`.
    Its **lease is a transient timer**, `app-verify-<run-id>-lease.timer`, whose
-   service stops the unit. `extend` replaces the timer. Cleanup names units,
-   never ports, process names or remembered PIDs.
+   service stops the unit. Hub #494 made it a realtime timer
+   (`--on-calendar=@<expiresAt>`, `AccuracySec=1s`) whose next elapse is read
+   back against the receipt, so the recorded expiry is verified and holds
+   across host sleep. `extend` starts the next timer
+   (`-lease-<k>`) before stopping the old one. Cleanup names units, never
+   ports, process names or remembered PIDs.
 2. **Two storage roots.** Proof goes under the owning canonical checkout's
    ignored `.local/evidence/verify/<run-id>/`; handoff moves the captures
    taken so far into a `verified/` set frozen with a checksum manifest and
@@ -47,6 +51,13 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    `doctor`; a stopped run's port refuses connections, which is the staleness
    signal. An in-page banner waits for an adapter that owns a page.
 
+7. **One shared lifecycle core** (owner decision, 2026-09-27). The run
+   lifecycle is implemented once, app-agnostic, in the Hub package
+   `@jimmie-potts/app-verify`, published as a release archive. The Hub,
+   Nanoleaf and Pixoo adapters each supply only a plug-in (build identity,
+   scenarios, launch, readiness, components, capture steps, boundary checks)
+   and their own wrapper command.
+
 ## Alternatives considered
 
 - **`nohup`/`setsid` with a PID file.** Rejected: the E4 probe showed a
@@ -58,6 +69,9 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
 - **A long-running preview supervisor service or Docker.** Rejected by #488's
   scope; a transient unit gives the same lifetime without a new installed
   service.
+- **Three independent adapters, one per repository.** Rejected by the owner
+  on 2026-09-27 in favour of the shared core: the lifecycle, lease and proof
+  rules are identical, and three copies would drift.
 - **One-time launch code (`cli.js open`) for the preview.** Rejected: the code
   would sit in the printed URL. Trusted loopback is already the owner's
   accepted posture on this PC and the run holds nothing real.
@@ -71,13 +85,17 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
   session, so ADR 0008's keep-alive trial and its linger item decide how long
   that is with no terminal open. Survival past an actual session end is
   pending evidence for the Hub adapter's tests.
-- Without a user systemd instance, `start` refuses; there is no degraded mode.
+- Without a user systemd instance, `start` refuses and creates nothing; there
+  is no fallback without systemd. A manager whose state is `degraded` (for
+  example, after an unrelated failed unit) still runs units and counts as
+  available.
 - Adapters test lifecycle behavior against real transient units with short
   leases, so their checks need a Linux host with `systemd --user`. Depot's
   Ubuntu runners must be verified for this before #494 relies on CI for it;
   otherwise those checks run locally and CI covers the rest. Verified on
-  2026-09-27 (PR #552): the runner is not booted with systemd, so lifecycle
-  tests skip there with a printed reason and CI runs the capture rules
-  without a supervisor.
+  2026-09-27 (PR #552): the runner is not booted with systemd. CI runs the
+  receipt, supervisor-refusal and unsupervised capture tests; the lifecycle
+  tests skip there with a printed reason and run on a host with a user
+  manager.
 - Windows browser access is proven for HTTP by `curl.exe` only. The owner's
   click in a real browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s evidence.

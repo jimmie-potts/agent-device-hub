@@ -1,12 +1,12 @@
 // capture: drive the real page in Chromium, assert, and keep a screenshot, a video
 // and the assertion log. Only a complete, asserted, finalized capture passes.
 import {existsSync} from 'node:fs';
-import {mkdir, open, readdir, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {mkdir, open, readdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {IN_PROGRESS} from './handoff.js';
-import {EXIT, Failure, load, reseed, UsageError, type Io} from './lifecycle.js';
+import {IN_PROGRESS, marker} from './handoff.js';
+import {EXIT, Failure, has, load, reseed, UsageError, type Io} from './lifecycle.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
 import {errorText, iso} from './util.js';
@@ -66,18 +66,43 @@ function tooling(error: unknown): string | undefined {
   return undefined;
 }
 
-async function isWebm(path: string): Promise<boolean> {
-  if (!existsSync(path)) return false;
-  const info = await stat(path);
-  if (info.size < 64) return false;
-  const handle = await open(path, 'r');
-  try {
-    const header = Buffer.alloc(4);
-    await handle.read(header, 0, 4, 0);
-    return header.equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
-  } finally {
-    await handle.close();
+/** An EBML variable-length integer at `at`: its value (marker kept for IDs) and length. */
+function vint(bytes: Buffer, at: number, id: boolean): {value: number; length: number; unknown: boolean} | undefined {
+  const first = bytes[at];
+  if (first === undefined || first === 0) return undefined;
+  let length = 1, mask = 0x80;
+  while (!(first & mask)) {
+    mask >>= 1;
+    length++;
   }
+  if (at + length > bytes.length) return undefined;
+  let value = id ? first : first & (mask - 1), allOnes = (first & (mask - 1)) === mask - 1;
+  for (let k = 1; k < length; k++) {
+    value = value * 256 + bytes[at + k]!;
+    if (bytes[at + k] !== 0xff) allOnes = false;
+  }
+  return {value, length, unknown: !id && allOnes};
+}
+
+/**
+ * A finalized WebM: an EBML header followed by a Segment whose size is known
+ * and ends exactly at the end of the file, with Cues. An encoder that crashed
+ * or was never closed leaves an unknown size, a truncated Segment or no Cues.
+ */
+async function isFinalizedWebm(path: string): Promise<boolean> {
+  if (!existsSync(path)) return false;
+  const bytes = await readFile(path);
+  const header = vint(bytes, 0, true);
+  if (!header || header.value !== 0x1a45dfa3) return false;
+  const headerSize = vint(bytes, header.length, false);
+  if (!headerSize || headerSize.unknown) return false;
+  const segmentAt = header.length + headerSize.length + headerSize.value;
+  const segment = vint(bytes, segmentAt, true);
+  if (!segment || segment.value !== 0x18538067) return false;
+  const size = vint(bytes, segmentAt + segment.length, false);
+  if (!size || size.unknown) return false;
+  const start = segmentAt + segment.length + size.length;
+  return start + size.value === bytes.length && bytes.indexOf(Buffer.from([0x1c, 0x53, 0xbb, 0x6b]), start) > 0;
 }
 
 async function isPng(path: string): Promise<boolean> {
@@ -140,13 +165,19 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
       context,
       async expect(name: string, check: () => unknown) {
         const at = iso();
+        let result: unknown;
         try {
-          await check();
-          finished.assertions.push({name, outcome: 'passed', at});
+          result = await check();
         } catch (error) {
           finished.assertions.push({name, outcome: 'failed', at, error: errorText(error)});
           throw new AssertionFailed(`${name}: ${errorText(error)}`);
         }
+        // A predicate such as isVisible() that answers false is a failed observation, never a pass.
+        if (result === false) {
+          finished.assertions.push({name, outcome: 'failed', at, error: 'check returned false'});
+          throw new AssertionFailed(`${name}: check returned false`);
+        }
+        finished.assertions.push({name, outcome: 'passed', at});
       },
       note(message: string) {
         finished.notes.push(`${iso()} ${message}`);
@@ -194,17 +225,24 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
     }
     // Playwright writes the video only when the context closes.
     const recorded = page.video();
+    let closed = true;
     try {
       await race(context.close());
     } catch (error) {
       if (error instanceof Interrupted) throw error;
+      // The recorder writes the file on close; a failed close never counts as finalized.
+      closed = false;
       finished.notes.push(`${iso()} closing the context failed: ${errorText(error)}`);
     }
     context = undefined;
     const source = recorded ? await race(recorded.path() as Promise<string>).catch(() => undefined) : undefined;
-    if (source && existsSync(source)) {
+    if (closed && source && existsSync(source)) {
       await rename(source, join(dir, 'interaction.webm'));
-      finished.video = await isWebm(join(dir, 'interaction.webm'));
+      finished.video = await isFinalizedWebm(join(dir, 'interaction.webm'));
+      if (!finished.video) {
+        await rename(join(dir, 'interaction.webm'), join(dir, 'interaction.unfinalized.webm'));
+        finished.partial.push('interaction.unfinalized.webm');
+      }
     }
     if (crashed) problem = 'the page crashed';
     const failedAssertion = finished.assertions.find(a => a.outcome === 'failed');
@@ -241,13 +279,14 @@ async function writeLog(dir: string, fields: Record<string, unknown>, finished: 
  * steps fail.
  */
 export async function runCaptureStep(plugin: AppPlugin, stepName: string, options: CaptureStepOptions): Promise<CaptureStepResult> {
-  const step = plugin.captureSteps[stepName];
-  if (!step) throw new Error(`unknown capture step ${stepName}`);
+  if (!has(plugin.captureSteps, stepName)) throw new Error(`unknown capture step ${stepName}`);
+  const step = plugin.captureSteps[stepName]!;
   const url = new URL(options.url);
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port) throw new Error('runCaptureStep needs an http://127.0.0.1:<port>/ URL');
   if (existsSync(options.outputDir) && (await readdir(options.outputDir)).length > 0) throw new Error('runCaptureStep needs a new or empty output directory');
   await mkdir(options.outputDir, {recursive: true});
   const scenario = options.scenario ?? plugin.defaultScenario;
+  if (step.scenario && step.scenario !== scenario) throw new Error(`${stepName} is pinned to scenario ${step.scenario}; the application was seeded with ${scenario}`);
   const target: Target = {runId: options.runId ?? `${plugin.app}-unmanaged`, root: plugin.root, runtimeDir: options.runtimeDir ?? '', dataDir: options.dataDir ?? '', scenario, url: url.href, port: Number(url.port)};
   const startedAt = iso();
   const finished = await drive(plugin, step, target, options.outputDir, new Promise<never>(() => undefined));
@@ -264,9 +303,9 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
 }
 
 export async function capture(plugin: AppPlugin, io: Io, runId: string | undefined, stepName: string | undefined) {
+  if (!stepName || !has(plugin.captureSteps, stepName)) throw new UsageError(`unknown capture step ${stepName ?? '(none)'}; see help`);
+  const step = plugin.captureSteps[stepName]!;
   const run = await load(plugin, io, runId);
-  const step = stepName ? plugin.captureSteps[stepName] : undefined;
-  if (!stepName || !step) throw new UsageError(`unknown capture step ${stepName ?? '(none)'}; see help`);
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   const current = await run.store.read();
   const unit = await systemd.unitState(run.unit);
@@ -290,8 +329,8 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
     const set = value.proof.frozenAt ? 'after-handoff' : 'verified';
     dirRelative = set === 'verified' ? `capture-${n}` : `after-handoff/capture-${n}`;
     await mkdir(join(run.store.dir, dirRelative), {recursive: true});
-    await writeFile(join(run.store.dir, dirRelative, IN_PROGRESS), String(process.pid));
-    record = {n, step: stepName, set, outcome: 'failed', reason: 'interrupted: the capture did not finish', screenshot: null, video: null, log: `${dirRelative}/assertions.json`, startedAt: iso(), finishedAt: null};
+    await writeFile(join(run.store.dir, dirRelative, IN_PROGRESS), await marker(process.pid));
+    record = {n, step: stepName, scenario: fresh?.scenario ?? value.scenario.name, ...(fresh && !fresh.failed ? {fresh: true as const} : {}), set, outcome: 'failed', reason: 'interrupted: the capture did not finish', screenshot: null, video: null, log: `${dirRelative}/assertions.json`, startedAt: iso(), finishedAt: null};
     value.captures.push(record);
   });
   const dir = join(run.store.dir, dirRelative);

@@ -36,7 +36,8 @@ export interface RunPaths {
   /**
    * The run's private directory, `<state root>/<run-id>/`, mode 0700, outside
    * every Git checkout and off the /tmp tmpfs. The core keeps `stdout.log`,
-   * `stderr.log` and `tmp/` here; `stop` deletes the whole directory.
+   * `stderr.log`, `tmp/` (the app's TMPDIR) and `home/` (the app's HOME)
+   * here; `stop` deletes the whole directory.
    */
   runtimeDir: string;
   /**
@@ -88,8 +89,11 @@ export interface LaunchSpec {
   argv: readonly string[];
   /**
    * Extra environment. It is visible in `systemctl --user show`, so it must
-   * never hold a credential. The core always sets `TMPDIR=<runtimeDir>/tmp`,
-   * `HOME` and `PATH` (the adapter's PATH with the Node directory first).
+   * never hold a credential. The core sets `TMPDIR=<runtimeDir>/tmp`,
+   * `HOME=<runtimeDir>/home` (so the app never reads the caller's personal
+   * files) and `PATH` (the adapter's PATH with the Node directory first).
+   * Entries here override those three; an app that genuinely needs the real
+   * home opts out with `HOME: process.env.HOME` and owns that choice.
    */
   env?: Readonly<Record<string, string>>;
   /** Working directory of the application; defaults to `root`. */
@@ -129,6 +133,16 @@ export interface Readiness {
   probe(context: ProbeContext): Promise<ProbeResult>;
   /** Milliseconds from launch until a ready line and a passing probe. Default 30000. */
   timeoutMs?: number;
+  /**
+   * Optional: name why a start or reseed failed. The core passes the last
+   * 4 KB of the application's stderr, in memory only, and appends the
+   * returned line to `failure.detail`. Return only a stable, non-secret cause
+   * line that you match exactly, such as `hub-start-failed: EINVAL`, or
+   * `undefined`. The core drops a value that is not a single line of at most
+   * 200 printable characters, and ignores a throw; raw log text is never
+   * written anywhere.
+   */
+  failureCause?(stderrTail: string): string | undefined;
 }
 
 export interface BuildSource {
@@ -172,9 +186,11 @@ export interface CaptureContext extends ProbeContext {
   page: PlaywrightPage;
   context: PlaywrightContext;
   /**
-   * Record one named assertion. `check` throws or rejects to fail it; the
-   * failure is logged, the step ends and the capture is `failed`. A step that
-   * records no assertion is `failed`: a screenshot alone never passes.
+   * Record one named assertion. `check` fails it by throwing, rejecting or
+   * returning `false` (so Playwright predicates such as `isVisible()` work);
+   * the failure is logged, the step ends and the capture is `failed`. Any
+   * other return value passes. A step that records no assertion is `failed`:
+   * a screenshot alone never passes.
    */
   expect(name: string, check: () => unknown): Promise<void>;
   /** Append a line to the capture's assertion log. */
@@ -214,13 +230,20 @@ export interface CaptureStep {
   run(context: CaptureContext): Promise<void>;
 }
 
-/** Where `runCaptureStep` drives an already-running application. */
+/**
+ * Where `runCaptureStep` drives an already-running application. Starting the
+ * application in the right state is the caller's job: `runCaptureStep` never
+ * reseeds, so for a `fresh` step start a newly seeded application.
+ */
 export interface CaptureStepOptions {
   /** `http://127.0.0.1:<port>/` of the running application. */
   url: string;
   /** New or empty directory for `after.png`, `interaction.webm` and `assertions.json`. */
   outputDir: string;
-  /** Scenario the application was seeded with; default the plug-in's default. */
+  /**
+   * Scenario the application was seeded with; default the plug-in's default.
+   * A step pinned to another scenario is refused.
+   */
   scenario?: string;
   /** Passed to the step as `dataDir`/`runtimeDir`/`runId` when it needs them. */
   dataDir?: string;
@@ -272,6 +295,12 @@ export interface AppPlugin {
   /** Named capture steps with assertions. */
   captureSteps: Readonly<Record<string, CaptureStep>>;
   browser?: BrowserOptions;
+  /**
+   * Ports a run must never serve on, added to the installed services' ports
+   * (8788, 8765, 8787, 8791, 41230, 41231). A run whose ready line announces
+   * one fails with `port-reserved`.
+   */
+  reservedPorts?: readonly number[];
 }
 
 /** Options for `runCli`, mainly for tests. */
@@ -303,8 +332,8 @@ export type AssessedState = RunState | 'stale';
  * Causes the core records in `failure.cause`: `supervisor-unavailable`,
  * `proof-root-unusable`, `runtime-root-unusable`, `build-failed`,
  * `seed-failed`, `lease-failed`, `launch-failed`, `unit-exited`,
- * `readiness-timeout`, `probe-failed`, `port-changed`, `artifact-unreadable`,
- * `check-failed`, `reset-failed`.
+ * `readiness-timeout`, `port-changed`, `port-reserved`,
+ * `artifact-unreadable`, `check-failed`, `reset-failed`.
  */
 export type FailureCause = string;
 
@@ -320,6 +349,10 @@ export interface CaptureRecord {
   /** Capture number, 1-based across the run. */
   n: number;
   step: string;
+  /** The scenario the run was seeded with when this step ran. Always written by 1.0.0; optional for readers of older records. */
+  scenario?: string;
+  /** `true` when the core reseeded `scenario` just before this step. */
+  fresh?: true;
   /** `verified` before handoff (frozen by it), `after-handoff` afterwards. */
   set: 'verified' | 'after-handoff';
   /** Written as `failed` with reason `interrupted` before the step runs, so a killed capture never reads as passed. */

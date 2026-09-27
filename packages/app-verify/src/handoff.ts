@@ -3,12 +3,24 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {card} from './card.js';
-import {EXIT, Failure, load, reseed, sums, type Io} from './lifecycle.js';
+import {EXIT, Failure, has, load, reseed, sums, type Io} from './lifecycle.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, Receipt} from './types.js';
 import {hex256, iso} from './util.js';
 
 export const IN_PROGRESS = '.in-progress';
+
+/** A process's start time in clock ticks since boot (`/proc/<pid>/stat` field 22), or undefined. */
+async function startTime(pid: number): Promise<string | undefined> {
+  const text = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => undefined);
+  // The command name may contain spaces and parentheses; fields resume after the last ')'.
+  return text?.slice(text.lastIndexOf(')') + 2).split(' ')[19];
+}
+
+/** The marker a running capture writes: its PID and start time, so a reused PID never looks live. */
+export async function marker(pid: number): Promise<string> {
+  return `${pid} ${(await startTime(pid)) ?? 'unknown'}\n`;
+}
 
 /** Captures whose process still runs. Markers of dead processes are removed; their receipts already say `failed`. */
 export async function capturesInProgress(proofDir: string): Promise<string[]> {
@@ -16,18 +28,13 @@ export async function capturesInProgress(proofDir: string): Promise<string[]> {
   for (const parent of [proofDir, join(proofDir, 'after-handoff')]) {
     if (!existsSync(parent)) continue;
     for (const entry of await readdir(parent)) {
-      const marker = join(parent, entry, IN_PROGRESS);
-      if (!/^capture-\d+$/.test(entry) || !existsSync(marker)) continue;
-      const pid = Number((await readFile(marker, 'utf8')).trim());
-      let alive = false;
-      try {
-        process.kill(pid, 0);
-        alive = pid > 0;
-      } catch {
-        alive = false;
-      }
+      const path = join(parent, entry, IN_PROGRESS);
+      if (!/^capture-\d+$/.test(entry) || !existsSync(path)) continue;
+      const [pidText, started] = (await readFile(path, 'utf8')).trim().split(' ');
+      const pid = Number(pidText);
+      const alive = Number.isInteger(pid) && pid > 0 && started !== undefined && started !== 'unknown' && (await startTime(pid)) === started;
       if (alive) running.push(entry);
-      else await rm(marker, {force: true});
+      else await rm(path, {force: true});
     }
   }
   return running;
@@ -43,7 +50,7 @@ async function readOnly(path: string): Promise<void> {
 
 export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefined, reset: string | undefined) {
   const run = await load(plugin, io, runId);
-  if (reset !== undefined && !plugin.scenarios[reset]) throw new Failure('unknown-scenario', `the fixtures define no scenario ${reset}`);
+  if (reset !== undefined && !has(plugin.scenarios, reset)) throw new Failure('unknown-scenario', `the fixtures define no scenario ${reset}`);
   if (!run.store.exists()) throw new Failure('unknown-run', `no receipt for ${run.runId}`);
   let receipt = await run.store.read();
   const unit = await systemd.unitState(run.unit);
@@ -55,13 +62,17 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     for (const line of lines) io.progress(line);
     return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
   }
-  const busy = await capturesInProgress(run.store.dir);
-  if (busy.length) throw new Failure('capture-in-progress', `wait for ${busy.join(', ')} to finish before handoff`);
   const verified = join(run.store.dir, 'verified');
   let manifest = '';
   receipt = await run.store.update(async current => {
+    // Checked under the receipt lock that a capture's write-ahead also takes, so no capture starts in between.
+    const busy = await capturesInProgress(run.store.dir);
+    if (busy.length) throw new Failure('capture-in-progress', `wait for ${busy.join(', ')} to finish before handoff`);
+    const captures = (await readdir(run.store.dir)).filter(e => /^capture-\d+$/.test(e));
+    // Refuse before moving anything if a capture holds a link or other non-regular entry.
+    for (const entry of captures) await sums(join(run.store.dir, entry));
     await mkdir(verified);
-    for (const entry of (await readdir(run.store.dir)).filter(e => /^capture-\d+$/.test(e))) await rename(join(run.store.dir, entry), join(verified, entry));
+    for (const entry of captures) await rename(join(run.store.dir, entry), join(verified, entry));
     const moved = (path: string | null) => (path === null ? null : `verified/${path}`);
     current.captures = current.captures.map(c => (c.set === 'verified' && !c.log.startsWith('verified/')
       ? {...c, screenshot: moved(c.screenshot), video: moved(c.video), log: moved(c.log)!, ...(c.attachments ? {attachments: c.attachments.map(a => moved(a)!)} : {})}

@@ -45,9 +45,9 @@ async function clicks(t, count, by) {
 }
 
 /**
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact']}} options
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw'}} options
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}}) {
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match'}) {
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
     /** @param {{dataDir: string, scenario: string}} context */
@@ -69,6 +69,8 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       broken: {description: 'Known-incorrect counter that adds two per click', ...scenario({behavior: 'broken', start: 0})},
       'never-ready': {description: 'Listens but never prints its ready line', ...scenario({behavior: 'never-ready'})},
       crash: {description: 'Starts a setsid helper and exits 3', ...scenario({behavior: 'crash'})},
+      'noisy-crash': {description: 'Exits 2 after printing a cause line and a secret-looking line on stderr', ...scenario({behavior: 'noisy-crash', secret})},
+      'fixed-port': {description: 'Binds the port the test chose instead of 0', ...scenario({behavior: 'reference', start: 0, bindPort})},
       'check-fails': {description: 'Ready, but its boundary check fails', ...scenario({behavior: 'reference', start: 0, failCheck: true})},
       'seed-fails': {
         description: 'Seeding throws',
@@ -104,7 +106,14 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         return response.ok ? {ok: true} : {ok: false, reason: `health answered ${response.status}`};
       },
       timeoutMs: 4000,
+      // Match only the stable cause line; the modes let tests prove a throw or a raw tail never leaks.
+      failureCause: tail => {
+        if (failureCause === 'throw') throw new Error(tail);
+        if (failureCause === 'raw') return tail;
+        return /^fixture-start-failed: [a-z-]+$/m.exec(tail)?.[0];
+      },
     },
+    ...(reservedPorts ? {reservedPorts} : {}),
     components: [
       {id: 'counter', kind: 'actual'},
       {id: 'command-sink', kind: 'simulated', note: 'the fixture records commands instead of reaching a device'},
@@ -158,6 +167,20 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         run: async t => {
           await clicks(t, 1, 1);
           await t.attach('../escape.txt', 'no');
+        },
+      },
+      'control-returns-false': {
+        description: 'Negative control: a predicate that answers false must fail',
+        run: async t => {
+          await t.page.goto(t.url);
+          await t.expect('the counter shows 999', async () => (await t.page.getByRole('status').textContent()) === 'Count: 999');
+        },
+      },
+      'control-not-visible': {
+        description: 'Negative control: isVisible() of text that is not there must fail',
+        run: async t => {
+          await t.page.goto(t.url);
+          await t.expect('a missing heading is visible', () => t.page.getByText('No such text anywhere').isVisible());
         },
       },
       'no-assertions': {

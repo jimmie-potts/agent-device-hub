@@ -17,7 +17,9 @@ and Pixoo ([divoom-app-upgrade#118](https://github.com/jimmie-potts/divoom-app-u
 Requirements:
 
 - Linux with a `systemd --user` manager. The core reads the output of
-  `systemctl --user is-system-running`: `running` and `degraded` are usable.
+  `systemctl --user is-system-running`, not its exit status: `running`,
+  `degraded`, `starting` and `initializing` are usable. The lease always runs
+  `systemctl` from `/usr/bin` or `/bin`.
 - Node.js 22 or later. The suite runs on Node 24 in CI and was also run on
   Node 22.22.1.
 - For `capture` and `runCaptureStep`: Playwright 1.50 or later with its
@@ -68,8 +70,9 @@ executed one.
 | `app`, `repository`, `command`, `root` | Name used in run ids and unit names (lowercase, at most 16 characters); `owner/name`; the wrapper command printed in the card; the absolute checkout it serves |
 | `scenarios`, `defaultScenario` | Named synthetic seeds. `seed({dataDir, scenario, …})` writes into an empty private directory before the application starts |
 | `build` | `version`; the served `artifact` to hash: `{route}` read over loopback, `{file}` under `root`, or `{files: [...]}` hashed as `sha256sum <files> \| sha256sum` prints; an optional `prepare()` that builds before launch |
-| `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there |
-| `readiness` | `line(stdoutLine)` returns `{url}` for the ready line, which must name `http://127.0.0.1:<port>`; `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read |
+| `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there. It overrides the core's `PATH`, `TMPDIR` and private `HOME` |
+| `readiness` | `line(stdoutLine)` returns `{url}` for the ready line, which must name `http://127.0.0.1:<port>`; `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
+| `reservedPorts` | Optional ports a run must never serve on, added to the installed services' ports |
 | `components` | Actual and simulated parts, copied into the receipt |
 | `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start. `doctor: true` also re-runs a check in `doctor`; set it only for read-only checks |
 | `captureSteps` | Named steps. `run(t)` drives `t.page` and records each expected observation with `await t.expect(name, fn)`. `t.screenshot(name)` and `t.attach(name, content)` add files to the capture. `scenario` and `fresh` control the starting state |
@@ -79,20 +82,33 @@ What the core guarantees to every plug-in callback:
 
 - `runtimeDir` is `<state root>/<run-id>/`, mode 0700, outside every Git
   checkout; `dataDir` is its `data/` subdirectory and is empty when `seed`
-  runs. `TMPDIR` for the application is `<runtimeDir>/tmp`.
+  runs. The application's `TMPDIR` is `<runtimeDir>/tmp` and its `HOME` is
+  `<runtimeDir>/home`, so it never reads the caller's personal files. A
+  plug-in that genuinely needs the real home, for example for a Python user
+  site, sets `env: {HOME: process.env.HOME}` and owns that choice.
+- A ready line that announces an installed service's port (8788, 8765, 8787,
+  8791, 41230, 41231) or one of `reservedPorts` fails the start with
+  `port-reserved`.
+- When a start or reseed fails, the core passes the last 4 KB of the app's
+  stderr, in memory only, to `readiness.failureCause`. It records the
+  returned line in `failure.detail` only if that line is a single line of at
+  most 200 printable characters; a throw is ignored. Match only stable,
+  non-secret cause lines, such as `/^hub-start-failed: [a-z0-9-]+$/m`, and
+  never return the tail itself.
 - The application runs as `app-verify-<run-id>.service` under the user
   manager with `KillMode=control-group`; its stdout and stderr go to
   `stdout.log` and `stderr.log` in `runtimeDir`, never into proof.
 - `build.prepare` runs on `start` and `restart`, after the `starting`
   receipt and before the runtime directory and `seed`.
 - A reseed (`scenario`, `handoff --reset`, a `fresh` step) stops the
-  application, recreates `data/` and `tmp/`, truncates the two logs, calls
-  `seed`, and relaunches with `ctx.port` set to the run's recorded port, so
+  application, recreates `data/`, `tmp/` and `home/`, truncates the two logs,
+  calls `seed`, and relaunches with `ctx.port` set to the run's recorded port, so
   the run keeps its id, port and lease. It never runs `prepare`, and other
   files in `runtimeDir` stay. `stop` removes the whole `runtimeDir`.
 - A capture step passes only when it recorded at least one assertion, every
   assertion passed, the page did not crash, the screenshot was written and
-  the video was finalized. Anything else is `failed`, or `unavailable` when
+  the video was finalized (a known-size WebM Segment that ends the file, with
+  Cues; a failed context close never counts). Anything else is `failed`, or `unavailable` when
   Playwright, Chromium or ffmpeg is missing. A capture is recorded as
   `failed` before it starts, so a killed capture never reads as passed.
 
@@ -102,6 +118,10 @@ What the core guarantees to every plug-in callback:
   with `reducedMotion: 'reduce'`, so animations settle and screenshots are
   stable. A step that checks animation turns motion back on first with
   `await t.page.emulateMedia({reducedMotion: 'no-preference'})`.
+- `t.expect(name, check)` fails when `check` throws, rejects or returns
+  `false`, so Playwright predicates work directly:
+  `await t.expect('the card is shown', () => t.page.getByText('Done').isVisible())`.
+  Any other return value passes.
 - Assert the settled state. Wait until every response the interaction caused
   has been applied, then compare exact values; a transient intermediate value
   can otherwise satisfy a wrong expectation. The fixture's first negative
@@ -148,7 +168,8 @@ from 0.05 to 1440. Main result fields:
 | Operation | Result |
 | --- | --- |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `not-frozen`), `windows` |
+| `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
+| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `not-frozen`), `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
 | `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
 | `scenario`, `extend`, `stop` | The new scenario and port, the new expiry and timer, or the final state and `cleanup` |
@@ -164,8 +185,10 @@ already started and judges it exactly as `capture` does, writing `after.png`,
 `interaction.webm` and `assertions.json` into a new or empty `outputDir`. It
 needs no user manager, receipt or lease, so an adapter's CI can prove on any
 Linux runner that its reference step passes and its `control-*` steps fail.
-It throws for an unknown step, a URL other than `http://127.0.0.1:<port>/` or
-a non-empty output directory.
+The starting state is the caller's job: it never reseeds, so give a `fresh`
+step a newly seeded application, and pass the `scenario` it was seeded with.
+It throws for an unknown step, a step pinned to another scenario, a URL other
+than `http://127.0.0.1:<port>/` or a non-empty output directory.
 
 ## Environment
 
@@ -179,17 +202,30 @@ The overrides exist for tests; normal runs use the defaults.
 
 ## Tests
 
-`npm run test:app-verify` runs the suite against real transient units, a
-fixture counter application and the repository's Chromium, in about a
-minute. While it runs, units named `app-verify-avt-<6 hex>-*` exist; each
-test stops the units of its own app name when it ends and fails if any
-remain. Test leases are at most ten minutes, so even a killed test run
-leaves nothing past that. Lifecycle and capture tests skip with a printed reason when no user
-manager exists, and fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`.
-`tests/unsupervised.test.mjs` needs only Chromium and always runs. Depot's
-Ubuntu runner is not booted with systemd, so the Hub's CI job runs the
-receipt, help and unsupervised tests and skips the rest with the reason. `npm run test:app-verify:package` packs the archive and runs the
-packaged suite from an isolated consumer.
+`npm run test:app-verify` runs the suite in about a minute. Set `TMPDIR`
+outside every Git checkout (for example `~/.cache/agent-device-hub/<task>-tmp`):
+the tests' runtime roots live under it, and the core refuses runtime state
+inside a checkout.
+
+- `tests/unsupervised.test.mjs`, the receipt tests, `help` and the no-manager
+  `start` refusal need no user manager and always run, including in the Hub's
+  CI. The unsupervised tests cover:
+  - the reference and `control-*` steps, and `false` predicates;
+  - a broken app and a silent step;
+  - missing Playwright, Chromium and ffmpeg;
+  - an encoder that writes nothing, and a truncated WebM.
+- Every other test drives real transient units named `app-verify-avt-<6 hex>-*`
+  with a fixture counter application. While the suite runs, those units exist.
+  Each test stops the units of its own app name when it ends and fails if any
+  remain. Test leases are at most ten minutes, so even a killed run leaves
+  nothing past that.
+  These tests skip, each with the reason, when no user manager exists, and
+  fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`. Depot's Ubuntu runner is
+  not booted with systemd, so they run on a systemd host such as the owner's
+  WSL PC.
+
+`npm run test:app-verify:package` packs the archive and runs the packaged
+suite from an isolated consumer.
 
 ## Future work
 

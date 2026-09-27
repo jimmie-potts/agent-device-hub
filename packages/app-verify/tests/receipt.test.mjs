@@ -76,3 +76,24 @@ test('invalid receipts are refused with a reason for each problem', () => {
 test('fields a later 1.x adds are ignored, so a newer receipt still reads', () => {
   assert.deepEqual(validateReceipt({...running(), inputs: {hubPeer: 'http://127.0.0.1:41000/'}}), {ok: true});
 });
+
+test('a run id with pattern characters is refused, never compiled into a pattern', () => {
+  const result = validateReceipt({runId: 'a(', owned: {}});
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /runId/);
+  const value = running();
+  value.runId = 'hub-(.*)';
+  assert.equal(validateReceipt(value).ok, false);
+});
+
+test('capture records name their scenario, and fresh is only ever true', () => {
+  const value = running();
+  value.captures[0].scenario = 'lifecycle-basic';
+  value.captures[0].fresh = true;
+  assert.deepEqual(validateReceipt(value), {ok: true});
+  value.captures[0].fresh = false;
+  assert.match(validateReceipt(value).errors.join('\n'), /captures\[0\]\.fresh/);
+  value.captures[0].fresh = true;
+  value.captures[0].scenario = '';
+  assert.match(validateReceipt(value).errors.join('\n'), /captures\[0\]\.scenario/);
+});

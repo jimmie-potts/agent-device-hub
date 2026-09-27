@@ -52,6 +52,7 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     const runtimeDir = join(box.stateRoot, runId);
     assert.equal((await stat(runtimeDir)).mode & 0o777, 0o700);
     assert.ok(existsSync(join(runtimeDir, 'data/scenario.json')));
+    assert.deepEqual(await (await fetch(url + 'env')).json(), {home: join(runtimeDir, 'home'), tmpdir: join(runtimeDir, 'tmp')}, 'the app gets a private HOME and TMPDIR, never the caller\'s');
     assert.ok(existsSync(join(box.proofRoot, runId, 'events.jsonl')));
     assert.deepEqual((await box.events(runId)).map(e => e.event).filter(e => ['created', 'seeded', 'lease-started', 'unit-started', 'ready', 'running'].includes(e)), ['created', 'seeded', 'lease-started', 'unit-started', 'ready', 'running'], 'start follows the contract order: receipt, seed, lease, unit, readiness');
 
@@ -64,6 +65,7 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.deepEqual(row.reasons, []);
     assert.equal(row.health.outcome, 'passed');
     assert.equal(row.artifact, 'matches');
+    assert.deepEqual(row.listener, {recorded: port, ports: [port], outcome: 'matches'}, 'doctor reads the unit\'s actual listener');
     assert.equal(row.unit.mainPid, receipt.owned.mainPid);
     assert.equal(row.preview.expiresAt, receipt.preview.expiresAt);
     assert.equal(row.windows.outcome, 'skipped');
@@ -158,12 +160,26 @@ test('failed starts clean up everything they created and keep a failed receipt',
   }
 });
 
-test('start refuses without a user manager or with runtime state inside a checkout, and creates nothing', {skip}, async () => {
+// No skip: this is the Depot runner's real condition, and forced here by hiding the user bus.
+test('start refuses without a user manager, exits 3 and creates nothing', async () => {
   const box = await sandbox();
   try {
     const noManager = await box.cli(['start'], {extraEnv: {XDG_RUNTIME_DIR: join(box.base, 'no-runtime'), DBUS_SESSION_BUS_ADDRESS: 'unix:path=' + join(box.base, 'no-bus')}});
     assert.equal(noManager.code, 3, noManager.stderr);
+    assert.equal(noManager.result.state, 'failed');
     assert.equal(noManager.result.cause, 'supervisor-unavailable');
+    assert.equal(noManager.result.runId, undefined, 'no run was created');
+    assert.equal(existsSync(box.proofRoot), false, 'no proof directory was created');
+    assert.equal(existsSync(box.stateRoot), false, 'no runtime directory was created');
+    assert.deepEqual(units(box.app), []);
+  } finally {
+    await box.close();
+  }
+});
+
+test('start refuses runtime state inside a checkout and creates nothing', {skip}, async () => {
+  const box = await sandbox();
+  try {
     const inside = await box.cli(['start'], {extraEnv: {APP_VERIFY_STATE_ROOT: join(box.repo, 'state')}});
     assert.equal(inside.code, 1);
     assert.equal(inside.result.cause, 'runtime-root-unusable');
@@ -316,6 +332,14 @@ test('doctor reports a reused PID with another start time, a missing lease or ru
     assert.equal(await readFile(path, 'utf8'), JSON.stringify(tampered), 'doctor never repairs the receipt');
     await writeFile(path, original);
 
+    const moved = JSON.parse(original);
+    moved.owned.port = moved.owned.port === 65535 ? 65534 : moved.owned.port + 1;
+    await writeFile(path, JSON.stringify(moved));
+    const elsewhere = (await box.cli(['doctor', runId])).result.runs[0];
+    assert.equal(elsewhere.state, 'stale');
+    assert.deepEqual(elsewhere.reasons, ['listener-mismatch'], 'a receipt naming a port the unit does not listen on is stale');
+    await writeFile(path, original);
+
     const runtime = join(box.stateRoot, runId);
     await rename(runtime, runtime + '.moved');
     const missing = (await box.cli(['doctor', runId])).result.runs[0];
@@ -445,6 +469,110 @@ test('an artifact of several files is digested in order, as sha256sum prints it'
     assert.equal((await box.receipt(started.result.runId)).build.artifactDigest, expected);
     assert.equal((await box.cli(['doctor', started.result.runId], {entry})).result.runs[0].artifact, 'matches');
     await box.cli(['stop', started.result.runId], {entry});
+  } finally {
+    await box.close();
+  }
+});
+
+test('a failed extend leaves the old lease in force, and a stray lease timer never blocks or outlives the next extend', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    const before = await box.receipt(runId);
+    const {writeFile, mkdir, chmod} = await import('node:fs/promises');
+    const shim = join(box.base, 'refuse-timers');
+    await mkdir(shim);
+    // A systemd-run that refuses any timer, like a manager that cannot create one.
+    await writeFile(join(shim, 'systemd-run'), '#!/bin/sh\nfor arg; do case "$arg" in --on-calendar=*) echo "refusing timers" >&2; exit 1;; esac; done\nexec /usr/bin/systemd-run "$@"\n');
+    await chmod(join(shim, 'systemd-run'), 0o755);
+    const refused = await box.cli(['extend', runId, '--lease', '20'], {extraEnv: {PATH: `${shim}:${process.env.PATH}`}});
+    assert.equal(refused.code, 1);
+    assert.equal(refused.result.error, 'lease-failed');
+    assert.deepEqual(await box.receipt(runId), before, 'the receipt is unchanged');
+    assert.equal(show(before.owned.leaseTimer, 'ActiveState').ActiveState, 'active', 'the old lease still holds');
+    assert.equal(Number(show(before.owned.leaseTimer, 'NextElapseUSecRealtime').NextElapseUSecRealtime.slice(1)), Date.parse(before.preview.expiresAt) / 1000);
+    assert.deepEqual(units(box.app).filter(name => name.includes('-lease-')), [], 'no unrecorded timer is left');
+
+    // A stray next-generation timer, as an extend killed after starting it would leave, set to fire early.
+    const {spawnSync} = await import('node:child_process');
+    const early = Math.ceil(Date.now() / 1000) + 300;
+    assert.equal(spawnSync('systemd-run', ['--user', `--unit=app-verify-${runId}-lease-2`, '--collect', '--quiet', `--on-calendar=@${early}`, '--', '/usr/bin/systemctl', '--user', 'stop', `app-verify-${runId}.service`]).status, 0);
+    const extended = await box.cli(['extend', runId, '--lease', '20']);
+    assert.equal(extended.code, 0, extended.stderr);
+    assert.equal(extended.result.leaseTimer, `app-verify-${runId}-lease-3.timer`, 'the next generation is above the stray one');
+    assert.deepEqual(units(box.app).filter(name => name.endsWith('.timer')), [`app-verify-${runId}-lease-3.timer`], 'only the recorded lease remains');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('stop cleans up by unit names when the receipt is unreadable, and leaves the file as found', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    const {writeFile} = await import('node:fs/promises');
+    const path = join(box.proofRoot, runId, 'receipt.json');
+    await writeFile(path, '{"receiptVersion": "app-verif');
+    const [row] = (await box.cli(['doctor', runId])).result.runs;
+    assert.equal(row.state, 'stale');
+    const stopped = await box.cli(['stop', runId]);
+    assert.equal(stopped.code, 0, stopped.stderr);
+    assert.equal(stopped.result.receipt, 'unreadable');
+    assert.equal(stopped.result.cleanup.result, 'clean');
+    assert.deepEqual(units(box.app), [], 'the unit and every lease timer are gone');
+    assert.equal(existsSync(join(box.stateRoot, runId)), false);
+    assert.equal(await readFile(path, 'utf8'), '{"receiptVersion": "app-verif', 'the unreadable receipt is left for diagnosis');
+  } finally {
+    await box.close();
+  }
+});
+
+test('a failed start records the plug-in\'s stable cause line and never the rest of stderr', {skip}, async () => {
+  const secret = 'tok_' + 'x'.repeat(40);
+  const box = await sandbox();
+  try {
+    const entry = async (name, mode) => {
+      const file = await box.wrapper(box.repo, name);
+      const {writeFile} = await import('node:fs/promises');
+      await writeFile(file, (await readFile(file, 'utf8')).replace('"root":', `"secret":"${secret}","failureCause":"${mode}","root":`));
+      return file;
+    };
+    const matched = await box.cli(['start', '--scenario', 'noisy-crash'], {entry: await entry('verify-match.mjs', 'match')});
+    assert.equal(matched.code, 1);
+    assert.equal(matched.result.cause, 'unit-exited');
+    assert.match(matched.result.detail, /; app: fixture-start-failed: port-in-use$/);
+    const thrown = await box.cli(['start', '--scenario', 'noisy-crash'], {entry: await entry('verify-throw.mjs', 'throw')});
+    assert.doesNotMatch(thrown.result.detail, /app:/, 'a plug-in that throws keeps the core cause');
+    const raw = await box.cli(['start', '--scenario', 'noisy-crash'], {entry: await entry('verify-raw.mjs', 'raw')});
+    assert.doesNotMatch(raw.result.detail, /app:/, 'a multi-line return is dropped');
+    for (const result of [matched, thrown, raw]) {
+      assert.equal(result.stdout.includes(secret) || result.stderr.includes(secret), false, 'nothing printed carries the secret');
+      const proof = join(box.proofRoot, result.result.runId);
+      for (const file of ['receipt.json', 'events.jsonl']) assert.equal((await readFile(join(proof, file), 'utf8')).includes(secret), false, `${file} carries no secret`);
+    }
+    assert.equal((await box.receipt(matched.result.runId)).failure.detail, matched.result.detail);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a run whose application announces a reserved port fails and cleans up', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {createServer} = await import('node:net');
+    const probe = createServer();
+    await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+    const port = probe.address().port;
+    await new Promise(resolve => probe.close(resolve));
+    const file = await box.wrapper(box.repo, 'verify-reserved.mjs');
+    const {writeFile} = await import('node:fs/promises');
+    await writeFile(file, (await readFile(file, 'utf8')).replace('"root":', `"bindPort":${port},"reservedPorts":[${port}],"root":`));
+    const refused = await box.cli(['start', '--scenario', 'fixed-port'], {entry: file});
+    assert.equal(refused.code, 1, refused.stderr);
+    assert.equal(refused.result.cause, 'port-reserved');
+    assert.equal(refused.result.cleanup.result, 'clean');
+    assert.deepEqual(units(box.app), []);
   } finally {
     await box.close();
   }

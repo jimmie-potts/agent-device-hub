@@ -90,6 +90,9 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
     oneOf(capture.set, `${path}.set`, ['verified', 'after-handoff']);
     oneOf(capture.outcome, `${path}.outcome`, ['passed', 'failed', 'unavailable']);
     if (capture.outcome !== 'passed') string(capture.reason, `${path}.reason`);
+    // Always written by 1.0.0; optional so a reader accepts records from before it existed.
+    if ('scenario' in capture) string(capture.scenario, `${path}.scenario`);
+    if ('fresh' in capture && capture.fresh !== true) fail(`${path}.fresh`, 'expected true when present');
     const relative = /^(?:verified\/|after-handoff\/)?capture-\d+\/[A-Za-z0-9._-]+$/;
     nullable(capture.screenshot, `${path}.screenshot`, (v, p) => string(v, p, relative));
     nullable(capture.video, `${path}.video`, (v, p) => string(v, p, relative));
@@ -107,13 +110,14 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
     const preview = object(v, p);
     string(preview.url, `${p}.url`, LOOPBACK);
     time(preview.expiresAt, `${p}.expiresAt`);
-    if (typeof preview.leaseMinutes !== 'number' || !(preview.leaseMinutes > 0) || preview.leaseMinutes > 1440) fail(`${p}.leaseMinutes`, 'expected minutes from 0 to 1440');
+    if (typeof preview.leaseMinutes !== 'number' || !(preview.leaseMinutes > 0) || preview.leaseMinutes > 1440) fail(`${p}.leaseMinutes`, 'expected minutes greater than 0 and at most 1440');
   });
 
   const owned = object(receipt.owned, 'owned');
-  const runId = typeof receipt.runId === 'string' ? receipt.runId : '';
-  if (owned.unit !== `app-verify-${runId}.service`) fail('owned.unit', 'expected app-verify-<run-id>.service');
-  string(owned.leaseTimer, 'owned.leaseTimer', new RegExp(`^app-verify-${runId.replace(/-/g, '\\-')}-lease(?:-\\d+)?\\.timer$`));
+  // Names derive from a valid run id only; an invalid one is reported above, never turned into a pattern.
+  const runId = typeof receipt.runId === 'string' && ANY_RUN_ID.test(receipt.runId) ? receipt.runId : undefined;
+  if (runId === undefined || owned.unit !== `app-verify-${runId}.service`) fail('owned.unit', 'expected app-verify-<run-id>.service');
+  if (typeof owned.leaseTimer !== 'string' || runId === undefined || !(owned.leaseTimer === `app-verify-${runId}-lease.timer` || /^-lease-\d+\.timer$/.test(owned.leaseTimer.slice(`app-verify-${runId}`.length)) && owned.leaseTimer.startsWith(`app-verify-${runId}-lease-`))) fail('owned.leaseTimer', 'expected app-verify-<run-id>-lease[-<k>].timer');
   nullable(owned.port, 'owned.port', (v, p) => integer(v, p, 1, 65535));
   if (owned.runtimeDir !== runId) fail('owned.runtimeDir', 'expected the run id');
   if (owned.proofDir !== runId) fail('owned.proofDir', 'expected the run id');

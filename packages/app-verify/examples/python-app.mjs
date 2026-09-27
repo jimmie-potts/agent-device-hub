@@ -41,6 +41,7 @@ export default definePlugin({
   build: {version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version ?? '0.0.0', artifact: {file: 'wall/static/map.js'}},
   launch: ({dataDir, port}) => ({
     argv: [python, 'scripts/demo.py', 'serve', '--state', dataDir, '--host', '127.0.0.1', '--port', String(port)],
+    // The core gives the app a private HOME; set HOME: process.env.HOME only if the app needs a user site-packages.
     env: {PYTHONDONTWRITEBYTECODE: '1', PYTHONUNBUFFERED: '1'},
   }),
   readiness: {
@@ -58,6 +59,8 @@ export default definePlugin({
       return response.ok ? {ok: true} : {ok: false, reason: `map page answered ${response.status}`};
     },
     timeoutMs: 20000,
+    // A stable, non-secret cause line from the demo's stderr, recorded in failure.detail.
+    failureCause: tail => /^demo-start-failed: [a-z-]+$/m.exec(tail)?.[0],
   },
   components: [
     {id: 'wall-server', kind: 'actual'},
