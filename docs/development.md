@@ -932,3 +932,15 @@ Publication follows the reviewed merged revision, with immutable source/checksum
 receipts and preserved prior release bytes. Packaging scratch is disk-backed
 under `.local/scratch/package-archives`; runtime fixtures keep their small
 private stores outside Git checkouts.
+
+## App verification and preview runs
+
+[App verification](app-verification.md) defines the operations, receipt,
+storage, supervisor and failure behavior for disposable application runs with
+synthetic data, and [ADR 0009](decisions/0009-app-verification-runs.md) records
+the decisions. The Hub adapter (#494) documents its wrapper, checks and CI
+coverage here when it lands; the Nanoleaf and Pixoo adapters document theirs
+in their own repositories. Runs use transient
+`systemd --user` units, keep runtime state under `~/.local/state/app-verify/`
+and proof under the canonical checkout's `.local/evidence/verify/`, and never
+use the installed ports or services.

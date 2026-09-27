@@ -490,6 +490,22 @@ but not yet installed. A dedicated Linux server (#44, which absorbs #42's
 Docker packaging) follows under the ADR's proposed trigger: the Tronbyt move
 starting, a story needing LAN discovery or events, or a failed keep-alive.
 
+## App verification previews
+
+[App verification](app-verification.md) and
+[ADR 0009](decisions/0009-app-verification-runs.md) define how an agent starts
+a disposable Hub, Nanoleaf wall or Pixoo run with synthetic state and simulated
+transports, keeps frozen proof and leaves a leased preview for the owner's
+browser on the same PC. Each run is a transient user unit with its own
+ephemeral loopback port, runtime directory and lease timer; it never attaches
+to the installed services, their ports or a device. The Hub pilot is
+[#494](https://github.com/jimmie-potts/agent-device-hub/issues/494); the
+device adapters are
+[codex-nanoleaf#193](https://github.com/jimmie-potts/codex-nanoleaf/issues/193)
+and [divoom-app-upgrade#118](https://github.com/jimmie-potts/divoom-app-upgrade/issues/118);
+Windows-host qualification is
+[#497](https://github.com/jimmie-potts/agent-device-hub/issues/497).
+
 ## Shared playback
 
 The standalone host owns shared playback
