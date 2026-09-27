@@ -315,6 +315,26 @@ test('review: the latest final round decides, and a later stale round supersedes
   assert.deepEqual(gate(report, 'review').evidence.rounds.map(r => [r.round, r.head]), [['final 1', OLD_HEAD], ['final 2', HEAD]]);
 });
 
+function splitReport(text) {
+  const [marker, ...body] = text.split('\n');
+  const open = body.lastIndexOf('~~~text');
+  const close = body.indexOf('~~~', open + 1);
+  const middle = open + 1 + Math.floor((close - open - 1) / 2);
+  const part = n => marker.replace('report final 1;', `report final 1 part ${n}/2;`);
+  return [[part(1), ...body.slice(0, middle), '~~~'].join('\n'), [part(2), '~~~text', ...body.slice(middle)].join('\n')];
+}
+
+test('review: a report split across comments is read whole, and a missing part leaves it unresolved', async () => {
+  const world = cleanWorld();
+  const [first, second] = splitReport(reviewReport());
+  world.comments = [comment(first), comment(second)];
+  const report = await preflight(world);
+  assert.equal(gate(report, 'review').status, 'satisfied', JSON.stringify(gate(report, 'review').reasons));
+  assert.ok(gate(report, 'review').evidence.returns.every(item => item.digestVerified));
+  world.comments = [comment(first)];
+  assertUnresolved(await preflight(world), 'review', /split into parts that are missing/);
+});
+
 test('feedback: unresolved threads and outstanding change requests stay visible', async () => {
   const world = cleanWorld();
   world.threads = [{ isResolved: false, isOutdated: false, path: 'a.mjs', comments: { nodes: [{ url: 'https://github.com/x/1', author: { login: 'reviewer' } }] } }];
