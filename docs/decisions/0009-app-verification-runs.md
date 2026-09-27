@@ -75,6 +75,9 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
 - Adapters test lifecycle behavior against real transient units with short
   leases, so their checks need a Linux host with `systemd --user`. Depot's
   Ubuntu runners must be verified for this before #494 relies on CI for it;
-  otherwise those checks run locally and CI covers the rest.
+  otherwise those checks run locally and CI covers the rest. Verified on
+  2026-09-27 (PR #552): the runner is not booted with systemd, so lifecycle
+  tests skip there with a printed reason and CI runs the capture rules
+  without a supervisor.
 - Windows browser access is proven for HTTP by `curl.exe` only. The owner's
   click in a real browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s evidence.

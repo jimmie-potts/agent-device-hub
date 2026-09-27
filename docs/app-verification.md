@@ -394,6 +394,9 @@ Pending host behavior, left explicit rather than inferred:
   lifetime without linger (`Linger=no` on this PC); today the manager is wanted
   by the WSL distribution's implicit login session, so the distribution's
   lifetime with no terminal open bounds every lease (ADR 0008 trial pending).
+- CI: Depot's Ubuntu runner is not booted with systemd (PR #552), so the
+  core's lifecycle tests run on this PC and skip in CI with a printed reason;
+  CI runs the capture rules through `runCaptureStep`.
 - Codex sandbox: this session ran from Claude Code, where Windows interop and
   `systemd-run` work. Earlier evidence shows Codex's sandbox refusing Windows
   interop; whether it can create user units is unknown until tried there.

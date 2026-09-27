@@ -952,18 +952,23 @@ The suite needs a Linux user manager (`systemctl --user is-system-running`
 answering `running` or `degraded`) and the repository's Playwright Chromium.
 Its lifecycle tests start real transient units named `app-verify-avt-*` with
 leases of seconds and a fixture counter application, and stop every unit they
-created. Without a user manager they skip with a printed reason, unless
-`APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure; the unsupervised capture
+created. Without a user manager they skip, each with the printed reason, unless
+`APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The unsupervised capture
 tests, including the negative controls, run either way. The package check
 installs the packed archive into an isolated consumer that supplies its own
-Playwright, verifies every file hash and runs the packaged suite. Neither
-check touches installed services, personal state or devices, and neither
-contacts Windows: `APP_VERIFY_WINDOWS_CHECK=off` is set by the tests.
+Playwright, verifies every file hash, runs the packaged suite and repeats any
+skip reason. Neither check touches installed services, personal state or
+devices, and neither contacts Windows: the tests set
+`APP_VERIFY_WINDOWS_CHECK=off`.
 
 The App verification CI job runs both after a fresh build and Chromium
-install. It starts a user manager with `loginctl enable-linger` first and sets
-`APP_VERIFY_REQUIRE_SYSTEMD=1`, so a runner without one fails instead of
-skipping. `npm run package:app-verify` writes
+install. Depot's Ubuntu runner is not booted with systemd: on PR #552,
+`systemctl --user is-system-running` answered `offline` and
+`loginctl enable-linger` failed with "System has not been booted with systemd
+as init system (PID 1)". CI therefore runs the receipt, help and unsupervised
+capture tests (reference passes, `control-*` and a broken app fail) and skips
+the lifecycle tests with that reason; they run locally on WSL, where the
+delivery evidence records them. `npm run package:app-verify` writes
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
 

@@ -185,9 +185,10 @@ minute. While it runs, units named `app-verify-avt-<6 hex>-*` exist; each
 test stops the units of its own app name when it ends and fails if any
 remain. Test leases are at most ten minutes, so even a killed test run
 leaves nothing past that. Lifecycle and capture tests skip with a printed reason when no user
-manager exists, and fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`, as the
-Hub's CI job sets. `tests/unsupervised.test.mjs` needs only Chromium and
-always runs. `npm run test:app-verify:package` packs the archive and runs the
+manager exists, and fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`.
+`tests/unsupervised.test.mjs` needs only Chromium and always runs. Depot's
+Ubuntu runner is not booted with systemd, so the Hub's CI job runs the
+receipt, help and unsupervised tests and skips the rest with the reason. `npm run test:app-verify:package` packs the archive and runs the
 packaged suite from an isolated consumer.
 
 ## Future work

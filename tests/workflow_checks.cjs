@@ -262,15 +262,10 @@ test('Depot CI runs seven Linux jobs and retains every suite', () => {
       if: "runner.os == 'Linux'",
       run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
     }] : []);
-    // Hub #494: lifecycle tests need a user manager; the job starts one and requires it, so a missing manager fails instead of skipping.
-    const managerSteps = job.steps.filter(step => step.name === 'Start a user systemd manager');
-    assert.equal(managerSteps.length, id === 'app-verify' ? 1 : 0);
-    if (id === 'app-verify') {
-      assert.deepEqual(job.env, { APP_VERIFY_REQUIRE_SYSTEMD: '1' });
-      assert.match(managerSteps[0].run, /sudo loginctl enable-linger/);
-      assert.ok(job.steps.indexOf(managerSteps[0]) < job.steps.findIndex(step => step.run === 'npm run test:app-verify:built'));
-    } else assert.equal(job.env, undefined);
-    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step) && !managerSteps.includes(step));
+    // Hub #494: Depot's runner has no systemd, so no job may claim to provide or require a user manager.
+    assert.equal(job.env, undefined);
+    assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
+    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
