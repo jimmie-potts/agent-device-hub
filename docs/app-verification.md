@@ -351,28 +351,30 @@ owns the page it would appear on.
 
 ## Caller walkthrough
 
-The commands below use the Hub adapter's future wrapper name as an example;
-#494 fixes the exact spelling. Each caller sees only documented entrypoints.
+The commands below use the Hub adapter's wrapper,
+[`npm run -s verify --`](../apps/hub/verify/README.md); `-s` keeps npm's banner
+off stdout, so it carries only the JSON result line. Each caller sees only
+documented entrypoints.
 
 ### Agent: verify, retain proof, hand off
 
-1. `npm run verify -- start --scenario lifecycle-basic` prints
+1. `npm run -s verify -- start --scenario lifecycle-basic` prints
    `{"runId":"hub-…","state":"running","port":41705,"build":{"dirty":false,…}}`.
-2. `npm run verify -- capture hub-… task-appears` drives the page, asserts the
+2. `npm run -s verify -- capture hub-… task-appears` drives the page, asserts the
    session card and writes `capture-1/after.png` and
    `capture-1/interaction.webm`, which handoff later moves under `verified/`.
    A failed assertion returns non-zero and the PNG of the failure.
-3. `npm run verify -- capture hub-… command-reaches-fake` asserts the fake
+3. `npm run -s verify -- capture hub-… command-reaches-fake` asserts the fake
    controller received exactly one command and read-only browsing sent none.
-4. `npm run verify -- handoff hub-… --reset lifecycle-basic` freezes
+4. `npm run -s verify -- handoff hub-… --reset lifecycle-basic` freezes
    `.local/evidence/verify/hub-…/verified/`, reseeds the run and prints the card:
 
    ```text
-   Preview  http://127.0.0.1:41705/   run hub-20260927T060259Z-3f9a1c
+   Preview   http://127.0.0.1:41705/   run hub-20260927T060259Z-3f9a1c
    Candidate 4adfbf48 (clean)   scenario lifecycle-basic
-   Expires  2026-09-27 08:02:59Z (in 1 h 58 min)
-   Extend   npm run verify -- extend hub-20260927T060259Z-3f9a1c
-   Stop     npm run verify -- stop hub-20260927T060259Z-3f9a1c
+   Expires   2026-09-27 08:02:59Z (in 1 h 58 min)
+   Extend    npm run -s verify -- extend hub-20260927T060259Z-3f9a1c
+   Stop      npm run -s verify -- stop hub-20260927T060259Z-3f9a1c
    ```
 
 5. The agent's handoff message links the two capture files at their frozen
@@ -384,15 +386,15 @@ The commands below use the Hub adapter's future wrapper name as an example;
 
 1. Open the card's URL in the Windows browser. The page signs in on load.
 2. Explore. Nothing the human does writes under the proof directory.
-3. `npm run verify -- extend hub-…` adds two more hours and prints the new
-   expiry; `npm run verify -- doctor` lists the run with its remaining time.
-4. After expiry the tab fails to reload. `npm run verify -- doctor hub-…`
-   answers `expired` with the expiry time; `npm run verify -- stop hub-…`
+3. `npm run -s verify -- extend hub-…` adds two more hours and prints the new
+   expiry; `npm run -s verify -- doctor` lists the run with its remaining time.
+4. After expiry the tab fails to reload. `npm run -s verify -- doctor hub-…`
+   answers `expired` with the expiry time; `npm run -s verify -- stop hub-…`
    removes the runtime directory and records `cleanup.result: clean`.
 
 ### Restart later
 
-`npm run verify -- restart hub-…` records the old run id in the new receipt,
+`npm run -s verify -- restart hub-…` records the old run id in the new receipt,
 reseeds the same scenario and prints a new card. If the working tree changed
 since the first run, the card says `dirty` or shows the new revision; it never
 claims to be the same candidate.

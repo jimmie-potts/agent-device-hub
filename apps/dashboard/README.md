@@ -386,6 +386,13 @@ lifecycle transition for both the form and the action wording, the route parser
 (home aliases, the `activity` and `connections` alias collision, round-trips and
 missing addresses), the widget catalog and home placement, and the token
 boundary of the authored styles.
+The same fixture, `tests/fixture.mjs`, is what a
+[Hub verification run](../hub/verify/README.md) serves. Its optional `token`,
+`reader`, `port` and `directory` let a run use run-generated credentials, its
+recorded port and a short private directory; the browser suites keep the
+defaults. A change to the fixture's fakes or to the UI a verification step
+drives updates that step and its feature map together.
+
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures
 and checks control, no-write inspection, heterogeneous components, reconnect,
 expired cursors, slow devices, concurrent edits, terminal and uncertain outcomes,
