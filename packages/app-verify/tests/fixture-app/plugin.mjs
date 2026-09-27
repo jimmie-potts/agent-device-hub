@@ -112,6 +112,8 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
     checks: [
       {
         id: 'seeded-scenario',
+        // Read-only, so doctor re-runs it.
+        doctor: true,
         run: async ({url, scenario: name, dataDir, signal}) => {
           const health = await json(new URL('/health', url).href, signal);
           const {failCheck} = JSON.parse(await (await import('node:fs/promises')).readFile(join(dataDir, 'scenario.json'), 'utf8'));
@@ -141,6 +143,22 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       'control-wrong-expectation': {
         description: 'Negative control: expects three after two clicks and must fail',
         run: async t => clicks(t, 2, 3),
+      },
+      'attach-proof': {
+        description: 'One click, then attach the observed state and a label',
+        run: async t => {
+          await clicks(t, 1, 1);
+          await t.screenshot('clicked');
+          await t.attach('observed.json', JSON.stringify({text: await t.page.getByRole('status').textContent()}));
+          await t.attach('label.txt', 'fixture rendering, not device evidence\n');
+        },
+      },
+      'attach-bad-name': {
+        description: 'Attaching outside the capture directory fails the step',
+        run: async t => {
+          await clicks(t, 1, 1);
+          await t.attach('../escape.txt', 'no');
+        },
       },
       'no-assertions': {
         description: 'Clicks without asserting anything',

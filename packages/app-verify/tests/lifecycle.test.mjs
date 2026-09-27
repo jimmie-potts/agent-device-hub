@@ -67,6 +67,7 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.equal(row.unit.mainPid, receipt.owned.mainPid);
     assert.equal(row.preview.expiresAt, receipt.preview.expiresAt);
     assert.equal(row.windows.outcome, 'skipped');
+    assert.deepEqual(row.checks, [{id: 'seeded-scenario', outcome: 'passed'}], 'doctor re-runs only the checks marked read-only');
     assert.equal(receipt.owned.runtimeDir, runId);
 
     const stopped = await box.cli(['stop', runId]);
@@ -231,6 +232,8 @@ test('two concurrent runs share nothing, and a reseed changes only its own run',
 
     const before = await box.receipt(a.result.runId);
     const bBefore = await readFile(join(box.stateRoot, b.result.runId, 'data/scenario.json'), 'utf8');
+    const {writeFile: write} = await import('node:fs/promises');
+    await write(join(box.stateRoot, a.result.runId, 'transport.jsonl'), 'kept\n');
     const reseeded = await box.cli(['scenario', a.result.runId, 'second']);
     assert.equal(reseeded.code, 0, reseeded.stderr);
     assert.equal(reseeded.result.port, a.result.port, 'the reseeded run keeps its port');
@@ -238,6 +241,7 @@ test('two concurrent runs share nothing, and a reseed changes only its own run',
     assert.match(page, /Count: 10/);
     assert.match(await (await fetch(b.result.url)).text(), /Count: 0/, 'the other run still serves its own state');
     assert.equal(await readFile(join(box.stateRoot, b.result.runId, 'data/scenario.json'), 'utf8'), bBefore);
+    assert.equal(await readFile(join(box.stateRoot, a.result.runId, 'transport.jsonl'), 'utf8'), 'kept\n', 'a reseed replaces only data/ and tmp/');
     const after = await box.receipt(a.result.runId);
     assert.equal(after.scenario.name, 'second');
     assert.equal(after.owned.leaseTimer, before.owned.leaseTimer);

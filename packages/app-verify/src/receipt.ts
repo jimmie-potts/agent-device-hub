@@ -94,6 +94,10 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
     nullable(capture.screenshot, `${path}.screenshot`, (v, p) => string(v, p, relative));
     nullable(capture.video, `${path}.video`, (v, p) => string(v, p, relative));
     string(capture.log, `${path}.log`, relative);
+    if ('attachments' in capture) {
+      if (!Array.isArray(capture.attachments)) fail(`${path}.attachments`, 'expected an array');
+      else capture.attachments.forEach((a, j) => string(a, `${path}.attachments[${j}]`, relative));
+    }
     time(capture.startedAt, `${path}.startedAt`);
     nullable(capture.finishedAt, `${path}.finishedAt`, time);
     if (capture.outcome === 'passed' && (capture.screenshot === null || capture.video === null || capture.finishedAt === null)) fail(path, 'a passed capture has its screenshot, video and finish time');

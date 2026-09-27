@@ -637,6 +637,7 @@ async function assess(run: Run, io: Io) {
     }
   }
   let health: CheckRecord | null = null, artifact: string | null = null, windows: CheckRecord | null = null;
+  const checks: CheckRecord[] = [];
   if (receipt?.preview && receipt.owned.port && active) {
     const url = receipt.preview.url, port = receipt.owned.port;
     try {
@@ -655,6 +656,15 @@ async function assess(run: Run, io: Io) {
       reasons.push('artifact-changed');
     }
     windows = await windowsLoopback(port, io.env);
+    for (const check of run.plugin.checks ?? []) {
+      if (!check.doctor) continue;
+      try {
+        const outcome = await check.run(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(15000)));
+        checks.push(outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: outcome.reason});
+      } catch (error) {
+        checks.push({id: check.id, outcome: 'failed', reason: errorText(error)});
+      }
+    }
   }
   return {
     runId: run.runId,
@@ -670,6 +680,7 @@ async function assess(run: Run, io: Io) {
     preview: receipt?.preview ? {...receipt.preview, remainingMinutes: Math.max(0, Math.round((Date.parse(receipt.preview.expiresAt) - Date.now()) / 60000))} : null,
     health,
     artifact,
+    checks,
     failure: receipt?.failure ?? null,
     proof: {frozenAt: receipt?.proof.frozenAt ?? null, sums: existsSync(run.store.dir) ? await verifySums(run.store.dir) : 'not-frozen'},
     windows,

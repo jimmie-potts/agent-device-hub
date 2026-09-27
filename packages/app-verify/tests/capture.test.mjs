@@ -292,3 +292,34 @@ test('a fresh step reseeds before it runs and records that in its log', {skip}, 
     await box.close();
   }
 });
+
+test('attachments are listed, frozen with the verified set, and tampering with one shows', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    const attached = await box.cli(['capture', runId, 'attach-proof']);
+    assert.equal(attached.code, 0, attached.stderr);
+    assert.deepEqual(attached.result.attachments.map(p => p.split('/').slice(-2).join('/')), ['capture-1/clicked.png', 'capture-1/observed.json', 'capture-1/label.txt']);
+    assert.deepEqual(JSON.parse(await readFile(attached.result.attachments[1], 'utf8')), {text: 'Count: 1'});
+    const log = JSON.parse(await readFile(attached.result.log, 'utf8'));
+    assert.deepEqual(log.attachments, ['clicked.png', 'observed.json', 'label.txt']);
+    const bad = await box.cli(['capture', runId, 'attach-bad-name']);
+    assert.equal(bad.code, 1);
+    assert.match(bad.result.reason, /^step error: invalid attachment name \.\.\/escape\.txt/);
+    assert.equal(existsSync(join(box.proofRoot, runId, 'escape.txt')), false);
+
+    assert.equal((await box.cli(['handoff', runId])).code, 0);
+    const verified = join(box.proofRoot, runId, 'verified');
+    const receipt = await box.receipt(runId);
+    assert.deepEqual(receipt.captures[0].attachments, ['verified/capture-1/clicked.png', 'verified/capture-1/observed.json', 'verified/capture-1/label.txt']);
+    assert.match(await readFile(join(verified, 'SHA256SUMS'), 'utf8'), /^[0-9a-f]{64} {2}capture-1\/label\.txt$/m);
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'ok');
+    await chmod(join(verified, 'capture-1'), 0o755);
+    await chmod(join(verified, 'capture-1/label.txt'), 0o644);
+    await writeFile(join(verified, 'capture-1/label.txt'), 'physical evidence\n');
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'tampered');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});

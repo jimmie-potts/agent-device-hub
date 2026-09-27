@@ -158,6 +158,11 @@ export type CheckOutcome = {outcome: 'passed'} | {outcome: 'failed' | 'skipped';
 export interface BoundaryCheck {
   /** Receipt check id, kebab-case. */
   id: string;
+  /**
+   * Also re-run by `doctor` against an active run and reported in its row.
+   * Set it only for read-only checks: doctor never changes a run.
+   */
+  doctor?: boolean;
   /** Runs after readiness during `start`. `failed` fails the start with cause `check-failed`. */
   run(context: ProbeContext): Promise<CheckOutcome>;
 }
@@ -176,6 +181,16 @@ export interface CaptureContext extends ProbeContext {
   note(message: string): void;
   /** Save an extra screenshot `<name>.png` beside the core's `after.png`. */
   screenshot(name: string): Promise<void>;
+  /**
+   * Write an extra file into this capture's directory, for example an exact
+   * simulator frame or a JSON label. `name` is a plain file name
+   * (`[A-Za-z0-9][A-Za-z0-9._-]*`, no separators or dotfiles) that is not
+   * `after.png`, `interaction.webm`, `assertions.json` or an existing file; at
+   * most 16 MB. Attachments are listed in the capture record and assertion
+   * log, and handoff freezes them with the rest of the verified set. A bad
+   * name throws, which fails the step.
+   */
+  attach(name: string, content: string | Uint8Array): Promise<void>;
 }
 
 export interface CaptureStep {
@@ -220,6 +235,8 @@ export interface CaptureStepResult {
   screenshot: string | null;
   video: string | null;
   log: string;
+  /** Absolute paths of `t.screenshot` and `t.attach` files. */
+  attachments: string[];
   assertions: {name: string; outcome: 'passed' | 'failed'; at: string; error?: string}[];
 }
 
@@ -312,6 +329,8 @@ export interface CaptureRecord {
   screenshot: string | null;
   video: string | null;
   log: string;
+  /** Extra files from `t.screenshot` and `t.attach`, relative to the proof directory. Optional. */
+  attachments?: string[];
   startedAt: string;
   finishedAt: string | null;
 }

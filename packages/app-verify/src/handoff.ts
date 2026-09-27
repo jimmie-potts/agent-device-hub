@@ -63,7 +63,9 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     await mkdir(verified);
     for (const entry of (await readdir(run.store.dir)).filter(e => /^capture-\d+$/.test(e))) await rename(join(run.store.dir, entry), join(verified, entry));
     const moved = (path: string | null) => (path === null ? null : `verified/${path}`);
-    current.captures = current.captures.map(c => (c.set === 'verified' && !c.log.startsWith('verified/') ? {...c, screenshot: moved(c.screenshot), video: moved(c.video), log: moved(c.log)!} : c));
+    current.captures = current.captures.map(c => (c.set === 'verified' && !c.log.startsWith('verified/')
+      ? {...c, screenshot: moved(c.screenshot), video: moved(c.video), log: moved(c.log)!, ...(c.attachments ? {attachments: c.attachments.map(a => moved(a)!)} : {})}
+      : c));
     const frozenAt = iso();
     current.proof.frozenAt = frozenAt;
     // The copy of this moment's receipt already names the captures' verified/ locations.

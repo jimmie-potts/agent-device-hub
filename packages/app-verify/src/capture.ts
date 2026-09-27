@@ -25,13 +25,18 @@ interface Finished {
   video: boolean;
   assertions: Assertion[];
   notes: string[];
-  extras: string[];
+  /** Extra files in the capture directory: `t.screenshot` PNGs and `t.attach` files. */
+  attachments: string[];
   partial: string[];
   /** The step's code may still be running (timeout or interrupt), so the process must exit. */
   abandoned?: boolean;
 }
 
 class AssertionFailed extends Error {}
+
+/** A plain file name: no separators, no dotfiles. */
+const ATTACHMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const RESERVED = new Set(['after.png', 'interaction.webm', 'assertions.json']);
 class Interrupted extends Error {}
 
 type Chromium = {launch(options: Record<string, unknown>): Promise<{newContext(options: Record<string, unknown>): Promise<unknown>; close(): Promise<void>}>};
@@ -100,7 +105,7 @@ interface Target {
 
 /** Drive one step in a fresh recorded context and judge it. Shared by `capture` and `runCaptureStep`. */
 async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: string, interrupt: Promise<never>): Promise<Finished> {
-  const finished: Finished = {outcome: 'failed', screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: []};
+  const finished: Finished = {outcome: 'failed', screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: []};
   const loaded = await loadChromium(plugin);
   if ('reason' in loaded) return {...finished, outcome: 'unavailable', reason: loaded.reason};
   const viewport = step.viewport ?? {width: 1280, height: 800};
@@ -148,8 +153,18 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
       },
       async screenshot(name: string) {
         if (!/^[a-z0-9][a-z0-9-]*$/.test(name) || name === 'after') throw new Error(`invalid screenshot name ${name}`);
-        await page.screenshot({path: join(dir, `${name}.png`), fullPage: true});
-        finished.extras.push(`${name}.png`);
+        const file = `${name}.png`;
+        if (existsSync(join(dir, file))) throw new Error(`${file} already exists in this capture`);
+        await page.screenshot({path: join(dir, file), fullPage: true});
+        finished.attachments.push(file);
+      },
+      async attach(name: string, content: string | Uint8Array) {
+        if (!ATTACHMENT.test(name) || RESERVED.has(name)) throw new Error(`invalid attachment name ${name}: use a plain file name that is not ${[...RESERVED].join(', ')}`);
+        if (existsSync(join(dir, name))) throw new Error(`${name} already exists in this capture`);
+        const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+        if (bytes.byteLength > 16 * 1024 * 1024) throw new Error(`attachment ${name} is larger than 16 MB`);
+        await writeFile(join(dir, name), bytes, {flag: 'wx'});
+        finished.attachments.push(name);
       },
     };
     let problem: string | undefined;
@@ -213,7 +228,7 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
 async function writeLog(dir: string, fields: Record<string, unknown>, finished: Finished): Promise<void> {
   await writeFile(join(dir, 'assertions.json'), JSON.stringify({
     ...fields, outcome: finished.outcome, ...(finished.reason ? {reason: finished.reason} : {}),
-    assertions: finished.assertions, notes: finished.notes, extraScreenshots: finished.extras, partialArtifacts: finished.partial,
+    assertions: finished.assertions, notes: finished.notes, attachments: finished.attachments, partialArtifacts: finished.partial,
     finishedAt: iso(),
   }, null, 2) + '\n');
 }
@@ -243,6 +258,7 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
     screenshot: finished.screenshot ? join(options.outputDir, 'after.png') : null,
     video: finished.video ? join(options.outputDir, 'interaction.webm') : null,
     log: join(options.outputDir, 'assertions.json'),
+    attachments: finished.attachments.map(name => join(options.outputDir, name)),
     assertions: finished.assertions.map(a => ({...a})),
   };
 }
@@ -294,11 +310,11 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   process.once('SIGTERM', onSignal);
   let finished: Finished;
   try {
-    if (fresh?.failed) finished = {outcome: 'failed', reason: `fresh reseed failed, the run was stopped: ${fresh.failed}`, screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: []};
+    if (fresh?.failed) finished = {outcome: 'failed', reason: `fresh reseed failed, the run was stopped: ${fresh.failed}`, screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: []};
     else finished = await drive(plugin, step, {...run.paths(), scenario: receipt.scenario.name, url: receipt.preview!.url, port: receipt.owned.port!}, dir, interrupt);
   } catch (error) {
     if (!(error instanceof Interrupted)) throw error;
-    finished = {outcome: 'failed', reason: `interrupted by ${signalName} before the capture completed`, screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: [], abandoned: true};
+    finished = {outcome: 'failed', reason: `interrupted by ${signalName} before the capture completed`, screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: [], abandoned: true};
   } finally {
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
@@ -311,6 +327,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
     outcome: finished.outcome,
     screenshot: finished.screenshot ? `${dirRelative}/after.png` : null,
     video: finished.video ? `${dirRelative}/interaction.webm` : null,
+    ...(finished.attachments.length ? {attachments: finished.attachments.map(name => `${dirRelative}/${name}`)} : {}),
     finishedAt,
   };
   if (finished.reason) final.reason = finished.reason;
@@ -323,5 +340,5 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   io.progress(`${run.runId}: capture ${record.n} ${final.outcome}${final.reason ? `: ${final.reason}` : ''}`);
   const code = final.outcome === 'passed' ? EXIT.ok : final.outcome === 'unavailable' ? EXIT.unavailable : EXIT.failed;
   const absolute = (path: string | null) => (path === null ? null : join(run.store.dir, path));
-  return {code, exitSoon: finished.abandoned === true, value: {operation: 'capture', runId: run.runId, n: final.n, step: stepName, set: final.set, outcome: final.outcome, ...(final.reason ? {reason: final.reason} : {}), screenshot: absolute(final.screenshot), video: absolute(final.video), log: absolute(final.log), captureDir: dir}};
+  return {code, exitSoon: finished.abandoned === true, value: {operation: 'capture', runId: run.runId, n: final.n, step: stepName, set: final.set, outcome: final.outcome, ...(final.reason ? {reason: final.reason} : {}), screenshot: absolute(final.screenshot), video: absolute(final.video), log: absolute(final.log), attachments: (final.attachments ?? []).map(path => join(run.store.dir, path)), captureDir: dir}};
 }

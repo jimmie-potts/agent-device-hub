@@ -47,7 +47,10 @@ process.exitCode = await runCli(plugin, process.argv.slice(2));
 ```
 
 and `"verify": "node scripts/verify.mjs"` in `package.json`, so the documented
-entry point is `npm run verify -- <operation> …`. A Python project can keep a
+entry point is `npm run verify -- <operation> …`. npm prints its own banner
+lines on stdout, so an agent that parses the result line should run
+`npm run -s verify -- <operation> …` (or `node scripts/verify.mjs`), and a
+plug-in can put that spelling in `command` so the card shows it. A Python project can keep a
 `python3 scripts/verify.py` wrapper that runs the Node wrapper with the same
 arguments and returns its exit status.
 
@@ -68,8 +71,8 @@ executed one.
 | `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there |
 | `readiness` | `line(stdoutLine)` returns `{url}` for the ready line, which must name `http://127.0.0.1:<port>`; `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read |
 | `components` | Actual and simulated parts, copied into the receipt |
-| `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start |
-| `captureSteps` | Named steps. `run(t)` drives `t.page` and records each expected observation with `await t.expect(name, fn)`. `scenario` and `fresh` control the starting state |
+| `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start. `doctor: true` also re-runs a check in `doctor`; set it only for read-only checks |
+| `captureSteps` | Named steps. `run(t)` drives `t.page` and records each expected observation with `await t.expect(name, fn)`. `t.screenshot(name)` and `t.attach(name, content)` add files to the capture. `scenario` and `fresh` control the starting state |
 | `browser.modules` | Optional module names that export `chromium`, resolved from `root`. Default `playwright`, then `@playwright/test` |
 
 What the core guarantees to every plug-in callback:
@@ -80,10 +83,13 @@ What the core guarantees to every plug-in callback:
 - The application runs as `app-verify-<run-id>.service` under the user
   manager with `KillMode=control-group`; its stdout and stderr go to
   `stdout.log` and `stderr.log` in `runtimeDir`, never into proof.
+- `build.prepare` runs on `start` and `restart`, after the `starting`
+  receipt and before the runtime directory and `seed`.
 - A reseed (`scenario`, `handoff --reset`, a `fresh` step) stops the
-  application, empties `dataDir`, calls `seed`, and relaunches with
-  `ctx.port` set to the run's recorded port, so the run keeps its id, port
-  and lease.
+  application, recreates `data/` and `tmp/`, truncates the two logs, calls
+  `seed`, and relaunches with `ctx.port` set to the run's recorded port, so
+  the run keeps its id, port and lease. It never runs `prepare`, and other
+  files in `runtimeDir` stay. `stop` removes the whole `runtimeDir`.
 - A capture step passes only when it recorded at least one assertion, every
   assertion passed, the page did not crash, the screenshot was written and
   the video was finalized. Anything else is `failed`, or `unavailable` when
@@ -92,6 +98,10 @@ What the core guarantees to every plug-in callback:
 
 ### Writing capture steps
 
+- Each step gets a new Chromium context at 1280×800 (or its `viewport`)
+  with `reducedMotion: 'reduce'`, so animations settle and screenshots are
+  stable. A step that checks animation turns motion back on first with
+  `await t.page.emulateMedia({reducedMotion: 'no-preference'})`.
 - Assert the settled state. Wait until every response the interaction caused
   has been applied, then compare exact values; a transient intermediate value
   can otherwise satisfy a wrong expectation. The fixture's first negative
@@ -105,6 +115,12 @@ What the core guarantees to every plug-in callback:
   no expected-failure mode that turns a failure into a pass.
 - Assert the simulated boundary inside the step, for example that reading a
   page sent no command to the fake controller.
+- Attach evidence the page cannot show with `t.attach(name, content)`, for
+  example an exact simulator frame and a label that says it is not physical
+  evidence. Names are plain files (`[A-Za-z0-9][A-Za-z0-9._-]*`), never
+  `after.png`, `interaction.webm`, `assertions.json` or an existing file, and
+  at most 16 MB. They are listed in the capture record and log and frozen by
+  `handoff`.
 
 ## Operations
 
@@ -132,8 +148,8 @@ from 0.05 to 1440. Main result fields:
 | Operation | Result |
 | --- | --- |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `failure`, `proof.sums` (`ok`, `tampered`, `not-frozen`), `windows` |
-| `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `captureDir` |
+| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `not-frozen`), `windows` |
+| `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
 | `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
 | `scenario`, `extend`, `stop` | The new scenario and port, the new expiry and timer, or the final state and `cleanup` |
 
@@ -165,7 +181,10 @@ The overrides exist for tests; normal runs use the defaults.
 
 `npm run test:app-verify` runs the suite against real transient units, a
 fixture counter application and the repository's Chromium, in about a
-minute. Lifecycle and capture tests skip with a printed reason when no user
+minute. While it runs, units named `app-verify-avt-<6 hex>-*` exist; each
+test stops the units of its own app name when it ends and fails if any
+remain. Test leases are at most ten minutes, so even a killed test run
+leaves nothing past that. Lifecycle and capture tests skip with a printed reason when no user
 manager exists, and fail instead when `APP_VERIFY_REQUIRE_SYSTEMD=1`, as the
 Hub's CI job sets. `tests/unsupervised.test.mjs` needs only Chromium and
 always runs. `npm run test:app-verify:package` packs the archive and runs the

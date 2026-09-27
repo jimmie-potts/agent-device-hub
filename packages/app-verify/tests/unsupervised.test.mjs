@@ -50,6 +50,10 @@ test('runCaptureStep: the reference passes, and a wrong expectation, a broken ap
     assert.equal(log.supervised, false);
     assert.equal(log.outcome, 'passed');
 
+    const attached = await runCaptureStep(plugin, 'attach-proof', {url: reference.url, outputDir: join(base, 'out-7')});
+    assert.equal(attached.outcome, 'passed', attached.reason);
+    assert.deepEqual(attached.attachments, ['clicked.png', 'observed.json', 'label.txt'].map(name => join(base, 'out-7', name)));
+
     const control = await runCaptureStep(plugin, 'control-wrong-expectation', {url: reference.url, outputDir: join(base, 'out-2')});
     assert.equal(control.outcome, 'failed', 'a control-* step fails by design; nothing turns it into a pass');
     assert.match(control.reason, /^assertion failed: the counter advanced by 3/);
