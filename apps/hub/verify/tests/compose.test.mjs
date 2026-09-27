@@ -126,6 +126,16 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
     assert.equal(dirty.code, 1);
     assert.equal(dirty.result.error, 'identity-mismatch');
     assert.match(dirty.result.detail, /pixoo at [0-9a-f]{12} with tracked changes/);
+    await writeFile(join(w.pixoo.checkout, 'served.txt'), 'stand-in pixoo\n');
+    // An adapter on another core version, or without the pinned scenario, is a mismatched identity too.
+    const manifest = JSON.parse(await readFile(w.manifest, 'utf8'));
+    manifest.services[0].coreVersion = '1.0.0';
+    manifest.services[1].scenario = 'no-such-scenario';
+    await writeFile(w.manifest, JSON.stringify(manifest));
+    const adapters = await w.run('start', '--manifest', w.manifest, '--checkout', `nanoleaf=${w.nanoleaf.checkout}`, '--checkout', `pixoo=${w.pixoo.checkout}`, '--unpinned');
+    assert.equal(adapters.code, 1);
+    assert.equal(adapters.result.error, 'identity-mismatch');
+    assert.match(adapters.result.detail, /^nanoleaf: core 1\.1\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
     assert.equal(existsSync(join(w.base, 'p')) && (await readdir(join(w.base, 'p'))).length > 0, false, 'no composition or proof was created');
     assert.equal(existsSync(join(w.base, 's')), false, 'no runtime directory was created');
     assert.equal(w.units(), '', 'no unit was started');

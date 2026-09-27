@@ -506,7 +506,17 @@ export async function start(options, io) {
   if (mismatches.length && !options.unpinned) throw new ComposeFailure('identity-mismatch', `${mismatches.join('; ')}; check out each pin cleanly, or pass --unpinned for a labelled development run`);
   /** @type {Record<string, any>} */
   const helps = {};
-  for (const service of services) helps[service.id] = await checkAdapter(service, env, progress);
+  /** @type {string[]} */
+  const adapters = [];
+  for (const service of services) {
+    try {
+      helps[service.id] = await checkAdapter(service, env, progress);
+    } catch (error) {
+      if (!(error instanceof ComposeFailure) || error.failure !== 'identity-mismatch') throw error;
+      adapters.push(error.detail);
+    }
+  }
+  if (adapters.length) throw new ComposeFailure('identity-mismatch', adapters.join('; '));
 
   // From here on everything created is recorded before the next step, so a failure stops exactly what exists.
   const id = `compose-${iso().replace(/[-:]/g, '').replace(/Z$/, 'Z')}-${randomBytes(3).toString('hex')}`;
