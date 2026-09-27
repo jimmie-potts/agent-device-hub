@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "rootDir": ".",
+    "outDir": "dist-examples",
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@jimmie-potts/app-verify": ["./src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "examples/*.mjs",
+    "tests/fixture-app/plugin.mjs"
+  ]
+}

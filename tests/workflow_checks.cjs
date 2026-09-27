@@ -204,12 +204,12 @@ test('both workflows exclude only guide-only changes', () => {
   }
 });
 
-test('Depot CI runs six Linux jobs and retains every suite', () => {
+test('Depot CI runs seven Linux jobs and retains every suite', () => {
   const ci = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/ci.yml'), 'utf8'));
   const guide = YAML.parse(fs.readFileSync(path.join(root, '.depot/workflows/work-guide.yml'), 'utf8'));
   const coreJobs = Object.values(ci.jobs).reduce((count, job) => count
     + Object.values(job.strategy.matrix).reduce((n, values) => n * values.length, 1), 0);
-  assert.equal(coreJobs + Object.keys(guide.jobs).length, 6, 'normal CI must run exactly six jobs');
+  assert.equal(coreJobs + Object.keys(guide.jobs).length, 7, 'normal CI must run exactly seven jobs');
   assert.deepEqual(ci.on, expectedTriggers);
   assert.deepEqual(ci.concurrency, {
     group: '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}',
@@ -220,12 +220,14 @@ test('Depot CI runs six Linux jobs and retains every suite', () => {
     contracts: ['npm ci', 'python -m pip install -r requirements-contracts.txt', 'npm run build', 'npm run typecheck', 'npm run test:contracts:built', 'npm run test:contracts:python', 'npm run test:performance', 'npm run test:package:built', 'npm run test:lifecycle:built', 'npm run test:lifecycle:python', 'npm run test:lifecycle:package:built', 'npm run test:setup:built', 'npm run test:hub:built', 'npm run test:hub:package:built', 'npm run test:agent-state:built', 'npm run test:agent-state:python', 'npm run test:agent-state:package:built', 'npm run test:agent-status:built', 'npm run test:lifx:built', 'npm run test:tidbyt:built', 'npm run test:local-controllers:built', 'npm run test:tidbyt:python'],
     dashboard: ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run typecheck:dashboard', 'npm run test:dashboard', 'npm run test:dashboard:browser'],
     mcp: ['npm ci', 'npm run build', 'npm run typecheck', 'npm run test:mcp:built', 'npm run test:mcp:protocol:built', 'npm run test:mcp:package:built', 'npm run test:hub:mcp:built'],
+    'app-verify': ['npm ci', 'npx playwright install --with-deps chromium', 'npm run build', 'npm run test:app-verify:built', 'npm run test:app-verify:package:built'],
   };
   const names = {
     workflow: 'Workflow checks on ${{ matrix.os }}',
     contracts: 'Contracts and state Python ${{ matrix.python }} on ${{ matrix.os }}',
     dashboard: 'Dashboard browser and contracts on ${{ matrix.os }}',
     mcp: 'MCP on ${{ matrix.os }}',
+    'app-verify': 'App verification on ${{ matrix.os }}',
   };
   assert.deepEqual(ci.permissions, { contents: 'read' });
   assert.deepEqual(Object.keys(ci.jobs).sort(), Object.keys(suites).sort());
@@ -260,11 +262,14 @@ test('Depot CI runs six Linux jobs and retains every suite', () => {
       if: "runner.os == 'Linux'",
       run: 'sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles\nsudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict\nbwrap --unshare-all --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 /usr/bin/true\nnpm run test:performance:linux\nnpm run test:performance:standalone\n',
     }] : []);
+    // Hub #494: Depot's runner has no systemd, so no job may claim to provide or require a user manager.
+    assert.equal(job.env, undefined);
+    assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
     const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     assert(originalSteps.every(step => step.if === undefined && !step['continue-on-error']));
   }
-  assert.equal(builds, 4);
+  assert.equal(builds, 5);
 });
 
 const builtPayloads = {
@@ -280,6 +285,8 @@ const builtPayloads = {
   'test:tidbyt': 'node --test controllers/tidbyt/tests/*.test.mjs',
   'test:lifx': 'node --test controllers/lifx/tests/*.test.mjs',
   'test:local-controllers': 'node --test apps/local-controllers/tests/*.test.mjs',
+  'test:app-verify': 'node --test --test-concurrency=1 packages/app-verify/tests/*.test.mjs',
+  'test:app-verify:package': 'node scripts/package-app-verify.mjs --test',
 };
 
 test('built variants retain every original test payload and standalone build', () => {
