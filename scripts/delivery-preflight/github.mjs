@@ -1,15 +1,15 @@
 // Read-only GitHub access for the delivery preflight.
 //
 // Every request passes through assertReadOnlyRequest before any transport sees
-// it: REST calls must be GET requests to the GitHub API, and the only POST is a
-// GraphQL document whose operation is a query. Merges, issue transitions,
-// labels, reviews, comments and every other write are refused here, so no code
-// path in the preflight can perform them.
+// it: REST calls must be GET requests to the GitHub API, and the only POST is
+// one of the preflight's own GraphQL query documents, matched by exact text.
+// Merges, issue transitions, labels, reviews, comments and every other write
+// are refused here, so no code path in the preflight can perform them.
 import { spawnSync } from 'node:child_process';
 
 export const API = 'https://api.github.com';
 const GRAPHQL = `${API}/graphql`;
-const MAX_PAGES = 50;
+export const MAX_PAGES = 50;
 
 export class ReadFailure extends Error {
   constructor(what, detail) {
@@ -27,9 +27,34 @@ export class ReadOnlyViolation extends Error {
   }
 }
 
-/** Refuse any GraphQL document that is not a single query operation. */
+// The only GraphQL documents the preflight sends. Each is a single named query
+// with no comments, block strings or carriage returns.
+export const QUERIES = Object.freeze({
+  PullRequestState: `query PullRequestState($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      closingIssuesReferences(first: 50) { nodes { number repository { nameWithOwner } } }
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { isResolved isOutdated path comments(first: 1) { nodes { url author { login } } } }
+      }
+    }
+  }
+}`,
+  RequirementVersion: `query RequirementVersion($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { lastEditedAt createdAt state } }
+}`,
+});
+const ALLOWED_QUERIES = new Set(Object.values(QUERIES));
+
+/**
+ * Refuse any GraphQL document that is not a single query operation. Comments,
+ * block strings and carriage returns are refused outright, so no lexer trick
+ * can hide a second operation.
+ */
 export function assertQueryOnly(document) {
   if (typeof document !== 'string') throw new ReadOnlyViolation('a GraphQL document must be a string');
+  if (/[#\r]|"""/.test(document)) throw new ReadOnlyViolation('GraphQL comments, block strings and carriage returns are refused');
   const code = document
     .replace(/"""[\s\S]*?"""/g, '""')
     .replace(/"(?:\\.|[^"\\\n])*"/g, '""')
@@ -57,6 +82,7 @@ export function assertReadOnlyRequest(method, url, body) {
     const extra = Object.keys(body).filter(key => key !== 'query' && key !== 'variables');
     if (extra.length) throw new ReadOnlyViolation(`unexpected GraphQL fields: ${extra.join(', ')}`);
     assertQueryOnly(body.query);
+    if (!ALLOWED_QUERIES.has(body.query)) throw new ReadOnlyViolation("only the preflight's own GraphQL query documents are allowed");
     return;
   }
   throw new ReadOnlyViolation(`${method} ${url.slice(API.length)} is refused: the preflight is read-only`);

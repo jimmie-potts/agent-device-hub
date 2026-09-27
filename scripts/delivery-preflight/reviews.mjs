@@ -2,9 +2,12 @@
 // review reports (references/review-reports.md, references/github.md) holding
 // review-work's result and reviewer returns (references/result-contract.md).
 // An axis counts only through a complete retained return whose digest and
-// provenance match the current comparison; gate lines, description sections and
+// provenance match the current comparison and whose own text states a
+// satisfied verdict. Summary rows, gate lines, description sections and
 // free-form summaries are the coordinator's words and never approve anything.
 import { createHash } from 'node:crypto';
+
+import { short } from './context.mjs';
 
 export const REVIEW_FORMAT = 'jimmie-potts/agent-skills@5d03ee40d119ba432dca39c17345d4ae00d0c2d7';
 export const POLICY_PATHS = ['AGENTS.md', 'CLAUDE.md', 'docs/sdlc.md'];
@@ -17,7 +20,32 @@ const AXES = ['standards', 'specification'];
 const FINDING = /^- (\S+) \((P[0-3]), ([a-z]+), (unresolved|resolved|regression|accepted|deferred)\): /;
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 
-export const short = sha => (typeof sha === 'string' ? sha.slice(0, 12) : String(sha));
+// Verdict phrases a reviewer return may state on a "Verdict:" line (any
+// heading, list or bold markup). Anything else on such a line is not satisfied.
+export const SATISFIED_VERDICTS = ['satisfied', 'approve', 'approved'];
+const VERDICT_LINE = /^[\s>#*_`-]*verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$/i;
+
+/**
+ * The verdict a reviewer's own return states: 'satisfied', 'not-satisfied' or
+ * 'none'. Verdict lines decide when present, and every one must be satisfied.
+ * Without one, the text must use the contract's `satisfied` and none of
+ * `action-required`, `changes requested` or `not satisfied`.
+ */
+export function statedVerdict(text) {
+  const lines = String(text).split('\n');
+  const phrases = [];
+  lines.forEach((line, index) => {
+    const match = line.match(VERDICT_LINE);
+    if (!match) return;
+    let phrase = match[1];
+    if (!phrase.trim()) phrase = lines.slice(index + 1).find(next => next.trim()) || '';
+    phrases.push(phrase.replace(/[*_`]/g, '').split(/[.;,:(]| - /)[0].trim().toLowerCase().replace(/\s+/g, ' '));
+  });
+  if (phrases.length) return phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) ? 'satisfied' : 'not-satisfied';
+  const lower = String(text).toLowerCase();
+  if (/\baction-required\b|\bchanges requested\b|\bnot satisfied\b|\bunsatisfied\b/.test(lower)) return 'not-satisfied';
+  return /\bsatisfied\b/.test(lower) ? 'satisfied' : 'none';
+}
 
 function byTime(a, b) {
   return String(a.created_at).localeCompare(String(b.created_at)) || Number(a.id) - Number(b.id);
@@ -121,7 +149,7 @@ export function parseReport(text, { split = false } = {}) {
     for (index = findingsAt + 1; index < lines.length && lines[index].trim() !== ''; index += 1) {
       const match = lines[index].match(FINDING);
       if (match) findings.push({ id: match[1], severity: match[2], axis: match[3], state: match[4] });
-      else if (lines[index].trim() !== 'none') problems.push(`unreadable finding line: ${lines[index].slice(0, 80)}`);
+      else if (lines[index].trim() !== 'none') problems.push(`finding line ${findings.length + 1} is unreadable`);
     }
   } else {
     problems.push('no findings list');
@@ -176,9 +204,9 @@ export function parseReport(text, { split = false } = {}) {
 
 function reviewerEntries(value) {
   if (!value || value === 'none') return [];
-  return value.split('; ').map(entry => {
+  return value.split('; ').map((entry, index) => {
     const match = entry.match(/^([a-z0-9]+(?:-[a-z0-9]+)*): ([a-z]+), requested /);
-    return match ? { label: match[1], axis: match[2] } : { label: null, axis: null, raw: entry };
+    return match ? { label: match[1], axis: match[2] } : { label: null, axis: null, index: index + 1 };
   });
 }
 
@@ -186,9 +214,11 @@ export function comparisonRow({ base, head, mergeBase }) {
   return `base ${base}; head ${head}; merge-base ${mergeBase}`;
 }
 
+const COMPARISON = /^base ([0-9a-f]{40}); head ([0-9a-f]{40}); merge-base ([0-9a-f]{40})$/;
+
 function describeComparison(value) {
-  const match = String(value).match(/^base ([0-9a-f]{40}); head ([0-9a-f]{40}); merge-base ([0-9a-f]{40})$/);
-  return match ? `base ${short(match[1])} head ${short(match[2])} merge-base ${short(match[3])}` : String(value);
+  const match = String(value).match(COMPARISON);
+  return match ? `base ${short(match[1])} head ${short(match[2])} merge-base ${short(match[3])}` : 'an unreadable comparison';
 }
 
 /** Parse "<reference> at <version>" into a GitHub issue reference when possible. */
@@ -228,7 +258,10 @@ export function judgeRound(round, { current, work }) {
   }
   if (rows.Comparison && !rows.Comparison.includes(`head ${round.head};`)) reasons.push(`final ${round.round}: its marker head and Comparison row disagree`);
   if (rows.Round && rows.Round !== `final ${round.round}`) reasons.push(`final ${round.round}: its Round row says ${rows.Round}`);
-  if (work && rows.Work && ![work.reference, work.url].includes(rows.Work)) reasons.push(`final ${round.round} names work ${rows.Work}, not ${work.reference}`);
+  if (work && rows.Work && ![work.reference, work.url].includes(rows.Work)) {
+    const named = /^[\w.-]+\/[\w.-]+#\d+$/.test(rows.Work) ? rows.Work : 'another work item';
+    reasons.push(`final ${round.round} names work ${named}, not ${work.reference}`);
+  }
   for (const axis of AXES) {
     const status = rows[axis[0].toUpperCase() + axis.slice(1)];
     if (status && status !== 'satisfied') reasons.push(`${axis} is ${status}`);
@@ -243,7 +276,7 @@ export function judgeRound(round, { current, work }) {
 
   const entries = reviewerEntries(rows.Reviewers);
   for (const entry of entries) {
-    if (!entry.label) reasons.push(`unreadable reviewer entry: ${entry.raw}`);
+    if (!entry.label) reasons.push(`reviewer entry ${entry.index} is unreadable`);
     else if (entry.label.startsWith('coordinator')) reasons.push(`${entry.label}: a coordinator cannot fill an axis`);
     if (entry.axis === 'both') reasons.push(`${entry.label}: a final round needs separate axes`);
   }
@@ -261,15 +294,26 @@ export function judgeRound(round, { current, work }) {
         && item.rows.Axis === axis && item.rows.Return === 'complete' && item.digestVerified
         && item.problems.length === 0 && PROVENANCE.every(field => rows[field] !== undefined && item.rows[field] === rows[field]);
     });
-    if (!qualifying.length) reasons.push(`${axis}: no complete retained return matching this comparison, requirements and policy`);
+    if (!qualifying.length) {
+      reasons.push(`${axis}: no complete retained return matching this comparison, requirements and policy`);
+      continue;
+    }
+    // The summary row never approves an axis; each qualifying return must state it.
+    const unstated = qualifying.filter(item => statedVerdict(item.text) !== 'satisfied');
+    if (unstated.length) {
+      reasons.push(`${axis}: retained return ${unstated.map(item => item.label).join(', ')} does not itself state a satisfied verdict (${SATISFIED_VERDICTS.join(', ')}), whatever the summary row says`);
+    }
   }
+  const comparisonMatch = String(rows.Comparison || '').match(COMPARISON);
   return {
     reasons,
     rows,
+    reviewedBase: comparisonMatch ? comparisonMatch[1] : null,
     returns: parsed.returns.map(item => ({
       label: item.label,
       axis: item.rows.Axis || null,
       return: item.rows.Return || null,
+      verdict: statedVerdict(item.text),
       digest: item.digest,
       digestVerified: item.digestVerified,
       redactions: item.rows.Redactions || null,

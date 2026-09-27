@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Read-only delivery preflight for one Hub PR. See docs/development.md
 // "Delivery preflight". Exit 0: every applicable gate satisfied; 1: unresolved;
-// 2: a read failed; 3: usage error.
+// 2: a read failed; 3: usage or internal error.
 import { parseArgs } from 'node:util';
 
 import { createReadOnlyClient, fetchTransport, resolveToken } from './delivery-preflight/github.mjs';
@@ -23,12 +23,14 @@ and local proof files; it never merges, comments, labels, approves or installs.
   --receipt <path>          app-verification/1 proof directory or receipt.json (repeatable)
   --ui                      declare a non-guide UI change the path list does not detect
   --ui-approval <url>       PR comment or review recording approval of a named candidate
-  --guide-receipt <path>    guide-verification.json for the guide-only CI exception
-  --guide-record <url>      PR comment recording that exception's evidence
+  --guide-receipt <path>    guide-verification.json for the guide-only CI exception (repeatable)
+  --guide-record <url>      PR comment recording that exception's evidence for one revision
+                            (repeatable: a merged guide-only PR needs one for its head and
+                            one for its merge commit)
   --json                    print the machine-readable report instead of text
   --help                    show this help
 
-Exit status: 0 satisfied, 1 unresolved, 2 read failure, 3 usage error.
+Exit status: 0 satisfied, 1 unresolved, 2 read failure, 3 usage or internal error.
 `;
 
 function usageError(message) {
@@ -52,8 +54,8 @@ function parse(argv) {
         receipt: { type: 'string', multiple: true, default: [] },
         ui: { type: 'boolean', default: false },
         'ui-approval': { type: 'string' },
-        'guide-receipt': { type: 'string' },
-        'guide-record': { type: 'string' },
+        'guide-receipt': { type: 'string', multiple: true, default: [] },
+        'guide-record': { type: 'string', multiple: true, default: [] },
         json: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -76,10 +78,9 @@ function parse(argv) {
   for (const ref of values.counterpart) {
     if (!/^[\w.-]+\/[\w.-]+#\d+$/.test(ref)) usageError(`--counterpart ${ref} must look like owner/repository#number`);
   }
-  for (const key of ['ui-approval', 'guide-record']) {
-    if (values[key] !== undefined && !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+#(?:issuecomment-\d+|pullrequestreview-\d+|discussion_r\d+)$/.test(values[key])) {
-      usageError(`--${key} must be a PR comment or review URL`);
-    }
+  const record = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+#(?:issuecomment-\d+|pullrequestreview-\d+|discussion_r\d+)$/;
+  for (const [key, urls] of [['ui-approval', values['ui-approval'] === undefined ? [] : [values['ui-approval']]], ['guide-record', values['guide-record']]]) {
+    if (urls.some(url => !record.test(url))) usageError(`--${key} must be a PR comment or review URL`);
   }
   return {
     json: values.json,
@@ -94,8 +95,8 @@ function parse(argv) {
       receipts: values.receipt,
       ui: values.ui,
       uiApproval: values['ui-approval'],
-      guideReceipt: values['guide-receipt'],
-      guideRecord: values['guide-record'],
+      guideReceipts: values['guide-receipt'],
+      guideRecords: values['guide-record'],
     },
   };
 }
@@ -109,7 +110,9 @@ let report;
 try {
   report = await runPreflight({ github: createReadOnlyClient(transport), declaration });
 } catch (error) {
-  process.stderr.write(`delivery preflight stopped: ${error.message}\n`);
+  // An internal error: report it without local paths.
+  const message = String(error && error.message).replace(/(?:~|\/)[^\s'"]*\/[^\s'"]*/g, '[path]');
+  process.stderr.write(`delivery preflight stopped by an internal error: ${message}\n`);
   process.exit(3);
 }
 process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : renderText(report));

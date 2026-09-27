@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { expectedJobs, parseWorkflow } from '../../scripts/delivery-preflight/workflows.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export const REPO = 'jimmie-potts/agent-device-hub';
@@ -22,18 +24,20 @@ export const POLICY = fakeSha('policy-sources');
 export const GUIDE_HTML = Buffer.from('<!doctype html><title>Guide</title>\n');
 export const sha256 = data => createHash('sha256').update(data).digest('hex');
 
-export const EXPECTED_JOBS = [
-  'Checks / Workflow checks on ubuntu-latest',
-  'Checks / Contracts and state Python 3.12 on ubuntu-latest',
-  'Checks / Contracts and state Python 3.14 on ubuntu-latest',
-  'Checks / MCP on ubuntu-latest',
-  'Checks / Dashboard browser and contracts on ubuntu-latest',
-  'Work guide / Work guide build and browser checks',
-];
+const workflowFiles = Object.fromEntries(fs.readdirSync(path.join(root, '.depot/workflows'))
+  .filter(file => /\.ya?ml$/.test(file))
+  .map(file => [file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')]));
 
-const workflowFiles = Object.fromEntries(['ci.yml', 'work-guide.yml'].map(file => [
-  file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8'),
-]));
+// The jobs the real configuration expects for an ordinary source change.
+export const EXPECTED_JOBS = expectedJobs(
+  Object.entries(workflowFiles).map(([file, text]) => parseWorkflow(file, text)),
+  { event: 'pull_request', branch: 'main', files: ['scripts/delivery-preflight.mjs'], filesComplete: true },
+).jobs.map(job => job.name);
+export const job = pattern => {
+  const name = EXPECTED_JOBS.find(candidate => pattern.test(candidate));
+  if (!name) throw new Error(`no expected job matches ${pattern}`);
+  return name;
+};
 
 let nextId = 1000;
 const id = () => (nextId += 1);
@@ -199,6 +203,9 @@ export function cleanWorld() {
     commits: {},
     failures: [],
     requests: [],
+    pageSize: 100,
+    threadPageSize: 100,
+    nextLinkHost: 'https://api.github.com',
   };
   world.compares[`${BASE}...${HEAD}`] = { status: 'ahead', merge_base_commit: { sha: BASE }, files: world.files };
   world.compares[`${POLICY}...${BASE}`] = { status: 'ahead', merge_base_commit: { sha: POLICY }, files: [{ filename: 'README.md', status: 'modified' }] };
@@ -223,8 +230,18 @@ export function mergeWorld(world) {
 
 // ---- Fake transport ----
 
-function page(items) {
-  return { status: 200, link: null, json: items };
+/** One page of a REST list, with a Link rel="next" header while more remain. */
+function page(world, pathname, params, items, key) {
+  const size = world.pageSize;
+  const number = Number(params.get('page') || 1);
+  const slice = items.slice((number - 1) * size, number * size);
+  let link = null;
+  if (number * size < items.length) {
+    const next = new URLSearchParams(params);
+    next.set('page', String(number + 1));
+    link = `<${world.nextLinkHost}${pathname}?${next}>; rel="next"`;
+  }
+  return { status: 200, link, json: key ? { total_count: items.length, [key]: slice } : slice };
 }
 
 function issueLike(world, repo, number) {
@@ -254,10 +271,11 @@ export function fakeTransport(world) {
     let m;
     const repoPath = `/repos/${REPO}`;
     if (pathname === `${repoPath}/pulls/${PR}`) return { status: 200, json: { ...world.pr, changed_files: world.pr.changed_files ?? world.files.length } };
-    if (pathname === `${repoPath}/pulls/${PR}/files`) return page(world.files);
-    if (pathname === `${repoPath}/pulls/${PR}/commits`) return page(world.prCommits.map(sha => ({ sha })));
-    if (pathname === `${repoPath}/pulls/${PR}/reviews`) return page(world.reviews);
-    if (pathname === `${repoPath}/issues/${PR}/comments`) return page(world.comments);
+    const list = (items, key) => page(world, pathname, params, items, key);
+    if (pathname === `${repoPath}/pulls/${PR}/files`) return list(world.files);
+    if (pathname === `${repoPath}/pulls/${PR}/commits`) return list(world.prCommits.map(sha => ({ sha })));
+    if (pathname === `${repoPath}/pulls/${PR}/reviews`) return list(world.reviews);
+    if (pathname === `${repoPath}/issues/${PR}/comments`) return list(world.comments);
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/(.+)$/))) {
       const sha = world.refs[m[1]];
       return sha ? { status: 200, json: { object: { sha } } } : { status: 404, json: { message: 'Not Found' } };
@@ -286,21 +304,19 @@ export function fakeTransport(world) {
       return blob ? { status: 200, json: { encoding: 'base64', content: blob.toString('base64') } } : { status: 404, json: { message: 'Not Found' } };
     }
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]{40})\/check-runs$/))) {
-      const runs = world.checkRuns[m[1]] || [];
-      return { status: 200, link: null, json: { total_count: runs.length, check_runs: runs } };
+      return list(world.checkRuns[m[1]] || [], 'check_runs');
     }
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]{40})\/check-suites$/))) {
-      const suites = world.checkSuites[m[1]] || [];
-      return { status: 200, link: null, json: { total_count: suites.length, check_suites: suites } };
+      return list(world.checkSuites[m[1]] || [], 'check_suites');
     }
-    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/check-runs\/(\d+)\/annotations$/))) return page(world.annotations[m[1]] || []);
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/check-runs\/(\d+)\/annotations$/))) return list(world.annotations[m[1]] || []);
     if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]{40})$/))) {
       const commit = world.commits[m[1]];
       return commit ? { status: 200, json: commit } : { status: 404, json: { message: 'Not Found' } };
     }
-    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/rules\/branches\/(.+)$/))) return page(world.branchRules);
+    if ((m = pathname.match(/^\/repos\/[^/]+\/[^/]+\/rules\/branches\/(.+)$/))) return list(world.branchRules);
     if ((m = pathname.match(/^\/repos\/([^/]+\/[^/]+)\/issues\/(\d+)\/dependencies\/blocked_by$/))) {
-      return page(world.issues[`${m[1]}#${m[2]}`]?.blockedBy || []);
+      return list(world.issues[`${m[1]}#${m[2]}`]?.blockedBy || []);
     }
     if ((m = pathname.match(/^\/repos\/([^/]+\/[^/]+)\/issues\/comments\/(\d+)$/))) {
       const found = world.comments.find(item => String(item.id) === m[2]);
@@ -321,9 +337,14 @@ export function fakeTransport(world) {
 function graphql(world, body) {
   const { query, variables = {} } = body;
   if (/reviewThreads/.test(query)) {
+    const start = variables.after ? Number(variables.after) : 0;
+    const end = start + world.threadPageSize;
     return { status: 200, json: { data: { repository: { pullRequest: {
       closingIssuesReferences: { nodes: world.closingIssues.map(number => ({ number, repository: { nameWithOwner: REPO } })) },
-      reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: world.threads },
+      reviewThreads: {
+        pageInfo: { hasNextPage: end < world.threads.length, endCursor: end < world.threads.length ? String(end) : null },
+        nodes: world.threads.slice(start, end),
+      },
     } } } } };
   }
   if (/lastEditedAt/.test(query)) {
@@ -398,4 +419,20 @@ export function writeGuideEvidence(directory, { html = GUIDE_HTML, errors = [], 
   if (screenshots) fs.writeFileSync(path.join(folder, 'guide-status-overview.png'), Buffer.from('png'));
   if (print) fs.writeFileSync(path.join(folder, 'guide-print-check.pdf'), Buffer.from('pdf'));
   return path.join(folder, 'guide-verification.json');
+}
+
+/**
+ * A guide-only exception record in the form the preflight reads: the revision,
+ * the HTML hash and one line per local check. Pass `null` to omit a check.
+ */
+export function guideRecordBody(sha, { html = GUIDE_HTML, build = 'exit 0', maintenance = 'exit 0', places = 'exit 0', drift = 'exit 0' } = {}) {
+  return [
+    `Guide-only CI exception evidence for ${sha}; guide HTML sha256 ${sha256(html)}.`,
+    '',
+    build === null ? null : `- python3 docs/work-guide/work/build_guide.py: ${build}`,
+    maintenance === null ? null : `- python3 docs/work-guide/work/test_maintenance.py: ${maintenance}`,
+    places === null ? null : `- node docs/skins/check_places.cjs: ${places}`,
+    drift === null ? null : `- git diff --exit-code -- docs/work-guide/outputs: ${drift}`,
+    '- node docs/work-guide/work/check_guide.cjs: passed; receipt retained outside Git',
+  ].filter(line => line !== null).join('\n');
 }

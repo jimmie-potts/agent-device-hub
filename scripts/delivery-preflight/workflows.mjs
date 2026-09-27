@@ -2,7 +2,6 @@
 // Depot reports each job as a GitHub check run named "<workflow> / <job>",
 // with matrix values substituted. Anything this module cannot evaluate exactly
 // is returned as uncertain so the caller keeps the normal gate.
-import path from 'node:path';
 import YAML from 'yaml';
 
 const MATRIX_REF = /\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}/g;
@@ -25,7 +24,36 @@ export function parseWorkflow(file, text) {
   return { file, name: document.name ?? null, triggers: normalizeTriggers(on), jobs };
 }
 
-const matches = (value, patterns) => patterns.some(pattern => path.posix.matchesGlob(value, String(pattern)));
+// GitHub filter patterns: `*` matches within one path segment, `**` across
+// segments (dot-files included), `?` one character. Negation, `+` and
+// character classes are not evaluated; a filter using them keeps every job.
+const UNSUPPORTED = /^!|[[\]+]/;
+
+export function filterPattern(pattern) {
+  let source = '';
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === '*' && pattern[index + 1] === '*') {
+      index += 1;
+      if (pattern[index + 1] === '/') {
+        index += 1;
+        source += '(?:.*/)?';
+      } else {
+        source += '.*';
+      }
+    } else if (char === '*') {
+      source += '[^/]*';
+    } else if (char === '?') {
+      source += '[^/]';
+    } else {
+      source += char.replace(/[.^$|(){}\\]/g, '\\$&');
+    }
+  }
+  return new RegExp(`^${source}$`);
+}
+
+const matches = (value, patterns) => patterns.some(pattern => filterPattern(String(pattern)).test(value));
+const unsupported = patterns => patterns && patterns.some(pattern => UNSUPPORTED.test(String(pattern)));
 
 /** Decide whether a trigger fires for this event, or why that is uncertain. */
 function triggerApplies(trigger, { branch, files, filesComplete }) {
@@ -33,14 +61,17 @@ function triggerApplies(trigger, { branch, files, filesComplete }) {
   const branches = trigger.branches;
   const ignoredBranches = trigger['branches-ignore'];
   if (trigger.tags && !branches && !ignoredBranches) return { applies: false, reason: 'tag-only push trigger' };
+  if (unsupported(branches) || unsupported(ignoredBranches)) {
+    return { applies: true, notes: ['branch patterns with negation, + or [] are not evaluated; every job stays expected'] };
+  }
   if (branches && !matches(branch, branches)) return { applies: false, reason: `branch ${branch} not in branches` };
   if (ignoredBranches && matches(branch, ignoredBranches)) return { applies: false, reason: `branch ${branch} in branches-ignore` };
   const paths = trigger.paths;
   const ignored = trigger['paths-ignore'];
   if (paths && ignored) return { applies: true, notes: ['both paths and paths-ignore are set; every job stays expected'] };
   const patterns = paths || ignored;
-  if (patterns && patterns.some(pattern => String(pattern).startsWith('!'))) {
-    return { applies: true, notes: ['negated path patterns are not evaluated; every job stays expected'] };
+  if (unsupported(patterns)) {
+    return { applies: true, notes: ['path patterns with negation, + or [] are not evaluated; every job stays expected'] };
   }
   if (!filesComplete && patterns) {
     notes.push('the changed-file list is incomplete, so path filters are not applied and every job stays expected');

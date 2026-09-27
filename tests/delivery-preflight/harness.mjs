@@ -9,7 +9,7 @@ import path from 'node:path';
 import { createReadOnlyClient } from '../../scripts/delivery-preflight/github.mjs';
 import { runPreflight } from '../../scripts/delivery-preflight/preflight.mjs';
 import {
-  BASE, GUIDE_HTML, HEAD, cleanWorld, comment, declaration, fakeTransport, sha256,
+  BASE, GUIDE_HTML, HEAD, cleanWorld, comment, declaration, fakeTransport, guideRecordBody,
 } from './world.mjs';
 
 const [proof, guideReceipt] = process.argv.slice(2);
@@ -25,9 +25,9 @@ guide.compares[`${BASE}...${HEAD}`].files = guide.files;
 guide.checkRuns[HEAD] = [];
 guide.checkSuites[HEAD] = [];
 guide.blobs[`${HEAD}:docs/work-guide/outputs/agent-device-work-guides.html`] = GUIDE_HTML;
-const record = comment(`Guide-only evidence for ${HEAD}, HTML sha256 ${sha256(GUIDE_HTML)}.`);
+const record = comment(guideRecordBody(HEAD, { html: GUIDE_HTML }));
 guide.comments.push(record);
-outcomes.guideOnly = (await run(guide, { guideReceipt, guideRecord: record.html_url })).result;
+outcomes.guideOnly = (await run(guide, { guideReceipts: [guideReceipt], guideRecords: [record.html_url] })).result;
 
 outcomes.physical = (await run(cleanWorld(), { receipts: [proof], finishLine: 'physical' })).result;
 const down = cleanWorld();

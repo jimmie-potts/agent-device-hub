@@ -1,6 +1,7 @@
 // Concise text form of a preflight report. The JSON form is the report object.
+import { short } from './context.mjs';
+
 const TAGS = { satisfied: 'ok', unresolved: 'unresolved', 'read-failure': 'read-failure', 'not-applicable': 'n/a' };
-const short = sha => (sha ? String(sha).slice(0, 12) : 'unknown');
 const MAX_REASONS = 8;
 
 function summary(gate) {

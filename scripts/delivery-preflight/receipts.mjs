@@ -4,19 +4,27 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { LocalReadFailure, short } from './context.mjs';
+
 export const RECEIPT_VERSION = 'app-verification/1';
 export const GUIDE_HTML_PATH = 'docs/work-guide/outputs/agent-device-work-guides.html';
 
 const sha256 = data => createHash('sha256').update(data).digest('hex');
-const short = sha => String(sha).slice(0, 12);
 
-export class LocalReadFailure extends Error {
-  constructor(what, detail) {
-    super(`${what}: ${detail}`);
-    this.name = 'LocalReadFailure';
-    this.what = what;
-    this.detail = detail;
+/** Run file reads so that any filesystem error becomes a LocalReadFailure with only its code. */
+function guarded(label, fn) {
+  try {
+    return fn();
+  } catch (error) {
+    if (error instanceof LocalReadFailure) throw error;
+    if (error && typeof error.code === 'string') throw new LocalReadFailure(label, error.code === 'ENOENT' ? 'not found' : error.code);
+    throw error;
   }
+}
+
+/** A receipt-supplied reason, shortened and without absolute paths. */
+function tidy(reason) {
+  return String(reason).replace(/(?:~|\/)[^\s'"]*\/[^\s'"]*/g, '[path]').slice(0, 80);
 }
 
 /** Name a local file without disclosing where it lives. */
@@ -26,12 +34,7 @@ export function describeLocal(file) {
 }
 
 function readJson(file, label) {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (error) {
-    throw new LocalReadFailure(label, error.code === 'ENOENT' ? 'not found' : error.code || 'unreadable');
-  }
+  const text = guarded(label, () => fs.readFileSync(file, 'utf8'));
   try {
     return JSON.parse(text);
   } catch {
@@ -56,6 +59,10 @@ function listFiles(directory, prefix = '') {
 export function readAppReceipt(location, { repository, head }) {
   const proofDir = path.basename(location) === 'receipt.json' ? path.dirname(location) : location;
   const label = `receipt ${describeLocal(path.join(proofDir, 'receipt.json'))}`;
+  return guarded(label, () => checkAppReceipt(proofDir, label, { repository, head }));
+}
+
+function checkAppReceipt(proofDir, label, { repository, head }) {
   const receipt = readJson(path.join(proofDir, 'receipt.json'), label);
   const reasons = [];
   const runId = typeof receipt.runId === 'string' ? receipt.runId : null;
@@ -64,23 +71,23 @@ export function readAppReceipt(location, { repository, head }) {
   if (receipt.repository !== repository) reasons.push(`${name}: repository ${receipt.repository} is not ${repository}`);
   const build = receipt.build || {};
   if (build.sourceRevision !== head) {
-    const built = /^[0-9a-f]{40}$/.test(String(build.sourceRevision)) ? short(build.sourceRevision) : String(build.sourceRevision);
+    const built = /^[0-9a-f]{40}$/.test(String(build.sourceRevision)) ? short(build.sourceRevision) : tidy(String(build.sourceRevision));
     reasons.push(`${name}: built from ${built}, not the candidate ${short(head)}`);
   }
   if (build.dirty !== false) reasons.push(`${name}: the build was dirty or its state is unknown; proof must come from a clean run`);
   if (receipt.state === 'failed') {
-    const cause = receipt.failure && receipt.failure.cause ? receipt.failure.cause : 'no cause recorded';
+    const cause = receipt.failure && receipt.failure.cause ? tidy(receipt.failure.cause) : 'no cause recorded';
     reasons.push(`${name}: the run failed: ${cause}`);
   }
   for (const check of Array.isArray(receipt.checks) ? receipt.checks : []) {
-    if (check.outcome === 'failed') reasons.push(`${name}: check ${check.id} failed${check.reason ? ` (${check.reason})` : ''}`);
+    if (check.outcome === 'failed') reasons.push(`${name}: check ${tidy(check.id)} failed${check.reason ? ` (${tidy(check.reason)})` : ''}`);
   }
   const captures = Array.isArray(receipt.captures) ? receipt.captures : [];
   const verified = captures.filter(capture => capture.set === 'verified');
   if (!verified.length) reasons.push(`${name}: no verified capture`);
   for (const capture of verified) {
     if (capture.outcome !== 'passed') {
-      reasons.push(`${name}: capture ${capture.n} ${capture.step}: ${capture.outcome}${capture.reason ? ` (${capture.reason})` : ''}`);
+      reasons.push(`${name}: capture ${capture.n} ${tidy(capture.step)}: ${capture.outcome}${capture.reason ? ` (${tidy(capture.reason)})` : ''}`);
     }
   }
 
@@ -153,6 +160,10 @@ export function readAppReceipt(location, { repository, head }) {
  */
 export function readGuideReceipt(file) {
   const label = `guide receipt ${describeLocal(file)}`;
+  return guarded(label, () => checkGuideReceipt(file, label));
+}
+
+function checkGuideReceipt(file, label) {
   const receipt = readJson(file, label);
   const reasons = [];
   if (!/^[0-9a-f]{64}$/.test(String(receipt.htmlSha256))) reasons.push('the guide receipt has no HTML hash');

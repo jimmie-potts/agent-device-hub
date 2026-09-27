@@ -227,23 +227,48 @@ head and read time it prints; a saved green report never covers a later head.
 `npm run preflight -- --help` lists the options.
 
 The tool only reads. Before any network use, its GitHub client refuses every
-request except `GET` and GraphQL queries, so it cannot merge, comment, label,
-approve, dispatch or change issue state. It writes no file. The only process it
-starts is `gh auth token`, and only when neither `GH_TOKEN` nor `GITHUB_TOKEN`
-is set. The output names revisions, check IDs, comment URLs, digests and run
-IDs; it never prints tokens, reviewer text or local paths.
+request except `GET` and the tool's own two GraphQL query documents, matched by
+exact text, so it cannot merge, comment, label, approve, dispatch or change
+issue state. It writes no file. The only process it starts is `gh auth token`,
+and only when neither `GH_TOKEN` nor `GITHUB_TOKEN` is set. The output names
+revisions, check IDs, comment URLs, digests and run IDs, plus short structured
+fields from the evidence it reads, such as receipt capture reasons. It never
+prints tokens, local paths or reviewer return text.
 
 | Gate | What it reads | Rule |
 | --- | --- | --- |
-| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts and closing keywords | [Review and merge](sdlc.md#review-and-merge) |
-| Depot CI | Expected jobs from `.depot/workflows/` at the PR head and, once merged, at the main merge commit, with matrix expansion and branch-rule checks; every page of `filter=all` check runs. A workflow edit cannot drop a job expected at the merge-base without an unresolved entry | [Depot CI evidence](sdlc.md#depot-ci-evidence) |
-| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML with its screenshots and print check beside it; `--guide-record`, a PR comment naming the full head and HTML hash | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
-| Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
+| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
+| Depot CI | Expected jobs from `.depot/workflows/` at the PR head and, once merged, at the main merge commit, with matrix expansion, GitHub path-filter semantics and branch-rule checks; every page of `filter=all` check runs. A workflow edit cannot drop a job expected at the merge-base without an unresolved entry | [Depot CI evidence](sdlc.md#depot-ci-evidence) |
+| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
+| Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
-| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/` or `docs/skins/`, or `--ui`; `--ui-approval` must name one PR revision with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
+| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/` or `docs/skins/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), to the Tidbyt frame sources (`render.ts`, `draw.ts`, `font.ts`, `status.ts`, `nowplaying.ts`) or golden frames, or `--ui`. `--ui-approval` must be a record (see below) naming one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
 | Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
 | Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
+
+A reviewer return states its verdict on a `Verdict:` line, in any heading, list
+or bold markup. Only `satisfied`, `approve` and `approved` count as satisfied,
+and every verdict line in the return must be one of them. A return without a
+verdict line counts only when it says `satisfied` and never says
+`action-required`, `changes requested` or `not satisfied`, even in quoted text.
+The summary row never approves an axis on its own.
+
+A UI approval or guide-only record is a comment or review on the PR written by
+the delivery account: the PR author, or the repository owner when a bot opened
+the PR. Bot comments, other accounts' comments and comments with an HTML marker,
+such as review reports and provider summaries, never count. A guide-only record
+names the full revision and the guide HTML SHA-256, and reports each local
+check on its own line with a passing result, for example:
+
+```text
+- python3 docs/work-guide/work/build_guide.py: exit 0
+- python3 docs/work-guide/work/test_maintenance.py: exit 0
+- node docs/skins/check_places.cjs: exit 0
+- git diff --exit-code -- docs/work-guide/outputs: exit 0
+```
+
+A failed, missing or unclear result leaves the exception unresolved.
 
 Exit status is 0 when every applicable gate is satisfied, 1 when any is
 unresolved, 2 when a read failed, and 3 for a usage or internal error. `--json`
@@ -255,12 +280,13 @@ npm run test:preflight
 
 The test suite covers a clean candidate and negative controls built from
 deterministic GitHub and receipt fixtures: a missing or unsuccessful job,
-changed head or base, stale or partial review, unavailable API, missing UI
-approval, open counterpart, both finish-line kinds, the guide-only exception
-with its evidence and with mixed paths, and dirty or failed-capture receipts.
-It also covers the read-only guard and a run under Node's permission model,
-which denies file writes and child processes. CI runs it in the Workflow checks
-job. Fixtures do not qualify live GitHub state or installed clients.
+changed head or base, stale, partial or self-contradicting review, unavailable
+API and paginated reads, missing or improper UI approval, open counterpart,
+missing work issue, both finish-line kinds, the guide-only exception with its
+evidence and with mixed paths, and dirty or failed-capture receipts. It also
+covers the read-only guard and a run under Node's permission model, which
+denies file writes and child processes. CI runs it in the Workflow checks job.
+Fixtures do not qualify live GitHub state or installed clients.
 
 ## Shared tooling provenance
 

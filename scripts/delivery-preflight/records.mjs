@@ -1,0 +1,76 @@
+// Owner-facing records on the PR: UI approval and guide-only exception
+// evidence. A record counts only when the delivery account wrote it as a plain
+// comment or review on this PR; bot comments, other accounts and comments that
+// carry automation markers (review reports, provider summaries) never count.
+export const RECORD_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)#(?:issuecomment-(\d+)|pullrequestreview-(\d+)|discussion_r(\d+))$/;
+
+export function isBot(user) {
+  return Boolean(user) && (user.type === 'Bot' || String(user.login || '').endsWith('[bot]'));
+}
+
+/**
+ * Read one record URL. Returns null after a read failure or a URL outside this
+ * PR (both already on the gate), otherwise {record, problems}.
+ */
+export async function readRecord(ctx, gate, url, label) {
+  const { github, repo, pr } = ctx;
+  const match = String(url).match(RECORD_URL);
+  if (!match || match[1] !== repo || Number(match[2]) !== pr.number) {
+    gate.unresolved(`the ${label} is not a comment or review on this PR`);
+    return null;
+  }
+  const [, , , commentId, reviewId, discussionId] = match;
+  const found = await ctx.read(gate, async () => {
+    if (commentId) {
+      const item = await github.get(`/repos/${repo}/issues/comments/${commentId}`);
+      return String(item.issue_url || '').endsWith(`/issues/${pr.number}`) ? item : null;
+    }
+    if (reviewId) return github.get(`/repos/${repo}/pulls/${pr.number}/reviews/${reviewId}`);
+    const item = await github.get(`/repos/${repo}/pulls/comments/${discussionId}`);
+    return String(item.pull_request_url || '').endsWith(`/pulls/${pr.number}`) ? item : null;
+  });
+  if (!found.ok) return null;
+  if (!found.value) {
+    gate.unresolved(`the ${label} belongs to another issue or PR`);
+    return null;
+  }
+  const item = found.value;
+  const user = item.user || {};
+  const record = { url, author: user.login ?? null, createdAt: item.created_at || item.submitted_at || null, body: String(item.body || '').replace(/\r\n/g, '\n') };
+  const problems = [];
+  if (isBot(user)) problems.push(`the ${label} ${url} is by ${record.author}, a bot; it must come from the delivery account ${ctx.publisher}`);
+  else if (record.author !== ctx.publisher) problems.push(`the ${label} ${url} is by ${record.author}, not the delivery account ${ctx.publisher}`);
+  if (record.body.includes('<!--')) problems.push(`the ${label} ${url} carries an automation marker (a review report or provider summary), not a plain record`);
+  return { record, problems };
+}
+
+/** PR revisions a record names by full or abbreviated (7+) hex SHA. */
+export function namedRevisions(body, commits) {
+  const tokens = body.match(/\b[0-9a-f]{7,40}\b/g) || [];
+  return [...new Set(commits.filter(sha => tokens.some(token => sha.startsWith(token))))];
+}
+
+// The local checks the guide README asks the record to report, besides the
+// browser check that the guide receipt covers. One line per check, for example
+// "python3 docs/work-guide/work/build_guide.py: exit 0".
+export const GUIDE_RECORD_CHECKS = [
+  ['build_guide.py', /\bbuild_guide\.py\b/],
+  ['test_maintenance.py', /\btest_maintenance\.py\b/],
+  ['check_places.cjs', /\bcheck_places\.cjs\b/],
+  ['git diff --exit-code', /git diff --exit-code/],
+];
+const PASS = /\bexit(?:ed)?(?: code| status)?\s*[:=]?\s*0\b|\bpass(?:ed|es)?\b|\bsucceeded\b/i;
+const FAIL = /\bfail(?:ed|s|ure|ing)?\b|\bexit(?:ed)?(?: code| status)?\s*[:=]?\s*[1-9]\d*\b|(?<!\b(?:0|no) )\berrors?\b|\bskipped\b|\bnot run\b|\btimed? ?out\b/i;
+
+/** Classify each required check as passed, failed or unverified from the record's lines. */
+export function guideRecordResults(body) {
+  const lines = body.split('\n');
+  const results = { passed: [], failed: [], unverified: [] };
+  for (const [id, pattern] of GUIDE_RECORD_CHECKS) {
+    const mentions = lines.filter(line => pattern.test(line));
+    if (mentions.some(line => FAIL.test(line))) results.failed.push(id);
+    else if (mentions.some(line => PASS.test(line))) results.passed.push(id);
+    else results.unverified.push(id);
+  }
+  return results;
+}

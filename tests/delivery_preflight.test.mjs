@@ -9,13 +9,14 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
+import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
 import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
-import { expectedJobs, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
+import { statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
+import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
 import {
   BASE, EXPECTED_JOBS, GUIDE_HTML, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO,
-  checkRun, cleanWorld, comment, declaration, fakeTransport, mergeWorld, reviewReport, sha256, suite,
+  checkRun, cleanWorld, comment, declaration, fakeTransport, guideRecordBody, job, mergeWorld, reviewReport, sha256, suite,
   writeGuideEvidence, writeProof,
 } from './delivery-preflight/world.mjs';
 
@@ -88,7 +89,14 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 test('the real Depot configuration enumerates the six expected jobs and filters guide-only changes', () => {
   const workflows = ['ci.yml', 'work-guide.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true });
-  assert.deepEqual(source.jobs.map(job => job.name).sort(), [...EXPECTED_JOBS].sort());
+  assert.deepEqual(source.jobs.map(item => item.name).sort(), [
+    'Checks / Contracts and state Python 3.12 on ubuntu-latest',
+    'Checks / Contracts and state Python 3.14 on ubuntu-latest',
+    'Checks / Dashboard browser and contracts on ubuntu-latest',
+    'Checks / MCP on ubuntu-latest',
+    'Checks / Workflow checks on ubuntu-latest',
+    'Work guide / Work guide build and browser checks',
+  ]);
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true });
   assert.equal(push.jobs.length, 6);
@@ -115,7 +123,7 @@ test('workflow shapes the preflight cannot evaluate are reported, not guessed', 
 // ---- CI evidence ----
 
 const ciCases = [
-  ['a missing expected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== EXPECTED_JOBS[3]); }, /MCP on ubuntu-latest: missing/],
+  ['a missing expected job', world => { world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/MCP/)); }, /MCP on ubuntu-latest: missing/],
   ['a pending job', world => { Object.assign(world.checkRuns[HEAD][0], { status: 'in_progress', conclusion: null }); }, /pending/],
   ['a failed job', world => { world.checkRuns[HEAD][1].conclusion = 'failure'; }, /failure/],
   ['a skipped job', world => { world.checkRuns[HEAD][2].conclusion = 'skipped'; }, /skipped/],
@@ -157,6 +165,13 @@ test('CI: a successful rerun is accepted and the superseded attempt stays visibl
   assert.deepEqual(job.superseded, [{ checkRunId: first.id, result: 'failure' }]);
 });
 
+test('CI: a superseded attempt that is still running keeps the job unresolved', async () => {
+  const world = cleanWorld();
+  const latest = world.checkRuns[HEAD][0];
+  world.checkRuns[HEAD].push(checkRun(latest.name, HEAD, latest.check_suite.id, { status: 'in_progress', conclusion: null, started_at: '2026-09-27T06:50:00Z' }));
+  assertUnresolved(await preflight(world), 'ci-pr', /an earlier attempt is still running/);
+});
+
 test('CI: a branch rule requiring a check adds it to the expected set', async () => {
   const world = cleanWorld();
   world.branchRules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Security scan' }] } }];
@@ -169,7 +184,7 @@ test('CI: a candidate that edits its workflows cannot drop an expected job unnot
   world.workflows[BASE] = { ...world.workflows[HEAD] };
   world.workflows[HEAD] = { ...world.workflows[HEAD], 'ci.yml': ci.replace(/\n  mcp:\n[\s\S]*?(?=\n  dashboard:)/, '') };
   world.files.push({ filename: '.depot/workflows/ci.yml', status: 'modified' });
-  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== EXPECTED_JOBS[3]);
+  world.checkRuns[HEAD] = world.checkRuns[HEAD].filter(run => run.name !== job(/MCP/));
   assertUnresolved(await preflight(world), 'ci-pr', /MCP on ubuntu-latest: expected at [0-9a-f]{12} but dropped/);
 
   const added = cleanWorld();
@@ -192,7 +207,7 @@ test('CI: filters that skip non-guide paths leave the change without CI, never u
   const receipt = writeGuideEvidence(scratch(t));
   const record = comment(`Guide evidence for ${HEAD}, HTML sha256 ${sha256(GUIDE_HTML)}.`);
   world.comments.push(record);
-  assertUnresolved(await preflight(world, { guideReceipt: receipt, guideRecord: record.html_url }), 'ci-pr', /no configured job applies and no exception covers this change/);
+  assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /no configured job applies and no exception covers this change/);
 });
 
 // ---- Identity ----
@@ -214,6 +229,54 @@ test('a changed base is unresolved and makes the retained review stale', async (
   const undeclared = await preflight(world);
   assert.equal(gate(undeclared, 'identity').status, 'satisfied');
   assertUnresolved(undeclared, 'review', /stale/);
+  assert.match(gate(undeclared, 'review').reasons.join(), /base moved from [0-9a-f]{12} to [0-9a-f]{12}; the candidate's diff is unchanged/);
+  world.compares[`${NEWER_MAIN}...${HEAD}`].files = [...world.files, { filename: 'README.md', status: 'modified', sha: 'f'.repeat(40) }];
+  assert.match(gate(await preflight(world), 'review').reasons.join(), /and the candidate's diff changed/);
+});
+
+test('identity: a fork head and a non-main base are unresolved', async () => {
+  const fork = cleanWorld();
+  fork.pr.head.repo = { full_name: 'someone/agent-device-hub' };
+  assertUnresolved(await preflight(fork), 'identity', /head comes from someone\/agent-device-hub/);
+  const develop = cleanWorld();
+  develop.pr.base.ref = 'develop';
+  develop.refs.develop = BASE;
+  assertUnresolved(await preflight(develop), 'identity', /targets develop, not main/);
+});
+
+test('identity: a missing or ambiguous work issue is unresolved, never not-applicable', async () => {
+  const none = cleanWorld();
+  none.pr.body = 'Adds the preflight.';
+  const missing = await preflight(none);
+  assertUnresolved(missing, 'identity', /no work issue: the PR body has no Refs #<issue>; declare --issue/);
+  assertUnresolved(missing, 'counterparts', /blockers were not read: no single work issue; declare --issue/);
+  assertUnresolved(missing, 'review', /cannot be matched to a work issue/);
+
+  const two = cleanWorld();
+  two.pr.body = 'Refs #496\nRefs #497';
+  two.issues[`${REPO}#${ISSUE}`].blockedBy[0].state = 'open';
+  const ambiguous = await preflight(two);
+  assertUnresolved(ambiguous, 'identity', /ambiguous: the PR body references #496, #497; declare --issue/);
+  assert.notEqual(gate(ambiguous, 'counterparts').status, 'not-applicable');
+  assertUnresolved(await preflight(two, { issue: ISSUE }), 'counterparts', /#493, which is open/);
+  two.issues[`${REPO}#${ISSUE}`].blockedBy[0].state = 'closed';
+  assert.equal((await preflight(two, { issue: ISSUE })).result, 'satisfied');
+});
+
+test('identity: the bot-opened nightly guide refresh is the only PR without a work issue', async () => {
+  const world = guideOnlyWorld();
+  world.pr.user = { login: 'github-actions[bot]', type: 'Bot' };
+  world.pr.head.ref = 'guide/nightly-refresh';
+  world.pr.body = 'Nightly guide refresh.';
+  const refresh = await preflight(world);
+  assert.equal(gate(refresh, 'identity').status, 'satisfied', JSON.stringify(gate(refresh, 'identity').reasons));
+  assert.match(gate(refresh, 'identity').reasons.join(), /not required for the bot-opened nightly guide refresh/);
+  assert.equal(gate(refresh, 'counterparts').status, 'not-applicable');
+  world.pr.head.ref = 'guide/other';
+  assertUnresolved(await preflight(world), 'identity', /no work issue/);
+  world.pr.head.ref = 'guide/nightly-refresh';
+  world.files.push({ filename: 'README.md', status: 'modified' });
+  assertUnresolved(await preflight(world), 'identity', /no work issue/);
 });
 
 test('identity catches drafts, closed PRs, conflicts and closing keywords', async () => {
@@ -282,6 +345,7 @@ const reviewCases = [
   ['policy sources changed after the reviewed policy', world => {
     world.compares[`${POLICY}...${BASE}`].files = [{ filename: 'docs/sdlc.md', status: 'modified' }];
   }, /policy changed after review: docs\/sdlc\.md/],
+  ['a policy revision that is not an ancestor of the base', world => { world.compares[`${POLICY}...${BASE}`].status = 'diverged'; }, /policy revision [0-9a-f]{12} is not an ancestor of the base/],
   ['a review for another work item', world => { world.comments = [comment(reviewReport({ work: `${REPO}#1` }))]; }, /names work/],
   ['only a coordinator summary', world => {
     world.comments = [comment('Review round 3 on the head: both axes satisfied, no P0 to P2.')];
@@ -304,6 +368,16 @@ test('review: a bot-opened PR takes reports from the repository owner, not the b
   assert.equal(gate(await preflight(world), 'review').status, 'satisfied');
   world.comments = [comment(reviewReport(), { user: { login: 'github-actions[bot]', type: 'Bot' } })];
   assertUnresolved(await preflight(world), 'review', /no retained final review report/);
+});
+
+test('review: a digest mismatch is reported in the evidence, not only as a reason', async () => {
+  const world = cleanWorld();
+  world.comments = [comment(reviewReport({ returns: [
+    { label: 'standards-reviewer-1', axis: 'standards', digest: `sha256:${'0'.repeat(64)}` },
+    { label: 'specification-reviewer-1', axis: 'specification' },
+  ] }))];
+  const returns = gate(await preflight(world), 'review').evidence.returns;
+  assert.deepEqual(returns.map(item => item.digestVerified), [false, true]);
 });
 
 test('review: the latest final round decides, and a later stale round supersedes an earlier current one', async () => {
@@ -333,6 +407,37 @@ test('review: a report split across comments is read whole, and a missing part l
   assert.ok(gate(report, 'review').evidence.returns.every(item => item.digestVerified));
   world.comments = [comment(first)];
   assertUnresolved(await preflight(world), 'review', /split into parts that are missing/);
+});
+
+test('review: each retained return must itself state a satisfied verdict', async () => {
+  const withSpecification = text => {
+    const world = cleanWorld();
+    world.comments = [comment(reviewReport({ returns: [
+      { label: 'standards-reviewer-1', axis: 'standards' },
+      { label: 'specification-reviewer-1', axis: 'specification', text },
+    ] }))];
+    return preflight(world);
+  };
+  const disagreeing = '## Verdict: changes requested\n\nBlocking findings:\n- P1 a.mjs:1, an empty filter exports every row.\n';
+  assertUnresolved(await withSpecification(disagreeing), 'review', /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/);
+  assertUnresolved(await withSpecification('Coverage: the whole comparison.\n'), 'review', /does not itself state a satisfied verdict/);
+  assertUnresolved(await withSpecification('The axis is action-required: F1 remains.\n'), 'review', /does not itself state a satisfied verdict/);
+  assertUnresolved(await withSpecification('Verdict: satisfied.\n\nVerdict (after rereading): changes requested\n'), 'review', /does not itself state/);
+  for (const text of ['## Verdict: approve\n\nNo blockers.\n', '**Verdict:** satisfied.\n', 'Verdict - approved\n', 'The Specification axis is now **satisfied**. No P0-P2 remains.\n']) {
+    const report = await withSpecification(text);
+    assert.equal(gate(report, 'review').status, 'satisfied', `${text}: ${gate(report, 'review').reasons}`);
+    assert.equal(gate(report, 'review').evidence.returns[1].verdict, 'satisfied');
+  }
+});
+
+test('review: stated verdicts recognize only satisfied, approve and approved', () => {
+  const cases = [
+    ['Verdict: satisfied.', 'satisfied'], ['## Verdict: approve', 'satisfied'], ['- **Verdict**: Approved', 'satisfied'],
+    ['## Verdict: changes requested', 'not-satisfied'], ['Verdict: action-required', 'not-satisfied'], ['Verdict: incomplete', 'not-satisfied'],
+    ['Verdict: approve with nits', 'not-satisfied'], ['Verdict: not satisfied', 'not-satisfied'], ['## Verdict\n\nsatisfied', 'satisfied'],
+    ['satisfied; F1 was action-required in round 1', 'not-satisfied'], ['No verdict here.', 'none'], ['Specification owns the verdict. satisfied', 'satisfied'],
+  ];
+  for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`), expected, text);
 });
 
 test('feedback: unresolved threads and outstanding change requests stay visible', async () => {
@@ -379,6 +484,66 @@ test('an unavailable API is a read failure, never success', async () => {
   assert.equal(partial.exitCode, 2);
 });
 
+// ---- Pagination ----
+
+test('pagination: every list and review thread page is read, and the decisive item can be on the last page', async () => {
+  const paged = world => Object.assign(world, { pageSize: 1, threadPageSize: 1 });
+  const clean = paged(cleanWorld());
+  clean.comments.unshift(comment('An earlier note.', { created_at: '2026-09-27T07:00:00Z' }));
+  const report = await preflight(clean);
+  assert.equal(report.result, 'satisfied', JSON.stringify(report.gates.filter(g => g.status !== 'satisfied' && g.status !== 'not-applicable')));
+  assert.ok(clean.requests.some(request => /comments\?.*page=2/.test(request.url)), 'the review report came from page 2');
+
+  const reviews = paged(cleanWorld());
+  reviews.reviews = [{ id: 1, user: { login: 'a' }, state: 'APPROVED', html_url: 'u1' }, { id: 2, user: { login: 'b' }, state: 'CHANGES_REQUESTED', html_url: 'u2' }];
+  assertUnresolved(await preflight(reviews), 'feedback', /changes requested by b/);
+
+  const threads = paged(cleanWorld());
+  threads.threads = [{ isResolved: true, isOutdated: false, path: 'a', comments: { nodes: [] } }, { isResolved: false, isOutdated: false, path: 'b', comments: { nodes: [] } }];
+  assertUnresolved(await preflight(threads), 'feedback', /1 unresolved review thread/);
+
+  const blockers = paged(cleanWorld());
+  blockers.issues[`${REPO}#${ISSUE}`].blockedBy[1].state = 'open';
+  assertUnresolved(await preflight(blockers), 'counterparts', /agent-skills#54, which is open/);
+
+  const files = paged(cleanWorld());
+  files.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
+  assertUnresolved(await preflight(files), 'ui-approval', /apps\/dashboard\/src\/main\.tsx/);
+
+  const runs = paged(cleanWorld());
+  runs.checkRuns[HEAD].at(-1).conclusion = 'failure';
+  assertUnresolved(await preflight(runs), 'ci-pr', /: failure/);
+});
+
+test('pagination: a failed later page, an off-host next link and too many pages are read failures', async () => {
+  const later = Object.assign(cleanWorld(), { pageSize: 1 });
+  later.comments.push(comment('A second comment.'));
+  later.failures.push({ match: /issues\/700\/comments\?.*page=2/, status: 502 });
+  const failed = await preflight(later);
+  assert.equal(gate(failed, 'review').status, 'read-failure');
+  assert.equal(failed.exitCode, 2);
+
+  const offHost = Object.assign(cleanWorld(), { pageSize: 1, nextLinkHost: 'https://example.com' });
+  const left = await preflight(offHost);
+  assert.equal(left.result, 'read-failure');
+  assert.ok(left.readFailures.some(failure => /pagination left the GitHub API/.test(failure.detail)));
+
+  const many = Object.assign(cleanWorld(), { pageSize: 1 });
+  for (let index = 0; index < MAX_PAGES; index += 1) many.comments.push(comment(`note ${index}`));
+  const tooMany = await preflight(many);
+  assert.equal(gate(tooMany, 'review').status, 'read-failure');
+  assert.ok(tooMany.readFailures.some(failure => new RegExp(`more than ${MAX_PAGES} pages`).test(failure.detail)));
+});
+
+test('an incomplete changed-file list keeps path-filtered jobs expected and the UI scope unresolved', async () => {
+  const world = guideOnlyWorld();
+  world.pr.changed_files = world.files.length + 1;
+  const report = await preflight(world);
+  assertUnresolved(report, 'ui-approval', /changed-file list is incomplete/);
+  assertUnresolved(report, 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
+  assert.match(gate(report, 'ci-pr').reasons.join(), /path filters are not applied and every job stays expected/);
+});
+
 // ---- UI approval ----
 
 test('UI approval: a non-guide UI change without approval evidence is unresolved', async () => {
@@ -421,6 +586,32 @@ test('UI approval: a record that names no candidate revision is not approval', a
   const vague = comment('The owner likes the dashboard.');
   world.comments.push(vague);
   assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', /names no revision of this PR/);
+});
+
+test('UI approval: bot summaries, review reports and other accounts are not approval records', async () => {
+  const records = [
+    comment(`<!-- codex-pull-request-review-summary -->\n<!-- codex-security-review:v1 {"headSha":"${HEAD}","status":"completed"} -->\n## Codex Review Summary`, { user: { login: 'chatgpt-codex-connector[bot]', type: 'Bot' } }),
+    comment(reviewReport()),
+    comment(`LGTM at ${HEAD}`, { user: { login: 'someone-else', type: 'User' } }),
+  ];
+  const reasons = [/a bot; it must come from the delivery account jimmie-potts/, /carries an automation marker/, /by someone-else, not the delivery account jimmie-potts/];
+  for (const [index, record] of records.entries()) {
+    const world = cleanWorld();
+    world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
+    world.comments.push(record);
+    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', reasons[index]);
+  }
+});
+
+test('UI approval: the dashboard shell and Tidbyt frame rendering are UI', async () => {
+  for (const file of ['scripts/build-dashboard.mjs', 'controllers/tidbyt/src/render.ts', 'controllers/tidbyt/src/nowplaying.ts', 'controllers/tidbyt/src/status.ts', 'controllers/tidbyt/fixtures/golden/status-bar.webp']) {
+    const world = cleanWorld();
+    world.files.push({ filename: file, status: 'modified' });
+    assertUnresolved(await preflight(world), 'ui-approval', /needs explicit human approval/);
+  }
+  const credentials = cleanWorld();
+  credentials.files.push({ filename: 'controllers/tidbyt/src/credentials.ts', status: 'modified' });
+  assert.equal(gate(await preflight(credentials), 'ui-approval').status, 'not-applicable');
 });
 
 // ---- Counterparts ----
@@ -485,8 +676,8 @@ function guideOnlyWorld() {
   return world;
 }
 
-function guideRecord(world, extra = '') {
-  const record = comment(`Guide-only CI exception evidence for head ${HEAD}: build, drift check, maintenance tests and browser checks passed; HTML sha256 ${sha256(GUIDE_HTML)}. ${extra}`);
+function guideRecord(world, options = {}, sha = HEAD) {
+  const record = comment(guideRecordBody(sha, options));
   world.comments.push(record);
   return record.html_url;
 }
@@ -494,7 +685,7 @@ function guideRecord(world, extra = '') {
 test('guide-only: the exception passes only with its documented evidence', async t => {
   const world = guideOnlyWorld();
   const receipt = writeGuideEvidence(scratch(t));
-  const report = await preflight(world, { guideReceipt: receipt, guideRecord: guideRecord(world) });
+  const report = await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world)] });
   const ci = gate(report, 'ci-pr');
   assert.equal(ci.status, 'satisfied', JSON.stringify(ci));
   assert.equal(ci.evidence.mode, 'guide-only-exception');
@@ -512,34 +703,105 @@ test('guide-only: mixed changes, renames out of the folder and inconsistent runs
   const receipt = writeGuideEvidence(directory);
   const mixed = guideOnlyWorld();
   mixed.files.push({ filename: 'docs/sdlc.md', status: 'modified' });
-  assertUnresolved(await preflight(mixed, { guideReceipt: receipt, guideRecord: guideRecord(mixed) }), 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
-  assert.match(gate(await preflight(mixed, { guideReceipt: receipt }), 'ci-pr').reasons.join(), /not guide-only: docs\/sdlc\.md/);
+  assertUnresolved(await preflight(mixed, { guideReceipts: [receipt], guideRecords: [guideRecord(mixed)] }), 'ci-pr', /Checks \/ Workflow checks on ubuntu-latest: missing/);
+  assert.match(gate(await preflight(mixed, { guideReceipts: [receipt] }), 'ci-pr').reasons.join(), /not guide-only: docs\/sdlc\.md/);
 
   const renamed = guideOnlyWorld();
   renamed.files.push({ filename: 'docs/build_guide.py', previous_filename: 'docs/work-guide/work/build_guide.py', status: 'renamed' });
-  assertUnresolved(await preflight(renamed, { guideReceipt: receipt, guideRecord: guideRecord(renamed) }), 'ci-pr', /missing/);
+  assertUnresolved(await preflight(renamed, { guideReceipts: [receipt], guideRecords: [guideRecord(renamed)] }), 'ci-pr', /missing/);
 
   const ran = guideOnlyWorld();
-  ran.checkRuns[HEAD] = [checkRun(EXPECTED_JOBS[0], HEAD, 9001)];
+  ran.checkRuns[HEAD] = [checkRun(job(/Workflow checks/), HEAD, 9001)];
   ran.checkSuites[HEAD] = [suite(9001, HEAD, 'claude/gh-700-example')];
-  assertUnresolved(await preflight(ran, { guideReceipt: receipt, guideRecord: guideRecord(ran) }), 'ci-pr', /Depot runs exist/);
+  assertUnresolved(await preflight(ran, { guideReceipts: [receipt], guideRecords: [guideRecord(ran)] }), 'ci-pr', /Depot runs exist/);
 });
 
 test('guide-only: a receipt for other HTML, a failed check or missing retained files are unresolved', async t => {
   const other = writeGuideEvidence(scratch(t), { html: Buffer.from('other') });
   const world = guideOnlyWorld();
-  assertUnresolved(await preflight(world, { guideReceipt: other, guideRecord: guideRecord(world) }), 'ci-pr', /does not match the candidate's committed guide HTML/);
+  assertUnresolved(await preflight(world, { guideReceipts: [other], guideRecords: [guideRecord(world)] }), 'ci-pr', /no guide receipt's HTML hash matches the candidate's committed guide HTML/);
   const failed = writeGuideEvidence(scratch(t), { overrides: { navigation: 'failed' } });
-  assertUnresolved(await preflight(world, { guideReceipt: failed, guideRecord: guideRecord(world) }), 'ci-pr', /navigation: failed/);
+  assertUnresolved(await preflight(world, { guideReceipts: [failed], guideRecords: [guideRecord(world)] }), 'ci-pr', /navigation: failed/);
   const errors = writeGuideEvidence(scratch(t), { errors: ['broken link'] });
-  assertUnresolved(await preflight(world, { guideReceipt: errors, guideRecord: guideRecord(world) }), 'ci-pr', /errors/);
+  assertUnresolved(await preflight(world, { guideReceipts: [errors], guideRecords: [guideRecord(world)] }), 'ci-pr', /errors/);
   const bare = writeGuideEvidence(scratch(t), { screenshots: false, print: false });
-  assertUnresolved(await preflight(world, { guideReceipt: bare, guideRecord: guideRecord(world) }), 'ci-pr', /screenshots.*print check/);
+  assertUnresolved(await preflight(world, { guideReceipts: [bare], guideRecords: [guideRecord(world)] }), 'ci-pr', /screenshots.*print check/);
   const good = writeGuideEvidence(scratch(t));
-  assertUnresolved(await preflight(world, { guideReceipt: good }), 'ci-pr', /record/);
+  assertUnresolved(await preflight(world, { guideReceipts: [good] }), 'ci-pr', /record/);
   const vague = comment('Guide checks passed.');
   world.comments.push(vague);
-  assertUnresolved(await preflight(world, { guideReceipt: good, guideRecord: vague.html_url }), 'ci-pr', /record does not name/);
+  assertUnresolved(await preflight(world, { guideReceipts: [good], guideRecords: [vague.html_url] }), 'ci-pr', /no guide record from jimmie-potts names [0-9a-f]{12} in full/);
+});
+
+test('guide-only: the record must show passing build, maintenance, Places and drift checks', async t => {
+  const receipt = writeGuideEvidence(scratch(t));
+  const cases = [
+    [{ maintenance: 'FAILED (2 failures)' }, /reports test_maintenance.py failed/],
+    [{ drift: 'exit 1' }, /reports git diff --exit-code failed/],
+    [{ places: null }, /does not show a passing result for check_places.cjs; it remains unverified/],
+    [{ build: 'ran' }, /does not show a passing result for build_guide.py; it remains unverified/],
+    [{ build: null, maintenance: null, places: null, drift: null }, /test_maintenance.py; it remains unverified/],
+  ];
+  for (const [options, reason] of cases) {
+    const world = guideOnlyWorld();
+    assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world, options)] }), 'ci-pr', reason);
+  }
+  const hashless = guideOnlyWorld();
+  const record = comment(guideRecordBody(HEAD).replace(sha256(GUIDE_HTML), 'unknown'));
+  hashless.comments.push(record);
+  assertUnresolved(await preflight(hashless, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /does not name the HTML sha256/);
+});
+
+test('guide-only: records from bots, other accounts or with markers do not count', async t => {
+  const receipt = writeGuideEvidence(scratch(t));
+  for (const overrides of [{ user: { login: 'github-actions[bot]', type: 'Bot' } }, { user: { login: 'someone-else', type: 'User' } }]) {
+    const world = guideOnlyWorld();
+    const record = comment(guideRecordBody(HEAD), overrides);
+    world.comments.push(record);
+    assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /not the delivery account|a bot/);
+  }
+  const marked = guideOnlyWorld();
+  const record = comment(`<!-- deliver-work note -->\n${guideRecordBody(HEAD)}`);
+  marked.comments.push(record);
+  assertUnresolved(await preflight(marked, { guideReceipts: [receipt], guideRecords: [record.html_url] }), 'ci-pr', /automation marker/);
+});
+
+test('guide-only: a merged PR needs its own record for the head and for the merge commit', async t => {
+  const receipt = writeGuideEvidence(scratch(t));
+  const world = mergeWorld(guideOnlyWorld());
+  world.checkRuns[MERGE] = [];
+  world.checkSuites[MERGE] = [];
+  world.blobs[`${MERGE}:docs/work-guide/outputs/agent-device-work-guides.html`] = GUIDE_HTML;
+  const headRecord = guideRecord(world);
+  const report = await preflight(world, { guideReceipts: [receipt], guideRecords: [headRecord] });
+  assert.equal(gate(report, 'ci-pr').status, 'satisfied', JSON.stringify(gate(report, 'ci-pr').reasons));
+  assertUnresolved(report, 'ci-main', new RegExp(`no guide record from jimmie-potts names ${MERGE.slice(0, 12)} in full`));
+  const mainRecord = guideRecord(world, {}, MERGE);
+  const both = await preflight(world, { guideReceipts: [receipt], guideRecords: [headRecord, mainRecord] });
+  assert.equal(both.result, 'satisfied', JSON.stringify(both.gates.filter(g => g.status !== 'satisfied' && g.status !== 'not-applicable')));
+  assert.equal(gate(both, 'ci-main').evidence.guideRecord.url, mainRecord);
+});
+
+test('guide-only: a branch-rule check keeps normal CI and the note says why', async t => {
+  const world = guideOnlyWorld();
+  world.branchRules = [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Security scan' }] } }];
+  const report = await preflight(world, { guideReceipts: [writeGuideEvidence(scratch(t))], guideRecords: [guideRecord(world)] });
+  assertUnresolved(report, 'ci-pr', /Security scan: missing/);
+  assert.match(gate(report, 'ci-pr').reasons.join(), /the guide-only exception does not apply: branch rules require Security scan/);
+});
+
+test('workflow filters treat ** as GitHub does, including dot-files', () => {
+  const workflows = ['ci.yml', 'work-guide.yml'].map(file => parseWorkflow(file, fs.readFileSync(path.join(root, '.depot/workflows', file), 'utf8')));
+  const dotfile = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/.gitignore'], filesComplete: true });
+  assert.deepEqual(dotfile.jobs, []);
+  for (const [pattern, file, expected] of [
+    ['docs/work-guide/**', 'docs/work-guide/.gitignore', true], ['docs/work-guide/**', 'docs/work-guides/a.md', false],
+    ['**/README.md', 'README.md', true], ['**/README.md', 'a/.b/README.md', true], ['docs/*.md', 'docs/a/b.md', false], ['a.b', 'axb', false],
+  ]) assert.equal(filterPattern(pattern).test(file), expected, `${pattern} ${file}`);
+  const classes = parseWorkflow('c.yml', "name: C\non:\n  pull_request:\n    paths-ignore: ['docs/[a-z]*/**']\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n");
+  const kept = expectedJobs([classes], { event: 'pull_request', branch: 'main', files: ['docs/x/y.md'], filesComplete: true });
+  assert.deepEqual(kept.jobs.map(item => item.name), ['C / a']);
+  assert.match(kept.notes.join(), /not evaluated; every job stays expected/);
 });
 
 // ---- Proof artifacts (app-verification/1 receipts) ----
@@ -579,6 +841,22 @@ test('proof: a clean frozen receipt is identified by run id and checksums, never
   assert.ok(!JSON.stringify(missing).includes(directory));
 });
 
+test('proof: an unreadable verified set is a read failure that names no local path', async t => {
+  const directory = scratch(t);
+  const proof = writeProof(directory);
+  const locked = path.join(proof, 'verified', 'capture-1');
+  fs.chmodSync(locked, 0o000);
+  let report;
+  try {
+    report = await preflight(cleanWorld(), { receipts: [proof] });
+  } finally {
+    fs.chmodSync(locked, 0o755);
+  }
+  assert.equal(gate(report, 'proof').status, 'read-failure');
+  assert.match(gate(report, 'proof').reasons.join(), /read failure: receipt .*receipt\.json: EACCES/);
+  assert.ok(!JSON.stringify(report).includes(directory));
+});
+
 // ---- Merged candidates ----
 
 test('a merged PR also needs its main revision CI', async () => {
@@ -609,6 +887,9 @@ const writes = [
 ];
 
 const mutations = [
+  // Lexer-bypass shapes: a block string opened inside a comment, and a lone carriage return ending a comment.
+  'query A { viewer { login } } # """\nmutation B { deleteIssue(input: {issueId: "x"}) { clientMutationId } } # """',
+  '# x\rmutation B { deleteIssue(input: {issueId: "x"}) { clientMutationId } }\nquery A { viewer { login } }',
   'mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }',
   'mutation Close { closeIssue(input: {issueId: "x"}) { clientMutationId } }',
   'mutation { addComment(input: {subjectId: "x", body: "y"}) { clientMutationId } }',
@@ -628,14 +909,20 @@ test('the client refuses every write before the transport sees it', async () => 
   }
   for (const document of mutations) {
     await assert.rejects(client.graphql(document), ReadOnlyViolation, document);
+    // The query guard refuses each one by itself, before the allowlist.
+    assert.throws(() => assertQueryOnly(document), { name: 'ReadOnlyViolation' }, document);
+  }
+  for (const document of ['query Q { viewer { login } }', '{ viewer { login } }', 'query Q { repository(owner: "mutation", name: "x") { id } }']) {
+    await assert.rejects(client.graphql(document), ReadOnlyViolation, `a query outside the allowlist: ${document}`);
   }
   assert.deepEqual(seen, []);
-  await client.graphql('query Q { viewer { login } }').catch(() => {});
-  await client.graphql('{ viewer { login } }').catch(() => {});
-  await client.graphql('query Q { repository(owner: "mutation", name: "x") { id } }').catch(() => {});
-  assert.equal(seen.length, 3, 'queries, including one with a string that looks like a keyword, still pass');
-  assert.doesNotThrow(() => assertQueryOnly('query { a } # the word mutation in a comment is inert'));
-  assert.throws(() => assertQueryOnly('query { a }\n# comment\nmutation { b }'), { name: 'ReadOnlyViolation' }, 'a comment cannot hide a second operation');
+  for (const document of Object.values(QUERIES)) await client.graphql(document, {}).catch(() => {});
+  assert.equal(seen.length, Object.keys(QUERIES).length, "only the preflight's own documents reach the transport");
+  for (const document of Object.values(QUERIES)) {
+    assert.doesNotThrow(() => assertQueryOnly(document));
+    assert.match(document, /^query \w+\(/);
+    assert.doesNotMatch(document, /\b(?:mutation|subscription)\b|#|"""|\r/);
+  }
 });
 
 test('the live transport repeats the read-only gate before any network use', async () => {
@@ -660,7 +947,7 @@ test('every scenario issues only GET requests and GraphQL queries', async t => {
   await run(cleanWorld(), { receipts: [proof], finishLine: 'physical', counterparts: [`${OWNER}/codex-nanoleaf#189`] });
   await run(mergeWorld(cleanWorld()));
   const guide = guideOnlyWorld();
-  await run(guide, { guideReceipt, guideRecord: guideRecord(guide) });
+  await run(guide, { guideReceipts: [guideReceipt], guideRecords: [guideRecord(guide)] });
   const ui = cleanWorld();
   ui.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
   const approval = comment(`approved ${HEAD}`);
@@ -675,7 +962,7 @@ test('every scenario issues only GET requests and GraphQL queries', async t => {
       }
       assert.equal(request.method, 'POST');
       assert.equal(request.url, 'https://api.github.com/graphql');
-      assert.doesNotThrow(() => assertQueryOnly(request.body.query));
+      assert.ok(Object.values(QUERIES).includes(request.body.query), 'only allowlisted query documents are sent');
     }
   }
 });
@@ -711,7 +998,7 @@ test('the CLI reports usage errors with their own exit status', () => {
   const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' });
   assert.equal(help.status, 0);
   assert.match(help.stdout, /--pr <number>/);
-  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat']]) {
+  for (const args of [[], ['--pr', 'abc'], ['--pr', '1', '--finish-line', 'moon'], ['--pr', '1', '--counterpart', 'nope'], ['--pr', '1', '--head', 'xyz'], ['--pr', '1', '--wat'], ['--pr', '1', '--guide-record', 'https://example.com/x'], ['--pr', '1', '--ui-approval', 'nope']]) {
     const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, GH_TOKEN: '' } });
     assert.equal(result.status, 3, `${args.join(' ')}: ${result.stderr}`);
   }
