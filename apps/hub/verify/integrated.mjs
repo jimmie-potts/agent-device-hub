@@ -30,7 +30,7 @@ export const PAIRING = Object.freeze({
   /** Credential files, 0600 in a run's runtime directory; never an input, never printed. */
   files: {
     consumer: {feed: 'hub-feed-token', controller: 'hub-controller-token'},
-    hub: {feed: consumer => `${consumer}-feed-token`, controller: consumer => `${consumer}-controller-token`},
+    hub: {feed: (/** @type {string} */ consumer) => `${consumer}-feed-token`, controller: (/** @type {string} */ consumer) => `${consumer}-controller-token`},
   },
 });
 
@@ -43,11 +43,14 @@ export const INPUTS = {
 };
 export const REQUIRED = Object.keys(INPUTS);
 
-/** A run input that must be a numeric-loopback origin with a port and nothing else. */
+/**
+ * A run input that must be a numeric-loopback origin with a port and nothing else.
+ * @param {string | undefined} value @param {string} name
+ */
 export function loopbackOrigin(value, name) {
   let url;
   try {
-    url = new URL(value);
+    url = new URL(value ?? '');
   } catch {
     throw new Error(`input ${name} is not a URL`);
   }
@@ -60,6 +63,7 @@ const TOKEN = /^[A-Za-z0-9_-]{43}\n?$/;
  * A pairing credential the orchestrator wrote: a private regular file owned by
  * this user holding one 43-character base64url token. Errors name the file,
  * never its content.
+ * @param {string} runtimeDir @param {string} name
  */
 export async function pairingToken(runtimeDir, name) {
   const path = join(runtimeDir, name);
@@ -71,12 +75,17 @@ export async function pairingToken(runtimeDir, name) {
   return text.trim();
 }
 
-const digest = token => createHash('sha256').update(token).digest('hex');
+const digest = (/** @type {string} */ token) => createHash('sha256').update(token).digest('hex');
 
-/** Seed `integrated`: run credentials, then the hub configuration without its port, all 0600 in the data directory. */
+/**
+ * Seed `integrated`: run credentials, then the hub configuration without its port, all 0600 in the data directory.
+ * @param {{runtimeDir: string, dataDir: string, inputs: Readonly<Record<string, string>>}} context
+ */
 export async function seedIntegrated({runtimeDir, dataDir, inputs}) {
+  /** @type {Record<string, string>} */
   const urls = Object.fromEntries(REQUIRED.map(name => [name, loopbackOrigin(inputs[name], name)]));
   const api = randomBytes(32).toString('base64url'), reader = randomBytes(32).toString('base64url');
+  /** @type {Record<string, {feed: string, controller: string}>} */
   const tokens = {};
   for (const consumer of Object.keys(PAIRING.controllers)) {
     tokens[consumer] = {feed: await pairingToken(runtimeDir, PAIRING.files.hub.feed(consumer)), controller: await pairingToken(runtimeDir, PAIRING.files.hub.controller(consumer))};
@@ -105,6 +114,7 @@ export async function seedIntegrated({runtimeDir, dataDir, inputs}) {
 /**
  * Launch the real hub CLI. Its configuration needs the port, which only the
  * launch knows: 0 on start, the recorded one on a relaunch.
+ * @param {{node: string, dataDir: string, port: number}} context
  */
 export async function launchIntegrated({node, dataDir, port}) {
   const configuration = JSON.parse(await readFile(join(dataDir, 'integrated.json'), 'utf8'));
@@ -115,7 +125,7 @@ export async function launchIntegrated({node, dataDir, port}) {
   return {argv: [node, cli, 'serve', host]};
 }
 
-/** Whether a seeded data directory is the integrated scenario. */
+/** Whether a seeded data directory is the integrated scenario. @param {string} dataDir */
 export async function isIntegrated(dataDir) {
   try {
     return JSON.parse(await readFile(join(dataDir, 'scenario.json'), 'utf8')).integrated === true;

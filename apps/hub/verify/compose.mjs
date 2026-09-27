@@ -38,17 +38,31 @@ const SERVICE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const USABLE_MANAGER = ['running', 'degraded', 'starting', 'initializing'];
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
 const iso = (ms = Date.now()) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 class UsageError extends Error {}
 /** A composition failure with a stable cause, the service it concerns and a one-line detail. */
 export class ComposeFailure extends Error {
-  constructor(cause, detail, service = null, code = EXIT.failed) {
-    super(`${cause}: ${detail}`);
-    Object.assign(this, {cause, detail, service, code});
+  /** @param {string} failure @param {string} detail @param {string | null} [service] @param {number} [code] */
+  constructor(failure, detail, service = null, code = EXIT.failed) {
+    super(`${failure}: ${detail}`);
+    this.failure = failure;
+    this.detail = detail;
+    this.service = service;
+    this.code = code;
+    /** @type {Check[] | undefined} */
+    this.checks = undefined;
   }
 }
+
+/**
+ * @typedef {Readonly<Record<string, string | undefined>>} Env
+ * @typedef {(line: string) => void} Progress
+ * @typedef {{env: Env, progress: Progress, hubRoot?: string}} Io
+ * @typedef {{id: string, outcome: 'passed' | 'failed', detail?: string}} Check
+ * @typedef {{code: number, value: Record<string, unknown>}} Outcome
+ */
 
 // ---------------------------------------------------------------------------
 // Manifest: which repositories, at which pinned revisions and core version, with which scenario.
@@ -56,17 +70,25 @@ export class ComposeFailure extends Error {
 /**
  * @typedef {{id: string, role: 'consumer' | 'owner', app: string, repository: string, revision: string, coreVersion: string, scenario: string, run: string[]}} ServiceSpec
  * @typedef {{manifestVersion: string, services: ServiceSpec[]}} Manifest
+ * @typedef {ServiceSpec & {checkout: string, pin: string | null, dirty: boolean, pinned: boolean, runId: string | null, state: string, url: string | null,
+ *   endpoints: Record<string, string> | null, proofDir: string | null, expiresAt: string | null, failure: {cause: string, detail: string | null} | null, cleanup: any}} Service
+ * @typedef {{compositionVersion: string, id: string, state: string, pinned: boolean, startedAt: string, updatedAt: string, manifest: unknown, lease: unknown,
+ *   services: Service[], readiness: {outcome: string, checks: Check[], at: string} | null, captures: any[], injections: any[], failure: any, cleanup: any, handoff?: unknown, secrets: string}} Composition
  */
 
-/** Load and check the manifest. Services are listed in start order: the consumers, then the one owner. */
+/**
+ * Load and check the manifest. Services are listed in start order: the consumers, then the one owner.
+ * @param {string} path
+ * @returns {Promise<{manifest: Manifest, digest: string}>}
+ */
 export async function loadManifest(path) {
   let manifest;
   try {
     manifest = JSON.parse(await readFile(path, 'utf8'));
   } catch (error) {
-    throw new UsageError(`the manifest is unreadable: ${error.message.split('\n')[0]}`);
+    throw new UsageError(`the manifest is unreadable: ${String(/** @type {Error} */ (error).message).split('\n')[0]}`);
   }
-  const bad = why => new UsageError(`the manifest ${why}`);
+  const bad = (/** @type {string} */ why) => new UsageError(`the manifest ${why}`);
   if (manifest?.manifestVersion !== COMPOSITION_VERSION || !Array.isArray(manifest.services)) throw bad(`must be ${COMPOSITION_VERSION} with a services list`);
   const ids = new Set();
   for (const [index, s] of manifest.services.entries()) {
@@ -77,9 +99,9 @@ export async function loadManifest(path) {
     if (!/^[a-z][a-z0-9-]{0,15}$/.test(s.app ?? '') || !/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(s.repository ?? '')) throw bad(`${where} needs an app name and an owner/name repository`);
     if (!(SHA.test(s.revision ?? '') || (s.role === 'owner' && s.revision === 'self'))) throw bad(`${where} revision must be a full commit (or "self" for the owner)`);
     if (!SEMVER.test(s.coreVersion ?? '') || typeof s.scenario !== 'string' || !s.scenario) throw bad(`${where} needs a core version and a scenario`);
-    if (!Array.isArray(s.run) || s.run.length === 0 || s.run.some(a => typeof a !== 'string' || !a)) throw bad(`${where} run must be the adapter wrapper's argv`);
+    if (!Array.isArray(s.run) || s.run.length === 0 || s.run.some((/** @type {unknown} */ a) => typeof a !== 'string' || !a)) throw bad(`${where} run must be the adapter wrapper's argv`);
   }
-  const owners = manifest.services.filter(s => s.role === 'owner');
+  const owners = manifest.services.filter((/** @type {ServiceSpec} */ s) => s.role === 'owner');
   if (owners.length !== 1 || manifest.services.at(-1).role !== 'owner' || manifest.services.length < 2) throw bad('must list the consumers first and exactly one owner last');
   return {manifest, digest: `sha256:${createHash('sha256').update(await readFile(path)).digest('hex')}`};
 }
@@ -87,11 +109,12 @@ export async function loadManifest(path) {
 // ---------------------------------------------------------------------------
 // Roots, identity and adapter invocation.
 
-/** The runtime root every run shares, as @jimmie-potts/app-verify resolves it. */
+/** The runtime root every run shares, as @jimmie-potts/app-verify resolves it. @param {Env} env */
 export function stateRoot(env) {
   return env.APP_VERIFY_STATE_ROOT ? resolve(env.APP_VERIFY_STATE_ROOT) : join(env.HOME || homedir(), '.local/state/app-verify');
 }
 
+/** @param {string} checkout @param {string[]} args */
 async function git(checkout, args) {
   try {
     return (await run('git', ['-C', checkout, ...args], {encoding: 'utf8'})).stdout;
@@ -100,7 +123,7 @@ async function git(checkout, args) {
   }
 }
 
-/** The Hub's proof root: compositions sit beside the Hub's own runs. */
+/** The Hub's proof root: compositions sit beside the Hub's own runs. @param {Env} env @param {string} [hubRoot] */
 export async function proofRoot(env, hubRoot = HUB_ROOT) {
   if (env.APP_VERIFY_PROOF_ROOT) return resolve(env.APP_VERIFY_PROOF_ROOT);
   const first = /^worktree (.+)$/m.exec((await git(hubRoot, ['worktree', 'list', '--porcelain'])) ?? '');
@@ -108,7 +131,7 @@ export async function proofRoot(env, hubRoot = HUB_ROOT) {
   return join(first[1], '.local/evidence/verify');
 }
 
-/** A checkout's revision and whether tracked files differ from it, as the core judges a candidate. */
+/** A checkout's revision and whether tracked files differ from it, as the core judges a candidate. @param {string} checkout */
 export async function checkoutIdentity(checkout) {
   const head = (await git(checkout, ['rev-parse', 'HEAD']))?.trim();
   const status = await git(checkout, ['status', '--porcelain', '--untracked-files=no']);
@@ -120,11 +143,14 @@ export async function checkoutIdentity(checkout) {
  * Run one adapter operation through the service's own wrapper, in its own
  * checkout. Returns the exit code and the one JSON result line. Progress goes
  * to our stderr prefixed with the service id; `onLine` sees each progress line.
+ * @param {{id: string, run: string[], checkout: string}} service @param {string[]} args
+ * @param {{env: Env, progress?: Progress, onLine?: (line: string) => void, timeoutMs?: number}} options
+ * @returns {Promise<{code: number, result: any}>}
  */
-export function invoke(service, args, {env, progress, onLine, timeoutMs = 20 * 60000} = {}) {
+export function invoke(service, args, {env, progress, onLine, timeoutMs = 20 * 60000}) {
   return new Promise((resolvePromise, reject) => {
     const [program, ...rest] = service.run;
-    const child = spawn(program, [...rest, ...args], {cwd: service.checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
+    const child = spawn(program ?? '', [...rest, ...args], {cwd: service.checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
     let stdout = '', pending = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     child.stdout.on('data', chunk => (stdout += chunk));
@@ -139,7 +165,7 @@ export function invoke(service, args, {env, progress, onLine, timeoutMs = 20 * 6
     });
     child.on('error', error => {
       clearTimeout(timer);
-      reject(new ComposeFailure('adapter-unavailable', `${service.id} wrapper ${program} could not start (${error.code ?? 'error'})`, service.id, EXIT.unavailable));
+      reject(new ComposeFailure('adapter-unavailable', `${service.id} wrapper ${program} could not start (${/** @type {NodeJS.ErrnoException} */ (error).code ?? 'error'})`, service.id, EXIT.unavailable));
     });
     child.on('close', code => {
       clearTimeout(timer);
@@ -170,21 +196,25 @@ async function supervisor() {
 // The composition record: composition.json and events.jsonl under the Hub's proof root.
 
 class Store {
+  /** @param {string} root @param {string} id */
   constructor(root, id) {
     this.root = root;
     this.id = id;
     this.dir = join(root, id);
     this.file = join(this.dir, 'composition.json');
   }
+  /** @returns {Promise<Composition>} */
   async read() {
     return JSON.parse(await readFile(this.file, 'utf8'));
   }
+  /** @param {Composition} value */
   async write(value) {
     value.updatedAt = iso();
     const next = `${this.file}.${process.pid}.tmp`;
     await writeFile(next, JSON.stringify(value, null, 2) + '\n', {mode: 0o600});
     await rename(next, this.file);
   }
+  /** @param {string} event @param {Record<string, unknown>} [fields] */
   async event(event, fields = {}) {
     await writeFile(join(this.dir, 'events.jsonl'), JSON.stringify({at: iso(), event, ...fields}) + '\n', {flag: 'a', mode: 0o600});
   }
@@ -198,14 +228,14 @@ class Store {
         await handle.close();
         return async () => rm(path, {force: true});
       } catch (error) {
-        if (error.code !== 'EEXIST') throw error;
+        if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') throw error;
         const holder = Number(await readFile(path, 'utf8').catch(() => ''));
         let alive = Number.isInteger(holder) && holder > 0;
         if (alive) {
           try {
             process.kill(holder, 0);
           } catch (probe) {
-            alive = probe.code === 'EPERM';
+            alive = /** @type {NodeJS.ErrnoException} */ (probe).code === 'EPERM';
           }
         }
         if (!alive) await rm(path, {force: true});
@@ -214,7 +244,10 @@ class Store {
     }
     throw new ComposeFailure('composition-locked', `another operation holds ${this.id}`);
   }
-  /** Read, change and write the record under the lock. */
+  /**
+   * Read, change and write the record under the lock.
+   * @param {(value: Composition) => void | Promise<void>} change @param {string} [event] @param {Record<string, unknown>} [fields]
+   */
   async update(change, event, fields) {
     const release = await this.lock();
     try {
@@ -229,29 +262,36 @@ class Store {
   }
 }
 
+/** @param {Env} env @param {string | undefined} id @param {string | undefined} hubRoot */
 async function loadComposition(env, id, hubRoot) {
   if (!ID.test(id ?? '')) throw new UsageError('expected a composition id, compose-<yyyymmddThhmmssZ>-<6 hex>');
-  const store = new Store(await proofRoot(env, hubRoot), id);
+  const store = new Store(await proofRoot(env, hubRoot), /** @type {string} */ (id));
   if (!existsSync(store.file)) throw new ComposeFailure('unknown-composition', `no composition.json for ${id}`);
   return {store, composition: await store.read()};
 }
 
-const serviceOf = (composition, id) => composition.services.find(s => s.id === id);
-const owner = composition => composition.services.find(s => s.role === 'owner');
+/** @param {Composition} composition @param {string} id @returns {Service} */
+const serviceOf = (composition, id) => /** @type {Service} */ (composition.services.find(s => s.id === id));
+/** @param {Composition} composition @returns {Service} */
+const owner = composition => /** @type {Service} */ (composition.services.find(s => s.role === 'owner'));
+/** @param {Composition} composition */
 const consumers = composition => composition.services.filter(s => s.role === 'consumer');
-/** Stop order: the owner first, then the consumers in reverse start order. */
+/** Stop order: the owner first, then the consumers in reverse start order. @param {Composition} composition */
 const stopOrder = composition => [owner(composition), ...consumers(composition).reverse()];
-const runtimeDir = (env, service) => join(stateRoot(env), service.runId);
+/** @param {Env} env @param {Service} service */
+const runtimeDir = (env, service) => join(stateRoot(env), service.runId ?? '');
+/** @param {Service} service */
 const unitOf = service => `app-verify-${service.runId}.service`;
 
 // ---------------------------------------------------------------------------
 // Pairing credentials: generated here, written 0600 into each run's runtime directory, never printed or recorded.
 
-const PAIRING_FILES = {consumer: {feed: 'hub-feed-token', controller: 'hub-controller-token'}, owner: {feed: id => `${id}-feed-token`, controller: id => `${id}-controller-token`}};
+const PAIRING_FILES = {consumer: {feed: 'hub-feed-token', controller: 'hub-controller-token'}, owner: {feed: (/** @type {string} */ id) => `${id}-feed-token`, controller: (/** @type {string} */ id) => `${id}-controller-token`}};
 
+/** @param {string} directory @param {string} name @param {string} value */
 async function writeSecret(directory, name, value) {
   const info = await lstat(directory).catch(() => undefined);
-  if (!info?.isDirectory() || info.uid !== process.getuid()) throw new ComposeFailure('pairing-failed', `the runtime directory for ${name} is missing or not owned by this user`);
+  if (!info?.isDirectory() || info.uid !== process.getuid?.()) throw new ComposeFailure('pairing-failed', `the runtime directory for ${name} is missing or not owned by this user`);
   const handle = await open(join(directory, name), 'wx', 0o600);
   try {
     await handle.writeFile(value);
@@ -263,12 +303,14 @@ async function writeSecret(directory, name, value) {
 // ---------------------------------------------------------------------------
 // Readiness: every run healthy, each consumer's feed current at the Hub's revision, and the Hub reading both devices.
 
+/** @param {Env} env @param {Service} hub */
 async function hubToken(env, hub) {
   return (await readFile(join(runtimeDir(env, hub), 'data/api-token'), 'utf8')).trim();
 }
 
+/** @param {Env} env @param {Service} hub @param {string} path @returns {Promise<{status: number, body: any}>} */
 async function hubRead(env, hub, path) {
-  const response = await fetch(new URL(path, hub.url), {headers: {authorization: `Bearer ${await hubToken(env, hub)}`}, signal: AbortSignal.timeout(5000)});
+  const response = await fetch(new URL(path, hub.url ?? ''), {headers: {authorization: `Bearer ${await hubToken(env, hub)}`}, signal: AbortSignal.timeout(5000)});
   let body;
   try {
     body = await response.json();
@@ -278,24 +320,27 @@ async function hubRead(env, hub, path) {
   return {status: response.status, body};
 }
 
-/** Controller aliases the Hub's integrated configuration uses for each consumer. */
+/** Controller aliases the Hub's integrated configuration uses for each consumer. @type {Record<string, string>} */
 const ALIASES = {nanoleaf: 'wall', pixoo: 'pixel'};
 
 /**
  * One pass of the pairing checks. Reads only: a snapshot read through the Hub
  * is the Hub's ordinary read path and changes no controller.
- * @returns {Promise<{id: string, outcome: 'passed' | 'failed', detail?: string}[]>}
+ * @param {Env} env @param {Composition} composition
+ * @returns {Promise<Check[]>}
  */
 async function pairingChecks(env, composition) {
-  const hub = owner(composition), checks = [];
-  const add = (id, ok, detail) => checks.push(ok ? {id, outcome: 'passed'} : {id, outcome: 'failed', detail});
+  const hub = owner(composition);
+  /** @type {Check[]} */
+  const checks = [];
+  const add = (/** @type {string} */ id, /** @type {boolean} */ ok, /** @type {string} */ detail) => checks.push(ok ? {id, outcome: 'passed'} : {id, outcome: 'failed', detail});
   let revision;
   try {
     const sessions = await hubRead(env, hub, '/api/monitor/v1/sessions');
     revision = sessions.body?.snapshot?.revision;
     add('hub-owner', sessions.status === 200 && Number.isInteger(revision), `the Hub feed answered ${sessions.status}`);
   } catch (error) {
-    add('hub-owner', false, `the Hub feed is unreadable (${error.name})`);
+    add('hub-owner', false, `the Hub feed is unreadable (${/** @type {Error} */ (error).name})`);
   }
   for (const consumer of consumers(composition)) {
     const alias = ALIASES[consumer.id];
@@ -303,29 +348,33 @@ async function pairingChecks(env, composition) {
       const snapshot = await hubRead(env, hub, `/api/controllers/v1/${alias}/snapshot`);
       add(`hub-reads-${consumer.id}`, snapshot.status === 200, `the Hub's ${alias} snapshot answered ${snapshot.status}${snapshot.body?.error?.code ? ` ${snapshot.body.error.code}` : ''}`);
     } catch (error) {
-      add(`hub-reads-${consumer.id}`, false, `the Hub's ${alias} snapshot is unreadable (${error.name})`);
+      add(`hub-reads-${consumer.id}`, false, `the Hub's ${alias} snapshot is unreadable (${/** @type {Error} */ (error).name})`);
     }
     try {
-      const state = await consumerState(consumer.id, consumer.url);
+      const state = await consumerState(consumer.id, consumer.url ?? '');
       const current = state.feed.connection === 'current' && state.feed.revision === revision;
       add(`${consumer.id}-feed-current`, current, `feed ${state.feed.connection} at revision ${state.feed.revision} (Hub ${revision})${state.feed.error ? `, ${state.feed.error}` : ''}`);
     } catch (error) {
-      add(`${consumer.id}-feed-current`, false, error.message);
+      add(`${consumer.id}-feed-current`, false, /** @type {Error} */ (error).message);
     }
   }
   try {
     const health = await hubRead(env, hub, '/api/hub/v1/health');
-    const devices = Object.fromEntries((health.body?.devices ?? []).map(d => [d.id, d.health]));
+    const devices = Object.fromEntries((health.body?.devices ?? []).map((/** @type {{id: string, health: string}} */ d) => [d.id, d.health]));
     const expected = consumers(composition).map(c => ALIASES[c.id]);
     add('hub-devices-current', health.status === 200 && expected.every(alias => devices[alias] === 'ready'), `health ${health.status}, devices ${JSON.stringify(devices)}`);
   } catch (error) {
-    add('hub-devices-current', false, `health unreadable (${error.name})`);
+    add('hub-devices-current', false, `health unreadable (${/** @type {Error} */ (error).name})`);
   }
   return checks;
 }
 
-/** Each run's own doctor: running, identity matched and every read-only boundary check passed. */
+/**
+ * Each run's own doctor: running, identity matched and every read-only boundary check passed.
+ * @param {Env} env @param {Composition} composition @param {Progress} progress @returns {Promise<Check[]>}
+ */
 async function doctorChecks(env, composition, progress) {
+  /** @type {Check[]} */
   const checks = [];
   for (const service of composition.services) {
     if (!service.runId) {
@@ -335,19 +384,24 @@ async function doctorChecks(env, composition, progress) {
     try {
       const {code, result} = await invoke(service, ['doctor', service.runId], {env, progress});
       const row = result.runs?.[0];
-      const failing = (row?.checks ?? []).filter(c => c.outcome !== 'passed');
+      /** @type {{id: string, outcome: string, reason?: string}[]} */
+      const failing = (row?.checks ?? []).filter((/** @type {{outcome: string}} */ c) => c.outcome !== 'passed');
       const ok = code === EXIT.ok && row?.state === 'running' && (row.reasons ?? []).length === 0 && failing.length === 0;
       checks.push(ok ? {id: `${service.id}-run`, outcome: 'passed'} : {id: `${service.id}-run`, outcome: 'failed', detail: `state ${row?.state ?? result.error ?? 'unknown'}${row?.reasons?.length ? `, ${row.reasons.join(', ')}` : ''}${failing.length ? `, check ${failing.map(c => `${c.id} ${c.outcome}${c.reason ? ` (${c.reason})` : ''}`).join('; ')}` : ''}`});
     } catch (error) {
-      checks.push({id: `${service.id}-run`, outcome: 'failed', detail: error.detail ?? error.message});
+      checks.push({id: `${service.id}-run`, outcome: 'failed', detail: /** @type {ComposeFailure} */ (error).detail ?? /** @type {Error} */ (error).message});
     }
   }
   return checks;
 }
 
-/** Wait until every pairing and run check passes, or report the last failing checks. */
+/**
+ * Wait until every pairing and run check passes, or report the last failing checks.
+ * @param {Env} env @param {Composition} composition @param {Progress} progress @param {number} timeoutMs @returns {Promise<Check[]>}
+ */
 async function awaitReady(env, composition, progress, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
+  /** @type {Check[]} */
   let checks = [];
   for (;;) {
     checks = await pairingChecks(env, composition);
@@ -357,7 +411,9 @@ async function awaitReady(env, composition, progress, timeoutMs) {
     }
     if (Date.now() > deadline) {
       const failing = checks.filter(c => c.outcome !== 'passed');
-      throw Object.assign(new ComposeFailure('readiness-timeout', `not ready within ${Math.round(timeoutMs / 1000)} s: ${failing.map(c => `${c.id}: ${c.detail}`).join('; ')}`), {checks});
+      const failure = new ComposeFailure('readiness-timeout', `not ready within ${Math.round(timeoutMs / 1000)} s: ${failing.map(c => `${c.id}: ${c.detail}`).join('; ')}`);
+      failure.checks = checks;
+      throw failure;
     }
     await pause(1000);
   }
@@ -366,28 +422,31 @@ async function awaitReady(env, composition, progress, timeoutMs) {
 // ---------------------------------------------------------------------------
 // Card and results.
 
+/** @param {Composition} composition */
 function card(composition) {
   const services = composition.services;
   const width = Math.max(...services.map(s => s.id.length));
   const lines = [`Composition ${composition.id}  ${composition.pinned ? 'pinned' : 'UNPINNED: development only, not citable evidence'}`];
   for (const s of services) lines.push(`${s.id.padEnd(width)}  ${s.url ?? '(no URL)'}  run ${s.runId ?? '-'}  ${s.revision.slice(0, 8)} ${s.dirty ? 'dirty' : 'clean'}  ${s.scenario}${s.state && s.state !== 'running' ? `  ${s.state}` : ''}`);
-  const expiries = services.map(s => s.expiresAt).filter(Boolean).sort();
+  const expiries = /** @type {string[]} */ (services.map(s => s.expiresAt).filter(Boolean)).sort();
   if (expiries.length) lines.push(`Expires  ${expiries[0]} (earliest lease of the three runs)`);
   lines.push(`Doctor   ${COMMAND} doctor ${composition.id}`, `Extend   ${COMMAND} extend ${composition.id}`, `Stop     ${COMMAND} stop ${composition.id}`);
   return lines;
 }
 
 /** The fields of a service a result line carries: never the checkout path, a token or a runtime file. */
-const publicService = s => ({id: s.id, repository: s.repository, app: s.app, runId: s.runId, state: s.state, revision: s.revision, pinned: s.pinned, dirty: s.dirty, coreVersion: s.coreVersion, scenario: s.scenario, url: s.url, endpoints: s.endpoints, proofDir: s.proofDir, expiresAt: s.expiresAt, failure: s.failure, cleanup: s.cleanup});
+const publicService = (/** @type {Service} */ s) => ({id: s.id, repository: s.repository, app: s.app, runId: s.runId, state: s.state, revision: s.revision, pinned: s.pinned, dirty: s.dirty, coreVersion: s.coreVersion, scenario: s.scenario, url: s.url, endpoints: s.endpoints, proofDir: s.proofDir, expiresAt: s.expiresAt, failure: s.failure, cleanup: s.cleanup});
 
 // ---------------------------------------------------------------------------
 // start
 
-const RUN_ID = app => new RegExp(`^(${app}-\\d{8}T\\d{6}Z-[0-9a-f]{6}): starting `);
+const RUN_ID = (/** @type {string} */ app) => new RegExp(`^(${app}-\\d{8}T\\d{6}Z-[0-9a-f]{6}): starting `);
 
+/** @param {Service & {checkout: string}} service @param {Env} env @param {Progress} progress */
 async function checkAdapter(service, env, progress) {
   const {code, result} = await invoke(service, ['help'], {env, progress, timeoutMs: 120000});
   if (code !== EXIT.ok) throw new ComposeFailure('adapter-unavailable', `${service.id} help exited ${code}: ${result.detail ?? result.error ?? 'no detail'}`, service.id, EXIT.unavailable);
+  /** @type {string[]} */
   const problems = [];
   if (result.app !== service.app) problems.push(`app ${result.app}, expected ${service.app}`);
   if (result.coreVersion !== service.coreVersion) problems.push(`core ${result.coreVersion ?? 'unknown (before 1.1)'}, pinned ${service.coreVersion}`);
@@ -399,11 +458,16 @@ async function checkAdapter(service, env, progress) {
   return result;
 }
 
+/**
+ * @param {{checkouts: Record<string, string>, lease?: number, unpinned?: boolean, manifest?: string, hubRoot?: string, readyTimeoutMs?: number}} options
+ * @param {Io} io @returns {Promise<Outcome>}
+ */
 export async function start(options, io) {
   const {env, progress} = io;
   const {manifest, digest} = await loadManifest(options.manifest ?? DEFAULT_MANIFEST);
   const hubRoot = options.hubRoot ?? HUB_ROOT;
   // Checkouts: absolute paths given for every service but a `self` owner.
+  /** @type {any[]} */
   const services = [];
   for (const spec of manifest.services) {
     const given = options.checkouts[spec.id];
@@ -417,8 +481,9 @@ export async function start(options, io) {
   }
   for (const id of Object.keys(options.checkouts)) if (!services.some(s => s.id === id)) throw new UsageError(`the manifest has no service ${id}`);
   const manager = await supervisor();
-  if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason, null, EXIT.unavailable);
+  if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason ?? 'no usable user manager', null, EXIT.unavailable);
   // Identity before anything is created: each checkout clean at its pin, unless explicitly unpinned.
+  /** @type {string[]} */
   const mismatches = [];
   for (const service of services) {
     const identity = await checkoutIdentity(service.checkout);
@@ -429,6 +494,7 @@ export async function start(options, io) {
     if (!service.pinned) mismatches.push(`${service.id} at ${identity.revision.slice(0, 12)}${identity.dirty ? ' with tracked changes' : ''}${service.pin && service.pin !== identity.revision ? `, pinned ${service.pin.slice(0, 12)}` : ''}`);
   }
   if (mismatches.length && !options.unpinned) throw new ComposeFailure('identity-mismatch', `${mismatches.join('; ')}; check out each pin cleanly, or pass --unpinned for a labelled development run`);
+  /** @type {Record<string, any>} */
   const helps = {};
   for (const service of services) helps[service.id] = await checkAdapter(service, env, progress);
 
@@ -437,6 +503,7 @@ export async function start(options, io) {
   const store = new Store(await proofRoot(env, hubRoot), id);
   await mkdir(store.root, {recursive: true});
   await mkdir(store.dir, {mode: 0o700});
+  /** @type {Composition} */
   const composition = {
     compositionVersion: COMPOSITION_VERSION,
     id,
@@ -458,21 +525,22 @@ export async function start(options, io) {
   await store.event('created', {pinned: composition.pinned, services: composition.services.map(s => ({id: s.id, revision: s.revision, dirty: s.dirty}))});
   progress(`${id}: composing ${services.map(s => s.id).join(', ')}${composition.pinned ? '' : ' (unpinned development run)'}`);
   const lease = options.lease === undefined ? [] : ['--lease', String(options.lease)];
-  const failWith = async error => {
-    const failure = error instanceof ComposeFailure ? error : new ComposeFailure('compose-failed', error.message.split('\n')[0]);
+  const failWith = async (/** @type {unknown} */ error) => {
+    const failure = error instanceof ComposeFailure ? error : new ComposeFailure('compose-failed', String(/** @type {Error} */ (error)?.message ?? error).split('\n')[0] ?? '');
     progress(`${id}: failed: ${failure.message}; stopping the recorded runs`);
     const cleanup = await stopRuns(store, env, progress, {reason: 'start-failed'});
     const value = await store.update(c => {
       c.state = 'failed';
-      c.failure = {cause: failure.cause, service: failure.service, detail: failure.detail, at: iso()};
+      c.failure = {cause: failure.failure, service: failure.service, detail: failure.detail, at: iso()};
       if (failure.checks) c.readiness = {outcome: 'failed', checks: failure.checks, at: iso()};
-    }, 'start-failed', {cause: failure.cause, service: failure.service});
-    return {code: failure.code === EXIT.unavailable ? EXIT.unavailable : EXIT.failed, value: {operation: 'start', compositionId: id, state: 'failed', cause: failure.cause, service: failure.service, detail: failure.detail, cleanup, services: value.services.map(publicService), compositionDir: store.dir}};
+    }, 'start-failed', {cause: failure.failure, service: failure.service});
+    return {code: failure.code === EXIT.unavailable ? EXIT.unavailable : EXIT.failed, value: {operation: 'start', compositionId: id, state: 'failed', cause: failure.failure, service: failure.service, detail: failure.detail, cleanup, services: value.services.map(publicService), compositionDir: store.dir}};
   };
   try {
     // 1. Each run starts standalone through its own wrapper; its run id is recorded as soon as the wrapper names it.
     for (const service of composition.services) {
       await store.update(c => void (serviceOf(c, service.id).state = 'starting'), 'service-starting', {service: service.id});
+      /** @type {Promise<unknown>} */
       let recorded = Promise.resolve();
       const {code, result} = await invoke(service, ['start', ...lease], {env, progress, onLine: line => {
         const match = RUN_ID(service.app).exec(line);
@@ -485,7 +553,7 @@ export async function start(options, io) {
         if (code !== EXIT.ok) s.failure = {cause: result.cause ?? result.error ?? 'start-failed', detail: result.detail ?? null};
         if (result.cleanup) s.cleanup = result.cleanup;
       }, 'service-started', {service: service.id, runId: result.runId, state: result.state});
-      Object.assign(service, {runId: result.runId, url: result.url, expiresAt: result.expiresAt});
+      Object.assign(service, {runId: result.runId ?? null, url: result.url ?? null, expiresAt: result.expiresAt ?? null});
       if (code !== EXIT.ok) throw new ComposeFailure('service-start-failed', `${service.id} ${result.cause ?? result.error ?? 'failed'}${result.detail ? `: ${result.detail}` : ''}`, service.id, code === EXIT.unavailable ? EXIT.unavailable : EXIT.failed);
     }
     // 2. Pairing credentials: one feed and one controller token per consumer, 0600, only in the runtime directories.
@@ -500,7 +568,7 @@ export async function start(options, io) {
     await store.event('pairing-written', {services: composition.services.map(s => s.id)});
     // 3. Each consumer reseeds hub-paired with the Hub's feed; it announces its controller endpoint.
     for (const consumer of consumers(composition)) {
-      const {code, result} = await invoke(consumer, ['scenario', consumer.runId, consumer.scenario, '--input', `hub-feed=${hub.url}`], {env, progress});
+      const {code, result} = await invoke(consumer, ['scenario', consumer.runId ?? '', consumer.scenario, '--input', `hub-feed=${hub.url}`], {env, progress});
       await store.update(c => {
         const s = serviceOf(c, consumer.id);
         if (code === EXIT.ok) Object.assign(s, {endpoints: result.endpoints ?? null, state: 'running'});
@@ -511,8 +579,8 @@ export async function start(options, io) {
       consumer.endpoints = result.endpoints;
     }
     // 4. The Hub reseeds integrated with the consumers' controllers and previews.
-    const inputs = consumers(composition).flatMap(c => ['--input', `${c.id}-controller=${c.endpoints.controller}`, '--input', `${c.id}-preview=${c.url}`]);
-    const reseeded = await invoke(hub, ['scenario', hub.runId, hub.scenario, ...inputs], {env, progress});
+    const inputs = consumers(composition).flatMap(c => ['--input', `${c.id}-controller=${c.endpoints?.controller}`, '--input', `${c.id}-preview=${c.url}`]);
+    const reseeded = await invoke(hub, ['scenario', hub.runId ?? '', hub.scenario, ...inputs], {env, progress});
     await store.update(c => {
       const s = serviceOf(c, hub.id);
       if (reseeded.code === EXIT.ok) s.state = 'running';
@@ -537,18 +605,22 @@ export async function start(options, io) {
 // ---------------------------------------------------------------------------
 // stop: the owner first, then the consumers; every recorded run, past any failure.
 
+/** @param {string} unit @returns {Promise<Record<string, string>>} */
 async function freezerState(unit) {
   const output = await run('systemctl', ['--user', 'show', unit, '-p', 'FreezerState', '-p', 'LoadState', '-p', 'ActiveState'], {encoding: 'utf8'}).then(r => r.stdout, () => '');
   return Object.fromEntries(output.trim().split('\n').filter(Boolean).map(line => line.split('=')));
 }
 
+/** @param {string} unit */
 async function thaw(unit) {
   await run('systemctl', ['--user', 'thaw', unit]).catch(() => undefined);
   return (await freezerState(unit)).FreezerState;
 }
 
+/** @param {Store} store @param {Env} env @param {Progress} progress @param {{reason: string}} why */
 async function stopRuns(store, env, progress, {reason}) {
   const composition = await store.read();
+  /** @type {{id: string, runId: string | null, result: string, state?: string | null, detail?: string}[]} */
   const results = [];
   for (const service of stopOrder(composition)) {
     if (!service.runId) {
@@ -572,14 +644,16 @@ async function stopRuns(store, env, progress, {reason}) {
         s.cleanup = cleanup ?? {result: entry.result};
       }, 'service-stopped', {service: service.id, runId: service.runId, state: result.state, cleanup: entry.result, reason});
     } catch (error) {
-      results.push({id: service.id, runId: service.runId, result: 'unknown', detail: error.detail ?? error.message});
-      await store.event('service-stop-failed', {service: service.id, runId: service.runId, detail: error.detail ?? error.message});
+      const detail = /** @type {ComposeFailure} */ (error).detail ?? /** @type {Error} */ (error).message;
+      results.push({id: service.id, runId: service.runId, result: 'unknown', detail});
+      await store.event('service-stop-failed', {service: service.id, runId: service.runId, detail});
     }
   }
   const result = results.some(r => r.result === 'unknown') ? 'unknown' : results.some(r => r.result === 'partial') ? 'partial' : 'clean';
   return {result, services: results};
 }
 
+/** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
 export async function stop(id, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   if (['stopped'].includes(composition.state) && composition.cleanup) {
@@ -596,12 +670,15 @@ export async function stop(id, io) {
 // ---------------------------------------------------------------------------
 // doctor
 
+/** @param {Env} env @param {string | undefined} hubRoot */
 async function listCompositions(env, hubRoot) {
   const root = await proofRoot(env, hubRoot);
   const names = existsSync(root) ? (await readdir(root)).filter(name => ID.test(name)).sort() : [];
+  /** @type {Record<string, unknown>[]} */
   const rows = [];
   for (const name of names) {
     try {
+      /** @type {Composition} */
       const c = JSON.parse(await readFile(join(root, name, 'composition.json'), 'utf8'));
       rows.push({compositionId: name, state: c.state, pinned: c.pinned, services: c.services.map(s => ({id: s.id, runId: s.runId, state: s.state, url: s.url}))});
     } catch {
@@ -611,13 +688,16 @@ async function listCompositions(env, hubRoot) {
   return rows;
 }
 
+/** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
 export async function doctor(id, io) {
   if (id === undefined) return {code: EXIT.ok, value: {operation: 'doctor', compositions: await listCompositions(io.env, io.hubRoot)}};
   const {composition} = await loadComposition(io.env, id, io.hubRoot);
+  /** @type {string[]} */
   const frozen = [];
   for (const service of composition.services) if (service.runId && (await freezerState(unitOf(service))).FreezerState === 'frozen') frozen.push(service.id);
   if (composition.state !== 'running') return {code: EXIT.failed, value: {operation: 'doctor', compositionId: id, state: composition.state, failure: composition.failure, frozen, services: composition.services.map(publicService)}};
-  const checks = [...await pairingChecks(io.env, composition), ...await doctorChecks(io.env, composition, io.progress), ...frozen.map(s => ({id: `${s}-frozen`, outcome: 'failed', detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
+  /** @type {Check[]} */
+  const checks = [...await pairingChecks(io.env, composition), ...await doctorChecks(io.env, composition, io.progress), ...frozen.map(s => ({id: `${s}-frozen`, outcome: /** @type {const} */ ('failed'), detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
   const ok = checks.every(c => c.outcome === 'passed');
   return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'doctor', compositionId: id, state: ok ? 'running' : 'degraded', pinned: composition.pinned, checks, services: composition.services.map(publicService), card: card(composition)}};
 }
@@ -625,17 +705,20 @@ export async function doctor(id, io) {
 // ---------------------------------------------------------------------------
 // capture, handoff, extend
 
+/** @param {Composition} composition */
 function requireRunning(composition) {
   if (composition.state !== 'running') throw new ComposeFailure('composition-not-running', `${composition.id} is ${composition.state}`);
 }
 
-async function captureStep(store, env, progress, hub, step, extra = {}) {
-  const {code, result} = await invoke(hub, ['capture', hub.runId, step], {env, progress, ...extra});
+/** @param {Store} store @param {Env} env @param {Progress} progress @param {Service} hub @param {string} step */
+async function captureStep(store, env, progress, hub, step) {
+  const {code, result} = await invoke(hub, ['capture', hub.runId ?? '', step], {env, progress});
   const record = {step, runId: hub.runId, n: result.n ?? null, set: result.set ?? null, outcome: result.outcome ?? (result.error ? 'failed' : null), reason: result.reason ?? result.detail ?? null, captureDir: result.captureDir ?? null, at: iso()};
   await store.update(c => void c.captures.push(record), 'captured', {step, outcome: record.outcome});
   return {code, record, result};
 }
 
+/** @param {string | undefined} id @param {string} step @param {Io} io @returns {Promise<Outcome>} */
 export async function capture(id, step, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
@@ -643,12 +726,14 @@ export async function capture(id, step, io) {
   return {code, value: {operation: 'capture', compositionId: id, ...record, screenshot: result.screenshot ?? null, video: result.video ?? null, log: result.log ?? null}};
 }
 
+/** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
 export async function handoff(id, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
+  /** @type {{id: string, runId: string | null, ok: boolean, frozenAt: string | null, verified: string | null, expiresAt: string | null, detail?: string}[]} */
   const results = [];
   for (const service of composition.services) {
-    const {code, result} = await invoke(service, ['handoff', service.runId], {env: io.env, progress: io.progress});
+    const {code, result} = await invoke(service, ['handoff', service.runId ?? ''], {env: io.env, progress: io.progress});
     results.push({id: service.id, runId: service.runId, ok: code === EXIT.ok, frozenAt: result.frozenAt ?? null, verified: result.verified ?? null, expiresAt: result.expiresAt ?? null, ...(code === EXIT.ok ? {} : {detail: result.detail ?? result.error ?? `exit ${code}`})});
   }
   const value = await store.update(c => {
@@ -660,12 +745,14 @@ export async function handoff(id, io) {
   return {code: results.every(r => r.ok) ? EXIT.ok : EXIT.failed, value: {operation: 'handoff', compositionId: id, pinned: value.pinned, services: results, card: lines}};
 }
 
+/** @param {string | undefined} id @param {number | undefined} leaseMinutes @param {Io} io @returns {Promise<Outcome>} */
 export async function extend(id, leaseMinutes, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
+  /** @type {{id: string, runId: string | null, ok: boolean, expiresAt: string | null, detail?: string}[]} */
   const results = [];
   for (const service of composition.services) {
-    const {code, result} = await invoke(service, ['extend', service.runId, ...(leaseMinutes === undefined ? [] : ['--lease', String(leaseMinutes)])], {env: io.env, progress: io.progress});
+    const {code, result} = await invoke(service, ['extend', service.runId ?? '', ...(leaseMinutes === undefined ? [] : ['--lease', String(leaseMinutes)])], {env: io.env, progress: io.progress});
     results.push({id: service.id, runId: service.runId, ok: code === EXIT.ok, expiresAt: result.expiresAt ?? null, ...(code === EXIT.ok ? {} : {detail: result.detail ?? result.error ?? `exit ${code}`})});
   }
   const value = await store.update(c => {
@@ -686,6 +773,7 @@ export async function extend(id, leaseMinutes, io) {
 
 export const INJECT_FILES = {request: 'compose-inject-request', state: 'compose-inject-state'};
 
+/** @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string} step @param {Io} io @returns {Promise<Outcome>} */
 export async function inject(id, kind, serviceId, step, io) {
   if (kind !== 'consumer-loss') throw new UsageError('inject supports consumer-loss');
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
@@ -700,15 +788,16 @@ export async function inject(id, kind, serviceId, step, io) {
   const requestFile = join(directory, INJECT_FILES.request), stateFile = join(directory, INJECT_FILES.state);
   await rm(requestFile, {force: true});
   await rm(stateFile, {force: true});
-  const answer = async phase => {
+  const answer = async (/** @type {string} */ phase) => {
     const next = `${stateFile}.tmp`;
     await writeFile(next, JSON.stringify({service: serviceId, phase, at: iso()}), {mode: 0o600});
     await rename(next, stateFile);
   };
   await answer('armed');
+  /** @type {Record<string, unknown>} */
   const injection = {kind, service: serviceId, unit, step, startedAt: iso(), frozenAt: null, thawedAt: null, thawedBy: null, capture: null, outcome: null};
   await store.update(c => void c.injections.push({...injection}), 'inject-armed', {service: serviceId, unit, step});
-  const record = async fields => {
+  const record = async (/** @type {Record<string, unknown>} */ fields) => {
     Object.assign(injection, fields);
     await store.update(c => void Object.assign(c.injections.at(-1), fields), 'inject-progress', fields);
   };
@@ -754,7 +843,7 @@ export async function inject(id, kind, serviceId, step, io) {
   let finished = false;
   const captured = captureStep(store, io.env, io.progress, hub, step).finally(() => (finished = true));
   while (!finished) {
-    await watch().catch(error => problems.push(error.message));
+    await watch().catch(error => problems.push(/** @type {Error} */ (error).message));
     await pause(100);
   }
   const {code, record: captureRecord} = await captured;
@@ -768,12 +857,13 @@ export async function inject(id, kind, serviceId, step, io) {
   await rm(stateFile, {force: true});
   if (!injection.frozenAt) problems.push('the step never asked for the freeze');
   // After recovery the composition must be ready again: feeds current and both devices read.
+  /** @type {Check[]} */
   let checks = [];
   try {
     checks = await awaitReady(io.env, composition, io.progress, 30000);
   } catch (error) {
-    checks = error.checks ?? [];
-    problems.push(error.detail ?? error.message);
+    checks = /** @type {ComposeFailure} */ (error).checks ?? [];
+    problems.push(/** @type {ComposeFailure} */ (error).detail ?? /** @type {Error} */ (error).message);
   }
   const passed = code === EXIT.ok && captureRecord.outcome === 'passed' && problems.length === 0;
   await record({capture: {n: captureRecord.n, outcome: captureRecord.outcome, reason: captureRecord.reason, captureDir: captureRecord.captureDir}, recovery: checks, problems, outcome: passed ? 'passed' : 'failed', finishedAt: iso()});
@@ -793,14 +883,23 @@ const OPERATIONS = [
   'extend <composition-id> [--lease <minutes>]',
   'stop <composition-id>',
 ];
+/** @type {Record<string, string[]>} */
 const FLAGS = {start: ['--checkout', '--lease', '--manifest'], inject: ['--step'], extend: ['--lease']};
+/** @type {Record<string, string[]>} */
 const SWITCHES = {start: ['--unpinned']};
 
+/** @param {readonly string[]} argv */
 function parse(argv) {
   const [operation = 'help', ...rest] = argv;
-  const positional = [], flags = {}, checkouts = {}, switches = new Set();
+  /** @type {string[]} */
+  const positional = [];
+  /** @type {Record<string, string>} */
+  const flags = {};
+  /** @type {Record<string, string>} */
+  const checkouts = {};
+  const switches = new Set();
   for (let index = 0; index < rest.length; index++) {
-    const argument = rest[index];
+    const argument = /** @type {string} */ (rest[index]);
     if (!argument.startsWith('--')) {
       positional.push(argument);
       continue;
@@ -824,6 +923,7 @@ function parse(argv) {
   return {operation, positional, flags, checkouts, switches};
 }
 
+/** @param {string | undefined} value */
 function lease(value) {
   if (value === undefined) return undefined;
   const minutes = Number(value);
@@ -831,6 +931,7 @@ function lease(value) {
   return minutes;
 }
 
+/** @param {string[]} positional @param {number} count @param {string} operation */
 function arity(positional, count, operation) {
   if (positional.length !== count) throw new UsageError(`${operation} takes ${count} argument${count === 1 ? '' : 's'}; see help`);
 }
@@ -838,17 +939,20 @@ function arity(positional, count, operation) {
 /**
  * Run one composition operation and return the exit code. `options` is for
  * tests: env, stdout/stderr sinks, the Hub root and a readiness timeout.
+ * @param {readonly string[]} argv
+ * @param {{env?: Env, stdout?: Progress, stderr?: Progress, hubRoot?: string, manifest?: string, readyTimeoutMs?: number}} [options]
  */
 export async function runCompose(argv, options = {}) {
   const env = options.env ?? process.env;
-  const stdout = options.stdout ?? (line => void process.stdout.write(line + '\n'));
-  const progress = options.stderr ?? (line => void process.stderr.write(line + '\n'));
+  const stdout = options.stdout ?? (/** @param {string} line */ line => void process.stdout.write(line + '\n'));
+  const progress = options.stderr ?? (/** @param {string} line */ line => void process.stderr.write(line + '\n'));
   const io = {env, progress, hubRoot: options.hubRoot};
   let operation = argv[0] ?? 'help';
   try {
     const parsed = parse(argv);
     operation = parsed.operation;
     const {positional, flags} = parsed;
+    /** @type {Outcome} */
     let outcome;
     switch (operation) {
       case 'help':
@@ -864,11 +968,11 @@ export async function runCompose(argv, options = {}) {
         break;
       case 'capture':
         arity(positional, 2, operation);
-        outcome = await capture(positional[0], positional[1], io);
+        outcome = await capture(positional[0], positional[1] ?? '', io);
         break;
       case 'inject':
         arity(positional, 3, operation);
-        outcome = await inject(positional[0], positional[1], positional[2], flags['--step'] ?? `${positional[2]}-loss`, io);
+        outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'] ?? `${positional[2]}-loss`, io);
         break;
       case 'handoff':
         arity(positional, 1, operation);
@@ -893,11 +997,11 @@ export async function runCompose(argv, options = {}) {
       return EXIT.usage;
     }
     if (error instanceof ComposeFailure) {
-      stdout(JSON.stringify({operation, error: error.cause, ...(error.service ? {service: error.service} : {}), detail: error.detail}));
+      stdout(JSON.stringify({operation, error: error.failure, ...(error.service ? {service: error.service} : {}), detail: error.detail}));
       return error.code;
     }
-    stdout(JSON.stringify({operation, error: 'internal', detail: String(error?.message ?? error).split('\n')[0]}));
-    progress(error?.stack ?? String(error));
+    stdout(JSON.stringify({operation, error: 'internal', detail: String(/** @type {Error} */ (error)?.message ?? error).split('\n')[0]}));
+    progress(/** @type {Error} */ (error)?.stack ?? String(error));
     return EXIT.failed;
   }
 }

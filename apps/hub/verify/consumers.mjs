@@ -18,7 +18,7 @@ export const CONSUMER_STATE = {
   // codex-nanoleaf#194: GET <wall url>verify/state, Host exactly 127.0.0.1:<port>.
   nanoleaf: {
     route: 'verify/state',
-    /** @returns {ConsumerState} */
+    /** @param {any} value @returns {ConsumerState} */
     parse: value => {
       if (value?.apiVersion !== 'wall-verify/1' || typeof value.feed !== 'object' || typeof value.integration !== 'object') throw new Error('the wall state route answered an unknown shape');
       return {
@@ -32,7 +32,7 @@ export const CONSUMER_STATE = {
   // divoom-app-upgrade#120: the Pixoo run's state route.
   pixoo: {
     route: 'api/verify/state',
-    /** @returns {ConsumerState} */
+    /** @param {any} value @returns {ConsumerState} */
     parse: value => {
       if (value?.apiVersion !== 'pixoo-verify/1' || typeof value.feed !== 'object' || typeof value.writer !== 'object') throw new Error('the Pixoo state route answered an unknown shape');
       return {
