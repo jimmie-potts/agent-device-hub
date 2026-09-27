@@ -757,11 +757,16 @@ systemd 259 refuses to stop a frozen unit ("Cannot perform operation on
 frozen unit"), so a unit left frozen would outlive its own lease. Before
 each freeze the orchestrator therefore arms a safety thaw: a transient timer
 under the user manager, `app-verify-<run-id>-thaw.timer`, that thaws the unit
-after `--thaw-after` seconds (default 120). A freeze is refused when it
-cannot be armed. If the orchestrator itself dies mid-loss, for example with
-its terminal, the consumer is running again within that bound and its lease
-can stop it. `stop` thaws before stopping, and `doctor` reports a unit that
-is still frozen. On this PC (WSL 2, cgroup v2, systemd 259)
+after `--thaw-after` seconds (60 to 600, default 120), comfortably above
+the loss step's own frozen phase. A freeze is refused when it cannot be
+armed. The lease stops its unit only once, so `inject` also refuses, with
+`lease-too-short`, to freeze a consumer whose lease ends within the step's
+budget plus that bound; extend the composition first. If the orchestrator
+itself dies mid-loss, for example with its terminal, the consumer is
+running again within the bound, before its lease ends, so the lease can
+stop it. A safety thaw that runs before the step asks is recorded as
+`thawedBy: safety-timer` and fails the injection. `stop` thaws before
+stopping, and `doctor` reports a unit that is still frozen. On this PC (WSL 2, cgroup v2, systemd 259)
 both commands work: a frozen run keeps its unit and listener, but its
 process stops and answers nothing.
 

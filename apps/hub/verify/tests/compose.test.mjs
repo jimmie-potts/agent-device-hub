@@ -512,17 +512,19 @@ test('a run id that is not the core\'s form is refused before it names any unit 
   }
 });
 
-test('a consumer left frozen by an orchestrator that died is thawed by its safety timer, so its lease can still stop it', {skip, timeout: 300000}, async () => {
+test('a consumer left frozen by an orchestrator that died is thawed by its safety timer, so its lease can still stop it', {skip, timeout: 360000}, async () => {
   const w = await world();
   try {
     const started = await w.start();
+    // The bound stays above the loss step's frozen phase.
+    assert.equal((await w.run('inject', started.result.compositionId, 'consumer-loss', 'pixoo', '--thaw-after', '30')).code, 2);
     assert.equal(started.code, 0, JSON.stringify(started.result));
     const id = started.result.compositionId;
     const c = await w.composition(id);
     const pixooUnit = `app-verify-${c.services[1].runId}.service`;
     const freezer = () => spawnSync('systemctl', ['--user', 'show', pixooUnit, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim();
     // The orchestrator and everything it started run in their own process group, which dies at once, as with a closed terminal.
-    const orchestrator = spawn(process.execPath, [compose, 'inject', id, 'consumer-loss', 'pixoo', '--thaw-after', '15'], {cwd: root, env: w.env, stdio: 'ignore', detached: true});
+    const orchestrator = spawn(process.execPath, [compose, 'inject', id, 'consumer-loss', 'pixoo', '--thaw-after', '60'], {cwd: root, env: w.env, stdio: 'ignore', detached: true});
     const state = join(w.base, 's', c.services[2].runId, 'compose-inject-state');
     const deadline = Date.now() + 60000;
     while (freezer() !== 'frozen' || !existsSync(state) || JSON.parse(await readFile(state, 'utf8').catch(() => '{}')).phase !== 'frozen') {
@@ -533,15 +535,36 @@ test('a consumer left frozen by an orchestrator that died is thawed by its safet
     process.kill(-orchestrator.pid, 'SIGKILL');
     assert.equal(freezer(), 'frozen');
     while (freezer() === 'frozen') {
-      assert.ok(Date.now() - frozenAt < 40000, 'the safety thaw ran within its bound');
+      assert.ok(Date.now() - frozenAt < 90000, 'the safety thaw ran within its bound');
       await new Promise(done => setTimeout(done, 500));
     }
     assert.equal(freezer(), 'running');
-    assert.ok(Date.now() - frozenAt >= 10000, 'nothing thawed it before the safety timer');
+    assert.ok(Date.now() - frozenAt >= 50000, 'nothing thawed it before the safety timer');
     // Running again, the unit can be stopped: through the composition and, for its lease, directly.
     const stopped = await w.run('stop', id);
     assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
     assert.equal(spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${c.services[1].runId}*`], {encoding: 'utf8'}).stdout.trim(), '', 'no unit or timer of the Pixoo run is left');
+  } finally {
+    await w.close();
+  }
+});
+
+test('a consumer whose lease could end while frozen is never frozen', {skip, timeout: 240000}, async () => {
+  const w = await world();
+  try {
+    // Four minutes of lease is less than the loss step's budget plus the default two-minute safety thaw.
+    const started = await w.start('--lease', '4');
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const c = await w.composition(id);
+    const refused = await w.run('inject', id, 'consumer-loss', 'pixoo');
+    assert.equal(refused.code, 1, JSON.stringify(refused.result));
+    assert.equal(refused.result.error, 'lease-too-short');
+    assert.match(refused.result.detail, /extend the composition first$/);
+    assert.equal(spawnSync('systemctl', ['--user', 'show', `app-verify-${c.services[1].runId}.service`, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim(), 'running', 'nothing was frozen');
+    assert.deepEqual((await w.composition(id)).injections, [], 'nothing was armed');
+    assert.equal((await w.run('extend', id, '--lease', '10')).code, 0);
+    assert.equal((await w.run('stop', id)).code, 0);
   } finally {
     await w.close();
   }
