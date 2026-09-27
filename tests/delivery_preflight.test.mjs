@@ -961,6 +961,7 @@ const receiptCases = [
   ['a tampered verified set', { tamper: true }, /SHA256SUMS mismatch: capture-1\/after\.png/],
   ['a failed run', { state: 'failed', failure: { cause: 'readiness-timeout', at: '2026-09-27T07:01:00Z' } }, /failed: readiness-timeout/],
   ['a failed receipt check', { checks: [{ id: 'readiness', outcome: 'failed', reason: 'timeout' }] }, /check readiness failed/],
+  ['a receipt the app-verify validator refuses', { overrides: { secrets: 'token abc' } }, /receipt invalid: secrets/],
 ];
 
 for (const [name, options, reason] of receiptCases) {

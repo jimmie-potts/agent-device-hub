@@ -4,6 +4,15 @@ This application implements the source scope of [Hub #5](https://github.com/jimm
 
 The host supplies private SQLite ownership, the shared agent-state engine, authenticated loopback monitor routes, bounded controller clients and both delivered integration extensions. Supervised migration transfers state into a fenced destination, verifies routes, then opens ingestion. The [setup runbook](SETUP.md) covers reversible producer setup and Nanoleaf cutover from #8. Installed-client and full integrated performance qualification remain separate.
 
+## Verification runs
+
+[`verify/`](verify/README.md) holds the Hub adapter for disposable
+[app verification runs](../../docs/app-verification.md): `npm run -s verify --
+<operation>` starts this hub and the dashboard with fake controllers under a
+leased user unit, drives the steps in its feature map, keeps frozen proof and
+hands over an expiring preview. It is repository tooling and is not part of
+the hub package.
+
 ## Configuration and authority
 
 The source entry point is `node apps/hub/dist/cli.js serve /absolute/private/config.json` after `npm ci` and `npm run build`. Starting an installed service needs separate authorization. Tests use ephemeral disposable state instead.
