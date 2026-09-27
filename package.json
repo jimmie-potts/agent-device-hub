@@ -10,8 +10,8 @@
     "openspec": "node scripts/openspec.cjs",
     "check:workflow": "node scripts/check-workflow.cjs",
     "test:workflow": "node --test tests/workflow_checks.cjs",
-    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json && tsc -p packages/mcp/tsconfig.json && tsc -p packages/lifecycle-contracts/tsconfig.json && tsc -p packages/agent-state/tsconfig.json && tsc -p packages/agent-status/tsconfig.json && tsc -p packages/app-verify/tsconfig.json && tsc -p apps/hub/tsconfig.json && tsc -p controllers/tidbyt/tsconfig.json && tsc -p controllers/lifx/tsconfig.json && tsc -p apps/local-controllers/tsconfig.json && npm run build:dashboard",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/mcp/tsconfig.json --noEmit && tsc -p packages/lifecycle-contracts/tsconfig.json --noEmit && tsc -p packages/agent-state/tsconfig.json --noEmit && tsc -p packages/agent-status/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.json --noEmit && tsc -p packages/app-verify/tsconfig.examples.json && tsc -p apps/hub/tsconfig.json --noEmit && tsc -p controllers/tidbyt/tsconfig.json --noEmit && npm run typecheck:dashboard && tsc -p controllers/lifx/tsconfig.json --noEmit && tsc -p apps/local-controllers/tsconfig.json --noEmit",
     "test:contracts": "npm run build && npm run test:contracts:built",
     "test:contracts:python": "python3 scripts/check-contracts.py",
     "package:contracts": "npm run build && node scripts/package-contracts.mjs",
@@ -62,7 +62,12 @@
     "test:local-controllers": "npm run build && npm run test:local-controllers:built",
     "test:local-controllers:built": "node --test apps/local-controllers/tests/*.test.mjs",
     "test:agent-status": "npm run build && npm run test:agent-status:built",
-    "test:agent-status:built": "node --test packages/agent-status/tests/*.test.mjs"
+    "test:agent-status:built": "node --test packages/agent-status/tests/*.test.mjs",
+    "test:app-verify": "npm run build && npm run test:app-verify:built",
+    "test:app-verify:built": "node --test --test-concurrency=1 packages/app-verify/tests/*.test.mjs",
+    "package:app-verify": "npm run build && node scripts/package-app-verify.mjs",
+    "test:app-verify:package": "npm run build && npm run test:app-verify:package:built",
+    "test:app-verify:package:built": "node scripts/package-app-verify.mjs --test"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -82,6 +87,7 @@
     "packages/lifecycle-contracts",
     "packages/agent-state",
     "packages/agent-status",
+    "packages/app-verify",
     "apps/hub",
     "controllers/tidbyt",
     "controllers/lifx",

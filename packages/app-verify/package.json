@@ -1,0 +1,24 @@
+{
+  "name": "@jimmie-potts/app-verify",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared lifecycle core for disposable app verification runs: transient systemd user units, lease timers, receipts, frozen proof and Playwright capture",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "peerDependencies": {
+    "playwright": ">=1.50.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  }
+}
