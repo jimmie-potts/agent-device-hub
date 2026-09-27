@@ -225,7 +225,9 @@ credentials do not block otherwise complete routine check evidence.
 evidence before a merge or issue closure. It is an aid, not a gate or an
 authorization. Every run re-reads GitHub, and a report is current only for the
 head and read time it prints; a saved green report never covers a later head.
-`npm run preflight -- --help` lists the options.
+`npm run preflight -- --help` lists the options. The script compiles
+`packages/app-verify` first, because proof receipts are checked with its
+`validateReceipt` rather than a second reader.
 
 The tool only reads. Before any network use, its GitHub client refuses every
 request except `GET` and the tool's own two GraphQL query documents, matched by
@@ -244,7 +246,7 @@ prints tokens, local paths or reviewer return text.
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
 | UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/`, `docs/skins/`, `controllers/tidbyt/src/` or `controllers/tidbyt/fixtures/golden/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), or `--ui`. Tidbyt modules that only queue, schedule, authenticate or transport frames are listed as non-UI in `NON_UI_PATHS` in `scripts/delivery-preflight/preflight.mjs`; a new Tidbyt module counts as UI until it is listed. `--ui-approval` must be a record (see below) whose first line approves one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
-| Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
+| Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a receipt, and its verified copy, that the app-verify core's `validateReceipt` accepts, a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
 | Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
 | Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
 
@@ -648,7 +650,10 @@ Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
 and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
 synthetic state and fake controllers. The dashboard CI job runs these checks;
 shared hub, contract/state, MCP and workflow jobs remain required. No check
-installs a personal service, opens live state or contacts hardware.
+installs a personal service, opens live state or contacts hardware. A change
+to `apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
+[Hub verification](../apps/hub/verify/README.md) step drives also runs
+`npm run test:hub:verify`; the App verification CI job runs it.
 
 Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
 `npm run test:hub:package` with disposable owner-launch and browser-session
@@ -1099,5 +1104,19 @@ as init system (PID 1)". CI therefore proves the first part only.
 `artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
 release; other repositories vendor that archive.
 
-The Hub adapter documents its wrapper and checks here when it lands; the
-Nanoleaf and Pixoo adapters document theirs in their own repositories.
+The Hub adapter ([`apps/hub/verify`](../apps/hub/verify/README.md)) runs the
+real hub and dashboard with the dashboard fixture's fake controllers. Its
+entry point is `npm run -s verify -- <operation>` after `npm run build`, and
+its README keeps the feature map of steps, UI entries, driver actions,
+scenarios and expected observations. Run `npm run test:hub:verify` with the
+checks above and the Standalone hub and Dashboard checks, because the adapter
+reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
+
+- its unsupervised step test judges the four reference steps on the correct
+  app and under each seeded fault (`write-on-read`, `duplicate-forward`,
+  `replay-on-recovery`), plus the two `control-*` steps;
+- its build test checks the build-freshness sources against esbuild's
+  dashboard inputs;
+- its run tests use real user units and skip there with the printed reason.
+
+The Nanoleaf and Pixoo adapters document theirs in their own repositories.

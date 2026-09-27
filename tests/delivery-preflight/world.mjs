@@ -360,10 +360,15 @@ function graphql(world, body) {
 
 // ---- Proof directories (docs/app-verification.md receipt, app-verification/1) ----
 
-export function writeProof(directory, { runId = 'hub-20260927T070000Z-3f9a1c', sourceRevision = HEAD, dirty = false, state = 'stopped', frozen = true, captures, checks, failure = null, tamper = false } = {}) {
+export function writeProof(directory, { runId = 'hub-20260927T070000Z-3f9a1c', sourceRevision = HEAD, dirty = false, state = 'stopped', frozen = true, captures, checks, failure = null, tamper = false, overrides = {} } = {}) {
   const proofDir = path.join(directory, runId);
   fs.mkdirSync(path.join(proofDir, 'verified', 'capture-1'), { recursive: true });
-  const verifiedCaptures = captures ?? [{ n: 1, step: 'task-appears', set: 'verified', outcome: 'passed', screenshot: 'verified/capture-1/after.png', video: 'verified/capture-1/interaction.webm' }];
+  // Complete capture records, as the app-verify core writes them, so the receipt passes its validator.
+  const record = capture => {
+    const prefix = capture.set === 'verified' ? `verified/capture-${capture.n}` : `after-handoff/capture-${capture.n}`;
+    return { scenario: 'lifecycle-basic', screenshot: `${prefix}/after.png`, video: `${prefix}/interaction.webm`, log: `${prefix}/assertions.json`, startedAt: '2026-09-27T07:03:00Z', finishedAt: '2026-09-27T07:03:03Z', ...capture };
+  };
+  const verifiedCaptures = (captures ?? [{ n: 1, step: 'task-appears', set: 'verified', outcome: 'passed' }]).map(record);
   const receipt = {
     receiptVersion: 'app-verification/1',
     runId,
@@ -382,17 +387,18 @@ export function writeProof(directory, { runId = 'hub-20260927T070000Z-3f9a1c', s
     checks: checks ?? [{ id: 'readiness', outcome: 'passed' }],
     captures: verifiedCaptures,
     preview: null,
-    owned: { unit: `app-verify-${runId}.service`, leaseTimer: `app-verify-${runId}-lease.timer`, port: 41705, runtimeDir: runId, proofDir: runId },
+    owned: { unit: `app-verify-${runId}.service`, leaseTimer: `app-verify-${runId}-lease.timer`, port: 41705, runtimeDir: runId, proofDir: runId, mainPid: null, mainStartMonotonic: null },
     proof: { frozenAt: frozen ? '2026-09-27T07:05:00Z' : null },
     failure,
     cleanup: { result: 'clean' },
     secrets: 'none recorded',
+    ...overrides,
   };
   fs.writeFileSync(path.join(proofDir, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
   if (frozen) {
     fs.writeFileSync(path.join(proofDir, 'verified', 'capture-1', 'after.png'), Buffer.from('png-bytes'));
     fs.writeFileSync(path.join(proofDir, 'verified', 'capture-1', 'interaction.webm'), Buffer.from('webm-bytes'));
-    fs.writeFileSync(path.join(proofDir, 'verified', 'receipt.json'), `${JSON.stringify({ ...receipt, proof: { frozenAt: null } }, null, 2)}\n`);
+    fs.writeFileSync(path.join(proofDir, 'verified', 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`);
     const files = ['capture-1/after.png', 'capture-1/interaction.webm', 'receipt.json'];
     const sums = files.map(file => `${sha256(fs.readFileSync(path.join(proofDir, 'verified', file)))}  ${file}`).join('\n');
     fs.writeFileSync(path.join(proofDir, 'verified', 'SHA256SUMS'), `${sums}\n`);

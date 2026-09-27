@@ -4,9 +4,12 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { RECEIPT_VERSION, validateReceipt } from '@jimmie-potts/app-verify';
+
 import { LocalReadFailure, redactPaths, short } from './context.mjs';
 
-export const RECEIPT_VERSION = 'app-verification/1';
+// The receipt format and its validator come from the shared app-verify core (Hub #494), never a second reader.
+export { RECEIPT_VERSION };
 export const GUIDE_HTML_PATH = 'docs/work-guide/outputs/agent-device-work-guides.html';
 
 const sha256 = data => createHash('sha256').update(data).digest('hex');
@@ -68,6 +71,10 @@ function checkAppReceipt(proofDir, label, { repository, head }) {
   const runId = typeof receipt.runId === 'string' ? receipt.runId : null;
   const name = runId || describeLocal(proofDir);
   if (receipt.receiptVersion !== RECEIPT_VERSION) reasons.push(`${name}: receiptVersion ${receipt.receiptVersion} is not ${RECEIPT_VERSION}`);
+  else {
+    const checked = validateReceipt(receipt);
+    if (!checked.ok) for (const error of checked.errors.slice(0, 5)) reasons.push(`${name}: receipt invalid: ${tidy(error)}`);
+  }
   if (receipt.repository !== repository) reasons.push(`${name}: repository ${receipt.repository} is not ${repository}`);
   const build = receipt.build || {};
   if (build.sourceRevision !== head) {
@@ -126,6 +133,7 @@ function checkAppReceipt(proofDir, label, { repository, head }) {
       }
       if (listed.has('receipt.json')) {
         const frozen = readJson(path.join(verifiedDir, 'receipt.json'), `${label} (verified copy)`);
+        if (!validateReceipt(frozen).ok) reasons.push(`${name}: the verified receipt copy is not a valid ${RECEIPT_VERSION} receipt`);
         if (frozen.runId !== runId || (frozen.build || {}).sourceRevision !== build.sourceRevision) {
           reasons.push(`${name}: the verified receipt names another run or revision`);
         }
