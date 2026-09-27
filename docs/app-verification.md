@@ -14,7 +14,8 @@ decisions and their alternatives. The initiative and its accepted scope are in
 [#488](https://github.com/jimmie-potts/agent-device-hub/issues/488).
 
 This document is a contract for source work. Nothing here is installed. A run
-never attaches to the installed services, personal state or physical devices. Actual Windows-host qualification belongs to
+never attaches to the installed services, personal state or physical devices.
+Actual Windows-host qualification belongs to
 [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497).
 
 ## Vocabulary
@@ -31,8 +32,10 @@ never attaches to the installed services, personal state or physical devices. Ac
 - **Scenario**: a named, deterministic synthetic seed owned by the adapter's
   test fixtures. Its version is the candidate's source revision, because the
   fixtures live with the source.
-- **Proof**: screenshots, video, receipts and check output captured while the
-  agent verified the run. Proof is frozen at handoff and never changes again.
+- **Proof**: screenshots, video, receipts and check output for a run. The
+  captures taken before handoff are the **verified set**; handoff freezes that
+  set and it never changes again. Later captures and the live receipt sit
+  beside it, outside the frozen set.
 - **Preview**: the same run, or a reset copy of its state, left serving for a
   human to explore under a lease.
 - **Lease**: the time after which the supervisor stops the run by itself.
@@ -49,27 +52,27 @@ merely requested.
 
 | Operation | Outcome | Failure it must report |
 | --- | --- | --- |
-| `start [--scenario <name>] [--lease <minutes>]` | Creates the run's runtime directory, seeds the scenario, starts the application under its supervisor unit, waits for readiness, starts the lease timer and writes the first receipt with `state: running` | Occupied or unusable port, dirty or unknown build, readiness timeout, seed failure, supervisor unavailable. A failed start stops its unit, removes its runtime directory and reports `state: failed` with the cause and what was cleaned |
-| `doctor [<run-id>]` | Reads live state without changing it: the unit's active state, main PID and start timestamp, the actual listener port and a loopback health read, the build identity the process reports or the receipt recorded, the lease timer's next elapse, and the proof directory's frozen state. Without an argument it lists every run of this app and flags runs whose unit is gone but whose receipt says `running` | A receipt that disagrees with the live unit is reported as `stale`, never repaired silently |
+| `start [--scenario <name>] [--lease <minutes>]` | In this order: writes the proof directory with a `starting` receipt naming the unit, timer and runtime directory it is about to create; creates the runtime directory and seeds the scenario; starts the lease timer; starts the application under its supervisor unit; waits for readiness; rewrites the receipt with `state: running`. The timer exists before the unit, so no running application is ever without a lease | Occupied or unusable port, dirty or unknown build, readiness timeout, seed failure, supervisor unavailable. A failed start stops its unit and timer, removes its runtime directory and reports `state: failed` with the cause and what was cleaned |
+| `doctor [<run-id>]` | Reads live state without changing it: the unit's active state, main PID and start timestamp, the actual listener port and a loopback health read, the build identity the process reports or the receipt recorded, the lease timer's next elapse, and the verified set's checksums. Without an argument it lists every run of this app discovered from the union of `app-verify-<app>-*` units and timers, runtime directories and receipts, so an orphan of any kind appears. A run whose unit is gone while its receipt says `running` or `starting` is `expired` when `preview.expiresAt` has passed and `stale` otherwise | A receipt that disagrees with the live unit is reported as `stale`, never repaired silently |
 | `scenario <run-id> <name>` | Reseeds this run's disposable state to the named scenario while the run keeps its identity, port and lease. Only this run's runtime directory changes | A scenario the fixtures do not define; a run that is not `running` |
-| `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory of the proof. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
-| `handoff <run-id> [--reset <scenario>]` | Freezes the proof (writes `SHA256SUMS`, marks the directory read-only, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose proof is already frozen accepts another `handoff` only to print the card again; it never rewrites frozen proof. A reset that fails leaves the run stopped rather than serving half-seeded state |
+| `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
+| `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `cleanup.result` and keeps the frozen set, rather than serving half-seeded state |
 | `extend <run-id> [--lease <minutes>]` | Replaces the lease timer with a new one and records the new expiry in the receipt and the printed card | A run whose unit is not active, or whose timer cannot be replaced, is reported as such; nothing else is touched |
 | `stop <run-id>` | Stops the lease timer and the supervisor unit, verifies both are gone, removes the runtime directory, and writes the final receipt with `cleanup.result`. Frozen proof stays | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
 | `restart <run-id>` | `stop`, then `start` with the recorded scenario and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
 
 Expiry is not an operation. The lease timer stops the unit, and the next
 `doctor` reports `state: expired`, the exact expiry time and that the runtime
-directory is still to be removed by `stop`. Frozen proof is unaffected.
+directory is still to be removed by `stop`. The frozen set is unaffected.
 
 ### Readiness and build identity
 
 `start` succeeds only after a loopback read of the application's own readiness
 route answers as expected: the hub's `{ready:true,url}` startup line and
 `GET /api/hub/v1/health`; the wall demo's `{url}` startup line and its map page;
-Pixoo's `GET /health` reporting simulator mode. The receipt's `build` uses the
+Pixoo's `GET /api/health` reporting simulator mode. The receipt's `build` uses the
 field names the [install contract](https://github.com/jimmie-potts/agent-device-hub/issues/465)
-fixes for running processes, so a later health field
+proposes for running processes, so a later health field
 ([#428](https://github.com/jimmie-potts/agent-device-hub/issues/428)) needs no
 receipt change:
 
@@ -85,8 +88,12 @@ receipt change:
 
 ### Receipt
 
-One `receipt.json` per run under its proof directory, rewritten by each
-operation that changes state, with an append-only `events.jsonl` beside it.
+One `receipt.json` per run at the top of its proof directory, rewritten by
+each operation that changes state, with an append-only `events.jsonl` beside
+it. Neither file is part of the frozen set; handoff copies the receipt of that
+moment into `verified/`. The proof directory therefore holds `receipt.json`,
+`events.jsonl`, `capture-<n>/` until handoff, then `verified/` (the moved
+captures, `receipt.json` copy and `SHA256SUMS`) and any `after-handoff/capture-<n>/`.
 Fields, all required unless marked optional:
 
 ```json
@@ -94,6 +101,8 @@ Fields, all required unless marked optional:
   "receiptVersion": "app-verification/1",
   "runId": "hub-20260927T060259Z-3f9a1c",
   "app": "hub",
+  "repository": "jimmie-potts/agent-device-hub",
+  "roots": {"proof": "<canonical checkout>/.local/evidence/verify", "runtime": "~/.local/state/app-verify"},
   "state": "running",
   "startedAt": "2026-09-27T06:02:59Z",
   "restarts": "hub-20260927T052001Z-91be07",
@@ -106,9 +115,9 @@ Fields, all required unless marked optional:
     {"id": "ht-a9", "kind": "simulated"}
   ],
   "checks": [{"id": "readiness", "outcome": "passed"}, {"id": "windows-loopback", "outcome": "skipped", "reason": "interop unavailable"}],
-  "captures": [{"n": 1, "step": "task-appears", "outcome": "passed", "screenshot": "capture-1/after.png", "video": "capture-1/interaction.webm"}],
+  "captures": [{"n": 1, "step": "task-appears", "set": "verified", "outcome": "passed", "screenshot": "verified/capture-1/after.png", "video": "verified/capture-1/interaction.webm"}],
   "preview": {"url": "http://127.0.0.1:41705/", "expiresAt": "2026-09-27T08:02:59Z", "leaseMinutes": 120},
-  "owned": {"unit": "app-verify-hub-20260927T060259Z-3f9a1c.service", "leaseTimer": "app-verify-hub-20260927T060259Z-3f9a1c-lease.timer", "port": 41705, "runtimeDir": "~/.local/state/app-verify/hub-20260927T060259Z-3f9a1c", "proofDir": ".local/evidence/verify/hub-20260927T060259Z-3f9a1c"},
+  "owned": {"unit": "app-verify-hub-20260927T060259Z-3f9a1c.service", "leaseTimer": "app-verify-hub-20260927T060259Z-3f9a1c-lease.timer", "port": 41705, "runtimeDir": "hub-20260927T060259Z-3f9a1c", "proofDir": "hub-20260927T060259Z-3f9a1c"},
   "proof": {"frozenAt": null},
   "cleanup": {"result": null},
   "secrets": "none recorded"
@@ -117,9 +126,12 @@ Fields, all required unless marked optional:
 
 `state` is one of `starting`, `running`, `failed`, `expired`, `stopped`.
 `cleanup.result` becomes `clean`, `partial` (with the resource left behind and
-its identity) or `unknown` (the readback failed). `restarts` is optional. Paths
-inside the receipt are relative to the two declared roots; the receipt never
-contains a token, a credential file path, an agent transcript or a session id.
+its identity) or `unknown` (the readback failed). `restarts` is optional.
+`roots` names the two storage roots: `<canonical checkout>` is the repository's
+main worktree named by `repository`, and `~` is the owning Linux user's home.
+`owned.runtimeDir` and `owned.proofDir` are directory names under those roots,
+and capture paths are relative to `proofDir`. The receipt never contains a
+token, a credential file path, an agent transcript or a session id.
 
 ### Storage and ownership
 
@@ -128,12 +140,15 @@ contains a token, a credential file path, an agent transcript or a session id.
 | Proof | `<owning canonical checkout>/.local/evidence/verify/<run-id>/` | Survives worktree removal; the SDLC already keeps evidence there. A worktree's adapter resolves the canonical checkout through the repository's main worktree, never its own path |
 | Runtime state | `~/.local/state/app-verify/<run-id>/` | Outside every Git checkout, as the hub's `private-path-in-checkout` rule and Pixoo's `PIXOO_DATA_DIR` rule require; on ext4, not the 7.6 GB `/tmp` tmpfs; short enough for Unix socket paths. `TMPDIR` for the run points here too, because the wall demo uses `tempfile` |
 | Synthetic fixtures | The adapter's own test fixtures in its repository | Scenarios version with the source; no shared fixture package |
-| Ports | Bind `127.0.0.1:0`; read the actual port from the application's readiness output | Two runs never race for a fixed port and never touch the installed ports (8788, 8765, 8787, 8791, 41231) |
+| Ports | Bind `127.0.0.1:0`; read the actual port from the application's readiness output | Two runs never race for a fixed port and never touch the installed ports (8788, 8765, 8787, 8791, 41230, 41231) |
 | Secrets | Run-generated credentials only, written `0600` inside the runtime directory and deleted with it | Installed `host.json` tokens are never read or copied |
 
 The `reset` in `handoff --reset` and the `scenario` operation change only the
 run's runtime directory. They cannot touch another run, the installed services'
-state or frozen proof.
+state or the frozen set. The confined standalone qualification runner
+(`scripts/performance/standalone.py`) is not reused: its bubblewrap sandbox
+dies with the runner, which is right for a measurement and wrong for a preview
+that must outlive the agent and be reachable from Windows.
 
 ### Supervisor and lease
 
@@ -162,12 +177,18 @@ service runs `systemctl --user stop app-verify-<run-id>.service`. This gives:
 - concurrency by name: `systemd-run` refuses a unit name that already exists,
   so two `start` calls cannot share an identity.
 
-A run therefore lives at most as long as the WSL distribution. Whether the
-distribution stays up when every terminal closes is the keep-alive trial in
-[ADR 0008](decisions/0008-runtime-hosting.md), which this contract does not
-settle. Without systemd (`systemctl --user is-system-running` fails) `start`
-reports `supervisor unavailable` and does nothing; the contract offers no
-nohup fallback because it could not honor the cleanup rules.
+A run therefore lives at most as long as the user manager,
+`user@<uid>.service`. On this PC that manager is wanted by the WSL
+distribution's implicit login session and linger is off, so today the bound is
+the distribution's lifetime; whether the distribution stays up when every
+terminal closes, and whether linger is enabled, are
+[ADR 0008](decisions/0008-runtime-hosting.md) matters that this contract does
+not settle. The E2 probe showed the unit's placement outside the calling
+session; survival past an actual session end is pending evidence, listed
+below and owed by the Hub adapter's tests. Without systemd
+(`systemctl --user is-system-running` fails) `start` reports
+`supervisor unavailable` and does nothing; the contract offers no nohup
+fallback because it could not honor the cleanup rules.
 
 ### Browser session and secrets
 
@@ -186,17 +207,20 @@ nohup fallback because it could not honor the cleanup rules.
   token in a header, which is not a secret to keep out of proof.
 - **Pixoo**: no sign-in exists. `PIXOO_MODE=simulator` is set explicitly,
   because the current source accepts `device` too, and readiness reads
-  `/health` to confirm the selected mode before the run is `running`.
+  `/api/health` to confirm the selected mode before the run is `running`.
 
 Capture masks nothing. Scenarios therefore use only synthetic values and
 run-generated credentials, and a configured token is never loaded into a page.
 
 ### Frozen proof
 
-`handoff` writes `SHA256SUMS` over the proof directory, removes write
-permission recursively and records `proof.frozenAt`. Later operations write
-only new `capture-<n>/` directories, `events.jsonl` and `receipt.json` updates
-for lease and cleanup fields; `doctor` verifies the sums and reports
+`handoff` moves every `capture-<n>/` taken so far and a copy of the receipt
+into `verified/`, writes `verified/SHA256SUMS` over exactly that directory,
+removes write permission from it recursively and records `proof.frozenAt`.
+The live `receipt.json` and `events.jsonl` stay outside `verified/` and keep
+changing with lease and cleanup fields; a `capture` after handoff writes under
+`after-handoff/` and is labelled `set: after-handoff` in the receipt, so it can
+never be mistaken for the verified set. `doctor` verifies the sums and reports
 `proof: tampered` when they no longer match. Manual exploration through the
 browser writes nothing under the proof directory because the application never
 knows it exists. A `restart` creates a new proof directory.
@@ -207,7 +231,7 @@ The preview card names the run id, candidate, scenario, expiry and the exact
 port, and `doctor <run-id>` answers the same for a link found later. The link
 itself cannot display expiry: the applications own their pages, the dashboard
 reads a fragment as a page route or a launch code, and the hub refuses query
-strings on its routes. After expiry or `stop` the port answers nothing, so
+strings on its page and dashboard routes. After expiry or `stop` the port answers nothing, so
 a stale link fails to connect instead of showing old content. That is the
 supported staleness signal; an in-page banner is deferred until an adapter
 owns the page it would appear on.
@@ -217,14 +241,14 @@ owns the page it would appear on.
 | Situation | Behavior |
 | --- | --- |
 | Concurrent runs | Distinct run ids, unit names, ports and directories; `doctor` lists all; no shared state |
-| Occupied port | Never happens for the run's own listener, which binds port 0. A fixed-port dependency the application insists on is a `start` failure naming the port, not a retry loop |
+| Occupied port | Never happens for the run's own WSL listener, which binds port 0. A fixed-port dependency the application insists on is a `start` failure naming the port, not a retry loop. A Windows process already on the chosen number is the pending host behavior below; `doctor`'s Windows reachability check is how it would show |
 | Stale build | `dirty` and `unknown` are labelled at `start`, in the card and in the receipt. Proof from a dirty run cannot be cited as a merge candidate's evidence |
-| Interrupted start | The unit's failure kills the rest of its control group; `start` reports `failed`, removes the runtime directory and leaves no timer. A `start` interrupted before the unit exists leaves nothing |
-| Agent exit | The unit and timer belong to the user manager; the run keeps serving until expiry or `stop`. The next session finds it with `doctor` |
+| Interrupted start | A unit that fails kills the rest of its control group; `start` reports `failed`, removes the runtime directory and stops the timer. A `start` interrupted before its `starting` receipt exists leaves nothing. Interrupted later, it leaves a `starting` receipt and whatever it had created; `doctor` lists that run and `stop` removes what exists, and because the timer precedes the unit an application is never left without a lease |
+| Agent exit | The unit and timer belong to the user manager, not the agent's session, so by construction the run keeps serving until expiry or `stop` and the next session finds it with `doctor`. An observed session end is pending evidence that the Hub adapter's tests must supply |
 | Stale process identity | Unit name, `MainPID` and start timestamp must all match the receipt, otherwise `stale`; cleanup goes through the unit, never a PID |
 | Failed capture | Recorded as `failed` with the reason and whatever partial artifact exists; the run continues; the assertion failure is the result |
 | Unavailable browser tooling | `capture` reports `unavailable` naming the missing piece (Playwright module, Chromium build, ffmpeg); `start`, `handoff`, `extend` and `stop` still work |
-| Expired lease | Unit stopped by the timer; `doctor` shows `expired`; `stop` removes the runtime directory; proof unchanged |
+| Expired lease | Unit stopped by the timer and unloaded; `doctor` shows `expired` because `preview.expiresAt` has passed; `stop` removes the runtime directory; the frozen set is unchanged |
 | Runtime directory missing | `doctor` reports it; `stop` still stops the unit and records `cleanup.result: partial` |
 
 ## Actual and simulated components
@@ -233,7 +257,7 @@ owns the page it would appear on.
 | --- | --- | --- | --- |
 | Hub | Hub service, B.U.N.N.Y. dashboard, browser sessions, command replay | Fake loopback controllers and Sony receiver from `apps/dashboard/tests/fixture.mjs`; synthetic lifecycle events | Controller writes are observed on the fake; read-only browsing writes no command |
 | Nanoleaf wall | Wall server, map page, private SQLite state, allocation and Prism rendering | Worker stand-in (`scripts/demo.py` `prepare`), synthetic projects and tasks, fixture layouts | The demo's `request=no_device` trap raises on any light request; the adapter proves an attempted request fails |
-| Pixoo | Fastify server, web UI, library, playlists, player | Simulator transport, synthetic media in a private `PIXOO_DATA_DIR` | `/health` reports simulator mode and no device connectivity; ambient `PIXOO_MODE=device` does not leak into the run |
+| Pixoo | Fastify server, web UI, library, playlists, player | Simulator transport, synthetic media in a private `PIXOO_DATA_DIR` | `/api/health` reports simulator mode and no device connectivity; ambient `PIXOO_MODE=device` does not leak into the run |
 
 ## Caller walkthrough
 
@@ -251,7 +275,7 @@ The commands below use the Hub adapter's future wrapper name as an example;
 3. `npm run verify -- capture hub-… command-reaches-fake` asserts the fake
    controller received exactly one command and read-only browsing sent none.
 4. `npm run verify -- handoff hub-… --reset lifecycle-basic` freezes
-   `.local/evidence/verify/hub-…/`, reseeds the run and prints the card:
+   `.local/evidence/verify/hub-…/verified/`, reseeds the run and prints the card:
 
    ```text
    Preview  http://127.0.0.1:41705/   run hub-20260927T060259Z-3f9a1c
@@ -262,7 +286,8 @@ The commands below use the Hub adapter's future wrapper name as an example;
    ```
 
 5. The agent's handoff message links the two capture files and the card. The
-   agent session ends; the run keeps serving.
+   agent session ends; the run is expected to keep serving because its unit
+   belongs to the user manager.
 
 ### Human: explore, extend, let it expire or stop
 
@@ -314,8 +339,10 @@ Pending host behavior, left explicit rather than inferred:
   behavior is untested; `doctor` therefore includes a Windows reachability
   check through `curl.exe` when interop is available and reports `skipped`
   when it is not.
-- WSL distribution lifetime with no terminal open, which bounds every lease
-  (ADR 0008 trial pending).
+- Survival past an actual end of the starting session, and the user manager's
+  lifetime without linger (`Linger=no` on this PC); today the manager is wanted
+  by the WSL distribution's implicit login session, so the distribution's
+  lifetime with no terminal open bounds every lease (ADR 0008 trial pending).
 - Codex sandbox: this session ran from Claude Code, where Windows interop and
   `systemd-run` work. Earlier evidence shows Codex's sandbox refusing Windows
   interop; whether it can create user units is unknown until tried there.
@@ -329,13 +356,17 @@ to its issue's acceptance list:
 | Clause | #494 Hub | codex-nanoleaf#193 | divoom-app-upgrade#118 |
 | --- | --- | --- | --- |
 | Operations and receipt shape | All operations; receipt validated against the fields above | Same, using `demo.py` `prepare` as the seed | Same, wrapping the simulator entrypoint |
-| Readiness and build identity | `{ready,url}` line, health, `/dashboard.js` digest, dirty flag | `{url}` line, map page read, dirty flag | `/health` selected mode, dirty flag |
+| Readiness and build identity | `{ready,url}` line, health, `/dashboard.js` digest, dirty flag | `{url}` line, map page read, dirty flag | `/api/health` selected mode, dirty flag |
 | Supervisor, lease, extend, stop, expiry | Tests against a real transient unit with a short lease | Same | Same |
 | Two concurrent runs share nothing | Two runs, two ports, independent reset | Same | Same, two `PIXOO_DATA_DIR`s |
 | Failed start cleans up | Broken build or readiness timeout leaves no unit, timer or directory | Same | Same |
-| Capture and failed capture | Screenshot and video of a stateful step; a known wrong result is reported as failed | Same for a task transition | Same for playlist progression |
-| Frozen proof | Sums verified after a reset and a second capture | Same | Same |
-| Secrets and session path | Trusted-loopback sign-in; no token in card, log or receipt; API assertions with a run-generated credential | Page token never printed | No credential exists; ambient `PIXOO_MODE=device` is overridden and proven by `/health` |
+| Interrupted start is discoverable | A start killed after seeding shows in `doctor` as `starting` and `stop` removes what exists | Same | Same |
+| `doctor` identity and expiry | A reused PID with a different start timestamp reports `stale`; a unit gone after `expiresAt` reports `expired` | Same | Same |
+| `scenario` reseeds only this run | A second run's state is unchanged by the first run's reseed | Same | Same |
+| `restart` names its predecessor | The new receipt's `restarts` field and a `dirty` label when the tree changed | Same | Same |
+| Capture and failed capture | Screenshot and video of a stateful step; a known wrong result is reported as failed; a capture interrupted before the video is finalized is reported as failed, not passed | Same for a task transition | Same for playlist progression |
+| Frozen proof | `verified/SHA256SUMS` still matches after a reset, an `extend` and a post-handoff capture, and the later capture is labelled `after-handoff` | Same | Same |
+| Secrets and session path | Trusted-loopback sign-in; no token in card, log or receipt; API assertions with a run-generated credential | Page token never printed | No credential exists; ambient `PIXOO_MODE=device` is overridden and proven by `/api/health` |
 | Simulated boundary | Fake controller observed; read-only browsing writes nothing | Light request trap raises | No physical transport request |
 
 The executable behavior these clauses describe arrives with those issues and
@@ -344,6 +375,9 @@ which is why #493 carries no OpenSpec delta.
 
 ## Deferred
 
-No LAN or phone hosting, remote fleet, continuous preview service, in-page
-expiry banner, physical-device accuracy or general process-management
-platform. Revisit wider access only after #497 qualifies the same-PC path.
+No LAN or phone hosting, remote fleet, continuous preview service,
+physical-device accuracy or general process-management platform. Revisit
+wider access only after #497 qualifies the same-PC path. The in-page expiry
+banner is deferred with the card and `doctor` as the manual alternative;
+revisit it when an adapter owns a page it can render in, or when #497 records
+a person misled by a stale link.

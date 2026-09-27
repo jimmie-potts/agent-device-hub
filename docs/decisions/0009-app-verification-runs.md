@@ -28,14 +28,17 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    service stops the unit. `extend` replaces the timer. Cleanup names units,
    never ports, process names or remembered PIDs.
 2. **Two storage roots.** Proof goes under the owning canonical checkout's
-   ignored `.local/evidence/verify/<run-id>/` and is frozen at handoff with a
-   checksum manifest and read-only permissions. Runtime state goes under
+   ignored `.local/evidence/verify/<run-id>/`; handoff moves the captures
+   taken so far into a `verified/` set frozen with a checksum manifest and
+   read-only permissions, while the live receipt and later captures stay
+   outside it. Runtime state goes under
    `~/.local/state/app-verify/<run-id>/`, outside every Git checkout and off
    the `/tmp` tmpfs, and is deleted by `stop`.
 3. **Ephemeral loopback ports.** Every run binds `127.0.0.1:0` and reports the
    port it got. Installed ports are never used.
-4. **Candidate identity uses the install contract's names**: `build.sourceRevision`,
-   `build.version`, plus `build.dirty` and `build.artifactDigest`. Dirty and
+4. **Candidate identity uses the names the install contract (#465)
+   proposes**: `build.sourceRevision`, `build.version`, plus `build.dirty`
+   and `build.artifactDigest`. Dirty and
    unknown builds run, labelled; they cannot serve as a merge candidate's proof.
 5. **Hub previews sign in through `browserAccess: "trusted-loopback"`** on the
    disposable run, so no token appears in a URL, card, log or receipt. Agent
@@ -63,8 +66,11 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
 
 ## Consequences
 
-- A run lives at most as long as the WSL distribution; ADR 0008's keep-alive
-  trial decides how long that is with no terminal open.
+- A run lives at most as long as the user manager `user@<uid>.service`. With
+  linger off that manager follows the WSL distribution's implicit login
+  session, so ADR 0008's keep-alive trial and its linger item decide how long
+  that is with no terminal open. Survival past an actual session end is
+  pending evidence for the Hub adapter's tests.
 - Without a user systemd instance, `start` refuses; there is no degraded mode.
 - Adapters test lifecycle behavior against real transient units with short
   leases, so their checks need a Linux host with `systemd --user`. Depot's
