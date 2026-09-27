@@ -11,4 +11,5 @@
 ## 3. Evidence
 
 - [x] 3.1 Capture before and after screenshots of the preview Places and ask the owner to approve the current UI candidate. The owner approved it at 3eeddb748315a1fb61ae0d76db9f1cc5fe73e872, recorded on PR #556 (https://github.com/jimmie-potts/agent-device-hub/pull/556#issuecomment-5857961024).
-- [x] 3.2 Run the dashboard, Hub, Hub verification and shared checks (all exit 0 locally; CI green on 2b64b9a). Then validate, synchronize and archive this change and verify the spec inventory.
+- [x] 3.2 Run the dashboard, Hub, Hub verification and shared checks. All exit 0 locally, and CI is green on 2b64b9a and 385da7b.
+- [ ] 3.3 Validate, synchronize and archive this change with the consumer pin commit, and verify the spec inventory.

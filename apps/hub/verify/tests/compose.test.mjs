@@ -34,12 +34,14 @@ async function standIn(base, name, {kind, app, fault}) {
   const checkout = join(base, name);
   await mkdir(join(checkout, 'scripts'), {recursive: true});
   await writeFile(join(checkout, 'served.txt'), `stand-in ${kind}\n`);
-  // `dirty-at-start` is a wrapper fault: the checkout changes after the orchestrator's pin check, as `start` begins.
-  const pluginFault = fault === 'dirty-at-start' ? undefined : fault;
+  // Wrapper faults: `dirty-at-start` changes the checkout after the orchestrator's pin check, as `start` begins;
+  // `malformed-run-id` answers start with a run id that is not the core's.
+  const pluginFault = ['dirty-at-start', 'malformed-run-id'].includes(fault) ? undefined : fault;
   await writeFile(join(checkout, 'scripts/verify.mjs'), [
     `import {runCli} from ${JSON.stringify(join(root, 'packages/app-verify/dist/index.js'))};`,
     `import {createPlugin} from ${JSON.stringify(join(root, 'apps/hub/verify/tests/fixture-consumer.mjs'))};`,
     ...(fault === 'dirty-at-start' ? [`if (process.argv[2] === 'start') (await import('node:fs')).writeFileSync(${JSON.stringify(join(checkout, 'served.txt'))}, 'changed during start\\n');`] : []),
+    ...(fault === 'malformed-run-id' ? [`if (process.argv[2] === 'start') { console.log(JSON.stringify({operation: 'start', runId: 'app-verify-*', state: 'running', url: 'http://127.0.0.1:9/'})); process.exit(0); }`] : []),
     `process.exitCode = await runCli(createPlugin(${JSON.stringify({root: checkout, kind, app, ...(pluginFault ? {fault: pluginFault} : {})})}), process.argv.slice(2));`,
   ].join('\n') + '\n');
   const git = (...args) => execFileSync('git', ['-C', checkout, ...args], {encoding: 'utf8'});
@@ -452,6 +454,12 @@ test('a Hub capture that dies mid-freeze still thaws the consumer, clears the ha
     const injection = (await w.composition(id)).injections.at(-1);
     assert.equal(injection.outcome, 'failed');
     assert.match(injection.problems.join(' '), /the Hub capture ended without a result/);
+    // The same crash after the Pixoo became its own owner: it is paired again, and the result line says so.
+    const owner = await w.run('inject', id, 'second-owner', 'pixoo');
+    assert.equal(owner.code, 3, JSON.stringify(owner.result));
+    assert.ok(owner.result.secondOwnerAt && owner.result.restoredAt, JSON.stringify(owner.result));
+    const doctor = await w.run('doctor', id);
+    assert.equal(doctor.code, 0, `the composition is paired again: ${JSON.stringify(doctor.result.checks?.filter(k => k.outcome !== 'passed'))}`);
     assert.equal((await w.run('stop', id)).code, 0);
   } finally {
     await w.close();
@@ -468,6 +476,22 @@ test('a checkout that changes after the pin check is another candidate, and the 
     assert.match(result.result.detail, /pixoo started [0-9a-f]{12} dirty, but the pin check saw [0-9a-f]{12}$/);
     assert.deepEqual(result.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'none'], ['pixoo', 'clean'], ['nanoleaf', 'clean']]);
     assert.equal(w.units(), '');
+  } finally {
+    await w.close();
+  }
+});
+
+test('a run id that is not the core\'s form is refused before it names any unit or path', {skip, timeout: 120000}, async () => {
+  const w = await world({faults: {nanoleaf: 'malformed-run-id'}});
+  try {
+    const result = await w.start();
+    assert.equal(result.code, 3, JSON.stringify(result.result));
+    assert.equal(result.result.cause, 'adapter-unavailable');
+    assert.equal(result.result.service, 'nanoleaf');
+    assert.match(result.result.detail, /answered a malformed run id/);
+    const c = await w.composition(result.result.compositionId);
+    assert.equal(c.services[0].runId, null, 'the malformed id was never recorded');
+    assert.deepEqual(result.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'none'], ['pixoo', 'none'], ['nanoleaf', 'none']]);
   } finally {
     await w.close();
   }

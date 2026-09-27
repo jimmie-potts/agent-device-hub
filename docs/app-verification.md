@@ -729,7 +729,9 @@ them for the steps and for readiness:
 A control holds only when it fails at its named assertion. `compose` records
 the expected assertion and whether the control held, and exits 0 only for a
 held control. A control that passes, or fails anywhere else, exits 1. Run the
-controls after `handoff`, so the verified sets hold only passed captures.
+controls in a separate composition, or after `handoff` so the verified sets
+hold only passed captures; a separate composition keeps them from freezing or
+reseeding a Pixoo the owner is already looking at.
 
 "Follows the Hub" means the consumer's feed is `current`, names the owner
 `verify-owner`, has applied the Hub's revision and, for Pixoo, lists exactly

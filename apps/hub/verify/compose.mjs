@@ -238,7 +238,10 @@ class Store {
           await rm(mine, {force: true});
           throw error;
         }
-        const holder = Number(await readFile(path, 'utf8').catch(() => ''));
+        const text = await readFile(path, 'utf8').catch(failure => (/** @type {NodeJS.ErrnoException} */ (failure).code === 'ENOENT' ? null : ''));
+        // Released meanwhile: try again at once, removing nothing.
+        if (text === null) continue;
+        const holder = Number(text);
         let alive = Number.isInteger(holder) && holder > 0;
         if (alive) {
           try {
@@ -247,8 +250,20 @@ class Store {
             alive = /** @type {NodeJS.ErrnoException} */ (probe).code === 'EPERM';
           }
         }
-        if (!alive) await rm(path, {force: true});
-        else await pause(100);
+        if (alive) {
+          await pause(100);
+          continue;
+        }
+        // Break a dead holder's lock by moving it aside under a unique name, and delete only what still names that
+        // holder: a lock another waiter linked in the meantime goes back into place.
+        const aside = `${path}.dead.${process.pid}.${randomBytes(4).toString('hex')}`;
+        try {
+          await rename(path, aside);
+        } catch {
+          continue;
+        }
+        if ((await readFile(aside, 'utf8').catch(() => text)) !== text) await link(aside, path).catch(() => undefined);
+        await rm(aside, {force: true});
       }
     }
     await rm(mine, {force: true});
@@ -456,6 +471,7 @@ const publicService = (/** @type {Service} */ s) => ({id: s.id, repository: s.re
 // start
 
 const RUN_ID = (/** @type {string} */ app) => new RegExp(`^(${app}-\\d{8}T\\d{6}Z-[0-9a-f]{6}): starting `);
+const RUN_ID_FORMAT = (/** @type {string} */ app) => new RegExp(`^${app}-\\d{8}T\\d{6}Z-[0-9a-f]{6}$`);
 
 /** @param {Service & {checkout: string}} service @param {Env} env @param {Progress} progress */
 async function checkAdapter(service, env, progress) {
@@ -588,6 +604,10 @@ export async function start(options, io) {
         await recorded.catch(error => progress(`${id}: could not record ${service.id}'s run id: ${/** @type {Error} */ (error).message}`));
       }
       const {code, result} = started;
+      // A run id names units and paths the orchestrator stops and writes, so only the core's exact form is accepted.
+      if (result.runId !== undefined && !RUN_ID_FORMAT(service.app).test(result.runId)) {
+        throw new ComposeFailure('adapter-unavailable', `${service.id} answered a malformed run id`, service.id, EXIT.unavailable);
+      }
       await store.update(c => {
         const s = serviceOf(c, service.id);
         Object.assign(s, {runId: result.runId ?? s.runId, state: result.state ?? 'failed', url: result.url ?? null, endpoints: result.endpoints ?? null, proofDir: result.proofDir ?? null, expiresAt: result.expiresAt ?? null});
@@ -934,8 +954,9 @@ export async function inject(id, kind, serviceId, step, io) {
       return answer('thawed');
     }
     // second-owner: the consumer's standalone scenario is its own embedded owner.
-    const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.standalone ?? '', ], {env: io.env, progress: io.progress});
+    // Marked first: whatever happens to this reseed, the finally pairs the consumer again.
     reseeded = true;
+    const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.standalone ?? ''], {env: io.env, progress: io.progress});
     if (code !== EXIT.ok) {
       problems.push(`reseeding ${serviceId} to ${target.standalone} failed: ${result.cause ?? result.error ?? code}`);
       return answer('refused');
@@ -988,7 +1009,7 @@ export async function inject(id, kind, serviceId, step, io) {
     const failure = crashed instanceof ComposeFailure ? crashed : new ComposeFailure('adapter-unavailable', String(/** @type {Error} */ (crashed)?.message ?? crashed), hub.id, EXIT.unavailable);
     problems.push(`the Hub capture ended without a result: ${failure.detail}`);
     await record({problems, outcome: 'failed', finishedAt: iso()});
-    return {code: failure.code === EXIT.failed ? EXIT.failed : EXIT.unavailable, value: {operation: 'inject', compositionId: id, kind, service: serviceId, unit, step: chosen, outcome: 'failed', error: failure.failure, detail: failure.detail, frozenAt: injection.frozenAt, thawedAt: injection.thawedAt, thawedBy: injection.thawedBy, problems}};
+    return {code: failure.code === EXIT.failed ? EXIT.failed : EXIT.unavailable, value: {operation: 'inject', compositionId: id, kind, service: serviceId, unit, step: chosen, outcome: 'failed', error: failure.failure, detail: failure.detail, frozenAt: injection.frozenAt, thawedAt: injection.thawedAt, thawedBy: injection.thawedBy, secondOwnerAt: injection.secondOwnerAt, restoredAt: injection.restoredAt, problems}};
   }
   const {code, record: captureRecord} = /** @type {{code: number, record: any}} */ (captured);
   const expected = kind === 'consumer-loss' ? 'frozenAt' : 'secondOwnerAt';

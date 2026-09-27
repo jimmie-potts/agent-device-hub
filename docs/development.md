@@ -1154,7 +1154,9 @@ worktree after `npm run build`:
    `capture <id> integrated-lifecycle`, `capture <id> integrated-command`,
    `capture <id> one-owner`, `inject <id> consumer-loss pixoo`,
    `handoff <id>` and `stop <id>`.
-3. Run the controls after `handoff`:
+3. Run the controls in a separate composition, so they never freeze or
+   reseed the Pixoo of a preview already handed to the owner; otherwise run
+   them after `handoff`:
    - `inject <id> consumer-loss pixoo --step control-replay-after-recovery`
      must hold at "nothing but the loss-time command reached a writer, and
      that at most once";
