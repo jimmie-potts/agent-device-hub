@@ -11,6 +11,10 @@ import {fileURLToPath} from 'node:url';
 
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
+/** The installed services' ports (docs/app-verification.md). A run never uses or targets them. */
+export const INSTALLED_PORTS = Object.freeze([8788, 8765, 8787, 8791, 41230, 41231]);
+export const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
  * The pairing convention the Hub shares with the consumers' `hub-paired`
  * scenarios (codex-nanoleaf#194, divoom-app-upgrade#120). The consumers pin
@@ -31,6 +35,8 @@ export const PAIRING = Object.freeze({
   files: {
     consumer: {feed: 'hub-feed-token', controller: 'hub-controller-token'},
     hub: {feed: (/** @type {string} */ consumer) => `${consumer}-feed-token`, controller: (/** @type {string} */ consumer) => `${consumer}-controller-token`},
+    /** The injection handshake between a Hub capture step and `compose inject`, in the Hub run's runtime directory. */
+    inject: {request: 'compose-inject-request', state: 'compose-inject-state'},
   },
 });
 
@@ -55,6 +61,8 @@ export function loopbackOrigin(value, name) {
     throw new Error(`input ${name} is not a URL`);
   }
   if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port || url.pathname !== '/' || url.username || url.password || url.search || url.hash) throw new Error(`input ${name} must be http://127.0.0.1:<port>/`);
+  // The paired runs are disposable; an installed service's port is never a pairing target.
+  if (INSTALLED_PORTS.includes(Number(url.port))) throw new Error(`input ${name} names installed port ${url.port}; pair only with disposable runs`);
   return url.href;
 }
 

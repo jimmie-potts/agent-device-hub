@@ -24,7 +24,10 @@ snapshot.capabilities = {power: {supported: true}, brightness: {supported: true,
 const pixooIntegration = JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json', 'utf8')).snapshot;
 pixooIntegration.identity = identity;
 const writer = {};
-const feed = {connection: 'unavailable', revision: null, ownerId: null, error: null, receivedAt: 0, titles: []};
+const feed = {connection: 'unavailable', revision: null, ownerId: null, error: null, receivedAt: 0, sessions: []};
+// Standalone, the stand-in Pixoo is its own embedded owner, as the real one is: owner verify-owner, always current, its own session.
+const local = {revision: 1, sessions: [{identity: {provider: 'codex', client: 'cli', hostId: 'verify-host', sourceId: 'verify-source', sessionId: 'stand-in-local'}, title: {value: 'Stand-in local session', source: 'provider'}}]};
+const embedded = scenario.kind === 'pixoo' && !paired;
 
 const send = (res, status, value) => {
   res.writeHead(status, {'content-type': 'application/json'});
@@ -33,9 +36,9 @@ const send = (res, status, value) => {
 const state = () => {
   const connection = !paired ? 'unavailable' : feed.receivedAt && Date.now() - feed.receivedAt <= 4000 ? 'current' : feed.receivedAt ? 'stale' : 'unavailable';
   const view = {connection, revision: feed.revision, ownerId: feed.ownerId, error: feed.error, receivedAt: feed.receivedAt ? Math.floor(feed.receivedAt / 1000) : null};
-  return scenario.kind === 'nanoleaf'
-    ? {apiVersion: 'wall-verify/1', scenario: scenario.name, feed: {source: 'shared', ...view}, integration: {applied: writer['integration.applied'] ?? 0, queued: 0, failed: 0}}
-    : {ownerId: feed.ownerId, connection, snapshot: feed.revision === null ? null : {revision: feed.revision}};
+  if (scenario.kind === 'nanoleaf') return {apiVersion: 'wall-verify/1', scenario: scenario.name, feed: {source: paired ? 'shared' : 'local', ...view}, integration: {applied: writer['integration.applied'] ?? 0, queued: 0, failed: 0}};
+  if (embedded) return {ownerId: 'verify-owner', connection: 'current', snapshot: local};
+  return {ownerId: feed.ownerId, connection, snapshot: feed.revision === null ? null : {revision: feed.revision, sessions: feed.sessions}};
 };
 
 const main = createServer((req, res) => {
@@ -47,17 +50,20 @@ const main = createServer((req, res) => {
     const count = n => ({admitted: n, succeeded: n});
     return send(res, 200, {mode: 'simulator', writer: {probe: count(0), uploadAnimation: count(0), setBrightness: count(writer['brightness.set'] ?? 0), setScreen: count(writer['power.set'] ?? 0)}});
   }
+  // Like Pixoo's monitor ingest: the stand-in holds no monitor credential, so nothing is accepted here.
+  if (path === '/api/monitor/v1/events') return send(res, 401, {error: {code: 'unauthenticated'}});
   if (path === '/') {
     res.writeHead(200, {'content-type': 'text/html'});
-    // Like the Pixoo page's Monitor, the sessions the stand-in last read from the Hub, as headings.
+    // Like the Pixoo page's Monitor: the sessions it last read from the Hub, or its own when embedded, as headings.
     const escape = text => String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
-    return res.end(`<!doctype html><title>Stand-in</title><h1>Stand-in ${scenario.kind} consumer</h1><nav aria-label="Controller views"><button type="button">Monitor</button></nav>${feed.titles.map(title => `<h3>${escape(title)}</h3>`).join('')}`);
+    const titles = (embedded ? local.sessions : feed.sessions).map(s => s.label ?? s.title?.value).filter(Boolean);
+    return res.end(`<!doctype html><title>Stand-in</title><h1>Stand-in ${scenario.kind} consumer</h1><nav aria-label="Controller views"><button type="button">Monitor</button></nav>${titles.map(title => `<h3>${escape(title)}</h3>`).join('')}`);
   }
   send(res, 404, {error: 'not-found'});
 });
 
 const controller = createServer(async (req, res) => {
-  if (req.headers.authorization !== `Bearer ${scenario.controllerToken}`) return send(res, 401, {failure: {code: 'unauthenticated'}});
+  if (!scenario.controllerToken || req.headers.authorization !== `Bearer ${scenario.controllerToken}`) return send(res, 401, {failure: {code: 'unauthenticated'}});
   let body = '';
   for await (const chunk of req) body += chunk;
   const path = new URL(req.url, 'http://127.0.0.1').pathname;
@@ -72,6 +78,7 @@ const controller = createServer(async (req, res) => {
     snapshot.configurationRevision++;
     snapshot.nextRequestId = {...snapshot.nextRequestId, sequence: snapshot.nextRequestId.sequence + 1};
     if (command.command.kind === 'brightness.set') snapshot.state.desired.brightness = {status: 'known', value: command.command.percent};
+    snapshot.state.lastSuccessfulSend = {status: 'known', requestId: structuredClone(command.requestId), clock: snapshot.sampleClock, operationIds: [command.command.kind === 'brightness.set' ? 'brightness' : 'power']};
     return send(res, 200, {...receipt, configurationRevision: snapshot.configurationRevision});
   }
   send(res, 404, {failure: {code: 'invalid-request'}});
@@ -90,7 +97,7 @@ async function poll() {
       feed.error = 'owner-mismatch';
       return;
     }
-    Object.assign(feed, {revision: value.snapshot.revision, ownerId: value.ownerId, error: null, receivedAt: Date.now(), titles: value.snapshot.sessions.map(s => s.label ?? s.title?.value).filter(Boolean)});
+    Object.assign(feed, {revision: value.snapshot.revision, ownerId: value.ownerId, error: null, receivedAt: Date.now(), sessions: value.snapshot.sessions});
   } catch {
     feed.error = 'unreachable';
   }
@@ -99,7 +106,9 @@ async function poll() {
 await new Promise(resolve => main.listen(port, '127.0.0.1', resolve));
 const url = `http://127.0.0.1:${main.address().port}/`;
 let endpoints;
-if (paired && scenario.fault !== 'no-controller') {
+// After pairing the core holds the controller endpoint to its port, so a later standalone reseed still serves it,
+// accepting no credential, as the real consumers do.
+if ((paired && scenario.fault !== 'no-controller') || controllerPort) {
   await new Promise(resolve => controller.listen(controllerPort, '127.0.0.1', resolve));
   endpoints = {controller: scenario.fault === 'installed-endpoint' ? 'http://127.0.0.1:8765/' : `http://127.0.0.1:${controller.address().port}/`};
 }

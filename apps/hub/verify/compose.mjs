@@ -20,13 +20,14 @@
 import {spawn, execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {consumerState} from './consumers.mjs';
-import {PAIRING} from './integrated.mjs';
+import {PAIRING, pause} from './integrated.mjs';
+import {CAPTURE_STEPS, CONTROLS, INJECTIONS} from './integrated-steps.mjs';
 
 const run = promisify(execFile);
 export const HUB_ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '');
@@ -39,7 +40,6 @@ const SERVICE_ID = /^[a-z][a-z0-9-]{0,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const USABLE_MANAGER = ['running', 'degraded', 'starting', 'initializing'];
-const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
 const iso = (ms = Date.now()) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
 class UsageError extends Error {}
@@ -72,7 +72,8 @@ export class ComposeFailure extends Error {
  * @typedef {{id: string, role: 'consumer' | 'owner', app: string, repository: string, revision: string, coreVersion: string, scenario: string, run: string[]}} ServiceSpec
  * @typedef {{manifestVersion: string, services: ServiceSpec[]}} Manifest
  * @typedef {ServiceSpec & {checkout: string, pin: string | null, dirty: boolean, pinned: boolean, runId: string | null, state: string, url: string | null,
- *   endpoints: Record<string, string> | null, proofDir: string | null, expiresAt: string | null, failure: {cause: string, detail: string | null} | null, cleanup: any}} Service
+ *   endpoints: Record<string, string> | null, proofDir: string | null, expiresAt: string | null, failure: {cause: string, detail: string | null} | null, cleanup: any,
+ *   standalone?: string}} Service
  * @typedef {{compositionVersion: string, id: string, state: string, pinned: boolean, startedAt: string, updatedAt: string, restarts?: string, continuity?: string, manifest: unknown, lease: unknown,
  *   services: Service[], readiness: {outcome: string, checks: Check[], at: string} | null, captures: any[], injections: any[], failure: any, cleanup: any, handoff?: unknown, secrets: string}} Composition
  */
@@ -219,17 +220,24 @@ class Store {
   async event(event, fields = {}) {
     await writeFile(join(this.dir, 'events.jsonl'), JSON.stringify({at: iso(), event, ...fields}) + '\n', {flag: 'a', mode: 0o600});
   }
-  /** One writer at a time: an exclusive lock file naming its holder; a dead holder's lock is broken. */
+  /**
+   * One writer at a time: an exclusive lock file naming its holder; a dead holder's lock is broken. The holder's pid
+   * is written first and linked into place, so no reader ever sees a lock without its holder.
+   */
   async lock() {
     const path = join(this.dir, '.composition.lock');
+    const mine = `${path}.${process.pid}.${randomBytes(4).toString('hex')}`;
+    await writeFile(mine, String(process.pid), {mode: 0o600});
     for (let attempt = 0; attempt < 200; attempt++) {
       try {
-        const handle = await open(path, 'wx', 0o600);
-        await handle.writeFile(String(process.pid));
-        await handle.close();
+        await link(mine, path);
+        await rm(mine, {force: true});
         return async () => rm(path, {force: true});
       } catch (error) {
-        if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') throw error;
+        if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') {
+          await rm(mine, {force: true});
+          throw error;
+        }
         const holder = Number(await readFile(path, 'utf8').catch(() => ''));
         let alive = Number.isInteger(holder) && holder > 0;
         if (alive) {
@@ -243,6 +251,7 @@ class Store {
         else await pause(100);
       }
     }
+    await rm(mine, {force: true});
     throw new ComposeFailure('composition-locked', `another operation holds ${this.id}`);
   }
   /**
@@ -534,7 +543,7 @@ export async function start(options, io) {
     ...(previous ? {restarts: previous.id, continuity: previous.services.every(p => services.some(s => s.id === p.id && s.revision === p.revision && !s.dirty && !p.dirty)) ? 'same-candidate' : 'different-candidate'} : {}),
     manifest: {digest, services: manifest.services.map(s => ({id: s.id, revision: s.revision, coreVersion: s.coreVersion, scenario: s.scenario}))},
     lease: {minutes: options.lease ?? null},
-    services: services.map(s => ({id: s.id, role: s.role, repository: s.repository, app: s.app, checkout: s.checkout, run: s.run, pin: s.pin, revision: s.revision, dirty: s.dirty, pinned: s.pinned, coreVersion: helps[s.id].coreVersion, scenario: s.scenario, runId: null, state: 'pending', url: null, endpoints: null, proofDir: null, expiresAt: null, failure: null, cleanup: null})),
+    services: services.map(s => ({id: s.id, role: s.role, repository: s.repository, app: s.app, checkout: s.checkout, run: s.run, pin: s.pin, revision: s.revision, dirty: s.dirty, pinned: s.pinned, coreVersion: helps[s.id].coreVersion, scenario: s.scenario, standalone: helps[s.id].defaultScenario, runId: null, state: 'pending', url: null, endpoints: null, proofDir: null, expiresAt: null, failure: null, cleanup: null})),
     readiness: null,
     captures: [],
     injections: [],
@@ -563,11 +572,18 @@ export async function start(options, io) {
       await store.update(c => void (serviceOf(c, service.id).state = 'starting'), 'service-starting', {service: service.id});
       /** @type {Promise<unknown>} */
       let recorded = Promise.resolve();
-      const {code, result} = await invoke(service, ['start', ...lease], {env, progress, onLine: line => {
-        const match = RUN_ID(service.app).exec(line);
-        if (match) recorded = store.update(c => void (serviceOf(c, service.id).runId = match[1]), 'run-recorded', {service: service.id, runId: match[1]});
-      }});
-      await recorded;
+      /** @type {{code: number, result: any}} */
+      let started;
+      try {
+        started = await invoke(service, ['start', ...lease], {env, progress, onLine: line => {
+          const match = RUN_ID(service.app).exec(line);
+          if (match) recorded = store.update(c => void (serviceOf(c, service.id).runId = match[1]), 'run-recorded', {service: service.id, runId: match[1]});
+        }});
+      } finally {
+        // The run id lands in the record before any cleanup reads it, even when the wrapper failed.
+        await recorded.catch(error => progress(`${id}: could not record ${service.id}'s run id: ${/** @type {Error} */ (error).message}`));
+      }
+      const {code, result} = started;
       await store.update(c => {
         const s = serviceOf(c, service.id);
         Object.assign(s, {runId: result.runId ?? s.runId, state: result.state ?? 'failed', url: result.url ?? null, endpoints: result.endpoints ?? null, proofDir: result.proofDir ?? null, expiresAt: result.expiresAt ?? null});
@@ -576,6 +592,16 @@ export async function start(options, io) {
       }, 'service-started', {service: service.id, runId: result.runId, state: result.state});
       Object.assign(service, {runId: result.runId ?? null, url: result.url ?? null, expiresAt: result.expiresAt ?? null});
       if (code !== EXIT.ok) throw new ComposeFailure('service-start-failed', `${service.id} ${result.cause ?? result.error ?? 'failed'}${result.detail ? `: ${result.detail}` : ''}`, service.id, code === EXIT.unavailable ? EXIT.unavailable : EXIT.failed);
+      // The run's own candidate must be the checkout the pin check saw; a checkout that changed meanwhile is another candidate.
+      if (result.build?.sourceRevision !== service.revision || result.build?.dirty !== service.dirty) {
+        const drift = `${service.id} started ${String(result.build?.sourceRevision).slice(0, 12)}${result.build?.dirty ? ' dirty' : ''}, but the pin check saw ${service.revision.slice(0, 12)}${service.dirty ? ' dirty' : ''}`;
+        if (composition.pinned) throw new ComposeFailure('identity-mismatch', drift, service.id);
+        progress(`${id}: ${drift}; the composition stays unpinned`);
+        await store.update(c => {
+          const s = serviceOf(c, service.id);
+          Object.assign(s, {revision: result.build?.sourceRevision ?? 'unknown', dirty: result.build?.dirty !== false, pinned: false});
+        }, 'identity-drift', {service: service.id});
+      }
     }
     // 2. Pairing credentials: one feed and one controller token per consumer, 0600, only in the runtime directories.
     const hub = owner(composition);
@@ -638,6 +664,23 @@ async function thaw(unit) {
   return (await freezerState(unit)).FreezerState;
 }
 
+/**
+ * Stop a run's unit and lease timers by their exact names, then read back that none is left.
+ * @param {Service} service @returns {Promise<{stopped: boolean, left: string[]}>}
+ */
+async function stopByName(service) {
+  const base = `app-verify-${service.runId}`;
+  const listed = await run('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `${base}-lease*.timer`], {encoding: 'utf8'}).then(r => r.stdout, () => '');
+  const units = [...new Set([`${base}.service`, `${base}-lease.timer`, ...listed.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(`${base}-lease`) && name.endsWith('.timer'))])];
+  for (const unit of units) await run('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
+  const left = [];
+  for (const unit of units) {
+    const state = await freezerState(unit);
+    if (state.LoadState === 'loaded' && state.ActiveState !== 'inactive' && state.ActiveState !== 'failed') left.push(unit);
+  }
+  return {stopped: left.length === 0, left};
+}
+
 /** @param {Store} store @param {Env} env @param {Progress} progress @param {{reason: string}} why */
 async function stopRuns(store, env, progress, {reason}) {
   const composition = await store.read();
@@ -665,9 +708,13 @@ async function stopRuns(store, env, progress, {reason}) {
         s.cleanup = cleanup ?? {result: entry.result};
       }, 'service-stopped', {service: service.id, runId: service.runId, state: result.state, cleanup: entry.result, reason});
     } catch (error) {
+      // The wrapper cannot run: stop the run's exact unit and lease timers by name, as the core would. Its runtime
+      // directory and receipt stay for the adapter's own stop, which a later `stop` of the composition retries.
       const detail = /** @type {ComposeFailure} */ (error).detail ?? /** @type {Error} */ (error).message;
-      results.push({id: service.id, runId: service.runId, result: 'unknown', detail});
-      await store.event('service-stop-failed', {service: service.id, runId: service.runId, detail});
+      const byName = await stopByName(service);
+      const entry = {id: service.id, runId: service.runId, result: byName.stopped ? 'partial' : 'unknown', detail: `${detail}; ${byName.stopped ? 'stopped its unit and lease timers by name, and left its runtime directory and receipt for its own stop' : `could not stop ${byName.left.join(', ')}`}`};
+      results.push(entry);
+      await store.update(c => void (serviceOf(c, service.id).cleanup = {result: entry.result, detail: entry.detail}), 'service-stop-failed', {service: service.id, runId: service.runId, detail: entry.detail, cleanup: entry.result, reason});
     }
   }
   const result = results.some(r => r.result === 'unknown') ? 'unknown' : results.some(r => r.result === 'partial') ? 'partial' : 'clean';
@@ -677,8 +724,10 @@ async function stopRuns(store, env, progress, {reason}) {
 /** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
 export async function stop(id, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
-  if (['stopped'].includes(composition.state) && composition.cleanup) {
-    return {code: composition.cleanup.result === 'clean' ? EXIT.ok : EXIT.failed, value: {operation: 'stop', compositionId: id, state: composition.state, cleanup: composition.cleanup, repeated: true}};
+  // Only a clean stop is final. After a partial or unknown one, every run is stopped again: each adapter's stop is
+  // idempotent and reports its final state, and one whose wrapper could not run gets its turn.
+  if (composition.state === 'stopped' && composition.cleanup?.result === 'clean') {
+    return {code: EXIT.ok, value: {operation: 'stop', compositionId: id, state: composition.state, cleanup: composition.cleanup, repeated: true}};
   }
   const cleanup = await stopRuns(store, io.env, io.progress, {reason: 'stop'});
   const value = await store.update(c => {
@@ -745,10 +794,13 @@ async function captureStep(store, env, progress, hub, step) {
 
 /** @param {string | undefined} id @param {string} step @param {Io} io @returns {Promise<Outcome>} */
 export async function capture(id, step, io) {
+  // Only the integrated steps: any other Hub step is pinned to a fixture scenario and would reseed the owner out of
+  // `integrated` under the paired consumers, and the injection steps need `inject`.
+  if (!CAPTURE_STEPS.includes(step)) throw new UsageError(`capture runs only ${CAPTURE_STEPS.join(', ')}; the loss and second-owner steps run through inject`);
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
   const {code, record, result} = await captureStep(store, io.env, io.progress, owner(composition), step);
-  return {code, value: {operation: 'capture', compositionId: id, ...record, screenshot: result.screenshot ?? null, video: result.video ?? null, log: result.log ?? null}};
+  return {code: code === EXIT.unavailable ? code : verdict(step, record).ok ? EXIT.ok : EXIT.failed, value: {operation: 'capture', compositionId: id, ...record, screenshot: result.screenshot ?? null, video: result.video ?? null, log: result.log ?? null}};
 }
 
 /** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
@@ -787,20 +839,42 @@ export async function extend(id, leaseMinutes, io) {
 }
 
 // ---------------------------------------------------------------------------
-// inject: one consumer's loss and recovery, driven by a Hub capture step.
+// inject: a consumer's loss and recovery, or a second owner, driven by a Hub capture step.
 //
 // The step and the orchestrator share two small files in the Hub run's runtime
-// directory. The step asks for `freeze` or `thaw` in compose-inject-request;
-// the orchestrator applies it to the recorded unit of the service named on the
-// command line, reads the unit's FreezerState back, and answers in
-// compose-inject-state. The step never names a unit, and the orchestrator
-// always thaws when the step ends.
+// directory (PAIRING.files.inject). The step asks for a phase in the request
+// file; the orchestrator applies it to the recorded run of the service named on
+// the command line and answers in the state file:
+// - consumer-loss: `freeze` and `thaw` of the recorded unit, read back through
+//   its FreezerState;
+// - second-owner: `second-owner` reseeds the consumer to its standalone
+//   scenario, its own embedded owner.
+// The step never names a unit or a scenario. Whatever happens to the step, the
+// orchestrator thaws the unit or reseeds the consumer back to its paired
+// scenario, removes the files, records the injection and prints one result line.
 
-export const INJECT_FILES = {request: 'compose-inject-request', state: 'compose-inject-state'};
+/** @type {Record<string, Record<string, string[]>>} */
+const INJECTION_STEPS = INJECTIONS;
 
-/** @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string} step @param {Io} io @returns {Promise<Outcome>} */
+/**
+ * The verdict on a capture: a reference step must pass; a control must fail at its named assertion.
+ * @param {string} step @param {{outcome: string | null, reason: string | null}} record
+ */
+export function verdict(step, record) {
+  const expected = /** @type {Record<string, string>} */ (CONTROLS)[step];
+  if (expected === undefined) return {ok: record.outcome === 'passed'};
+  const held = record.outcome === 'failed' && typeof record.reason === 'string' && record.reason.startsWith(`assertion failed: ${expected}`);
+  return {ok: held, control: {expected, held}};
+}
+
+/** @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string | undefined} step @param {Io} io @returns {Promise<Outcome>} */
 export async function inject(id, kind, serviceId, step, io) {
-  if (kind !== 'consumer-loss') throw new UsageError('inject supports consumer-loss');
+  const kinds = INJECTION_STEPS[kind];
+  if (!kinds) throw new UsageError(`inject supports ${Object.keys(INJECTION_STEPS).join(' and ')}`);
+  const steps = kinds[serviceId];
+  if (!steps) throw new UsageError(`${kind} has no step for ${serviceId}; it supports ${Object.keys(kinds).join(', ')}`);
+  const chosen = step ?? steps[0] ?? '';
+  if (!steps.includes(chosen)) throw new UsageError(`${kind} ${serviceId} runs only ${steps.join(' or ')}`);
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
   const target = serviceOf(composition, serviceId);
@@ -810,7 +884,7 @@ export async function inject(id, kind, serviceId, step, io) {
   const before = await freezerState(unit);
   if (before.ActiveState !== 'active' || before.FreezerState !== 'running') throw new ComposeFailure('run-not-running', `${unit} is ${before.ActiveState ?? 'unknown'}/${before.FreezerState ?? 'unknown'}`, serviceId);
   const directory = runtimeDir(io.env, hub);
-  const requestFile = join(directory, INJECT_FILES.request), stateFile = join(directory, INJECT_FILES.state);
+  const requestFile = join(directory, PAIRING.files.inject.request), stateFile = join(directory, PAIRING.files.inject.state);
   await rm(requestFile, {force: true});
   await rm(stateFile, {force: true});
   const answer = async (/** @type {string} */ phase) => {
@@ -820,14 +894,51 @@ export async function inject(id, kind, serviceId, step, io) {
   };
   await answer('armed');
   /** @type {Record<string, unknown>} */
-  const injection = {kind, service: serviceId, unit, step, startedAt: iso(), frozenAt: null, thawedAt: null, thawedBy: null, capture: null, outcome: null};
-  await store.update(c => void c.injections.push({...injection}), 'inject-armed', {service: serviceId, unit, step});
+  const injection = {kind, service: serviceId, unit, step: chosen, startedAt: iso(), frozenAt: null, thawedAt: null, thawedBy: null, secondOwnerAt: null, restoredAt: null, capture: null, outcome: null};
+  await store.update(c => void c.injections.push({...injection}), 'inject-armed', {kind, service: serviceId, unit, step: chosen});
   const record = async (/** @type {Record<string, unknown>} */ fields) => {
     Object.assign(injection, fields);
     await store.update(c => void Object.assign(c.injections.at(-1), fields), 'inject-progress', fields);
   };
+  /** @type {string[]} */
   const problems = [];
-  let handled = 0;
+  let handled = 0, reseeded = false;
+  /** Apply one requested phase to the recorded run. @param {{phase?: unknown, service?: unknown}} request */
+  const apply = async request => {
+    const allowed = kind === 'consumer-loss' ? ['freeze', 'thaw'] : ['second-owner'];
+    if (request.service !== serviceId || !allowed.includes(String(request.phase))) {
+      problems.push(`the step asked for ${request.phase} on ${request.service}; this ${kind} injection targets ${serviceId}`);
+      return answer('refused');
+    }
+    if (request.phase === 'freeze') {
+      await run('systemctl', ['--user', 'freeze', unit]).catch(() => undefined);
+      const state = (await freezerState(unit)).FreezerState;
+      if (state !== 'frozen') {
+        problems.push(`freeze left ${unit} ${state}`);
+        return answer('refused');
+      }
+      await record({frozenAt: iso()});
+      return answer('frozen');
+    }
+    if (request.phase === 'thaw') {
+      const state = await thaw(unit);
+      if (state !== 'running') {
+        problems.push(`thaw left ${unit} ${state}`);
+        return answer('refused');
+      }
+      await record({thawedAt: iso(), thawedBy: 'step'});
+      return answer('thawed');
+    }
+    // second-owner: the consumer's standalone scenario is its own embedded owner.
+    const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.standalone ?? '', ], {env: io.env, progress: io.progress});
+    reseeded = true;
+    if (code !== EXIT.ok) {
+      problems.push(`reseeding ${serviceId} to ${target.standalone} failed: ${result.cause ?? result.error ?? code}`);
+      return answer('refused');
+    }
+    await record({secondOwnerAt: iso()});
+    return answer('second-owner');
+  };
   const watch = async () => {
     const text = await readFile(requestFile, 'utf8').catch(() => undefined);
     if (!text) return;
@@ -839,60 +950,58 @@ export async function inject(id, kind, serviceId, step, io) {
     }
     if (!Number.isInteger(request.seq) || request.seq <= handled) return;
     handled = request.seq;
-    if (request.service !== serviceId || !['freeze', 'thaw'].includes(request.phase)) {
-      problems.push(`the step asked to ${request.phase} ${request.service}; this injection targets ${serviceId}`);
-      await answer('refused');
-      return;
-    }
-    if (request.phase === 'freeze') {
-      await run('systemctl', ['--user', 'freeze', unit]).catch(() => undefined);
-      const state = (await freezerState(unit)).FreezerState;
-      if (state !== 'frozen') {
-        problems.push(`freeze left ${unit} ${state}`);
-        await answer('refused');
-        return;
-      }
-      await record({frozenAt: iso()});
-      await answer('frozen');
-    } else {
-      const state = await thaw(unit);
-      if (state !== 'running') {
-        problems.push(`thaw left ${unit} ${state}`);
-        await answer('refused');
-        return;
-      }
-      await record({thawedAt: iso(), thawedBy: 'step'});
-      await answer('thawed');
-    }
+    await apply(request);
   };
+  /** @type {{code: number, record: any} | undefined} */
+  let captured;
+  /** @type {unknown} */
+  let crashed;
   let finished = false;
-  const captured = captureStep(store, io.env, io.progress, hub, step).finally(() => (finished = true));
-  while (!finished) {
-    await watch().catch(error => problems.push(/** @type {Error} */ (error).message));
-    await pause(100);
+  // Settled at once, so a wrapper that dies mid-step is a result here, never an unhandled rejection.
+  const capturing = captureStep(store, io.env, io.progress, hub, chosen).then(value => void (captured = value), error => void (crashed = error)).finally(() => (finished = true));
+  try {
+    while (!finished) {
+      await watch().catch(error => problems.push(/** @type {Error} */ (error).message));
+      await pause(100);
+    }
+    await capturing;
+  } finally {
+    // Always leave the consumer as the composition paired it.
+    if ((await freezerState(unit)).FreezerState !== 'running') {
+      const state = await thaw(unit);
+      await record({thawedAt: iso(), thawedBy: 'orchestrator'});
+      if (state !== 'running') problems.push(`the final thaw left ${unit} ${state}`);
+    }
+    if (reseeded) {
+      const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.scenario], {env: io.env, progress: io.progress}).catch(error => ({code: EXIT.failed, result: {error: /** @type {ComposeFailure} */ (error).failure ?? 'adapter-unavailable'}}));
+      if (code === EXIT.ok) await record({restoredAt: iso()});
+      else problems.push(`restoring ${serviceId} to ${target.scenario} failed: ${result.cause ?? result.error ?? code}`);
+    }
+    await rm(requestFile, {force: true});
+    await rm(stateFile, {force: true});
   }
-  const {code, record: captureRecord} = await captured;
-  // Always leave the consumer running.
-  if ((await freezerState(unit)).FreezerState !== 'running') {
-    const state = await thaw(unit);
-    await record({thawedAt: iso(), thawedBy: 'orchestrator'});
-    if (state !== 'running') problems.push(`the final thaw left ${unit} ${state}`);
+  if (crashed !== undefined) {
+    const failure = crashed instanceof ComposeFailure ? crashed : new ComposeFailure('adapter-unavailable', String(/** @type {Error} */ (crashed)?.message ?? crashed), hub.id, EXIT.unavailable);
+    problems.push(`the Hub capture ended without a result: ${failure.detail}`);
+    await record({problems, outcome: 'failed', finishedAt: iso()});
+    return {code: failure.code === EXIT.failed ? EXIT.failed : EXIT.unavailable, value: {operation: 'inject', compositionId: id, kind, service: serviceId, unit, step: chosen, outcome: 'failed', error: failure.failure, detail: failure.detail, frozenAt: injection.frozenAt, thawedAt: injection.thawedAt, thawedBy: injection.thawedBy, problems}};
   }
-  await rm(requestFile, {force: true});
-  await rm(stateFile, {force: true});
-  if (!injection.frozenAt) problems.push('the step never asked for the freeze');
-  // After recovery the composition must be ready again: feeds current and both devices read.
+  const {code, record: captureRecord} = /** @type {{code: number, record: any}} */ (captured);
+  const expected = kind === 'consumer-loss' ? 'frozenAt' : 'secondOwnerAt';
+  if (!injection[expected]) problems.push(`the step never asked for the ${kind === 'consumer-loss' ? 'freeze' : 'second owner'}`);
+  // After the step the composition must be ready again: feeds current and both devices read.
   /** @type {Check[]} */
   let checks = [];
   try {
-    checks = await awaitReady(io.env, composition, io.progress, 30000);
+    checks = await awaitReady(io.env, composition, io.progress, 60000);
   } catch (error) {
     checks = /** @type {ComposeFailure} */ (error).checks ?? [];
     problems.push(/** @type {ComposeFailure} */ (error).detail ?? /** @type {Error} */ (error).message);
   }
-  const passed = code === EXIT.ok && captureRecord.outcome === 'passed' && problems.length === 0;
-  await record({capture: {n: captureRecord.n, outcome: captureRecord.outcome, reason: captureRecord.reason, captureDir: captureRecord.captureDir}, recovery: checks, problems, outcome: passed ? 'passed' : 'failed', finishedAt: iso()});
-  return {code: passed ? EXIT.ok : EXIT.failed, value: {operation: 'inject', compositionId: id, kind, service: serviceId, unit, step, outcome: passed ? 'passed' : 'failed', frozenAt: injection.frozenAt, thawedAt: injection.thawedAt, thawedBy: injection.thawedBy, capture: injection.capture, recovery: checks, problems}};
+  const judged = verdict(chosen, captureRecord);
+  const passed = judged.ok && problems.length === 0 && (code === EXIT.ok || judged.control !== undefined);
+  await record({capture: {n: captureRecord.n, outcome: captureRecord.outcome, reason: captureRecord.reason, captureDir: captureRecord.captureDir}, ...(judged.control ? {control: judged.control} : {}), recovery: checks, problems, outcome: passed ? 'passed' : 'failed', finishedAt: iso()});
+  return {code: passed ? EXIT.ok : EXIT.failed, value: {operation: 'inject', compositionId: id, kind, service: serviceId, unit, step: chosen, outcome: passed ? 'passed' : 'failed', ...(judged.control ? {control: judged.control} : {}), frozenAt: injection.frozenAt, thawedAt: injection.thawedAt, thawedBy: injection.thawedBy, secondOwnerAt: injection.secondOwnerAt, restoredAt: injection.restoredAt, capture: injection.capture, recovery: checks, problems}};
 }
 
 // ---------------------------------------------------------------------------
@@ -903,7 +1012,7 @@ const OPERATIONS = [
   'start --checkout <service>=<absolute path>... [--lease <minutes>] [--unpinned] [--restarts <composition-id>] [--manifest <path>]',
   'doctor [<composition-id>]',
   'capture <composition-id> <step>',
-  'inject <composition-id> consumer-loss <service> [--step <step>]',
+  'inject <composition-id> consumer-loss|second-owner <service> [--step <step>]',
   'handoff <composition-id>',
   'extend <composition-id> [--lease <minutes>]',
   'stop <composition-id>',
@@ -997,7 +1106,7 @@ export async function runCompose(argv, options = {}) {
         break;
       case 'inject':
         arity(positional, 3, operation);
-        outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'] ?? `${positional[2]}-loss`, io);
+        outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'], io);
         break;
       case 'handoff':
         arity(positional, 1, operation);

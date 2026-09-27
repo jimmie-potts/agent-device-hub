@@ -34,10 +34,13 @@ async function standIn(base, name, {kind, app, fault}) {
   const checkout = join(base, name);
   await mkdir(join(checkout, 'scripts'), {recursive: true});
   await writeFile(join(checkout, 'served.txt'), `stand-in ${kind}\n`);
+  // `dirty-at-start` is a wrapper fault: the checkout changes after the orchestrator's pin check, as `start` begins.
+  const pluginFault = fault === 'dirty-at-start' ? undefined : fault;
   await writeFile(join(checkout, 'scripts/verify.mjs'), [
     `import {runCli} from ${JSON.stringify(join(root, 'packages/app-verify/dist/index.js'))};`,
     `import {createPlugin} from ${JSON.stringify(join(root, 'apps/hub/verify/tests/fixture-consumer.mjs'))};`,
-    `process.exitCode = await runCli(createPlugin(${JSON.stringify({root: checkout, kind, app, ...(fault ? {fault} : {})})}), process.argv.slice(2));`,
+    ...(fault === 'dirty-at-start' ? [`if (process.argv[2] === 'start') (await import('node:fs')).writeFileSync(${JSON.stringify(join(checkout, 'served.txt'))}, 'changed during start\\n');`] : []),
+    `process.exitCode = await runCli(createPlugin(${JSON.stringify({root: checkout, kind, app, ...(pluginFault ? {fault: pluginFault} : {})})}), process.argv.slice(2));`,
   ].join('\n') + '\n');
   const git = (...args) => execFileSync('git', ['-C', checkout, ...args], {encoding: 'utf8'});
   git('init', '-q');
@@ -47,7 +50,7 @@ async function standIn(base, name, {kind, app, fault}) {
 }
 
 /** A test world: private roots, stand-in checkouts, a manifest and the compose CLI. */
-async function world({faults = {}} = {}) {
+async function world({faults = {}, hubRun = [process.execPath, 'scripts/verify.mjs']} = {}) {
   const base = await realpath(await mkdtemp(join(shortTmp(), 'hc-')));
   const tag = `c${Math.random().toString(16).slice(2, 7)}`;
   const env = {...process.env, APP_VERIFY_STATE_ROOT: join(base, 's'), APP_VERIFY_PROOF_ROOT: join(base, 'p'), APP_VERIFY_WINDOWS_CHECK: 'off'};
@@ -58,7 +61,7 @@ async function world({faults = {}} = {}) {
   const writeManifest = pins => writeFile(manifest, JSON.stringify({manifestVersion: 'hub-compose/1', services: [
     service('nanoleaf', `${tag}-nl`, pins?.nanoleaf ?? nanoleaf.revision),
     service('pixoo', `${tag}-px`, pins?.pixoo ?? pixoo.revision),
-    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: '1.1.0', scenario: 'integrated', run: [process.execPath, 'scripts/verify.mjs']},
+    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: '1.1.0', scenario: 'integrated', run: hubRun},
   ]}));
   await writeManifest();
   const outputs = [];
@@ -96,6 +99,17 @@ async function world({faults = {}} = {}) {
     assert.equal(left, '', 'no stand-in unit is left');
   }
   return {base, tag, env, nanoleaf, pixoo, manifest, writeManifest, run, start, composition, events, units, outputs, close};
+}
+
+/** Every file under a directory, recursively. */
+async function files(directory) {
+  const found = [];
+  for (const entry of existsSync(directory) ? await readdir(directory, {withFileTypes: true}) : []) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...await files(path));
+    else found.push(path);
+  }
+  return found;
 }
 
 /** Tokens written for pairing, from each run's runtime directory. */
@@ -181,7 +195,21 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     const listed = await w.run('doctor');
     assert.deepEqual(listed.result.compositions.map(x => [x.compositionId, x.state]), [[id, 'running']]);
 
-    // Consumer loss and recovery through the Hub's real controller client, then the replay control.
+    // Only integrated steps: a fixture step would reseed the owner out of integrated, so it is refused before anything runs.
+    const fixtureStep = await w.run('capture', id, 'task-appears');
+    assert.equal(fixtureStep.code, 2);
+    assert.equal(fixtureStep.result.error, 'usage');
+    assert.equal((await w.run('inject', id, 'consumer-loss', 'pixoo', '--step', 'integrated-command')).code, 2, 'inject runs only its own steps');
+    assert.equal((await w.run('inject', id, 'consumer-loss', 'nanoleaf')).code, 2, 'there is no wall loss step');
+    assert.equal((await w.run('capture', id, 'pixoo-loss')).code, 2, 'a loss step needs inject');
+    assert.equal(JSON.parse(await readFile(join(w.base, 'p', hubRun.runId, 'receipt.json'), 'utf8')).scenario.name, 'integrated', 'the owner stays integrated');
+    assert.deepEqual((await w.composition(id)).captures, [], 'nothing was captured');
+
+    // One owner: a direct event is not accepted, and the Pixoo mirrors exactly the Hub's sessions.
+    const one = await w.run('capture', id, 'one-owner');
+    assert.equal(one.code, 0, JSON.stringify(one.result));
+
+    // Consumer loss and recovery through the Hub's real controller client.
     const loss = await w.run('inject', id, 'consumer-loss', 'pixoo');
     assert.equal(loss.code, 0, JSON.stringify(loss.result));
     assert.equal(loss.result.outcome, 'passed');
@@ -189,13 +217,20 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     const attachment = JSON.parse(await readFile(join(loss.result.capture.captureDir, 'loss-command.json'), 'utf8'));
     assert.ok([0, 1].includes(attachment.deliveredAtWriter));
     assert.equal(attachment.hubOutcome, 'uncertain-result');
+    assert.deepEqual(attachment.writerChanges.filter(d => d.key !== 'brightness.set' && !d.key.startsWith('setBrightness')), []);
+    // Controls hold when they fail at their named assertion: a replay right after the thaw, and a second owner.
     const replay = await w.run('inject', id, 'consumer-loss', 'pixoo', '--step', 'control-replay-after-recovery');
-    assert.equal(replay.code, 1, 'the replay control must fail');
-    assert.match(replay.result.capture.reason, /^assertion failed: recovery replayed nothing/);
+    assert.equal(replay.code, 0, `the replay control holds: ${JSON.stringify(replay.result)}`);
+    assert.deepEqual(replay.result.control, {expected: 'nothing but the loss-time command reached a writer, and that at most once', held: true});
+    assert.equal(replay.result.capture.outcome, 'failed');
+    assert.match(replay.result.capture.reason, /^assertion failed: nothing but the loss-time command reached a writer, and that at most once: .*(not the loss-time request|2 brightness commands)/);
     assert.equal(spawnSync('systemctl', ['--user', 'show', `app-verify-${c.services[1].runId}.service`, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim(), 'running', 'the orchestrator always thaws');
-    const owner = await w.run('capture', id, 'control-second-owner');
-    assert.equal(owner.code, 1, 'the second-owner control must fail');
-    assert.match(owner.result.reason, /^assertion failed: the Pixoo Monitor lists a session the Hub never saw/);
+    const owner = await w.run('inject', id, 'second-owner', 'pixoo');
+    assert.equal(owner.code, 0, `the second-owner control holds: ${JSON.stringify(owner.result)}`);
+    assert.deepEqual(owner.result.control, {expected: 'the Pixoo reads its sessions only from the Hub: current at the owner\'s revision, with exactly the Hub\'s sessions', held: true});
+    assert.ok(owner.result.secondOwnerAt && owner.result.restoredAt, 'the Pixoo became its own owner and was paired again');
+    assert.deepEqual(owner.result.recovery.filter(k => k.outcome !== 'passed'), [], 'the composition is ready again');
+    assert.equal((await w.run('capture', id, 'one-owner')).code, 0, 'one owner again after the control');
 
     // Extend and handoff apply to all three runs.
     const before = (await w.composition(id)).services.map(s => s.expiresAt);
@@ -208,12 +243,14 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     assert.equal(handed.code, 0, JSON.stringify(handed.result));
     assert.equal(handed.result.services.filter(s => s.frozenAt).length, 3);
 
-    // No pairing credential appears in any output or composition record.
-    const record = await readFile(join(w.base, 'p', id, 'composition.json'), 'utf8') + await readFile(join(w.base, 'p', id, 'events.jsonl'), 'utf8');
-    for (const secret of [...tokens, token]) {
-      assert.equal(record.includes(secret), false, 'no credential in the composition record');
-      assert.equal(w.outputs.some(o => o.includes(secret)), false, 'no credential in any output');
+    // No pairing credential appears in any output, the composition record or any proof file of the three runs.
+    const proof = await files(join(w.base, 'p'));
+    assert.ok(proof.some(file => file.endsWith('loss-command.json')) && proof.some(file => file.endsWith('composition.json')));
+    for (const file of proof) {
+      const content = await readFile(file);
+      for (const secret of [...tokens, token]) assert.equal(content.includes(secret), false, `no credential in ${file}`);
     }
+    for (const secret of [...tokens, token]) assert.equal(w.outputs.some(o => o.includes(secret)), false, 'no credential in any output');
 
     // A unit left frozen, as by an interrupted injection, shows in doctor, and stop thaws it before stopping.
     const pixooUnit = `app-verify-${c.services[1].runId}.service`;
@@ -312,15 +349,24 @@ test('a crashed consumer fails doctor, and stop continues past a service it cann
     const failing = doctor.result.checks.filter(k => k.outcome !== 'passed').map(k => k.id);
     for (const check of ['hub-reads-pixoo', 'pixoo-feed-current', 'pixoo-run']) assert.ok(failing.includes(check), `${check} fails: ${failing}`);
     assert.ok(!failing.includes('nanoleaf-run') && !failing.includes('nanoleaf-feed-current'), 'the healthy consumer stays healthy');
-    // The wall's wrapper disappears: stop still stops the others and names what it could not.
+    // The wall's wrapper disappears: stop still stops the others, stops the wall's unit and timers by name, and
+    // says its runtime directory is left for the wall's own stop.
     await rm(join(w.nanoleaf.checkout, 'scripts/verify.mjs'));
     const stopped = await w.run('stop', id);
     assert.equal(stopped.code, 1);
     const byId = Object.fromEntries(stopped.result.cleanup.services.map(s => [s.id, s.result]));
     assert.equal(byId.hub, 'clean');
     assert.ok(['clean', 'partial'].includes(byId.pixoo), `pixoo ${byId.pixoo}`);
-    assert.equal(byId.nanoleaf, 'unknown');
-    spawnSync('systemctl', ['--user', 'stop', `app-verify-${c.services[0].runId}.service`, `app-verify-${c.services[0].runId}-lease.timer`]);
+    assert.equal(byId.nanoleaf, 'partial');
+    assert.equal(spawnSync('systemctl', ['--user', 'is-active', `app-verify-${c.services[0].runId}.service`], {encoding: 'utf8'}).stdout.trim(), 'inactive', 'the wall unit was stopped by name');
+    assert.equal(existsSync(join(w.base, 's', c.services[0].runId)), true, 'its runtime directory waits for its own stop');
+    // Once the wrapper is back, stopping again finishes the cleanup instead of repeating the recorded result.
+    w.nanoleaf.git('checkout', '--', 'scripts/verify.mjs');
+    const again = await w.run('stop', id);
+    assert.equal(again.code, 0, JSON.stringify(again.result));
+    assert.notEqual(again.result.repeated, true);
+    assert.equal(Object.fromEntries(again.result.cleanup.services.map(s => [s.id, s.result])).nanoleaf, 'clean');
+    assert.equal(existsSync(join(w.base, 's', c.services[0].runId)), false);
   } finally {
     await w.close();
   }
@@ -373,11 +419,56 @@ test('the Hub cannot start directly in integrated: its pairing credentials exist
     assert.equal(result.cause, 'seed-failed');
     assert.match(result.detail, /pairing credential nanoleaf-feed-token is missing; write the pairing files before reseeding integrated/);
     assert.equal(result.cleanup.result, 'clean');
+    const installed = spawnSync(process.execPath, [join(root, 'scripts/verify.mjs'), 'start', '--scenario', 'integrated', '--lease', '5', ...['nanoleaf-controller', 'nanoleaf-preview', 'pixoo-controller', 'pixoo-preview'].flatMap(name => ['--input', `${name}=${name === 'nanoleaf-controller' ? 'http://127.0.0.1:8765/' : url}`])], {cwd: root, env, encoding: 'utf8'});
+    const refused = JSON.parse(installed.stdout.trim());
+    for (const unit of [`app-verify-${refused.runId}.service`, `app-verify-${refused.runId}-lease.timer`]) spawnSync('systemctl', ['--user', 'stop', unit]);
+    assert.equal(refused.cause, 'seed-failed');
+    assert.match(refused.detail, /input nanoleaf-controller names installed port 8765/);
     const missing = spawnSync(process.execPath, [join(root, 'scripts/verify.mjs'), 'start', '--scenario', 'integrated'], {cwd: root, env, encoding: 'utf8'});
     assert.equal(missing.status, 2, 'the scenario requires the paired runs\' URLs');
     assert.match(JSON.parse(missing.stdout.trim()).detail, /scenario integrated requires input nanoleaf-controller/);
   } finally {
     if (runId) for (const unit of [`app-verify-${runId}.service`, `app-verify-${runId}-lease.timer`]) spawnSync('systemctl', ['--user', 'stop', unit]);
     await rm(base, {recursive: true, force: true});
+  }
+});
+
+test('a Hub capture that dies mid-freeze still thaws the consumer, clears the handshake and prints a result', {skip, timeout: 300000}, async () => {
+  const shim = fileURLToPath(new URL('fixture-crash-capture.mjs', import.meta.url));
+  const w = await world({hubRun: [process.execPath, shim]});
+  try {
+    const started = await w.start();
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const c = await w.composition(id);
+    const loss = await w.run('inject', id, 'consumer-loss', 'pixoo');
+    assert.equal(loss.code, 3, JSON.stringify(loss.result));
+    assert.equal(loss.result.outcome, 'failed');
+    assert.equal(loss.result.error, 'adapter-unavailable');
+    assert.ok(loss.result.frozenAt && loss.result.thawedBy === 'orchestrator', 'the orchestrator thawed what the dead step froze');
+    assert.equal(spawnSync('systemctl', ['--user', 'show', `app-verify-${c.services[1].runId}.service`, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim(), 'running');
+    const hubDir = join(w.base, 's', c.services[2].runId);
+    assert.deepEqual((await readdir(hubDir)).filter(name => name.startsWith('compose-inject')), [], 'no handshake file is left');
+    const injection = (await w.composition(id)).injections.at(-1);
+    assert.equal(injection.outcome, 'failed');
+    assert.match(injection.problems.join(' '), /the Hub capture ended without a result/);
+    assert.equal((await w.run('stop', id)).code, 0);
+  } finally {
+    await w.close();
+  }
+});
+
+test('a checkout that changes after the pin check is another candidate, and the pinned start stops', {skip: skip ?? (hubClean() ? undefined : 'the Hub checkout has tracked changes, so no start here is pinned'), timeout: 240000}, async () => {
+  const w = await world({faults: {pixoo: 'dirty-at-start'}});
+  try {
+    const result = await w.start();
+    assert.equal(result.code, 1, JSON.stringify(result.result));
+    assert.equal(result.result.cause, 'identity-mismatch');
+    assert.equal(result.result.service, 'pixoo');
+    assert.match(result.result.detail, /pixoo started [0-9a-f]{12} dirty, but the pin check saw [0-9a-f]{12}$/);
+    assert.deepEqual(result.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'none'], ['pixoo', 'clean'], ['nanoleaf', 'clean']]);
+    assert.equal(w.units(), '');
+  } finally {
+    await w.close();
   }
 });

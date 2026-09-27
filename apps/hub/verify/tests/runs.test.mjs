@@ -117,7 +117,7 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     const help = await r.verify('help');
     assert.equal(help.code, 0);
     assert.deepEqual(Object.keys(help.result.scenarios).sort(), ['control-installed-links', 'control-startup-fails', 'integrated', 'lifecycle-basic', 'pixel-offline']);
-    assert.deepEqual(Object.keys(help.result.steps).sort(), ['command-reaches-fake', 'control-installed-links', 'control-missing-session', 'control-replay-after-recovery', 'control-second-owner', 'integrated-command', 'integrated-lifecycle', 'offline-recovers', 'pixoo-loss', 'task-appears', 'uncertain-no-replay']);
+    assert.deepEqual(Object.keys(help.result.steps).sort(), ['command-reaches-fake', 'control-installed-links', 'control-missing-session', 'control-replay-after-recovery', 'control-second-owner', 'integrated-command', 'integrated-lifecycle', 'offline-recovers', 'one-owner', 'pixoo-loss', 'task-appears', 'uncertain-no-replay']);
     // Hub #495: the integrated scenario needs the paired runs' four loopback URLs, and no input is required elsewhere.
     assert.deepEqual(help.result.scenarioInputs, {integrated: ['nanoleaf-controller', 'pixoo-controller', 'nanoleaf-preview', 'pixoo-preview']});
     assert.ok(Object.values(help.result.inputs).every(input => input.required === false));

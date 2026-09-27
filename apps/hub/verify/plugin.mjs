@@ -9,16 +9,13 @@ import {readFile, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin} from '@jimmie-potts/app-verify';
-import {INPUTS, REQUIRED, launchIntegrated, seedIntegrated} from './integrated.mjs';
+import {INPUTS, INSTALLED_PORTS, REQUIRED, launchIntegrated, pause, seedIntegrated} from './integrated.mjs';
 import {integratedSteps} from './integrated-steps.mjs';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const serve = fileURLToPath(new URL('serve.mjs', import.meta.url));
 const version = JSON.parse(await readFile(join(root, 'apps/hub/package.json'), 'utf8')).version;
-/** The installed services' ports (docs/app-verification.md); a run never uses them. */
-const INSTALLED_PORTS = [8788, 8765, 8787, 8791, 41230, 41231];
 const SIGNED_IN = 'Control enabled · Local';
-const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** @param {string} dataDir */
 const apiToken = async dataDir => (await readFile(join(dataDir, 'api-token'), 'utf8')).trim();

@@ -7,11 +7,18 @@
 /**
  * @typedef {{
  *   format: string,
- *   feed: {connection: 'current' | 'stale' | 'unavailable', revision: number | null, ownerId: string | null, error: string | null},
+ *   feed: {connection: 'current' | 'stale' | 'unavailable', revision: number | null, ownerId: string | null, error: string | null,
+ *     source: string | null, sessions: string[] | null},
  *   writer: Record<string, number>,
  *   raw: unknown,
  * }} ConsumerState
  */
+
+/**
+ * A session's identity as one comparable key. The Hub and every consumer name a session by the same five fields.
+ * @param {{provider: string, client: string, hostId: string, sourceId: string, sessionId: string}} identity
+ */
+export const sessionKey = identity => JSON.stringify([identity.provider, identity.client, identity.hostId, identity.sourceId, identity.sessionId]);
 
 /** @param {string} preview @param {string} route @param {AbortSignal} signal */
 async function json(preview, route, signal) {
@@ -31,7 +38,8 @@ export const CONSUMER_STATE = {
     if (value?.apiVersion !== 'wall-verify/1' || typeof value.feed !== 'object' || typeof value.integration !== 'object') throw new Error('the wall state route answered an unknown shape');
     return {
       format: value.apiVersion,
-      feed: {connection: value.feed.connection, revision: value.feed.revision ?? null, ownerId: value.feed.ownerId ?? null, error: value.feed.error ?? null},
+      // The wall reports whether it follows the shared feed; it does not list the sessions it read.
+      feed: {connection: value.feed.connection, revision: value.feed.revision ?? null, ownerId: value.feed.ownerId ?? null, error: value.feed.error ?? null, source: value.feed.source ?? null, sessions: null},
       writer: {'integration.applied': value.integration.applied, 'integration.queued': value.integration.queued, 'integration.failed': value.integration.failed},
       raw: value,
     };
@@ -47,7 +55,9 @@ export const CONSUMER_STATE = {
     const writer = simulator.writer;
     return {
       format: 'pixoo-feed-view+simulator-writer',
-      feed: {connection: view.connection, revision: view.snapshot?.revision ?? null, ownerId: view.ownerId ?? null, error: null},
+      // Pixoo's embedded owner also reports `verify-owner` and `current`, so its session list is what tells the Hub's feed apart.
+      feed: {connection: view.connection, revision: view.snapshot?.revision ?? null, ownerId: view.ownerId ?? null, error: null, source: null,
+        sessions: Array.isArray(view.snapshot?.sessions) ? view.snapshot.sessions.map((/** @type {any} */ s) => sessionKey(s.identity)).sort() : null},
       // The controller command kinds the Hub sends, by the writer operation that carries them.
       writer: {
         'brightness.set': writer.setBrightness?.admitted ?? 0,
