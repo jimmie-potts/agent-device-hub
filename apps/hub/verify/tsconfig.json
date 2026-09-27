@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "rootDir": "../../..",
+    "outDir": "dist-check",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": [
+    "plugin.mjs"
+  ]
+}
