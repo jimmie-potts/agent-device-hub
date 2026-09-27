@@ -137,9 +137,12 @@ export interface BuildSource {
   /**
    * The served bundle whose SHA-256 becomes `build.artifactDigest`: a route
    * read over loopback from the running application (the hub's
-   * `/dashboard.js`), or a file under `root`.
+   * `/dashboard.js`), a file under `root`, or several files under `root`.
+   * For `files` the digest is the SHA-256 of the lines
+   * `<sha256 of the file>  <path>\n` in the listed order, which is what
+   * `sha256sum <paths…> | sha256sum` prints for the same list.
    */
-  artifact: {route: string} | {file: string};
+  artifact: {route: string} | {file: string} | {files: readonly string[]};
   /**
    * Optional: bring the served artifact up to date with the checkout, for
    * example `npm run build`, before `start` and `restart` launch it. Runs after
@@ -178,14 +181,46 @@ export interface CaptureContext extends ProbeContext {
 export interface CaptureStep {
   /** One line for `help` and the assertion log. */
   description: string;
-  /** When set, `capture` refuses a run seeded with another scenario. */
+  /** When set, `capture` refuses a run seeded with another scenario (or, with `fresh`, reseeds to it). */
   scenario?: string;
+  /**
+   * Start from newly seeded state: before the step, the core stops the
+   * application, reseeds `scenario` (or the run's current scenario) and
+   * relaunches it on the same port, and the capture log records it. Use it
+   * for steps that change state; without it, state persists from earlier
+   * captures, so assert deltas.
+   */
+  fresh?: boolean;
   /** Default 1280×800. */
   viewport?: {width: number; height: number};
   /** Milliseconds for `run`. Default 30000. */
   timeoutMs?: number;
   /** Drive the real page and assert the expected observations with `expect`. */
   run(context: CaptureContext): Promise<void>;
+}
+
+/** Where `runCaptureStep` drives an already-running application. */
+export interface CaptureStepOptions {
+  /** `http://127.0.0.1:<port>/` of the running application. */
+  url: string;
+  /** New or empty directory for `after.png`, `interaction.webm` and `assertions.json`. */
+  outputDir: string;
+  /** Scenario the application was seeded with; default the plug-in's default. */
+  scenario?: string;
+  /** Passed to the step as `dataDir`/`runtimeDir`/`runId` when it needs them. */
+  dataDir?: string;
+  runtimeDir?: string;
+  runId?: string;
+}
+
+export interface CaptureStepResult {
+  outcome: CaptureOutcome;
+  reason?: string;
+  /** Absolute paths; `null` when not produced. */
+  screenshot: string | null;
+  video: string | null;
+  log: string;
+  assertions: {name: string; outcome: 'passed' | 'failed'; at: string; error?: string}[];
 }
 
 export interface BrowserOptions {

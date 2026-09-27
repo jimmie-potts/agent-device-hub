@@ -45,9 +45,9 @@ async function clicks(t, count, by) {
 }
 
 /**
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string}} options
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact']}} options
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog}) {
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}}) {
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
     /** @param {{dataDir: string, scenario: string}} context */
@@ -88,7 +88,7 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         },
       },
     },
-    build: {version: '1.0.0-fixture', artifact: {route: '/app.js'}},
+    build: {version: '1.0.0-fixture', artifact},
     launch: ({node, dataDir, port}) => ({argv: [node, server, '--data', dataDir, '--port', String(port)]}),
     readiness: {
       line: line => {
@@ -126,8 +126,20 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         description: 'Two clicks advance the counter by two',
         run: async t => clicks(t, 2, 2),
       },
-      'wrong-expectation': {
-        description: 'An injected wrong expectation: two clicks expected to advance the counter by three',
+      'fresh-count': {
+        description: 'From a fresh reference seed, two clicks show exactly Count: 2',
+        scenario: 'reference',
+        fresh: true,
+        run: async t => {
+          await clicks(t, 2, 2);
+          await t.expect('the fresh counter shows exactly 2', async () => {
+            const shown = await t.page.getByRole('status').textContent();
+            if (shown !== 'Count: 2') throw new Error(`expected Count: 2, saw ${shown}`);
+          });
+        },
+      },
+      'control-wrong-expectation': {
+        description: 'Negative control: expects three after two clicks and must fail',
         run: async t => clicks(t, 2, 3),
       },
       'no-assertions': {

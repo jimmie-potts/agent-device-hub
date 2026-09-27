@@ -36,7 +36,7 @@ test('a stateful step passes with screenshot, video and assertion log; known-wro
     assert.equal(existsSync(join(passed.result.captureDir, '.in-progress')), false);
 
     // An injected wrong expectation fails, keeps its screenshot and exits non-zero.
-    const wrong = await box.cli(['capture', runId, 'wrong-expectation']);
+    const wrong = await box.cli(['capture', runId, 'control-wrong-expectation']);
     assert.equal(wrong.code, 1);
     assert.equal(wrong.result.outcome, 'failed');
     assert.match(wrong.result.reason, /^assertion failed: the counter advanced by 3: expected Count: 5, saw Count: 4/);
@@ -64,7 +64,7 @@ test('a stateful step passes with screenshot, video and assertion log; known-wro
 
     const receipt = await box.receipt(runId);
     assert.deepEqual(validateReceipt(receipt), {ok: true});
-    assert.deepEqual(receipt.captures.map(c => [c.n, c.step, c.outcome]), [[1, 'count-twice', 'passed'], [2, 'wrong-expectation', 'failed'], [3, 'no-assertions', 'failed'], [4, 'count-twice', 'failed'], [5, 'read-only', 'passed'], [6, 'command-once', 'passed']]);
+    assert.deepEqual(receipt.captures.map(c => [c.n, c.step, c.outcome]), [[1, 'count-twice', 'passed'], [2, 'control-wrong-expectation', 'failed'], [3, 'no-assertions', 'failed'], [4, 'count-twice', 'failed'], [5, 'read-only', 'passed'], [6, 'command-once', 'passed']]);
     assert.ok(receipt.captures.every(c => c.log === `capture-${c.n}/assertions.json`));
 
     const unknown = await box.cli(['capture', runId, 'nope']);
@@ -182,7 +182,7 @@ test('handoff freezes the verified set; reset, extend and later captures never c
   try {
     const {runId, url} = (await box.cli(['start', '--lease', '10'])).result;
     assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
-    assert.equal((await box.cli(['capture', runId, 'wrong-expectation'])).code, 1);
+    assert.equal((await box.cli(['capture', runId, 'control-wrong-expectation'])).code, 1);
     const handoff = await box.cli(['handoff', runId, '--reset', 'second']);
     assert.equal(handoff.code, 0, handoff.stderr);
     const proof = join(box.proofRoot, runId), verified = join(proof, 'verified');
@@ -268,6 +268,26 @@ test('a reset that fails stops the run instead of serving half-seeded state, and
     assert.ok((await box.events(runId)).some(e => e.event === 'reset-failed'));
     const refusedPort = await fetch(`http://127.0.0.1:${port}/`).then(() => false, () => true);
     assert.ok(refusedPort);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a fresh step reseeds before it runs and records that in its log', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId, port} = (await box.cli(['start', '--scenario', 'second', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    const fresh = await box.cli(['capture', runId, 'fresh-count']);
+    assert.equal(fresh.code, 0, fresh.stderr);
+    const log = JSON.parse(await readFile(fresh.result.log, 'utf8'));
+    assert.equal(log.fresh.scenario, 'reference');
+    assert.match(log.fresh.seededAt, /Z$/);
+    const receipt = await box.receipt(runId);
+    assert.equal(receipt.scenario.name, 'reference');
+    assert.equal(receipt.owned.port, port, 'the reseeded run keeps its port');
+    assert.ok((await box.events(runId)).some(e => e.event === 'capture-started' && e.fresh?.scenario === 'reference'));
+    await box.cli(['stop', runId]);
   } finally {
     await box.close();
   }

@@ -1,6 +1,7 @@
 export * from './types.js';
 export {runCli} from './cli.js';
 export {validateReceipt} from './receipt.js';
+export {runCaptureStep} from './capture.js';
 
 import type {AppPlugin} from './types.js';
 

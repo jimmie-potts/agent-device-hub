@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import type {AppPlugin} from './types.js';
-import {exec, sha256} from './util.js';
+import {exec, hex256, sha256} from './util.js';
 
 export const DEFAULT_PROOF_LABEL = '<canonical checkout>/.local/evidence/verify';
 export const DEFAULT_RUNTIME_LABEL = '~/.local/state/app-verify';
@@ -83,6 +83,12 @@ export async function artifactDigest(plugin: AppPlugin, url: string, signal: Abo
     if (!response.ok) throw new Error(`artifact route ${artifact.route} answered ${response.status}`);
     return sha256(new Uint8Array(await response.arrayBuffer()));
   }
-  const file = isAbsolute(artifact.file) ? artifact.file : join(plugin.root, artifact.file);
-  return sha256(await readFile(file));
+  const under = (path: string) => (isAbsolute(path) ? path : join(plugin.root, path));
+  if ('files' in artifact) {
+    if (artifact.files.length === 0) throw new Error('artifact files list is empty');
+    let lines = '';
+    for (const path of artifact.files) lines += `${hex256(await readFile(under(path)))}  ${path}\n`;
+    return sha256(lines);
+  }
+  return sha256(await readFile(under(artifact.file)));
 }

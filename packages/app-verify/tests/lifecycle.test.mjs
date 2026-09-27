@@ -399,3 +399,49 @@ test('a linked worktree keeps proof in the canonical checkout', {skip}, async ()
     await box.close();
   }
 });
+
+test('a degraded user manager is available; an offline one is not', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {writeFile, mkdir, chmod} = await import('node:fs/promises');
+    const shim = async (name, answer) => {
+      const dir = join(box.base, name);
+      await mkdir(dir);
+      // Answers is-system-running like this host (degraded, exit 1) and passes everything else to the real systemctl.
+      await writeFile(join(dir, 'systemctl'), `#!/bin/sh\nif [ "$2" = is-system-running ]; then echo ${answer}; exit 1; fi\nexec /usr/bin/systemctl "$@"\n`);
+      await chmod(join(dir, 'systemctl'), 0o755);
+      return {PATH: `${dir}:${process.env.PATH}`};
+    };
+    const degraded = await box.cli(['start', '--lease', '5'], {extraEnv: await shim('degraded', 'degraded')});
+    assert.equal(degraded.code, 0, degraded.stderr);
+    assert.equal(degraded.result.state, 'running');
+    assert.equal((await box.cli(['stop', degraded.result.runId])).code, 0);
+    const offline = await box.cli(['start'], {extraEnv: await shim('offline', 'offline')});
+    assert.equal(offline.code, 3);
+    assert.equal(offline.result.cause, 'supervisor-unavailable');
+    assert.match(offline.result.detail, /answered offline/);
+  } finally {
+    await box.close();
+  }
+});
+
+test('an artifact of several files is digested in order, as sha256sum prints it', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {writeFile} = await import('node:fs/promises');
+    const {execFileSync} = await import('node:child_process');
+    await writeFile(join(box.repo, 'page.html'), '<p>page</p>');
+    await writeFile(join(box.repo, 'asset.js'), 'export {};');
+    const options = JSON.stringify({artifact: {files: ['page.html', 'asset.js']}}).slice(1, -1);
+    const entry = await box.wrapper(box.repo, 'verify-files.mjs');
+    await writeFile(entry, (await readFile(entry, 'utf8')).replace('"root":', options + ',"root":'));
+    const started = await box.cli(['start', '--lease', '5'], {entry});
+    assert.equal(started.code, 0, started.stderr);
+    const expected = 'sha256:' + execFileSync('sh', ['-c', 'sha256sum page.html asset.js | sha256sum'], {cwd: box.repo, encoding: 'utf8'}).split(' ')[0];
+    assert.equal((await box.receipt(started.result.runId)).build.artifactDigest, expected);
+    assert.equal((await box.cli(['doctor', started.result.runId], {entry})).result.runs[0].artifact, 'matches');
+    await box.cli(['stop', started.result.runId], {entry});
+  } finally {
+    await box.close();
+  }
+});

@@ -6,9 +6,9 @@ import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {IN_PROGRESS} from './handoff.js';
-import {EXIT, Failure, load, UsageError, type Io, type Run} from './lifecycle.js';
+import {EXIT, Failure, load, reseed, UsageError, type Io} from './lifecycle.js';
 import * as systemd from './systemd.js';
-import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, Receipt} from './types.js';
+import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
 import {errorText, iso} from './util.js';
 
 interface Assertion {
@@ -87,9 +87,21 @@ async function isPng(path: string): Promise<boolean> {
   }
 }
 
-async function drive(run: Run, receipt: Receipt, step: CaptureStep, dir: string, interrupt: Promise<never>): Promise<Finished> {
+/** What a step sees of the application it drives. */
+interface Target {
+  runId: string;
+  root: string;
+  runtimeDir: string;
+  dataDir: string;
+  scenario: string;
+  url: string;
+  port: number;
+}
+
+/** Drive one step in a fresh recorded context and judge it. Shared by `capture` and `runCaptureStep`. */
+async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: string, interrupt: Promise<never>): Promise<Finished> {
   const finished: Finished = {outcome: 'failed', screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: []};
-  const loaded = await loadChromium(run.plugin);
+  const loaded = await loadChromium(plugin);
   if ('reason' in loaded) return {...finished, outcome: 'unavailable', reason: loaded.reason};
   const viewport = step.viewport ?? {width: 1280, height: 800};
   const raw = join(dir, '.video');
@@ -116,12 +128,8 @@ async function drive(run: Run, receipt: Receipt, step: CaptureStep, dir: string,
     page.setDefaultTimeout(Math.min(step.timeoutMs ?? 30000, 15000));
     const timeoutMs = step.timeoutMs ?? 30000;
     const signal = AbortSignal.timeout(timeoutMs);
-    const preview = receipt.preview!;
     const t = {
-      ...run.paths(),
-      scenario: receipt.scenario.name,
-      url: preview.url,
-      port: receipt.owned.port!,
+      ...target,
       signal,
       page,
       context,
@@ -202,6 +210,43 @@ async function drive(run: Run, receipt: Receipt, step: CaptureStep, dir: string,
   }
 }
 
+async function writeLog(dir: string, fields: Record<string, unknown>, finished: Finished): Promise<void> {
+  await writeFile(join(dir, 'assertions.json'), JSON.stringify({
+    ...fields, outcome: finished.outcome, ...(finished.reason ? {reason: finished.reason} : {}),
+    assertions: finished.assertions, notes: finished.notes, extraScreenshots: finished.extras, partialArtifacts: finished.partial,
+    finishedAt: iso(),
+  }, null, 2) + '\n');
+}
+
+/**
+ * Drive one capture step against an application that is already running,
+ * without a supervisor, receipt or lease: the same assertion, screenshot,
+ * video and failure rules as `capture`. For CI hosts without `systemd --user`,
+ * so an adapter can still prove that its reference passes and its `control-*`
+ * steps fail.
+ */
+export async function runCaptureStep(plugin: AppPlugin, stepName: string, options: CaptureStepOptions): Promise<CaptureStepResult> {
+  const step = plugin.captureSteps[stepName];
+  if (!step) throw new Error(`unknown capture step ${stepName}`);
+  const url = new URL(options.url);
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port) throw new Error('runCaptureStep needs an http://127.0.0.1:<port>/ URL');
+  if (existsSync(options.outputDir) && (await readdir(options.outputDir)).length > 0) throw new Error('runCaptureStep needs a new or empty output directory');
+  await mkdir(options.outputDir, {recursive: true});
+  const scenario = options.scenario ?? plugin.defaultScenario;
+  const target: Target = {runId: options.runId ?? `${plugin.app}-unmanaged`, root: plugin.root, runtimeDir: options.runtimeDir ?? '', dataDir: options.dataDir ?? '', scenario, url: url.href, port: Number(url.port)};
+  const startedAt = iso();
+  const finished = await drive(plugin, step, target, options.outputDir, new Promise<never>(() => undefined));
+  await writeLog(options.outputDir, {runId: target.runId, step: stepName, description: step.description, scenario, supervised: false, startedAt}, finished);
+  return {
+    outcome: finished.outcome,
+    ...(finished.reason ? {reason: finished.reason} : {}),
+    screenshot: finished.screenshot ? join(options.outputDir, 'after.png') : null,
+    video: finished.video ? join(options.outputDir, 'interaction.webm') : null,
+    log: join(options.outputDir, 'assertions.json'),
+    assertions: finished.assertions.map(a => ({...a})),
+  };
+}
+
 export async function capture(plugin: AppPlugin, io: Io, runId: string | undefined, stepName: string | undefined) {
   const run = await load(plugin, io, runId);
   const step = stepName ? plugin.captureSteps[stepName] : undefined;
@@ -210,7 +255,16 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   const current = await run.store.read();
   const unit = await systemd.unitState(run.unit);
   if (current.state !== 'running' || !unit?.loaded || unit.active !== 'active' || unit.mainPid !== current.owned.mainPid) throw new Failure('run-not-running', `${run.runId} is not running as its receipt says`);
-  if (step.scenario && current.scenario.name !== step.scenario) throw new Failure('scenario-mismatch', `${stepName} expects scenario ${step.scenario}; the run is seeded with ${current.scenario.name}`);
+  if (step.scenario && !step.fresh && current.scenario.name !== step.scenario) throw new Failure('scenario-mismatch', `${stepName} expects scenario ${step.scenario}; the run is seeded with ${current.scenario.name}`);
+
+  // A fresh step starts from newly seeded state: stop, reseed and relaunch on the same port first.
+  let fresh: {scenario: string; seededAt?: string; failed?: string} | undefined;
+  if (step.fresh) {
+    const name = step.scenario ?? current.scenario.name;
+    io.progress(`${run.runId}: reseeding ${name} for fresh step ${stepName}`);
+    const reseeded = await reseed(run, io, current, name);
+    fresh = reseeded.code === EXIT.ok ? {scenario: name, seededAt: reseeded.value.seededAt as string} : {scenario: name, failed: `${reseeded.value.detail}`};
+  }
 
   // Write-ahead: the receipt says `failed` until this capture proves otherwise.
   let record!: CaptureRecord;
@@ -225,7 +279,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
     value.captures.push(record);
   });
   const dir = join(run.store.dir, dirRelative);
-  await run.store.event('capture-started', {n: record.n, step: stepName, set: record.set});
+  await run.store.event('capture-started', {n: record.n, step: stepName, set: record.set, ...(fresh ? {fresh} : {})});
   io.progress(`${run.runId}: capture ${record.n} (${stepName}) into ${dir}`);
 
   let signalName: string | undefined;
@@ -240,7 +294,8 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   process.once('SIGTERM', onSignal);
   let finished: Finished;
   try {
-    finished = await drive(run, receipt, step, dir, interrupt);
+    if (fresh?.failed) finished = {outcome: 'failed', reason: `fresh reseed failed, the run was stopped: ${fresh.failed}`, screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: []};
+    else finished = await drive(plugin, step, {...run.paths(), scenario: receipt.scenario.name, url: receipt.preview!.url, port: receipt.owned.port!}, dir, interrupt);
   } catch (error) {
     if (!(error instanceof Interrupted)) throw error;
     finished = {outcome: 'failed', reason: `interrupted by ${signalName} before the capture completed`, screenshot: false, video: false, assertions: [], notes: [], extras: [], partial: [], abandoned: true};
@@ -250,12 +305,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   }
 
   const finishedAt = iso();
-  await writeFile(join(dir, 'assertions.json'), JSON.stringify({
-    runId: run.runId, n: record.n, step: stepName, description: step.description, scenario: receipt.scenario.name,
-    candidate: receipt.build, outcome: finished.outcome, ...(finished.reason ? {reason: finished.reason} : {}),
-    assertions: finished.assertions, notes: finished.notes, extraScreenshots: finished.extras, partialArtifacts: finished.partial,
-    startedAt: record.startedAt, finishedAt,
-  }, null, 2) + '\n');
+  await writeLog(dir, {runId: run.runId, n: record.n, step: stepName, description: step.description, scenario: receipt.scenario.name, candidate: receipt.build, ...(fresh ? {fresh} : {}), supervised: true, startedAt: record.startedAt}, finished);
   const final: CaptureRecord = {
     ...record,
     outcome: finished.outcome,
