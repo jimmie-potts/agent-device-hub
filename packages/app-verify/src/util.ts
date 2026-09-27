@@ -1,0 +1,69 @@
+import {execFile} from 'node:child_process';
+import {createHash, randomBytes} from 'node:crypto';
+import {existsSync} from 'node:fs';
+import {delimiter, isAbsolute, join} from 'node:path';
+
+/** UTC time with second precision, as the receipt writes it: `2026-09-27T06:02:59Z`. */
+export function iso(ms: number = Date.now()): string {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+export const APP_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+export const KEBAB = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+
+export function runIdPattern(app: string): RegExp {
+  return new RegExp(`^${app.replace(/-/g, '\\-')}-\\d{8}T\\d{6}Z-[0-9a-f]{6}$`);
+}
+
+export const ANY_RUN_ID = /^[a-z][a-z0-9-]*-\d{8}T\d{6}Z-[0-9a-f]{6}$/;
+
+export function newRunId(app: string, now = Date.now()): string {
+  const stamp = new Date(now).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  return `${app}-${stamp}-${randomBytes(3).toString('hex')}`;
+}
+
+export function sha256(bytes: Uint8Array | string): string {
+  return 'sha256:' + createHash('sha256').update(bytes).digest('hex');
+}
+
+export function hex256(bytes: Uint8Array | string): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+export const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+export interface ExecResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  error?: string;
+}
+
+/** Run a program without a shell. Never throws; a spawn failure is code -1. */
+export function exec(file: string, args: readonly string[], options: {cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv} = {}): Promise<ExecResult> {
+  return new Promise(resolve => {
+    execFile(file, args, {cwd: options.cwd, timeout: options.timeoutMs ?? 30000, env: options.env, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024}, (error, stdout, stderr) => {
+      const code = error ? (typeof (error as {code?: unknown}).code === 'number' ? ((error as {code: number}).code) : -1) : 0;
+      resolve({code, stdout: stdout ?? '', stderr: stderr ?? '', ...(error && code === -1 ? {error: error.message} : {})});
+    });
+  });
+}
+
+/** Resolve a program name on a PATH string; absolute and relative-with-slash paths pass through. */
+export function which(program: string, path: string, cwd: string): string | undefined {
+  if (program.includes('/')) {
+    const resolved = isAbsolute(program) ? program : join(cwd, program);
+    return existsSync(resolved) ? resolved : undefined;
+  }
+  for (const directory of path.split(delimiter)) {
+    if (!directory) continue;
+    const candidate = join(directory, program);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+export function errorText(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return text.split('\n')[0]!.slice(0, 500);
+}

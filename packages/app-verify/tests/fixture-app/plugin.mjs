@@ -22,6 +22,28 @@ function defaultPlaywright() {
 /** @param {number} ms */
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+/** @param {import('@jimmie-potts/app-verify').CaptureContext} t */
+async function commands(t) {
+  return (await (await fetch(new URL('/api/commands', t.url), {signal: t.signal})).json()).length;
+}
+
+/**
+ * Click Add `count` times and assert the settled counter advanced by `by`.
+ * Waiting for every response to be applied keeps a transient value from satisfying the expectation.
+ * @param {import('@jimmie-potts/app-verify').CaptureContext} t @param {number} count @param {number} by
+ */
+async function clicks(t, count, by) {
+  await t.page.goto(t.url);
+  const status = t.page.getByRole('status');
+  const start = Number((await status.textContent()).replace('Count: ', ''));
+  for (let i = 0; i < count; i++) await t.page.getByRole('button', {name: 'Add one'}).click();
+  await t.page.locator(`#count[data-applied="${count}"]`).waitFor();
+  await t.expect(`the counter advanced by ${by}`, async () => {
+    const shown = await status.textContent();
+    if (shown !== `Count: ${start + by}`) throw new Error(`expected Count: ${start + by}, saw ${shown}`);
+  });
+}
+
 /**
  * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string}} options
  */
@@ -101,22 +123,12 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
     browser: {modules: playwright},
     captureSteps: {
       'count-twice': {
-        description: 'Two clicks show Count: 2',
-        run: async t => {
-          await t.page.goto(t.url);
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.expect('the counter shows 2', () => t.page.getByText('Count: 2', {exact: true}).waitFor({timeout: 2000}));
-        },
+        description: 'Two clicks advance the counter by two',
+        run: async t => clicks(t, 2, 2),
       },
       'wrong-expectation': {
-        description: 'An injected wrong expectation: two clicks expected to show Count: 3',
-        run: async t => {
-          await t.page.goto(t.url);
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.expect('the counter shows 3', () => t.page.getByText('Count: 3', {exact: true}).waitFor({timeout: 1500}));
-        },
+        description: 'An injected wrong expectation: two clicks expected to advance the counter by three',
+        run: async t => clicks(t, 2, 3),
       },
       'no-assertions': {
         description: 'Clicks without asserting anything',
@@ -126,25 +138,26 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         },
       },
       'read-only': {
-        description: 'Reading the page sends no command',
+        description: 'Loading and reading the page sends no command',
         run: async t => {
+          const before = await commands(t);
           await t.page.goto(t.url);
           await t.expect('the counter is shown', () => t.page.getByRole('status').waitFor());
+          await t.page.reload();
           await t.expect('no command reached the sink', async () => {
-            const commands = await json(new URL('/api/commands', t.url).href, t.signal);
-            if (commands.length !== 0) throw new Error(`expected 0 commands, saw ${commands.length}`);
+            const after = await commands(t);
+            if (after !== before) throw new Error(`expected no new command, saw ${after - before}`);
           });
         },
       },
       'command-once': {
         description: 'One click sends exactly one command',
         run: async t => {
-          await t.page.goto(t.url);
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.expect('the counter advanced', () => t.page.getByText(/Count: (1|11)$/).waitFor({timeout: 2000}));
+          const before = await commands(t);
+          await clicks(t, 1, 1);
           await t.expect('exactly one command reached the sink', async () => {
-            const commands = await json(new URL('/api/commands', t.url).href, t.signal);
-            if (commands.length !== 1) throw new Error(`expected 1 command, saw ${commands.length}`);
+            const after = await commands(t);
+            if (after !== before + 1) throw new Error(`expected 1 new command, saw ${after - before}`);
           });
         },
       },
@@ -152,9 +165,7 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         description: 'Clicks, asserts, then waits long enough to be interrupted',
         timeoutMs: 120000,
         run: async t => {
-          await t.page.goto(t.url);
-          await t.page.getByRole('button', {name: 'Add one'}).click();
-          await t.expect('the counter shows 1', () => t.page.getByText('Count: 1', {exact: true}).waitFor({timeout: 2000}));
+          await clicks(t, 1, 1);
           t.note('waiting to be interrupted');
           await pause(60000);
         },

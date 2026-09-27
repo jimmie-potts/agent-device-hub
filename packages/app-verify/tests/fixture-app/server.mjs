@@ -20,15 +20,16 @@ if (scenario.behavior === 'crash') {
   let count = scenario.start ?? 0;
   const commands = [];
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Counter</title></head>
-<body><main><h1>Counter</h1><p id="count" role="status">Count: ${count}</p>
+<body><main><h1>Counter</h1><p id="count" role="status" data-applied="0">Count: ${count}</p>
 <button type="button" id="add">Add one</button></main><script src="/app.js"></script></body></html>`;
-  const script = `document.getElementById('add').addEventListener('click',async()=>{const r=await fetch('/api/add',{method:'POST'});const v=await r.json();document.getElementById('count').textContent='Count: '+v.count;});`;
+  // `data-applied` counts applied responses, so a step can assert the settled count rather than a transient one.
+  const script = `document.getElementById('add').addEventListener('click',async()=>{const r=await fetch('/api/add',{method:'POST'});const v=await r.json();const e=document.getElementById('count');e.textContent='Count: '+v.count;e.dataset.applied=String(Number(e.dataset.applied)+1);});`;
   const server = createServer((request, response) => {
     const send = (status, type, body) => {
       response.writeHead(status, {'content-type': type});
       response.end(body);
     };
-    if (request.method === 'GET' && request.url === '/') return send(200, 'text/html; charset=utf-8', page.replace(/Count: \d+/, `Count: ${count}`));
+    if (request.method === 'GET' && request.url === '/') return send(200, 'text/html; charset=utf-8', page.replace(/>Count: \d+</, `>Count: ${count}<`));
     if (request.method === 'GET' && request.url === '/app.js') return send(200, 'text/javascript', script);
     if (request.method === 'GET' && request.url === '/health') return send(200, 'application/json', JSON.stringify({ok: true, scenario: scenario.name}));
     if (request.method === 'GET' && request.url === '/api/commands') return send(200, 'application/json', JSON.stringify(commands));
