@@ -200,8 +200,10 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   - a Hub capture that dies mid-freeze: the consumer is thawed, the
     handshake cleared and a result printed with exit 3;
   - an orchestrator killed with its process group mid-freeze: the safety
-    thaw runs the consumer again within `--thaw-after`, so it can be
-    stopped;
+    thaw runs the consumer again within `--thaw-after` (at least 60 s), so
+    it can be stopped;
+  - a consumer whose lease could end while frozen is never frozen
+    (`lease-too-short`);
   - a checkout that changes during `start` failing a pinned start;
   - a stop retried after one that could not stop a run;
   - extend, handoff, a unit left frozen in `doctor`, and stop with the Hub

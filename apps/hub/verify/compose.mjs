@@ -880,6 +880,8 @@ export async function extend(id, leaseMinutes, io) {
 
 /** @type {Record<string, Record<string, string[]>>} */
 const INJECTION_STEPS = INJECTIONS;
+/** The loss step's own budget in seconds (its capture timeout), which a lease must outlast with the safety thaw. */
+const LOSS_STEP_SECONDS = 180;
 
 /**
  * The verdict on a capture: a reference step must pass; a control must fail at its named assertion.
@@ -912,6 +914,13 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
   const unit = unitOf(target);
   const before = await freezerState(unit);
   if (before.ActiveState !== 'active' || before.FreezerState !== 'running') throw new ComposeFailure('run-not-running', `${unit} is ${before.ActiveState ?? 'unknown'}/${before.FreezerState ?? 'unknown'}`, serviceId);
+  // The lease stops its unit once; systemd refuses to stop a frozen unit, so a lease that ended inside the freeze would
+  // leave the consumer running with none. Freeze only a consumer whose lease outlasts the step and the safety thaw.
+  if (kind === 'consumer-loss') {
+    const remaining = Date.parse(target.expiresAt ?? '') - Date.now();
+    const needed = (thawAfter + LOSS_STEP_SECONDS) * 1000;
+    if (!(remaining >= needed)) throw new ComposeFailure('lease-too-short', `${serviceId}'s lease ends at ${target.expiresAt}, within the ${Math.ceil(needed / 60000)} min a loss may take; extend the composition first`, serviceId);
+  }
   const directory = runtimeDir(io.env, hub);
   const requestFile = join(directory, PAIRING.files.inject.request), stateFile = join(directory, PAIRING.files.inject.state);
   await rm(requestFile, {force: true});
@@ -954,6 +963,12 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
       return answer('frozen');
     }
     if (request.phase === 'thaw') {
+      // Already running means the safety timer ended the loss before the step asked: its observations may be short.
+      if ((await freezerState(unit)).FreezerState === 'running') {
+        problems.push(`the safety thaw ran ${unit} before the step asked for the thaw; raise --thaw-after`);
+        await record({thawedAt: iso(), thawedBy: 'safety-timer'});
+        return answer('thawed');
+      }
       const state = await thaw(unit);
       if (state !== 'running') {
         problems.push(`thaw left ${unit} ${state}`);
@@ -1104,7 +1119,8 @@ function lease(value) {
 function thawAfter(value) {
   if (value === undefined) return 120;
   const seconds = Number(value);
-  if (!/^\d+$/.test(value) || seconds < 10 || seconds > 600) throw new UsageError('--thaw-after takes whole seconds from 10 to 600');
+  // At least a minute: the loss step holds the freeze while it waits up to 20 s for the stale mark and sends one command.
+  if (!/^\d+$/.test(value) || seconds < 60 || seconds > 600) throw new UsageError('--thaw-after takes whole seconds from 60 to 600');
   return seconds;
 }
 
