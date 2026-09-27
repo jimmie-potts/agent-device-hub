@@ -87,7 +87,10 @@ supply one writes it with mode 0600 into the run's runtime directory,
 reseed keeps it. The plug-in reads it by a fixed file name from
 `ctx.runtimeDir`. `start` creates the directory, so the caller writes the file
 after `start` and before the `scenario` reseed that needs it, and `stop`
-deletes it with the directory.
+deletes it with the directory. Such a scenario cannot be a run's first seed,
+and `restart` of a run in it stops the run and then fails at seed, because the
+new run's directory does not exist yet: stop the run, start a new one in a
+scenario that needs no file, write the file and reseed.
 
 A ready line may also name **extra endpoints**: other loopback listeners of
 the same application, such as a fake controller that another run calls. Each
@@ -182,9 +185,11 @@ values it cannot know yet to `null`: `owned.port`, `owned.mainPid`,
   add its application's own stable cause line from the tail of the app's
   stderr (`readiness.failureCause`), appended as `; app: <line>` when it is
   printable ASCII of at most 200 characters; the core never records raw log
-  text. Since 1.1, `detail`, like a check's or capture's `reason`, has every
-  absolute path outside the two roots replaced with `<path>` and is capped at
-  1000 characters.
+  text. Since 1.1, `detail`, like a check's or capture's `reason` (also as
+  `doctor` prints it) and a supervised capture log's assertion errors and
+  notes, has every absolute path outside the two roots replaced with `<path>`
+  and is capped at 1000 characters. Full URLs are kept, so a reason names a
+  route by its URL.
 - `cleanup.result` becomes `clean`, `partial` or `unknown` (a readback
   failed). `cleanup.at` records when, and `cleanup.items` lists one
   `{kind, name, outcome}` per lease timer, the unit and the runtime

@@ -103,11 +103,18 @@ What the core guarantees to every plug-in callback:
   ignored. Match only stable,
   non-secret cause lines, such as `/^hub-start-failed: [a-z0-9-]+$/m`, and
   never return the tail itself.
-- Since 1.1, every `failure.detail`, check `reason` and capture `reason` the
-  core records or prints has each absolute path outside the run's two roots
-  replaced with `<path>` and is capped at 1000 characters, so an error such as
-  a child process's `Command failed: /abs/…` cannot put a private path into
-  a receipt or event. URLs and paths inside the roots are kept.
+- Since 1.1, every `failure.detail`, check `reason` (including `doctor`'s
+  health and check reasons) and capture `reason` the core records or prints,
+  and each assertion error and note in a supervised capture's
+  `assertions.json`, has each absolute path outside the run's two roots
+  replaced with `<path>` and is capped at 1000 characters. An error such as a
+  child process's `Command failed: /abs/…` therefore cannot put a private
+  path into a receipt, event, printed line or frozen log. A path is judged
+  after normalizing `..`; a `file://` URL's path counts as a path. Full
+  `http(s)` URLs, relative paths and paths inside the roots are kept. A bare
+  route such as `/api/x` cannot be told from a file path and is replaced, so
+  name routes by their full URL in reasons, as the core does for its own
+  artifact route.
 - The application runs as `app-verify-<run-id>.service` under the user
   manager with `KillMode=control-group`; its stdout and stderr go to
   `stdout.log` and `stderr.log` in `runtimeDir`, never into proof.
@@ -315,7 +322,11 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
     keeps it. The plug-in reads it by a fixed file name from `ctx.runtimeDir`.
     `start` creates that directory, so write the file after `start` and before
     the reseed (`scenario`) that needs it; `stop` deletes it with the
-    directory.
+    directory. A scenario that reads such a file therefore cannot be a run's
+    first seed, and `restart` of a run in that scenario stops it and then
+    fails at seed, because the new run's directory does not exist yet. Stop
+    it instead, start a new run in a scenario that needs no file, write the
+    file and reseed.
 - **Extra endpoints.** A ready line may return `endpoints: {name: url}` for
   other loopback listeners of the same application, such as a fake controller
   another run must reach. It names at most 16; each name is a letter followed
@@ -339,8 +350,9 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
   `build.artifactDigest`. The page is not driven when it already differs.
   `runCaptureStep` does the same when given `artifactDigest`.
 - **Redacted details.** A recorded or printed `failure.detail`, check
-  `reason` or capture `reason` keeps paths inside the two roots and URLs,
-  replaces every other absolute path with `<path>` and is capped at 1000
+  `reason` (also in `doctor`) or capture `reason`, and a supervised capture
+  log's assertion errors and notes, keep paths inside the two roots and full
+  URLs, replace every other absolute path with `<path>` and are capped at 1000
   characters.
 - **Lock and stop follow-ups from 1.0's review.** A retried `stop` records
   the refused attempt's cleanup (P-S21); a swept prepared lock directory is

@@ -80,7 +80,8 @@ export async function artifactDigest(plugin: AppPlugin, url: string, signal: Abo
   const artifact = plugin.build.artifact;
   if ('route' in artifact) {
     const response = await fetch(new URL(artifact.route, url), {signal, redirect: 'error'});
-    if (!response.ok) throw new Error(`artifact route ${artifact.route} answered ${response.status}`);
+    // The full URL, which a redacted detail keeps; a bare route would read as a path.
+    if (!response.ok) throw new Error(`artifact route ${new URL(artifact.route, url).href} answered ${response.status}`);
     return sha256(new Uint8Array(await response.arrayBuffer()));
   }
   const under = (path: string) => (isAbsolute(path) ? path : join(plugin.root, path));

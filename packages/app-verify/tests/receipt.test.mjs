@@ -142,6 +142,26 @@ test('recorded details keep root paths and URLs, replace other absolute paths an
   );
   assert.equal(redact('/home/u/.local/state/app-verify-other/x', roots), '<path>', 'a sibling that only shares a prefix is outside the root');
   assert.equal(redact('ratio 3/4 and a / b', roots), 'ratio 3/4 and a / b');
+  const cases = [
+    // A path after a colon, in backticks or after <, {, ; or |, and a file: URL outside the roots.
+    ['cwd:/home/someone/secret', 'cwd:<path>'],
+    ['open `/tmp/a` failed', 'open `<path>` failed'],
+    ['</srv/a> {/srv/b} x;/srv/c |/srv/d', '<<path>> {<path>} x;<path> |<path>'],
+    ['file:///home/someone/.ssh/key', 'file://<path>'],
+    ['file:///home/u/.local/state/app-verify/r/data/x', 'file:///home/u/.local/state/app-verify/r/data/x'],
+    // A trailing colon is not part of the path.
+    ['reads /srv/private/fixture.json: ENOENT', 'reads <path>: ENOENT'],
+    ['PATH=/a/bin:/b/bin', 'PATH=<path>'],
+    // `..` cannot climb out of a root.
+    ['/home/u/.local/state/app-verify/../../someone/secret', '<path>'],
+    ['/home/u/.local/state/app-verify/r/../r/data', '/home/u/.local/state/app-verify/r/../r/data'],
+    // URLs keep their paths and queries, including a / inside the query.
+    ['GET http://127.0.0.1:41705/api/x?y=/z answered 503', 'GET http://127.0.0.1:41705/api/x?y=/z answered 503'],
+    ['see https://example.invalid/docs/a (or /usr/share/doc)', 'see https://example.invalid/docs/a (or <path>)'],
+    // A bare route is indistinguishable from a file path, so it is replaced: plug-ins name full URLs.
+    ['GET /api/monitor/v1/sessions answered 503', 'GET <path> answered 503'],
+  ];
+  for (const [input, expected] of cases) assert.equal(redact(input, roots), expected, input);
   const long = redact('x'.repeat(5000), roots);
   assert.equal(long.length, 1000);
   assert.ok(long.endsWith('...'));

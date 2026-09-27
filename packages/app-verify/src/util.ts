@@ -2,7 +2,7 @@ import {execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
-import {delimiter, isAbsolute, join} from 'node:path';
+import {delimiter, isAbsolute, join, posix} from 'node:path';
 
 /** UTC time with second precision, as the receipt writes it: `2026-09-27T06:02:59Z`. */
 export function iso(ms: number = Date.now()): string {
@@ -89,15 +89,37 @@ export function loopback(value: unknown, endpoint = false): URL | string {
 /** Longest detail or reason the core records from an application, plug-in or tool error. */
 export const DETAIL_LIMIT = 1000;
 
+/*
+ * What redact() matches, in order at each position:
+ * 1. `file://` followed by an absolute path: the path is judged like any other.
+ * 2. An http(s) or ws(s) URL: kept whole, with its path and query.
+ * 3. An absolute path at the start or after whitespace, a quote, a backtick or
+ *    one of ( = [ , < { ; | : . It never ends in `:`, so `<path>: ENOENT`
+ *    keeps its colon.
+ */
+const PATH_TOKEN = "\\/[^\\s'\"\\x60()[\\]{}<>,;|]*[^\\s'\"\\x60()[\\]{}<>,;|:]";
+const REDACTABLE = new RegExp(`(file:\\/\\/)(${PATH_TOKEN})|(?:https?|wss?):\\/\\/[^\\s'"\\x60<>]*|(^|[\\s'"\\x60(=[,<{;|:])(${PATH_TOKEN})`, 'gi');
+
 /**
- * A detail fit for a receipt, event or result line: every absolute path
+ * A detail fit for a receipt, event, log or printed line: every absolute path
  * outside the run's two roots becomes `<path>` (a tool's "Command failed:
  * /abs/…" can name private files), and the text is capped at
- * `DETAIL_LIMIT` characters. URLs and relative paths are kept.
+ * `DETAIL_LIMIT` characters. A path is judged after normalizing, so `..`
+ * cannot climb out of a root. Full http(s) URLs and relative paths are kept;
+ * a bare route such as `/api/x` cannot be told from a file path and is
+ * replaced, so name routes by their full URL.
  */
 export function redact(text: string, roots: {runtime: string; proof: string}): string {
-  const inside = (path: string) => [roots.runtime, roots.proof].some(root => path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`));
-  const redacted = text.replace(/(^|[\s'"(=[,])(\/[^\s'"()[\],]+)/g, (_, before: string, path: string) => `${before}${inside(path) ? path : '<path>'}`);
+  const bases = [roots.runtime, roots.proof].map(root => posix.normalize(root).replace(/\/+$/, ''));
+  const inside = (path: string) => {
+    const normal = posix.normalize(path);
+    return bases.some(base => normal === base || normal.startsWith(`${base}/`));
+  };
+  const redacted = text.replace(REDACTABLE, (match: string, scheme?: string, filePath?: string, before?: string, path?: string) => {
+    if (scheme !== undefined) return `${scheme}${inside(filePath!) ? filePath : '<path>'}`;
+    if (path === undefined) return match;
+    return `${before}${inside(path) ? path : '<path>'}`;
+  });
   return redacted.length > DETAIL_LIMIT ? `${redacted.slice(0, DETAIL_LIMIT - 3)}...` : redacted;
 }
 

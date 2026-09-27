@@ -883,9 +883,10 @@ async function assess(run: Run, io: Io) {
     const url = receipt.preview.url, port = receipt.owned.port, seen = recorded(receipt);
     try {
       const probe = await run.plugin.readiness.probe(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(5000), seen));
-      health = probe.ok ? {id: 'health', outcome: 'passed'} : {id: 'health', outcome: 'failed', reason: probe.reason};
+      // Printed, so no absolute path outside the two roots, as in a recorded reason.
+      health = probe.ok ? {id: 'health', outcome: 'passed'} : {id: 'health', outcome: 'failed', reason: redact(String(probe.reason), run.roots)};
     } catch (error) {
-      health = {id: 'health', outcome: 'failed', reason: errorText(error)};
+      health = {id: 'health', outcome: 'failed', reason: redact(errorText(error), run.roots)};
     }
     try {
       artifact = (await artifactDigest(run.plugin, url, AbortSignal.timeout(5000))) === receipt.build.artifactDigest ? 'matches' : 'changed';
@@ -914,9 +915,9 @@ async function assess(run: Run, io: Io) {
       if (!check.doctor) continue;
       try {
         const outcome = await check.run(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(15000), seen));
-        checks.push(outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: outcome.reason});
+        checks.push(outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: redact(String(outcome.reason), run.roots)});
       } catch (error) {
-        checks.push({id: check.id, outcome: 'failed', reason: errorText(error)});
+        checks.push({id: check.id, outcome: 'failed', reason: redact(errorText(error), run.roots)});
       }
     }
   }

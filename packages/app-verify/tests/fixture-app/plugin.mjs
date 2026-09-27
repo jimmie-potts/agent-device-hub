@@ -56,9 +56,11 @@ export function sameInputs(a, b) {
 /**
  * The fixture's plug-in. Without `inputs` it is a 1.0-style plug-in: it declares no inputs and reads no 1.1 context field
  * unless a scenario announces an extra endpoint.
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>, inputs?: import('@jimmie-potts/app-verify').AppPlugin['inputs'], announcePort?: number, announce?: {url?: string, endpoints?: unknown}}} options
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>, inputs?: import('@jimmie-potts/app-verify').AppPlugin['inputs'], announcePort?: number, announce?: {url?: string, endpoints?: unknown}, leakyDoctor?: boolean}} options
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride, inputs, announcePort, announce}) {
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride, inputs, announcePort, announce, leakyDoctor}) {
+  /** With `leakyDoctor`, a `leak` file in the run's data directory makes the probe and a read-only check fail naming private paths. */
+  const leaking = async (/** @type {string} */ dataDir) => leakyDoctor === true && existsSync(join(dataDir, 'leak'));
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
     /** @param {import('@jimmie-potts/app-verify').SeedContext} context */
@@ -140,7 +142,8 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
           return undefined;
         }
       },
-      probe: async ({url, signal}) => {
+      probe: async ({url, signal, dataDir}) => {
+        if (await leaking(dataDir)) return {ok: false, reason: 'Command failed: /opt/private-probe/bin/health --config /home/someone/.config/probe.json'};
         const response = await fetch(new URL('/health', url), {signal});
         return response.ok ? {ok: true} : {ok: false, reason: `health answered ${response.status}`};
       },
@@ -170,6 +173,15 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
           return health.scenario === name ? {outcome: 'passed'} : {outcome: 'failed', reason: `health reports ${health.scenario}`};
         },
       },
+      ...(leakyDoctor ? [{
+        id: 'leaky-check',
+        doctor: true,
+        /** @param {import('@jimmie-potts/app-verify').ProbeContext} context */
+        run: async ({dataDir}) => {
+          if (await leaking(dataDir)) throw new Error('Command failed: /opt/private-check/bin/check /home/someone/secret');
+          return {outcome: /** @type {const} */ ('passed')};
+        },
+      }] : []),
       ...(inputs ? [{
         id: 'inputs-seen',
         doctor: true,
@@ -209,6 +221,16 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
         fresh: true,
         run: inputsShown,
       }} : {}),
+      'leaky-assertion': {
+        description: 'Fails with an assertion error and a note that name a private path',
+        run: async t => {
+          await t.page.goto(t.url);
+          t.note('reading /srv/private/fixture.json');
+          await t.expect('the private fixture is readable', () => {
+            throw new Error('ENOENT: no such file or directory, open `/srv/private/fixture.json`');
+          });
+        },
+      },
       'controller-answers': {
         description: 'The controller endpoint the ready line announced answers',
         run: async t => {
