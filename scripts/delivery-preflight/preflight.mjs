@@ -6,7 +6,7 @@ import { evaluateCi } from './ci.mjs';
 import { COMPARE_FILE_LIMIT, Gate, GUIDE_ROOT, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
-import { approvedRevisions, isBot, readRecord } from './records.mjs';
+import { approvedRevision, isBot, readRecord } from './records.mjs';
 import { POLICY_PATHS, REVIEW_FORMAT, collectReports, judgeRound, policyComponents, requirementReference } from './reviews.mjs';
 
 // Non-guide UI recognized by path: a directory prefix ends with "/", anything
@@ -460,14 +460,11 @@ async function evaluateUi(ctx) {
   }
   const commits = await ctx.read(ui, () => ctx.github.getAll(`/repos/${ctx.repo}/pulls/${ctx.pr.number}/commits?per_page=100`));
   if (!commits.ok) return;
-  const named = approvedRevisions(record.body, commits.value.map(item => item.sha));
-  if (named.length !== 1) {
-    ui.unresolved(named.length
-      ? `the approval record approves several revisions of this PR (${named.map(short).join(', ')})`
-      : 'the approval record does not start with "UI approved: <full sha>" or "UI approved by <login>: <full sha>" for a revision of this PR');
+  const approved = approvedRevision(record.body, commits.value.map(item => item.sha));
+  if (!approved) {
+    ui.unresolved('the approval record does not start with "UI approved: <full sha>" or "UI approved by <login>: <full sha>" for a revision of this PR');
     return;
   }
-  const [approved] = named;
   ui.evidence.approvedRevision = approved;
   if (approved === ctx.head) return;
   if (declaration.ui && !uiPaths.length) {

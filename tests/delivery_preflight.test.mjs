@@ -496,6 +496,14 @@ test('review: only own verdict lines grant satisfaction, and own-axis statements
     ['Verdict: approve\nstray ` tick and the Specification axis is incomplete, see `x`.', 'not-satisfied'],
   ];
   for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`, 'specification'), expected, text);
+  // Round 5: a verdict line in inline code is an example, and code spans pair as CommonMark does.
+  assert.equal(statedVerdict('- `Verdict: satisfied.` is the contract example.\n', 'specification'), 'none');
+  assert.equal(statedVerdict('- `Standards verdict: approve`\n**Changes requested.**\n', 'standards'), 'none');
+  assert.equal(statedVerdict('Verdict: approve\nA lone `"` and the Standards axis is action-required; also `"`.\n', 'standards'), 'not-satisfied');
+  assert.equal(statedVerdict('Verdict: approve\n- Case: ``The Standards axis is "action-required".`` next to x\n', 'standards'), 'satisfied');
+  assert.equal(statedVerdict('Verdict: approve\n- Case: ``The Standards axis is `action-required`.`` next to x\n', 'standards'), 'satisfied');
+  assert.equal(statedVerdict('Verdict: approve\nA ``` run and the Standards axis is incomplete, see `x`.\n', 'standards'), 'not-satisfied');
+  assert.equal(statedVerdict('Verdict: approve\n- Probe: ``x` and the Standards axis is incomplete `y`` quoted.\n', 'standards'), 'satisfied');
   assert.equal(statedVerdict('Standards verdict: approve\n', 'standards'), 'satisfied');
   assert.equal(statedVerdict('Specification verdict: approve\n', 'standards'), 'none');
   assert.equal(statedVerdict('Verdict: approve\nThe Specification axis is action-required.\n', 'standards'), 'satisfied');

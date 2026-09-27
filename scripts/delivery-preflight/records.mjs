@@ -83,9 +83,9 @@ export function guideRecordResults(body) {
 // requests, templates or revocations from being misread as approval.
 const UI_APPROVAL_LINE = /^(?:[-*] )?UI approved(?: by [A-Za-z0-9-]+)?: ([0-9a-f]{40})[ \t]*$/;
 
-/** The PR revision a record approves on its first line, as a list of zero or one. */
-export function approvedRevisions(body, commits) {
+/** The PR revision a record approves on its first line, or null. */
+export function approvedRevision(body, commits) {
   const first = body.split('\n').find(line => line.trim()) || '';
   const match = first.match(UI_APPROVAL_LINE);
-  return match && commits.includes(match[1]) ? [match[1]] : [];
+  return match && commits.includes(match[1]) ? match[1] : null;
 }

@@ -23,9 +23,9 @@ const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 // A reviewer return's own verdict. Only explicit verdict lines can grant
 // satisfaction; status statements can only veto it.
 //
-// Verdict lines are the reviewer's own lines (not in fenced code, a blockquote
-// or a 4-space indent) reading `Verdict: <phrase>` (or `Verdict -`, en or em
-// dash) in any heading, list or bold markup, with an optional parenthetical
+// Verdict lines are the reviewer's own lines (not in fenced code, a blockquote,
+// a 4-space indent or inline code) reading `Verdict: <phrase>` (or `Verdict -`,
+// en or em dash) in any heading, list or bold markup, with an optional parenthetical
 // after `Verdict`, or a bare `Verdict` heading with the phrase on the next
 // non-empty line. The word before `Verdict` may be nothing, `Final`,
 // `Overall`, `My` or the return's own axis (`Specification verdict:`); a line
@@ -36,16 +36,16 @@ const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 // A veto is an "axis is <status>" statement for the return's own axis or no
 // named axis whose status is action-required, incomplete or not satisfied,
 // even when only the status is wrapped in markup or quotes. It is ignored only
-// when "axis is" lies inside fenced code, a blockquote or a balanced quoted
-// span (straight or curly double quotes, or inline code); a line whose quotes
-// or backticks do not balance is read whole.
+// when "axis is" lies inside fenced code, a blockquote, an inline code span or
+// a balanced double-quoted span outside code; a line with an unclosed backtick
+// run or unbalanced quotes is read whole.
 //
 // Result: 'satisfied' needs at least one own verdict line, every one of them
 // satisfied, and no veto; 'none' when there is no own verdict line and no
 // veto; otherwise 'not-satisfied'.
 export const SATISFIED_VERDICTS = ['satisfied', 'approve', 'approved'];
 const VERDICT_PREFIXES = ['final', 'overall', 'my'];
-const VERDICT_LINE = /^[\s#*_`-]*(?:(?:([A-Za-z]+)\s+)?verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$|verdict[\s*_`]*$)/i;
+const VERDICT_LINE = /^[\s#*_-]*(?:(?:([A-Za-z]+)\s+)?verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$|verdict[\s*_`]*$)/i;
 const QUOTE_MARKS = `"'\u2018\u2019\u201c\u201d`;
 const VETO = new RegExp(`(?:\\b(standards|specification)[*_\`]*\\s+)?\\baxis is (?:now )?[*_\`${QUOTE_MARKS}]*(action-required|incomplete|not[ -]satisfied)\\b`, 'gi');
 
@@ -67,20 +67,30 @@ function ownLines(text) {
 }
 
 /**
- * Character ranges of balanced quoted spans: straight and curly double quotes
- * and inline code. None when any of them does not balance on the line.
+ * Character ranges that count as quotation on one line. Inline code spans are
+ * found first, as CommonMark does: a run of n backticks closes at the next run
+ * of exactly n. Straight and curly double quotes pair only outside them. When
+ * a backtick run has no closing run, or the quotes outside code do not
+ * balance, the line is read whole and nothing counts as quoted.
  */
 function quotedSpans(line) {
-  const at = pattern => [...line.matchAll(pattern)].map(match => match.index);
-  const straight = at(/"/g);
-  const ticks = at(/`/g);
-  const opens = at(/\u201c/g);
-  const closes = at(/\u201d/g);
-  if (straight.length % 2 || ticks.length % 2 || opens.length !== closes.length || opens.some((open, index) => open > closes[index])) return [];
-  const spans = [];
-  for (const marks of [straight, ticks]) {
-    for (let index = 0; index < marks.length; index += 2) spans.push([marks[index], marks[index + 1]]);
+  const runs = [...line.matchAll(/`+/g)].map(match => [match.index, match[0].length]);
+  const code = [];
+  for (let index = 0; index < runs.length; index += 1) {
+    const [start, length] = runs[index];
+    const close = runs.findIndex((run, later) => later > index && run[1] === length);
+    if (close < 0) return [];
+    code.push([start, runs[close][0] + length - 1]);
+    index = close;
   }
+  const outside = pattern => [...line.matchAll(pattern)].map(match => match.index)
+    .filter(position => !code.some(([start, end]) => position >= start && position <= end));
+  const straight = outside(/"/g);
+  const opens = outside(/\u201c/g);
+  const closes = outside(/\u201d/g);
+  if (straight.length % 2 || opens.length !== closes.length || opens.some((open, index) => open > closes[index])) return [];
+  const spans = [...code];
+  for (let index = 0; index < straight.length; index += 2) spans.push([straight[index], straight[index + 1]]);
   opens.forEach((open, index) => spans.push([open, closes[index]]));
   return spans;
 }

@@ -248,7 +248,8 @@ prints tokens, local paths or reviewer return text.
 | Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
 
 Each retained return must carry its own verdict line. Only the reviewer's own
-lines count: not fenced code, blockquotes (`>`) or lines indented four spaces.
+lines count: not fenced code, blockquotes (`>`), lines indented four spaces or
+a verdict written in inline code, which is an example.
 A verdict line is `Verdict:` (or `Verdict -`, or an en or em dash) in any
 heading, list or bold markup, or a bare `Verdict` heading with the phrase on
 the next line, optionally prefixed by `Final`, `Overall`, `My` or the
@@ -262,9 +263,10 @@ Statements can only veto. "<axis> axis is <status>" with `action-required`,
 `incomplete` or `not satisfied`, for the return's own axis or no named axis,
 makes the return not satisfied, even when only the status is wrapped in
 markup or quotes. It is ignored only when "axis is" lies inside fenced code, a
-blockquote or a balanced quoted span (straight or curly double quotes, or
-inline code); a line whose quotes do not balance is read whole. The summary
-row never approves an axis on its own.
+blockquote, an inline code span (a run of backticks closed by a run of the
+same length) or a balanced double-quoted span outside code; a line with an
+unclosed backtick run or unbalanced quotes is read whole. The summary row
+never approves an axis on its own.
 
 A UI approval or guide-only record is a comment or review on the PR written by
 the delivery account: the PR author, or the repository owner when a bot opened
