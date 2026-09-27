@@ -6,7 +6,9 @@ import {createRequire} from 'node:module';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {IN_PROGRESS, marker} from './handoff.js';
-import {EXIT, Failure, has, load, reseed, UsageError, type Io} from './lifecycle.js';
+import {resolveInputs} from './inputs.js';
+import {EXIT, Failure, has, load, reseed, reseedInputs, UsageError, type Io} from './lifecycle.js';
+import {artifactDigest} from './roots.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
 import {errorText, iso} from './util.js';
@@ -126,11 +128,35 @@ interface Target {
   scenario: string;
   url: string;
   port: number;
+  inputs: Readonly<Record<string, string>>;
+  endpoints: Readonly<Record<string, string>>;
+  /** The candidate's `build.artifactDigest` from start; `null` when there is none to compare. */
+  artifactDigest: string | null;
+}
+
+/**
+ * Why the served artifact is not the candidate the run recorded, or
+ * `undefined` when it is (or there is no recorded digest). Several runs of
+ * one checkout serve the same build on disk, so another run's rebuild can
+ * change what this one serves.
+ */
+async function servedDrift(plugin: AppPlugin, target: Target): Promise<string | undefined> {
+  if (target.artifactDigest === null) return undefined;
+  let served: string;
+  try {
+    served = await artifactDigest(plugin, target.url, AbortSignal.timeout(15000));
+  } catch (error) {
+    return `the served artifact could not be re-read (${errorText(error)})`;
+  }
+  return served === target.artifactDigest ? undefined : `the served artifact changed since start (recorded ${target.artifactDigest}, served ${served})`;
 }
 
 /** Drive one step in a fresh recorded context and judge it. Shared by `capture` and `runCaptureStep`. */
 async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: string, interrupt: Promise<never>): Promise<Finished> {
   const finished: Finished = {outcome: 'failed', screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: []};
+  // Never drive another candidate under this run's name: the step would prove nothing about the recorded build.
+  const changed = await Promise.race([servedDrift(plugin, target), interrupt]);
+  if (changed) return {...finished, reason: changed};
   const loaded = await loadChromium(plugin);
   if ('reason' in loaded) return {...finished, outcome: 'unavailable', reason: loaded.reason};
   const viewport = step.viewport ?? {width: 1280, height: 800};
@@ -245,8 +271,11 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
       }
     }
     if (crashed) problem = 'the page crashed';
+    // A rebuild during the step means its observations may belong to another candidate.
+    const changedDuring = await race(servedDrift(plugin, target));
     const failedAssertion = finished.assertions.find(a => a.outcome === 'failed');
-    finished.reason = problem
+    finished.reason = changedDuring
+      ?? problem
       ?? (failedAssertion ? `assertion failed: ${failedAssertion.name}` : undefined)
       ?? (finished.assertions.length === 0 ? 'no assertions recorded: a screenshot alone never passes' : undefined)
       ?? (!finished.screenshot ? 'the screenshot was not written' : undefined)
@@ -287,7 +316,21 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
   await mkdir(options.outputDir, {recursive: true});
   const scenario = options.scenario ?? plugin.defaultScenario;
   if (step.scenario && step.scenario !== scenario) throw new Error(`${stepName} is pinned to scenario ${step.scenario}; the application was seeded with ${scenario}`);
-  const target: Target = {runId: options.runId ?? `${plugin.app}-unmanaged`, root: plugin.root, runtimeDir: options.runtimeDir ?? '', dataDir: options.dataDir ?? '', scenario, url: url.href, port: Number(url.port)};
+  // The same rules as `start`: declared, not secret-like, printable ASCII, required ones present.
+  const inputs = Object.freeze(resolveInputs(plugin, options.inputs ?? {}));
+  const endpoints: Record<string, string> = {};
+  for (const [name, value] of Object.entries(options.endpoints ?? {})) {
+    let endpoint: URL | undefined;
+    try {
+      endpoint = new URL(value);
+    } catch {
+      endpoint = undefined;
+    }
+    if (!endpoint || endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error(`runCaptureStep needs an http://127.0.0.1:<port>/ URL for endpoint ${name}`);
+    endpoints[name] = endpoint.href;
+  }
+  if (options.artifactDigest !== undefined && !/^sha256:[0-9a-f]{64}$/.test(options.artifactDigest)) throw new Error('runCaptureStep needs artifactDigest as sha256:<64 hex>, as the receipt records it');
+  const target: Target = {runId: options.runId ?? `${plugin.app}-unmanaged`, root: plugin.root, runtimeDir: options.runtimeDir ?? '', dataDir: options.dataDir ?? '', scenario, url: url.href, port: Number(url.port), inputs, endpoints: Object.freeze(endpoints), artifactDigest: options.artifactDigest ?? null};
   const startedAt = iso();
   const finished = await drive(plugin, step, target, options.outputDir, new Promise<never>(() => undefined));
   await writeLog(options.outputDir, {runId: target.runId, step: stepName, description: step.description, scenario, supervised: false, startedAt}, finished);
@@ -312,12 +355,13 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   if (current.state !== 'running' || !unit?.loaded || unit.active !== 'active' || unit.mainPid !== current.owned.mainPid) throw new Failure('run-not-running', `${run.runId} is not running as its receipt says`);
   if (step.scenario && !step.fresh && current.scenario.name !== step.scenario) throw new Failure('scenario-mismatch', `${stepName} expects scenario ${step.scenario}; the run is seeded with ${current.scenario.name}`);
 
-  // A fresh step starts from newly seeded state: stop, reseed and relaunch on the same port first.
+  // A fresh step starts from newly seeded state: stop, reseed and relaunch on the same port first, with the recorded inputs.
   let fresh: {scenario: string; seededAt?: string; failed?: string} | undefined;
   if (step.fresh) {
     const name = step.scenario ?? current.scenario.name;
+    const inputs = reseedInputs(plugin, current);
     io.progress(`${run.runId}: reseeding ${name} for fresh step ${stepName}`);
-    const reseeded = await reseed(run, io, current, name);
+    const reseeded = await reseed(run, io, current, name, inputs);
     fresh = reseeded.code === EXIT.ok ? {scenario: name, seededAt: reseeded.value.seededAt as string} : {scenario: name, failed: `${reseeded.value.detail}`};
   }
 
@@ -350,7 +394,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   let finished: Finished;
   try {
     if (fresh?.failed) finished = {outcome: 'failed', reason: `fresh reseed failed, the run was stopped: ${fresh.failed}`, screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: []};
-    else finished = await drive(plugin, step, {...run.paths(), scenario: receipt.scenario.name, url: receipt.preview!.url, port: receipt.owned.port!}, dir, interrupt);
+    else finished = await drive(plugin, step, {...run.paths(), scenario: receipt.scenario.name, url: receipt.preview!.url, port: receipt.owned.port!, inputs: Object.freeze({...receipt.inputs}), endpoints: Object.freeze({...receipt.owned.endpoints}), artifactDigest: receipt.build.artifactDigest}, dir, interrupt);
   } catch (error) {
     if (!(error instanceof Interrupted)) throw error;
     finished = {outcome: 'failed', reason: `interrupted by ${signalName} before the capture completed`, screenshot: false, video: false, assertions: [], notes: [], attachments: [], partial: [], abandoned: true};

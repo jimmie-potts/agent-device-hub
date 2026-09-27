@@ -57,6 +57,16 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    Nanoleaf and Pixoo adapters each supply only a plug-in (build identity,
    scenarios, launch, readiness, components, capture steps, boundary checks)
    and their own wrapper command.
+8. **Run inputs and extra endpoints** (`app-verify` 1.1, for
+   [#495](https://github.com/jimmie-potts/agent-device-hub/issues/495)). A
+   composed preview starts one run per application and points one at
+   another. Rather than a multi-unit run, each run stays one unit and takes
+   declared, non-secret `--input` values, which the receipt records and
+   every relaunch reuses; its ready line may name extra loopback endpoints,
+   which keep their ports across a relaunch. Secret-like input names are
+   refused because inputs are recorded. The receipt stays
+   `app-verification/1`, since both fields are optional and readers ignore
+   unknown fields.
 
 ## Alternatives considered
 

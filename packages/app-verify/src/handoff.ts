@@ -3,7 +3,7 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {card} from './card.js';
-import {EXIT, Failure, has, load, reseed, sums, type Io} from './lifecycle.js';
+import {EXIT, Failure, has, load, reseed, reseedInputs, sums, type Io} from './lifecycle.js';
 import {validateReceipt} from './receipt.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, Receipt} from './types.js';
@@ -170,6 +170,8 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     for (const line of lines) io.progress(line);
     return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
   }
+  // Checked before the freeze: a plug-in that no longer accepts a recorded input is a usage error that changes nothing.
+  const inputs = reset !== undefined ? reseedInputs(plugin, receipt) : undefined;
   const verified = join(run.store.dir, 'verified'), partial = join(run.store.dir, PARTIAL);
   let manifest = '', committed: string | undefined;
   receipt = await run.store.update(async current => {
@@ -218,7 +220,7 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
   if (committed) await run.store.event('frozen-committed', {frozenAt: receipt.proof.frozenAt, manifest: committed});
   io.progress(`${run.runId}: verified set frozen in ${verified}`);
   if (reset !== undefined) {
-    const reseeded = await reseed(run, io, receipt, reset);
+    const reseeded = await reseed(run, io, receipt, reset, inputs!);
     if (reseeded.code !== EXIT.ok) {
       const {receipt: _unused, ...value} = reseeded.value;
       return {code: reseeded.code, value: {operation: 'handoff', ...value, frozenAt: receipt.proof.frozenAt, verified}};

@@ -9,6 +9,9 @@ export function iso(ms: number = Date.now()): string {
   return new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+/** A caller's mistake: printed as `{"error": "usage"}` with exit status 2, before the run changes. */
+export class UsageError extends Error {}
+
 export const APP_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 export const KEBAB = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 

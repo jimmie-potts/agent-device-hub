@@ -5,11 +5,14 @@ import {chmod, mkdir, open, readdir, readFile, rm, writeFile} from 'node:fs/prom
 import {delimiter, dirname, join} from 'node:path';
 import {card, windowsLoopback} from './card.js';
 import {latestFrozen, recoverOnStop, uncommitted} from './handoff.js';
+import {declaresInputs, NAME, resolveInputs} from './inputs.js';
 import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
-import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunState} from './types.js';
-import {errorText, hex256, iso, newRunId, pause, runIdPattern, which} from './util.js';
+import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunInputs, type RunState} from './types.js';
+import {errorText, hex256, iso, newRunId, pause, runIdPattern, UsageError, which} from './util.js';
+
+export {UsageError};
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -69,15 +72,42 @@ export class Run {
   }
 }
 
-function probeContext(run: Run, scenario: string, url: string, port: number, signal: AbortSignal): ProbeContext {
-  return {...run.paths(), scenario, url, port, signal};
+/** What a run's application sees of its inputs and endpoints (1.1); frozen copies, so a plug-in never changes the receipt's. */
+interface Surface {
+  inputs: RunInputs;
+  endpoints: Readonly<Record<string, string>>;
+}
+
+const surface = (inputs: RunInputs = {}, endpoints: Readonly<Record<string, string>> = {}): Surface => ({inputs: Object.freeze({...inputs}), endpoints: Object.freeze({...endpoints})});
+const recorded = (receipt: Receipt): Surface => surface(receipt.inputs, receipt.owned.endpoints);
+
+function probeContext(run: Run, scenario: string, url: string, port: number, signal: AbortSignal, seen: Surface): ProbeContext {
+  return {...run.paths(), scenario, url, port, signal, inputs: seen.inputs, endpoints: seen.endpoints};
+}
+
+/** The 1.1 fields a result, event or receipt carries: `inputs` only when the plug-in declares any, `endpoints` only when announced. */
+function additions(plugin: AppPlugin, seen: Surface): {inputs?: RunInputs; endpoints?: Readonly<Record<string, string>>} {
+  return {...(declaresInputs(plugin) ? {inputs: {...seen.inputs}} : {}), ...(Object.keys(seen.endpoints).length ? {endpoints: {...seen.endpoints}} : {})};
+}
+
+/** An `http://127.0.0.1:<port>/…` URL from a ready line, or a `launch-failed` that names the endpoint when it is one. */
+function loopbackUrl(value: unknown, endpoint?: string): URL {
+  const which = endpoint === undefined ? '' : ` for endpoint ${endpoint}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(String(value));
+  } catch {
+    throw new Failure('launch-failed', `the ready line named an invalid URL${which}`);
+  }
+  if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port) throw new Failure('launch-failed', `the application did not bind 127.0.0.1 with an explicit port${which}`);
+  return parsed;
 }
 
 // ---------------------------------------------------------------------------
 // Launch and readiness, shared by start and reseed.
 
 /** Empty the application's state and seed a scenario into it. */
-async function seed(run: Run, scenario: string): Promise<void> {
+async function seed(run: Run, scenario: string, inputs: RunInputs): Promise<void> {
   for (const dir of [run.dataDir, run.tmpDir, run.homeDir]) {
     await rm(dir, {recursive: true, force: true});
     await mkdir(dir, {mode: 0o700});
@@ -87,17 +117,18 @@ async function seed(run: Run, scenario: string): Promise<void> {
   if (!has(run.plugin.scenarios, scenario)) throw new Failure('seed-failed', `unknown scenario ${scenario}`);
   const definition = run.plugin.scenarios[scenario]!;
   try {
-    await definition.seed({...run.paths(), scenario});
+    await definition.seed({...run.paths(), scenario, inputs: surface(inputs).inputs});
   } catch (error) {
     throw new Failure('seed-failed', errorText(error));
   }
 }
 
 /** Launch the app; returns the names of core variables (PATH, HOME, TMPDIR) the plug-in overrode. */
-async function launch(run: Run, scenario: string, port: number, env: Env): Promise<string[]> {
+async function launch(run: Run, scenario: string, port: number, env: Env, inputs: RunInputs, endpoints: Readonly<Record<string, string>>): Promise<string[]> {
   let spec;
   try {
-    spec = await run.plugin.launch({...run.paths(), scenario, port, node: process.execPath});
+    const endpointPorts = Object.freeze(Object.fromEntries(Object.entries(endpoints).map(([name, url]) => [name, Number(new URL(url).port)])));
+    spec = await run.plugin.launch({...run.paths(), scenario, port, node: process.execPath, inputs: surface(inputs).inputs, endpointPorts});
   } catch (error) {
     throw new Failure('launch-failed', errorText(error));
   }
@@ -128,11 +159,16 @@ async function noteOverrides(run: Run, io: Io, overrides: string[]): Promise<voi
   if (overrides.length) io.progress(`${run.runId}: the plug-in overrides ${overrides.join(', ')}; stop removes only the runtime directory`);
 }
 
-/** Wait for the ready line and a passing probe. Returns the URL and port. */
-async function ready(run: Run, scenario: string, expectedPort: number): Promise<{url: string; port: number}> {
+/**
+ * Wait for the ready line and a passing probe. Returns the URL, port and extra
+ * endpoints. On a relaunch (`expected` set), the port and every recorded
+ * endpoint must come back unchanged.
+ */
+async function ready(run: Run, scenario: string, inputs: RunInputs, expected?: {port: number; endpoints: Readonly<Record<string, string>>}): Promise<{url: string; port: number; endpoints: Record<string, string>}> {
   const timeoutMs = run.plugin.readiness.timeoutMs ?? 30000;
   const deadline = Date.now() + timeoutMs;
   let offset = 0, pending = '', url: string | undefined, port = 0, lastProbe = '';
+  let endpoints: Record<string, string> = {};
   for (;;) {
     if (!url) {
       const handle = await open(run.stdoutLog, 'r').catch(() => undefined);
@@ -155,17 +191,33 @@ async function ready(run: Run, scenario: string, expectedPort: number): Promise<
             announced = undefined;
           }
           if (!announced) continue;
-          let parsed: URL;
-          try {
-            parsed = new URL(announced.url);
-          } catch {
-            throw new Failure('launch-failed', 'the ready line named an invalid URL');
-          }
-          if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port) throw new Failure('launch-failed', 'the application did not bind 127.0.0.1 with an explicit port');
+          const parsed = loopbackUrl(announced.url);
           url = parsed.href;
           port = Number(parsed.port);
-          if (expectedPort && port !== expectedPort) throw new Failure('port-changed', `relaunched on port ${port}, expected ${expectedPort}`);
-          if ([...INSTALLED_PORTS, ...(run.plugin.reservedPorts ?? [])].includes(port)) throw new Failure('port-reserved', `the application announced reserved port ${port}`);
+          const extra = announced.endpoints ?? {};
+          if (typeof extra !== 'object' || extra === null || Array.isArray(extra)) throw new Failure('launch-failed', 'the ready line named endpoints that are not a map of names to URLs');
+          if (Object.keys(extra).length > 16) throw new Failure('launch-failed', 'the ready line named more than 16 endpoints');
+          endpoints = {};
+          for (const [name, value] of Object.entries(extra)) {
+            if (!NAME.test(name)) throw new Failure('launch-failed', 'the ready line named an endpoint with an invalid name');
+            endpoints[name] = loopbackUrl(value, name).href;
+          }
+          if (expected) {
+            if (port !== expected.port) throw new Failure('port-changed', `relaunched on port ${port}, expected ${expected.port}`);
+            // Another run may already point at a recorded endpoint, so it keeps its port; a relaunch may add endpoints.
+            for (const [name, recordedUrl] of Object.entries(expected.endpoints)) {
+              const was = Number(new URL(recordedUrl).port);
+              if (!Object.hasOwn(endpoints, name)) throw new Failure('port-changed', `endpoint ${name} was not announced again, expected port ${was}`);
+              const now = Number(new URL(endpoints[name]!).port);
+              if (now !== was) throw new Failure('port-changed', `endpoint ${name} relaunched on port ${now}, expected ${was}`);
+            }
+          }
+          const reserved = [...INSTALLED_PORTS, ...(run.plugin.reservedPorts ?? [])];
+          if (reserved.includes(port)) throw new Failure('port-reserved', `the application announced reserved port ${port}`);
+          for (const [name, value] of Object.entries(endpoints)) {
+            const endpointPort = Number(new URL(value).port);
+            if (reserved.includes(endpointPort)) throw new Failure('port-reserved', `the application announced reserved port ${endpointPort} for endpoint ${name}`);
+          }
           break;
         }
       }
@@ -173,8 +225,8 @@ async function ready(run: Run, scenario: string, expectedPort: number): Promise<
     if (url) {
       const remaining = Math.max(250, Math.min(5000, deadline - Date.now()));
       try {
-        const result = await run.plugin.readiness.probe(probeContext(run, scenario, url, port, AbortSignal.timeout(remaining)));
-        if (result.ok) return {url, port};
+        const result = await run.plugin.readiness.probe(probeContext(run, scenario, url, port, AbortSignal.timeout(remaining), surface(inputs, endpoints)));
+        if (result.ok) return {url, port, endpoints};
         lastProbe = result.reason;
       } catch (error) {
         lastProbe = errorText(error);
@@ -191,12 +243,12 @@ async function ready(run: Run, scenario: string, expectedPort: number): Promise<
   }
 }
 
-async function boundaryChecks(run: Run, scenario: string, url: string, port: number, env: Env): Promise<CheckRecord[]> {
+async function boundaryChecks(run: Run, scenario: string, url: string, port: number, env: Env, seen: Surface): Promise<CheckRecord[]> {
   const checks: CheckRecord[] = [{id: 'readiness', outcome: 'passed'}];
   for (const check of run.plugin.checks ?? []) {
     let record: CheckRecord;
     try {
-      const outcome = await check.run(probeContext(run, scenario, url, port, AbortSignal.timeout(15000)));
+      const outcome = await check.run(probeContext(run, scenario, url, port, AbortSignal.timeout(15000), seen));
       record = outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: outcome.reason};
     } catch (error) {
       record = {id: check.id, outcome: 'failed', reason: errorText(error)};
@@ -256,7 +308,15 @@ const withCause = (detail: string, cause: string | undefined) => (cause ? `${det
 // ---------------------------------------------------------------------------
 // Cleanup through unit names only.
 
-export async function cleanup(run: Run, receipt: Receipt | undefined, expectRuntimeDir: boolean): Promise<{result: 'clean' | 'partial' | 'unknown'; items: CleanupItem[]}> {
+type Cleanup = {result: 'clean' | 'partial' | 'unknown'; items: CleanupItem[]};
+
+/** `unknown` when a readback failed, `partial` when something was left or an expected runtime directory was missing, else `clean`. */
+function cleanupResult(items: CleanupItem[], expectRuntimeDir: boolean): Cleanup['result'] {
+  if (items.some(i => i.outcome === 'unknown')) return 'unknown';
+  return items.some(i => i.outcome === 'left') || (expectRuntimeDir && items.some(i => i.kind === 'runtime-dir' && i.outcome === 'absent')) ? 'partial' : 'clean';
+}
+
+export async function cleanup(run: Run, receipt: Receipt | undefined, expectRuntimeDir: boolean): Promise<Cleanup> {
   const items: CleanupItem[] = [];
   const timers = new Set<string>();
   if (receipt) timers.add(receipt.owned.leaseTimer);
@@ -269,9 +329,33 @@ export async function cleanup(run: Run, receipt: Receipt | undefined, expectRunt
     await rm(run.runtimeDir, {recursive: true, force: true});
     items.push({kind: 'runtime-dir', name: run.runId, outcome: existsSync(run.runtimeDir) ? 'left' : 'removed'});
   } else items.push({kind: 'runtime-dir', name: run.runId, outcome: 'absent'});
-  const result = items.some(i => i.outcome === 'unknown') ? 'unknown'
-    : items.some(i => i.outcome === 'left') || (expectRuntimeDir && items.at(-1)!.outcome === 'absent') ? 'partial' : 'clean';
-  return {result, items};
+  return {result: cleanupResult(items, expectRuntimeDir), items};
+}
+
+/**
+ * A stop retried after a `receipt-locked` refusal finds absent what the
+ * refused attempt removed. Each attempt records its cleanup and the state it
+ * judged in a `stop-cleaned` event before it takes the lock, so the retry
+ * counts an item an earlier attempt removed as removed, instead of reading
+ * the absent runtime directory as a partial cleanup, and keeps the first
+ * attempt's `stopped` or `expired`.
+ */
+async function earlierStops(run: Run, cleaned: Cleanup, expectRuntimeDir: boolean): Promise<{cleaned: Cleanup; state?: RunState}> {
+  const text = await readFile(join(run.store.dir, 'events.jsonl'), 'utf8').catch(() => '');
+  const removed = new Set<string>();
+  let state: RunState | undefined;
+  for (const line of text.split('\n')) {
+    try {
+      const event = JSON.parse(line) as {event?: string; items?: unknown; state?: unknown};
+      if (event.event !== 'stop-cleaned' || !Array.isArray(event.items)) continue;
+      if (state === undefined && (event.state === 'stopped' || event.state === 'expired')) state = event.state;
+      for (const item of event.items as CleanupItem[]) if (item?.outcome === 'removed') removed.add(`${item.kind} ${item.name}`);
+    } catch {
+      // A torn line is not evidence either way.
+    }
+  }
+  const items = cleaned.items.map(item => (item.outcome === 'absent' && removed.has(`${item.kind} ${item.name}`) ? {...item, outcome: 'removed' as const} : item));
+  return {cleaned: {result: cleanupResult(items, expectRuntimeDir), items}, ...(state ? {state} : {})};
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +365,8 @@ export interface StartOptions {
   scenario: string;
   leaseMinutes: number;
   restarts?: string;
+  /** Resolved with `resolveInputs`. */
+  inputs?: RunInputs;
 }
 
 export async function start(plugin: AppPlugin, io: Io, options: StartOptions): Promise<{code: number; receipt?: Receipt; value: Record<string, unknown>}> {
@@ -297,6 +383,8 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
   const build = await candidate(plugin);
   const run = new Run(plugin, rootsFound, newRunId(plugin.app));
   const {runId} = run;
+  const inputs = surface(options.inputs).inputs;
+  const given = additions(plugin, surface(inputs));
   // 1. The proof directory and a `starting` receipt naming everything start will create.
   await mkdir(rootsFound.proof, {recursive: true});
   await mkdir(run.store.dir);
@@ -309,6 +397,7 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
     state: 'starting',
     startedAt: iso(),
     ...(options.restarts ? {restarts: options.restarts} : {}),
+    ...given,
     build: {...build, artifactDigest: null},
     scenario: {name: options.scenario, version: build.sourceRevision, seededAt: null},
     components: plugin.components.map(c => ({...c})),
@@ -342,29 +431,30 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
     } catch (error) {
       throw new Failure('runtime-root-unusable', errorText(error));
     }
-    await seed(run, options.scenario);
+    await seed(run, options.scenario, inputs);
     const seededAt = iso();
-    await run.store.event('seeded', {scenario: options.scenario});
+    await run.store.event('seeded', {scenario: options.scenario, ...given});
     // 3. The lease exists before the application.
     const expiresAt = Math.ceil((Date.now() + options.leaseMinutes * 60000) / 1000);
     const lease = await systemd.startLease(systemd.leaseBase(runId), run.unit, expiresAt, `app-verify lease ${runId}`);
     if (!lease.ok) throw new Failure('lease-failed', lease.reason);
     await run.store.event('lease-started', {timer: receipt.owned.leaseTimer, expiresAt: iso(expiresAt * 1000)});
     // 4. The application under its unit.
-    const overrides = await launch(run, options.scenario, 0, io.env);
-    await run.store.event('unit-started', {unit: run.unit, ...(overrides.length ? {overrides} : {})});
+    const overrides = await launch(run, options.scenario, 0, io.env, inputs, {});
+    await run.store.event('unit-started', {unit: run.unit, ...(overrides.length ? {overrides} : {}), ...given});
     await noteOverrides(run, io, overrides);
     // 5. Readiness, identity, artifact, boundary checks.
-    const announced = await ready(run, options.scenario, 0);
+    const announced = await ready(run, options.scenario, inputs);
     port = announced.port;
-    await run.store.event('ready', {port});
+    const seen = surface(inputs, announced.endpoints);
+    await run.store.event('ready', {port, ...(Object.keys(announced.endpoints).length ? {endpoints: announced.endpoints} : {})});
     let digest: string;
     try {
       digest = await artifactDigest(plugin, announced.url, AbortSignal.timeout(15000));
     } catch (error) {
       throw new Failure('artifact-unreadable', errorText(error));
     }
-    const checks = await boundaryChecks(run, options.scenario, announced.url, port, io.env);
+    const checks = await boundaryChecks(run, options.scenario, announced.url, port, io.env, seen);
     const live = await identity(run);
     // 6. The running receipt.
     Object.assign(receipt, {
@@ -374,12 +464,12 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
       checks,
       preview: {url: announced.url, expiresAt: iso(expiresAt * 1000), leaseMinutes: options.leaseMinutes},
     });
-    Object.assign(receipt.owned, {port, ...live});
+    Object.assign(receipt.owned, {port, ...live, ...(Object.keys(announced.endpoints).length ? {endpoints: announced.endpoints} : {})});
     await run.store.write(receipt);
     await run.store.event('running', {port, url: announced.url, mainPid: live.mainPid});
     const lines = card(receipt, plugin.command);
     for (const line of lines) io.progress(line);
-    return {code: EXIT.ok, receipt, value: {...operation, runId, state: 'running', url: announced.url, port, scenario: options.scenario, build: receipt.build, expiresAt: receipt.preview!.expiresAt, proofDir: run.store.dir, card: lines}};
+    return {code: EXIT.ok, receipt, value: {...operation, runId, state: 'running', url: announced.url, port, ...additions(plugin, seen), scenario: options.scenario, build: receipt.build, expiresAt: receipt.preview!.expiresAt, proofDir: run.store.dir, card: lines}};
   } catch (error) {
     const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
     const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
@@ -397,8 +487,6 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
 
 // ---------------------------------------------------------------------------
 // Loading an existing run.
-
-export class UsageError extends Error {}
 
 export async function load(plugin: AppPlugin, io: Io, runId: string | undefined): Promise<Run> {
   if (!runId || !runIdPattern(plugin.app).test(runId)) throw new UsageError(`expected a ${plugin.app} run id`);
@@ -433,27 +521,37 @@ async function requireRunning(run: Run): Promise<Receipt> {
 // ---------------------------------------------------------------------------
 // scenario and handoff --reset: reseed on the same port, keeping id and lease.
 
-export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: string): Promise<{code: number; value: Record<string, unknown>}> {
+/**
+ * Reseed on the recorded port with `inputs`, which the caller resolved before
+ * anything changed (`reseedInputs`, or `scenario`'s replacements). Recorded
+ * endpoints must come back on their ports.
+ */
+export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: string, inputs: RunInputs): Promise<{code: number; value: Record<string, unknown>}> {
   try {
     const stopped = await systemd.stopUnit(run.unit);
     if (stopped !== 'removed' && stopped !== 'absent') throw new Failure('unit-exited', `${run.unit} did not stop (${stopped})`);
-    await seed(run, scenario);
+    await seed(run, scenario, inputs);
     const seededAt = iso();
     const timer = await systemd.timerState(receipt.owned.leaseTimer);
     if (!timer?.loaded || timer.active !== 'active') throw new Failure('lease-failed', 'the lease elapsed during the reseed');
-    const overrides = await launch(run, scenario, receipt.owned.port!, io.env);
+    const endpoints = receipt.owned.endpoints ?? {};
+    const overrides = await launch(run, scenario, receipt.owned.port!, io.env, inputs, endpoints);
     await noteOverrides(run, io, overrides);
-    const announced = await ready(run, scenario, receipt.owned.port!);
-    const checks = await boundaryChecks(run, scenario, announced.url, announced.port, io.env);
+    const announced = await ready(run, scenario, inputs, {port: receipt.owned.port!, endpoints});
+    const seen = surface(inputs, announced.endpoints);
+    const checks = await boundaryChecks(run, scenario, announced.url, announced.port, io.env, seen);
     const live = await identity(run);
+    const given = additions(run.plugin, seen);
     const updated = await run.store.update(current => {
       current.scenario = {name: scenario, version: current.build.sourceRevision, seededAt};
       current.checks = checks;
+      if (given.inputs) current.inputs = {...given.inputs};
       Object.assign(current.owned, live);
+      if (given.endpoints) current.owned.endpoints = {...given.endpoints};
     });
-    await run.store.event('reseeded', {scenario, mainPid: live.mainPid});
+    await run.store.event('reseeded', {scenario, mainPid: live.mainPid, ...given});
     io.progress(`${run.runId}: reseeded to ${scenario} on port ${announced.port}`);
-    return {code: EXIT.ok, value: {runId: run.runId, state: 'running', scenario, port: announced.port, url: announced.url, seededAt, receipt: updated}};
+    return {code: EXIT.ok, value: {runId: run.runId, state: 'running', scenario, port: announced.port, url: announced.url, ...given, seededAt, receipt: updated}};
   } catch (error) {
     const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
     const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
@@ -467,11 +565,18 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
   }
 }
 
-export async function scenario(plugin: AppPlugin, io: Io, runId: string | undefined, name: string | undefined) {
+/** The recorded inputs, checked against the plug-in before a relaunch reuses them: a usage error changes nothing. */
+export function reseedInputs(plugin: AppPlugin, receipt: Receipt): RunInputs {
+  return resolveInputs(plugin, {}, receipt.inputs ?? {});
+}
+
+/** `given` replaces the recorded value of each input it names; the others are kept. */
+export async function scenario(plugin: AppPlugin, io: Io, runId: string | undefined, name: string | undefined, given: RunInputs = {}) {
   const run = await load(plugin, io, runId);
   if (!name || !has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name ?? '(none)'}; see help`);
   const receipt = await requireRunning(run);
-  const result = await reseed(run, io, receipt, name);
+  const inputs = resolveInputs(plugin, given, receipt.inputs ?? {});
+  const result = await reseed(run, io, receipt, name, inputs);
   const {receipt: _unused, ...value} = result.value;
   return {code: result.code, value: {operation: 'scenario', ...value}};
 }
@@ -547,11 +652,15 @@ export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined)
   }
   if (!receipt && !anything) throw new Failure('unknown-run', `nothing is known about ${run.runId}`);
   // Units, timers and the runtime directory go first: no proof state can keep a run serving.
-  const cleaned = await cleanup(run, receipt, live);
+  let cleaned = await cleanup(run, receipt, live);
   let state: RunState = receipt?.state ?? 'stopped';
   if (receipt && live) {
     const expired = !unitBefore?.loaded && receipt.preview !== null && Date.parse(receipt.preview.expiresAt) <= Date.now();
-    state = expired ? 'expired' : 'stopped';
+    const earlier = await earlierStops(run, cleaned, live);
+    cleaned = earlier.cleaned;
+    state = earlier.state ?? (expired ? 'expired' : 'stopped');
+    // Recorded before the lock, so a retry after a receipt-locked refusal knows what this attempt removed.
+    await run.store.event('stop-cleaned', {state, cleanup: cleaned.result, items: cleaned.items});
   }
   for (const item of cleaned.items) if (item.outcome === 'left' || item.outcome === 'unknown') io.progress(`${run.runId}: ${item.kind} ${item.name} is ${item.outcome}; stop it by name with systemctl --user stop ${item.name}`);
   const ok = cleaned.items.every(i => i.outcome !== 'left' && i.outcome !== 'unknown');
@@ -583,9 +692,11 @@ export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined)
 export async function restart(plugin: AppPlugin, io: Io, runId: string | undefined) {
   const run = await load(plugin, io, runId);
   const previous = await readReceipt(run);
+  // Checked before the stop, so a plug-in that no longer accepts a recorded input leaves the run serving.
+  const inputs = reseedInputs(plugin, previous);
   const stopped = await stop(plugin, io, run.runId);
   if (stopped.code !== EXIT.ok) return {code: stopped.code, value: {...stopped.value, operation: 'restart'}};
-  const started = await start(plugin, io, {scenario: previous.scenario.name, leaseMinutes: previous.preview?.leaseMinutes ?? DEFAULT_LEASE_MINUTES, restarts: run.runId});
+  const started = await start(plugin, io, {scenario: previous.scenario.name, leaseMinutes: previous.preview?.leaseMinutes ?? DEFAULT_LEASE_MINUTES, restarts: run.runId, inputs});
   if (!started.receipt) return {code: started.code, value: {...started.value, operation: 'restart', restarts: run.runId}};
   const next = started.receipt.build;
   const same = !previous.build.dirty && !next.dirty && next.sourceRevision !== 'unknown' && next.sourceRevision === previous.build.sourceRevision
@@ -763,11 +874,12 @@ async function assess(run: Run, io: Io) {
   }
   let health: CheckRecord | null = null, artifact: string | null = null, windows: CheckRecord | null = null;
   const checks: CheckRecord[] = [];
-  let listener: {recorded: number; ports: number[] | null; outcome: 'matches' | 'mismatch' | 'unread'} | null = null;
+  type Outcome = 'matches' | 'mismatch' | 'unread';
+  let listener: {recorded: number; ports: number[] | null; outcome: Outcome; endpoints?: Record<string, {port: number; outcome: Outcome}>} | null = null;
   if (receipt?.preview && receipt.owned.port && active) {
-    const url = receipt.preview.url, port = receipt.owned.port;
+    const url = receipt.preview.url, port = receipt.owned.port, seen = recorded(receipt);
     try {
-      const probe = await run.plugin.readiness.probe(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(5000)));
+      const probe = await run.plugin.readiness.probe(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(5000), seen));
       health = probe.ok ? {id: 'health', outcome: 'passed'} : {id: 'health', outcome: 'failed', reason: probe.reason};
     } catch (error) {
       health = {id: 'health', outcome: 'failed', reason: errorText(error)};
@@ -781,9 +893,15 @@ async function assess(run: Run, io: Io) {
       state = 'stale';
       reasons.push('artifact-changed');
     }
-    // The actual listener: the recorded port must be one the unit's own processes listen on.
+    // The actual listener: the recorded port and every recorded endpoint's port must be ones the unit's own processes listen on.
     const ports = await systemd.listeningPorts(run.unit);
-    listener = ports === undefined ? {recorded: port, ports: null, outcome: 'unread'} : {recorded: port, ports, outcome: ports.includes(port) ? 'matches' : 'mismatch'};
+    const judge = (wanted: number): Outcome => (ports === undefined ? 'unread' : ports.includes(wanted) ? 'matches' : 'mismatch');
+    const endpoints = Object.fromEntries(Object.entries(seen.endpoints).map(([name, value]) => {
+      const endpointPort = Number(new URL(value).port);
+      return [name, {port: endpointPort, outcome: judge(endpointPort)}];
+    }));
+    const outcomes = [judge(port), ...Object.values(endpoints).map(e => e.outcome)];
+    listener = {recorded: port, ports: ports ?? null, outcome: outcomes.includes('unread') ? 'unread' : outcomes.includes('mismatch') ? 'mismatch' : 'matches', ...(Object.keys(endpoints).length ? {endpoints} : {})};
     if (listener.outcome === 'mismatch') {
       state = 'stale';
       reasons.push('listener-mismatch');
@@ -792,7 +910,7 @@ async function assess(run: Run, io: Io) {
     for (const check of run.plugin.checks ?? []) {
       if (!check.doctor) continue;
       try {
-        const outcome = await check.run(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(15000)));
+        const outcome = await check.run(probeContext(run, receipt.scenario.name, url, port, AbortSignal.timeout(15000), seen));
         checks.push(outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: outcome.reason});
       } catch (error) {
         checks.push({id: check.id, outcome: 'failed', reason: errorText(error)});
@@ -810,6 +928,7 @@ async function assess(run: Run, io: Io) {
     runtimeDir,
     build: receipt?.build ?? null,
     scenario: receipt?.scenario.name ?? null,
+    ...(receipt?.inputs ? {inputs: receipt.inputs} : {}),
     preview: receipt?.preview ? {...receipt.preview, remainingMinutes: Math.max(0, Math.round((Date.parse(receipt.preview.expiresAt) - Date.now()) / 60000))} : null,
     health,
     artifact,

@@ -12,6 +12,7 @@ import test from 'node:test';
 import {RECEIPT_VERSION} from '@jimmie-potts/app-verify';
 
 const worker = fileURLToPath(new URL('fixture-app/lock-worker.mjs', import.meta.url));
+const race = fileURLToPath(new URL('fixture-app/lock-race.mjs', import.meta.url));
 
 const receipt = () => ({
   receiptVersion: RECEIPT_VERSION, runId: 'avt-20260927T060259Z-3f9a1c', app: 'avt', repository: 'jimmie-potts/agent-device-hub',
@@ -82,6 +83,39 @@ test('a stuck lock breaker ends in receipt-locked within the deadline, and a hol
     assert.equal(JSON.parse(await readFile(join(orphan, 'receipt.json'), 'utf8')).counter, 1);
   } finally {
     sleeper.kill('SIGKILL');
+    await rm(base, {recursive: true, force: true});
+  }
+});
+
+test('an operation whose prepared lock directory was swept while it was suspended retries instead of failing', {timeout: 30000}, async () => {
+  const result = JSON.parse((await promisify(execFile)(process.execPath, [race, 'swept', JSON.stringify(receipt())])).stdout);
+  assert.equal(result.swept, true, 'the prepared directory was removed before its rename');
+  assert.deepEqual(result.errors, [], 'no internal error');
+  assert.equal(result.applied, 1, 'the update was applied on the retry');
+});
+
+test('an operation acting on a stale dead-breaker record never displaces the live breaker that replaced it', {timeout: 30000}, async () => {
+  const result = JSON.parse((await promisify(execFile)(process.execPath, [race, 'stale-breaker', JSON.stringify(receipt())])).stdout);
+  assert.equal(result.displaced, false, 'the live breaker still holds its name after the stale attempt');
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.applied, 2, 'both updates were applied');
+});
+
+test('a dead lock that repeats a record already broken, as a copied proof directory could, is still broken', {timeout: 60000}, async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'app-verify-repeat-')));
+  try {
+    await writeFile(join(base, 'receipt.json'), JSON.stringify(receipt()));
+    const record = `${Number(String(spawnSync('sh', ['-c', 'echo $$']).stdout).trim())} 1 copied\n`;
+    for (const round of [1, 2]) {
+      await mkdir(join(base, '.receipt.lock'));
+      await writeFile(join(base, '.receipt.lock', 'holder'), record);
+      const began = Date.now();
+      const result = JSON.parse((await promisify(execFile)(process.execPath, [worker, base, '1'])).stdout);
+      assert.deepEqual(result, {applied: 1, errors: []}, `round ${round}`);
+      assert.ok(Date.now() - began < 5000, `round ${round}: the dead lock broke at once`);
+    }
+    assert.equal(JSON.parse(await readFile(join(base, 'receipt.json'), 'utf8')).counter, 2);
+  } finally {
     await rm(base, {recursive: true, force: true});
   }
 });

@@ -1,15 +1,17 @@
 import {capture} from './capture.js';
 import {handoff} from './handoff.js';
+import {checkDeclarations, checkGiven, parseInputs, resolveInputs} from './inputs.js';
 import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
 import {LockedError} from './receipt.js';
 import type {AppPlugin, RunOptions} from './types.js';
 import {APP_PATTERN, errorText} from './util.js';
+import {VERSION} from './version.js';
 
 const OPERATIONS = [
   'help',
-  'start [--scenario <name>] [--lease <minutes>]',
+  'start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...',
   'doctor [<run-id>]',
-  'scenario <run-id> <name>',
+  'scenario <run-id> <name> [--input <name>=<value>]...',
   'capture <run-id> <step>',
   'handoff <run-id> [--reset <scenario>]',
   'extend <run-id> [--lease <minutes>]',
@@ -17,21 +19,24 @@ const OPERATIONS = [
   'restart <run-id>',
 ];
 
-const FLAGS: Record<string, readonly string[]> = {start: ['--scenario', '--lease'], extend: ['--lease'], handoff: ['--reset']};
+const FLAGS: Record<string, readonly string[]> = {start: ['--scenario', '--lease', '--input'], scenario: ['--input'], extend: ['--lease'], handoff: ['--reset']};
+/** Flags that may repeat; each occurrence is kept in order. */
+const REPEATED = new Set(['--input']);
 
-function parse(argv: readonly string[]): {operation: string; positional: string[]; flags: Record<string, string>} {
+function parse(argv: readonly string[]): {operation: string; positional: string[]; flags: Record<string, string>; inputs: string[]} {
   const [operation = 'help', ...rest] = argv;
-  const positional: string[] = [], flags: Record<string, string> = {};
+  const positional: string[] = [], flags: Record<string, string> = {}, inputs: string[] = [];
   for (let index = 0; index < rest.length; index++) {
     const argument = rest[index]!;
     if (argument.startsWith('--')) {
       if (!(FLAGS[operation] ?? []).includes(argument)) throw new UsageError(`${operation} does not take ${argument}`);
       const value = rest[++index];
       if (value === undefined || value.startsWith('--')) throw new UsageError(`${argument} needs a value`);
-      flags[argument] = value;
+      if (REPEATED.has(argument)) inputs.push(value);
+      else flags[argument] = value;
     } else positional.push(argument);
   }
-  return {operation, positional, flags};
+  return {operation, positional, flags, inputs};
 }
 
 function lease(value: string | undefined): number {
@@ -49,6 +54,7 @@ function checkPlugin(plugin: AppPlugin) {
   if (!APP_PATTERN.test(plugin.app) || plugin.app.length > 16) throw new Error(`plug-in app name ${plugin.app} must be lowercase kebab-case, at most 16 characters`);
   if (!has(plugin.scenarios, plugin.defaultScenario)) throw new Error(`plug-in default scenario ${plugin.defaultScenario} is not defined`);
   if (!plugin.root.startsWith('/')) throw new Error('plug-in root must be an absolute path');
+  checkDeclarations(plugin);
 }
 
 /** Run one operation for `plugin` and return the process exit code. */
@@ -62,10 +68,14 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
     const parsed = parse(argv);
     operation = parsed.operation;
     const {positional, flags} = parsed;
+    // Names and values are checked before any run is touched; required inputs once the recorded ones are known.
+    const given = parseInputs(parsed.inputs);
+    checkGiven(plugin, given);
     let outcome: {code: number; value: Record<string, unknown>; exitSoon?: boolean};
     switch (operation) {
       case 'help':
-        outcome = {code: EXIT.ok, value: {operation, app: plugin.app, command: plugin.command, operations: OPERATIONS,
+        outcome = {code: EXIT.ok, value: {operation, app: plugin.app, command: plugin.command, coreVersion: VERSION, operations: OPERATIONS,
+          inputs: Object.fromEntries(Object.entries(plugin.inputs ?? {}).map(([name, input]) => [name, {description: input.description, required: input.required === true}])),
           scenarios: Object.fromEntries(Object.entries(plugin.scenarios).map(([k, v]) => [k, v.description])), defaultScenario: plugin.defaultScenario,
           steps: Object.fromEntries(Object.entries(plugin.captureSteps).map(([k, v]) => [k, v.description])),
           exitCodes: {0: 'verified', 1: 'failed outcome', 2: 'usage error', 3: 'supervisor or browser tooling unavailable'}}};
@@ -74,7 +84,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
         arity(positional, 0, operation);
         const name = flags['--scenario'] ?? plugin.defaultScenario;
         if (!has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name}; see help`);
-        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease'])});
+        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given)});
         break;
       }
       case 'doctor':
@@ -84,7 +94,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
       case 'scenario':
         arity(positional, 2, operation);
         if (!has(plugin.scenarios, positional[1]!)) throw new UsageError(`the fixtures define no scenario ${positional[1]}; see help`);
-        outcome = await scenario(plugin, io, positional[0], positional[1]);
+        outcome = await scenario(plugin, io, positional[0], positional[1], given);
         break;
       case 'capture':
         arity(positional, 2, operation);

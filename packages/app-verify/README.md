@@ -34,11 +34,14 @@ Other repositories vendor the release archive the same way they vendor the
 other Hub packages:
 
 ```bash
-gh release download app-verify-v1.0.0 --repo jimmie-potts/agent-device-hub \
-  --pattern 'jimmie-potts-app-verify-1.0.0.tgz*' --dir vendor
-(cd vendor && sha256sum -c jimmie-potts-app-verify-1.0.0.tgz.sha256)
-npm install --save-dev file:vendor/jimmie-potts-app-verify-1.0.0.tgz
+gh release download app-verify-v1.1.0 --repo jimmie-potts/agent-device-hub \
+  --pattern 'jimmie-potts-app-verify-1.1.0.tgz*' --dir vendor
+(cd vendor && sha256sum -c jimmie-potts-app-verify-1.1.0.tgz.sha256)
+npm install --save-dev file:vendor/jimmie-potts-app-verify-1.1.0.tgz
 ```
+
+Version 1.1 only adds to 1.0: a 1.0 plug-in runs unchanged, and receipts stay
+`app-verification/1`. See [What 1.1 adds](#what-11-adds).
 
 Then add a wrapper, for example `scripts/verify.mjs`:
 
@@ -71,7 +74,8 @@ executed one.
 | `scenarios`, `defaultScenario` | Named synthetic seeds. `seed({dataDir, scenario, …})` writes into an empty private directory before the application starts |
 | `build` | `version`; the served `artifact` to hash: `{route}` read over loopback, `{file}` under `root`, or `{files: [...]}` hashed as `sha256sum <files> \| sha256sum` prints; an optional `prepare()` that builds before launch |
 | `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there. It overrides the core's `PATH`, `TMPDIR` and private `HOME` |
-| `readiness` | `line(stdoutLine)` returns `{url}` for the ready line, which must name `http://127.0.0.1:<port>`; `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
+| `readiness` | `line(stdoutLine)` returns `{url, endpoints?}` for the ready line: `url` must name `http://127.0.0.1:<port>`, and optional `endpoints` names other loopback listeners of the app (1.1); `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
+| `inputs` | Optional (1.1): `{name: {description, required?}}`, the non-secret run inputs a caller may give with `--input <name>=<value>` |
 | `reservedPorts` | Optional ports a run must never serve on, added to the installed services' ports |
 | `components` | Actual and simulated parts, copied into the receipt |
 | `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start. `doctor: true` also re-runs a check in `doctor`; set it only for read-only checks |
@@ -90,8 +94,8 @@ What the core guarantees to every plug-in callback:
   event and a progress line, and `stop` removes only the runtime directory,
   so an overridden `HOME` or `TMPDIR` is the plug-in's to clean.
 - A ready line that announces an installed service's port (8788, 8765, 8787,
-  8791, 41230, 41231) or one of `reservedPorts` fails the start with
-  `port-reserved`.
+  8791, 41230, 41231) or one of `reservedPorts`, as its URL or as an extra
+  endpoint, fails the start with `port-reserved`.
 - When a start or reseed fails, the core passes the last 4 KB of the app's
   stderr, in memory only, to `readiness.failureCause`. It records the
   returned line in `failure.detail` only if that line is printable ASCII of at
@@ -108,11 +112,16 @@ What the core guarantees to every plug-in callback:
   application, recreates `data/`, `tmp/` and `home/`, truncates the two logs,
   calls `seed`, and relaunches with `ctx.port` set to the run's recorded port, so
   the run keeps its id, port and lease. It never runs `prepare`, and other
-  files in `runtimeDir` stay. `stop` removes the whole `runtimeDir`.
+  files in `runtimeDir` stay. `stop` removes the whole `runtimeDir`. A
+  relaunch passes the run's inputs again and each recorded endpoint's port as
+  `ctx.endpointPorts`.
 - A capture step passes only when it recorded at least one assertion, every
   assertion passed, the page did not crash, the screenshot was written and
   the video was finalized (a known-size WebM Segment that ends the file, with
-  Cues; a failed context close never counts). Anything else is `failed`, or `unavailable` when
+  Cues; a failed context close never counts). Since 1.1 the served artifact
+  must also still match the run's `build.artifactDigest` before and after
+  the step: another run's rebuild in the same checkout can change what this
+  run serves. Anything else is `failed`, or `unavailable` when
   Playwright, Chromium or ffmpeg is missing. A capture is recorded as
   `failed` before it starts, so a killed capture never reads as passed.
 
@@ -161,9 +170,9 @@ tooling is unavailable.
 
 ```text
 help
-start [--scenario <name>] [--lease <minutes>]
+start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...
 doctor [<run-id>]
-scenario <run-id> <name>
+scenario <run-id> <name> [--input <name>=<value>]...
 capture <run-id> <step>
 handoff <run-id> [--reset <scenario>]
 extend <run-id> [--lease <minutes>]
@@ -176,36 +185,44 @@ from 0.05 to 1440. Main result fields:
 
 | Operation | Result |
 | --- | --- |
-| `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
+| `help` | `app`, `command`, `coreVersion`, `operations`, `inputs` (each with `description` and `required`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
+| `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `inputs` (when the plug-in declares any), `endpoints` (when the ready line names any), `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
 | `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |
+| `stop` retried after `receipt-locked` | Records the cleanup and state of the refused attempt: an item it removed counts as `removed`, not a missing runtime directory's `partial` |
 | `handoff` after an interrupted one | Finishes the freeze. It rebuilds from `verified.partial/`, or commits an uncommitted `verified/` only when its digest and time match this run's `frozen` event and its copy matches the live receipt. It rebuilds if a later capture exists, and otherwise refuses with `proof-conflict`, changing nothing |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
+| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `inputs` (when recorded), `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one and, under `endpoints`, each recorded endpoint's port; any missing one is `listener-mismatch`), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
 | `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
-| `scenario`, `extend`, `stop` | The new scenario and port, the new expiry and timer, or the final state and `cleanup` |
+| `scenario`, `extend`, `stop` | The new scenario, port, `inputs` and `endpoints`; the new expiry and timer; or the final state and `cleanup` |
 
 An error that stops an operation before it acts prints
 `{"operation", "error", "detail"}`, for example `run-not-running`, or
 `receipt-locked` when another live operation holds the run's receipt for
 more than 10 s. The lock is created atomically with its holder's PID, start
 time and a nonce. A lock left by a killed operation breaks at once, one
-breaker at a time, so a live lock is never displaced. The receipt is written
-only while the lock still names the writer, so a race can refuse an update but
-never lose one silently.
+breaker at a time, so a live lock is never displaced. A dead lock or dead
+breaker is renamed to a name derived from its holder record and kept for a
+minute, so an operation that read the same record late moves nothing. An
+operation whose prepared lock directory was swept while it was suspended
+prepares a new one. The receipt is written only while the lock still names
+the writer, so a race can refuse an update but never lose one silently.
 
 ## Capture without a supervisor
 
 `runCaptureStep(plugin, step, {url, outputDir, scenario?, dataDir?,
-runtimeDir?, runId?})` drives one step against an application the caller
+runtimeDir?, runId?, inputs?, endpoints?, artifactDigest?})` drives one step against an application the caller
 already started and judges it exactly as `capture` does, writing `after.png`,
 `interaction.webm` and `assertions.json` into a new or empty `outputDir`. It
 needs no user manager, receipt or lease, so an adapter's CI can prove on any
 Linux runner that its reference step passes and its `control-*` steps fail.
 The starting state is the caller's job: it never reseeds, so give a `fresh`
 step a newly seeded application, and pass the `scenario` it was seeded with.
-It throws for an unknown step, a step pinned to another scenario, a URL other
-than `http://127.0.0.1:<port>/` or a non-empty output directory.
+Pass the `inputs` the application was started with; they are checked as
+`start` checks them. With the `artifactDigest` recorded at start, the served
+artifact is re-read before and after the step, as `capture` does. It throws for an unknown step, a step pinned to another
+scenario, a URL or endpoint other than `http://127.0.0.1:<port>/`, a bad or
+missing input or a non-empty output directory.
 
 ## Environment
 
@@ -225,12 +242,18 @@ the tests' runtime roots live under it, and the core refuses runtime state
 inside a checkout.
 
 - `tests/unsupervised.test.mjs`, `tests/lock.test.mjs`, the receipt tests,
-  `help` and the no-manager `start` refusal need no user manager and always
-  run, including in the Hub's CI. The unsupervised tests cover:
+  `help`, the no-manager `start` refusal and the usage and `runCaptureStep`
+  tests in `tests/inputs.test.mjs` need no user manager and always run,
+  including in the Hub's CI. They cover:
   - the reference and `control-*` steps, and `false` predicates;
   - a broken app and a silent step;
   - missing Playwright, Chromium and ffmpeg;
-  - an encoder that writes nothing, and a truncated WebM.
+  - an encoder that writes nothing, and a truncated WebM;
+  - lock races: a dead lock under contention, a stuck or holder-less breaker,
+    a prepared lock directory swept mid-acquire and a stale dead-breaker record;
+  - undeclared, secret-like, missing, duplicate and non-ASCII inputs, and
+    inputs given to `runCaptureStep`;
+  - a served artifact that changed before or during a step.
 - Every other test drives real transient units named `app-verify-avt-<6 hex>-*`
   with a fixture counter application. While the suite runs, those units exist.
   Each test stops the units of its own app name when it ends and fails if any
@@ -244,12 +267,54 @@ inside a checkout.
 `npm run test:app-verify:package` packs the archive and runs the packaged
 suite from an isolated consumer.
 
-## Future work
+## What 1.1 adds
 
-Hub [#495](https://github.com/jimmie-potts/agent-device-hub/issues/495)
-composes one preview from three runs, one per application, and needs the Hub
-run's scenario to point at the other runs' loopback URLs. The planned
-additive shape is `start --input <name>=<value>` for non-secret inputs, a
-`ctx.inputs` map on `seed` and `launch`, an optional `receipt.inputs` and
-`restart` reusing them. One unit per run stays. Readers already ignore
-unknown receipt fields, so this can ship in a 1.x minor version.
+Delivered for Hub [#495](https://github.com/jimmie-potts/agent-device-hub/issues/495),
+which composes one preview from three runs, one per application. One unit per
+run stays, and a 1.0 plug-in, receipt and caller work unchanged.
+
+- **Run inputs.** A plug-in declares `inputs: {name: {description,
+  required?}}`, and callers give values with `start --input <name>=<value>`
+  (repeatable), for example another run's loopback URL.
+  - `scenario <run-id> <name> --input …` replaces the named values and keeps
+    the others. A reseed without `--input`, a `fresh` step, `handoff --reset`
+    and `restart` reuse the recorded values.
+  - `seed`, `launch`, `readiness.probe`, boundary checks and capture steps
+    get them as `ctx.inputs`.
+  - These are usage errors (exit 2), refused before any run changes: an
+    undeclared name, a missing required input, a name given twice, a value
+    that is not 1 to 512 printable ASCII characters, and a name matching
+    `/token|secret|password|credential|key/i`. Inputs are recorded in the
+    receipt, events and frozen copy, so they never carry a credential, and a
+    plug-in that declares a secret-like name is refused outright.
+  - `receipt.inputs` is written whenever the plug-in declares inputs (`{}`
+    when none was given). The `seeded`, `unit-started` and `reseeded` events
+    carry them, and `help` lists the declared inputs and `coreVersion`.
+- **Extra endpoints.** A ready line may return `endpoints: {name: url}` for
+  other loopback listeners of the same application, such as a fake controller
+  another run must reach: at most 16, each `http://127.0.0.1:<port>/`.
+  - They are recorded as `receipt.owned.endpoints`, returned by `start`,
+    printed in the card as `Endpoint  <name> <url>` and given to probes,
+    checks and steps as `ctx.endpoints`.
+  - An endpoint on an installed or reserved port fails the start with
+    `port-reserved`.
+  - A relaunch gets their ports as `ctx.endpointPorts` and must announce each
+    recorded endpoint on the same port; otherwise the reseed fails with
+    `port-changed`.
+  - `doctor` checks each endpoint's port against the unit's listeners, as it
+    does the main port.
+- **Served artifact re-check.** `capture` re-reads the served artifact before
+  and after the step and fails it, with `the served artifact changed since
+  start (recorded …, served …)`, when the digest differs from
+  `build.artifactDigest`. The page is not driven when it already differs.
+  `runCaptureStep` does the same when given `artifactDigest`.
+- **Lock and stop follow-ups from 1.0's review.** A retried `stop` records
+  the refused attempt's cleanup (P-S21); a swept prepared lock directory is
+  retried (S25); a stale dead-breaker record cannot displace a live breaker
+  (S26).
+
+The contexts a plug-in receives gained fields the core always supplies:
+`inputs` everywhere, `endpointPorts` on `launch` and `endpoints` on probes,
+checks and steps. Code that builds a context itself, such as a test calling
+`seed({runId, root, runtimeDir, dataDir, scenario})`, still runs, but
+type-checked code must add `inputs: {}` (and the endpoint map) to it.

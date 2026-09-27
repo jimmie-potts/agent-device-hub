@@ -1071,7 +1071,10 @@ The suite has two parts:
   wrong expectation, predicates that return `false`, a known-broken app and a
   step without assertions fail. Missing Playwright, Chromium or ffmpeg is
   `unavailable`, and an encoder that writes nothing or a truncated WebM is
-  `failed`.
+  `failed`, as is a step whose served artifact changed before or during it.
+  The lock file also forces a prepared lock directory swept
+  mid-acquire and a stale dead-breaker record, and `tests/inputs.test.mjs`
+  runs its input refusals and `runCaptureStep` inputs test here.
 - **Only on a host with a user manager** (`systemctl --user
   is-system-running` answering `running`, `degraded`, `starting` or
   `initializing`): every lifecycle test. These start real transient units
@@ -1079,7 +1082,9 @@ The suite has two parts:
   application, and stop every unit they created. They cover start order,
   failed and interrupted starts, concurrency and reseeds, extend (including a
   refused timer and a stray one), expiry, doctor staleness, restart, frozen
-  proof, attachments, interrupted captures and receipt-less stop. Without a
+  proof, attachments, interrupted captures, receipt-less stop and a stop
+  retried after `receipt-locked`, and, for 1.1, inputs kept across every
+  relaunch and extra endpoints (`tests/endpoints.test.mjs`). Without a
   manager they skip, each with the printed reason, unless
   `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
   records them from the owner's WSL host.

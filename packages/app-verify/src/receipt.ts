@@ -1,12 +1,18 @@
 import {existsSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
-import {appendFile, mkdtemp, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {appendFile, mkdtemp, readdir, readFile, rename, rm, stat, utimes, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {INPUT_VALUE, NAME, SECRET_LIKE} from './inputs.js';
 import {RECEIPT_VERSION, type Receipt} from './types.js';
-import {ANY_RUN_ID, KEBAB, holder, holderAlive, iso, pause} from './util.js';
+import {ANY_RUN_ID, KEBAB, hex256, holder, holderAlive, iso, pause} from './util.js';
 
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const LOOPBACK = /^http:\/\/127\.0\.0\.1:\d{1,5}\//;
+/** A loopback URL whose explicit port is 1 to 65535. */
+const loopbackPort = (value: string) => {
+  const port = Number(/^http:\/\/127\.0\.0\.1:(\d{1,5})\//.exec(value)?.[1]);
+  return port >= 1 && port <= 65535;
+};
 const STATES = ['starting', 'running', 'failed', 'expired', 'stopped'];
 
 type Value = Record<string, unknown>;
@@ -54,6 +60,15 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
   oneOf(receipt.state, 'state', STATES);
   time(receipt.startedAt, 'startedAt');
   if ('restarts' in receipt) string(receipt.restarts, 'restarts', ANY_RUN_ID);
+  // Optional (1.1): written whenever the plug-in declares inputs. Never a credential, so never a secret-like name.
+  if ('inputs' in receipt) {
+    const inputs = object(receipt.inputs, 'inputs');
+    for (const [name, value] of Object.entries(inputs)) {
+      if (!NAME.test(name)) fail(`inputs.${name}`, 'is not an input name');
+      else if (SECRET_LIKE.test(name)) fail(`inputs.${name}`, 'names a secret; inputs never carry a credential');
+      if (typeof value !== 'string' || !INPUT_VALUE.test(value)) fail(`inputs.${name}`, 'expected 1 to 512 printable ASCII characters');
+    }
+  }
 
   const build = object(receipt.build, 'build');
   string(build.sourceRevision, 'build.sourceRevision', /^(?:[0-9a-f]{40}|[0-9a-f]{64}|unknown)$/);
@@ -124,6 +139,14 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
   if (owned.proofDir !== runId) fail('owned.proofDir', 'expected the run id');
   nullable(owned.mainPid, 'owned.mainPid', (v, p) => integer(v, p, 1));
   nullable(owned.mainStartMonotonic, 'owned.mainStartMonotonic', (v, p) => integer(v, p, 0));
+  // Optional (1.1): the extra loopback endpoints the ready line announced.
+  if ('endpoints' in owned) {
+    for (const [name, url] of Object.entries(object(owned.endpoints, 'owned.endpoints'))) {
+      if (!NAME.test(name)) fail(`owned.endpoints.${name}`, 'is not an endpoint name');
+      string(url, `owned.endpoints.${name}`, LOOPBACK);
+      if (typeof url === 'string' && LOOPBACK.test(url) && !loopbackPort(url)) fail(`owned.endpoints.${name}`, 'expected a port from 1 to 65535');
+    }
+  }
 
   const proof = object(receipt.proof, 'proof');
   nullable(proof.frozenAt, 'proof.frozenAt', time);
@@ -235,17 +258,22 @@ export class ProofStore {
     }
   }
 
-  /** Put a prepared lock in place; `false` when another lock already holds the name. */
+  /**
+   * Put a prepared lock in place; `false` when another lock already holds the
+   * name, or when another operation's sweep removed the prepared directory
+   * while this process was suspended, so the caller prepares a new one.
+   */
   private async acquire(lock: string, mine: string): Promise<boolean> {
     const prepared = await mkdtemp(join(this.dir, '.receipt.lock.new-'));
-    await writeFile(join(prepared, 'holder'), mine);
     try {
+      await writeFile(join(prepared, 'holder'), mine);
       await rename(prepared, lock);
       return true;
     } catch (error) {
       await rm(prepared, {recursive: true, force: true});
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ENOTDIR') return false;
+      if (code === 'ENOENT' && existsSync(this.dir)) return false;
       throw error;
     }
   }
@@ -254,7 +282,11 @@ export class ProofStore {
    * Remove a dead holder's lock, and only that lock. Breaking is serialized
    * under a short-lived breaker lock: while it is held nothing else can
    * replace the main lock, so a lock that still names the dead holder is
-   * exactly the one removed, and a live lock is never displaced.
+   * exactly the one removed, and a live lock is never displaced. A dead
+   * breaker is cleared the same way the dead lock is: it is buried under a
+   * name derived from its holder record, so a second operation that read the
+   * same record finds that name taken and moves nothing, not even the live
+   * breaker that replaced it.
    */
   private async breakDead(lock: string, record: string | undefined): Promise<string | undefined> {
     const breaker = `${lock}.break`;
@@ -262,7 +294,7 @@ export class ProofStore {
     if (!(await this.acquire(breaker, me))) {
       // A breaker killed mid-break, or one that never recorded a holder, is dead: clear it and try again.
       const other = await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined);
-      if (other !== undefined && !(await holderAlive(other))) await this.tombstone(breaker, other);
+      if (other !== undefined && !(await holderAlive(other))) await this.tombstone(breaker, other, true);
       else if (other === undefined) {
         const info = await stat(breaker).catch(() => undefined);
         if (info && Date.now() - info.mtimeMs > HOLDERLESS_MS) await this.tombstone(breaker, undefined);
@@ -271,7 +303,7 @@ export class ProofStore {
       return undefined;
     }
     try {
-      if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) === record) await this.tombstone(lock, record);
+      if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) === record) await this.tombstone(lock, record, record !== undefined);
     } finally {
       if ((await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined)) === me) await this.tombstone(breaker, me);
     }
@@ -287,12 +319,29 @@ export class ProofStore {
     }
   }
 
-  /** Rename a lock aside and delete it if it still names `record`; otherwise put it back. */
-  private async tombstone(path: string, record: string | undefined): Promise<void> {
-    const aside = join(this.dir, `.receipt.lock.dead-${randomBytes(8).toString('hex')}`);
+  /**
+   * Rename a lock aside and delete it if it still names `record`; otherwise
+   * put it back. With `bury`, a dead holder's lock goes to a name derived from
+   * `record` and stays there, with a fresh time, until the sweep removes it a
+   * minute later. Records carry a nonce, so that name is this lock's alone: a
+   * later attempt from an operation that read the same record fails to rename
+   * onto the non-empty grave and moves nothing.
+   */
+  private async tombstone(path: string, record: string | undefined, bury = false): Promise<void> {
+    const aside = join(this.dir, `.receipt.lock.dead-${bury && record !== undefined ? hex256(record).slice(0, 32) : randomBytes(8).toString('hex')}`);
+    if (bury) {
+      const now = new Date();
+      // The dead lock may be old; the grave's time is when it was buried, so the sweep keeps it for a minute.
+      await utimes(path, now, now).catch(() => undefined);
+    }
     try {
       await rename(path, aside);
-    } catch {
+    } catch (error) {
+      // Already gone, or buried by an operation that read the same record, which leaves a newer lock alone.
+      const code = (error as NodeJS.ErrnoException).code;
+      const again = bury && (code === 'EEXIST' || code === 'ENOTEMPTY') && (await readFile(join(path, 'holder'), 'utf8').catch(() => undefined)) === record;
+      // The buried record at the path again can only be a copied or hand-made lock (live records carry a nonce): remove it as 1.0 did.
+      if (again) await this.tombstone(path, record);
       return;
     }
     if ((await readFile(join(aside, 'holder'), 'utf8').catch(() => undefined)) !== record) {
@@ -302,7 +351,7 @@ export class ProofStore {
       } catch {
         // Taken again meanwhile; its holder's fencing check refuses to write.
       }
-    }
+    } else if (bury) return;
     await rm(aside, {recursive: true, force: true});
   }
 }

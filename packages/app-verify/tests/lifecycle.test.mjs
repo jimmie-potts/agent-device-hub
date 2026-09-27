@@ -34,6 +34,12 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.equal(receipt.owned.unit, `app-verify-${runId}.service`);
     assert.equal(receipt.owned.leaseTimer, `app-verify-${runId}-lease.timer`);
     assert.equal(receipt.owned.port, port);
+    // A plug-in that declares no inputs and announces no endpoint gets the 1.0 receipt, events, result and card.
+    assert.equal('inputs' in receipt, false);
+    assert.equal('endpoints' in receipt.owned, false);
+    assert.equal('inputs' in started.result || 'endpoints' in started.result, false);
+    assert.equal(started.result.card.length, 5);
+    assert.ok((await box.events(runId)).every(e => !('inputs' in e) && !('endpoints' in e)));
 
     // The unit belongs to the user manager, its identity matches the receipt and the lease timer elapses at expiresAt.
     const unit = show(receipt.owned.unit, 'ActiveState', 'MainPID', 'ExecMainStartTimestampMonotonic', 'ControlGroup', 'KillMode');
@@ -66,6 +72,7 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.equal(row.health.outcome, 'passed');
     assert.equal(row.artifact, 'matches');
     assert.deepEqual(row.listener, {recorded: port, ports: [port], outcome: 'matches'}, 'doctor reads the unit\'s actual listener');
+    assert.equal('inputs' in row, false);
     assert.equal(row.unit.mainPid, receipt.owned.mainPid);
     assert.equal(row.preview.expiresAt, receipt.preview.expiresAt);
     assert.equal(row.windows.outcome, 'skipped');
@@ -99,7 +106,7 @@ test('help lists operations, scenarios and capture steps', async () => {
   try {
     const help = await box.cli(['help']);
     assert.equal(help.code, 0);
-    assert.ok(help.result.operations.includes('start [--scenario <name>] [--lease <minutes>]'));
+    assert.ok(help.result.operations.includes('start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...'));
     assert.equal(help.result.scenarios.reference, 'Counter at 0 that adds one per click');
     assert.equal(help.result.steps['count-twice'], 'Two clicks advance the counter by two');
     const usage = await box.cli(['launch']);

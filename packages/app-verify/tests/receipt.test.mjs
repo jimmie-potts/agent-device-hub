@@ -74,7 +74,38 @@ test('invalid receipts are refused with a reason for each problem', () => {
 });
 
 test('fields a later 1.x adds are ignored, so a newer receipt still reads', () => {
-  assert.deepEqual(validateReceipt({...running(), inputs: {hubPeer: 'http://127.0.0.1:41000/'}}), {ok: true});
+  const value = running();
+  value.owned.laterField = {any: 'shape'};
+  assert.deepEqual(validateReceipt({...value, laterField: [1, 2]}), {ok: true});
+});
+
+test('1.1 run inputs and extra endpoints validate when present and stay optional', () => {
+  const value = running();
+  value.inputs = {hubFeed: 'http://127.0.0.1:41000/api/monitor/v1/sessions', label: 'wall run'};
+  value.owned.endpoints = {controller: 'http://127.0.0.1:41999/'};
+  assert.deepEqual(validateReceipt(value), {ok: true});
+  assert.deepEqual(validateReceipt({...running(), inputs: {}}), {ok: true}, 'a plug-in that declares inputs records an empty map when none were given');
+  const cases = [
+    [v => (v.inputs = ['a']), /inputs: expected an object/],
+    [v => (v.inputs = {'1st': 'x'}), /inputs\.1st/],
+    [v => (v.inputs = {apiToken: 'x'}), /inputs\.apiToken: .*secret/],
+    [v => (v.inputs = {label: ''}), /inputs\.label/],
+    [v => (v.inputs = {label: 'x'.repeat(513)}), /inputs\.label/],
+    [v => (v.inputs = {label: 'caf\u00e9'}), /inputs\.label/],
+    [v => (v.inputs = {label: 'a\nb'}), /inputs\.label/],
+    [v => (v.inputs = {label: 7}), /inputs\.label/],
+    [v => (v.owned.endpoints = []), /owned\.endpoints: expected an object/],
+    [v => (v.owned.endpoints = {controller: 'http://192.168.1.4:41999/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:0/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {'bad name': 'http://127.0.0.1:41999/'}), /owned\.endpoints\.bad name/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const bad = running();
+    mutate(bad);
+    const result = validateReceipt(bad);
+    assert.equal(result.ok, false, String(pattern));
+    assert.match(result.errors.join('\n'), pattern);
+  }
 });
 
 test('a run id with pattern characters is refused, never compiled into a pattern', () => {
