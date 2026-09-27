@@ -98,6 +98,10 @@ test('1.1 run inputs and extra endpoints validate when present and stay optional
     [v => (v.owned.endpoints = {controller: 'http://192.168.1.4:41999/'}), /owned\.endpoints\.controller/],
     [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:0/'}), /owned\.endpoints\.controller/],
     [v => (v.owned.endpoints = {'bad name': 'http://127.0.0.1:41999/'}), /owned\.endpoints\.bad name/],
+    [v => (v.owned.endpoints = {controller: 'http://u:p@127.0.0.1:41999/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/?token=x'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/#x'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/api/'}), /owned\.endpoints\.controller/],
   ];
   for (const [mutate, pattern] of cases) {
     const bad = running();

@@ -1,6 +1,6 @@
 import {capture} from './capture.js';
 import {handoff} from './handoff.js';
-import {checkDeclarations, checkGiven, parseInputs, resolveInputs} from './inputs.js';
+import {checkDeclarations, checkGiven, declaresInputs, parseInputs, resolveInputs} from './inputs.js';
 import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
 import {LockedError} from './receipt.js';
 import type {AppPlugin, RunOptions} from './types.js';
@@ -9,9 +9,9 @@ import {VERSION} from './version.js';
 
 const OPERATIONS = [
   'help',
-  'start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...',
+  'start [--scenario <name>] [--lease <minutes>]',
   'doctor [<run-id>]',
-  'scenario <run-id> <name> [--input <name>=<value>]...',
+  'scenario <run-id> <name>',
   'capture <run-id> <step>',
   'handoff <run-id> [--reset <scenario>]',
   'extend <run-id> [--lease <minutes>]',
@@ -74,7 +74,9 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
     let outcome: {code: number; value: Record<string, unknown>; exitSoon?: boolean};
     switch (operation) {
       case 'help':
-        outcome = {code: EXIT.ok, value: {operation, app: plugin.app, command: plugin.command, coreVersion: VERSION, operations: OPERATIONS,
+        // A plug-in without inputs keeps the 1.0 operation strings.
+        outcome = {code: EXIT.ok, value: {operation, app: plugin.app, command: plugin.command, coreVersion: VERSION,
+          operations: declaresInputs(plugin) ? OPERATIONS.map(o => (/^(?:start|scenario) /.test(o) ? `${o} [--input <name>=<value>]...` : o)) : OPERATIONS,
           inputs: Object.fromEntries(Object.entries(plugin.inputs ?? {}).map(([name, input]) => [name, {description: input.description, required: input.required === true}])),
           scenarioInputs: Object.fromEntries(Object.entries(plugin.scenarios).filter(([, v]) => v.requiredInputs?.length).map(([k, v]) => [k, [...v.requiredInputs!]])),
           scenarios: Object.fromEntries(Object.entries(plugin.scenarios).map(([k, v]) => [k, v.description])), defaultScenario: plugin.defaultScenario,

@@ -32,6 +32,9 @@ test('help reports the declared inputs and the core version', async () => {
     assert.ok(help.result.operations.includes('scenario <run-id> <name> [--input <name>=<value>]...'));
     const plain = await box.cli(['help'], {entry: await box.wrapper(box.repo, 'verify-plain.mjs', {})});
     assert.deepEqual(plain.result.inputs, {}, 'a plug-in without inputs declares none');
+    assert.ok(plain.result.operations.includes('start [--scenario <name>] [--lease <minutes>]'), 'a plug-in without inputs keeps the 1.0 operation strings');
+    assert.ok(plain.result.operations.includes('scenario <run-id> <name>'));
+    assert.equal(plain.result.operations.some(o => o.includes('--input')), false);
     assert.equal(plain.result.coreVersion, VERSION);
   } finally {
     await box.close();
@@ -55,6 +58,8 @@ test('bad inputs are usage errors that create nothing', async () => {
       [['start', '--input', 'label=a‮b'], /label takes 1 to 512 printable ASCII characters/],
       [['start', '--input', 'label'], /--input takes <name>=<value>/],
       [['start', '--input', 'label=a', '--input', 'label=b'], /label is given twice/],
+      [['start', '--input', 'label=a', '--input', '__proto__=x'], /__proto__ is not an input of this plug-in/],
+      [['start', '--input', 'label=a', '--input', 'constructor=x'], /constructor is not an input of this plug-in/],
       [['scenario', `${box.app}-20260927T060259Z-3f9a1c`, 'reference', '--input', 'nope=1'], /nope is not an input of this plug-in/],
       [['scenario', `${box.app}-20260927T060259Z-3f9a1c`, 'reference', '--input', 'label=café'], /label takes 1 to 512/],
       [['extend', `${box.app}-20260927T060259Z-3f9a1c`, '--input', 'label=a'], /extend does not take --input/],
@@ -197,6 +202,11 @@ test('inputs reach seed, launch, checks and captures, and persist across reseed,
     const refused = await box.cli(['restart', runId], {entry: plain});
     assert.equal(refused.code, 2);
     assert.match(refused.result.detail, /label is not an input of this plug-in/);
+    // A plug-in that now requires an input the run never recorded names the operations that take --input.
+    const stricter = await box.wrapper(box.repo, 'verify-stricter.mjs', {inputs: {...INPUTS, extra: {description: 'Added later', required: true}}});
+    const hinted = await box.cli(['restart', runId], {entry: stricter});
+    assert.equal(hinted.code, 2);
+    assert.equal(hinted.result.detail, 'input extra is required and this run has not recorded it; reseed it with scenario <run-id> second --input extra=<value>, or stop it and start a new run with --input extra=<value>');
     assert.equal((await box.receipt(runId)).state, 'running');
     // restart reuses them.
     const restarted = await box.cli(['restart', runId]);
@@ -231,10 +241,12 @@ test('a scenario-specific input missing on scenario, a fresh step or handoff --r
     assert.equal(started.code, 0, started.stderr);
     const {runId, url} = started.result;
     const before = await box.receipt(runId);
+    // Only `scenario` takes --input; the operations that relaunch with the recorded inputs say how to supply one.
+    const relaunch = 'scenario paired requires input feed, which this run has not recorded; reseed it with scenario <run-id> paired --input feed=<value>, or stop it and start a new run with --input feed=<value>';
     const refusals = [
       [['scenario', runId, 'paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
-      [['capture', runId, 'fresh-paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
-      [['handoff', runId, '--reset', 'paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
+      [['capture', runId, 'fresh-paired'], relaunch],
+      [['handoff', runId, '--reset', 'paired'], relaunch],
     ];
     for (const [args, detail] of refusals) {
       const refused = await box.cli(args);

@@ -74,7 +74,7 @@ executed one.
 | `scenarios`, `defaultScenario` | Named synthetic seeds. `seed({dataDir, scenario, …})` writes into an empty private directory before the application starts. Optional `requiredInputs` (1.1) names declared inputs the scenario cannot run without |
 | `build` | `version`; the served `artifact` to hash: `{route}` read over loopback, `{file}` under `root`, or `{files: [...]}` hashed as `sha256sum <files> \| sha256sum` prints; an optional `prepare()` that builds before launch |
 | `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there. It overrides the core's `PATH`, `TMPDIR` and private `HOME` |
-| `readiness` | `line(stdoutLine)` returns `{url, endpoints?}` for the ready line: `url` must name `http://127.0.0.1:<port>`, and optional `endpoints` names other loopback listeners of the app (1.1); `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
+| `readiness` | `line(stdoutLine)` returns `{url, endpoints?}` for the ready line: `url` must name `http://127.0.0.1:<port>` and, since 1.1, carry no credentials, query or fragment (a path is allowed); optional `endpoints` names other loopback listeners of the app, each exactly `http://127.0.0.1:<port>/` (1.1); `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
 | `inputs` | Optional (1.1): `{name: {description, required?}}`, the non-secret run inputs a caller may give with `--input <name>=<value>` |
 | `reservedPorts` | Optional ports a run must never serve on, added to the installed services' ports |
 | `components` | Actual and simulated parts, copied into the receipt |
@@ -190,7 +190,7 @@ from 0.05 to 1440. Main result fields:
 
 | Operation | Result |
 | --- | --- |
-| `help` | `app`, `command`, `coreVersion`, `operations`, `inputs` (each with `description` and `required`), `scenarioInputs` (each scenario's `requiredInputs`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
+| `help` | `app`, `command`, `coreVersion`, `operations` (with `[--input <name>=<value>]...` on `start` and `scenario` only when the plug-in declares inputs), `inputs` (each with `description` and `required`), `scenarioInputs` (each scenario's `requiredInputs`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `inputs` (when the plug-in declares any), `endpoints` (when the ready line names any), `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
 | `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |
@@ -207,10 +207,14 @@ An error that stops an operation before it acts prints
 more than 10 s. The lock is created atomically with its holder's PID, start
 time and a nonce. A lock left by a killed operation breaks at once, one
 breaker at a time, so a live lock is never displaced. A dead lock or dead
-breaker is renamed to a name derived from its holder record and kept for a
-minute, so an operation that read the same record late moves nothing. An
-operation whose prepared lock directory was swept while it was suspended
-prepares a new one. The receipt is written only while the lock still names
+breaker is renamed to a name derived from its holder record, so an operation
+that read the same record late moves nothing. That
+`.receipt.lock.dead-<hash>/` directory stays until an update at least a minute
+later sweeps it; one left by a run's last operation stays in the proof
+directory, outside `verified/`, where nothing reads it. An operation suspended
+for over a minute while acquiring the lock, whose prepared directory another
+operation's sweep removed, prepares a new one and restarts its 10 s wait,
+because a suspension is not a wait on a holder. The receipt is written only while the lock still names
 the writer, so a race can refuse an update but never lose one silently.
 
 ## Capture without a supervisor
@@ -299,7 +303,11 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
   - `receipt.inputs` is written whenever the plug-in declares inputs (`{}`
     when none was given). The `seeded`, `unit-started` and `reseeded` events
     carry them. `help` lists the declared inputs, `scenarioInputs` (each
-    scenario's required inputs) and `coreVersion`.
+    scenario's required inputs) and `coreVersion`, and shows `--input` on
+    `start` and `scenario` only for a plug-in that declares inputs.
+  - A fresh step, `handoff --reset` and `restart` take no `--input`: they
+    reuse the recorded values. When one is missing they say to reseed with
+    `scenario <run-id> <name> --input …` or to start a new run.
   - A credential, or a path to one, never travels as an input. A caller that
     must supply one writes it with mode 0600 into the run's runtime directory
     (`<runtime root>/<run-id>/`, the receipt's `roots.runtime` and
@@ -310,7 +318,11 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
     directory.
 - **Extra endpoints.** A ready line may return `endpoints: {name: url}` for
   other loopback listeners of the same application, such as a fake controller
-  another run must reach: at most 16, each `http://127.0.0.1:<port>/`.
+  another run must reach. It names at most 16; each name is a letter followed
+  by up to 63 letters, digits, `_` or `-`, and each URL is exactly
+  `http://127.0.0.1:<port>/`, with no path, credentials, query or fragment,
+  because it is recorded and printed. The main `url` now refuses credentials,
+  a query or a fragment too.
   - They are recorded as `receipt.owned.endpoints`, returned by `start`,
     printed in the card as `Endpoint  <name> <url>` and given to probes,
     checks and steps as `ctx.endpoints`.

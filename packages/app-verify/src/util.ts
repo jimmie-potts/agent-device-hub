@@ -67,6 +67,25 @@ export function which(program: string, path: string, cwd: string): string | unde
   return undefined;
 }
 
+/**
+ * A loopback URL the core accepts, or why not: `http://127.0.0.1:<port>`
+ * with no credentials, query or fragment, which the core records and prints.
+ * An `endpoint` is exactly `http://127.0.0.1:<port>/`; a main URL may have a
+ * path.
+ */
+export function loopback(value: unknown, endpoint = false): URL | string {
+  let url: URL;
+  try {
+    url = new URL(String(value));
+  } catch {
+    return 'an invalid URL';
+  }
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port) return 'not 127.0.0.1 with an explicit port';
+  if (url.username || url.password || url.href.includes('?') || url.href.includes('#')) return 'a URL with credentials, a query or a fragment';
+  if (endpoint && url.pathname !== '/') return 'an endpoint with a path; an endpoint is exactly http://127.0.0.1:<port>/';
+  return url;
+}
+
 /** Longest detail or reason the core records from an application, plug-in or tool error. */
 export const DETAIL_LIMIT = 1000;
 

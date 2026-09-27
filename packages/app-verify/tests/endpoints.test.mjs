@@ -56,7 +56,12 @@ test('extra endpoints are recorded, printed, given to steps and held to their po
     await writeFile(path, original);
     assert.equal((await box.cli(['doctor', runId])).result.runs[0].state, 'running');
 
-    // A relaunch that moves a recorded endpoint is a failed reset, never a silently changed address.
+    // A relaunch that drops or moves a recorded endpoint is a failed reset, never a silently changed address.
+    const second = (await box.cli(['start', '--scenario', 'endpoint', '--lease', '10'])).result;
+    const dropped = await box.cli(['scenario', second.runId, 'reference']);
+    assert.equal(dropped.code, 1);
+    assert.equal(dropped.result.detail, `port-changed: endpoint controller was not announced again, expected port ${new URL(second.endpoints.controller).port}`);
+    assert.equal((await box.receipt(second.runId)).state, 'stopped');
     const movedOn = await box.cli(['scenario', runId, 'endpoint-moves']);
     assert.equal(movedOn.code, 1);
     assert.equal(movedOn.result.cause, 'reset-failed');
@@ -90,6 +95,46 @@ test('an endpoint on an installed or reserved port fails the start with port-res
     assert.equal(reserved.result.cleanup.result, 'clean');
     assert.deepEqual(units(box.app), []);
     for (const result of [installed, reserved]) assert.equal('endpoints' in (await box.receipt(result.result.runId)).owned, false, 'a refused endpoint is never recorded');
+  } finally {
+    await box.close();
+  }
+});
+
+test('a ready line with a malformed URL or endpoints fails the start, and nothing it named is recorded', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const many = Object.fromEntries(Array.from({length: 17}, (_, i) => [`c${i}`, `http://127.0.0.1:${40000 + i}/`]));
+    const cases = [
+      [{endpoints: ['http://127.0.0.1:9/']}, 'the ready line named endpoints that are not a map of names to URLs'],
+      [{endpoints: 'http://127.0.0.1:9/'}, 'the ready line named endpoints that are not a map of names to URLs'],
+      [{endpoints: many}, 'the ready line named more than 16 endpoints'],
+      [{endpoints: {'bad name': 'http://127.0.0.1:9/'}}, 'the ready line named an endpoint with an invalid name'],
+      [{endpoints: {controller: 'http://localhost:9/'}}, 'the application did not bind 127.0.0.1 with an explicit port for endpoint controller'],
+      [{endpoints: {controller: 'http://probe:hunter2@127.0.0.1:9/'}}, 'the ready line named a URL with credentials, a query or a fragment for endpoint controller'],
+      [{endpoints: {controller: 'http://127.0.0.1:9/?token=hunter2'}}, 'the ready line named a URL with credentials, a query or a fragment for endpoint controller'],
+      [{endpoints: {controller: 'http://127.0.0.1:9/#hunter2'}}, 'the ready line named a URL with credentials, a query or a fragment for endpoint controller'],
+      [{endpoints: {controller: 'http://127.0.0.1:9/hunter2/'}}, 'the ready line named an endpoint with a path; an endpoint is exactly http://127.0.0.1:<port>/ for endpoint controller'],
+      [{url: 'http://probe:hunter2@127.0.0.1:{port}/'}, 'the ready line named a URL with credentials, a query or a fragment'],
+      [{url: 'http://127.0.0.1:{port}/?token=hunter2'}, 'the ready line named a URL with credentials, a query or a fragment'],
+    ];
+    for (const [index, [announce, detail]] of cases.entries()) {
+      const entry = await box.wrapper(box.repo, `verify-raw-${index}.mjs`, {announce});
+      const failed = await box.cli(['start', '--scenario', 'announce-raw'], {entry});
+      assert.equal(failed.code, 1, `${JSON.stringify(announce)}: ${failed.stdout}`);
+      assert.equal(failed.result.cause, 'launch-failed', JSON.stringify(announce));
+      assert.equal(failed.result.detail, detail, JSON.stringify(announce));
+      assert.equal(failed.result.cleanup.result, 'clean');
+      const receipt = await box.receipt(failed.result.runId);
+      assert.deepEqual(validateReceipt(receipt), {ok: true});
+      assert.equal(receipt.state, 'failed');
+      for (const text of [failed.stdout, failed.stderr, JSON.stringify(receipt), JSON.stringify(await box.events(failed.result.runId))]) assert.equal(text.includes('hunter2'), false, 'nothing the refused line named is printed or recorded');
+    }
+    // A path on the main URL stays allowed, as in 1.0.
+    const withPath = await box.cli(['start', '--scenario', 'announce-raw', '--lease', '5'], {entry: await box.wrapper(box.repo, 'verify-raw-path.mjs', {announce: {url: 'http://127.0.0.1:{port}/app/'}})});
+    assert.equal(withPath.code, 0, withPath.stderr);
+    assert.match(withPath.result.url, /^http:\/\/127\.0\.0\.1:\d+\/app\/$/);
+    assert.equal((await box.cli(['stop', withPath.result.runId])).code, 0);
+    assert.deepEqual(units(box.app), []);
   } finally {
     await box.close();
   }

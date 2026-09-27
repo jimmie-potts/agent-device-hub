@@ -106,7 +106,7 @@ test('help lists operations, scenarios and capture steps', async () => {
   try {
     const help = await box.cli(['help']);
     assert.equal(help.code, 0);
-    assert.ok(help.result.operations.includes('start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...'));
+    assert.ok(help.result.operations.includes('start [--scenario <name>] [--lease <minutes>]'));
     assert.equal(help.result.scenarios.reference, 'Counter at 0 that adds one per click');
     assert.equal(help.result.steps['count-twice'], 'Two clicks advance the counter by two');
     const usage = await box.cli(['launch']);

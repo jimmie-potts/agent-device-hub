@@ -10,7 +10,7 @@ import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunInputs, type RunState} from './types.js';
-import {errorText, hex256, iso, newRunId, pause, redact, runIdPattern, UsageError, which} from './util.js';
+import {errorText, hex256, iso, loopback, newRunId, pause, redact, runIdPattern, UsageError, which} from './util.js';
 
 export {UsageError};
 
@@ -90,17 +90,18 @@ function additions(plugin: AppPlugin, seen: Surface): {inputs?: RunInputs; endpo
   return {...(declaresInputs(plugin) ? {inputs: {...seen.inputs}} : {}), ...(Object.keys(seen.endpoints).length ? {endpoints: {...seen.endpoints}} : {})};
 }
 
-/** An `http://127.0.0.1:<port>/…` URL from a ready line, or a `launch-failed` that names the endpoint when it is one. */
+/**
+ * A loopback URL from a ready line, or a `launch-failed` that names the
+ * endpoint when it is one and never repeats the refused text, which may hold
+ * a credential.
+ */
 function loopbackUrl(value: unknown, endpoint?: string): URL {
   const which = endpoint === undefined ? '' : ` for endpoint ${endpoint}`;
-  let parsed: URL;
-  try {
-    parsed = new URL(String(value));
-  } catch {
-    throw new Failure('launch-failed', `the ready line named an invalid URL${which}`);
-  }
-  if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || !parsed.port) throw new Failure('launch-failed', `the application did not bind 127.0.0.1 with an explicit port${which}`);
-  return parsed;
+  const parsed = loopback(value, endpoint !== undefined);
+  if (typeof parsed !== 'string') return parsed;
+  // The 1.0 wording for the two refusals 1.0 had.
+  if (parsed === 'not 127.0.0.1 with an explicit port') throw new Failure('launch-failed', `the application did not bind 127.0.0.1 with an explicit port${which}`);
+  throw new Failure('launch-failed', `the ready line named ${parsed}${which}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -569,7 +570,7 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
 
 /** The recorded inputs for seeding `scenario`, checked before a relaunch reuses them: a usage error changes nothing. */
 export function reseedInputs(plugin: AppPlugin, receipt: Receipt, scenario: string): RunInputs {
-  return resolveInputs(plugin, {}, receipt.inputs ?? {}, scenario);
+  return resolveInputs(plugin, {}, receipt.inputs ?? {}, scenario, true);
 }
 
 /** `given` replaces the recorded value of each input it names; the others are kept. */

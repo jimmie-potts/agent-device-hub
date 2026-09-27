@@ -2,8 +2,10 @@
 // microsecond window. The file system calls of the core are wrapped (through
 // syncBuiltinESMExports) so the test decides exactly when each step happens.
 //
-//   swept:         the sweep of another operation removes this operation's
-//                  prepared lock directory between mkdtemp and rename.
+//   swept:         this operation is suspended for over a minute between
+//                  mkdtemp and rename (the clock jumps 61 s), another
+//                  operation's sweep removes its prepared lock directory, and
+//                  a live operation holds the lock for a moment when it resumes.
 //   stale-breaker: an operation that read a dead breaker's record resumes after
 //                  another operation cleared that breaker and took a new one,
 //                  and a third operation grabs the name if it is moved aside.
@@ -47,9 +49,15 @@ try {
     let swept = false;
     fsp.rename = async function (from, to) {
       if (!swept && basename(from).startsWith('.receipt.lock.new-')) {
-        // Suspended past the sweep's minute: the prepared directory is gone when the rename runs.
+        // Suspended past the sweep's minute: the wait's deadline has long passed and the prepared directory is gone.
         swept = true;
+        const now = Date.now.bind(Date);
+        Date.now = () => now() + 61000;
         await rm(from, {recursive: true, force: true});
+        // Meanwhile a live operation took the lock; it releases it shortly after this one resumes.
+        await mkdir(lock);
+        await writeFile(join(lock, 'holder'), await live('other'));
+        setTimeout(() => void rm(lock, {recursive: true, force: true}), 300);
       }
       return original.rename.call(this, from, to);
     };

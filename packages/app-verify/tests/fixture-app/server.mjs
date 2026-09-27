@@ -66,8 +66,12 @@ if (scenario.behavior === 'noisy-crash') {
     let endpoints;
     if (controller) endpoints = {controller: await listen(controller, scenario.endpoint === 'bind' ? Number(argument('--endpoint-port') ?? 0) : 0)};
     else if (scenario.endpoint === 'announce') endpoints = {controller: `http://127.0.0.1:${scenario.announcePort}/`};
+    // `raw` announces what the test chose, so the core's refusals of a malformed ready line can be exercised.
+    const announced = scenario.endpoint === 'raw'
+      ? {ready: true, url: (scenario.announce?.url ?? url).replace('{port}', String(server.address().port)), ...('endpoints' in (scenario.announce ?? {}) ? {endpoints: scenario.announce.endpoints} : {})}
+      : {ready: true, url, ...(endpoints ? {endpoints} : {})};
     // `never-ready` listens but never announces readiness, like a broken build.
-    if (scenario.behavior !== 'never-ready') process.stdout.write(JSON.stringify({ready: true, url, ...(endpoints ? {endpoints} : {})}) + '\n');
+    if (scenario.behavior !== 'never-ready') process.stdout.write(JSON.stringify(announced) + '\n');
   };
   announce();
   const stop = () => {

@@ -8,9 +8,10 @@ import {ANY_RUN_ID, KEBAB, hex256, holder, holderAlive, iso, pause} from './util
 
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const LOOPBACK = /^http:\/\/127\.0\.0\.1:\d{1,5}\//;
-/** A loopback URL whose explicit port is 1 to 65535. */
-const loopbackPort = (value: string) => {
-  const port = Number(/^http:\/\/127\.0\.0\.1:(\d{1,5})\//.exec(value)?.[1]);
+/** An extra endpoint (1.1): exactly `http://127.0.0.1:<port>/`, with a port from 1 to 65535. */
+const ENDPOINT = /^http:\/\/127\.0\.0\.1:(\d{1,5})\/$/;
+const endpointPort = (value: string) => {
+  const port = Number(ENDPOINT.exec(value)?.[1]);
   return port >= 1 && port <= 65535;
 };
 const STATES = ['starting', 'running', 'failed', 'expired', 'stopped'];
@@ -143,8 +144,8 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
   if ('endpoints' in owned) {
     for (const [name, url] of Object.entries(object(owned.endpoints, 'owned.endpoints'))) {
       if (!NAME.test(name)) fail(`owned.endpoints.${name}`, 'is not an endpoint name');
-      string(url, `owned.endpoints.${name}`, LOOPBACK);
-      if (typeof url === 'string' && LOOPBACK.test(url) && !loopbackPort(url)) fail(`owned.endpoints.${name}`, 'expected a port from 1 to 65535');
+      string(url, `owned.endpoints.${name}`, ENDPOINT);
+      if (typeof url === 'string' && ENDPOINT.test(url) && !endpointPort(url)) fail(`owned.endpoints.${name}`, 'expected a port from 1 to 65535');
     }
   }
 
@@ -228,20 +229,21 @@ export class ProofStore {
   async update(change: (receipt: Receipt) => void | Promise<void>): Promise<Receipt> {
     const lock = join(this.dir, '.receipt.lock');
     const mine = `${(await holder()).trim()} ${randomBytes(8).toString('hex')}\n`;
-    const deadline = Date.now() + LOCK_WAIT_MS;
+    // The wait for holders; a suspension of this process is not such a wait, so a swept acquire restarts it.
+    const wait = {deadline: Date.now() + LOCK_WAIT_MS};
     for (;;) {
-      if (await this.acquire(lock, mine)) break;
+      if (await this.acquire(lock, mine, wait)) break;
       const record = await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined);
       let blocker: string | undefined;
       if (record === undefined) {
         // Released meanwhile, or a lock from an older writer that never recorded a holder.
         const info = await stat(lock).catch(() => undefined);
-        if (info && Date.now() - info.mtimeMs > HOLDERLESS_MS) blocker = await this.breakDead(lock, undefined);
+        if (info && Date.now() - info.mtimeMs > HOLDERLESS_MS) blocker = await this.breakDead(lock, undefined, wait);
       } else if (!(await holderAlive(record))) {
-        blocker = await this.breakDead(lock, record);
+        blocker = await this.breakDead(lock, record, wait);
       } else blocker = `another operation (pid ${record.trim().split(' ')[0]})`;
       // Every path is bounded: a stuck holder or lock breaker ends in receipt-locked, never an endless wait.
-      if (Date.now() > deadline) throw new LockedError(`${blocker ?? 'another operation'} held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
+      if (Date.now() > wait.deadline) throw new LockedError(`${blocker ?? 'another operation'} held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
       await pause(blocker ? 50 : 10);
     }
     await this.sweep();
@@ -260,21 +262,24 @@ export class ProofStore {
 
   /**
    * Put a prepared lock in place; `false` when another lock already holds the
-   * name, or when another operation's sweep removed the prepared directory
-   * while this process was suspended, so the caller prepares a new one.
+   * name. Another operation's sweep removes a prepared directory only after a
+   * minute, so one that vanished means this process was suspended: the wait
+   * starts again and a new directory is prepared at once.
    */
-  private async acquire(lock: string, mine: string): Promise<boolean> {
-    const prepared = await mkdtemp(join(this.dir, '.receipt.lock.new-'));
-    try {
-      await writeFile(join(prepared, 'holder'), mine);
-      await rename(prepared, lock);
-      return true;
-    } catch (error) {
-      await rm(prepared, {recursive: true, force: true});
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ENOTDIR') return false;
-      if (code === 'ENOENT' && existsSync(this.dir)) return false;
-      throw error;
+  private async acquire(lock: string, mine: string, wait: {deadline: number}): Promise<boolean> {
+    for (let attempt = 1; ; attempt++) {
+      const prepared = await mkdtemp(join(this.dir, '.receipt.lock.new-'));
+      try {
+        await writeFile(join(prepared, 'holder'), mine);
+        await rename(prepared, lock);
+        return true;
+      } catch (error) {
+        await rm(prepared, {recursive: true, force: true});
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ENOTDIR') return false;
+        if (code !== 'ENOENT' || !existsSync(this.dir) || attempt >= 3) throw error;
+        wait.deadline = Date.now() + LOCK_WAIT_MS;
+      }
     }
   }
 
@@ -288,10 +293,10 @@ export class ProofStore {
    * same record finds that name taken and moves nothing, not even the live
    * breaker that replaced it.
    */
-  private async breakDead(lock: string, record: string | undefined): Promise<string | undefined> {
+  private async breakDead(lock: string, record: string | undefined, wait: {deadline: number}): Promise<string | undefined> {
     const breaker = `${lock}.break`;
     const me = `${(await holder()).trim()} ${randomBytes(8).toString('hex')}\n`;
-    if (!(await this.acquire(breaker, me))) {
+    if (!(await this.acquire(breaker, me, wait))) {
       // A breaker killed mid-break, or one that never recorded a holder, is dead: clear it and try again.
       const other = await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined);
       if (other !== undefined && !(await holderAlive(other))) await this.tombstone(breaker, other, true);
@@ -322,10 +327,12 @@ export class ProofStore {
   /**
    * Rename a lock aside and delete it if it still names `record`; otherwise
    * put it back. With `bury`, a dead holder's lock goes to a name derived from
-   * `record` and stays there, with a fresh time, until the sweep removes it a
-   * minute later. Records carry a nonce, so that name is this lock's alone: a
-   * later attempt from an operation that read the same record fails to rename
-   * onto the non-empty grave and moves nothing.
+   * `record` and stays there, with a fresh time, until the sweep of an update
+   * at least a minute later removes it; after the run's last update it stays
+   * in the proof directory, outside `verified/`, where nothing reads it.
+   * Records carry a nonce, so that name is this lock's alone: a later attempt
+   * from an operation that read the same record fails to rename onto the
+   * non-empty grave and moves nothing.
    */
   private async tombstone(path: string, record: string | undefined, bury = false): Promise<void> {
     const aside = join(this.dir, `.receipt.lock.dead-${bury && record !== undefined ? hex256(record).slice(0, 32) : randomBytes(8).toString('hex')}`);

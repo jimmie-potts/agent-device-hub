@@ -11,7 +11,7 @@ import {EXIT, Failure, has, load, reseed, reseedInputs, UsageError, type Io} fro
 import {artifactDigest} from './roots.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
-import {errorText, iso, redact} from './util.js';
+import {errorText, iso, loopback, redact} from './util.js';
 
 interface Assertion {
   name: string;
@@ -310,8 +310,8 @@ async function writeLog(dir: string, fields: Record<string, unknown>, finished: 
 export async function runCaptureStep(plugin: AppPlugin, stepName: string, options: CaptureStepOptions): Promise<CaptureStepResult> {
   if (!has(plugin.captureSteps, stepName)) throw new Error(`unknown capture step ${stepName}`);
   const step = plugin.captureSteps[stepName]!;
-  const url = new URL(options.url);
-  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port) throw new Error('runCaptureStep needs an http://127.0.0.1:<port>/ URL');
+  const url = loopback(options.url);
+  if (typeof url === 'string') throw new Error(`runCaptureStep needs an http://127.0.0.1:<port>/ URL without credentials, a query or a fragment; it got ${url}`);
   if (existsSync(options.outputDir) && (await readdir(options.outputDir)).length > 0) throw new Error('runCaptureStep needs a new or empty output directory');
   await mkdir(options.outputDir, {recursive: true});
   const scenario = options.scenario ?? plugin.defaultScenario;
@@ -320,13 +320,8 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
   const inputs = Object.freeze(resolveInputs(plugin, options.inputs ?? {}, {}, scenario));
   const endpoints: Record<string, string> = {};
   for (const [name, value] of Object.entries(options.endpoints ?? {})) {
-    let endpoint: URL | undefined;
-    try {
-      endpoint = new URL(value);
-    } catch {
-      endpoint = undefined;
-    }
-    if (!endpoint || endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || !endpoint.port) throw new Error(`runCaptureStep needs an http://127.0.0.1:<port>/ URL for endpoint ${name}`);
+    const endpoint = loopback(value, true);
+    if (typeof endpoint === 'string') throw new Error(`runCaptureStep needs exactly http://127.0.0.1:<port>/ for endpoint ${name}; it got ${endpoint}`);
     endpoints[name] = endpoint.href;
   }
   if (options.artifactDigest !== undefined && !/^sha256:[0-9a-f]{64}$/.test(options.artifactDigest)) throw new Error('runCaptureStep needs artifactDigest as sha256:<64 hex>, as the receipt records it');

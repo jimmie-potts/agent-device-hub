@@ -32,7 +32,8 @@ export function checkDeclarations(plugin: AppPlugin): void {
 
 /** Parse repeated `--input <name>=<value>` arguments. Format errors only; `resolveInputs` checks the rest. */
 export function parseInputs(pairs: readonly string[]): RunInputs {
-  const given: Record<string, string> = {};
+  // No prototype: `__proto__` or `constructor` is an ordinary, undeclared name, never a no-op or an inherited key.
+  const given: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const pair of pairs) {
     const at = pair.indexOf('=');
     if (at <= 0) throw new UsageError('--input takes <name>=<value>');
@@ -62,18 +63,20 @@ export function checkGiven(plugin: AppPlugin, given: Readonly<Record<string, unk
  * scenario about to be seeded, a missing input it requires. The result lists
  * names in declaration order.
  */
-export function resolveInputs(plugin: AppPlugin, given: Readonly<Record<string, unknown>>, recorded: Readonly<Record<string, unknown>> = {}, scenario?: string): RunInputs {
+export function resolveInputs(plugin: AppPlugin, given: Readonly<Record<string, unknown>>, recorded: Readonly<Record<string, unknown>> = {}, scenario?: string, relaunch = false): RunInputs {
+  // Only start and scenario take --input; a relaunch (fresh step, handoff --reset, restart) uses what the run recorded.
+  const remedy = (name: string, target: string) => `reseed it with scenario <run-id> ${target} --input ${name}=<value>, or stop it and start a new run with --input ${name}=<value>`;
   const declared = plugin.inputs ?? {};
   const merged: Record<string, unknown> = {...recorded, ...given};
   checkGiven(plugin, merged);
   const inputs: Record<string, string> = {};
   for (const [name, declaration] of Object.entries(declared)) {
     if (Object.hasOwn(merged, name)) inputs[name] = merged[name] as string;
-    else if (declaration.required) throw new UsageError(`input ${name} is required; give it with --input ${name}=<value>`);
+    else if (declaration.required) throw new UsageError(relaunch ? `input ${name} is required and this run has not recorded it; ${remedy(name, scenario ?? '<name>')}` : `input ${name} is required; give it with --input ${name}=<value>`);
   }
   const definition = scenario !== undefined && Object.hasOwn(plugin.scenarios, scenario) ? plugin.scenarios[scenario] : undefined;
   for (const name of definition?.requiredInputs ?? []) {
-    if (!Object.hasOwn(inputs, name)) throw new UsageError(`scenario ${scenario} requires input ${name}; give it with --input ${name}=<value>`);
+    if (!Object.hasOwn(inputs, name)) throw new UsageError(relaunch ? `scenario ${scenario} requires input ${name}, which this run has not recorded; ${remedy(name, scenario!)}` : `scenario ${scenario} requires input ${name}; give it with --input ${name}=<value>`);
   }
   return inputs;
 }

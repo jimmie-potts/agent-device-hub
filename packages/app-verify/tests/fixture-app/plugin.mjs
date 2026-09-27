@@ -56,9 +56,9 @@ export function sameInputs(a, b) {
 /**
  * The fixture's plug-in. Without `inputs` it is a 1.0-style plug-in: it declares no inputs and reads no 1.1 context field
  * unless a scenario announces an extra endpoint.
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>, inputs?: import('@jimmie-potts/app-verify').AppPlugin['inputs'], announcePort?: number}} options
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>, inputs?: import('@jimmie-potts/app-verify').AppPlugin['inputs'], announcePort?: number, announce?: {url?: string, endpoints?: unknown}}} options
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride, inputs, announcePort}) {
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride, inputs, announcePort, announce}) {
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
     /** @param {import('@jimmie-potts/app-verify').SeedContext} context */
@@ -94,6 +94,7 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       endpoint: {description: 'Counter plus a controller listener announced as an extra endpoint', ...scenario({behavior: 'reference', start: 0, endpoint: 'bind'})},
       'endpoint-moves': {description: 'Controller endpoint that ignores its recorded port on relaunch', ...scenario({behavior: 'reference', start: 0, endpoint: 'moves'})},
       'endpoint-announce': {description: 'Announces the test\'s chosen endpoint port without binding it', ...scenario({behavior: 'reference', start: 0, endpoint: 'announce', announcePort})},
+      'announce-raw': {description: 'Announces the test\'s chosen URL ({port} is the bound port) and endpoints, verbatim', ...scenario({behavior: 'reference', start: 0, endpoint: 'raw', announce})},
       // Only with a declared `feed` input: the plug-in check refuses a scenario that requires an undeclared input.
       ...(inputs?.feed || inputs?.label ? {paired: {description: 'Counter at 0 paired with a peer feed', requiredInputs: ['feed'], ...scenario({behavior: 'reference', start: 0})}} : {}),
       'seed-leaks': {

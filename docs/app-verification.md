@@ -90,11 +90,16 @@ after `start` and before the `scenario` reseed that needs it, and `stop`
 deletes it with the directory.
 
 A ready line may also name **extra endpoints**: other loopback listeners of
-the same application, such as a fake controller that another run calls. They
-follow the port rules below and are recorded and printed in the card. They
-keep their ports across a relaunch, or the reseed fails with `port-changed`,
-and `doctor`'s listener read covers them. A `stop` retried after a
-`receipt-locked` refusal records the cleanup the refused attempt did.
+the same application, such as a fake controller that another run calls. Each
+is exactly `http://127.0.0.1:<port>/`, with no path, credentials, query or
+fragment, and a ready line names at most 16. They follow the port rules below
+and are recorded and printed in the card. They keep their ports across a
+relaunch, or the reseed fails with `port-changed`, and `doctor`'s listener
+read covers them. Since 1.1 the main URL also refuses credentials, a query or
+a fragment.
+
+A `stop` retried after a `receipt-locked` refusal records the cleanup the
+refused attempt did.
 
 Expiry is not an operation. The lease timer stops the unit, and the next
 `doctor` reports `state: expired`, the exact expiry time and that the runtime
