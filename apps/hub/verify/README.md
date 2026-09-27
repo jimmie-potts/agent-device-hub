@@ -153,7 +153,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 | `integrated-command` | `pixel` Brightness slider, then `wall` Layout style | Set brightness; switch the layout style | `integrated` | Queued or Sent. Exactly one `brightness.set` at the Pixoo writer. The wall's writer applies exactly one integration setting, with the physical outcome unknown. Nothing is sent twice |
 | `pixoo-loss` | `pixel` component | Through `inject … consumer-loss pixoo`: ask for the freeze; a client that read before the loss sends brightness; post an event; ask for the thaw | `integrated` | `Stale / unavailable` and no enabled slider. Health says unavailable. The Hub answers `uncertain-result`. The owner advances past the Pixoo's revision. After the thaw the page recovers without a reload and the Pixoo catches up. The command reached the writer at most once (`loss-command.json` records 0 or 1), and nothing more arrives |
 | `control-replay-after-recovery` | `pixel` component | Through `inject … --step control-replay-after-recovery`: as `pixoo-loss`, then re-send the lost command as new work | `integrated` | Negative control: "recovery replayed nothing" fails |
-| `control-second-owner` | The Pixoo run's page | Post a lifecycle event straight to the Pixoo run | `integrated` | Negative control: expects the Pixoo to accept it as a second owner would, and fails because a Hub consumer refuses it |
+| `control-second-owner` | The Pixoo run's Monitor tab | Post a lifecycle event straight to the Pixoo run with the controller credential the Hub holds, bypassing the Hub | `integrated` | Negative control: expects the Pixoo Monitor to list that session as a second owner's would, and fails because a Hub consumer lists only the Hub's sessions |
 
 ## Checks
 

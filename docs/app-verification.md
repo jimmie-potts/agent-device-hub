@@ -582,7 +582,7 @@ npm run -s verify:compose -- stop <composition-id>
 ```
 
 Each operation prints one JSON result line and uses the core's exit codes.
-Exit 3 now also covers an adapter wrapper that cannot run.
+Exit 3 also covers an adapter wrapper that cannot run.
 
 ### Pinned sources
 
@@ -712,7 +712,7 @@ them for the steps and for readiness:
 | `integrated-command` | One brightness change from the dashboard reaches Pixoo's writer exactly once. One Nanoleaf integration setting is applied once, with its physical outcome unknown |
 | `pixoo-loss` | Through `inject … consumer-loss pixoo`, as described below |
 | `control-replay-after-recovery` | Negative control through `inject --step`: the same loss, then a client re-sends the lost command as new work. "recovery replayed nothing" must fail |
-| `control-second-owner` | Negative control: it expects the paired Pixoo to accept a lifecycle event posted to it directly, as a second owner would, and must fail |
+| `control-second-owner` | Negative control: it posts a lifecycle event straight to the paired Pixoo, bypassing the Hub, and expects the Pixoo Monitor to list it as a second owner's session. A Hub consumer lists only the Hub's sessions, so it must fail |
 
 `inject <id> consumer-loss pixoo` runs the loss step through a handshake.
 The step asks for `freeze` and later `thaw` through two files in the Hub
@@ -728,8 +728,8 @@ The step asserts:
 - The dashboard shows the Pixoo `Stale / unavailable` and offers no
   brightness change.
 - The Hub's health reports it unavailable.
-- A command that a client read before the loss and sends during it gets the
-  Hub's `uncertain-result`.
+- A client that read the Pixoo before the loss sends one command during it,
+  and the Hub answers `uncertain-result`.
 - The owner's revision moves past the Pixoo's last applied one.
 - After the thaw, the Pixoo shows current again without a reload, and its
   view catches up with the owner.
@@ -744,9 +744,10 @@ after the thaw. The step attaches `loss-command.json` recording whether 0 or
 thaw times, the capture and the recovery checks.
 
 A composition is simulated integration evidence only. It is not
-installed-system acceptance, physical-device evidence or a Windows browser
-result, which [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)
-qualifies.
+installed-system acceptance or physical-device evidence. It is not a Windows
+browser result either;
+[#497](https://github.com/jimmie-potts/agent-device-hub/issues/497) qualifies
+that.
 
 ## Deferred
 
@@ -755,4 +756,5 @@ physical-device accuracy or general process-management platform. Revisit
 wider access only after #497 qualifies the same-PC path. The in-page expiry
 banner is deferred with the card and `doctor` as the manual alternative;
 revisit it when an adapter owns a page it can render in, or when #497 records
-a person misled by a stale link.
+a person misled by a stale link. A composition has a loss step only for
+Pixoo; add a wall loss step when a change to the wall's pairing needs one.

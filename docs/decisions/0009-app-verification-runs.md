@@ -80,12 +80,13 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    3. The consumers reseed `hub-paired`, and the Hub reseeds `integrated`,
       the real hub CLI as the only agent-state owner.
 
-   An aggregate `composition.json` under the Hub's proof root records each
-   run and stops only recorded runs, owner first. Consumer loss uses
-   `systemctl --user freeze` and `thaw` on the recorded unit, driven by the
-   orchestrator. A capture step requests it through the Hub run's runtime
-   directory. A Hub on a preview configures its own Places destinations
-   (`placeLinks`), so no preview link leads to an installed service.
+   The orchestrator records each run in an aggregate `composition.json`
+   under the Hub's proof root, and a cleanup stops only recorded runs, owner
+   first. Consumer loss is `systemctl --user freeze` and `thaw` on the
+   recorded unit. The orchestrator applies them when a capture step asks
+   through the Hub run's runtime directory. A preview's Hub configures its
+   own Places destinations (`placeLinks`), so no preview link leads to an
+   installed service.
 
 ## Alternatives considered
 
