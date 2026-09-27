@@ -67,7 +67,7 @@ scenarios and its capture steps.
 | `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
 | `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `state: stopped` with the cause in `events.jsonl` and `cleanup.result`, and keeps the frozen set, rather than serving half-seeded state |
 | `extend <run-id> [--lease <minutes>]` | Starts the next lease timer (`app-verify-<run-id>-lease-<k>.timer`), reads back that it elapses at the new expiry, then stops the old timer, so the run is never without a lease. Records the new expiry in the receipt and the printed card | A run whose unit is not active, or whose new timer cannot be started, is reported as such; the old lease and everything else stay untouched |
-| `stop <run-id>` | Stops every lease timer of the run and the supervisor unit, verifies each is gone, returns the captures of an interrupted, never-frozen handoff from `verified.partial/` to the proof directory, removes the runtime directory, and writes the final receipt with `cleanup.result`: `state: expired` when the lease had already stopped the unit, `stopped` otherwise. Frozen proof stays. Repeating `stop` reports the final state without rewriting it. With an unreadable or invalid receipt, `stop` still cleans up through the unit names the run id gives, reports `state: stale` and `receipt: unreadable`, and leaves the file as found for diagnosis. It removes only the runtime directory: a `HOME` or `TMPDIR` a plug-in moved elsewhere is the plug-in's to clean | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
+| `stop <run-id>` | First stops every lease timer of the run and the supervisor unit, verifies each is gone and removes the runtime directory. Then, under the receipt lock, recovers the proof of a run that was never frozen. It reports `proof: committed` (a complete own set left by an interrupted handoff), `unwound` (partial or rebuildable captures returned to the proof directory) or `conflict` (files left for inspection, cleanup unaffected). Finally it writes the receipt with `cleanup.result`: `state: expired` when the lease had already stopped the unit, `stopped` otherwise. A `receipt-locked` refusal still reports the cleanup done. Frozen proof stays. Repeating `stop` reports the final state without rewriting it. With an unreadable or invalid receipt, `stop` still cleans up through the unit names the run id gives, reports `state: stale` and `receipt: unreadable`, and leaves the file as found for diagnosis. It removes only the runtime directory: a `HOME` or `TMPDIR` a plug-in moved elsewhere is the plug-in's to clean | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
 | `restart <run-id>` | `stop`, then `start` with the recorded scenario and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
 
 Expiry is not an operation. The lease timer stops the unit, and the next
@@ -455,6 +455,8 @@ PC, and the delivery evidence records them. Depot's runner has no systemd,
 so the Hub's App verification CI job runs only the parts that need none:
 
 - receipt validation;
+- the receipt lock under contention, including a lock left by a killed
+  writer and a stuck or holder-less lock breaker;
 - `start` refusing without a manager;
 - the capture rules through `runCaptureStep`: reference, `control-*`,
   `false` predicates, a broken app, a silent step, missing tooling, and
@@ -482,7 +484,11 @@ host, in addition to its issue's acceptance list:
 | Simulated boundary | Plug-in boundary checks fail the start | Fake controller observed; read-only browsing writes nothing | Light request trap raises | No physical transport request |
 
 A negative control is an ordinary capture step named `control-*` that reports
-`failed` by design; adapter tests assert that it fails. There is no
+`failed` by design; adapter tests assert that it fails. A run cited as a
+change's delivery proof runs its `control-*` steps in tests (through
+`runCaptureStep`) or after handoff, so its verified set holds only passed
+captures: the delivery preflight (#496) rejects a verified set with any
+capture that did not pass. There is no
 expected-failure mode that turns a failure into a pass. On a CI host without
 `systemd --user`, an adapter can still run its reference and `control-*` steps
 against an application it started itself with `runCaptureStep`, which judges a

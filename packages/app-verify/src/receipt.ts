@@ -1,6 +1,6 @@
 import {existsSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
-import {appendFile, mkdtemp, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {appendFile, mkdtemp, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {RECEIPT_VERSION, type Receipt} from './types.js';
 import {ANY_RUN_ID, KEBAB, holder, holderAlive, iso, pause} from './util.js';
@@ -158,6 +158,8 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
 }
 
 const LOCK_WAIT_MS = 10000;
+/** A lock or breaker directory without a readable holder this old was left by a killed writer. */
+const HOLDERLESS_MS = 5000;
 
 /** The receipt is held by another live operation. */
 export class LockedError extends Error {}
@@ -207,18 +209,19 @@ export class ProofStore {
     for (;;) {
       if (await this.acquire(lock, mine)) break;
       const record = await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined);
+      let blocker: string | undefined;
       if (record === undefined) {
         // Released meanwhile, or a lock from an older writer that never recorded a holder.
         const info = await stat(lock).catch(() => undefined);
-        if (info && Date.now() - info.mtimeMs > 5000) await this.breakDead(lock, undefined);
+        if (info && Date.now() - info.mtimeMs > HOLDERLESS_MS) blocker = await this.breakDead(lock, undefined);
       } else if (!(await holderAlive(record))) {
-        await this.breakDead(lock, record);
-        continue;
-      } else if (Date.now() > deadline) {
-        throw new LockedError(`another operation (pid ${record.trim().split(' ')[0]}) held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
-      }
-      await pause(50);
+        blocker = await this.breakDead(lock, record);
+      } else blocker = `another operation (pid ${record.trim().split(' ')[0]})`;
+      // Every path is bounded: a stuck holder or lock breaker ends in receipt-locked, never an endless wait.
+      if (Date.now() > deadline) throw new LockedError(`${blocker ?? 'another operation'} held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
+      await pause(blocker ? 50 : 10);
     }
+    await this.sweep();
     try {
       const receipt = await this.read();
       await change(receipt);
@@ -253,20 +256,34 @@ export class ProofStore {
    * replace the main lock, so a lock that still names the dead holder is
    * exactly the one removed, and a live lock is never displaced.
    */
-  private async breakDead(lock: string, record: string | undefined): Promise<void> {
+  private async breakDead(lock: string, record: string | undefined): Promise<string | undefined> {
     const breaker = `${lock}.break`;
     const me = `${(await holder()).trim()} ${randomBytes(8).toString('hex')}\n`;
     if (!(await this.acquire(breaker, me))) {
-      // A breaker killed mid-break names a dead process; clear it and let the waiters try again.
+      // A breaker killed mid-break, or one that never recorded a holder, is dead: clear it and try again.
       const other = await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined);
       if (other !== undefined && !(await holderAlive(other))) await this.tombstone(breaker, other);
-      await pause(10);
-      return;
+      else if (other === undefined) {
+        const info = await stat(breaker).catch(() => undefined);
+        if (info && Date.now() - info.mtimeMs > HOLDERLESS_MS) await this.tombstone(breaker, undefined);
+        else if (info) return 'a lock breaker without a holder';
+      } else return `a lock breaker (pid ${other.trim().split(' ')[0]})`;
+      return undefined;
     }
     try {
       if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) === record) await this.tombstone(lock, record);
     } finally {
       if ((await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined)) === me) await this.tombstone(breaker, me);
+    }
+    return undefined;
+  }
+
+  /** Remove lock litter a killed process left: prepared or set-aside lock directories older than a minute. */
+  private async sweep(): Promise<void> {
+    for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+      if (!/^\.receipt\.lock\.(?:new|dead)-/.test(name)) continue;
+      const info = await stat(join(this.dir, name)).catch(() => undefined);
+      if (info && Date.now() - info.mtimeMs > 60000) await rm(join(this.dir, name), {recursive: true, force: true});
     }
   }
 

@@ -47,3 +47,41 @@ test('concurrent receipt updates against a dead lock lose nothing', {timeout: 18
     await rm(base, {recursive: true, force: true});
   }
 });
+
+test('a stuck lock breaker ends in receipt-locked within the deadline, and a holder-less one is cleared', {timeout: 60000}, async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'app-verify-breaker-')));
+  const {spawn} = await import('node:child_process');
+  const {utimes} = await import('node:fs/promises');
+  const sleeper = spawn('sleep', ['60']);
+  try {
+    // A breaker whose holder is alive but stopped, over a dead main lock.
+    const stuck = join(base, 'stuck');
+    await mkdir(stuck);
+    await writeFile(join(stuck, 'receipt.json'), JSON.stringify(receipt()));
+    await deadLock(stuck);
+    const stat = await readFile(`/proc/${sleeper.pid}/stat`, 'utf8');
+    await mkdir(join(stuck, '.receipt.lock.break'));
+    await writeFile(join(stuck, '.receipt.lock.break', 'holder'), `${sleeper.pid} ${stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]} breaker\n`);
+    process.kill(sleeper.pid, 'SIGSTOP');
+    const began = Date.now();
+    const blocked = JSON.parse((await promisify(execFile)(process.execPath, [worker, stuck, '1'])).stdout);
+    assert.ok(Date.now() - began < 15000, 'the wait is bounded');
+    assert.equal(blocked.applied, 0);
+    assert.match(blocked.errors[0], new RegExp(`^a lock breaker \\(pid ${sleeper.pid}\\) held the receipt lock for 10 s`));
+
+    // A breaker directory that never recorded a holder, left long enough ago, is cleared.
+    const orphan = join(base, 'orphan');
+    await mkdir(orphan);
+    await writeFile(join(orphan, 'receipt.json'), JSON.stringify(receipt()));
+    await deadLock(orphan);
+    await mkdir(join(orphan, '.receipt.lock.break'));
+    const past = new Date(Date.now() - 30000);
+    await utimes(join(orphan, '.receipt.lock.break'), past, past);
+    const cleared = JSON.parse((await promisify(execFile)(process.execPath, [worker, orphan, '1'])).stdout);
+    assert.deepEqual(cleared, {applied: 1, errors: []});
+    assert.equal(JSON.parse(await readFile(join(orphan, 'receipt.json'), 'utf8')).counter, 1);
+  } finally {
+    sleeper.kill('SIGKILL');
+    await rm(base, {recursive: true, force: true});
+  }
+});

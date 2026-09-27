@@ -1063,7 +1063,10 @@ The suite has two parts:
 
 - **Everywhere, including CI:** receipt validation, `help`, `start` refusing
   without a user manager (exit 3, nothing created; forced locally by hiding
-  the user bus), and `tests/unsupervised.test.mjs`. That file judges capture
+  the user bus), `tests/lock.test.mjs` (concurrent receipt updates against a
+  lock left by a killed writer lose nothing, and a stuck or holder-less lock
+  breaker ends in `receipt-locked` or is cleared), and
+  `tests/unsupervised.test.mjs`. That file judges capture
   steps through `runCaptureStep`: the reference passes, and a `control-*`
   wrong expectation, predicates that return `false`, a known-broken app and a
   step without assertions fail. Missing Playwright, Chromium or ffmpeg is

@@ -138,7 +138,10 @@ What the core guarantees to every plug-in callback:
   in the same application.
 - Name negative controls `control-*`. They are ordinary steps that report
   `failed` by design, and the adapter's tests assert that they fail. There is
-  no expected-failure mode that turns a failure into a pass.
+  no expected-failure mode that turns a failure into a pass. A run cited as a
+  change's delivery proof runs its controls in tests (`runCaptureStep`) or
+  after handoff, so its verified set holds only passed captures: the delivery
+  preflight (#496) rejects a verified set with any capture that did not pass.
 - Assert the simulated boundary inside the step, for example that reading a
   page sent no command to the fake controller.
 - Attach evidence the page cannot show with `t.attach(name, content)`, for
@@ -221,9 +224,9 @@ outside every Git checkout (for example `~/.cache/agent-device-hub/<task>-tmp`):
 the tests' runtime roots live under it, and the core refuses runtime state
 inside a checkout.
 
-- `tests/unsupervised.test.mjs`, the receipt tests, `help` and the no-manager
-  `start` refusal need no user manager and always run, including in the Hub's
-  CI. The unsupervised tests cover:
+- `tests/unsupervised.test.mjs`, `tests/lock.test.mjs`, the receipt tests,
+  `help` and the no-manager `start` refusal need no user manager and always
+  run, including in the Hub's CI. The unsupervised tests cover:
   - the reference and `control-*` steps, and `false` predicates;
   - a broken app and a silent step;
   - missing Playwright, Chromium and ffmpeg;
