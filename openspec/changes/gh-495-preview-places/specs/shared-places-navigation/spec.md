@@ -33,3 +33,14 @@ The public edition SHALL use public URLs for Guide, Architecture, Atlas and Refe
 #### Scenario: Refuse an unsafe preview link
 - **WHEN** a Hub configuration names a preview place link that is not a credential-free numeric-loopback HTTP URL without query or fragment, or that names B.U.N.N.Y.
 - **THEN** the Hub refuses to start with a stable configuration error and no dashboard serves the link
+
+### Requirement: Preserve application boundaries
+The navigation SHALL be static links, except that a verification preview's Local destinations come from its Hub's private configuration through the authenticated dashboard context. It SHALL NOT send credentials or private runtime data, alter the Hub asset allowlist or CSP, frame the dashboard, or change the wall map's origin and CSRF protections.
+
+#### Scenario: Follow a local destination
+- **WHEN** a reader activates the B.U.N.N.Y. or Wall link from a document
+- **THEN** the browser navigates to the fixed numeric-loopback address without a token, query or fragment in the link
+
+#### Scenario: Follow a preview's local destination
+- **WHEN** the owner activates a preview dashboard's Wall link
+- **THEN** the browser navigates to the paired run's numeric-loopback address without a token, query or fragment, and the Hub serves no new asset route and keeps its CSP

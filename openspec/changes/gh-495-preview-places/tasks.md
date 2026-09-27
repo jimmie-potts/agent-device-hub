@@ -11,4 +11,4 @@
 ## 3. Evidence
 
 - [x] 3.1 Capture before and after screenshots of the preview Places and ask the owner to approve the current UI candidate. The approval itself is recorded in the PR as the merge gate.
-- [ ] 3.2 Run the dashboard, Hub, Hub verification and shared checks. Then validate, synchronize and archive this change and verify the spec inventory.
+- [x] 3.2 Run the dashboard, Hub, Hub verification and shared checks (all exit 0 locally; CI green on 2b64b9a). Then validate, synchronize and archive this change and verify the spec inventory.
