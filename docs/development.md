@@ -155,7 +155,7 @@ Normal Depot CI has six Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |
-| Workflow checks | Node 24 workflow validation and isolated Linux hook qualification |
+| Workflow checks | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification |
 | Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, the Tidbyt controller and its Pillow golden-image check, performance checks and isolated package consumers |
 | Contracts and state, Python 3.14 | The same suites on the second supported Python version |
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
@@ -216,6 +216,51 @@ organization token for this integration and treat its write capabilities as
 outside read-only diagnosis. Credential provisioning and successful access
 verification are separate from adopting the merge policy; absent diagnostic
 credentials do not block otherwise complete routine check evidence.
+
+## Delivery preflight
+
+`npm run preflight -- --pr <number>` checks one Hub PR against the
+[review and merge gates](sdlc.md#review-and-merge) and reports missing or stale
+evidence before a merge or issue closure. It is an aid, not a gate or an
+authorization. Every run re-reads GitHub, and a report is current only for the
+head and read time it prints; a saved green report never covers a later head.
+`npm run preflight -- --help` lists the options.
+
+The tool only reads. Before any network use, its GitHub client refuses every
+request except `GET` and GraphQL queries, so it cannot merge, comment, label,
+approve, dispatch or change issue state. It writes no file. The only process it
+starts is `gh auth token`, and only when neither `GH_TOKEN` nor `GITHUB_TOKEN`
+is set. The output names revisions, check IDs, comment URLs, digests and run
+IDs; it never prints tokens, reviewer text or local paths.
+
+| Gate | What it reads | Rule |
+| --- | --- | --- |
+| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts and closing keywords | [Review and merge](sdlc.md#review-and-merge) |
+| Depot CI | Expected jobs from `.depot/workflows/` at the PR head and, once merged, at the main merge commit, with matrix expansion and branch-rule checks; every page of `filter=all` check runs. A workflow edit cannot drop a job expected at the merge-base without an unresolved entry | [Depot CI evidence](sdlc.md#depot-ci-evidence) |
+| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML with its screenshots and print check beside it; `--guide-record`, a PR comment naming the full head and HTML hash | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
+| Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison. The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
+| Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
+| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/` or `docs/skins/`, or `--ui`; `--ui-approval` must name one PR revision with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
+| Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
+| Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
+| Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
+
+Exit status is 0 when every applicable gate is satisfied, 1 when any is
+unresolved, 2 when a read failed, and 3 for a usage or internal error. `--json`
+prints the machine-readable report.
+
+```bash
+npm run test:preflight
+```
+
+The test suite covers a clean candidate and negative controls built from
+deterministic GitHub and receipt fixtures: a missing or unsuccessful job,
+changed head or base, stale or partial review, unavailable API, missing UI
+approval, open counterpart, both finish-line kinds, the guide-only exception
+with its evidence and with mixed paths, and dirty or failed-capture receipts.
+It also covers the read-only guard and a run under Node's permission model,
+which denies file writes and child processes. CI runs it in the Workflow checks
+job. Fixtures do not qualify live GitHub state or installed clients.
 
 ## Shared tooling provenance
 
