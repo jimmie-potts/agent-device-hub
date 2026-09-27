@@ -92,6 +92,7 @@ test('the Hub reference steps pass on the correct app and fail on each known-bro
     const installed = await judge(base, 'control-installed-links', 'control-installed-links');
     assertFailedAt(installed, 'no run link leads to an installed service port', 'a link to the installed wall');
     assert.match(installed.reason, /http:\/\/127\.0\.0\.1:8765\/wall/);
+    assert.match(installed.reason, /http:\/\/127\.0\.0\.1:8765\/(,|$)/, 'the Places Wall link to the installed wall is caught too');
     assertFailedAt(await judge(base, 'control-missing-session', 'lifecycle-basic'), 'an unseeded session is shown', 'an unseeded session');
 
     // No run credential enters any log, reference, fault or control alike.

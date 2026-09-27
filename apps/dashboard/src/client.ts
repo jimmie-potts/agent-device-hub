@@ -2,7 +2,8 @@ import type {Snapshot, Request, Command} from '../../../packages/contracts/src/t
 export type {Snapshot, Command};
 export type Component = {id:string;kind:string;controllerId:string;deviceId:string;health:string;pending:number;editorUrl?:string};
 /** playback names the configured source only when the caller's credential grants it. */
-export type Context = {apiVersion:'1.0';control:boolean;consumers:string[];components:Component[];playback?:{sourceId:string}};
+/** `places`, present only on a verification preview's Hub (Hub #495), replaces the Local Places destinations: a named place links to its URL, and any other Local place but B.U.N.N.Y. is omitted. */
+export type Context = {apiVersion:'1.0';control:boolean;consumers:string[];components:Component[];playback?:{sourceId:string};places?:Record<string,string>};
 export type PlaybackAction='play'|'pause'|'next'|'previous';
 export type PlaybackSnapshot={apiVersion:'1.0';sourceId:string;availability:'available'|'stale'|'unavailable';observedAtMs:number|null;ageMs:number|null;
  playback:null|{status:'playing'|'paused'|'stopped'|'inactive'|'unknown';title?:string;artist?:string;album?:string;controls:PlaybackAction[]}};
