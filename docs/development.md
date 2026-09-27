@@ -938,9 +938,34 @@ private stores outside Git checkouts.
 [App verification](app-verification.md) defines the operations, receipt,
 storage, supervisor and failure behavior for disposable application runs with
 synthetic data, and [ADR 0009](decisions/0009-app-verification-runs.md) records
-the decisions. The Hub adapter (#494) documents its wrapper, checks and CI
-coverage here when it lands; the Nanoleaf and Pixoo adapters document theirs
-in their own repositories. Runs use transient
-`systemd --user` units, keep runtime state under `~/.local/state/app-verify/`
-and proof under the canonical checkout's `.local/evidence/verify/`, and never
-use the installed ports or services.
+the decisions. Runs use transient `systemd --user` units, keep runtime state
+under `~/.local/state/app-verify/` and proof under the canonical checkout's
+`.local/evidence/verify/`, and never use the installed ports or services.
+
+Hub #494 implements the lifecycle once in the private workspace package
+[`packages/app-verify`](../packages/app-verify/README.md)
+(`@jimmie-potts/app-verify`), which the Hub, Nanoleaf and Pixoo adapters
+consume through one plug-in each. Use Node 24 from the worktree root and run
+`npm run build`, `npm run typecheck` (which also type-checks the package's
+caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
+The suite needs a Linux user manager (`systemctl --user is-system-running`
+answering `running` or `degraded`) and the repository's Playwright Chromium.
+Its lifecycle tests start real transient units named `app-verify-avt-*` with
+leases of seconds and a fixture counter application, and stop every unit they
+created. Without a user manager they skip with a printed reason, unless
+`APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure; the unsupervised capture
+tests, including the negative controls, run either way. The package check
+installs the packed archive into an isolated consumer that supplies its own
+Playwright, verifies every file hash and runs the packaged suite. Neither
+check touches installed services, personal state or devices, and neither
+contacts Windows: `APP_VERIFY_WINDOWS_CHECK=off` is set by the tests.
+
+The App verification CI job runs both after a fresh build and Chromium
+install. It starts a user manager with `loginctl enable-linger` first and sets
+`APP_VERIFY_REQUIRE_SYSTEMD=1`, so a runner without one fails instead of
+skipping. `npm run package:app-verify` writes
+`artifacts/jimmie-potts-app-verify-<version>.tgz` and its `.sha256` for a
+release; other repositories vendor that archive.
+
+The Hub adapter documents its wrapper and checks here when it lands; the
+Nanoleaf and Pixoo adapters document theirs in their own repositories.

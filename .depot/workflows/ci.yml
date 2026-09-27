@@ -125,3 +125,38 @@ jobs:
       - run: npm run typecheck:dashboard
       - run: npm run test:dashboard
       - run: npm run test:dashboard:browser
+  app-verify:
+    name: App verification on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      APP_VERIFY_REQUIRE_SYSTEMD: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - name: Start a user systemd manager
+        run: |
+          uid="$(id -u)"
+          state="$(systemctl --user is-system-running 2>&1 || true)"
+          echo "user manager before: $state"
+          case "$state" in running|degraded|starting) exit 0;; esac
+          sudo loginctl enable-linger "$(id -un)"
+          for attempt in $(seq 1 30); do
+            if [ -S "/run/user/$uid/bus" ]; then break; fi
+            sleep 1
+          done
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+          echo "user manager after: $(XDG_RUNTIME_DIR="/run/user/$uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" systemctl --user is-system-running 2>&1 || true)"
+      - run: npm run test:app-verify:built
+      - run: npm run test:app-verify:package:built

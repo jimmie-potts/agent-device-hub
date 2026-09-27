@@ -134,6 +134,16 @@ Run `npm run test:lifecycle`, `npm run test:lifecycle:python` and
 Run `npm run test:agent-state`, `npm run test:agent-state:python` and
 `npm run test:agent-state:package` for the state owner and external consumers.
 
+## App verification runs
+
+[App verification](docs/app-verification.md) starts a disposable copy of an
+application with synthetic data under a transient `systemd --user` unit and a
+lease, drives it in Chromium, keeps frozen proof and hands over an expiring
+preview. The [`@jimmie-potts/app-verify`](packages/app-verify/README.md)
+package implements that lifecycle once; the Hub, Nanoleaf and Pixoo adapters
+each supply a plug-in. Run `npm run test:app-verify` and
+`npm run test:app-verify:package` with the shared build/type checks.
+
 ## Cross-project work guide
 
 The [work guide](docs/work-guide/README.md) is a dated remaining-work map,
