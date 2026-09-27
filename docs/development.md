@@ -155,7 +155,7 @@ Normal Depot CI has six Linux jobs:
 
 | Check | Runtime and coverage |
 | --- | --- |
-| Workflow checks | Node 24 workflow validation and isolated Linux hook qualification |
+| Workflow checks | Node 24 workflow validation, delivery preflight fixtures and isolated Linux hook qualification |
 | Contracts and state, Python 3.12 | Controller contracts, lifecycle contracts and agent state in both languages, the Tidbyt controller and its Pillow golden-image check, performance checks and isolated package consumers |
 | Contracts and state, Python 3.14 | The same suites on the second supported Python version |
 | MCP | Node 24 build/type, tool/service tests, loopback protocol tests and isolated archive consumers |
@@ -216,6 +216,112 @@ organization token for this integration and treat its write capabilities as
 outside read-only diagnosis. Credential provisioning and successful access
 verification are separate from adopting the merge policy; absent diagnostic
 credentials do not block otherwise complete routine check evidence.
+
+## Delivery preflight
+
+`npm run preflight -- --pr <number>` checks one Hub PR against the
+[review and merge gates](sdlc.md#review-and-merge) and reports missing or stale
+evidence before a merge or issue closure. It is an aid, not a gate or an
+authorization. Every run re-reads GitHub, and a report is current only for the
+head and read time it prints; a saved green report never covers a later head.
+`npm run preflight -- --help` lists the options.
+
+The tool only reads. Before any network use, its GitHub client refuses every
+request except `GET` and the tool's own two GraphQL query documents, matched by
+exact text, so it cannot merge, comment, label, approve, dispatch or change
+issue state. It writes no file. The only process it starts is `gh auth token`,
+and only when neither `GH_TOKEN` nor `GITHUB_TOKEN` is set. The output names
+revisions, check IDs, comment URLs, digests and run IDs, plus short structured
+fields from the evidence it reads, such as receipt capture reasons. It never
+prints tokens, local paths or reviewer return text.
+
+| Gate | What it reads | Rule |
+| --- | --- | --- |
+| Source identity | PR state, live head against `--head`, base branch tip against `--base`, merge-base, draft, conflicts, fork head, non-main base and closing keywords. The work issue is `--issue` or the single `Refs #<n>` in the PR body; a missing or ambiguous one is unresolved, except for the bot-opened nightly guide refresh | [Review and merge](sdlc.md#review-and-merge) |
+| Depot CI | Expected jobs from `.depot/workflows/` at the PR head and, once merged, at the main merge commit, with matrix expansion, GitHub path-filter semantics (`*` and `**`; a filter with negation, `?`, `+` or `[]` keeps every job expected) and branch-rule checks; every page of `filter=all` check runs. A workflow edit cannot drop a job expected at the merge-base without an unresolved entry | [Depot CI evidence](sdlc.md#depot-ci-evidence) |
+| Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
+| Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
+| Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
+| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/`, `docs/skins/`, `controllers/tidbyt/src/` or `controllers/tidbyt/fixtures/golden/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), or `--ui`. Tidbyt modules that only queue, schedule, authenticate or transport frames are listed as non-UI in `NON_UI_PATHS` in `scripts/delivery-preflight/preflight.mjs`; a new Tidbyt module counts as UI until it is listed. `--ui-approval` must be a record (see below) whose first line approves one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
+| Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
+| Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
+| Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
+
+Each retained return must carry its own verdict line. Only the reviewer's own
+lines count: not fenced code, blockquotes (`>`), lines indented four spaces or
+a verdict written in inline code, which is an example.
+A verdict line is `Verdict:` (or `Verdict -`, or an en or em dash) in any
+heading, list or bold markup, or a bare `Verdict` heading with the phrase on
+the next line, optionally prefixed by `Final`, `Overall`, `My` or the
+return's own axis (`Specification verdict:`). Other prefixes, such as
+another axis or `Coordinator`, are ignored. The phrase up to the first `.`,
+`,`, `;`, `:`, `(` or dash must be `satisfied`, `approve` or `approved`, on
+every own verdict line. A return without one states no verdict, and its axis
+stays unresolved; status statements never grant satisfaction.
+
+Statements can only veto. "<axis> axis is <status>" with `action-required`,
+`incomplete` or `not satisfied`, for the return's own axis or no named axis,
+makes the return not satisfied, even when only the status is wrapped in
+markup or quotes. It is ignored only when "axis is" lies inside fenced code, a
+blockquote, an inline code span (a run of backticks closed by a run of the
+same length) or a balanced double-quoted span outside code; a line with an
+unclosed backtick run or unbalanced quotes is read whole. The summary row
+never approves an axis on its own.
+
+A UI approval or guide-only record is a comment or review on the PR written by
+the delivery account: the PR author, or the repository owner when a bot opened
+the PR. Bot comments, other accounts' comments and comments with an HTML marker,
+such as review reports and provider summaries, never count.
+
+A UI approval record starts with its approval: the comment's first non-empty
+line is exactly one of these, case-sensitive, with an optional list marker and
+trailing spaces, and not indented, fenced or quoted. The body may continue
+after it.
+
+```text
+UI approved: <full 40-character sha>
+UI approved by <login>: <full 40-character sha>
+```
+
+Anything else is not approval, including a request that quotes this line
+further down, a free-text name or an abbreviated SHA. The owner writes the
+line from the delivery account, so the tool cannot tell a human from an agent
+using the same account; the form only prevents requests, templates and
+revocations from being misread as approval.
+
+A guide-only record names the full revision and the guide HTML SHA-256, and
+reports each of the four local checks in exactly this form: the command
+(without a colon), a colon, and `exit 0` or `passed` as the entire value.
+
+```text
+- python3 docs/work-guide/work/build_guide.py: exit 0
+- python3 docs/work-guide/work/test_maintenance.py: exit 0
+- node docs/skins/check_places.cjs: exit 0
+- git diff --exit-code -- docs/work-guide/outputs: exit 0
+```
+
+Every line that names one of these checks must have that form. Any other
+wording, such as `2 failures, 40 passed`, `did not pass` or
+`exit 1; rerun: exit 0`, leaves the check unverified and the exception
+unresolved.
+
+Exit status is 0 when every applicable gate is satisfied, 1 when any is
+unresolved, 2 when a read failed, and 3 for a usage or internal error. `--json`
+prints the machine-readable report.
+
+```bash
+npm run test:preflight
+```
+
+The test suite covers a clean candidate and negative controls built from
+deterministic GitHub and receipt fixtures: a missing or unsuccessful job,
+changed head or base, stale, partial or self-contradicting review, unavailable
+API and paginated reads, missing or improper UI approval, open counterpart,
+missing work issue, both finish-line kinds, the guide-only exception with its
+evidence and with mixed paths, and dirty or failed-capture receipts. It also
+covers the read-only guard and a run under Node's permission model, which
+denies file writes and child processes. CI runs it in the Workflow checks job.
+Fixtures do not qualify live GitHub state or installed clients.
 
 ## Shared tooling provenance
 
