@@ -14,7 +14,9 @@
 // - `duplicate-forward`: a loopback relay in front of the Pixoo fake forwards
 //   every command twice.
 // - `replay-on-recovery`: clearing an offline or uncertain Pixoo re-sends a
-//   brightness command through the hub.
+//   brightness command through the hub. After an uncertain result it re-sends
+//   the value the controller already holds (60), so the reloaded value is
+//   unchanged and only the command count can catch the replay.
 import {createServer, request as httpRequest} from 'node:http';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -75,13 +77,18 @@ async function duplicatingRelay(target) {
     outgoing.end(body);
   });
   const relay = createServer(async (request, response) => {
-    let body = '';
-    for await (const chunk of request) body += chunk;
-    const first = await forward(request, body);
-    if (request.method !== 'GET') await forward(request, body);
-    if (!first) return request.socket.destroy();
-    response.writeHead(first.status, {'content-type': first.type ?? 'application/json'});
-    response.end(first.text);
+    try {
+      let body = '';
+      for await (const chunk of request) body += chunk;
+      const first = await forward(request, body);
+      if (request.method !== 'GET') await forward(request, body);
+      if (!first) return request.socket.destroy();
+      response.writeHead(first.status, {'content-type': first.type ?? 'application/json'});
+      response.end(first.text);
+    } catch {
+      // A broken exchange looks like a lost response to the hub; it never ends the run.
+      request.socket.destroy();
+    }
   });
   await new Promise(resolve => relay.listen(0, '127.0.0.1', resolve));
   relays.push(relay);
@@ -132,7 +139,7 @@ const control = createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/writes') return send(200, f.writes);
     // Every command-shaped request a fake received, recorded before any offline or uncertain answer.
     if (request.method === 'GET' && request.url === '/commands') return send(200, f.requests.filter(r => r.method !== 'GET').map(({id, method, url}) => ({id, method, url})));
-    if (request.method === 'GET' && request.url === '/ports') return send(200, {hub: Number(new URL(f.hub.url).port), control: control.address().port, controllers: f.endpoints});
+    if (request.method === 'GET' && request.url === '/ports') return send(200, {hub: Number(new URL(f.hub.url).port), control: control.address().port, controllers: f.endpoints, relays: relays.map(relay => relay.address().port)});
     if (request.method === 'POST' && request.url === '/offline') {
       f.setOffline(input.on === true, input.device ?? 'pixel');
       if (input.on !== true && scenario.fault === 'replay-on-recovery') await sendThroughHub(45);
@@ -140,7 +147,7 @@ const control = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && request.url === '/uncertain') {
       f.setUncertain(input.on === true);
-      if (input.on !== true && scenario.fault === 'replay-on-recovery') await sendThroughHub(25);
+      if (input.on !== true && scenario.fault === 'replay-on-recovery') await sendThroughHub(60);
       return send(200, {uncertain: input.on === true});
     }
     if (request.method === 'POST' && request.url === '/event' && EVENTS.has(input.kind)) {

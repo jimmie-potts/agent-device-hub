@@ -112,3 +112,22 @@ test('an unknown fault name refuses to start instead of serving a correct app', 
     await rm(base, {recursive: true, force: true});
   }
 });
+
+test('a fault relay is one of the run listeners the installed-port check sees', {timeout: 60000}, async () => {
+  const base = await realpath(await mkdtemp(join(shortTmp(), 'hv-')));
+  try {
+    const app = await started(base, 'relay', 'lifecycle-basic', 'duplicate-forward');
+    try {
+      const {port} = JSON.parse(await readFile(join(app.dataDir, 'control.json'), 'utf8'));
+      const token = (await readFile(join(app.dataDir, 'api-token'), 'utf8')).trim();
+      const ports = await (await fetch(`http://127.0.0.1:${port}/ports`, {headers: {authorization: `Bearer ${token}`}})).json();
+      assert.equal(ports.relays.length, 1, 'the relay in front of the Pixoo fake is listed');
+      const check = plugin.checks.find(c => c.id === 'no-installed-ports');
+      assert.deepEqual(await check.run({url: app.url, port: Number(new URL(app.url).port), dataDir: app.dataDir, runtimeDir: app.runtimeDir, runId: 'hub-unmanaged-relay', root, scenario: 'lifecycle-basic', signal: AbortSignal.timeout(5000)}), {outcome: 'passed'});
+    } finally {
+      await app.stop();
+    }
+  } finally {
+    await rm(base, {recursive: true, force: true});
+  }
+});

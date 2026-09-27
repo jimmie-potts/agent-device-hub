@@ -241,7 +241,7 @@ export default definePlugin({
       doctor: true,
       run: async t => {
         const ports = await control(t, '/ports');
-        const used = [ports.hub, ports.control, ...ports.controllers.map((/** @type {{port: number}} */ c) => c.port)];
+        const used = [ports.hub, ports.control, ...ports.controllers.map((/** @type {{port: number}} */ c) => c.port), ...(ports.relays ?? [])];
         const clash = used.filter(port => INSTALLED_PORTS.includes(port));
         return clash.length ? {outcome: 'failed', reason: `uses installed port ${clash.join(', ')}`} : {outcome: 'passed'};
       },

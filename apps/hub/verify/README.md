@@ -88,7 +88,7 @@ fault, never the environment, and an unknown fault refuses to start. CI's
 | --- | --- | --- |
 | `write-on-read` | An unsolicited brightness command goes through the hub shortly after the Pixoo fake is first read | `task-appears`: "read-only browsing sent no controller command" |
 | `duplicate-forward` | A loopback relay in front of the Pixoo fake forwards every command twice | `command-reaches-fake`: "the fake received exactly one brightness.set of 30"; `uncertain-no-replay`: "the uncertain command reached the fake once and was not retried" |
-| `replay-on-recovery` | Clearing an offline or uncertain Pixoo re-sends a brightness command through the hub | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay`: "recovery replayed nothing" |
+| `replay-on-recovery` | Clearing an offline Pixoo sends a brightness command through the hub; clearing an uncertain one re-sends the value the controller already holds (60), so the reloaded value is unchanged and only the count sees the replay | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay`: "recovery replayed nothing" |
 
 Runs serve no per-device editor links, so a preview never sends the owner to
 an installed service's port. The dashboard's own Places navigation is product
@@ -104,8 +104,9 @@ directory left. Its `failure.detail` ends with the hub's own stable cause,
 `; app: hub-start-failed: invalid-configuration`, which the plug-in's
 `readiness.failureCause` picks from the app's stderr; no other log text is
 kept. Boundary checks at start, which `doctor` repeats:
-`build-current`, and `no-installed-ports`, which confirms that neither the hub,
-the control listener nor any fake controller uses an installed port.
+`build-current`, and `no-installed-ports`, which confirms that no listener of
+the run (the hub, the control listener, the fake controllers or a fault relay)
+uses an installed port.
 
 When the UI or a fake changes, update the step, this map and the
 [dashboard checks](../../../docs/development.md#dashboard-checks) together.

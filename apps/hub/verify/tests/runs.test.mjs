@@ -60,6 +60,7 @@ async function roots() {
   };
   const receipt = async runId => JSON.parse(await readFile(join(base, 'p', runId, 'receipt.json'), 'utf8'));
   const token = async runId => (await readFile(join(base, 's', runId, 'data/api-token'), 'utf8')).trim();
+  const readerToken = async runId => (await readFile(join(base, 's', runId, 'data/reader-token'), 'utf8')).trim();
   async function close() {
     for (const runId of mine) {
       for (const unit of [`app-verify-${runId}.service`, `app-verify-${runId}-lease.timer`]) spawnSync('systemctl', ['--user', 'stop', unit]);
@@ -69,7 +70,7 @@ async function roots() {
     await rm(base, {recursive: true, force: true});
     assert.equal(left, '', 'no unit of these runs is left');
   }
-  return {base, env, verify, start, receipt, token, outputs, close, track: runId => mine.add(runId)};
+  return {base, env, verify, start, receipt, token, readerToken, outputs, close, track: runId => mine.add(runId)};
 }
 
 async function files(directory) {
@@ -104,7 +105,12 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.deepEqual(receipt.checks.map(c => [c.id, c.outcome]), [['readiness', 'passed'], ['build-current', 'passed'], ['no-installed-ports', 'passed'], ['windows-loopback', 'skipped']]);
     assert.deepEqual(receipt.components.filter(c => c.kind === 'simulated').map(c => c.id), ['wall-controller', 'pixel-controller', 'lifecycle-events']);
     // Every credential the run ever held: fresh steps and resets rotate the token.
-    const secrets = new Set([await r.token(runId), (await readFile(join(r.base, 's', runId, 'data/reader-token'), 'utf8')).trim()]);
+    const secrets = new Set([await r.token(runId), await r.readerToken(runId)]);
+    // Both run credentials rotate with every reseed; collect each generation.
+    const collect = async id => {
+      secrets.add(await r.token(id));
+      secrets.add(await r.readerToken(id));
+    };
     const token = await r.token(runId);
     assert.equal((await stat(join(r.base, 's', runId, 'data/api-token'))).mode & 0o777, 0o600);
 
@@ -116,11 +122,11 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     const command = await r.verify('capture', runId, 'command-reaches-fake');
     assert.equal(command.code, 0, command.stderr);
     assert.equal(command.result.outcome, 'passed');
-    secrets.add(await r.token(runId));
+    await collect(runId);
     const control = await r.verify('capture', runId, 'control-missing-session');
     assert.equal(control.code, 1);
     assert.equal(control.result.outcome, 'failed');
-    secrets.add(await r.token(runId));
+    await collect(runId);
 
     const extended = await r.verify('extend', runId, '--lease', '20');
     assert.equal(extended.code, 0, extended.stderr);
@@ -135,7 +141,7 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.equal(new URL(handoff.result.url).search + new URL(handoff.result.url).hash, '', 'the preview URL carries no code or token');
     const resetToken = await r.token(runId);
     assert.notEqual(resetToken, token, 'the reset seeds a new run-generated credential');
-    secrets.add(resetToken);
+    await collect(runId);
 
     // The owner's view: a fresh browser opens the card's URL and is signed in by trusted-loopback.
     const context = await browser.newContext({viewport: {width: 1280, height: 900}});
@@ -168,7 +174,7 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.equal((await r.receipt(runId)).state, 'stopped');
     assert.equal(existsSync(join(r.base, 's', runId)), false, 'the runtime directory and its credentials are gone');
     assert.ok(existsSync(join(r.base, 'p', runId, 'verified/SHA256SUMS')), 'the frozen proof survives the runtime cleanup');
-    secrets.add(await r.token(restarted.result.runId));
+    await collect(restarted.result.runId);
     const stopped = await r.verify('stop', restarted.result.runId);
     assert.equal(stopped.result.cleanup.result, 'clean');
 
@@ -184,7 +190,8 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
       }
     }
     for (const output of r.outputs) for (const secret of secrets) assert.equal(output.includes(secret), false, 'no operation printed a credential');
-    assert.ok(secrets.size >= 5, 'the rotated tokens were all collected');
+    // Four credential generations (start, the fresh command step, the reset, the restarted run), two tokens each.
+    assert.equal(secrets.size, 8, 'the rotated API and reader tokens were all collected');
   } finally {
     await browser.close();
     await r.close();
