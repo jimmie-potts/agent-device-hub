@@ -35,13 +35,18 @@ const state = () => {
   const view = {connection, revision: feed.revision, ownerId: feed.ownerId, error: feed.error, receivedAt: feed.receivedAt ? Math.floor(feed.receivedAt / 1000) : null};
   return scenario.kind === 'nanoleaf'
     ? {apiVersion: 'wall-verify/1', scenario: scenario.name, feed: {source: 'shared', ...view}, integration: {applied: writer['integration.applied'] ?? 0, queued: 0, failed: 0}}
-    : {ownerId: feed.ownerId, connection, snapshot: feed.revision === null ? null : {revision: feed.revision}, writer};
+    : {ownerId: feed.ownerId, connection, snapshot: feed.revision === null ? null : {revision: feed.revision}};
 };
 
 const main = createServer((req, res) => {
   const path = new URL(req.url, 'http://127.0.0.1').pathname;
   if (path === '/health') return send(res, 200, {ok: true});
   if (path === (scenario.kind === 'nanoleaf' ? '/verify/state' : '/api/integration/v1/sessions')) return send(res, 200, state());
+  // Like Pixoo's GET /api/device/simulator: what reached the writer, by operation.
+  if (path === '/api/device/simulator' && scenario.kind === 'pixoo') {
+    const count = n => ({admitted: n, succeeded: n});
+    return send(res, 200, {mode: 'simulator', writer: {probe: count(0), uploadAnimation: count(0), setBrightness: count(writer['brightness.set'] ?? 0), setScreen: count(writer['power.set'] ?? 0)}});
+  }
   if (path === '/') {
     res.writeHead(200, {'content-type': 'text/html'});
     // Like the Pixoo page's Monitor, the sessions the stand-in last read from the Hub, as headings.

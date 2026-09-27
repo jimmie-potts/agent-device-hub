@@ -636,7 +636,7 @@ development only, not citable evidence.
 5. Readiness waits up to 60 s for all of these:
    - the Hub's feed answers;
    - the Hub reads both controllers and reports both devices ready;
-   - each consumer's verification state route reports its feed `current`
+   - each consumer's own state read (see below) reports its feed `current`
      at the Hub's revision;
    - each run's own `doctor` reports `running` with every read-only check
      passed.
@@ -695,8 +695,16 @@ and `stop` need.
 ### Cross-service proof and loss
 
 The Hub's `integrated` capture steps drive the Hub dashboard and, in the
-same page and video, the paired runs' pages. They read each consumer's
-verification state route for its feed revision and writer counts:
+same page and video, the paired runs' pages. Each consumer also answers
+unauthenticated loopback reads for its feed revision and writer counts, and
+[`apps/hub/verify/consumers.mjs`](../apps/hub/verify/consumers.mjs) reads
+them for the steps and for readiness:
+
+- the wall: `GET <wall URL>verify/state`, which reports its feed and the
+  integration commands its writer applied;
+- Pixoo: `GET <Pixoo URL>api/integration/v1/sessions`, its own view of the
+  remote feed, and `GET <Pixoo URL>api/device/simulator`, the operations
+  its simulator writer admitted and completed.
 
 | Step | What it proves |
 | --- | --- |

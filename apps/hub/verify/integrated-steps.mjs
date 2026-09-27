@@ -288,7 +288,7 @@ export const integratedSteps = {
       await t.expect('the applied setting keeps its physical outcome unknown', async () => {
         const snapshot = await until(() => hub(t, `/api/controllers/v1/${PAIRING.controllers.nanoleaf.alias}/integration/snapshot`), read => read.status === 200 && read.body.settings.style === next, 'the wall snapshot did not show the setting');
         const outcome = snapshot.body.outcomes?.at?.(-1);
-        if (outcome && outcome.physicalOutcome !== 'unknown') throw new Error(`the last outcome claims ${outcome.physicalOutcome}`);
+        if (outcome?.outcome !== 'applied' || outcome.physicalOutcome !== 'unknown') throw new Error(`the last outcome is ${JSON.stringify(outcome)}`);
       });
       await pause(3000);
       await t.expect('nothing was sent twice', async () => {
