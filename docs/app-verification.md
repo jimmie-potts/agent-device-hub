@@ -575,7 +575,7 @@ choice.
 npm run -s verify:compose -- start --checkout nanoleaf=<abs> --checkout pixoo=<abs> [--lease <minutes>] [--unpinned] [--restarts <composition-id>]
 npm run -s verify:compose -- doctor [<composition-id>]
 npm run -s verify:compose -- capture <composition-id> <step>
-npm run -s verify:compose -- inject <composition-id> consumer-loss pixoo [--step <step>]
+npm run -s verify:compose -- inject <composition-id> consumer-loss|second-owner pixoo [--step <step>] [--thaw-after <seconds>]
 npm run -s verify:compose -- handoff <composition-id>
 npm run -s verify:compose -- extend <composition-id> [--lease <minutes>]
 npm run -s verify:compose -- stop <composition-id>
@@ -745,7 +745,17 @@ recorded for Pixoo with `systemctl --user freeze` or `thaw` and reads
 `FreezerState` back. The step never names a unit. Whatever the step does,
 even if its wrapper dies, the orchestrator thaws the unit (or reseeds a
 second owner back), removes the files, records the injection and prints one
-result line; a capture that ended without a result exits 3. On this PC (WSL 2, cgroup v2, systemd 259)
+result line; a capture that ended without a result exits 3.
+
+systemd 259 refuses to stop a frozen unit ("Cannot perform operation on
+frozen unit"), so a unit left frozen would outlive its own lease. Before
+each freeze the orchestrator therefore arms a safety thaw: a transient timer
+under the user manager, `app-verify-<run-id>-thaw.timer`, that thaws the unit
+after `--thaw-after` seconds (default 120). A freeze is refused when it
+cannot be armed. If the orchestrator itself dies mid-loss, for example with
+its terminal, the consumer is running again within that bound and its lease
+can stop it. `stop` thaws before stopping, and `doctor` reports a unit that
+is still frozen. On this PC (WSL 2, cgroup v2, systemd 259)
 both commands work: a frozen run keeps its unit and listener, but its
 process stops and answers nothing.
 

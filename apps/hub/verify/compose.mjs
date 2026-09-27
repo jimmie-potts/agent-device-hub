@@ -688,6 +688,27 @@ async function thaw(unit) {
   return (await freezerState(unit)).FreezerState;
 }
 
+/** The safety thaw of a run: a transient timer, owned by the user manager, that thaws its unit if nobody else does. @param {Service} service */
+const safetyThaw = service => `app-verify-${service.runId}-thaw`;
+const SYSTEMCTL = existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : '/bin/systemctl';
+
+/**
+ * Arm the safety thaw before a freeze. systemd refuses to stop a frozen unit, so a unit left frozen by an
+ * orchestrator that died would outlive its own lease; this timer thaws it after `seconds`, and the lease then works.
+ * @param {Service} service @param {number} seconds
+ */
+async function armSafetyThaw(service, seconds) {
+  const name = safetyThaw(service);
+  await run('systemctl', ['--user', 'stop', `${name}.timer`]).catch(() => undefined);
+  const armed = await run('systemd-run', ['--user', `--unit=${name}`, '--collect', `--on-active=${seconds}s`, '--timer-property=AccuracySec=1s', `--description=app-verify safety thaw ${service.runId}`, SYSTEMCTL, '--user', 'thaw', unitOf(service)]).then(() => true, () => false);
+  return armed && (await freezerState(`${name}.timer`)).ActiveState === 'active';
+}
+
+/** Disarm the safety thaw once the unit is running again. @param {Service} service */
+async function disarmSafetyThaw(service) {
+  await run('systemctl', ['--user', 'stop', `${safetyThaw(service)}.timer`]).catch(() => undefined);
+}
+
 /**
  * Stop a run's unit and lease timers by their exact names, then read back that none is left.
  * @param {Service} service @returns {Promise<{stopped: boolean, left: string[]}>}
@@ -695,7 +716,7 @@ async function thaw(unit) {
 async function stopByName(service) {
   const base = `app-verify-${service.runId}`;
   const listed = await run('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `${base}-lease*.timer`], {encoding: 'utf8'}).then(r => r.stdout, () => '');
-  const units = [...new Set([`${base}.service`, `${base}-lease.timer`, ...listed.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(`${base}-lease`) && name.endsWith('.timer'))])];
+  const units = [...new Set([`${base}.service`, `${base}-lease.timer`, `${base}-thaw.timer`, ...listed.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(`${base}-lease`) && name.endsWith('.timer'))])];
   for (const unit of units) await run('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
   const left = [];
   for (const unit of units) {
@@ -891,8 +912,12 @@ export function verdict(step, record) {
   return {ok: held, control: {expected, held}};
 }
 
-/** @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string | undefined} step @param {Io} io @returns {Promise<Outcome>} */
-export async function inject(id, kind, serviceId, step, io) {
+/**
+ * @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string | undefined} step @param {Io} io
+ * @param {number} [thawAfter] seconds after a freeze at which the user manager thaws the consumer even if this process died
+ * @returns {Promise<Outcome>}
+ */
+export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
   const kinds = INJECTION_STEPS[kind];
   if (!kinds) throw new UsageError(`inject supports ${Object.keys(INJECTION_STEPS).join(' and ')}`);
   const steps = kinds[serviceId];
@@ -935,6 +960,10 @@ export async function inject(id, kind, serviceId, step, io) {
       return answer('refused');
     }
     if (request.phase === 'freeze') {
+      if (!await armSafetyThaw(target, thawAfter)) {
+        problems.push(`the safety thaw for ${unit} could not be armed, so it was not frozen`);
+        return answer('refused');
+      }
       await run('systemctl', ['--user', 'freeze', unit]).catch(() => undefined);
       const state = (await freezerState(unit)).FreezerState;
       if (state !== 'frozen') {
@@ -997,6 +1026,7 @@ export async function inject(id, kind, serviceId, step, io) {
       await record({thawedAt: iso(), thawedBy: 'orchestrator'});
       if (state !== 'running') problems.push(`the final thaw left ${unit} ${state}`);
     }
+    if ((await freezerState(unit)).FreezerState === 'running') await disarmSafetyThaw(target);
     if (reseeded) {
       const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.scenario], {env: io.env, progress: io.progress}).catch(error => ({code: EXIT.failed, result: {error: /** @type {ComposeFailure} */ (error).failure ?? 'adapter-unavailable'}}));
       if (code === EXIT.ok) await record({restoredAt: iso()});
@@ -1037,13 +1067,13 @@ const OPERATIONS = [
   'start --checkout <service>=<absolute path>... [--lease <minutes>] [--unpinned] [--restarts <composition-id>] [--manifest <path>]',
   'doctor [<composition-id>]',
   'capture <composition-id> <step>',
-  'inject <composition-id> consumer-loss|second-owner <service> [--step <step>]',
+  'inject <composition-id> consumer-loss|second-owner <service> [--step <step>] [--thaw-after <seconds>]',
   'handoff <composition-id>',
   'extend <composition-id> [--lease <minutes>]',
   'stop <composition-id>',
 ];
 /** @type {Record<string, string[]>} */
-const FLAGS = {start: ['--checkout', '--lease', '--manifest', '--restarts'], inject: ['--step'], extend: ['--lease']};
+const FLAGS = {start: ['--checkout', '--lease', '--manifest', '--restarts'], inject: ['--step', '--thaw-after'], extend: ['--lease']};
 /** @type {Record<string, string[]>} */
 const SWITCHES = {start: ['--unpinned']};
 
@@ -1090,6 +1120,14 @@ function lease(value) {
   return minutes;
 }
 
+/** @param {string | undefined} value */
+function thawAfter(value) {
+  if (value === undefined) return 120;
+  const seconds = Number(value);
+  if (!/^\d+$/.test(value) || seconds < 10 || seconds > 600) throw new UsageError('--thaw-after takes whole seconds from 10 to 600');
+  return seconds;
+}
+
 /** @param {string[]} positional @param {number} count @param {string} operation */
 function arity(positional, count, operation) {
   if (positional.length !== count) throw new UsageError(`${operation} takes ${count} argument${count === 1 ? '' : 's'}; see help`);
@@ -1131,7 +1169,7 @@ export async function runCompose(argv, options = {}) {
         break;
       case 'inject':
         arity(positional, 3, operation);
-        outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'], io);
+        outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'], io, thawAfter(flags['--thaw-after']));
         break;
       case 'handoff':
         arity(positional, 1, operation);

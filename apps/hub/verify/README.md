@@ -199,6 +199,9 @@ wrapper runs under `fnm exec --using=.nvmrc`.
     right after the thaw and the second owner an embedded stand-in Pixoo;
   - a Hub capture that dies mid-freeze: the consumer is thawed, the
     handshake cleared and a result printed with exit 3;
+  - an orchestrator killed with its process group mid-freeze: the safety
+    thaw runs the consumer again within `--thaw-after`, so it can be
+    stopped;
   - a checkout that changes during `start` failing a pinned start;
   - a stop retried after one that could not stop a run;
   - extend, handoff, a unit left frozen in `doctor`, and stop with the Hub
@@ -211,7 +214,10 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   - a crashed consumer in `doctor`;
   - `stop` continuing past a service it cannot stop.
 
-  The stand-ins prove the orchestrator, not the real consumers; the local
+  Its teardown thaws and stops every unit its private roots created,
+  found by run directory, composition record and stand-in app name, because
+  systemd refuses to stop a frozen unit. The stand-ins prove the
+  orchestrator, not the real consumers; the local
   cross-repository run in [development](../../../docs/development.md#app-verification-and-preview-runs)
   does. Without a user manager it skips, like `runs.test.mjs`.
 

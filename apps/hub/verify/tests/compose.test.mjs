@@ -27,6 +27,7 @@ function skipReason() {
   return reason;
 }
 const skip = skipReason();
+const RUN = /^(hub|c[0-9a-f]{5}-(nl|px))-\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const hubClean = () => execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], {encoding: 'utf8'}).trim() === '';
 
 /** A disposable Git checkout whose wrapper runs the stand-in consumer adapter. */
@@ -75,32 +76,46 @@ async function world({faults = {}, hubRun = [process.execPath, 'scripts/verify.m
     child.on('error', reject);
     child.on('close', code => {
       outputs.push(stdout, stderr);
-      const lines = stdout.trim().split('\n');
-      assert.equal(lines.length, 1, `one JSON result line on stdout, saw: ${stdout}\n${stderr.slice(-2000)}`);
-      resolve({code, result: JSON.parse(lines[0]), stderr});
+      // Settle either way: a thrown assertion here would leave the test waiting and skip its teardown.
+      try {
+        const lines = stdout.trim().split('\n');
+        assert.equal(lines.length, 1, `one JSON result line on stdout, saw: ${stdout}\n${stderr.slice(-2000)}`);
+        resolve({code, result: JSON.parse(lines[0]), stderr});
+      } catch (error) {
+        reject(new Error(`${args[0]} printed no single JSON result (exit ${code}): ${error.message}\n${stderr.slice(-2000)}`));
+      }
     });
   });
   const start = (...extra) => run('start', '--manifest', manifest, '--checkout', `nanoleaf=${nanoleaf.checkout}`, '--checkout', `pixoo=${pixoo.checkout}`, ...(extra.includes('--lease') ? [] : ['--lease', '10']), ...(hubClean() ? [] : ['--unpinned']), ...extra);
   const composition = async id => JSON.parse(await readFile(join(base, 'p', id, 'composition.json'), 'utf8'));
   const events = async id => (await readFile(join(base, 'p', id, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const units = () => spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${tag}-*`], {encoding: 'utf8'}).stdout.trim();
-  const hubRuns = new Set();
+  /** Every unit of one run: its service, lease timers and safety thaw. */
+  const runUnits = runId => spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${runId}.service`, `app-verify-${runId}-*`], {encoding: 'utf8'}).stdout.split('\n').map(line => line.trim().split(/\s+/)[0]).filter(Boolean);
   async function close() {
-    // Every Hub run this world's compositions recorded, and every stand-in unit by its unique app name.
-    for (const name of existsSync(join(base, 'p')) ? await readdir(join(base, 'p')) : []) {
-      if (!name.startsWith('compose-')) continue;
-      for (const s of (await composition(name).catch(() => ({services: []}))).services) if (s.runId) hubRuns.add(s.runId);
+    // Every run these roots created, found by its directories, its composition records and, for the stand-ins, its
+    // unique app name. Each unit is thawed first: systemd refuses to stop a frozen unit.
+    const runIds = new Set();
+    for (const dir of [join(base, 's'), join(base, 'p')]) {
+      for (const name of existsSync(dir) ? await readdir(dir) : []) {
+        if (RUN.test(name)) runIds.add(name);
+        if (name.startsWith('compose-')) for (const s of (await composition(name).catch(() => ({services: []}))).services) if (s.runId) runIds.add(s.runId);
+      }
     }
-    for (const runId of hubRuns) for (const unit of [`app-verify-${runId}.service`, `app-verify-${runId}-lease.timer`]) {
-      spawnSync('systemctl', ['--user', 'thaw', unit]);
-      spawnSync('systemctl', ['--user', 'stop', unit]);
+    for (const unit of units().split('\n').map(line => line.trim().split(/\s+/)[0]).filter(Boolean)) {
+      const match = /^app-verify-(.+?-\d{8}T\d{6}Z-[0-9a-f]{6})/.exec(unit);
+      if (match) runIds.add(match[1]);
     }
-    const left = units();
+    for (const runId of runIds) {
+      for (const unit of runUnits(runId)) spawnSync('systemctl', ['--user', 'thaw', unit]);
+      for (const unit of runUnits(runId)) spawnSync('systemctl', ['--user', 'stop', unit]);
+    }
+    const left = [...runIds].flatMap(runUnits);
     spawnSync('chmod', ['-R', 'u+w', base]);
     await rm(base, {recursive: true, force: true});
-    assert.equal(left, '', 'no stand-in unit is left');
+    assert.deepEqual(left, [], 'no unit of these roots is left');
   }
-  return {base, tag, env, nanoleaf, pixoo, manifest, writeManifest, run, start, composition, events, units, outputs, close};
+  return {base, tag, env, nanoleaf, pixoo, manifest, writeManifest, run, start, composition, events, units, outputs, close, compose, root};
 }
 
 /** Every file under a directory, recursively. */
@@ -492,6 +507,41 @@ test('a run id that is not the core\'s form is refused before it names any unit 
     const c = await w.composition(result.result.compositionId);
     assert.equal(c.services[0].runId, null, 'the malformed id was never recorded');
     assert.deepEqual(result.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'none'], ['pixoo', 'none'], ['nanoleaf', 'none']]);
+  } finally {
+    await w.close();
+  }
+});
+
+test('a consumer left frozen by an orchestrator that died is thawed by its safety timer, so its lease can still stop it', {skip, timeout: 300000}, async () => {
+  const w = await world();
+  try {
+    const started = await w.start();
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const c = await w.composition(id);
+    const pixooUnit = `app-verify-${c.services[1].runId}.service`;
+    const freezer = () => spawnSync('systemctl', ['--user', 'show', pixooUnit, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim();
+    // The orchestrator and everything it started run in their own process group, which dies at once, as with a closed terminal.
+    const orchestrator = spawn(process.execPath, [compose, 'inject', id, 'consumer-loss', 'pixoo', '--thaw-after', '15'], {cwd: root, env: w.env, stdio: 'ignore', detached: true});
+    const state = join(w.base, 's', c.services[2].runId, 'compose-inject-state');
+    const deadline = Date.now() + 60000;
+    while (freezer() !== 'frozen' || !existsSync(state) || JSON.parse(await readFile(state, 'utf8').catch(() => '{}')).phase !== 'frozen') {
+      assert.ok(Date.now() < deadline, 'the step asked for the freeze');
+      await new Promise(done => setTimeout(done, 200));
+    }
+    const frozenAt = Date.now();
+    process.kill(-orchestrator.pid, 'SIGKILL');
+    assert.equal(freezer(), 'frozen');
+    while (freezer() === 'frozen') {
+      assert.ok(Date.now() - frozenAt < 40000, 'the safety thaw ran within its bound');
+      await new Promise(done => setTimeout(done, 500));
+    }
+    assert.equal(freezer(), 'running');
+    assert.ok(Date.now() - frozenAt >= 10000, 'nothing thawed it before the safety timer');
+    // Running again, the unit can be stopped: through the composition and, for its lease, directly.
+    const stopped = await w.run('stop', id);
+    assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
+    assert.equal(spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${c.services[1].runId}*`], {encoding: 'utf8'}).stdout.trim(), '', 'no unit or timer of the Pixoo run is left');
   } finally {
     await w.close();
   }
