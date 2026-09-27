@@ -1,10 +1,4 @@
-# Shared Places Navigation Specification
-
-## Purpose
-
-Gives readers one consistent route among the public B.U.N.N.Y. documents and the two local applications without exposing application state or credentials.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Consistent place identity and order
 Every Hub-owned guide, architecture viewer, atlas, reference and dashboard entry point SHALL identify its current place and present Guide, Architecture, Atlas, Reference, B.U.N.N.Y. and Wall in that order with those labels. The only exception is a Local place that a verification preview's dashboard omits under the public and local destinations requirement. A place other than the current one SHALL be one link away.

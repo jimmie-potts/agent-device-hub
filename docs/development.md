@@ -69,7 +69,12 @@ directory and inspect `atlas/manifest.json`'s `placesPages`: every exported HTML
 page must carry the public Places strip. The dashboard browser suite checks its
 sidebar destinations and that rendering them sends no controller request. The
 Nanoleaf return link is owned by codex-nanoleaf #189 and has separate source and
-UI acceptance.
+UI acceptance. Hub #495 lets a verification preview's Hub replace or omit the
+dashboard's Local places through `placeLinks`.
+`apps/dashboard/tests/preview-places.mjs`, part of
+`npm run test:dashboard:browser`, covers three cases: a paired Wall link, a
+Hub-only preview with no Wall link and the unchanged unconfigured Hub.
+`apps/hub/tests/dashboard.test.mjs` covers the validation.
 Run `node docs/skins/check_places.cjs` after generation for the source-page
 inventory, 390 px navigation and screenshots. The Work guide CI job runs it with
 the pinned Chromium alongside the existing guide and atlas browser checks.
@@ -1126,3 +1131,45 @@ reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
 - its run tests use real user units and skip there with the printed reason.
 
 The Nanoleaf and Pixoo adapters document theirs in their own repositories.
+
+Hub #495 composes one preview from the three adapters with
+`npm run -s verify:compose -- <operation>`; see
+[Composed previews](app-verification.md#composed-previews). The composition
+tests (`apps/hub/verify/tests/compose.test.mjs`) run in
+`npm run test:hub:verify`. They use real user units with stand-in consumer
+adapters in disposable pinned Git checkouts and skip without a user manager,
+as on Depot's runner.
+
+The cross-repository check with the real consumers runs locally from this
+worktree after `npm run build`:
+
+1. Prepare each consumer at its pin in
+   [`compose.json`](../apps/hub/verify/compose.json) as a detached worktree
+   under disk-backed scratch:
+   - codex-nanoleaf: `npm ci`, and a Python 3.12 or later virtual
+     environment with `requirements-controller.txt`, exported as `PYTHON`;
+   - divoom-app-upgrade: its Node 24.5 or later `npm ci`. Its adapter builds
+     on `start`.
+2. Run `start` with both `--checkout` paths, then
+   `capture <id> integrated-lifecycle`, `capture <id> integrated-command`,
+   `capture <id> one-owner`, `inject <id> consumer-loss pixoo`,
+   `handoff <id>` and `stop <id>`.
+3. Run the controls in a separate composition, so they never freeze or
+   reseed the Pixoo of a preview already handed to the owner; otherwise run
+   them after `handoff`:
+   - `inject <id> consumer-loss pixoo --step control-replay-after-recovery`
+     must hold at "nothing but the loss-time command reached a writer, and
+     that at most once";
+   - `inject <id> second-owner pixoo` must hold at "the Pixoo reads its
+     sessions only from the Hub: current at the owner's revision, with
+     exactly the Hub's sessions".
+
+   `compose` exits 0 only for a held control and records the expected
+   assertion. A control that exits 1 did not hold, whatever its reason.
+
+The delivery evidence records the composition id, its `composition.json`,
+each run's verified set and the consumer revisions. Only the delivery
+composition's runs are delivery receipts; a controls composition's runs are
+not. A composition proves
+simulated cross-service behavior only, not installed or physical
+acceptance.

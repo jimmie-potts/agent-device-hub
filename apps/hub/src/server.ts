@@ -20,7 +20,7 @@ import {createSonosSource,sonosConfiguration} from './sonos.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
-export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
+export type HubOptions = {directory:string; ownerId:string; consumers:Consumer[]; credentials:Credential[]; controllers:ControllerConfig[]; port?:number; editorLinks?:Record<string,string>; placeLinks?:Record<string,string>; mcp?:boolean; codexDesktop?:CodexDesktopOptions; playback?:{id:string; sources:unknown[]}; browserAccess?:'trusted-loopback'; clock?:()=>number; feedIntervalMs?:number};
 
 function credentials(input: Credential[]): Credential[] {
   if (!Array.isArray(input) || input.length < 1 || input.length > 32 || new Set(input.map(c => c.id)).size !== input.length ||
@@ -97,6 +97,19 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       const link = new URL(href);
       if (!options.controllers.some(c=>c.id===alias) || link.protocol!=='http:' || link.hostname!=='127.0.0.1' || link.username || link.password || link.search || link.hash) throw new Error('invalid-editor-links');
       editorLinks[alias]=link.href;
+    }
+  }
+  // Hub #495: a verification preview's own Local Places destinations; the dashboard omits every other Local place.
+  let placeLinks:Record<string,string>|undefined;
+  if (options.placeLinks !== undefined) {
+    if (!object(options.placeLinks) || Object.keys(options.placeLinks).length > 8) throw new Error('invalid-place-links');
+    placeLinks = {};
+    for (const [place,href] of Object.entries(options.placeLinks)) {
+      if (typeof href !== 'string' || !id(place) || place === 'bunny') throw new Error('invalid-place-links');
+      let link:URL;
+      try { link = new URL(href); } catch { throw new Error('invalid-place-links'); }
+      if (link.protocol !== 'http:' || link.hostname !== '127.0.0.1' || !link.port || link.username || link.password || link.search || link.hash) throw new Error('invalid-place-links');
+      placeLinks[place] = link.href;
     }
   }
   const clients = new Map(options.controllers.map(config => [config.id,new ControllerClient(config)]));
@@ -302,7 +315,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(browserSessions.get(principal.digest)?.credential.id===principal.id)retireBrowser(principal.digest);
           json(res,200,{disconnected:true});
         } else if (req.method === 'GET' && path === '/api/dashboard/v1/context' && !url.search) {
-          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
+          json(res,200,{apiVersion:'1.0',control:principal.scopes.includes('control'),consumers:options.consumers.map(c=>c.id),...(placeLinks?{places:placeLinks}:{}),...(playbackId && principal.devices.includes(playbackId) ? {playback:{sourceId:playbackId}} : {}),components:[...clients.values()].filter(c=>principal.devices.includes(c.config.id)).map(c=>({...c.status(),...(editorLinks[c.config.id]?{editorUrl:editorLinks[c.config.id]}:{})}))});
         } else if (req.method === 'GET' && path === '/api/hub/v1/authority' && [...url.searchParams.keys()].length === 1 && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '')) {
           authorize(req,url.searchParams.get('scope') as Scope);json(res,200,{ownerId:options.ownerId,scope:url.searchParams.get('scope')});
         } else if (req.method === 'GET' && path === '/api/monitor/v1/sessions') {

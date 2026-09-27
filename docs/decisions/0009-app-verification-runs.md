@@ -67,6 +67,28 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    refused because inputs are recorded. The receipt stays
    `app-verification/1`, since both fields are optional and readers ignore
    unknown fields.
+9. **A composed preview is three runs stitched by a Hub-owned orchestrator**
+   (addendum for [#495](https://github.com/jimmie-potts/agent-device-hub/issues/495),
+   2026-09-27). `apps/hub/verify/compose.mjs` starts the wall, Pixoo and Hub
+   runs, each through its own repository's wrapper, from checkouts pinned to
+   exact commits in `apps/hub/verify/compose.json`. A pin mismatch fails
+   before anything is created, and `--unpinned` runs are labelled
+   non-citable. The pairing follows a fixed order:
+   1. Every run starts standalone.
+   2. The orchestrator writes run-generated feed and controller credentials,
+      0600, into the runtime directories.
+   3. The consumers reseed `hub-paired`, and the Hub reseeds `integrated`,
+      the real hub CLI as the only agent-state owner.
+
+   The orchestrator records each run in an aggregate `composition.json`
+   under the Hub's proof root, and a cleanup stops only recorded runs, owner
+   first. Consumer loss is `systemctl --user freeze` and `thaw` on the
+   recorded unit. The orchestrator applies them when a capture step asks
+   through the Hub run's runtime directory. In an integrated preview no link
+   on the three paired pages leads to an installed service: the Hub
+   configures its own Places destinations (`placeLinks`), the wall's paired
+   run points its B.U.N.N.Y. link at the paired Hub, and a capture step
+   asserts both. Standalone consumer runs are out of that scope.
 
 ## Alternatives considered
 
@@ -87,6 +109,18 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
   accepted posture on this PC and the run holds nothing real.
 - **Proof under the worktree or `/tmp`.** Rejected: worktree removal deletes
   ignored files and `/tmp` is a small RAM disk shared by every agent.
+- **One multi-unit run for the composed preview, or a container compose
+  file.** Rejected for #495. One run per application keeps each repository's
+  adapter, receipt and cleanup rules intact, and it needs no new installed
+  service. A multi-unit run would move three toolchains under one plug-in.
+- **Stopping and restarting the consumer to simulate its loss.** Rejected in
+  favour of freeze and thaw, which the 2026-09-27 probe showed working under
+  WSL cgroup v2. A restart reseeds the consumer, so it could not show
+  recovery of the same process or catch a command held across the loss.
+- **Starting a paired run directly in `hub-paired` or `integrated`.**
+  Impossible by design: the pairing credentials go into the runtime
+  directory, which exists only after `start`. The same reason makes the
+  core's `restart` of a paired run fail at seed.
 
 ## Consequences
 
@@ -107,5 +141,10 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
   receipt, supervisor-refusal and unsupervised capture tests; the lifecycle
   tests skip there with a printed reason and run on a host with a user
   manager.
+- A composed preview proves simulated cross-service behavior only. Its
+  consumer-loss evidence allows one late delivery of a command sent during
+  the freeze, because the frozen process's kernel still accepts the
+  connection; it records whether that happened. Restarting a composition
+  means stopping it and starting a new one.
 - Windows browser access is proven for HTTP by `curl.exe` only. The owner's
   click in a real browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s evidence.

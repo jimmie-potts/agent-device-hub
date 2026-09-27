@@ -9,14 +9,13 @@ import {readFile, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin} from '@jimmie-potts/app-verify';
+import {INPUTS, INSTALLED_PORTS, REQUIRED, launchIntegrated, pause, seedIntegrated} from './integrated.mjs';
+import {integratedSteps} from './integrated-steps.mjs';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const serve = fileURLToPath(new URL('serve.mjs', import.meta.url));
 const version = JSON.parse(await readFile(join(root, 'apps/hub/package.json'), 'utf8')).version;
-/** The installed services' ports (docs/app-verification.md); a run never uses them. */
-const INSTALLED_PORTS = [8788, 8765, 8787, 8791, 41230, 41231];
 const SIGNED_IN = 'Control enabled · Local';
-const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /** @param {string} dataDir */
 const apiToken = async dataDir => (await readFile(join(dataDir, 'api-token'), 'utf8')).trim();
@@ -108,21 +107,21 @@ async function open(t) {
 }
 
 /**
- * Loopback links on the current page that target an installed service's port, outside the dashboard's own
- * Places navigation (product links to the installed B.U.N.N.Y. and wall, docs/skins/places.json).
+ * Loopback links on the current page that target an installed service's port, including the dashboard's Places
+ * navigation: a run's Hub configures its own Local places (Hub #495), so none may lead to an installed service.
  * @param {any} t
  */
 async function installedLinks(t) {
-  /** @type {{href: string, places: boolean}[]} */
-  const links = await t.page.locator('a[href]').evaluateAll((/** @type {HTMLAnchorElement[]} */ all) => all.map(a => ({href: a.href, places: !!a.closest('nav[aria-label="Places"]')})));
-  return links.filter(link => {
+  /** @type {string[]} */
+  const links = await t.page.locator('a[href]').evaluateAll((/** @type {HTMLAnchorElement[]} */ all) => all.map(a => a.href));
+  return links.filter(href => {
     try {
-      const url = new URL(link.href);
-      return !link.places && ['127.0.0.1', 'localhost'].includes(url.hostname) && INSTALLED_PORTS.includes(Number(url.port));
+      const url = new URL(href);
+      return ['127.0.0.1', 'localhost'].includes(url.hostname) && INSTALLED_PORTS.includes(Number(url.port));
     } catch {
       return false;
     }
-  }).map(link => link.href);
+  });
 }
 
 /** @param {any} t */
@@ -202,10 +201,16 @@ export default definePlugin({
     'lifecycle-basic': scenario({}, 'One labelled Codex session and two healthy fake controllers (Nanoleaf wall, Pixoo pixel)'),
     'pixel-offline': scenario({offline: 'pixel'}, 'As lifecycle-basic, with the Pixoo fake unavailable until a step restores it'),
     'control-startup-fails': scenario({browserAccess: 'invalid'}, 'Negative control: an invalid browserAccess makes the hub refuse to start'),
-    'control-installed-links': scenario({editorLinks: {wall: 'http://127.0.0.1:8765/wall'}}, 'Negative control: a wall editor link to the installed wall port'),
+    'control-installed-links': scenario({editorLinks: {wall: 'http://127.0.0.1:8765/wall'}, placeLinks: {wall: 'http://127.0.0.1:8765/'}}, 'Negative control: a wall editor link and a Places link to the installed wall port'),
+    integrated: {
+      description: 'The real hub CLI owning agent state, with the paired wall and Pixoo runs as its controllers and feed consumers (compose.mjs writes the pairing credentials first)',
+      requiredInputs: REQUIRED,
+      seed: seedIntegrated,
+    },
   },
+  inputs: INPUTS,
   build: {version, artifact: {route: '/dashboard.js'}},
-  launch: ({node, dataDir, port}) => ({argv: [node, serve, '--data', dataDir, '--port', String(port)]}),
+  launch: ({node, dataDir, port, scenario: name}) => (name === 'integrated' ? launchIntegrated({node, dataDir, port}) : {argv: [node, serve, '--data', dataDir, '--port', String(port)]}),
   readiness: {
     line: line => {
       try {
@@ -230,9 +235,9 @@ export default definePlugin({
     {id: 'dashboard', kind: 'actual', note: 'B.U.N.N.Y. bundle served by the hub'},
     {id: 'browser-session', kind: 'actual', note: 'trusted-loopback sign-in; no token in the URL'},
     {id: 'command-replay', kind: 'actual'},
-    {id: 'wall-controller', kind: 'simulated', note: 'fake loopback Nanoleaf controller from apps/dashboard/tests/fixture.mjs'},
-    {id: 'pixel-controller', kind: 'simulated', note: 'fake loopback Pixoo controller from apps/dashboard/tests/fixture.mjs'},
-    {id: 'lifecycle-events', kind: 'simulated', note: 'synthetic Codex session events posted with a run-generated credential'},
+    {id: 'wall-controller', kind: 'simulated', note: 'fake loopback Nanoleaf controller from apps/dashboard/tests/fixture.mjs; in integrated, the paired wall run\'s real controller API, whose light transport that run refuses'},
+    {id: 'pixel-controller', kind: 'simulated', note: 'fake loopback Pixoo controller from apps/dashboard/tests/fixture.mjs; in integrated, the paired Pixoo run\'s real controller API on its simulator transport'},
+    {id: 'lifecycle-events', kind: 'simulated', note: 'synthetic Codex session events posted with a run-generated credential through the hub\'s own ingest route'},
   ],
   checks: [
     {id: 'build-current', doctor: true, run: () => buildCurrent()},
@@ -240,6 +245,11 @@ export default definePlugin({
       id: 'no-installed-ports',
       doctor: true,
       run: async t => {
+        // integrated: the real hub CLI is the unit's only listener, and its paired targets are other runs' ports.
+        if (t.scenario === 'integrated') {
+          const clash = [t.port, ...REQUIRED.map(name => Number(new URL(t.inputs[name]).port))].filter(port => INSTALLED_PORTS.includes(port));
+          return clash.length ? {outcome: 'failed', reason: `uses or targets installed port ${clash.join(', ')}`} : {outcome: 'passed'};
+        }
         const ports = await control(t, '/ports');
         const used = [ports.hub, ports.control, ...ports.controllers.map((/** @type {{port: number}} */ c) => c.port), ...(ports.relays ?? [])];
         const clash = used.filter(port => INSTALLED_PORTS.includes(port));
@@ -248,6 +258,7 @@ export default definePlugin({
     },
   ],
   captureSteps: {
+    ...integratedSteps,
     'task-appears': {
       description: 'The seeded session shows on the home page, a new question appears on it, and reading sends no command',
       scenario: 'lifecycle-basic',

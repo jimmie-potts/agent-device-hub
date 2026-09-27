@@ -1,0 +1,35 @@
+{
+  "manifestVersion": "hub-compose/1",
+  "services": [
+    {
+      "id": "nanoleaf",
+      "role": "consumer",
+      "app": "wall",
+      "repository": "jimmie-potts/codex-nanoleaf",
+      "revision": "6e6b4fae815b431b03cb263014dfa95e9a23cfee",
+      "coreVersion": "1.1.0",
+      "scenario": "hub-paired",
+      "run": ["node", "scripts/verify.mjs"]
+    },
+    {
+      "id": "pixoo",
+      "role": "consumer",
+      "app": "pixoo",
+      "repository": "jimmie-potts/divoom-app-upgrade",
+      "revision": "1b4115c3b4f22220102382278052d55b6d287b9c",
+      "coreVersion": "1.1.0",
+      "scenario": "hub-paired",
+      "run": ["fnm", "exec", "--using=.nvmrc", "--", "node", "scripts/verify.mjs"]
+    },
+    {
+      "id": "hub",
+      "role": "owner",
+      "app": "hub",
+      "repository": "jimmie-potts/agent-device-hub",
+      "revision": "self",
+      "coreVersion": "1.1.0",
+      "scenario": "integrated",
+      "run": ["node", "scripts/verify.mjs"]
+    }
+  ]
+}

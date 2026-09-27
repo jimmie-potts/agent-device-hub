@@ -9,6 +9,7 @@
     "lib": ["ES2022", "DOM"]
   },
   "include": [
-    "plugin.mjs"
+    "plugin.mjs",
+    "compose.mjs"
   ]
 }

@@ -52,7 +52,7 @@
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "typecheck:dashboard": "tsc -p apps/dashboard/tsconfig.json --noEmit",
     "test:dashboard": "node --test apps/dashboard/tests/*.test.mjs",
-    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs && node apps/dashboard/tests/retirement.mjs && node apps/dashboard/tests/local-controllers.mjs && node apps/dashboard/tests/trusted.mjs && node apps/dashboard/tests/art.mjs && node apps/dashboard/tests/session-metadata.mjs",
+    "test:dashboard:browser": "node apps/dashboard/tests/browser.mjs && node apps/dashboard/tests/matrix.mjs && node apps/dashboard/tests/retirement.mjs && node apps/dashboard/tests/local-controllers.mjs && node apps/dashboard/tests/trusted.mjs && node apps/dashboard/tests/art.mjs && node apps/dashboard/tests/session-metadata.mjs && node apps/dashboard/tests/preview-places.mjs",
     "test:setup": "npm run build && npm run test:setup:built",
     "test:setup:built": "node --test apps/hub/tests/setup*.test.mjs",
     "test:hub:mcp": "npm run build && npm run test:hub:mcp:built",
@@ -71,6 +71,7 @@
     "test:app-verify:package": "npm run build && npm run test:app-verify:package:built",
     "test:app-verify:package:built": "node scripts/package-app-verify.mjs --test",
     "verify": "node scripts/verify.mjs",
+    "verify:compose": "node apps/hub/verify/compose.mjs",
     "test:hub:verify": "npm run build && npm run test:hub:verify:built",
     "test:hub:verify:built": "node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs"
   },

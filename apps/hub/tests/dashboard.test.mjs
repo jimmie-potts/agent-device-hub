@@ -42,6 +42,24 @@ test('editor links reject credentials and nonloopback destinations before startu
  }
 });
 
+test('preview place links reject unsafe destinations and the current place before startup',async()=>{
+ const base={directory:'/invalid-test-directory',ownerId:'owner',consumers:[],controllers:[],credentials:[{id:'reader',digest:createHash('sha256').update('x'.repeat(43)).digest('hex'),scopes:['read'],devices:[]}]};
+ for(const placeLinks of [{wall:'http://example.com/'},{wall:'http://user:secret@127.0.0.1:9/'},{wall:'http://127.0.0.1:9/?token=secret'},{wall:'http://127.0.0.1:9/#x'},{wall:'https://127.0.0.1:9/'},{wall:'http://localhost:9/'},{wall:'javascript:alert(1)'},{wall:'not a url'},{wall:7},{bunny:'http://127.0.0.1:9/'},{'bad id':'http://127.0.0.1:9/'},[],null,'http://127.0.0.1:9/',Object.fromEntries(Array.from({length:9},(_,i)=>['place'+i,'http://127.0.0.1:9/']))]){
+  await assert.rejects(startHub({...base,placeLinks}),/invalid-place-links/,JSON.stringify(placeLinks));
+ }
+});
+
+test('dashboard context carries preview place links only when configured',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'dashboard-places-'));const token='a'.repeat(43);let hub;
+ const options=extra=>({directory,ownerId:'owner',consumers:[],controllers:[],credentials:[{id:'reader',digest:createHash('sha256').update(token).digest('hex'),scopes:['read'],devices:[]}],...extra});
+ const context=async()=>(await fetch(hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${token}`}})).json();
+ try{
+  hub=await startHub(options({}));assert.equal(Object.hasOwn(await context(),'places'),false,'an unconfigured Hub keeps the fixed destinations');await hub.close();
+  hub=await startHub(options({placeLinks:{}}));assert.deepEqual((await context()).places,{},'an empty map omits every Local place but B.U.N.N.Y.');await hub.close();
+  hub=await startHub(options({placeLinks:{wall:'http://127.0.0.1:41999'}}));assert.deepEqual((await context()).places,{wall:'http://127.0.0.1:41999/'},'links are normalized');
+ }finally{await hub?.close();await rm(directory,{recursive:true,force:true});}
+});
+
 test('general controller commands are validated before forwarding and require control scope',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'dashboard-general-'));
  const control='c'.repeat(43),reader='r'.repeat(43),native='n'.repeat(43);const upstream=[];let hub;

@@ -102,8 +102,9 @@ try {
     empty: scenario.empty === true,
     browserAccess: scenario.browserAccess ?? 'trusted-loopback',
     token, reader, port, directory,
-    // No editor links: a preview must never send the owner to an installed service's port.
+    // No editor links, and no Local Places destination but B.U.N.N.Y. itself: a preview must never send the owner to an installed service's port.
     editorLinks: scenario.editorLinks ?? {},
+    placeLinks: scenario.placeLinks ?? {},
     ...(scenario.fault === 'write-on-read' ? {beforeRead: request => {
       if (request.id !== 'pixel' || unsolicited) return;
       unsolicited = true;
