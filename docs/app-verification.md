@@ -56,7 +56,7 @@ merely requested.
 | `doctor [<run-id>]` | Reads live state without changing it: the unit's active state, main PID and start timestamp, the actual listener port and a loopback health read, the build identity the process reports or the receipt recorded, the lease timer's next elapse, and the verified set's checksums. Without an argument it lists every run of this app discovered from the union of `app-verify-<app>-*` units and timers, runtime directories and receipts, so an orphan of any kind appears. A run whose unit is gone while its receipt says `running` or `starting` is `expired` when `preview.expiresAt` has passed and `stale` otherwise | A receipt that disagrees with the live unit is reported as `stale`, never repaired silently |
 | `scenario <run-id> <name>` | Reseeds this run's disposable state to the named scenario while the run keeps its identity, port and lease. Only this run's runtime directory changes | A scenario the fixtures do not define; a run that is not `running` |
 | `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
-| `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `cleanup.result` and keeps the frozen set, rather than serving half-seeded state |
+| `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `state: stopped` with the cause in `events.jsonl` and `cleanup.result`, and keeps the frozen set, rather than serving half-seeded state |
 | `extend <run-id> [--lease <minutes>]` | Replaces the lease timer with a new one and records the new expiry in the receipt and the printed card | A run whose unit is not active, or whose timer cannot be replaced, is reported as such; nothing else is touched |
 | `stop <run-id>` | Stops the lease timer and the supervisor unit, verifies both are gone, removes the runtime directory, and writes the final receipt with `cleanup.result`. Frozen proof stays | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
 | `restart <run-id>` | `stop`, then `start` with the recorded scenario and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
@@ -94,7 +94,11 @@ it. Neither file is part of the frozen set; handoff copies the receipt of that
 moment into `verified/`. The proof directory therefore holds `receipt.json`,
 `events.jsonl`, `capture-<n>/` until handoff, then `verified/` (the moved
 captures, `receipt.json` copy and `SHA256SUMS`) and any `after-handoff/capture-<n>/`.
-Fields, all required unless marked optional:
+Fields, all required unless marked optional. A `starting` receipt sets the
+values it cannot know yet to `null`: `owned.port`, `preview`,
+`scenario.seededAt`, `build.artifactDigest` and an empty `captures` list. A
+receipt without `preview.expiresAt` whose unit is gone therefore reads
+`stale`, never `expired`:
 
 ```json
 {
@@ -214,8 +218,9 @@ run-generated credentials, and a configured token is never loaded into a page.
 
 ### Frozen proof
 
-`handoff` moves every `capture-<n>/` taken so far and a copy of the receipt
-into `verified/`, writes `verified/SHA256SUMS` over exactly that directory,
+`handoff` moves every `capture-<n>/` taken so far into `verified/`, then
+writes a copy of the receipt there whose capture paths already name their
+`verified/` locations, writes `verified/SHA256SUMS` over exactly that directory,
 removes write permission from it recursively and records `proof.frozenAt`.
 The live `receipt.json` and `events.jsonl` stay outside `verified/` and keep
 changing with lease and cleanup fields; a `capture` after handoff writes under
@@ -270,8 +275,8 @@ The commands below use the Hub adapter's future wrapper name as an example;
    `{"runId":"hub-…","state":"running","port":41705,"build":{"dirty":false,…}}`.
 2. `npm run verify -- capture hub-… task-appears` drives the page, asserts the
    session card and writes `capture-1/after.png` and
-   `capture-1/interaction.webm`. A failed assertion returns non-zero and the
-   PNG of the failure.
+   `capture-1/interaction.webm`, which handoff later moves under `verified/`.
+   A failed assertion returns non-zero and the PNG of the failure.
 3. `npm run verify -- capture hub-… command-reaches-fake` asserts the fake
    controller received exactly one command and read-only browsing sent none.
 4. `npm run verify -- handoff hub-… --reset lifecycle-basic` freezes
@@ -285,9 +290,10 @@ The commands below use the Hub adapter's future wrapper name as an example;
    Stop     npm run verify -- stop hub-20260927T060259Z-3f9a1c
    ```
 
-5. The agent's handoff message links the two capture files and the card. The
-   agent session ends; the run is expected to keep serving because its unit
-   belongs to the user manager.
+5. The agent's handoff message links the two capture files at their frozen
+   `verified/capture-<n>/` paths and the card. The agent session ends; the
+   run is expected to keep serving because its unit belongs to the user
+   manager.
 
 ### Human: explore, extend, let it expire or stop
 
@@ -309,9 +315,11 @@ claims to be the same candidate.
 ### Failed start
 
 `start` on a checkout whose build is broken reports
-`{"state":"failed","cause":"readiness-timeout","cleanup":{"result":"clean"}}`,
-the unit is gone, no timer exists, and `doctor` lists nothing for that run id.
-A start that failed after seeding removes its runtime directory as well.
+`{"state":"failed","cause":"readiness-timeout","cleanup":{"result":"clean"}}`.
+The unit is gone, no timer exists, and the runtime directory was removed even
+when seeding had already happened. The proof directory stays with the `failed`
+receipt and `events.jsonl`, so `doctor` lists the run as `failed` with its
+cause; that record is the useful outcome of a failed start.
 
 ## Feasibility findings, 2026-09-27
 
@@ -359,7 +367,7 @@ to its issue's acceptance list:
 | Readiness and build identity | `{ready,url}` line, health, `/dashboard.js` digest, dirty flag | `{url}` line, map page read, dirty flag | `/api/health` selected mode, dirty flag |
 | Supervisor, lease, extend, stop, expiry | Tests against a real transient unit with a short lease | Same | Same |
 | Two concurrent runs share nothing | Two runs, two ports, independent reset | Same | Same, two `PIXOO_DATA_DIR`s |
-| Failed start cleans up | Broken build or readiness timeout leaves no unit, timer or directory | Same | Same |
+| Failed start cleans up | Broken build or readiness timeout leaves no unit, timer or runtime directory, and a `failed` receipt that `doctor` lists | Same | Same |
 | Interrupted start is discoverable | A start killed after seeding shows in `doctor` as `starting` and `stop` removes what exists | Same | Same |
 | `doctor` identity and expiry | A reused PID with a different start timestamp reports `stale`; a unit gone after `expiresAt` reports `expired` | Same | Same |
 | `scenario` reseeds only this run | A second run's state is unchanged by the first run's reseed | Same | Same |

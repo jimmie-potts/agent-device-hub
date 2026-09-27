@@ -939,8 +939,8 @@ private stores outside Git checkouts.
 storage, supervisor and failure behavior for disposable application runs with
 synthetic data, and [ADR 0009](decisions/0009-app-verification-runs.md) records
 the decisions. The Hub adapter (#494) documents its wrapper, checks and CI
-coverage here; the Nanoleaf and Pixoo adapters document theirs in their own
-repositories. Runs use transient
+coverage here when it lands; the Nanoleaf and Pixoo adapters document theirs
+in their own repositories. Runs use transient
 `systemd --user` units, keep runtime state under `~/.local/state/app-verify/`
 and proof under the canonical checkout's `.local/evidence/verify/`, and never
 use the installed ports or services.
