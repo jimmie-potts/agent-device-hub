@@ -326,3 +326,66 @@ test('doctor reports a frozen set as tampered or missing when its manifest, entr
     await box.close();
   }
 });
+
+test('an interrupted handoff is reported as partial and a retry completes or adopts the freeze', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['capture', runId, 'read-only'])).code, 0);
+    const proof = join(box.proofRoot, runId);
+    const doctorSums = async () => (await box.cli(['doctor', runId])).result.runs[0].proof.sums;
+    // The on-disk state a kill leaves while the set is being built: one capture moved into the partial set.
+    const {mkdir, rename, readFile: read} = await import('node:fs/promises');
+    await mkdir(join(proof, 'verified.partial'));
+    await rename(join(proof, 'capture-1'), join(proof, 'verified.partial', 'capture-1'));
+    assert.equal(await doctorSums(), 'partial', 'an interrupted freeze is not tampering');
+    const resumed = await box.cli(['handoff', runId]);
+    assert.equal(resumed.code, 0, resumed.stderr);
+    assert.equal(existsSync(join(proof, 'verified.partial')), false);
+    assert.deepEqual((await readdir(join(proof, 'verified'))).sort(), ['SHA256SUMS', 'capture-1', 'capture-2', 'receipt.json']);
+    assert.equal(spawnSync('sha256sum', ['-c', 'SHA256SUMS'], {cwd: join(proof, 'verified')}).status, 0);
+    assert.equal(await doctorSums(), 'ok');
+
+    // The state a kill leaves after the rename but before the receipt recorded the freeze.
+    const frozen = await box.receipt(runId);
+    const manifest = await read(join(proof, 'verified', 'SHA256SUMS'), 'utf8');
+    const before = structuredClone(frozen);
+    before.proof.frozenAt = null;
+    before.captures = before.captures.map(c => ({...c, screenshot: c.screenshot?.replace('verified/', '') ?? null, video: c.video?.replace('verified/', '') ?? null, log: c.log.replace('verified/', '')}));
+    await writeFile(join(proof, 'receipt.json'), JSON.stringify(before, null, 2));
+    assert.equal(await doctorSums(), 'partial');
+    // A rebuild would stamp a later second; adoption keeps the original.
+    await until(() => Date.now() > Date.parse(frozen.proof.frozenAt) + 1500, 'a later second', 5000);
+    const adopted = await box.cli(['handoff', runId]);
+    assert.equal(adopted.code, 0, adopted.stderr);
+    const after = await box.receipt(runId);
+    assert.equal(after.proof.frozenAt, frozen.proof.frozenAt, 'the adopted set keeps the time it was frozen');
+    assert.deepEqual(after.captures, frozen.captures, 'the receipt names the verified/ locations again');
+    assert.equal(await read(join(proof, 'verified', 'SHA256SUMS'), 'utf8'), manifest, 'the frozen set was adopted, not rebuilt');
+    assert.ok((await box.events(runId)).some(e => e.event === 'frozen' && e.adopted === true), 'the adoption is recorded');
+    assert.equal(await doctorSums(), 'ok');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('doctor reports one run\'s unreadable proof on its own row and still lists the others', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['handoff', runId])).code, 0);
+    const other = await box.cli(['start', '--scenario', 'seed-fails']);
+    await chmod(join(box.proofRoot, runId, 'verified', 'capture-1', 'after.png'), 0o000);
+    const doctor = await box.cli(['doctor']);
+    assert.equal(doctor.code, 0, doctor.stderr);
+    const rows = Object.fromEntries(doctor.result.runs.map(r => [r.runId, r]));
+    assert.equal(rows[runId].proof.sums, 'unreadable');
+    assert.equal(rows[other.result.runId].state, 'failed', 'the other run still prints');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});

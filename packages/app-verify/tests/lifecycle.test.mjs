@@ -546,7 +546,10 @@ test('a failed start records the plug-in\'s stable cause line and never the rest
     assert.doesNotMatch(thrown.result.detail, /app:/, 'a plug-in that throws keeps the core cause');
     const raw = await box.cli(['start', '--scenario', 'noisy-crash'], {entry: await entry('verify-raw.mjs', 'raw')});
     assert.doesNotMatch(raw.result.detail, /app:/, 'a multi-line return is dropped');
-    for (const result of [matched, thrown, raw]) {
+    const bidi = await box.cli(['start', '--scenario', 'noisy-crash'], {entry: await entry('verify-bidi.mjs', 'bidi')});
+    assert.doesNotMatch(bidi.result.detail, /app:/, 'a line with a right-to-left override is dropped');
+    assert.equal(bidi.stderr.includes('\u202e'), false);
+    for (const result of [matched, thrown, raw, bidi]) {
       assert.equal(result.stdout.includes(secret) || result.stderr.includes(secret), false, 'nothing printed carries the secret');
       const proof = join(box.proofRoot, result.result.runId);
       for (const file of ['receipt.json', 'events.jsonl']) assert.equal((await readFile(join(proof, file), 'utf8')).includes(secret), false, `${file} carries no secret`);
@@ -573,6 +576,48 @@ test('a run whose application announces a reserved port fails and cleans up', {s
     assert.equal(refused.result.cause, 'port-reserved');
     assert.equal(refused.result.cleanup.result, 'clean');
     assert.deepEqual(units(box.app), []);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a plug-in that overrides HOME or TMPDIR is named in the events and progress, never with values', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {mkdir, writeFile} = await import('node:fs/promises');
+    const home = join(box.base, 'outside-home');
+    await mkdir(home);
+    const file = await box.wrapper(box.repo, 'verify-home.mjs');
+    await writeFile(file, (await readFile(file, 'utf8')).replace('"root":', `"envOverride":{"HOME":${JSON.stringify(home)}},"root":`));
+    const started = await box.cli(['start', '--lease', '5'], {entry: file});
+    assert.equal(started.code, 0, started.stderr);
+    const {runId, url} = started.result;
+    assert.equal((await (await fetch(url + 'env')).json()).home, home, 'the override took effect');
+    const unitStarted = (await box.events(runId)).find(e => e.event === 'unit-started');
+    assert.deepEqual(unitStarted.overrides, ['HOME']);
+    assert.match(started.stderr, /the plug-in overrides HOME; stop removes only the runtime directory/);
+    for (const text of [started.stdout, started.stderr, JSON.stringify(await box.events(runId)), JSON.stringify(await box.receipt(runId))]) assert.equal(text.includes(home), false, 'the overridden value is never recorded');
+    await box.cli(['stop', runId], {entry: file});
+  } finally {
+    await box.close();
+  }
+});
+
+test('doctor reads an unattributed listener as unread, not as a mismatch', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId, port} = (await box.cli(['start', '--lease', '5'])).result;
+    const {mkdir, writeFile, chmod} = await import('node:fs/promises');
+    const shim = join(box.base, 'no-owners');
+    await mkdir(shim);
+    // An ss that cannot attribute sockets to processes, as in a sandbox that hides other processes.
+    await writeFile(join(shim, 'ss'), '#!/bin/sh\n/usr/bin/ss "$@" | sed "s/users:.*//"\n');
+    await chmod(join(shim, 'ss'), 0o755);
+    const [row] = (await box.cli(['doctor', runId], {extraEnv: {PATH: `${shim}:${process.env.PATH}`}})).result.runs;
+    assert.equal(row.state, 'running', 'missing evidence is not a failure');
+    assert.deepEqual(row.listener, {recorded: port, ports: null, outcome: 'unread'});
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].listener.outcome, 'matches');
+    await box.cli(['stop', runId]);
   } finally {
     await box.close();
   }

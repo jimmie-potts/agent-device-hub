@@ -93,7 +93,9 @@ export interface LaunchSpec {
    * `HOME=<runtimeDir>/home` (so the app never reads the caller's personal
    * files) and `PATH` (the adapter's PATH with the Node directory first).
    * Entries here override those three; an app that genuinely needs the real
-   * home opts out with `HOME: process.env.HOME` and owns that choice.
+   * home opts out with `HOME: process.env.HOME` and owns that choice. `start`
+   * records the overridden names (never values), and `stop` removes only
+   * `runtimeDir`, so an overridden HOME or TMPDIR is the plug-in's to clean.
    */
   env?: Readonly<Record<string, string>>;
   /** Working directory of the application; defaults to `root`. */
@@ -138,9 +140,9 @@ export interface Readiness {
    * 4 KB of the application's stderr, in memory only, and appends the
    * returned line to `failure.detail`. Return only a stable, non-secret cause
    * line that you match exactly, such as `hub-start-failed: EINVAL`, or
-   * `undefined`. The core drops a value that is not a single line of at most
-   * 200 printable characters, and ignores a throw; raw log text is never
-   * written anywhere.
+   * `undefined`. The core drops a value that is not printable ASCII of at
+   * most 200 characters, and ignores a throw; raw log text is never written
+   * anywhere.
    */
   failureCause?(stderrTail: string): string | undefined;
 }

@@ -85,14 +85,18 @@ What the core guarantees to every plug-in callback:
   runs. The application's `TMPDIR` is `<runtimeDir>/tmp` and its `HOME` is
   `<runtimeDir>/home`, so it never reads the caller's personal files. A
   plug-in that genuinely needs the real home, for example for a Python user
-  site, sets `env: {HOME: process.env.HOME}` and owns that choice.
+  site, sets `env: {HOME: process.env.HOME}` and owns that choice: `start`
+  names each overridden variable (never its value) in the `unit-started`
+  event and a progress line, and `stop` removes only the runtime directory,
+  so an overridden `HOME` or `TMPDIR` is the plug-in's to clean.
 - A ready line that announces an installed service's port (8788, 8765, 8787,
   8791, 41230, 41231) or one of `reservedPorts` fails the start with
   `port-reserved`.
 - When a start or reseed fails, the core passes the last 4 KB of the app's
   stderr, in memory only, to `readiness.failureCause`. It records the
-  returned line in `failure.detail` only if that line is a single line of at
-  most 200 printable characters; a throw is ignored. Match only stable,
+  returned line in `failure.detail` only if that line is printable ASCII of at
+  most 200 characters (no control, bidi or zero-width characters); a throw is
+  ignored. Match only stable,
   non-secret cause lines, such as `/^hub-start-failed: [a-z0-9-]+$/m`, and
   never return the tail itself.
 - The application runs as `app-verify-<run-id>.service` under the user
@@ -169,7 +173,8 @@ from 0.05 to 1440. Main result fields:
 | --- | --- |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `not-frozen`), `windows` |
+| `handoff` after an interrupted one | Finishes the freeze: rebuilds from `verified.partial/`, or adopts a complete `verified/` whose sums verify |
+| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `unreadable`, `not-frozen`), `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
 | `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
 | `scenario`, `extend`, `stop` | The new scenario and port, the new expiry and timer, or the final state and `cleanup` |

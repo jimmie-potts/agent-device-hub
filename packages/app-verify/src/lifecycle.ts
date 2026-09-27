@@ -92,7 +92,8 @@ async function seed(run: Run, scenario: string): Promise<void> {
   }
 }
 
-async function launch(run: Run, scenario: string, port: number, env: Env): Promise<void> {
+/** Launch the app; returns the names of core variables (PATH, HOME, TMPDIR) the plug-in overrode. */
+async function launch(run: Run, scenario: string, port: number, env: Env): Promise<string[]> {
   let spec;
   try {
     spec = await run.plugin.launch({...run.paths(), scenario, port, node: process.execPath});
@@ -118,6 +119,12 @@ async function launch(run: Run, scenario: string, port: number, env: Env): Promi
     description: `app-verify ${run.runId}`,
   });
   if (!started.ok) throw new Failure('launch-failed', started.reason);
+  return ['PATH', 'HOME', 'TMPDIR'].filter(name => Object.hasOwn(spec.env ?? {}, name));
+}
+
+/** Names only, never values: a run that dropped its private HOME or TMPDIR says so. */
+async function noteOverrides(run: Run, io: Io, overrides: string[]): Promise<void> {
+  if (overrides.length) io.progress(`${run.runId}: the plug-in overrides ${overrides.join(', ')}; stop removes only the runtime directory`);
 }
 
 /** Wait for the ready line and a passing probe. Returns the URL and port. */
@@ -235,7 +242,8 @@ async function appCause(run: Run): Promise<string | undefined> {
   if (!tail) return undefined;
   try {
     const cause = name.call(run.plugin.readiness, tail);
-    if (typeof cause === 'string' && cause.length > 0 && cause.length <= 200 && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(cause)) return cause;
+    // Printable ASCII only: no control, bidi or zero-width characters can reshape a receipt or terminal line.
+    if (typeof cause === 'string' && cause.length <= 200 && /^[\x20-\x7e]+$/.test(cause)) return cause;
   } catch {
     // A plug-in that throws never masks the core's own cause.
   }
@@ -342,8 +350,9 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
     if (!lease.ok) throw new Failure('lease-failed', lease.reason);
     await run.store.event('lease-started', {timer: receipt.owned.leaseTimer, expiresAt: iso(expiresAt * 1000)});
     // 4. The application under its unit.
-    await launch(run, options.scenario, 0, io.env);
-    await run.store.event('unit-started', {unit: run.unit});
+    const overrides = await launch(run, options.scenario, 0, io.env);
+    await run.store.event('unit-started', {unit: run.unit, ...(overrides.length ? {overrides} : {})});
+    await noteOverrides(run, io, overrides);
     // 5. Readiness, identity, artifact, boundary checks.
     const announced = await ready(run, options.scenario, 0);
     port = announced.port;
@@ -431,7 +440,8 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
     const seededAt = iso();
     const timer = await systemd.timerState(receipt.owned.leaseTimer);
     if (!timer?.loaded || timer.active !== 'active') throw new Failure('lease-failed', 'the lease elapsed during the reseed');
-    await launch(run, scenario, receipt.owned.port!, io.env);
+    const overrides = await launch(run, scenario, receipt.owned.port!, io.env);
+    await noteOverrides(run, io, overrides);
     const announced = await ready(run, scenario, receipt.owned.port!);
     const checks = await boundaryChecks(run, scenario, announced.url, announced.port, io.env);
     const live = await identity(run);
@@ -481,13 +491,14 @@ export async function extend(plugin: AppPlugin, io: Io, runId: string | undefine
     await run.store.event('extend-failed', {timer: `${next}.timer`, reason: lease.reason});
     throw new Failure('lease-failed', `the new lease timer could not be started; ${old} still holds the old expiry (${lease.reason})`);
   }
-  // Only the new lease may remain: an older or stray timer could stop the run before the recorded expiry.
-  const retired: Record<string, string> = {};
-  for (const timer of new Set([old, ...leases])) retired[timer] = await systemd.stopUnit(timer);
+  // The receipt names the new lease before any old one stops, so it always names a live lease and the true expiry.
   const updated = await run.store.update(current => {
     current.owned.leaseTimer = `${next}.timer`;
     current.preview = {...current.preview!, expiresAt: iso(expiresAt * 1000), leaseMinutes};
   });
+  // Only the new lease may remain: an older or stray timer could stop the run before the recorded expiry.
+  const retired: Record<string, string> = {};
+  for (const timer of new Set([old, ...leases])) retired[timer] = await systemd.stopUnit(timer);
   await run.store.event('extended', {timer: `${next}.timer`, replaced: retired, expiresAt: updated.preview!.expiresAt});
   const lines = card(updated, plugin.command);
   for (const line of lines) io.progress(line);
@@ -610,10 +621,22 @@ async function frozenManifest(proofDir: string): Promise<string | undefined> {
  * (the receipt says frozen but `verified/` or `SHA256SUMS` is gone) or
  * `not-frozen`.
  */
-export async function verifySums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'not-frozen'> {
+export async function verifySums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'unreadable' | 'not-frozen'> {
+  try {
+    return await checkSums(proofDir, frozenAt);
+  } catch (error) {
+    // One damaged proof file never hides the other runs doctor lists.
+    if (!(error instanceof Failure)) return 'unreadable';
+    throw error;
+  }
+}
+
+async function checkSums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'not-frozen'> {
   const verified = join(proofDir, 'verified');
   const manifest = join(verified, 'SHA256SUMS');
-  if (!existsSync(manifest)) return frozenAt ? 'missing' : existsSync(verified) ? 'tampered' : 'not-frozen';
+  // A handoff that was interrupted before its receipt recorded frozenAt: rerunning handoff finishes it.
+  if (!frozenAt) return existsSync(verified) || existsSync(join(proofDir, 'verified.partial')) ? 'partial' : 'not-frozen';
+  if (!existsSync(manifest)) return 'missing';
   const text = await readFile(manifest, 'utf8');
   const recorded = await frozenManifest(proofDir);
   if (recorded !== undefined && recorded !== 'sha256:' + hex256(text)) return 'tampered';

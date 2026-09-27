@@ -45,9 +45,9 @@ async function clicks(t, count, by) {
 }
 
 /**
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw'}} options
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>}} options
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match'}) {
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride}) {
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
     /** @param {{dataDir: string, scenario: string}} context */
@@ -91,7 +91,7 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       },
     },
     build: {version: '1.0.0-fixture', artifact},
-    launch: ({node, dataDir, port}) => ({argv: [node, server, '--data', dataDir, '--port', String(port)]}),
+    launch: ({node, dataDir, port}) => ({argv: [node, server, '--data', dataDir, '--port', String(port)], ...(envOverride ? {env: envOverride} : {})}),
     readiness: {
       line: line => {
         try {
@@ -110,6 +110,7 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       failureCause: tail => {
         if (failureCause === 'throw') throw new Error(tail);
         if (failureCause === 'raw') return tail;
+        if (failureCause === 'bidi') return 'fixture-start-failed: port\u202ein-use';
         return /^fixture-start-failed: [a-z-]+$/m.exec(tail)?.[0];
       },
     },

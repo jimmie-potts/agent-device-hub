@@ -169,10 +169,14 @@ export async function listeningPorts(unit: string): Promise<number[] | undefined
   const listed = await exec('ss', ['-ltnpH'], {timeoutMs: 10000});
   if (listed.code !== 0) return undefined;
   const ports = new Set<number>();
+  let attributed = false;
   for (const line of listed.stdout.split('\n')) {
     const local = /\s(127\.0\.0\.1|\[::ffff:127\.0\.0\.1\]):(\d+)\s/.exec(line);
     const owners = [...line.matchAll(/pid=(\d+)/g)].map(m => m[1]!);
+    if (owners.length) attributed = true;
     if (local && owners.some(pid => pids.has(pid))) ports.add(Number(local[2]));
   }
+  // Without any owner attribution (a sandbox that hides other processes' sockets), the read proves nothing.
+  if (!attributed) return undefined;
   return [...ports].sort((a, b) => a - b);
 }

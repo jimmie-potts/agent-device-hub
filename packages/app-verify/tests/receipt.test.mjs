@@ -16,7 +16,7 @@ const running = () => ({
   scenario: {name: 'lifecycle-basic', version: '4adfbf480a5bc3000cf99aec10226403d391a299', seededAt: '2026-09-27T06:03:01Z'},
   components: [{id: 'hub', kind: 'actual'}, {id: 'wall-controller', kind: 'simulated', note: 'fake loopback controller'}],
   checks: [{id: 'readiness', outcome: 'passed'}, {id: 'windows-loopback', outcome: 'skipped', reason: 'interop unavailable'}],
-  captures: [{n: 1, step: 'task-appears', set: 'verified', outcome: 'passed', screenshot: 'verified/capture-1/after.png', video: 'verified/capture-1/interaction.webm', log: 'verified/capture-1/assertions.json', startedAt: '2026-09-27T06:04:00Z', finishedAt: '2026-09-27T06:04:03Z'}],
+  captures: [{n: 1, step: 'task-appears', scenario: 'lifecycle-basic', set: 'verified', outcome: 'passed', screenshot: 'verified/capture-1/after.png', video: 'verified/capture-1/interaction.webm', log: 'verified/capture-1/assertions.json', startedAt: '2026-09-27T06:04:00Z', finishedAt: '2026-09-27T06:04:03Z'}],
   preview: {url: 'http://127.0.0.1:41705/', expiresAt: '2026-09-27T08:02:59Z', leaseMinutes: 120},
   owned: {unit: 'app-verify-hub-20260927T060259Z-3f9a1c.service', leaseTimer: 'app-verify-hub-20260927T060259Z-3f9a1c-lease.timer', port: 41705, runtimeDir: 'hub-20260927T060259Z-3f9a1c', proofDir: 'hub-20260927T060259Z-3f9a1c', mainPid: 4242, mainStartMonotonic: 218551931014},
   proof: {frozenAt: null},

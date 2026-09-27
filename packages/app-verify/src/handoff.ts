@@ -40,6 +40,32 @@ export async function capturesInProgress(proofDir: string): Promise<string[]> {
   return running;
 }
 
+/** The frozen set is built here and renamed to `verified/` only once `SHA256SUMS` is written. */
+export const PARTIAL = 'verified.partial';
+
+async function writableTree(path: string): Promise<void> {
+  const info = await stat(path);
+  if (info.isDirectory()) {
+    await chmod(path, 0o755);
+    for (const entry of await readdir(path)) await writableTree(join(path, entry));
+  } else await chmod(path, 0o644);
+}
+
+/**
+ * Put back a freeze that was interrupted before its set was complete: its
+ * captures return to the proof directory and the partial set is removed.
+ */
+async function unwind(proofDir: string, name: string): Promise<void> {
+  const partial = join(proofDir, name);
+  if (!existsSync(partial)) return;
+  await writableTree(partial);
+  for (const entry of (await readdir(partial)).filter(e => /^capture-\d+$/.test(e))) {
+    if (existsSync(join(proofDir, entry))) throw new Failure('proof-conflict', `${entry} exists both in ${name}/ and the proof directory; move one aside`);
+    await rename(join(partial, entry), join(proofDir, entry));
+  }
+  await rm(partial, {recursive: true, force: true});
+}
+
 async function readOnly(path: string): Promise<void> {
   const info = await stat(path);
   if (info.isDirectory()) {
@@ -62,31 +88,48 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     for (const line of lines) io.progress(line);
     return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
   }
-  const verified = join(run.store.dir, 'verified');
-  let manifest = '';
+  const verified = join(run.store.dir, 'verified'), partial = join(run.store.dir, PARTIAL);
+  let manifest = '', adopted = false;
   receipt = await run.store.update(async current => {
     // Checked under the receipt lock that a capture's write-ahead also takes, so no capture starts in between.
     const busy = await capturesInProgress(run.store.dir);
     if (busy.length) throw new Failure('capture-in-progress', `wait for ${busy.join(', ')} to finish before handoff`);
+    if (existsSync(join(verified, 'SHA256SUMS'))) {
+      // A handoff killed after its rename but before this receipt was written: adopt the complete set if it verifies.
+      const copy = JSON.parse(await readFile(join(verified, 'receipt.json'), 'utf8')) as Receipt;
+      manifest = await readFile(join(verified, 'SHA256SUMS'), 'utf8');
+      const found = await sums(verified);
+      if ([...found].map(([path, sum]) => `${sum}  ${path}\n`).join('') !== manifest) throw new Failure('proof-tampered', 'verified/ does not match its SHA256SUMS; it was not adopted');
+      const frozen = new Map(copy.captures.filter(c => c.set === 'verified').map(c => [c.n, c]));
+      current.captures = current.captures.map(c => frozen.get(c.n) ?? c);
+      current.proof.frozenAt = copy.proof.frozenAt;
+      adopted = true;
+      return;
+    }
+    // A freeze interrupted before its set was complete starts over.
+    await unwind(run.store.dir, PARTIAL);
+    await unwind(run.store.dir, 'verified');
     const captures = (await readdir(run.store.dir)).filter(e => /^capture-\d+$/.test(e));
     // Refuse before moving anything if a capture holds a link or other non-regular entry.
     for (const entry of captures) await sums(join(run.store.dir, entry));
-    await mkdir(verified);
-    for (const entry of captures) await rename(join(run.store.dir, entry), join(verified, entry));
+    await mkdir(partial);
+    for (const entry of captures) await rename(join(run.store.dir, entry), join(partial, entry));
     const moved = (path: string | null) => (path === null ? null : `verified/${path}`);
     current.captures = current.captures.map(c => (c.set === 'verified' && !c.log.startsWith('verified/')
       ? {...c, screenshot: moved(c.screenshot), video: moved(c.video), log: moved(c.log)!, ...(c.attachments ? {attachments: c.attachments.map(a => moved(a)!)} : {})}
       : c));
-    const frozenAt = iso();
-    current.proof.frozenAt = frozenAt;
+    current.proof.frozenAt = iso();
     // The copy of this moment's receipt already names the captures' verified/ locations.
-    await writeFile(join(verified, 'receipt.json'), JSON.stringify(current satisfies Receipt, null, 2) + '\n');
-    const found = await sums(verified);
+    await writeFile(join(partial, 'receipt.json'), JSON.stringify(current satisfies Receipt, null, 2) + '\n');
+    const found = await sums(partial);
     manifest = [...found].map(([path, sum]) => `${sum}  ${path}\n`).join('');
-    await writeFile(join(verified, 'SHA256SUMS'), manifest);
-    await readOnly(verified);
+    await writeFile(join(partial, 'SHA256SUMS'), manifest);
+    await readOnly(partial);
+    await run.store.event('frozen', {frozenAt: current.proof.frozenAt, files: manifest.split('\n').filter(Boolean).length, manifest: 'sha256:' + hex256(manifest)});
+    // Only a complete, summed set ever becomes verified/.
+    await rename(partial, verified);
   });
-  await run.store.event('frozen', {frozenAt: receipt.proof.frozenAt, files: manifest.split('\n').filter(Boolean).length, manifest: 'sha256:' + hex256(manifest)});
+  if (adopted) await run.store.event('frozen', {frozenAt: receipt.proof.frozenAt, files: manifest.split('\n').filter(Boolean).length, manifest: 'sha256:' + hex256(manifest), adopted: true});
   io.progress(`${run.runId}: verified set frozen in ${verified}`);
   if (reset !== undefined) {
     const reseeded = await reseed(run, io, receipt, reset);
