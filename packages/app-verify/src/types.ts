@@ -48,15 +48,39 @@ export interface RunPaths {
   dataDir: string;
 }
 
+/**
+ * A run's inputs by name: non-secret values the caller gave with
+ * `--input <name>=<value>`, each 1 to 512 printable ASCII characters. Empty
+ * when the plug-in declares none. Added in 1.1.
+ */
+export type RunInputs = Readonly<Record<string, string>>;
+
+/** One input a plug-in accepts (1.1). */
+export interface InputDeclaration {
+  /** One line for `help`. */
+  description: string;
+  /** `start` refuses without it. Default `false`. */
+  required?: boolean;
+}
+
 export interface SeedContext extends RunPaths {
   /** The scenario being seeded. */
   scenario: string;
+  /** The run's inputs (1.1). A relaunch passes the recorded ones again. */
+  inputs: RunInputs;
 }
 
 /** A named, deterministic synthetic seed owned by the adapter's test fixtures. */
 export interface Scenario {
   /** One line for `help` and the card. */
   description: string;
+  /**
+   * Optional (1.1): declared inputs this scenario cannot run without, even
+   * when the plug-in declares them optional. `start`, `scenario`, a `fresh`
+   * step, `handoff --reset` and `restart` refuse, as a usage error before
+   * anything stops, to seed it without them.
+   */
+  requiredInputs?: readonly string[];
   /**
    * Write this scenario's state into the empty `dataDir`. Runs before the
    * application starts: on `start`, on `scenario` and on `handoff --reset`
@@ -79,6 +103,15 @@ export interface LaunchContext extends RunPaths {
    * inherit the caller's shell, so launch Node through this path.
    */
   node: string;
+  /** The run's inputs (1.1). */
+  inputs: RunInputs;
+  /**
+   * The ports of the extra endpoints the run recorded, by name (1.1): empty on
+   * `start`; on a relaunch after a reseed, bind each named endpoint on its
+   * port again, as the application does with `port`. A relaunch that moves
+   * or drops a recorded endpoint fails with `port-changed`.
+   */
+  endpointPorts: Readonly<Record<string, number>>;
 }
 
 export interface LaunchSpec {
@@ -106,6 +139,16 @@ export interface LaunchSpec {
 export interface ReadyLine {
   /** Loopback origin, `http://127.0.0.1:<port>/`, optionally with a path. */
   url: string;
+  /**
+   * Optional (1.1): other loopback listeners of the same application, such as
+   * a fake controller another run must reach, by name. A name is a letter
+   * followed by up to 63 letters, digits, `_` or `-`, and a ready line names
+   * at most 16 endpoints. Each is an `http://127.0.0.1:<port>/` URL. They are recorded as
+   * `receipt.owned.endpoints`, printed in the card, held to their ports on a
+   * relaunch, refused on a reserved port and checked by `doctor`'s listener
+   * read.
+   */
+  endpoints?: Readonly<Record<string, string>>;
 }
 
 export interface ProbeContext extends RunPaths {
@@ -114,6 +157,10 @@ export interface ProbeContext extends RunPaths {
   url: string;
   /** The port the application actually bound. */
   port: number;
+  /** The run's inputs (1.1). */
+  inputs: RunInputs;
+  /** The extra endpoints from the ready line, by name (1.1); empty when it named none. */
+  endpoints: Readonly<Record<string, string>>;
   /** Aborted when the operation's deadline passes. */
   signal: AbortSignal;
 }
@@ -251,6 +298,20 @@ export interface CaptureStepOptions {
   dataDir?: string;
   runtimeDir?: string;
   runId?: string;
+  /**
+   * The inputs the application was started with (1.1), checked as `start`
+   * checks them: declared, not secret-like, printable ASCII, required ones
+   * present.
+   */
+  inputs?: Readonly<Record<string, string>>;
+  /** The application's extra endpoints (1.1), each an `http://127.0.0.1:<port>/` URL. */
+  endpoints?: Readonly<Record<string, string>>;
+  /**
+   * Optional (1.1): the candidate's recorded `build.artifactDigest`. When
+   * given, the served artifact is re-read before and after the step, and a
+   * different one fails it, as `capture` does.
+   */
+  artifactDigest?: string;
 }
 
 export interface CaptureStepResult {
@@ -286,6 +347,16 @@ export interface AppPlugin {
   /** Scenario used when `start` has no `--scenario`. */
   defaultScenario: string;
   scenarios: Readonly<Record<string, Scenario>>;
+  /**
+   * Optional (1.1): the run inputs this plug-in accepts, by name (a letter,
+   * then letters, digits, `_` or `-`; at most 64 characters). Callers give
+   * them with `start --input <name>=<value>` and replace them with
+   * `scenario <run-id> <name> --input …`; every other relaunch reuses the
+   * recorded values. They are recorded in the receipt and events, so a name
+   * matching /token|secret|password|credential|key/i is refused: an input
+   * never carries a credential.
+   */
+  inputs?: Readonly<Record<string, InputDeclaration>>;
   build: BuildSource;
   /** The application process. It must bind 127.0.0.1 on `port` and print a ready line. */
   launch(context: LaunchContext): LaunchSpec | Promise<LaunchSpec>;
@@ -300,7 +371,7 @@ export interface AppPlugin {
   /**
    * Ports a run must never serve on, added to the installed services' ports
    * (8788, 8765, 8787, 8791, 41230, 41231). A run whose ready line announces
-   * one fails with `port-reserved`.
+   * one, as its URL or an extra endpoint, fails with `port-reserved`.
    */
   reservedPorts?: readonly number[];
 }
@@ -388,6 +459,11 @@ export interface Receipt {
   startedAt: string;
   /** The run id this run restarts. Optional. */
   restarts?: string;
+  /**
+   * The run's inputs (1.1). Optional; written by 1.1 whenever the plug-in
+   * declares inputs, as `{}` when none was given, and never otherwise.
+   */
+  inputs?: Record<string, string>;
   build: {sourceRevision: string; dirty: boolean; artifactDigest: string | null; version: string};
   scenario: {name: string; version: string; seededAt: string | null};
   components: Component[];
@@ -403,6 +479,8 @@ export interface Receipt {
     /** Identity of the live process, compared by `doctor`; `null` until running. */
     mainPid: number | null;
     mainStartMonotonic: number | null;
+    /** The extra endpoints the ready line announced, by name (1.1). Optional; present only when it named any. */
+    endpoints?: Record<string, string>;
   };
   proof: {frozenAt: string | null};
   /** Why the run failed or was stopped by the core; `null` otherwise. */

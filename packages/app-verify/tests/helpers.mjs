@@ -28,7 +28,8 @@ export function supervisorSkipReason() {
 
 const git = (cwd, ...args) => execFileSync('git', args, {cwd, encoding: 'utf8', env: {...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1'}}).trim();
 
-export async function sandbox({playwright} = {}) {
+/** `options` are extra `createPlugin` options for the default wrapper, such as declared `inputs`. */
+export async function sandbox({playwright, options: extra = {}} = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), 'app-verify-test-')));
   const app = `avt-${randomBytes(3).toString('hex')}`;
   const repo = join(base, 'repo'), stateRoot = join(base, 'state'), markerDir = join(base, 'markers');
@@ -40,8 +41,8 @@ export async function sandbox({playwright} = {}) {
   await writeFile(join(repo, '.gitignore'), '.local/\n');
   git(repo, 'add', '.');
   git(repo, 'commit', '-q', '-m', 'fixture');
-  const wrapper = async (root, name = 'verify.mjs') => {
-    const options = {root, app, markerDir, pidFile: join(base, 'helper.pid'), ...(playwright ? {playwright} : {})};
+  const wrapper = async (root, name = 'verify.mjs', more = extra) => {
+    const options = {root, app, markerDir, pidFile: join(base, 'helper.pid'), ...(playwright ? {playwright} : {}), ...more};
     await writeFile(join(root, name), `import {runCli} from ${JSON.stringify(core)};\nimport {createPlugin} from ${JSON.stringify(plugin)};\nprocess.exitCode = await runCli(createPlugin(${JSON.stringify(options)}), process.argv.slice(2));\n`);
     return join(root, name);
   };

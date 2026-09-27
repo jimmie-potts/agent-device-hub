@@ -34,6 +34,12 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.equal(receipt.owned.unit, `app-verify-${runId}.service`);
     assert.equal(receipt.owned.leaseTimer, `app-verify-${runId}-lease.timer`);
     assert.equal(receipt.owned.port, port);
+    // A plug-in that declares no inputs and announces no endpoint gets the 1.0 receipt, events, result and card.
+    assert.equal('inputs' in receipt, false);
+    assert.equal('endpoints' in receipt.owned, false);
+    assert.equal('inputs' in started.result || 'endpoints' in started.result, false);
+    assert.equal(started.result.card.length, 5);
+    assert.ok((await box.events(runId)).every(e => !('inputs' in e) && !('endpoints' in e)));
 
     // The unit belongs to the user manager, its identity matches the receipt and the lease timer elapses at expiresAt.
     const unit = show(receipt.owned.unit, 'ActiveState', 'MainPID', 'ExecMainStartTimestampMonotonic', 'ControlGroup', 'KillMode');
@@ -66,6 +72,7 @@ test('start runs the app under a leased unit, doctor reads it, stop removes what
     assert.equal(row.health.outcome, 'passed');
     assert.equal(row.artifact, 'matches');
     assert.deepEqual(row.listener, {recorded: port, ports: [port], outcome: 'matches'}, 'doctor reads the unit\'s actual listener');
+    assert.equal('inputs' in row, false);
     assert.equal(row.unit.mainPid, receipt.owned.mainPid);
     assert.equal(row.preview.expiresAt, receipt.preview.expiresAt);
     assert.equal(row.windows.outcome, 'skipped');
@@ -635,6 +642,59 @@ test('doctor reports an extra armed lease timer as stale', {skip}, async () => {
     assert.deepEqual(row.reasons, ['extra-lease-timer'], 'the extra timer could stop the run before the recorded expiry');
     assert.equal((await box.cli(['stop', runId])).code, 0);
     assert.deepEqual(units(box.app), [], 'stop removes every lease timer of the run');
+  } finally {
+    await box.close();
+  }
+});
+
+test('a failure detail keeps paths inside the two roots and replaces every other absolute path', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const failed = await box.cli(['start', '--scenario', 'seed-leaks']);
+    assert.equal(failed.code, 1, failed.stderr);
+    assert.equal(failed.result.cause, 'seed-failed');
+    const dataDir = join(box.stateRoot, failed.result.runId, 'data');
+    assert.equal(failed.result.detail, `Command failed: <path> --data ${dataDir} --config <path> (see "<path>")`);
+    const receipt = await box.receipt(failed.result.runId);
+    assert.equal(receipt.failure.detail, failed.result.detail);
+    assert.equal((await box.events(failed.result.runId)).find(e => e.event === 'start-failed').detail, failed.result.detail);
+
+    // A reseed that fails the same way records the same redacted detail.
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const reset = await box.cli(['scenario', runId, 'seed-leaks']);
+    assert.equal(reset.code, 1);
+    assert.equal(reset.result.detail, `seed-failed: Command failed: <path> --data ${join(box.stateRoot, runId, 'data')} --config <path> (see "<path>")`);
+    assert.equal((await box.receipt(runId)).failure.detail, reset.result.detail);
+    for (const result of [failed, reset]) {
+      const texts = [result.stdout, result.stderr, JSON.stringify(await box.receipt(result.result.runId)), JSON.stringify(await box.events(result.result.runId))];
+      for (const text of texts) assert.equal(/\/opt\/private-tool|\/home\/someone|\/srv\/private/.test(text), false, 'no private path is printed or recorded');
+    }
+    assert.deepEqual(units(box.app), []);
+  } finally {
+    await box.close();
+  }
+});
+
+test('doctor prints health and check reasons redacted, and the core names a failed artifact route by its full URL', {skip}, async () => {
+  const box = await sandbox({options: {leakyDoctor: true}});
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const {writeFile} = await import('node:fs/promises');
+    await writeFile(join(box.stateRoot, runId, 'data', 'leak'), '');
+    const doctor = await box.cli(['doctor', runId]);
+    assert.equal(doctor.code, 0, doctor.stderr);
+    const [row] = doctor.result.runs;
+    assert.deepEqual(row.health, {id: 'health', outcome: 'failed', reason: 'Command failed: <path> --config <path>'});
+    assert.deepEqual(row.checks.find(c => c.id === 'leaky-check'), {id: 'leaky-check', outcome: 'failed', reason: 'Command failed: <path> <path>'});
+    assert.equal(/\/opt\/private|\/home\/someone/.test(doctor.stdout + doctor.stderr), false, 'doctor prints no private path');
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+
+    // The core's own artifact detail keeps the route, as a full URL.
+    const missing = await box.cli(['start'], {entry: await box.wrapper(box.repo, 'verify-missing-route.mjs', {artifact: {route: '/missing.js'}})});
+    assert.equal(missing.code, 1);
+    assert.equal(missing.result.cause, 'artifact-unreadable');
+    assert.match(missing.result.detail, /^artifact route http:\/\/127\.0\.0\.1:\d+\/missing\.js answered 404$/);
+    assert.deepEqual(units(box.app), []);
   } finally {
     await box.close();
   }

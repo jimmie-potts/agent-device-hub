@@ -57,18 +57,52 @@ No operation prints a token, a private path outside the receipt's two declared
 roots, or personal data. Exit status 0 means the outcome was verified, not
 merely requested; 1 is a failed outcome, 2 a usage error and 3 an unavailable
 supervisor or browser tooling. `help` lists the operations, the adapter's
-scenarios and its capture steps.
+scenarios and its capture steps and, since 1.1, its declared inputs, each
+scenario's required inputs and the core version.
 
 | Operation | Outcome | Failure it must report |
 | --- | --- | --- |
-| `start [--scenario <name>] [--lease <minutes>]` | In this order: writes the proof directory with a `starting` receipt naming the unit, timer and runtime directory it is about to create; runs the adapter's optional build step; creates the runtime directory and seeds the scenario; starts the lease timer; starts the application under its supervisor unit; waits for readiness; runs the adapter's boundary checks; rewrites the receipt with `state: running`. The timer exists before the unit, so no running application is ever without a lease | Occupied or unusable port, dirty or unknown build, readiness timeout, seed failure, supervisor unavailable. A failed start stops its unit and timer, removes its runtime directory and reports `state: failed` with the cause and what was cleaned |
+| `start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...` | In this order: writes the proof directory with a `starting` receipt naming the unit, timer and runtime directory it is about to create; runs the adapter's optional build step; creates the runtime directory and seeds the scenario; starts the lease timer; starts the application under its supervisor unit; waits for readiness; runs the adapter's boundary checks; rewrites the receipt with `state: running`. The timer exists before the unit, so no running application is ever without a lease | Occupied or unusable port, dirty or unknown build, readiness timeout, seed failure, supervisor unavailable. A failed start stops its unit and timer, removes its runtime directory and reports `state: failed` with the cause and what was cleaned |
 | `doctor [<run-id>]` | Reads live state without changing it: the unit's active state, main PID and start timestamp, the ports the unit's own processes listen on (from its control group and `ss`) against the recorded port, a loopback health read, the build identity the process reports or the receipt recorded, the lease timer's next elapse, the verified set's checksums, and any boundary check the adapter marks read-only. Without an argument it lists every run of this app discovered from the union of `app-verify-<app>-*` units and timers, runtime directories and receipts, so an orphan of any kind appears. A run whose unit is gone while its receipt says `running` or `starting` is `expired` when `preview.expiresAt` has passed and `stale` otherwise | A receipt that disagrees with the live unit is reported as `stale`, never repaired silently |
-| `scenario <run-id> <name>` | Reseeds this run's disposable state to the named scenario while the run keeps its identity, port and lease: stops the application unit, empties its state, seeds, and relaunches it on the recorded port. Only this run's runtime directory changes | A scenario the fixtures do not define; a run that is not `running`. A reseed that fails after the application stopped ends like a failed reset below: `state: stopped`, `failure.cause: reset-failed` |
-| `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
+| `scenario <run-id> <name> [--input <name>=<value>]...` | Reseeds this run's disposable state to the named scenario while the run keeps its identity, port and lease: stops the application unit, empties its state, seeds, and relaunches it on the recorded port and endpoint ports. Each `--input` replaces that input's recorded value; the others are kept. Only this run's runtime directory changes | A scenario the fixtures do not define; a run that is not `running`. A reseed that fails after the application stopped ends like a failed reset below: `state: stopped`, `failure.cause: reset-failed` |
+| `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot. Since 1.1 it re-reads the served artifact before and after the step: several runs of one checkout serve the same build on disk, so a rebuild can change what this run serves | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure, and a served artifact whose digest no longer equals `build.artifactDigest` (`the served artifact changed since start (recorded …, served …)`; the page is not driven when it differs before the step). Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
 | `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `state: stopped` with the cause in `events.jsonl` and `cleanup.result`, and keeps the frozen set, rather than serving half-seeded state |
 | `extend <run-id> [--lease <minutes>]` | Starts the next lease timer (`app-verify-<run-id>-lease-<k>.timer`), reads back that it elapses at the new expiry, then stops the old timer, so the run is never without a lease. Records the new expiry in the receipt and the printed card | A run whose unit is not active, or whose new timer cannot be started, is reported as such; the old lease and everything else stay untouched |
 | `stop <run-id>` | First stops every lease timer of the run and the supervisor unit, verifies each is gone and removes the runtime directory. Then, under the receipt lock, recovers the proof of a run that was never frozen. It reports `proof: committed` (a complete own set left by an interrupted handoff), `unwound` (partial or rebuildable captures returned to the proof directory) or `conflict` (files left for inspection, cleanup unaffected). Finally it writes the receipt with `cleanup.result`: `state: expired` when the lease had already stopped the unit, `stopped` otherwise. A `receipt-locked` refusal still reports the cleanup done. Frozen proof stays. Repeating `stop` reports the final state without rewriting it. With an unreadable or invalid receipt, `stop` still cleans up through the unit names the run id gives, reports `state: stale` and `receipt: unreadable`, and leaves the file as found for diagnosis. It removes only the runtime directory: a `HOME` or `TMPDIR` a plug-in moved elsewhere is the plug-in's to clean | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
-| `restart <run-id>` | `stop`, then `start` with the recorded scenario and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
+| `restart <run-id>` | `stop`, then `start` with the recorded scenario, inputs and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
+
+Since `app-verify` 1.1, a plug-in may declare **run inputs**: named,
+non-secret values such as another run's loopback URL, given with `--input`.
+The core refuses, as a usage error before any run changes, an undeclared
+name, a missing required input, a value that is not 1 to 512 printable ASCII
+characters and a name matching `/token|secret|password|credential|key/i`.
+It records them in the receipt and the `seeded`, `unit-started` and
+`reseeded` events, and every reseed, `fresh` step, `handoff --reset` and
+`restart` reuses them. A scenario can list `requiredInputs`, and seeding it
+without them is the same usage error, raised before anything stops.
+
+A credential, or a path to one, never travels as an input. A caller that must
+supply one writes it with mode 0600 into the run's runtime directory,
+`<runtime root>/<run-id>/`, outside `data/`, `tmp/` and `home/` so that a
+reseed keeps it. The plug-in reads it by a fixed file name from
+`ctx.runtimeDir`. `start` creates the directory, so the caller writes the file
+after `start` and before the `scenario` reseed that needs it, and `stop`
+deletes it with the directory. Such a scenario cannot be a run's first seed,
+and `restart` of a run in it stops the run and then fails at seed, because the
+new run's directory does not exist yet: stop the run, start a new one in a
+scenario that needs no file, write the file and reseed.
+
+A ready line may also name **extra endpoints**: other loopback listeners of
+the same application, such as a fake controller that another run calls. Each
+is exactly `http://127.0.0.1:<port>/`, with no path, credentials, query or
+fragment, and a ready line names at most 16. They follow the port rules below
+and are recorded and printed in the card. They keep their ports across a
+relaunch, or the reseed fails with `port-changed`, and `doctor`'s listener
+read covers them. Since 1.1 the main URL also refuses credentials, a query or
+a fragment.
+
+A `stop` retried after a `receipt-locked` refusal records the cleanup the
+refused attempt did.
 
 Expiry is not an operation. The lease timer stops the unit, and the next
 `doctor` reports `state: expired`, the exact expiry time and that the runtime
@@ -151,7 +185,11 @@ values it cannot know yet to `null`: `owned.port`, `owned.mainPid`,
   add its application's own stable cause line from the tail of the app's
   stderr (`readiness.failureCause`), appended as `; app: <line>` when it is
   printable ASCII of at most 200 characters; the core never records raw log
-  text.
+  text. Since 1.1, `detail`, like a check's or capture's `reason` (also as
+  `doctor` prints it) and a supervised capture log's assertion errors and
+  notes, has every absolute path outside the two roots replaced with `<path>`
+  and is capped at 1000 characters. Full URLs are kept, so a reason names a
+  route by its URL.
 - `cleanup.result` becomes `clean`, `partial` or `unknown` (a readback
   failed). `cleanup.at` records when, and `cleanup.items` lists one
   `{kind, name, outcome}` per lease timer, the unit and the runtime
@@ -168,6 +206,13 @@ values it cannot know yet to `null`: `owned.port`, `owned.mainPid`,
   step wrote into its capture directory, such as an exact simulator frame;
   `handoff` freezes them with the rest of the verified set.
 - `restarts` is optional.
+- `inputs` is optional: the run's inputs, written by `app-verify` 1.1
+  whenever the plug-in declares any (`{}` when none was given). Each name
+  is a letter followed by up to 63 letters, digits, `_` or `-` and never
+  matches `/token|secret|password|credential|key/i`; each value is 1 to 512
+  printable ASCII characters.
+- `owned.endpoints` is optional: the extra endpoints the ready line named, as
+  `{name: "http://127.0.0.1:<port>/"}`, written by 1.1 only when there are any.
 - A reader ignores fields it does not know, so a later `app-verification/1`
   minor version can add optional fields without breaking older readers.
 `roots` names the two storage roots: `<canonical checkout>` is the repository's
@@ -183,7 +228,7 @@ token, a credential file path, an agent transcript or a session id.
 | Proof | `<owning canonical checkout>/.local/evidence/verify/<run-id>/` | Survives worktree removal; the SDLC already keeps evidence there. A worktree's adapter resolves the canonical checkout through the repository's main worktree, never its own path |
 | Runtime state | `~/.local/state/app-verify/<run-id>/` | Outside every Git checkout, as the hub's `private-path-in-checkout` rule and Pixoo's `PIXOO_DATA_DIR` rule require; on ext4, not the 7.6 GB `/tmp` tmpfs; short enough for Unix socket paths. The app's `TMPDIR` is `<run-id>/tmp`, because the wall demo uses `tempfile`, and its `HOME` is `<run-id>/home`, so the app never reads the caller's personal files unless its plug-in explicitly opts out |
 | Synthetic fixtures | The adapter's own test fixtures in its repository | Scenarios version with the source; no shared fixture package |
-| Ports | Bind `127.0.0.1:0`; read the actual port from the application's readiness output | Two runs never race for a fixed port. The installed ports (8788, 8765, 8787, 8791, 41230, 41231; the last two lie inside Linux's ephemeral range) and any the adapter adds are refused: a run announcing one fails with `port-reserved` |
+| Ports | Bind `127.0.0.1:0`; read the actual port, and any extra endpoint's, from the application's readiness output | Two runs never race for a fixed port. The installed ports (8788, 8765, 8787, 8791, 41230, 41231; the last two lie inside Linux's ephemeral range) and any the adapter adds are refused: a run announcing one, as its URL or an endpoint, fails with `port-reserved` |
 | Secrets | Run-generated credentials only, written `0600` inside the runtime directory and deleted with it | Installed `host.json` tokens are never read or copied |
 
 The `reset` in `handoff --reset` and the `scenario` operation change only the
@@ -463,10 +508,15 @@ need a user manager, so they run on a systemd host such as the owner's WSL
 PC, and the delivery evidence records them. Depot's runner has no systemd,
 so the Hub's App verification CI job runs only the parts that need none:
 
-- receipt validation;
+- receipt validation, including the optional 1.1 fields;
 - the receipt lock under contention, including a lock left by a killed
-  writer and a stuck or holder-less lock breaker;
+  writer, a stuck or holder-less lock breaker, a prepared lock directory
+  swept mid-acquire and a stale dead-breaker record;
 - `start` refusing without a manager;
+- input refusals (undeclared, secret-like, missing, malformed) and inputs
+  given to `runCaptureStep`;
+- a served artifact that changed before or during a step, through
+  `runCaptureStep` with the recorded digest;
 - the capture rules through `runCaptureStep`: reference, `control-*`,
   `false` predicates, a broken app, a silent step, missing tooling, and
   unfinalized or truncated video.

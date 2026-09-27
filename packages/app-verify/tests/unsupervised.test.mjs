@@ -2,6 +2,7 @@
 // one without `systemd --user`, so the negative controls always execute.
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {homedir, tmpdir} from 'node:os';
@@ -154,6 +155,39 @@ test('runCaptureStep: missing Chromium or ffmpeg is unavailable, and an unfinali
       assert.equal(result.video, null);
       assert.equal(existsSync(join(base, name, 'interaction.webm')), false, 'no claimed video remains under the finalized name');
     }
+  } finally {
+    await app.stop();
+    await rm(base, {recursive: true, force: true});
+  }
+});
+
+test('runCaptureStep with a recorded digest fails a step whose served artifact changed before or during it', async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'app-verify-drift-')));
+  const app = await serve(base, 'reference', 'reference');
+  const plugin = createPlugin({root: base, app: 'avt-drift', artifact: {file: 'bundle.js'}});
+  const digest = text => 'sha256:' + createHash('sha256').update(text).digest('hex');
+  try {
+    await writeFile(join(base, 'bundle.js'), 'build one\n');
+    const recorded = digest('build one\n');
+    const same = await runCaptureStep(plugin, 'count-twice', {url: app.url, outputDir: join(base, 'd1'), artifactDigest: recorded});
+    assert.equal(same.outcome, 'passed', same.reason);
+
+    await writeFile(join(base, 'bundle.js'), 'build two\n');
+    const before = await runCaptureStep(plugin, 'count-twice', {url: app.url, outputDir: join(base, 'd2'), artifactDigest: recorded});
+    assert.equal(before.outcome, 'failed');
+    assert.equal(before.reason, `the served artifact changed since start (recorded ${recorded}, served ${digest('build two\n')})`);
+    assert.deepEqual(before.assertions, [], 'the step never ran against another candidate');
+    assert.equal(JSON.parse(await readFile(before.log, 'utf8')).reason, before.reason);
+    const unchecked = await runCaptureStep(plugin, 'count-twice', {url: app.url, outputDir: join(base, 'd3')});
+    assert.equal(unchecked.outcome, 'passed', 'without a recorded digest nothing is compared');
+
+    await writeFile(join(base, 'bundle.js'), 'build one\n');
+    const during = await runCaptureStep(plugin, 'rebuild-during-step', {url: app.url, outputDir: join(base, 'd4'), artifactDigest: recorded});
+    assert.equal(during.outcome, 'failed', 'passing assertions do not outweigh a candidate that changed under the step');
+    assert.deepEqual(during.assertions.map(a => a.outcome), ['passed']);
+    assert.equal(during.reason, `the served artifact changed since start (recorded ${recorded}, served ${digest('rebuilt during the step\n')})`);
+
+    await assert.rejects(runCaptureStep(plugin, 'count-twice', {url: app.url, outputDir: join(base, 'd5'), artifactDigest: 'abc'}), /artifactDigest/);
   } finally {
     await app.stop();
     await rm(base, {recursive: true, force: true});

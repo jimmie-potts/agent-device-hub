@@ -45,16 +45,37 @@ async function clicks(t, count, by) {
 }
 
 /**
- * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>}} options
+ * Whether two input maps hold the same names and values, in any order.
+ * @param {Readonly<Record<string, string>> | null | undefined} a @param {Readonly<Record<string, string>> | null | undefined} b
  */
-export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride}) {
+export function sameInputs(a, b) {
+  const text = (/** @type {Readonly<Record<string, string>> | null | undefined} */ value) => JSON.stringify(Object.entries(value ?? {}).sort(([x], [y]) => (x < y ? -1 : 1)));
+  return a != null && b != null && text(a) === text(b);
+}
+
+/**
+ * The fixture's plug-in. Without `inputs` it is a 1.0-style plug-in: it declares no inputs and reads no 1.1 context field
+ * unless a scenario announces an extra endpoint.
+ * @param {{root: string, app: string, playwright?: string[], pidFile?: string, markerDir?: string, commandLog?: string, artifact?: import('@jimmie-potts/app-verify').BuildSource['artifact'], bindPort?: number, reservedPorts?: number[], secret?: string, failureCause?: 'match' | 'throw' | 'raw' | 'bidi', envOverride?: Record<string, string>, inputs?: import('@jimmie-potts/app-verify').AppPlugin['inputs'], announcePort?: number, announce?: {url?: string, endpoints?: unknown}, leakyDoctor?: boolean}} options
+ */
+export function createPlugin({root, app, playwright = defaultPlaywright(), pidFile, markerDir, commandLog, artifact = {route: '/app.js'}, bindPort, reservedPorts, secret = 'not-set', failureCause = 'match', envOverride, inputs, announcePort, announce, leakyDoctor}) {
+  /** With `leakyDoctor`, a `leak` file in the run's data directory makes the probe and a read-only check fail naming private paths. */
+  const leaking = async (/** @type {string} */ dataDir) => leakyDoctor === true && existsSync(join(dataDir, 'leak'));
   /** @param {Record<string, unknown>} value */
   const scenario = value => ({
-    /** @param {{dataDir: string, scenario: string}} context */
-    seed: async ({dataDir, scenario: name}) => {
-      await writeFile(join(dataDir, 'scenario.json'), JSON.stringify({name, pidFile, commandLog, ...value}));
+    /** @param {import('@jimmie-potts/app-verify').SeedContext} context */
+    seed: async ({dataDir, scenario: name, inputs: given}) => {
+      await writeFile(join(dataDir, 'scenario.json'), JSON.stringify({name, pidFile, commandLog, ...value, ...(inputs ? {inputs: given} : {})}));
     },
   });
+  /** @param {import('@jimmie-potts/app-verify').CaptureContext} t */
+  const inputsShown = async t => {
+    await t.page.goto(t.url);
+    await t.expect('the application was seeded and launched with the run inputs', async () => {
+      const seen = await (await fetch(new URL('/inputs', t.url), {signal: t.signal})).json();
+      if (!sameInputs(seen.seeded, t.inputs) || !sameInputs(seen.launched, t.inputs)) throw new Error(`the app saw ${JSON.stringify(seen)}, the step has ${JSON.stringify(t.inputs)}`);
+    });
+  };
   /** @param {string} url @param {AbortSignal} [signal] */
   const json = async (url, signal) => (await fetch(url, {signal})).json();
   return definePlugin({
@@ -72,6 +93,18 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       'noisy-crash': {description: 'Exits 2 after printing a cause line and a secret-looking line on stderr', ...scenario({behavior: 'noisy-crash', secret})},
       'fixed-port': {description: 'Binds the port the test chose instead of 0', ...scenario({behavior: 'reference', start: 0, bindPort})},
       'check-fails': {description: 'Ready, but its boundary check fails', ...scenario({behavior: 'reference', start: 0, failCheck: true})},
+      endpoint: {description: 'Counter plus a controller listener announced as an extra endpoint', ...scenario({behavior: 'reference', start: 0, endpoint: 'bind'})},
+      'endpoint-moves': {description: 'Controller endpoint that ignores its recorded port on relaunch', ...scenario({behavior: 'reference', start: 0, endpoint: 'moves'})},
+      'endpoint-announce': {description: 'Announces the test\'s chosen endpoint port without binding it', ...scenario({behavior: 'reference', start: 0, endpoint: 'announce', announcePort})},
+      'announce-raw': {description: 'Announces the test\'s chosen URL ({port} is the bound port) and endpoints, verbatim', ...scenario({behavior: 'reference', start: 0, endpoint: 'raw', announce})},
+      // Only with a declared `feed` input: the plug-in check refuses a scenario that requires an undeclared input.
+      ...(inputs?.feed || inputs?.label ? {paired: {description: 'Counter at 0 paired with a peer feed', requiredInputs: ['feed'], ...scenario({behavior: 'reference', start: 0})}} : {}),
+      'seed-leaks': {
+        description: 'Seeding fails like a child process whose error names private absolute paths',
+        seed: ({dataDir}) => {
+          throw new Error(`Command failed: /opt/private-tool/bin/seed --data ${dataDir} --config /home/someone/.config/private.json (see "/srv/private/log")`);
+        },
+      },
       'seed-fails': {
         description: 'Seeding throws',
         seed: () => {
@@ -91,17 +124,26 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       },
     },
     build: {version: '1.0.0-fixture', artifact},
-    launch: ({node, dataDir, port}) => ({argv: [node, server, '--data', dataDir, '--port', String(port)], ...(envOverride ? {env: envOverride} : {})}),
+    ...(inputs ? {inputs} : {}),
+    launch: ({node, dataDir, port, inputs: given, endpointPorts}) => ({
+      argv: [
+        node, server, '--data', dataDir, '--port', String(port),
+        ...(inputs ? ['--inputs', JSON.stringify(given)] : []),
+        ...(endpointPorts?.controller ? ['--endpoint-port', String(endpointPorts.controller)] : []),
+      ],
+      ...(envOverride ? {env: envOverride} : {}),
+    }),
     readiness: {
       line: line => {
         try {
           const value = JSON.parse(line);
-          return value?.ready === true && typeof value.url === 'string' ? {url: value.url} : undefined;
+          return value?.ready === true && typeof value.url === 'string' ? {url: value.url, ...(value.endpoints ? {endpoints: value.endpoints} : {})} : undefined;
         } catch {
           return undefined;
         }
       },
-      probe: async ({url, signal}) => {
+      probe: async ({url, signal, dataDir}) => {
+        if (await leaking(dataDir)) return {ok: false, reason: 'Command failed: /opt/private-probe/bin/health --config /home/someone/.config/probe.json'};
         const response = await fetch(new URL('/health', url), {signal});
         return response.ok ? {ok: true} : {ok: false, reason: `health answered ${response.status}`};
       },
@@ -131,12 +173,73 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
           return health.scenario === name ? {outcome: 'passed'} : {outcome: 'failed', reason: `health reports ${health.scenario}`};
         },
       },
+      ...(leakyDoctor ? [{
+        id: 'leaky-check',
+        doctor: true,
+        /** @param {import('@jimmie-potts/app-verify').ProbeContext} context */
+        run: async ({dataDir}) => {
+          if (await leaking(dataDir)) throw new Error('Command failed: /opt/private-check/bin/check /home/someone/secret');
+          return {outcome: /** @type {const} */ ('passed')};
+        },
+      }] : []),
+      ...(inputs ? [{
+        id: 'inputs-seen',
+        doctor: true,
+        /** @param {import('@jimmie-potts/app-verify').ProbeContext} context */
+        run: async ({url, inputs: given, signal}) => {
+          const seen = await json(new URL('/inputs', url).href, signal);
+          return sameInputs(seen.seeded, given) && sameInputs(seen.launched, given) ? {outcome: /** @type {const} */ ('passed')} : {outcome: /** @type {const} */ ('failed'), reason: `the app saw ${JSON.stringify(seen)}`};
+        },
+      }] : []),
     ],
     browser: {modules: playwright},
     captureSteps: {
       'count-twice': {
         description: 'Two clicks advance the counter by two',
         run: async t => clicks(t, 2, 2),
+      },
+      'inputs-shown': {
+        description: 'The step and the application see the same run inputs',
+        run: inputsShown,
+      },
+      'fresh-inputs': {
+        description: 'After a fresh reseed, the application still runs with the run inputs',
+        fresh: true,
+        run: inputsShown,
+      },
+      'rebuild-during-step': {
+        description: 'Rewrites the file artifact under root while the step runs, as a rebuild in the same checkout would',
+        run: async t => {
+          await t.page.goto(t.url);
+          await writeFile(join(t.root, 'bundle.js'), 'rebuilt during the step\n');
+          await t.expect('the counter is shown', () => t.page.getByRole('status').isVisible());
+        },
+      },
+      ...(inputs?.feed ? {'fresh-paired': {
+        description: 'A fresh step pinned to the paired scenario',
+        scenario: 'paired',
+        fresh: true,
+        run: inputsShown,
+      }} : {}),
+      'leaky-assertion': {
+        description: 'Fails with an assertion error and a note that name a private path',
+        run: async t => {
+          await t.page.goto(t.url);
+          t.note('reading /srv/private/fixture.json');
+          await t.expect('the private fixture is readable', () => {
+            throw new Error('ENOENT: no such file or directory, open `/srv/private/fixture.json`');
+          });
+        },
+      },
+      'controller-answers': {
+        description: 'The controller endpoint the ready line announced answers',
+        run: async t => {
+          await t.page.goto(t.url);
+          await t.expect('the controller endpoint answers for this scenario', async () => {
+            const answer = await (await fetch(t.endpoints.controller, {signal: t.signal})).json();
+            if (answer.controller !== true || answer.scenario !== t.scenario) throw new Error(`the controller answered ${JSON.stringify(answer)}`);
+          });
+        },
       },
       'fresh-count': {
         description: 'From a fresh reference seed, two clicks show exactly Count: 2',

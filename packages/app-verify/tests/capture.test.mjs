@@ -528,6 +528,16 @@ test('a dead lock holder never blocks the next operation, a live one is named, a
     assert.deepEqual(lockedStop.result.cleanup.items.map(i => [i.kind, i.outcome]), [['lease-timer', 'removed'], ['unit', 'removed'], ['runtime-dir', 'removed']]);
     assert.deepEqual(units(box.app), []);
     await rm(join(proof, '.receipt.lock'), {recursive: true});
+    // The retry finds everything already gone and records the cleanup the refused stop did, not a partial one.
+    const retried = await box.cli(['stop', runId]);
+    assert.equal(retried.code, 0, retried.stderr);
+    assert.equal(retried.result.state, 'stopped');
+    assert.equal(retried.result.cleanup.result, 'clean');
+    assert.deepEqual(retried.result.cleanup.items.map(i => [i.kind, i.outcome]), [['lease-timer', 'removed'], ['unit', 'removed'], ['runtime-dir', 'removed']]);
+    const stoppedReceipt = await box.receipt(runId);
+    assert.equal(stoppedReceipt.state, 'stopped');
+    assert.equal(stoppedReceipt.cleanup.result, 'clean');
+    assert.deepEqual((await box.events(runId)).filter(e => e.event === 'stop-cleaned').map(e => e.cleanup), ['clean', 'clean'], 'each attempt recorded its cleanup before taking the lock');
     // A handoff interrupted mid-build, then stopped: the capture returns to the proof directory.
     const second = (await box.cli(['start', '--lease', '10'])).result.runId;
     assert.equal((await box.cli(['capture', second, 'count-twice'])).code, 0);
@@ -601,6 +611,56 @@ test('two captures raced against a dead receipt lock get distinct numbers', {ski
     const numbers = (await box.receipt(runId)).captures.map(c => c.n);
     assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8], 'every capture kept its own record');
     await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a capture fails, without driving the page, when the served artifact changed since start', {skip}, async () => {
+  const box = await sandbox({options: {artifact: {file: 'bundle.js'}}});
+  try {
+    await writeFile(join(box.repo, 'bundle.js'), 'build one\n');
+    const started = await box.cli(['start', '--lease', '10']);
+    assert.equal(started.code, 0, started.stderr);
+    const {runId} = started.result;
+    const recorded = (await box.receipt(runId)).build.artifactDigest;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+
+    // Another run's rebuild in the same checkout replaces what this run serves.
+    await writeFile(join(box.repo, 'bundle.js'), 'build two\n');
+    const drifted = await box.cli(['capture', runId, 'count-twice']);
+    assert.equal(drifted.code, 1);
+    assert.equal(drifted.result.outcome, 'failed');
+    assert.match(drifted.result.reason, new RegExp(`^the served artifact changed since start \\(recorded ${recorded}, served sha256:[0-9a-f]{64}\\)$`));
+    assert.equal(drifted.result.video, null, 'the page was never driven');
+    const fresh = await box.cli(['capture', runId, 'fresh-count']);
+    assert.equal(fresh.code, 1, 'a fresh reseed does not make another candidate this run\'s');
+    assert.match(fresh.result.reason, /^the served artifact changed since start/);
+    assert.deepEqual((await box.receipt(runId)).captures.map(c => [c.step, c.outcome]), [['count-twice', 'passed'], ['count-twice', 'failed'], ['fresh-count', 'failed']]);
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].artifact, 'changed');
+
+    // The same candidate on disk again: captures pass again.
+    await writeFile(join(box.repo, 'bundle.js'), 'build one\n');
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a supervised capture log, which handoff freezes, records assertion errors and notes redacted', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const leaky = await box.cli(['capture', runId, 'leaky-assertion']);
+    assert.equal(leaky.code, 1);
+    assert.equal(leaky.result.reason, 'assertion failed: the private fixture is readable: ENOENT: no such file or directory, open `<path>`');
+    assert.equal((await box.receipt(runId)).captures[0].reason, leaky.result.reason);
+    const log = JSON.parse(await readFile(leaky.result.log, 'utf8'));
+    assert.equal(log.assertions[0].error, 'ENOENT: no such file or directory, open `<path>`');
+    assert.match(log.notes[0], /^\S+ reading <path>$/);
+    assert.equal((await readFile(leaky.result.log, 'utf8')).includes('/srv/private'), false);
+    assert.equal((await box.cli(['stop', runId])).code, 0);
   } finally {
     await box.close();
   }

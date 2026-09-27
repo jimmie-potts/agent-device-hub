@@ -74,7 +74,42 @@ test('invalid receipts are refused with a reason for each problem', () => {
 });
 
 test('fields a later 1.x adds are ignored, so a newer receipt still reads', () => {
-  assert.deepEqual(validateReceipt({...running(), inputs: {hubPeer: 'http://127.0.0.1:41000/'}}), {ok: true});
+  const value = running();
+  value.owned.laterField = {any: 'shape'};
+  assert.deepEqual(validateReceipt({...value, laterField: [1, 2]}), {ok: true});
+});
+
+test('1.1 run inputs and extra endpoints validate when present and stay optional', () => {
+  const value = running();
+  value.inputs = {hubFeed: 'http://127.0.0.1:41000/api/monitor/v1/sessions', label: 'wall run'};
+  value.owned.endpoints = {controller: 'http://127.0.0.1:41999/'};
+  assert.deepEqual(validateReceipt(value), {ok: true});
+  assert.deepEqual(validateReceipt({...running(), inputs: {}}), {ok: true}, 'a plug-in that declares inputs records an empty map when none were given');
+  const cases = [
+    [v => (v.inputs = ['a']), /inputs: expected an object/],
+    [v => (v.inputs = {'1st': 'x'}), /inputs\.1st/],
+    [v => (v.inputs = {apiToken: 'x'}), /inputs\.apiToken: .*secret/],
+    [v => (v.inputs = {label: ''}), /inputs\.label/],
+    [v => (v.inputs = {label: 'x'.repeat(513)}), /inputs\.label/],
+    [v => (v.inputs = {label: 'caf\u00e9'}), /inputs\.label/],
+    [v => (v.inputs = {label: 'a\nb'}), /inputs\.label/],
+    [v => (v.inputs = {label: 7}), /inputs\.label/],
+    [v => (v.owned.endpoints = []), /owned\.endpoints: expected an object/],
+    [v => (v.owned.endpoints = {controller: 'http://192.168.1.4:41999/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:0/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {'bad name': 'http://127.0.0.1:41999/'}), /owned\.endpoints\.bad name/],
+    [v => (v.owned.endpoints = {controller: 'http://u:p@127.0.0.1:41999/'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/?token=x'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/#x'}), /owned\.endpoints\.controller/],
+    [v => (v.owned.endpoints = {controller: 'http://127.0.0.1:41999/api/'}), /owned\.endpoints\.controller/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const bad = running();
+    mutate(bad);
+    const result = validateReceipt(bad);
+    assert.equal(result.ok, false, String(pattern));
+    assert.match(result.errors.join('\n'), pattern);
+  }
 });
 
 test('a run id with pattern characters is refused, never compiled into a pattern', () => {
@@ -96,4 +131,39 @@ test('capture records name their scenario, and fresh is only ever true', () => {
   value.captures[0].fresh = true;
   value.captures[0].scenario = '';
   assert.match(validateReceipt(value).errors.join('\n'), /captures\[0\]\.scenario/);
+});
+
+test('recorded details keep root paths and URLs, replace other absolute paths and are capped', async () => {
+  const {redact} = await import('../dist/util.js');
+  const roots = {runtime: '/home/u/.local/state/app-verify', proof: '/home/u/repo/.local/evidence/verify'};
+  assert.equal(
+    redact("Command failed: /usr/bin/python3 /home/u/repo/scripts/seed.py --data=/home/u/.local/state/app-verify/r/data open '/etc/private' [/var/x] (/tmp/y) http://127.0.0.1:41705/api/x /home/u/repo/.local/evidence/verify/r/receipt.json", roots),
+    "Command failed: <path> <path> --data=/home/u/.local/state/app-verify/r/data open '<path>' [<path>] (<path>) http://127.0.0.1:41705/api/x /home/u/repo/.local/evidence/verify/r/receipt.json",
+  );
+  assert.equal(redact('/home/u/.local/state/app-verify-other/x', roots), '<path>', 'a sibling that only shares a prefix is outside the root');
+  assert.equal(redact('ratio 3/4 and a / b', roots), 'ratio 3/4 and a / b');
+  const cases = [
+    // A path after a colon, in backticks or after <, {, ; or |, and a file: URL outside the roots.
+    ['cwd:/home/someone/secret', 'cwd:<path>'],
+    ['open `/tmp/a` failed', 'open `<path>` failed'],
+    ['</srv/a> {/srv/b} x;/srv/c |/srv/d', '<<path>> {<path>} x;<path> |<path>'],
+    ['file:///home/someone/.ssh/key', 'file://<path>'],
+    ['file:///home/u/.local/state/app-verify/r/data/x', 'file:///home/u/.local/state/app-verify/r/data/x'],
+    // A trailing colon is not part of the path.
+    ['reads /srv/private/fixture.json: ENOENT', 'reads <path>: ENOENT'],
+    ['PATH=/a/bin:/b/bin', 'PATH=<path>'],
+    // `..` cannot climb out of a root.
+    ['/home/u/.local/state/app-verify/../../someone/secret', '<path>'],
+    ['/home/u/.local/state/app-verify/r/../r/data', '/home/u/.local/state/app-verify/r/../r/data'],
+    // URLs keep their paths and queries, including a / inside the query.
+    ['GET http://127.0.0.1:41705/api/x?y=/z answered 503', 'GET http://127.0.0.1:41705/api/x?y=/z answered 503'],
+    ['see https://example.invalid/docs/a (or /usr/share/doc)', 'see https://example.invalid/docs/a (or <path>)'],
+    // A bare route is indistinguishable from a file path, so it is replaced: plug-ins name full URLs.
+    ['GET /api/monitor/v1/sessions answered 503', 'GET <path> answered 503'],
+  ];
+  for (const [input, expected] of cases) assert.equal(redact(input, roots), expected, input);
+  const long = redact('x'.repeat(5000), roots);
+  assert.equal(long.length, 1000);
+  assert.ok(long.endsWith('...'));
+  assert.equal(redact('short', roots), 'short');
 });

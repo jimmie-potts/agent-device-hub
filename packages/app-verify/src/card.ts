@@ -15,12 +15,13 @@ function remaining(expiresAt: string, now: number): string {
   return `in ${hours ? `${hours} h ` : ''}${minutes % 60} min`;
 }
 
-/** The preview card: URL, run, candidate, scenario, expiry and how to extend or stop. */
+/** The preview card: URL, extra endpoints, run, candidate, scenario, expiry and how to extend or stop. */
 export function card(receipt: Receipt, command: string, now = Date.now()): string[] {
   const url = receipt.preview?.url ?? '(not serving)';
   const expires = receipt.preview ? `${receipt.preview.expiresAt.replace('T', ' ')} (${remaining(receipt.preview.expiresAt, now)})` : 'no lease';
   return [
     `Preview   ${url}   run ${receipt.runId}`,
+    ...Object.entries(receipt.owned.endpoints ?? {}).map(([name, endpoint]) => `Endpoint  ${name} ${endpoint}`),
     `Candidate ${candidateLabel(receipt.build)}   scenario ${receipt.scenario.name}`,
     `Expires   ${expires}`,
     `Extend    ${command} extend ${receipt.runId}`,
