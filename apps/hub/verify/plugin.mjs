@@ -1,8 +1,8 @@
 // The Hub adapter's plug-in for @jimmie-potts/app-verify (Hub #494). It runs the
 // real hub and B.U.N.N.Y. dashboard (apps/hub/verify/serve.mjs) with the fake
 // loopback controllers of apps/dashboard/tests/fixture.mjs and synthetic
-// lifecycle events. The feature map in apps/hub/README.md names each step's UI
-// entry, driver action, scenario and expected observation.
+// lifecycle events. The feature map in apps/hub/verify/README.md names each
+// step's UI entry, driver action, scenario and expected observation.
 import {randomBytes} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {readFile, stat, writeFile} from 'node:fs/promises';
@@ -37,8 +37,54 @@ async function control(t, path, body) {
   return response.json();
 }
 
-/** Commands that reached the fake controllers so far. @param {{dataDir: string, signal?: AbortSignal}} t */
+/** Commands the fakes parsed so far, with their content. @param {{dataDir: string, signal?: AbortSignal}} t */
 const writes = async t => /** @type {{id: string, integration: boolean, command: any}[]} */ (await control(t, '/writes'));
+
+/**
+ * Every command-shaped request any fake received, counted before an offline or
+ * uncertain answer, so a command sent to an unavailable device is still seen.
+ * @param {{dataDir: string, signal?: AbortSignal}} t
+ */
+const commands = async t => /** @type {{id: string, method: string, url: string}[]} */ (await control(t, '/commands'));
+
+/**
+ * The command count once it has held still for a second, so a late or
+ * debounced command is counted before a "no command" or "exactly one" check.
+ * @param {{dataDir: string, signal?: AbortSignal}} t
+ */
+async function settledCommands(t) {
+  let seen = (await commands(t)).length, still = 0;
+  for (let waited = 0; waited < 10000 && still < 4; waited += 250) {
+    await pause(250);
+    const now = (await commands(t)).length;
+    still = now === seen ? still + 1 : 0;
+    seen = now;
+  }
+  return seen;
+}
+
+/**
+ * The reference assertion that exactly one Pixoo brightness command with this
+ * value reached the fakes, and nothing else.
+ * @param {any} t @param {number} percent
+ */
+async function exactlyOneBrightness(t, percent) {
+  await t.expect(`the fake received exactly one brightness.set of ${percent}`, async () => {
+    await until(() => writes(t), list => list.length >= 1, 'no command reached the fake');
+    const count = await settledCommands(t);
+    if (count !== 1) throw new Error(`expected 1 command, saw ${count}`);
+    const [write] = await writes(t);
+    if (write.id !== 'pixel' || write.integration || JSON.stringify(write.command.command) !== JSON.stringify({kind: 'brightness.set', percent})) throw new Error(`unexpected command ${JSON.stringify(write)}`);
+  });
+}
+
+/** @param {any} t @param {string} name @param {number} expected */
+async function commandCount(t, name, expected) {
+  await t.expect(name, async () => {
+    const count = await settledCommands(t);
+    if (count !== expected) throw new Error(`expected ${expected} command${expected === 1 ? '' : 's'}, saw ${count}`);
+  });
+}
 
 /**
  * Wait until `check` holds, polling the fake. Throws with the last observation.
@@ -110,20 +156,36 @@ const scenario = (/** @type {Record<string, unknown>} */ definition, /** @type {
 });
 
 /**
+ * What the run serves and what it is built from. Sources are Git pathspecs: the
+ * hub and dashboard sources, the packages the hub imports, and the dashboard
+ * bundle's other inputs (its Places manifest and build script). The build
+ * check's test proves every esbuild input of the dashboard is covered.
+ */
+export const BUILD_SOURCES = [
+  ':(glob)apps/hub/src/**',
+  ':(glob)apps/dashboard/src/**',
+  ...['agent-state', 'contracts', 'lifecycle-contracts', 'mcp'].map(name => `:(glob)packages/${name}/src/**`),
+  'docs/skins/places.json',
+  'scripts/build-dashboard.mjs',
+];
+export const BUILD_OUTPUTS = ['apps/hub/dist/server.js', 'apps/hub/public/dashboard.js', 'packages/agent-state/dist/index.js', 'packages/contracts/dist/index.js', 'packages/lifecycle-contracts/dist/index.js', 'packages/mcp/dist/index.js'];
+
+/**
  * The newest tracked source must be older than the oldest build output the run
  * serves; otherwise the served candidate is not the checkout's revision.
+ * @param {string} [at] checkout root
  */
-async function buildCurrent() {
-  const sources = execFileSync('git', ['-C', root, 'ls-files', '-z', 'apps/hub/src', 'apps/dashboard/src', 'packages/*/src'], {encoding: 'utf8'}).split('\0').filter(Boolean);
+export async function buildCurrent(at = root) {
+  const sources = execFileSync('git', ['-C', at, 'ls-files', '-z', '--', ...BUILD_SOURCES], {encoding: 'utf8'}).split('\0').filter(Boolean);
+  if (sources.length === 0) return {outcome: /** @type {const} */ ('failed'), reason: 'no build sources matched; the check cannot vouch for the build'};
   let newest = 0, newestFile = '';
   for (const file of sources) {
-    const time = (await stat(join(root, file)).catch(() => undefined))?.mtimeMs ?? 0;
+    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs ?? 0;
     if (time > newest) [newest, newestFile] = [time, file];
   }
-  const outputs = ['apps/hub/dist/server.js', 'apps/hub/public/dashboard.js', 'packages/agent-state/dist/index.js', 'packages/contracts/dist/index.js', 'packages/lifecycle-contracts/dist/index.js', 'packages/mcp/dist/index.js'];
   let oldest = Infinity;
-  for (const file of outputs) {
-    const time = (await stat(join(root, file)).catch(() => undefined))?.mtimeMs;
+  for (const file of BUILD_OUTPUTS) {
+    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
     if (time === undefined) return {outcome: /** @type {const} */ ('failed'), reason: `${file} is missing; run npm run build`};
     oldest = Math.min(oldest, time);
   }
@@ -173,7 +235,7 @@ export default definePlugin({
     {id: 'lifecycle-events', kind: 'simulated', note: 'synthetic Codex session events posted with a run-generated credential'},
   ],
   checks: [
-    {id: 'build-current', doctor: true, run: buildCurrent},
+    {id: 'build-current', doctor: true, run: () => buildCurrent()},
     {
       id: 'no-installed-ports',
       doctor: true,
@@ -204,10 +266,7 @@ export default definePlugin({
         await t.expect('no run link leads to an installed service port', () => {
           if (reachable.length) throw new Error(`links to installed ports: ${reachable.join(', ')}`);
         });
-        await t.expect('read-only browsing sent no controller command', async () => {
-          const seen = await writes(t);
-          if (seen.length !== 0) throw new Error(`expected no command, saw ${JSON.stringify(seen)}`);
-        });
+        await commandCount(t, 'read-only browsing sent no controller command', 0);
       },
     },
     'command-reaches-fake': {
@@ -217,20 +276,11 @@ export default definePlugin({
       run: async t => {
         await open(t);
         const brightness = await openPixel(t);
-        await t.expect('opening the device sent no command', async () => {
-          if ((await writes(t)).length !== 0) throw new Error('a command was sent before the change');
-        });
+        await commandCount(t, 'opening the device sent no command', 0);
         await brightness.fill('30');
         await brightnessStatus(t).filter({hasText: /^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
         await formReady(t);
-        await t.expect('the fake received exactly one brightness.set of 30', async () => {
-          const seen = await until(() => writes(t), list => list.length >= 1, 'no command reached the fake');
-          await pause(500);
-          const settled = await writes(t);
-          if (settled.length !== 1) throw new Error(`expected 1 command, saw ${settled.length}`);
-          const [write] = settled;
-          if (write.id !== 'pixel' || write.integration || JSON.stringify(write.command.command) !== JSON.stringify({kind: 'brightness.set', percent: 30})) throw new Error(`unexpected command ${JSON.stringify(seen[0])}`);
-        });
+        await exactlyOneBrightness(t, 30);
         await t.expect('the page shows the refreshed value', async () => {
           if ((await brightness.inputValue()) !== '30') throw new Error(`slider shows ${await brightness.inputValue()}`);
         });
@@ -251,21 +301,14 @@ export default definePlugin({
           if (!(await brightness.isDisabled())) throw new Error('the slider is enabled after an uncertain result');
         });
         await pause(5500);
-        await t.expect('the uncertain command reached the fake once and was not retried', async () => {
-          const seen = await writes(t);
-          if (seen.length !== 1) throw new Error(`expected 1 command, saw ${seen.length}`);
-        });
+        await commandCount(t, 'the uncertain command reached the fake once and was not retried', 1);
         await control(t, '/uncertain', {on: false});
         await t.page.locator('form.edit').filter({visible: true}).getByRole('button', {name: 'Reload current values', exact: true}).click();
         await formReady(t);
         await t.expect('reload shows the controller value; the lost command never applied', async () => {
           if ((await brightness.inputValue()) !== '60') throw new Error(`slider shows ${await brightness.inputValue()}`);
         });
-        await pause(1000);
-        await t.expect('recovery replayed nothing', async () => {
-          const seen = await writes(t);
-          if (seen.length !== 1) throw new Error(`expected still 1 command, saw ${seen.length}`);
-        });
+        await commandCount(t, 'recovery replayed nothing', 1);
       },
     },
     'offline-recovers': {
@@ -282,26 +325,7 @@ export default definePlugin({
         await control(t, '/offline', {on: false});
         await t.expect('the device recovers without a reload', () => stale.waitFor({state: 'detached', timeout: 20000}));
         await t.page.getByLabel('Brightness (%)').filter({visible: true}).waitFor();
-        await t.expect('recovery sent no command', async () => {
-          const seen = await writes(t);
-          if (seen.length !== 0) throw new Error(`expected no command, saw ${seen.length}`);
-        });
-      },
-    },
-    'control-duplicate-command': {
-      description: 'Negative control: expects two commands from one brightness change and must fail',
-      scenario: 'lifecycle-basic',
-      fresh: true,
-      run: async t => {
-        await open(t);
-        const brightness = await openPixel(t);
-        await brightness.fill('30');
-        await brightnessStatus(t).filter({hasText: /^(Queued\. The device hasn’t received it yet\.|Sent to the device\.)/}).waitFor();
-        await pause(500);
-        await t.expect('the fake received two commands', async () => {
-          const seen = await writes(t);
-          if (seen.length !== 2) throw new Error(`expected 2 commands, saw ${seen.length}`);
-        });
+        await commandCount(t, 'recovery sent no command', 0);
       },
     },
     'control-installed-links': {

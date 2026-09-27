@@ -237,8 +237,13 @@ the distribution's lifetime; whether the distribution stays up when every
 terminal closes, and whether linger is enabled, are
 [ADR 0008](decisions/0008-runtime-hosting.md) matters that this contract does
 not settle. The E2 probe showed the unit's placement outside the calling
-session; survival past an actual session end is pending evidence, listed
-below and owed by the Hub adapter's tests. The core reads the output of
+session. The Hub adapter's `apps/hub/verify/tests/runs.test.mjs` supplies the
+stand-in for an agent's exit: the wrapper runs inside its own transient scope,
+and the scope is then stopped, killing everything the "agent" started. The
+run's unit stays under `user@<uid>.service/app.slice` and `doctor` still
+reports it `running` with health passed. What remains open is the user
+manager's own lifetime without linger and the WSL distribution's lifetime,
+listed below under ADR 0008. The core reads the output of
 `systemctl --user is-system-running`, not its exit status: `running` and
 `degraded` (common on WSL, where a failed browser scope degrades the manager
 and the command exits 1) mean a usable manager, as do `starting` and
@@ -334,7 +339,7 @@ owns the page it would appear on.
 | Occupied port | Never happens for the run's own WSL listener, which binds port 0. A fixed-port dependency the application insists on is a `start` failure naming the port, not a retry loop. A Windows process already on the chosen number is the pending host behavior below; `doctor`'s Windows reachability check is how it would show |
 | Stale build | `dirty` and `unknown` are labelled at `start`, in the card and in the receipt. Proof from a dirty run cannot be cited as a merge candidate's evidence |
 | Interrupted start | A unit that fails kills the rest of its control group; `start` reports `failed`, removes the runtime directory and stops the timer. A `start` interrupted before its `starting` receipt exists leaves nothing. Interrupted later, it leaves a `starting` receipt and whatever it had created; `doctor` lists that run and `stop` removes what exists, and because the timer precedes the unit an application is never left without a lease |
-| Agent exit | The unit and timer belong to the user manager, not the agent's session, so by construction the run keeps serving until expiry or `stop` and the next session finds it with `doctor`. An observed session end is pending evidence that the Hub adapter's tests must supply |
+| Agent exit | The unit and timer belong to the user manager, not the agent's session, so the run keeps serving until expiry or `stop`, and the next session finds it with `doctor`. `apps/hub/verify/tests/runs.test.mjs` proves it with a stand-in: stopping the transient scope the wrapper ran in leaves the run serving. The user manager's lifetime without linger stays with ADR 0008 |
 | Stale process identity | Unit name, `MainPID` and start timestamp must all match the receipt, otherwise `stale`; cleanup goes through the unit, never a PID |
 | Failed capture | Recorded as `failed` with the reason and whatever partial artifact exists; the run continues; the assertion failure is the result |
 | Unavailable browser tooling | `capture` reports `unavailable` naming the missing piece (Playwright module, Chromium build, ffmpeg); `start`, `handoff`, `extend` and `stop` still work |
@@ -434,13 +439,15 @@ Pending host behavior, left explicit rather than inferred:
   behavior is untested; `doctor` therefore includes a Windows reachability
   check through `curl.exe` when interop is available and reports `skipped`
   when it is not.
-- Survival past an actual end of the starting session, and the user manager's
-  lifetime without linger (`Linger=no` on this PC); today the manager is wanted
-  by the WSL distribution's implicit login session, so the distribution's
-  lifetime with no terminal open bounds every lease (ADR 0008 trial pending).
+- The user manager's lifetime without linger (`Linger=no` on this PC). The
+  run's independence from the starting session's processes is covered by the
+  Hub's scope-stop test, but today the manager is wanted by the WSL
+  distribution's implicit login session. So the distribution's lifetime with no
+  terminal open bounds every lease (ADR 0008 trial pending).
 - CI: Depot's Ubuntu runner is not booted with systemd (PR #552). CI runs
-  the core's receipt, supervisor-refusal and unsupervised capture tests
-  (through `runCaptureStep`); the lifecycle tests skip there with a printed
+  the core's receipt, supervisor-refusal, lock and unsupervised capture tests
+  (through `runCaptureStep`), and the Hub's `steps.test.mjs` and
+  `build.test.mjs`. The lifecycle and Hub run tests skip there with a printed
   reason and run on this PC.
 - Codex sandbox: this session ran from Claude Code, where Windows interop and
   `systemd-run` work. Earlier evidence shows Codex's sandbox refusing Windows

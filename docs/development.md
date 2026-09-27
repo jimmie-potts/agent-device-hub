@@ -650,7 +650,10 @@ Hub #6 uses Node 24 and React/TypeScript. Run `npm ci`, `npm run build`,
 and `npm run test:dashboard:browser`. Browser checks use Playwright Chromium,
 synthetic state and fake controllers. The dashboard CI job runs these checks;
 shared hub, contract/state, MCP and workflow jobs remain required. No check
-installs a personal service, opens live state or contacts hardware.
+installs a personal service, opens live state or contacts hardware. A change
+to `apps/dashboard/tests/fixture.mjs`, to a fake it serves, or to UI that a
+[Hub verification](../apps/hub/verify/README.md) step drives also runs
+`npm run test:hub:verify`; the App verification CI job runs it.
 
 Hub #179 extends `npm run test:hub`, `npm run test:dashboard:browser` and
 `npm run test:hub:package` with disposable owner-launch and browser-session
@@ -1107,8 +1110,13 @@ entry point is `npm run -s verify -- <operation>` after `npm run build`, and
 its README keeps the feature map of steps, UI entries, driver actions,
 scenarios and expected observations. Run `npm run test:hub:verify` with the
 checks above and the Standalone hub and Dashboard checks, because the adapter
-reuses `apps/dashboard/tests/fixture.mjs`. Its unsupervised step test judges
-every Hub step, including the two `control-*` negative controls, in the App
-verification CI job; its run tests use real user units and skip there with
-the printed reason. The Nanoleaf and Pixoo adapters document theirs in their
-own repositories.
+reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
+
+- its unsupervised step test judges the four reference steps on the correct
+  app and under each seeded fault (`write-on-read`, `duplicate-forward`,
+  `replay-on-recovery`), plus the two `control-*` steps;
+- its build test checks the build-freshness sources against esbuild's
+  dashboard inputs;
+- its run tests use real user units and skip there with the printed reason.
+
+The Nanoleaf and Pixoo adapters document theirs in their own repositories.

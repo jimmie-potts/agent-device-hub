@@ -388,9 +388,10 @@ missing addresses), the widget catalog and home placement, and the token
 boundary of the authored styles.
 The same fixture, `tests/fixture.mjs`, is what a
 [Hub verification run](../hub/verify/README.md) serves. Its optional `token`,
-`reader`, `port` and `directory` let a run use run-generated credentials, its
-recorded port and a short private directory; the browser suites keep the
-defaults. A change to the fixture's fakes or to the UI a verification step
+`reader`, `port`, `directory`, `editorLinks` and `endpointFor` let a run use
+run-generated credentials, its recorded port, a short private directory, no
+editor links to installed services, and a stand-in in front of a fake
+controller for its fault scenarios. The browser suites keep the defaults. A change to the fixture's fakes or to the UI a verification step
 drives updates that step and its feature map together.
 
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures

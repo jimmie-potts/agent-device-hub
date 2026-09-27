@@ -103,15 +103,29 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.deepEqual(receipt.build, {sourceRevision: head, dirty, artifactDigest: 'sha256:' + createHash('sha256').update(bundle).digest('hex'), version: JSON.parse(await readFile(join(root, 'apps/hub/package.json'), 'utf8')).version});
     assert.deepEqual(receipt.checks.map(c => [c.id, c.outcome]), [['readiness', 'passed'], ['build-current', 'passed'], ['no-installed-ports', 'passed'], ['windows-loopback', 'skipped']]);
     assert.deepEqual(receipt.components.filter(c => c.kind === 'simulated').map(c => c.id), ['wall-controller', 'pixel-controller', 'lifecycle-events']);
+    // Every credential the run ever held: fresh steps and resets rotate the token.
+    const secrets = new Set([await r.token(runId), (await readFile(join(r.base, 's', runId, 'data/reader-token'), 'utf8')).trim()]);
     const token = await r.token(runId);
     assert.equal((await stat(join(r.base, 's', runId, 'data/api-token'))).mode & 0o777, 0o600);
+
+    const help = await r.verify('help');
+    assert.equal(help.code, 0);
+    assert.deepEqual(Object.keys(help.result.scenarios).sort(), ['control-installed-links', 'control-startup-fails', 'lifecycle-basic', 'pixel-offline']);
+    assert.deepEqual(Object.keys(help.result.steps).sort(), ['command-reaches-fake', 'control-installed-links', 'control-missing-session', 'offline-recovers', 'task-appears', 'uncertain-no-replay']);
 
     const command = await r.verify('capture', runId, 'command-reaches-fake');
     assert.equal(command.code, 0, command.stderr);
     assert.equal(command.result.outcome, 'passed');
-    const control = await r.verify('capture', runId, 'control-duplicate-command');
+    secrets.add(await r.token(runId));
+    const control = await r.verify('capture', runId, 'control-missing-session');
     assert.equal(control.code, 1);
     assert.equal(control.result.outcome, 'failed');
+    secrets.add(await r.token(runId));
+
+    const extended = await r.verify('extend', runId, '--lease', '20');
+    assert.equal(extended.code, 0, extended.stderr);
+    assert.equal(extended.result.leaseTimer, `app-verify-${runId}-lease-2.timer`);
+    assert.equal((await r.receipt(runId)).preview.expiresAt, extended.result.expiresAt);
 
     const handoff = await r.verify('handoff', runId, '--reset', 'lifecycle-basic');
     assert.equal(handoff.code, 0, handoff.stderr);
@@ -121,6 +135,7 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.equal(new URL(handoff.result.url).search + new URL(handoff.result.url).hash, '', 'the preview URL carries no code or token');
     const resetToken = await r.token(runId);
     assert.notEqual(resetToken, token, 'the reset seeds a new run-generated credential');
+    secrets.add(resetToken);
 
     // The owner's view: a fresh browser opens the card's URL and is signed in by trusted-loopback.
     const context = await browser.newContext({viewport: {width: 1280, height: 900}});
@@ -132,8 +147,8 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     await page.getByLabel('Brightness (%)').filter({visible: true}).waitFor();
     await context.close();
     const {port: controlPort} = JSON.parse(await readFile(join(r.base, 's', runId, 'data/control.json'), 'utf8'));
-    const writes = await (await fetch(`http://127.0.0.1:${controlPort}/writes`, {headers: {authorization: `Bearer ${resetToken}`}})).json();
-    assert.deepEqual(writes, [], 'exploring the reset preview sent no command');
+    const commands = await (await fetch(`http://127.0.0.1:${controlPort}/commands`, {headers: {authorization: `Bearer ${resetToken}`}})).json();
+    assert.deepEqual(commands, [], 'exploring the reset preview sent no command');
 
     const doctor = await r.verify('doctor', runId);
     const [row] = doctor.result.runs;
@@ -143,21 +158,33 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.ok(row.listener.ports.length >= 4, 'the unit also holds the fake controllers and the control listener, all inside its cgroup');
     assert.deepEqual(row.checks.map(c => c.outcome), ['passed', 'passed']);
 
-    const stopped = await r.verify('stop', runId);
-    assert.equal(stopped.result.cleanup.result, 'clean');
+    // restart: a new run naming its predecessor, same candidate unless the tree changed meanwhile.
+    const restarted = await r.verify('restart', runId);
+    assert.equal(restarted.code, 0, restarted.stderr);
+    r.track(restarted.result.runId);
+    assert.equal(restarted.result.restarts, runId);
+    assert.equal(restarted.result.continuity, dirty ? 'different-candidate' : 'same-candidate');
+    assert.equal((await r.receipt(restarted.result.runId)).restarts, runId);
+    assert.equal((await r.receipt(runId)).state, 'stopped');
     assert.equal(existsSync(join(r.base, 's', runId)), false, 'the runtime directory and its credentials are gone');
     assert.ok(existsSync(join(r.base, 'p', runId, 'verified/SHA256SUMS')), 'the frozen proof survives the runtime cleanup');
+    secrets.add(await r.token(restarted.result.runId));
+    const stopped = await r.verify('stop', restarted.result.runId);
+    assert.equal(stopped.result.cleanup.result, 'clean');
 
     // No run credential appears in any proof file or in anything an operation printed.
-    for (const file of await files(join(r.base, 'p', runId))) {
-      const bytes = await readFile(file).catch(async error => {
-        if (error.code !== 'EACCES') throw error;
-        await chmod(file, 0o400);
-        return readFile(file);
-      });
-      for (const secret of [token, resetToken]) assert.equal(bytes.includes(secret), false, `${file} holds no credential`);
+    for (const id of [runId, restarted.result.runId]) {
+      for (const file of await files(join(r.base, 'p', id))) {
+        const bytes = await readFile(file).catch(async error => {
+          if (error.code !== 'EACCES') throw error;
+          await chmod(file, 0o400);
+          return readFile(file);
+        });
+        for (const secret of secrets) assert.equal(bytes.includes(secret), false, `${file} holds no credential`);
+      }
     }
-    for (const output of r.outputs) for (const secret of [token, resetToken]) assert.equal(output.includes(secret), false, 'no operation printed a credential');
+    for (const output of r.outputs) for (const secret of secrets) assert.equal(output.includes(secret), false, 'no operation printed a credential');
+    assert.ok(secrets.size >= 5, 'the rotated tokens were all collected');
   } finally {
     await browser.close();
     await r.close();

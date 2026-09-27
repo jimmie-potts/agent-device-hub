@@ -16,17 +16,34 @@ run's private data directory; `stop` deletes them with the runtime directory.
 
 ## Entry points
 
-Use Node 24 from the repository root. `start` serves the built candidate and
-does not build: run `npm run build` first. The `build-current` check fails the
-start when a tracked source under `apps/hub/src`, `apps/dashboard/src` or
-`packages/*/src` is newer than the build it would serve. Use `npm run -s`, so
-stdout carries only the JSON result line.
+Prerequisites: Linux with a `systemd --user` manager, and the repository's
+Chromium (`npx playwright install chromium`). Use Node 24 from the repository
+root, with `npm run -s` so stdout carries only the JSON result line.
+
+`start` serves the built candidate and does not build, so run `npm run build`
+first. The `build-current` check fails the start when a tracked build source
+is newer than the build it would serve. The sources are `apps/hub/src`,
+`apps/dashboard/src`, the packages the hub imports (`agent-state`,
+`contracts`, `lifecycle-contracts`, `mcp`), `docs/skins/places.json` and
+`scripts/build-dashboard.mjs`. `tests/build.test.mjs` proves that every input
+esbuild bundles into the dashboard is among them.
+
+Capture only the reference steps before `handoff`, so the verified set holds
+only passed captures; the #496 delivery preflight rejects any other. CI's
+`steps.test.mjs` already proves that the `control-*` steps fail and that the
+reference steps fail on known-broken behavior. If you do run controls on a
+handed-over run, their fresh reseeds change the preview: finish with
+`npm run -s verify -- scenario <run-id> lifecycle-basic` before the owner
+opens it.
 
 ```bash
 npm run build
 npm run -s verify -- help
 npm run -s verify -- start --scenario lifecycle-basic
+npm run -s verify -- capture <run-id> task-appears
 npm run -s verify -- capture <run-id> command-reaches-fake
+npm run -s verify -- capture <run-id> uncertain-no-replay
+npm run -s verify -- capture <run-id> offline-recovers
 npm run -s verify -- handoff <run-id> --reset lifecycle-basic
 npm run -s verify -- doctor
 npm run -s verify -- stop <run-id>
@@ -47,8 +64,11 @@ qualification.
 
 Scenarios are seeded by [`plugin.mjs`](plugin.mjs) and served by
 [`serve.mjs`](serve.mjs). Steps marked fresh reseed their scenario first. The
-fake's observations come from the run's control listener (`GET /writes`),
-which only the run's API token can read.
+fakes' observations come from the run's control listener, which only the
+run's API token can read. `GET /commands` lists every command-shaped request
+a fake received, including those it refused while offline or uncertain.
+`GET /writes` gives the parsed commands. Count checks wait until the count has
+held still for a second, so a late command is counted.
 
 | Step | UI entry | Driver action | Scenario | Expected observation |
 | --- | --- | --- | --- | --- |
@@ -56,15 +76,27 @@ which only the run's API token can read.
 | `command-reaches-fake` | `pixel` component, Brightness slider | Set brightness to 30 | `lifecycle-basic`, fresh | Queued or Sent status; exactly one `brightness.set` of 30 reached the Pixoo fake; the slider shows 30 |
 | `uncertain-no-replay` | `pixel` component, Brightness slider, Reload current values | Make the fake drop the response; set 25; wait 5.5 s; restore; reload | `lifecycle-basic`, fresh | "Result unknown … (uncertain-result)"; the form stays locked; one command, never retried; reload shows 60 and sends nothing |
 | `offline-recovers` | `pixel` component | Open while the fake answers 503; restore it | `pixel-offline`, fresh | "Stale / unavailable", then recovery without a reload; no command |
-| `control-duplicate-command` | `pixel` component, Brightness slider | Set 30 | `lifecycle-basic`, fresh | Negative control: expects two commands, sees one, reports `failed` |
 | `control-installed-links` | `wall` component page | Open it with a seeded editor link to the installed wall | `control-installed-links`, fresh | Negative control: the installed-port link check catches the link and reports `failed` |
 | `control-missing-session` | Home | Open the preview | `lifecycle-basic` | Negative control: expects an unseeded session, reports `failed` |
 
+The reference steps must also fail on known-broken behavior. A scenario
+seed's `fault` field selects one in `serve.mjs`. Only a seed file selects a
+fault, never the environment, and an unknown fault refuses to start. CI's
+`steps.test.mjs` judges the unchanged reference steps under each:
+
+| Fault | Broken behavior | Reference step and the assertion that fails |
+| --- | --- | --- |
+| `write-on-read` | An unsolicited brightness command goes through the hub shortly after the Pixoo fake is first read | `task-appears`: "read-only browsing sent no controller command" |
+| `duplicate-forward` | A loopback relay in front of the Pixoo fake forwards every command twice | `command-reaches-fake`: "the fake received exactly one brightness.set of 30"; `uncertain-no-replay`: "the uncertain command reached the fake once and was not retried" |
+| `replay-on-recovery` | Clearing an offline or uncertain Pixoo re-sends a brightness command through the hub | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay`: "recovery replayed nothing" |
+
 Runs serve no per-device editor links, so a preview never sends the owner to
-an installed service's port. The dashboard's own Places navigation still
-links to the installed B.U.N.N.Y. and wall (`docs/skins/places.json`),
-because that is product UI. The link check excludes it, and a preview reader
-should treat those two links as leaving the run.
+an installed service's port. The dashboard's own Places navigation is product
+UI (`docs/skins/places.json`). Its only anchor is "Wall · Local", which leads
+to the installed wall at `http://127.0.0.1:8765/`; "B.U.N.N.Y. · Local"
+renders as the current place, with no link. The link check excludes the
+Places navigation, and a preview reader should treat "Wall · Local" as leaving
+the run. Hub #495 owns pointing preview Places links at the paired runs.
 
 The `control-startup-fails` scenario gives the hub an invalid
 `browserAccess`, so `start` reports `failed` with no unit, timer or runtime
@@ -82,17 +114,25 @@ When the UI or a fake changes, update the step, this map and the
 
 `npm run test:hub:verify` builds, then runs [`tests/`](tests):
 
-- `steps.test.mjs` judges every step with `runCaptureStep` against a freshly
-  seeded `serve.mjs` per step, without a supervisor: the four reference steps
-  pass, and both controls fail for the stated reason. It needs only Chromium
-  and runs in CI.
+- `steps.test.mjs` judges steps with `runCaptureStep` against a freshly
+  seeded `serve.mjs` per step, without a supervisor. The four reference steps
+  pass on the correct app and fail at their named assertions under each
+  fault above; the two `control-*` steps fail for their stated reasons; and no
+  run credential appears in any of their logs. It needs only Chromium and runs
+  in CI.
+- `build.test.mjs` shows that a newer package source, Places manifest or
+  dashboard build script fails `build-current`, and that every esbuild input
+  of the dashboard is a build source. It runs in CI.
 - `runs.test.mjs` drives the documented wrapper against real transient user
   units, with private roots:
-  - start with build identity and checks;
+  - start with build identity and checks, and `help`;
   - a stateful capture and a failing control;
+  - `extend`, whose new lease timer the receipt records;
   - handoff with a reset whose preview a fresh browser opens signed in,
     without sending a command;
-  - no run credential in any proof file or printed output;
+  - `restart`, naming its predecessor and its continuity;
+  - no run credential, including each rotated token, in any proof file or
+    printed output;
   - two concurrent runs, where reseeding one leaves the other's sessions and
     process unchanged;
   - a hub that refuses to start;
