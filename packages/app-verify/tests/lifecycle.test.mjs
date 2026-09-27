@@ -674,3 +674,28 @@ test('a failure detail keeps paths inside the two roots and replaces every other
     await box.close();
   }
 });
+
+test('doctor prints health and check reasons redacted, and the core names a failed artifact route by its full URL', {skip}, async () => {
+  const box = await sandbox({options: {leakyDoctor: true}});
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const {writeFile} = await import('node:fs/promises');
+    await writeFile(join(box.stateRoot, runId, 'data', 'leak'), '');
+    const doctor = await box.cli(['doctor', runId]);
+    assert.equal(doctor.code, 0, doctor.stderr);
+    const [row] = doctor.result.runs;
+    assert.deepEqual(row.health, {id: 'health', outcome: 'failed', reason: 'Command failed: <path> --config <path>'});
+    assert.deepEqual(row.checks.find(c => c.id === 'leaky-check'), {id: 'leaky-check', outcome: 'failed', reason: 'Command failed: <path> <path>'});
+    assert.equal(/\/opt\/private|\/home\/someone/.test(doctor.stdout + doctor.stderr), false, 'doctor prints no private path');
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+
+    // The core's own artifact detail keeps the route, as a full URL.
+    const missing = await box.cli(['start'], {entry: await box.wrapper(box.repo, 'verify-missing-route.mjs', {artifact: {route: '/missing.js'}})});
+    assert.equal(missing.code, 1);
+    assert.equal(missing.result.cause, 'artifact-unreadable');
+    assert.match(missing.result.detail, /^artifact route http:\/\/127\.0\.0\.1:\d+\/missing\.js answered 404$/);
+    assert.deepEqual(units(box.app), []);
+  } finally {
+    await box.close();
+  }
+});

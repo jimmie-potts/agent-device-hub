@@ -292,10 +292,16 @@ async function drive(plugin: AppPlugin, step: CaptureStep, target: Target, dir: 
   }
 }
 
-async function writeLog(dir: string, fields: Record<string, unknown>, finished: Finished): Promise<void> {
+/**
+ * Write the assertion log. With `roots` (a supervised capture, whose log
+ * handoff freezes as proof), assertion errors, notes and the reason are
+ * redacted as the receipt's reason is.
+ */
+async function writeLog(dir: string, fields: Record<string, unknown>, finished: Finished, roots?: {runtime: string; proof: string}): Promise<void> {
+  const clean = (text: string) => (roots ? redact(text, roots) : text);
   await writeFile(join(dir, 'assertions.json'), JSON.stringify({
-    ...fields, outcome: finished.outcome, ...(finished.reason ? {reason: finished.reason} : {}),
-    assertions: finished.assertions, notes: finished.notes, attachments: finished.attachments, partialArtifacts: finished.partial,
+    ...fields, outcome: finished.outcome, ...(finished.reason ? {reason: clean(finished.reason)} : {}),
+    assertions: finished.assertions.map(a => (a.error === undefined ? a : {...a, error: clean(a.error)})), notes: finished.notes.map(clean), attachments: finished.attachments, partialArtifacts: finished.partial,
     finishedAt: iso(),
   }, null, 2) + '\n');
 }
@@ -401,7 +407,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   // The reason is recorded in the receipt and events: no absolute path outside the two roots.
   if (finished.reason) finished.reason = redact(finished.reason, run.roots);
   const finishedAt = iso();
-  await writeLog(dir, {runId: run.runId, n: record.n, step: stepName, description: step.description, scenario: receipt.scenario.name, candidate: receipt.build, ...(fresh ? {fresh} : {}), supervised: true, startedAt: record.startedAt}, finished);
+  await writeLog(dir, {runId: run.runId, n: record.n, step: stepName, description: step.description, scenario: receipt.scenario.name, candidate: receipt.build, ...(fresh ? {fresh} : {}), supervised: true, startedAt: record.startedAt}, finished, run.roots);
   const final: CaptureRecord = {
     ...record,
     outcome: finished.outcome,

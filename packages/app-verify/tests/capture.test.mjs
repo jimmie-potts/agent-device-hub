@@ -647,3 +647,21 @@ test('a capture fails, without driving the page, when the served artifact change
     await box.close();
   }
 });
+
+test('a supervised capture log, which handoff freezes, records assertion errors and notes redacted', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const leaky = await box.cli(['capture', runId, 'leaky-assertion']);
+    assert.equal(leaky.code, 1);
+    assert.equal(leaky.result.reason, 'assertion failed: the private fixture is readable: ENOENT: no such file or directory, open `<path>`');
+    assert.equal((await box.receipt(runId)).captures[0].reason, leaky.result.reason);
+    const log = JSON.parse(await readFile(leaky.result.log, 'utf8'));
+    assert.equal(log.assertions[0].error, 'ENOENT: no such file or directory, open `<path>`');
+    assert.match(log.notes[0], /^\S+ reading <path>$/);
+    assert.equal((await readFile(leaky.result.log, 'utf8')).includes('/srv/private'), false);
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
