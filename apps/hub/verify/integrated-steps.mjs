@@ -233,23 +233,24 @@ export const integratedSteps = {
         await t.page.getByRole('heading', {name: s.title, exact: true}).waitFor({timeout: 15000});
         await t.page.getByText('Question · continuing', {exact: true}).first().waitFor({timeout: 15000});
       });
+      // Hold each page briefly so the one video shows every run's page, and keep one screenshot per app.
+      await pause(1500);
+      await t.screenshot('hub');
       await consumersCurrent(t, 'both consumers read the owner\'s revision with the new session');
       await t.page.goto(wall);
       await t.expect('the wall lists the session as a question on a Line', async () => {
-        // The wall page keeps its model in the global `state` (codex-nanoleaf bridge/wall.html).
-        await t.page.waitForFunction((/** @type {string} */ title) => {
-          const wall = /** @type {any} */ (globalThis).state;
-          return wall?.tasks?.some((/** @type {any} */ task) => (task.title ?? task.name) === title && task.line != null);
-        }, s.title, {timeout: 15000});
-        const status = await t.page.evaluate((/** @type {string} */ title) => {
-          const task = /** @type {any} */ (globalThis).state.tasks.find((/** @type {any} */ item) => (item.title ?? item.name) === title);
-          return /** @type {HTMLElement | null} */ (document.querySelector(`#taskList .task[data-task="${CSS.escape(task.id)}"] .badge`))?.dataset.status ?? null;
-        }, s.title);
-        if (status !== 'question') throw new Error(`the wall lists status ${status}`);
+        // The wall's task list (codex-nanoleaf bridge/wall.html): the title, a status badge and the Line it was placed on.
+        const row = t.page.locator('#taskList .task').filter({has: t.page.locator('.task-title', {hasText: s.title})});
+        await row.locator('.badge[data-status="question"]').waitFor({timeout: 15000});
+        await row.locator('.task-placement .line-badge').filter({hasText: /\d+$/}).waitFor({timeout: 15000});
       });
+      await pause(1500);
+      await t.screenshot('wall');
       await t.page.goto(pixoo);
       await t.page.getByRole('navigation', {name: 'Controller views'}).getByRole('button', {name: 'Monitor', exact: true}).click({timeout: 15000});
       await t.expect('the Pixoo Monitor lists the session', () => t.page.getByRole('heading', {name: s.title, exact: true}).waitFor({timeout: 15000}));
+      await pause(1500);
+      await t.screenshot('pixoo');
       await t.page.goto(t.url);
       await t.expect('back on the Hub the session is unchanged', () => t.page.getByRole('heading', {name: s.title, exact: true}).waitFor({timeout: 15000}));
       await t.expect('showing the session sent no command to either writer', async () => {
@@ -309,19 +310,20 @@ export const integratedSteps = {
     run: lossStep(true),
   },
   'control-second-owner': {
-    description: 'Negative control: expects the paired Pixoo to accept a lifecycle event posted to it directly, as a second owner would; a Hub consumer refuses it',
+    description: 'Negative control: a lifecycle event posted straight to the paired Pixoo, bypassing the Hub, is expected to show on its Monitor as a second owner\'s session would; a Hub consumer shows only the Hub\'s sessions',
     scenario: 'integrated',
     timeoutMs: 45000,
     run: async t => {
       const pixoo = t.inputs['pixoo-preview'];
       const s = session();
       const event = {apiVersion: '1.1', identity: s.identity, turn: {status: 'known', id: `turn-${s.nonce}`}, parent: {status: 'top-level'}, ordering: {status: 'known', epoch: `direct-${s.nonce}`, sequence: 0}, observedAtMs: Date.now(), title: {value: s.title, source: 'provider'}, event: {kind: 'session.started'}};
-      const response = await fetch(new URL('api/monitor/v1/events', pixoo), {method: 'POST', headers: {'content-type': 'application/json', 'x-pixoo-request': '1'}, body: JSON.stringify(event), signal: AbortSignal.timeout(5000)});
-      t.note(`a direct event to the Pixoo run answered ${response.status}`);
+      // The strongest Pixoo credential this composition holds is the one the Hub presents to Pixoo's controller API.
+      const token = (await readFile(join(t.runtimeDir, PAIRING.files.hub.controller('pixoo')), 'utf8')).trim();
+      const response = await fetch(new URL('api/monitor/v1/events', pixoo), {method: 'POST', headers: {authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-pixoo-request': '1'}, body: JSON.stringify(event), signal: AbortSignal.timeout(5000)});
+      t.note(`a lifecycle event posted straight to the Pixoo run answered ${response.status}`);
       await t.page.goto(pixoo);
-      await t.expect('the Pixoo run accepted a lifecycle event directly, as a second owner would', () => {
-        if (!response.ok) throw new Error(`the Pixoo run refused it (${response.status})`);
-      });
+      await t.page.getByRole('navigation', {name: 'Controller views'}).getByRole('button', {name: 'Monitor', exact: true}).click({timeout: 15000});
+      await t.expect('the Pixoo Monitor lists a session the Hub never saw, as a second owner\'s would', () => t.page.getByRole('heading', {name: s.title, exact: true}).waitFor({timeout: 5000}));
     },
   },
 };

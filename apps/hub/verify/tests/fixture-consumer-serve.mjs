@@ -24,7 +24,7 @@ snapshot.capabilities = {power: {supported: true}, brightness: {supported: true,
 const pixooIntegration = JSON.parse(await readFile('apps/hub/fixtures/pixoo-integration.json', 'utf8')).snapshot;
 pixooIntegration.identity = identity;
 const writer = {};
-const feed = {connection: 'unavailable', revision: null, ownerId: null, error: null, receivedAt: 0};
+const feed = {connection: 'unavailable', revision: null, ownerId: null, error: null, receivedAt: 0, titles: []};
 
 const send = (res, status, value) => {
   res.writeHead(status, {'content-type': 'application/json'});
@@ -35,16 +35,18 @@ const state = () => {
   const view = {connection, revision: feed.revision, ownerId: feed.ownerId, error: feed.error, receivedAt: feed.receivedAt ? Math.floor(feed.receivedAt / 1000) : null};
   return scenario.kind === 'nanoleaf'
     ? {apiVersion: 'wall-verify/1', scenario: scenario.name, feed: {source: 'shared', ...view}, integration: {applied: writer['integration.applied'] ?? 0, queued: 0, failed: 0}}
-    : {apiVersion: 'pixoo-verify/1', scenario: scenario.name, feed: view, writer};
+    : {ownerId: feed.ownerId, connection, snapshot: feed.revision === null ? null : {revision: feed.revision}, writer};
 };
 
 const main = createServer((req, res) => {
   const path = new URL(req.url, 'http://127.0.0.1').pathname;
   if (path === '/health') return send(res, 200, {ok: true});
-  if (path === (scenario.kind === 'nanoleaf' ? '/verify/state' : '/api/verify/state')) return send(res, 200, state());
+  if (path === (scenario.kind === 'nanoleaf' ? '/verify/state' : '/api/integration/v1/sessions')) return send(res, 200, state());
   if (path === '/') {
     res.writeHead(200, {'content-type': 'text/html'});
-    return res.end(`<!doctype html><title>Stand-in</title><h1>Stand-in ${scenario.kind} consumer</h1>`);
+    // Like the Pixoo page's Monitor, the sessions the stand-in last read from the Hub, as headings.
+    const escape = text => String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+    return res.end(`<!doctype html><title>Stand-in</title><h1>Stand-in ${scenario.kind} consumer</h1><nav aria-label="Controller views"><button type="button">Monitor</button></nav>${feed.titles.map(title => `<h3>${escape(title)}</h3>`).join('')}`);
   }
   send(res, 404, {error: 'not-found'});
 });
@@ -83,7 +85,7 @@ async function poll() {
       feed.error = 'owner-mismatch';
       return;
     }
-    Object.assign(feed, {revision: value.snapshot.revision, ownerId: value.ownerId, error: null, receivedAt: Date.now()});
+    Object.assign(feed, {revision: value.snapshot.revision, ownerId: value.ownerId, error: null, receivedAt: Date.now(), titles: value.snapshot.sessions.map(s => s.label ?? s.title?.value).filter(Boolean)});
   } catch {
     feed.error = 'unreachable';
   }

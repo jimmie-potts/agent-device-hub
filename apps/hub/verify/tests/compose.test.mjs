@@ -185,7 +185,7 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     assert.equal(spawnSync('systemctl', ['--user', 'show', `app-verify-${c.services[1].runId}.service`, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim(), 'running', 'the orchestrator always thaws');
     const owner = await w.run('capture', id, 'control-second-owner');
     assert.equal(owner.code, 1, 'the second-owner control must fail');
-    assert.match(owner.result.reason, /^assertion failed: the Pixoo run accepted a lifecycle event directly/);
+    assert.match(owner.result.reason, /^assertion failed: the Pixoo Monitor lists a session the Hub never saw/);
 
     // Extend and handoff apply to all three runs.
     const before = (await w.composition(id)).services.map(s => s.expiresAt);
@@ -347,5 +347,27 @@ test('an expired composition reports expired, stops with each run expired, and r
     assert.equal((await w.run('stop', restarted.result.compositionId)).code, 0);
   } finally {
     await w.close();
+  }
+});
+
+test('the Hub cannot start directly in integrated: its pairing credentials exist only after a start', {skip, timeout: 120000}, async () => {
+  const base = await realpath(await mkdtemp(join(shortTmp(), 'hc-')));
+  const env = {...process.env, APP_VERIFY_STATE_ROOT: join(base, 's'), APP_VERIFY_PROOF_ROOT: join(base, 'p'), APP_VERIFY_WINDOWS_CHECK: 'off'};
+  let runId;
+  try {
+    const url = 'http://127.0.0.1:9/';
+    const child = spawnSync(process.execPath, [join(root, 'scripts/verify.mjs'), 'start', '--scenario', 'integrated', '--lease', '5', ...['nanoleaf-controller', 'nanoleaf-preview', 'pixoo-controller', 'pixoo-preview'].flatMap(name => ['--input', `${name}=${url}`])], {cwd: root, env, encoding: 'utf8'});
+    const result = JSON.parse(child.stdout.trim());
+    runId = result.runId;
+    assert.equal(child.status, 1);
+    assert.equal(result.cause, 'seed-failed');
+    assert.match(result.detail, /pairing credential nanoleaf-feed-token is missing; write the pairing files before reseeding integrated/);
+    assert.equal(result.cleanup.result, 'clean');
+    const missing = spawnSync(process.execPath, [join(root, 'scripts/verify.mjs'), 'start', '--scenario', 'integrated'], {cwd: root, env, encoding: 'utf8'});
+    assert.equal(missing.status, 2, 'the scenario requires the paired runs\' URLs');
+    assert.match(JSON.parse(missing.stdout.trim()).detail, /scenario integrated requires input nanoleaf-controller/);
+  } finally {
+    if (runId) for (const unit of [`app-verify-${runId}.service`, `app-verify-${runId}-lease.timer`]) spawnSync('systemctl', ['--user', 'stop', unit]);
+    await rm(base, {recursive: true, force: true});
   }
 });

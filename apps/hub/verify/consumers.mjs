@@ -29,16 +29,18 @@ export const CONSUMER_STATE = {
       };
     },
   },
-  // divoom-app-upgrade#120: the Pixoo run's state route.
+  // divoom-app-upgrade#120: Pixoo's own view of its remote feed, GET <pixoo url>api/integration/v1/sessions,
+  // which refreshes from the Hub first, as the Monitor tab does.
   pixoo: {
-    route: 'api/verify/state',
+    route: 'api/integration/v1/sessions',
     /** @param {any} value @returns {ConsumerState} */
     parse: value => {
-      if (value?.apiVersion !== 'pixoo-verify/1' || typeof value.feed !== 'object' || typeof value.writer !== 'object') throw new Error('the Pixoo state route answered an unknown shape');
+      if (typeof value !== 'object' || value === null || !('connection' in value)) throw new Error('the Pixoo feed view answered an unknown shape');
       return {
-        format: value.apiVersion,
-        feed: {connection: value.feed.connection, revision: value.feed.revision ?? null, ownerId: value.feed.ownerId ?? null, error: value.feed.error ?? null},
-        writer: Object.fromEntries(Object.entries(value.writer).filter(([, count]) => Number.isInteger(count))),
+        format: 'pixoo-integration-sessions',
+        feed: {connection: value.connection, revision: value.snapshot?.revision ?? null, ownerId: value.ownerId ?? null, error: null},
+        // Provisional until divoom-app-upgrade#120 names its writer counts.
+        writer: typeof value.writer === 'object' && value.writer !== null ? Object.fromEntries(Object.entries(value.writer).filter(([, count]) => Number.isInteger(count))) : {},
         raw: value,
       };
     },
