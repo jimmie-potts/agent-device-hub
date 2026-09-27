@@ -519,15 +519,88 @@ test('a dead lock holder never blocks the next operation, a live one is named, a
     assert.equal(blocked.code, 1);
     assert.equal(blocked.result.error, 'receipt-locked');
     assert.match(blocked.result.detail, new RegExp(`pid ${process.pid}`));
+    const {units} = await import('./helpers.mjs');
+    assert.deepEqual(units(box.app).filter(name => name.endsWith('.timer')), [(await box.receipt(runId)).owned.leaseTimer], 'the refused extend left no unrecorded timer armed');
+    // A stop under the same live lock still cleans up, and says what it did.
+    const lockedStop = await box.cli(['stop', runId]);
+    assert.equal(lockedStop.code, 1);
+    assert.equal(lockedStop.result.error, 'receipt-locked');
+    assert.deepEqual(lockedStop.result.cleanup.items.map(i => [i.kind, i.outcome]), [['lease-timer', 'removed'], ['unit', 'removed'], ['runtime-dir', 'removed']]);
+    assert.deepEqual(units(box.app), []);
     await rm(join(proof, '.receipt.lock'), {recursive: true});
     // A handoff interrupted mid-build, then stopped: the capture returns to the proof directory.
+    const second = (await box.cli(['start', '--lease', '10'])).result.runId;
+    assert.equal((await box.cli(['capture', second, 'count-twice'])).code, 0);
+    const secondProof = join(box.proofRoot, second);
     const {rename} = await import('node:fs/promises');
-    await mkdir(join(proof, 'verified.partial'));
-    await rename(join(proof, 'capture-1'), join(proof, 'verified.partial', 'capture-1'));
-    assert.equal((await box.cli(['stop', runId])).code, 0);
-    assert.equal(existsSync(join(proof, 'verified.partial')), false);
-    assert.ok(existsSync(join(proof, 'capture-1', 'assertions.json')), 'nothing is stranded');
-    assert.equal((await box.receipt(runId)).captures[0].log, 'capture-1/assertions.json');
+    await mkdir(join(secondProof, 'verified.partial'));
+    await rename(join(secondProof, 'capture-1'), join(secondProof, 'verified.partial', 'capture-1'));
+    const stopped = await box.cli(['stop', second]);
+    assert.equal(stopped.code, 0, stopped.stderr);
+    assert.equal(stopped.result.proof.proof, 'unwound');
+    assert.equal(existsSync(join(secondProof, 'verified.partial')), false);
+    assert.ok(existsSync(join(secondProof, 'capture-1', 'assertions.json')), 'nothing is stranded');
+    assert.equal((await box.receipt(second)).captures[0].log, 'capture-1/assertions.json');
+  } finally {
+    await box.close();
+  }
+});
+
+test('stop commits a complete uncommitted set, and reports a proof conflict only after cleaning up', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    // A handoff killed after its rename, then stop instead of a retry: the run's own set is committed, not stranded.
+    const a = (await box.cli(['start', '--lease', '10'])).result.runId;
+    assert.equal((await box.cli(['capture', a, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['handoff', a])).code, 0);
+    const frozen = await box.receipt(a);
+    await uncommit(box, a);
+    const committed = await box.cli(['stop', a]);
+    assert.equal(committed.code, 0, committed.stderr);
+    assert.equal(committed.result.proof.proof, 'committed');
+    const after = await box.receipt(a);
+    assert.equal(after.proof.frozenAt, frozen.proof.frozenAt);
+    assert.deepEqual(after.captures, frozen.captures);
+    assert.equal((await box.cli(['doctor', a])).result.runs[0].proof.sums, 'ok');
+
+    // A colliding capture in an interrupted partial set: the units still go, and the conflict is reported.
+    const b = (await box.cli(['start', '--lease', '10'])).result.runId;
+    assert.equal((await box.cli(['capture', b, 'count-twice'])).code, 0);
+    const proof = join(box.proofRoot, b);
+    const {mkdir} = await import('node:fs/promises');
+    await mkdir(join(proof, 'verified.partial', 'capture-1'), {recursive: true});
+    await writeFile(join(proof, 'verified.partial', 'capture-1', 'assertions.json'), '{}');
+    const conflicted = await box.cli(['stop', b]);
+    assert.equal(conflicted.code, 0, 'cleanup succeeded');
+    assert.equal(conflicted.result.cleanup.result, 'clean');
+    assert.equal(conflicted.result.proof.proof, 'conflict');
+    assert.match(conflicted.stderr, /proof-conflict/);
+    const {units} = await import('./helpers.mjs');
+    assert.deepEqual(units(box.app), [], 'no unit or timer outlives the stop');
+    assert.ok(existsSync(join(proof, 'verified.partial', 'capture-1')), 'the conflicting files are left for inspection');
+  } finally {
+    await box.close();
+  }
+});
+
+test('two captures raced against a dead receipt lock get distinct numbers', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    const proof = join(box.proofRoot, runId);
+    const {mkdir} = await import('node:fs/promises');
+    const {holderRecord} = await import('./lock-holder.mjs');
+    for (let round = 0; round < 4; round++) {
+      await mkdir(join(proof, '.receipt.lock'));
+      await writeFile(join(proof, '.receipt.lock', 'holder'), await holderRecord({dead: true}));
+      const [first, second] = await Promise.all([box.cli(['capture', runId, 'read-only']), box.cli(['capture', runId, 'read-only'])]);
+      assert.equal(first.code, 0, first.stderr);
+      assert.equal(second.code, 0, second.stderr);
+      assert.notEqual(first.result.n, second.result.n, `round ${round}: distinct capture numbers`);
+    }
+    const numbers = (await box.receipt(runId)).captures.map(c => c.n);
+    assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8], 'every capture kept its own record');
+    await box.cli(['stop', runId]);
   } finally {
     await box.close();
   }

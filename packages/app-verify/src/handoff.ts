@@ -98,9 +98,39 @@ export async function uncommitted(proofDir: string, live: Receipt): Promise<{kin
   return later ? {kind: 'rebuild'} : {kind: 'commit', copy, manifest, digest};
 }
 
-/** Return an interrupted partial set's captures to the proof directory. */
-export async function unwindPartial(proofDir: string): Promise<void> {
-  await unwind(proofDir, PARTIAL);
+/**
+ * Proof recovery when a never-frozen run stops, after its units are gone:
+ * commit a set that `uncommitted` says is this run's own and complete, return
+ * any other captures to the proof directory, or report a conflict and leave
+ * the files for inspection. It changes only `current` and those files.
+ */
+export async function recoverOnStop(proofDir: string, current: Receipt): Promise<{proof: 'none' | 'committed' | 'unwound' | 'conflict'; reason?: string; digest?: string}> {
+  if (current.proof.frozenAt) return {proof: 'none'};
+  let proof: 'none' | 'committed' | 'unwound' = 'none', digest: string | undefined;
+  try {
+    if (existsSync(join(proofDir, 'verified'))) {
+      const verdict = await uncommitted(proofDir, current);
+      if (verdict.kind === 'conflict') return {proof: 'conflict', reason: verdict.reason};
+      if (verdict.kind === 'commit') {
+        const frozen = new Map(verdict.copy.captures.filter(c => c.set === 'verified').map(c => [c.n, c]));
+        current.captures = current.captures.map(c => frozen.get(c.n) ?? c);
+        current.proof.frozenAt = verdict.copy.proof.frozenAt;
+        proof = 'committed';
+        digest = verdict.digest;
+      } else {
+        await unwind(proofDir, 'verified');
+        proof = 'unwound';
+      }
+    }
+    if (existsSync(join(proofDir, PARTIAL))) {
+      await unwind(proofDir, PARTIAL);
+      if (proof === 'none') proof = 'unwound';
+    }
+  } catch (error) {
+    if (error instanceof Failure && error.code === 'proof-conflict') return {proof: 'conflict', reason: error.detail};
+    throw error;
+  }
+  return {proof, ...(digest ? {digest} : {})};
 }
 
 /**

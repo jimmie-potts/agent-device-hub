@@ -279,8 +279,11 @@ removes write permission from it recursively, records the manifest digest in a
 complete, summed set is ever named `verified/`.
 
 A handoff killed before the rename leaves `verified.partial/`. The next
-`handoff` moves its captures back and rebuilds, and `stop` of a run that was
-never frozen moves them back so nothing is stranded.
+`handoff` moves its captures back and rebuilds. `stop` of a run that was never
+frozen first removes its units, timers and runtime directory, then recovers
+its proof under the receipt lock. It commits a complete own set as below,
+moves other captures back so nothing is stranded, or reports a conflict
+without undoing the cleanup.
 
 A handoff killed after the rename but before the receipt records the freeze
 leaves a `verified/` that no receipt has committed. The next `handoff`

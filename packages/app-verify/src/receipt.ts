@@ -1,5 +1,6 @@
 import {existsSync} from 'node:fs';
-import {appendFile, mkdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {appendFile, mkdtemp, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {RECEIPT_VERSION, type Receipt} from './types.js';
 import {ANY_RUN_ID, KEBAB, holder, holderAlive, iso, pause} from './util.js';
@@ -191,39 +192,100 @@ export class ProofStore {
   }
 
   /**
-   * Read-modify-write under a directory lock shared by concurrent operations
-   * on this run. The lock names its holder's PID and start time, so a killed
-   * holder's lock breaks at once; a live holder is waited for up to 10 s.
+   * Read-modify-write under a lock shared by every operation on this run.
+   * The lock is a directory holding its holder's PID, start time and a nonce,
+   * created atomically by renaming a prepared directory into place. A dead
+   * holder's lock is broken by renaming it aside and deleting it only if it
+   * still names that holder. The receipt is written only while the lock
+   * still names this operation, and only this operation's lock is released.
+   * A live holder is waited for up to 10 s, then reported as locked.
    */
   async update(change: (receipt: Receipt) => void | Promise<void>): Promise<Receipt> {
     const lock = join(this.dir, '.receipt.lock');
+    const mine = `${(await holder()).trim()} ${randomBytes(8).toString('hex')}\n`;
     const deadline = Date.now() + LOCK_WAIT_MS;
     for (;;) {
-      try {
-        await mkdir(lock);
-        await writeFile(join(lock, 'holder'), await holder());
-        break;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        const record = await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined);
+      if (await this.acquire(lock, mine)) break;
+      const record = await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined);
+      if (record === undefined) {
+        // Released meanwhile, or a lock from an older writer that never recorded a holder.
         const info = await stat(lock).catch(() => undefined);
-        // A dead holder, or a lock that never recorded one, belongs to a killed operation.
-        const dead = record !== undefined ? !(await holderAlive(record)) : info !== undefined && Date.now() - info.mtimeMs > 5000;
-        if (dead) {
-          await rm(lock, {recursive: true, force: true});
-          continue;
-        }
-        if (Date.now() > deadline) throw new LockedError(`another operation (${record?.trim().split(' ')[0] ? `pid ${record.trim().split(' ')[0]}` : 'starting'}) held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
-        await pause(50);
+        if (info && Date.now() - info.mtimeMs > 5000) await this.breakDead(lock, undefined);
+      } else if (!(await holderAlive(record))) {
+        await this.breakDead(lock, record);
+        continue;
+      } else if (Date.now() > deadline) {
+        throw new LockedError(`another operation (pid ${record.trim().split(' ')[0]}) held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
       }
+      await pause(50);
     }
     try {
       const receipt = await this.read();
       await change(receipt);
+      // Fencing: never write after losing the lock, so a displaced operation cannot overwrite another's update.
+      if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) !== mine) throw new LockedError('the receipt lock changed hands during this operation; nothing was written, retry it');
       await this.write(receipt);
       return receipt;
     } finally {
-      await rm(lock, {recursive: true, force: true}).catch(() => undefined);
+      // Released by renaming it aside first: an emptied lock directory could otherwise be replaced mid-delete.
+      if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) === mine) await this.tombstone(lock, mine);
     }
+  }
+
+  /** Put a prepared lock in place; `false` when another lock already holds the name. */
+  private async acquire(lock: string, mine: string): Promise<boolean> {
+    const prepared = await mkdtemp(join(this.dir, '.receipt.lock.new-'));
+    await writeFile(join(prepared, 'holder'), mine);
+    try {
+      await rename(prepared, lock);
+      return true;
+    } catch (error) {
+      await rm(prepared, {recursive: true, force: true});
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'ENOTDIR') return false;
+      throw error;
+    }
+  }
+
+  /**
+   * Remove a dead holder's lock, and only that lock. Breaking is serialized
+   * under a short-lived breaker lock: while it is held nothing else can
+   * replace the main lock, so a lock that still names the dead holder is
+   * exactly the one removed, and a live lock is never displaced.
+   */
+  private async breakDead(lock: string, record: string | undefined): Promise<void> {
+    const breaker = `${lock}.break`;
+    const me = `${(await holder()).trim()} ${randomBytes(8).toString('hex')}\n`;
+    if (!(await this.acquire(breaker, me))) {
+      // A breaker killed mid-break names a dead process; clear it and let the waiters try again.
+      const other = await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined);
+      if (other !== undefined && !(await holderAlive(other))) await this.tombstone(breaker, other);
+      await pause(10);
+      return;
+    }
+    try {
+      if ((await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined)) === record) await this.tombstone(lock, record);
+    } finally {
+      if ((await readFile(join(breaker, 'holder'), 'utf8').catch(() => undefined)) === me) await this.tombstone(breaker, me);
+    }
+  }
+
+  /** Rename a lock aside and delete it if it still names `record`; otherwise put it back. */
+  private async tombstone(path: string, record: string | undefined): Promise<void> {
+    const aside = join(this.dir, `.receipt.lock.dead-${randomBytes(8).toString('hex')}`);
+    try {
+      await rename(path, aside);
+    } catch {
+      return;
+    }
+    if ((await readFile(join(aside, 'holder'), 'utf8').catch(() => undefined)) !== record) {
+      try {
+        await rename(aside, path);
+        return;
+      } catch {
+        // Taken again meanwhile; its holder's fencing check refuses to write.
+      }
+    }
+    await rm(aside, {recursive: true, force: true});
   }
 }

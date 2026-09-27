@@ -4,8 +4,8 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, open, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {delimiter, dirname, join} from 'node:path';
 import {card, windowsLoopback} from './card.js';
-import {latestFrozen, uncommitted, unwindPartial} from './handoff.js';
-import {ProofStore, validateReceipt} from './receipt.js';
+import {latestFrozen, recoverOnStop, uncommitted} from './handoff.js';
+import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunState} from './types.js';
@@ -493,10 +493,17 @@ export async function extend(plugin: AppPlugin, io: Io, runId: string | undefine
     throw new Failure('lease-failed', `the new lease timer could not be started; ${old} still holds the old expiry (${lease.reason})`);
   }
   // The receipt names the new lease before any old one stops, so it always names a live lease and the true expiry.
-  const updated = await run.store.update(current => {
-    current.owned.leaseTimer = `${next}.timer`;
-    current.preview = {...current.preview!, expiresAt: iso(expiresAt * 1000), leaseMinutes};
-  });
+  let updated: Receipt;
+  try {
+    updated = await run.store.update(current => {
+      current.owned.leaseTimer = `${next}.timer`;
+      current.preview = {...current.preview!, expiresAt: iso(expiresAt * 1000), leaseMinutes};
+    });
+  } catch (error) {
+    // The receipt still names the old lease, so the new timer must not stay armed unrecorded.
+    await systemd.stopUnit(`${next}.timer`);
+    throw error;
+  }
   // Only the new lease may remain: an older or stray timer could stop the run before the recorded expiry.
   const retired: Record<string, string> = {};
   for (const timer of new Set([old, ...leases])) retired[timer] = await systemd.stopUnit(timer);
@@ -539,24 +546,35 @@ export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined)
     return {code: EXIT.ok, value: {operation: 'stop', runId: run.runId, state: receipt.state, cleanup: receipt.cleanup}};
   }
   if (!receipt && !anything) throw new Failure('unknown-run', `nothing is known about ${run.runId}`);
-  // A handoff interrupted before its set was complete can no longer finish once the run stops: put its captures back.
-  if (receipt && !receipt.proof.frozenAt) await unwindPartial(run.store.dir);
+  // Units, timers and the runtime directory go first: no proof state can keep a run serving.
   const cleaned = await cleanup(run, receipt, live);
   let state: RunState = receipt?.state ?? 'stopped';
   if (receipt && live) {
     const expired = !unitBefore?.loaded && receipt.preview !== null && Date.parse(receipt.preview.expiresAt) <= Date.now();
     state = expired ? 'expired' : 'stopped';
   }
-  if (receipt) {
-    await run.store.update(current => {
-      current.state = state;
-      current.cleanup = {...cleaned, at: iso()};
-    });
-    await run.store.event('stopped', {state, cleanup: cleaned.result, items: cleaned.items});
-  }
   for (const item of cleaned.items) if (item.outcome === 'left' || item.outcome === 'unknown') io.progress(`${run.runId}: ${item.kind} ${item.name} is ${item.outcome}; stop it by name with systemctl --user stop ${item.name}`);
   const ok = cleaned.items.every(i => i.outcome !== 'left' && i.outcome !== 'unknown');
-  return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'stop', runId: run.runId, state, cleanup: cleaned}};
+  let proof: Awaited<ReturnType<typeof recoverOnStop>> = {proof: 'none'};
+  if (receipt) {
+    try {
+      // Then proof recovery under the lock: an interrupted handoff can no longer finish once the run stops.
+      await run.store.update(async current => {
+        proof = await recoverOnStop(run.store.dir, current);
+        current.state = state;
+        current.cleanup = {...cleaned, at: iso()};
+      });
+    } catch (error) {
+      // The cleanup already happened; report it with the refusal instead of hiding it.
+      if (!(error instanceof LockedError)) throw error;
+      return {code: EXIT.failed, value: {operation: 'stop', runId: run.runId, state, cleanup: cleaned, error: 'receipt-locked', detail: error.message}};
+    }
+    if (proof.proof === 'committed') await run.store.event('frozen-committed', {manifest: proof.digest});
+    if (proof.proof === 'conflict') io.progress(`${run.runId}: proof-conflict: ${proof.reason}; the files are left for inspection`);
+    await run.store.event('stopped', {state, cleanup: cleaned.result, items: cleaned.items, proof: proof.proof});
+  }
+  const {digest: _digest, ...reported} = proof;
+  return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'stop', runId: run.runId, state, cleanup: cleaned, ...(reported.proof !== 'none' ? {proof: reported} : {})}};
 }
 
 // ---------------------------------------------------------------------------

@@ -133,7 +133,9 @@ What the core guarantees to every plug-in callback:
 - State persists between captures of one run. Either set `fresh: true` (the
   core reseeds `scenario`, or the current scenario, before the step and the
   capture log records it) or assert deltas, such as commands before and
-  after.
+  after. Delta assertions, like the fixture's `read-only` and `command-once`,
+  assume one capture at a time per run: a concurrent capture's commands land
+  in the same application.
 - Name negative controls `control-*`. They are ordinary steps that report
   `failed` by design, and the adapter's tests assert that they fail. There is
   no expected-failure mode that turns a failure into a pass.
@@ -173,6 +175,7 @@ from 0.05 to 1440. Main result fields:
 | --- | --- |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
+| `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |
 | `handoff` after an interrupted one | Finishes the freeze. It rebuilds from `verified.partial/`, or commits an uncommitted `verified/` only when its digest and time match this run's `frozen` event and its copy matches the live receipt. It rebuilds if a later capture exists, and otherwise refuses with `proof-conflict`, changing nothing |
 | `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
@@ -182,8 +185,11 @@ from 0.05 to 1440. Main result fields:
 An error that stops an operation before it acts prints
 `{"operation", "error", "detail"}`, for example `run-not-running`, or
 `receipt-locked` when another live operation holds the run's receipt for
-more than 10 s. A lock left by a killed operation (its holder's PID and
-start time no longer match) breaks at once.
+more than 10 s. The lock is created atomically with its holder's PID, start
+time and a nonce. A lock left by a killed operation breaks at once, one
+breaker at a time, so a live lock is never displaced. The receipt is written
+only while the lock still names the writer, so a race can refuse an update but
+never lose one silently.
 
 ## Capture without a supervisor
 
