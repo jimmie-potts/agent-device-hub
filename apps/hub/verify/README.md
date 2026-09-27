@@ -72,11 +72,11 @@ held still for a second, so a late command is counted.
 
 | Step | UI entry | Driver action | Scenario | Expected observation |
 | --- | --- | --- | --- | --- |
-| `task-appears` | Home, then the `wall` and `pixel` component pages | Open the preview; post a synthetic `question.continuing` event; browse both devices | `lifecycle-basic`, fresh | Signed in on load; the "Build the integration" session shows, then "Question · continuing"; no controller command; no link outside Places targets an installed port |
+| `task-appears` | Home, then the `wall` and `pixel` component pages | Open the preview; post a synthetic `question.continuing` event; browse both devices | `lifecycle-basic`, fresh | Signed in on load; the "Build the integration" session shows, then "Question · continuing"; no controller command; no link, Places included, targets an installed port |
 | `command-reaches-fake` | `pixel` component, Brightness slider | Set brightness to 30 | `lifecycle-basic`, fresh | Queued or Sent status; exactly one `brightness.set` of 30 reached the Pixoo fake; the slider shows 30 |
 | `uncertain-no-replay` | `pixel` component, Brightness slider, Reload current values | Make the fake drop the response; set 25; wait 5.5 s; restore; reload | `lifecycle-basic`, fresh | "Result unknown … (uncertain-result)"; the form stays locked; one command, never retried; reload shows 60 and sends nothing |
 | `offline-recovers` | `pixel` component | Open while the fake answers 503; restore it | `pixel-offline`, fresh | "Stale / unavailable", then recovery without a reload; no command |
-| `control-installed-links` | `wall` component page | Open it with a seeded editor link to the installed wall | `control-installed-links`, fresh | Negative control: the installed-port link check catches the link and reports `failed` |
+| `control-installed-links` | `wall` component page | Open it with a seeded editor link and a Places link to the installed wall | `control-installed-links`, fresh | Negative control: the installed-port link check catches both links and reports `failed` |
 | `control-missing-session` | Home | Open the preview | `lifecycle-basic` | Negative control: expects an unseeded session, reports `failed` |
 
 The reference steps must also fail on known-broken behavior. A scenario
@@ -91,12 +91,11 @@ fault, never the environment, and an unknown fault refuses to start. CI's
 | `replay-on-recovery` | Clearing an offline Pixoo sends a brightness command through the hub; clearing an uncertain one re-sends the value the controller already holds (60), so the reloaded value is unchanged and only the count sees the replay | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay`: "recovery replayed nothing" |
 
 Runs serve no per-device editor links, so a preview never sends the owner to
-an installed service's port. The dashboard's own Places navigation is product
-UI (`docs/skins/places.json`). Its only anchor is "Wall · Local", which leads
-to the installed wall at `http://127.0.0.1:8765/`; "B.U.N.N.Y. · Local"
-renders as the current place, with no link. The link check excludes the
-Places navigation, and a preview reader should treat "Wall · Local" as leaving
-the run. Hub #495 owns pointing preview Places links at the paired runs.
+an installed service's port. The dashboard's Places navigation follows the
+run's own `placeLinks` (Hub #495). The standalone scenarios configure none,
+so Places shows the four public documents and the current B.U.N.N.Y. place
+and no "Wall · Local" link. In `integrated`, Wall leads to the paired wall
+run. The installed-port link check therefore covers Places too.
 
 The `control-startup-fails` scenario gives the hub an invalid
 `browserAccess`, so `start` reports `failed` with no unit, timer or runtime
@@ -110,6 +109,51 @@ uses an installed port.
 
 When the UI or a fake changes, update the step, this map and the
 [dashboard checks](../../../docs/development.md#dashboard-checks) together.
+
+## Integrated scenario and composed previews
+
+The `integrated` scenario ([`integrated.mjs`](integrated.mjs)) runs the real
+`apps/hub/dist/cli.js serve`, not the fake-controller fixture. Its
+configuration has:
+
+- the single agent-state owner, `verify-owner`;
+- consumers `dashboard`, `nanoleaf` and `pixoo`;
+- the paired runs' feed credentials, stored as digests;
+- controllers `wall` (Nanoleaf `wall-controller`/`wall`) and `pixel` (Pixoo
+  `pixoo-controller`/`pixoo-local`), called with the paired controller
+  tokens;
+- trusted-loopback sign-in;
+- `placeLinks` pointing Wall at the paired wall run.
+
+It needs four inputs (`nanoleaf-controller`, `nanoleaf-preview`,
+`pixoo-controller`, `pixoo-preview`) and the four pairing credential files in
+the run's runtime directory. So it is reached only by a reseed from
+[`compose.mjs`](compose.mjs), the orchestrator described in
+[Composed previews](../../../docs/app-verification.md#composed-previews):
+
+```bash
+npm run build
+npm run -s verify:compose -- start --checkout nanoleaf=/abs/codex-nanoleaf --checkout pixoo=/abs/divoom-app-upgrade
+npm run -s verify:compose -- capture <composition-id> integrated-lifecycle
+npm run -s verify:compose -- capture <composition-id> integrated-command
+npm run -s verify:compose -- inject <composition-id> consumer-loss pixoo
+npm run -s verify:compose -- handoff <composition-id>
+npm run -s verify:compose -- stop <composition-id>
+```
+
+Each consumer checkout must be clean at its pin in
+[`compose.json`](compose.json), with its own dependencies installed and built
+as its README says. For the wall, set `PYTHON` to a Python 3.12 or later
+interpreter that has `requirements-controller.txt` installed. The Pixoo
+wrapper runs under `fnm exec --using=.nvmrc`.
+
+| Step | UI entry | Driver action | Scenario | Expected observation |
+| --- | --- | --- | --- | --- |
+| `integrated-lifecycle` | Hub home, then the wall run's map, then the Pixoo run's Monitor tab, in one page | Post `session.started` and `question.continuing` for a new session through the Hub's ingest route | `integrated` | The Hub card shows the session and "Question · continuing". Both consumers read the owner's revision. The wall lists the session as `question` on a Line. The Pixoo Monitor lists it. Neither writer received a command |
+| `integrated-command` | `pixel` Brightness slider, then `wall` Layout style | Set brightness; switch the layout style | `integrated` | Queued or Sent. Exactly one `brightness.set` at the Pixoo writer. The wall's writer applies exactly one integration setting, with the physical outcome unknown. Nothing is sent twice |
+| `pixoo-loss` | `pixel` component | Through `inject … consumer-loss pixoo`: ask for the freeze; a client that read before the loss sends brightness; post an event; ask for the thaw | `integrated` | `Stale / unavailable` and no enabled slider. Health says unavailable. The Hub answers `uncertain-result`. The owner advances past the Pixoo's revision. After the thaw the page recovers without a reload and the Pixoo catches up. The command reached the writer at most once (`loss-command.json` records 0 or 1), and nothing more arrives |
+| `control-replay-after-recovery` | `pixel` component | Through `inject … --step control-replay-after-recovery`: as `pixoo-loss`, then re-send the lost command as new work | `integrated` | Negative control: "recovery replayed nothing" fails |
+| `control-second-owner` | The Pixoo run's page | Post a lifecycle event straight to the Pixoo run | `integrated` | Negative control: expects the Pixoo to accept it as a second owner would, and fails because a Hub consumer refuses it |
 
 ## Checks
 
@@ -141,6 +185,27 @@ When the UI or a fake changes, update the step, this map and the
 
   Without a user manager, as on Depot's runner, it skips with the printed
   reason.
+- `compose.test.mjs` drives `compose.mjs` against real user units with
+  this checkout's Hub and two stand-in consumer adapters
+  ([`fixture-consumer.mjs`](tests/fixture-consumer.mjs)) in disposable
+  pinned Git checkouts. It covers:
+  - a pin mismatch and a dirty checkout failing before anything is created;
+  - pairing and readiness;
+  - the loss through `inject`, with the replay control failing;
+  - the second-owner control failing;
+  - extend, handoff, a unit left frozen in `doctor`, and stop with the Hub
+    first;
+  - expiry reported as `expired`, and a restart as a new composition linked
+    by `--restarts`;
+  - a partial start stopping only recorded runs in reverse;
+  - an installed port announced during pairing;
+  - a readiness timeout naming the silent consumer;
+  - a crashed consumer in `doctor`;
+  - `stop` continuing past a service it cannot stop.
+
+  The stand-ins prove the orchestrator, not the real consumers; the local
+  cross-repository run in [development](../../../docs/development.md#app-verification-and-preview-runs)
+  does. Without a user manager it skips, like `runs.test.mjs`.
 
 The hub keeps a Unix socket at `<state root>/<run-id>/data/h/bunny-launch.sock`,
 which must stay under 108 bytes. The default state root,

@@ -340,8 +340,12 @@ use disposable stores and fake controllers; they do not qualify a personal
 service or device result.
 
 Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
-HTTP editor links without query/fragment. Existing API-only configurations remain
-valid. See [the dashboard guide](../dashboard/README.md) for provisioning,
+HTTP editor links without query/fragment. Optional `placeLinks` (Hub #495) is for
+verification previews. It maps a Local Places id other than `bunny` to a
+credential-free `http://127.0.0.1:<port>/` URL without query or fragment, with at
+most 8 entries, and anything else fails the start with `invalid-place-links`.
+The dashboard then shows only those Local destinations. Existing API-only
+configurations remain valid. See [the dashboard guide](../dashboard/README.md) for provisioning,
 capability-based views and synthetic verification.
 
 ## Optional local MCP

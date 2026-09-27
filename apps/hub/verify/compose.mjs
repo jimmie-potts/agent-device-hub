@@ -72,7 +72,7 @@ export class ComposeFailure extends Error {
  * @typedef {{manifestVersion: string, services: ServiceSpec[]}} Manifest
  * @typedef {ServiceSpec & {checkout: string, pin: string | null, dirty: boolean, pinned: boolean, runId: string | null, state: string, url: string | null,
  *   endpoints: Record<string, string> | null, proofDir: string | null, expiresAt: string | null, failure: {cause: string, detail: string | null} | null, cleanup: any}} Service
- * @typedef {{compositionVersion: string, id: string, state: string, pinned: boolean, startedAt: string, updatedAt: string, manifest: unknown, lease: unknown,
+ * @typedef {{compositionVersion: string, id: string, state: string, pinned: boolean, startedAt: string, updatedAt: string, restarts?: string, continuity?: string, manifest: unknown, lease: unknown,
  *   services: Service[], readiness: {outcome: string, checks: Check[], at: string} | null, captures: any[], injections: any[], failure: any, cleanup: any, handoff?: unknown, secrets: string}} Composition
  */
 
@@ -371,9 +371,10 @@ async function pairingChecks(env, composition) {
 
 /**
  * Each run's own doctor: running, identity matched and every read-only boundary check passed.
- * @param {Env} env @param {Composition} composition @param {Progress} progress @returns {Promise<Check[]>}
+ * `states` receives each run's assessed state from its doctor.
+ * @param {Env} env @param {Composition} composition @param {Progress} progress @param {Record<string, string>} [states] @returns {Promise<Check[]>}
  */
-async function doctorChecks(env, composition, progress) {
+async function doctorChecks(env, composition, progress, states = {}) {
   /** @type {Check[]} */
   const checks = [];
   for (const service of composition.services) {
@@ -384,6 +385,7 @@ async function doctorChecks(env, composition, progress) {
     try {
       const {code, result} = await invoke(service, ['doctor', service.runId], {env, progress});
       const row = result.runs?.[0];
+      states[service.id] = row?.state ?? result.error ?? 'unknown';
       /** @type {{id: string, outcome: string, reason?: string}[]} */
       const failing = (row?.checks ?? []).filter((/** @type {{outcome: string}} */ c) => c.outcome !== 'passed');
       const ok = code === EXIT.ok && row?.state === 'running' && (row.reasons ?? []).length === 0 && failing.length === 0;
@@ -459,7 +461,7 @@ async function checkAdapter(service, env, progress) {
 }
 
 /**
- * @param {{checkouts: Record<string, string>, lease?: number, unpinned?: boolean, manifest?: string, hubRoot?: string, readyTimeoutMs?: number}} options
+ * @param {{checkouts: Record<string, string>, lease?: number, unpinned?: boolean, restarts?: string, manifest?: string, hubRoot?: string, readyTimeoutMs?: number}} options
  * @param {Io} io @returns {Promise<Outcome>}
  */
 export async function start(options, io) {
@@ -480,6 +482,14 @@ export async function start(options, io) {
     services.push({...spec, checkout});
   }
   for (const id of Object.keys(options.checkouts)) if (!services.some(s => s.id === id)) throw new UsageError(`the manifest has no service ${id}`);
+  // A composition restarts as a new one: the paired runs cannot restart in place, because their credentials
+  // live in runtime directories that exist only after a start. The new record names the one it replaces.
+  /** @type {Composition | undefined} */
+  let previous;
+  if (options.restarts !== undefined) {
+    previous = (await loadComposition(env, options.restarts, hubRoot)).composition;
+    if (previous.state === 'running' || previous.state === 'starting') throw new UsageError(`${options.restarts} is ${previous.state}; stop it before restarting it`);
+  }
   const manager = await supervisor();
   if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason ?? 'no usable user manager', null, EXIT.unavailable);
   // Identity before anything is created: each checkout clean at its pin, unless explicitly unpinned.
@@ -511,6 +521,7 @@ export async function start(options, io) {
     pinned: mismatches.length === 0,
     startedAt: iso(),
     updatedAt: iso(),
+    ...(previous ? {restarts: previous.id, continuity: previous.services.every(p => services.some(s => s.id === p.id && s.revision === p.revision && !s.dirty && !p.dirty)) ? 'same-candidate' : 'different-candidate'} : {}),
     manifest: {digest, services: manifest.services.map(s => ({id: s.id, revision: s.revision, coreVersion: s.coreVersion, scenario: s.scenario}))},
     lease: {minutes: options.lease ?? null},
     services: services.map(s => ({id: s.id, role: s.role, repository: s.repository, app: s.app, checkout: s.checkout, run: s.run, pin: s.pin, revision: s.revision, dirty: s.dirty, pinned: s.pinned, coreVersion: helps[s.id].coreVersion, scenario: s.scenario, runId: null, state: 'pending', url: null, endpoints: null, proofDir: null, expiresAt: null, failure: null, cleanup: null})),
@@ -595,7 +606,7 @@ export async function start(options, io) {
     }, 'running', {});
     const lines = card(value);
     for (const line of lines) progress(line);
-    return {code: EXIT.ok, value: {operation: 'start', compositionId: id, state: 'running', pinned: value.pinned, services: value.services.map(publicService), readiness: value.readiness, compositionDir: store.dir, card: lines}};
+    return {code: EXIT.ok, value: {operation: 'start', compositionId: id, state: 'running', pinned: value.pinned, ...(value.restarts ? {restarts: value.restarts, continuity: value.continuity} : {}), services: value.services.map(publicService), readiness: value.readiness, compositionDir: store.dir, card: lines}};
   } catch (error) {
     if (error instanceof UsageError) throw error;
     return failWith(error);
@@ -696,10 +707,14 @@ export async function doctor(id, io) {
   const frozen = [];
   for (const service of composition.services) if (service.runId && (await freezerState(unitOf(service))).FreezerState === 'frozen') frozen.push(service.id);
   if (composition.state !== 'running') return {code: EXIT.failed, value: {operation: 'doctor', compositionId: id, state: composition.state, failure: composition.failure, frozen, services: composition.services.map(publicService)}};
+  /** @type {Record<string, string>} */
+  const states = {};
   /** @type {Check[]} */
-  const checks = [...await pairingChecks(io.env, composition), ...await doctorChecks(io.env, composition, io.progress), ...frozen.map(s => ({id: `${s}-frozen`, outcome: /** @type {const} */ ('failed'), detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
+  const checks = [...await pairingChecks(io.env, composition), ...await doctorChecks(io.env, composition, io.progress, states), ...frozen.map(s => ({id: `${s}-frozen`, outcome: /** @type {const} */ ('failed'), detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
   const ok = checks.every(c => c.outcome === 'passed');
-  return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'doctor', compositionId: id, state: ok ? 'running' : 'degraded', pinned: composition.pinned, checks, services: composition.services.map(publicService), card: card(composition)}};
+  // Every lease elapsed: the composition expired as a whole, and stop removes what is left.
+  const expired = composition.services.every(s => states[s.id] === 'expired');
+  return {code: ok ? EXIT.ok : EXIT.failed, value: {operation: 'doctor', compositionId: id, state: ok ? 'running' : expired ? 'expired' : 'degraded', pinned: composition.pinned, runs: states, checks, services: composition.services.map(publicService), card: card(composition)}};
 }
 
 // ---------------------------------------------------------------------------
@@ -875,7 +890,7 @@ export async function inject(id, kind, serviceId, step, io) {
 
 const OPERATIONS = [
   'help',
-  'start --checkout <service>=<absolute path>... [--lease <minutes>] [--unpinned] [--manifest <path>]',
+  'start --checkout <service>=<absolute path>... [--lease <minutes>] [--unpinned] [--restarts <composition-id>] [--manifest <path>]',
   'doctor [<composition-id>]',
   'capture <composition-id> <step>',
   'inject <composition-id> consumer-loss <service> [--step <step>]',
@@ -884,7 +899,7 @@ const OPERATIONS = [
   'stop <composition-id>',
 ];
 /** @type {Record<string, string[]>} */
-const FLAGS = {start: ['--checkout', '--lease', '--manifest'], inject: ['--step'], extend: ['--lease']};
+const FLAGS = {start: ['--checkout', '--lease', '--manifest', '--restarts'], inject: ['--step'], extend: ['--lease']};
 /** @type {Record<string, string[]>} */
 const SWITCHES = {start: ['--unpinned']};
 
@@ -960,7 +975,7 @@ export async function runCompose(argv, options = {}) {
         break;
       case 'start':
         arity(positional, 0, operation);
-        outcome = await start({checkouts: parsed.checkouts, lease: lease(flags['--lease']), unpinned: parsed.switches.has('--unpinned'), manifest: flags['--manifest'] ? resolve(flags['--manifest']) : options.manifest, hubRoot: options.hubRoot, readyTimeoutMs: options.readyTimeoutMs}, io);
+        outcome = await start({checkouts: parsed.checkouts, lease: lease(flags['--lease']), unpinned: parsed.switches.has('--unpinned'), restarts: flags['--restarts'], manifest: flags['--manifest'] ? resolve(flags['--manifest']) : options.manifest, hubRoot: options.hubRoot, readyTimeoutMs: options.readyTimeoutMs}, io);
         break;
       case 'doctor':
         if (positional.length > 1) throw new UsageError('doctor takes at most one composition id');

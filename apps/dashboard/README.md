@@ -126,6 +126,15 @@ URLs. Only credential-free `http://127.0.0.1:<port>/<path>` links without a quer
 or fragment are accepted. Configure the existing wall/playlist editor's actual
 address; the dashboard neither guesses destinations nor proxies these links.
 
+An optional hub `placeLinks` object (Hub #495) is for verification previews.
+It maps a Local place of the Places navigation (`docs/skins/places.json`),
+such as `wall`, to a credential-free `http://127.0.0.1:<port>/` URL. When it
+is configured, the dashboard context carries it as `places`. Each named Local
+place then links to its URL, and every other Local place except the current
+B.U.N.N.Y. is omitted, so a preview never leads to an installed service.
+Without it, Places keeps the manifest's fixed loopback destinations. Local
+links appear once the context has loaded.
+
 ## Common component view
 
 `client.ts` defines the component identity and authenticated transport.
@@ -388,10 +397,11 @@ missing addresses), the widget catalog and home placement, and the token
 boundary of the authored styles.
 The same fixture, `tests/fixture.mjs`, is what a
 [Hub verification run](../hub/verify/README.md) serves. Its optional `token`,
-`reader`, `port`, `directory`, `editorLinks` and `endpointFor` let a run use
-run-generated credentials, its recorded port, a short private directory, no
-editor links to installed services, and a stand-in in front of a fake
-controller for its fault scenarios. The browser suites keep the defaults. A change to the fixture's fakes or to the UI a verification step
+`reader`, `port`, `directory`, `editorLinks`, `placeLinks` and `endpointFor` let
+a run use run-generated credentials, its recorded port, a short private
+directory, no editor links or Local Places destinations that lead to installed
+services, and a stand-in in front of a fake controller for its fault
+scenarios. The browser suites keep the defaults. A change to the fixture's fakes or to the UI a verification step
 drives updates that step and its feature map together.
 
 `npm run test:dashboard:browser` starts disposable hub and fake-controller fixtures

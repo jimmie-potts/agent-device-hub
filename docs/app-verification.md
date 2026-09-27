@@ -557,6 +557,189 @@ The executable behavior these clauses describe arrives with those issues. The
 core package and the Hub adapter are verification tooling with no product
 behavior change, so #494 carries no OpenSpec delta, like #493.
 
+## Composed previews
+
+Hub [#495](https://github.com/jimmie-potts/agent-device-hub/issues/495)
+composes one integrated preview from three ordinary runs: the Nanoleaf wall,
+Pixoo and the Hub. The Hub owns only the orchestration,
+[`apps/hub/verify/compose.mjs`](../apps/hub/verify/compose.mjs). Each run
+starts through its own repository's adapter wrapper, in its own checkout and
+toolchain, and keeps its own unit, lease, receipt and proof. The Hub is the
+one agent-state owner. The wall and Pixoo consume its feed and serve the
+controller APIs that the Hub calls through its per-device queues. Their device
+transports stay simulated or refused, as in their standalone runs.
+[ADR 0009](decisions/0009-app-verification-runs.md) decision 9 records the
+choice.
+
+```text
+npm run -s verify:compose -- start --checkout nanoleaf=<abs> --checkout pixoo=<abs> [--lease <minutes>] [--unpinned] [--restarts <composition-id>]
+npm run -s verify:compose -- doctor [<composition-id>]
+npm run -s verify:compose -- capture <composition-id> <step>
+npm run -s verify:compose -- inject <composition-id> consumer-loss pixoo [--step <step>]
+npm run -s verify:compose -- handoff <composition-id>
+npm run -s verify:compose -- extend <composition-id> [--lease <minutes>]
+npm run -s verify:compose -- stop <composition-id>
+```
+
+Each operation prints one JSON result line and uses the core's exit codes.
+Exit 3 now also covers an adapter wrapper that cannot run.
+
+### Pinned sources
+
+The manifest [`apps/hub/verify/compose.json`](../apps/hub/verify/compose.json)
+lists the consumers, then the owner. For each service it names:
+
+- the repository and app name;
+- the exact commit;
+- the core version;
+- the scenario it must support;
+- the wrapper's argv.
+
+The Hub runs from the checkout that holds the orchestrator, so its pin is
+`self`: that checkout's commit, recorded as it is. The consumers' checkouts
+are given as absolute real paths.
+
+Before anything is created, `start` checks each checkout's `HEAD` and tracked
+changes against its pin. It also runs each wrapper's `help` to read the app
+name, `coreVersion`, the scenario and the scenario's required inputs. A pin
+that differs or a dirty checkout fails `identity-mismatch`, with no proof
+directory, runtime directory or unit created. `--unpinned` allows the run,
+but the composition then records `pinned: false`, and its card says
+development only, not citable evidence.
+
+### Start and pairing
+
+`start` records each step in the composition before the next one runs:
+
+1. The wall, then Pixoo, then the Hub start in their default standalone
+   scenarios. A run's id is recorded as soon as its wrapper names it on
+   stderr, before its start finishes.
+2. The orchestrator generates one feed token and one controller token per
+   consumer and writes them with mode 0600:
+   - into the consumer's runtime directory as `hub-feed-token` and
+     `hub-controller-token`;
+   - into the Hub's runtime directory as `<consumer>-feed-token` and
+     `<consumer>-controller-token`.
+
+   They are never printed, recorded or passed as inputs.
+3. Each consumer reseeds `hub-paired` with `--input hub-feed=<Hub origin>`
+   and announces its `controller` endpoint.
+4. The Hub reseeds `integrated` with four inputs:
+   `--input nanoleaf-controller=…`, `nanoleaf-preview`, `pixoo-controller`
+   and `pixoo-preview`. It runs the real `cli.js serve` with:
+   - owner `verify-owner`;
+   - consumers `dashboard`, `nanoleaf` and `pixoo`;
+   - the feed credentials' digests;
+   - the two controllers, `wall` and `pixel`;
+   - `browserAccess: "trusted-loopback"`;
+   - Places pointing Wall at the paired wall run.
+5. Readiness waits up to 60 s for all of these:
+   - the Hub's feed answers;
+   - the Hub reads both controllers and reports both devices ready;
+   - each consumer's verification state route reports its feed `current`
+     at the Hub's revision;
+   - each run's own `doctor` reports `running` with every read-only check
+     passed.
+
+Every run starts standalone because a caller-supplied credential file cannot
+serve a run's first seed: the runtime directory does not exist before
+`start`. For the same reason the core's `restart` of a paired run fails at
+seed by design. To restart a composition, stop it and start a new one with
+`--restarts <old id>`. The new record names the old one and says
+`same-candidate` or `different-candidate`, as the core's `restart` does, and
+a composition that is still running must be stopped first. A `start` killed
+midway leaves `state: starting`, and `stop` removes the runs it recorded.
+
+A failure at any step stops only the runs the composition recorded, Hub
+first and then the consumers in reverse start order. The composition then
+reports `state: failed` with the cause, the service and each run's cleanup.
+Examples of causes:
+
+- `service-start-failed`: a run did not start;
+- `pairing-failed`: a reseed failed or announced no controller, or an
+  endpoint used an installed port;
+- `readiness-timeout`: with every failing check named.
+
+### The composition record
+
+`<Hub proof root>/<composition-id>/composition.json`, with an append-only
+`events.jsonl`, records:
+
+- the manifest digest;
+- `pinned`;
+- per service: its repository, checkout, pin, revision, dirty flag, core
+  version, scenario, run id, state, URL, endpoints, proof directory, expiry,
+  failure and cleanup;
+- readiness checks, captures and injections;
+- the composition's own failure and cleanup.
+
+The composition id is `compose-<UTC start>-<6 hex>`. The record never holds a
+token. The checkout paths are local operating state that `doctor`, `extend`
+and `stop` need.
+
+- `doctor <id>` runs each run's `doctor` and the readiness checks once. It
+  reports `degraded` with every failing check, for example a crashed consumer
+  or a unit left frozen. When every lease has elapsed it reports `expired`,
+  and `stop` then records each run as expired. Without an id it lists every
+  composition.
+- `capture <id> <step>` runs a Hub capture step and records its outcome.
+- `handoff <id>` freezes each run's verified set and prints one card with the
+  three links. It never resets a run, because a reseeded Hub would restart
+  its agent state under the consumers.
+- `extend <id>` extends all three leases.
+- `stop <id>` stops the Hub first, then the consumers. It thaws a frozen unit
+  first, continues past a service it cannot stop and reports each cleanup
+  (`clean`, `partial`, `unknown` or `none`). Repeating it reports the
+  recorded result.
+
+### Cross-service proof and loss
+
+The Hub's `integrated` capture steps drive the Hub dashboard and, in the
+same page and video, the paired runs' pages. They read each consumer's
+verification state route for its feed revision and writer counts:
+
+| Step | What it proves |
+| --- | --- |
+| `integrated-lifecycle` | A session posted to the Hub's real ingest route shows on the Hub card, as a question on a wall Line and on the Pixoo Monitor. Both consumers reach the Hub's revision, and no writer received a command |
+| `integrated-command` | One brightness change from the dashboard reaches Pixoo's writer exactly once. One Nanoleaf integration setting is applied once, with its physical outcome unknown |
+| `pixoo-loss` | Through `inject … consumer-loss pixoo`, as described below |
+| `control-replay-after-recovery` | Negative control through `inject --step`: the same loss, then a client re-sends the lost command as new work. "recovery replayed nothing" must fail |
+| `control-second-owner` | Negative control: it expects the paired Pixoo to accept a lifecycle event posted to it directly, as a second owner would, and must fail |
+
+`inject <id> consumer-loss pixoo` runs the loss step through a handshake.
+The step asks for `freeze` and later `thaw` through two files in the Hub
+run's runtime directory. The orchestrator applies each request to the unit it
+recorded for Pixoo with `systemctl --user freeze` or `thaw` and reads
+`FreezerState` back. The step never names a unit, and the orchestrator
+always thaws when the step ends. On this PC (WSL 2, cgroup v2, systemd 259)
+both commands work: a frozen run keeps its unit and listener, but its
+process stops and answers nothing.
+
+The step asserts:
+
+- The dashboard shows the Pixoo `Stale / unavailable` and offers no
+  brightness change.
+- The Hub's health reports it unavailable.
+- A command that a client read before the loss and sends during it gets the
+  Hub's `uncertain-result`.
+- The owner's revision moves past the Pixoo's last applied one.
+- After the thaw, the Pixoo shows current again without a reload, and its
+  view catches up with the owner.
+- The loss-time command reached the writer at most once, and nothing more
+  arrives afterwards.
+
+Why at most once rather than never: the kernel of a frozen process still
+accepts the Hub's TCP connection, so the Pixoo may process that one request
+after the thaw. The step attaches `loss-command.json` recording whether 0 or
+1 arrived. The Hub never sends the command again. After the step,
+`inject` re-runs readiness, and the injection record keeps the freeze and
+thaw times, the capture and the recovery checks.
+
+A composition is simulated integration evidence only. It is not
+installed-system acceptance, physical-device evidence or a Windows browser
+result, which [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)
+qualifies.
+
 ## Deferred
 
 No LAN or phone hosting, remote fleet, continuous preview service,

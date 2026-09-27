@@ -75,7 +75,7 @@ async function world({faults = {}} = {}) {
       resolve({code, result: JSON.parse(lines[0]), stderr});
     });
   });
-  const start = (...extra) => run('start', '--manifest', manifest, '--checkout', `nanoleaf=${nanoleaf.checkout}`, '--checkout', `pixoo=${pixoo.checkout}`, '--lease', '10', ...(hubClean() ? [] : ['--unpinned']), ...extra);
+  const start = (...extra) => run('start', '--manifest', manifest, '--checkout', `nanoleaf=${nanoleaf.checkout}`, '--checkout', `pixoo=${pixoo.checkout}`, ...(extra.includes('--lease') ? [] : ['--lease', '10']), ...(hubClean() ? [] : ['--unpinned']), ...extra);
   const composition = async id => JSON.parse(await readFile(join(base, 'p', id, 'composition.json'), 'utf8'));
   const events = async id => (await readFile(join(base, 'p', id, 'events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const units = () => spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${tag}-*`], {encoding: 'utf8'}).stdout.trim();
@@ -205,9 +205,17 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
       assert.equal(w.outputs.some(o => o.includes(secret)), false, 'no credential in any output');
     }
 
+    // A unit left frozen, as by an interrupted injection, shows in doctor, and stop thaws it before stopping.
+    const pixooUnit = `app-verify-${c.services[1].runId}.service`;
+    spawnSync('systemctl', ['--user', 'freeze', pixooUnit]);
+    const frozen = await w.run('doctor', id);
+    assert.equal(frozen.code, 1);
+    assert.ok(frozen.result.checks.some(k => k.id === 'pixoo-frozen' && k.outcome === 'failed'), JSON.stringify(frozen.result.checks));
+
     const stopped = await w.run('stop', id);
     assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
     assert.deepEqual(stopped.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'clean'], ['pixoo', 'clean'], ['nanoleaf', 'clean']]);
+    assert.match(w.outputs.at(-1), /thawed app-verify-.+ before stopping it/);
     const stops = (await w.events(id)).filter(e => e.event === 'service-stopped').map(e => e.service);
     assert.deepEqual(stops, ['hub', 'pixoo', 'nanoleaf'], 'the Hub stops first, then the consumers');
     for (const s of c.services) assert.equal(existsSync(join(w.base, 's', s.runId)), false, `${s.id} runtime directory removed`);
@@ -303,6 +311,40 @@ test('a crashed consumer fails doctor, and stop continues past a service it cann
     assert.ok(['clean', 'partial'].includes(byId.pixoo), `pixoo ${byId.pixoo}`);
     assert.equal(byId.nanoleaf, 'unknown');
     spawnSync('systemctl', ['--user', 'stop', `app-verify-${c.services[0].runId}.service`, `app-verify-${c.services[0].runId}-lease.timer`]);
+  } finally {
+    await w.close();
+  }
+});
+
+test('an expired composition reports expired, stops with each run expired, and restarts as a new linked composition', {skip, timeout: 300000}, async () => {
+  const w = await world();
+  try {
+    const started = await w.start('--lease', '0.6');
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const deadline = Date.now() + 90000;
+    let doctor;
+    do {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      doctor = await w.run('doctor', id);
+    } while (doctor.result.state !== 'expired' && Date.now() < deadline);
+    assert.equal(doctor.code, 1);
+    assert.equal(doctor.result.state, 'expired', JSON.stringify(doctor.result.runs));
+    assert.deepEqual(Object.values(doctor.result.runs), ['expired', 'expired', 'expired']);
+    const stopped = await w.run('stop', id);
+    assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
+    assert.deepEqual(stopped.result.cleanup.services.map(s => [s.id, s.state]), [['hub', 'expired'], ['pixoo', 'expired'], ['nanoleaf', 'expired']]);
+    const refused = await w.start('--restarts', `compose-20260101T000000Z-000000`);
+    assert.equal(refused.code, 1);
+    assert.equal(refused.result.error, 'unknown-composition');
+    const restarted = await w.start('--restarts', id);
+    assert.equal(restarted.code, 0, JSON.stringify(restarted.result));
+    assert.equal(restarted.result.restarts, id);
+    assert.equal(restarted.result.continuity, hubClean() ? 'same-candidate' : 'different-candidate');
+    assert.notEqual(restarted.result.compositionId, id);
+    const running = await w.run('start', '--manifest', w.manifest, '--checkout', `nanoleaf=${w.nanoleaf.checkout}`, '--checkout', `pixoo=${w.pixoo.checkout}`, '--unpinned', '--restarts', restarted.result.compositionId);
+    assert.equal(running.code, 2, 'a running composition must be stopped before it restarts');
+    assert.equal((await w.run('stop', restarted.result.compositionId)).code, 0);
   } finally {
     await w.close();
   }
