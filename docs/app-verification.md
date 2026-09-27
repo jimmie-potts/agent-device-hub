@@ -682,15 +682,26 @@ and `stop` need.
   or a unit left frozen. When every lease has elapsed it reports `expired`,
   and `stop` then records each run as expired. Without an id it lists every
   composition.
-- `capture <id> <step>` runs a Hub capture step and records its outcome.
+- `capture <id> <step>` runs one of the reference steps `integrated-lifecycle`,
+  `integrated-command` or `one-owner` and records its outcome. Any other Hub
+  step is refused as a usage error before anything runs: the fixture steps
+  would reseed the owner out of `integrated`, and the loss and second-owner
+  steps need `inject`.
 - `handoff <id>` freezes each run's verified set and prints one card with the
   three links. It never resets a run, because a reseeded Hub would restart
-  its agent state under the consumers.
+  its agent state under the consumers. An aggregate reset is
+  [#557](https://github.com/jimmie-potts/agent-device-hub/issues/557).
 - `extend <id>` extends all three leases.
 - `stop <id>` stops the Hub first, then the consumers. It thaws a frozen unit
-  first, continues past a service it cannot stop and reports each cleanup
-  (`clean`, `partial`, `unknown` or `none`). Repeating it reports the
-  recorded result.
+  first and continues past a service it cannot stop. When a run's wrapper
+  cannot run, it stops that run's unit and lease timers by their exact names
+  and reports `partial`: the runtime directory and receipt wait for the
+  run's own `stop`. It reports each cleanup as `clean`, `partial`, `unknown`
+  or `none`. Only a clean stop is final; stopping again retries every run.
+- A run whose own recorded candidate (`sourceRevision`, `dirty`) differs
+  from what the pin check saw, because its checkout changed during `start`,
+  fails a pinned start with `identity-mismatch` and marks an unpinned
+  composition's service unpinned.
 
 ### Cross-service proof and loss
 
@@ -708,18 +719,31 @@ them for the steps and for readiness:
 
 | Step | What it proves |
 | --- | --- |
-| `integrated-lifecycle` | A session posted to the Hub's real ingest route shows on the Hub card, as a question on a wall Line and on the Pixoo Monitor. Both consumers reach the Hub's revision, and no writer received a command |
-| `integrated-command` | One brightness change from the dashboard reaches Pixoo's writer exactly once. One Nanoleaf integration setting is applied once, with its physical outcome unknown |
+| `integrated-lifecycle` | A session posted to the Hub's real ingest route shows on the Hub card, as a question on a wall Line and on the Pixoo Monitor. Both consumers follow the Hub's revision, and no writer received a command. No link on the three pages leads to an installed service, and the wall's B.U.N.N.Y. link leads to the paired Hub run |
+| `integrated-command` | One brightness change from the dashboard reaches Pixoo's writer exactly once. One Nanoleaf integration setting is applied once, with its physical outcome unknown. Nothing else reaches either writer |
+| `one-owner` | A lifecycle event posted straight to the paired Pixoo, with the strongest Pixoo credential the composition holds, is not accepted. The Pixoo mirrors exactly the Hub's sessions at the Hub's revision, and its Monitor lists the Hub's session but not the direct one |
 | `pixoo-loss` | Through `inject … consumer-loss pixoo`, as described below |
-| `control-replay-after-recovery` | Negative control through `inject --step`: the same loss, then a client re-sends the lost command as new work. "recovery replayed nothing" must fail |
-| `control-second-owner` | Negative control: it posts a lifecycle event straight to the paired Pixoo, bypassing the Hub, and expects the Pixoo Monitor to list it as a second owner's session. A Hub consumer lists only the Hub's sessions, so it must fail |
+| `control-replay-after-recovery` | Negative control through `inject … consumer-loss pixoo --step control-replay-after-recovery`: the same loss, then a client re-sends the lost command as new work the moment the thawed Pixoo answers. It must fail at "nothing but the loss-time command reached a writer, and that at most once" |
+| `control-second-owner` | Negative control through `inject … second-owner pixoo`: the orchestrator reseeds the Pixoo run to its standalone scenario, its own embedded owner, then restores `hub-paired`. The one-owner checks run in between and must fail at "the Pixoo reads its sessions only from the Hub: current at the owner's revision, with exactly the Hub's sessions" |
+
+A control holds only when it fails at its named assertion. `compose` records
+the expected assertion and whether the control held, and exits 0 only for a
+held control. A control that passes, or fails anywhere else, exits 1. Run the
+controls after `handoff`, so the verified sets hold only passed captures.
+
+"Follows the Hub" means the consumer's feed is `current`, names the owner
+`verify-owner`, has applied the Hub's revision and, for Pixoo, lists exactly
+the Hub's sessions. The owner name alone proves nothing: Pixoo's embedded
+owner uses it too. Readiness and the steps use the same rule.
 
 `inject <id> consumer-loss pixoo` runs the loss step through a handshake.
 The step asks for `freeze` and later `thaw` through two files in the Hub
 run's runtime directory. The orchestrator applies each request to the unit it
 recorded for Pixoo with `systemctl --user freeze` or `thaw` and reads
-`FreezerState` back. The step never names a unit, and the orchestrator
-always thaws when the step ends. On this PC (WSL 2, cgroup v2, systemd 259)
+`FreezerState` back. The step never names a unit. Whatever the step does,
+even if its wrapper dies, the orchestrator thaws the unit (or reseeds a
+second owner back), removes the files, records the injection and prints one
+result line; a capture that ended without a result exits 3. On this PC (WSL 2, cgroup v2, systemd 259)
 both commands work: a frozen run keeps its unit and listener, but its
 process stops and answers nothing.
 
@@ -731,17 +755,29 @@ The step asserts:
 - A client that read the Pixoo before the loss sends one command during it,
   and the Hub answers `uncertain-result`.
 - The owner's revision moves past the Pixoo's last applied one.
-- After the thaw, the Pixoo shows current again without a reload, and its
-  view catches up with the owner.
-- The loss-time command reached the writer at most once, and nothing more
-  arrives afterwards.
+- The step leaves the dashboard before the thaw, so its own read is the first
+  Hub read of the recovered Pixoo. The dashboard then shows the Pixoo
+  current, and both consumers follow the owner again.
+- Nothing but the loss-time command reached a writer, and that at most once.
+  Every writer counter of both consumers is compared. A delivered brightness
+  command must carry the loss-time request id and its unique percent, and it
+  must have taken effect before the Pixoo answered that first read. After
+  that read, the request could only arrive as a re-send.
+- Nothing more reaches a writer in the following seconds.
 
 Why at most once rather than never: the kernel of a frozen process still
-accepts the Hub's TCP connection, so the Pixoo may process that one request
-after the thaw. The step attaches `loss-command.json` recording whether 0 or
-1 arrived. The Hub never sends the command again. After the step,
-`inject` re-runs readiness, and the injection record keeps the freeze and
-thaw times, the capture and the recovery checks.
+accepts the Hub's TCP connection, so the Pixoo may take that one request as
+the first thing it does after the thaw. The step attaches
+`loss-command.json` with the request id, the percent, the first read after
+the thaw and whether 0 or 1 arrived. After the step, `inject` re-runs
+readiness, and the injection record keeps the freeze and thaw times, the
+capture and the recovery checks.
+
+In an integrated preview, no link on the three paired pages leads to an
+installed service: the Hub's Places come from `placeLinks`, and the wall's
+`hub-paired` run points its B.U.N.N.Y. link at the paired Hub
+(codex-nanoleaf#197). `integrated-lifecycle` asserts both. Standalone
+consumer runs are out of this scope and keep their own links.
 
 A composition is simulated integration evidence only. It is not
 installed-system acceptance or physical-device evidence. It is not a Windows

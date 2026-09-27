@@ -276,14 +276,24 @@ function lossStep(replay) {
       if (!(before.feed.revision !== null && during > before.feed.revision)) throw new Error(`owner ${during}, Pixoo last applied ${before.feed.revision}`);
     });
 
+    // Leave the dashboard before the thaw, so the step's own read is the first Hub read of the recovered Pixoo.
+    await t.page.goto('about:blank');
     await t.expect('the orchestrator thawed the Pixoo run', () => injection(t, 'pixoo', 'thaw', 'thawed'));
+    // A frozen consumer's kernel still holds the Hub's timed-out request, so the Pixoo may still take it once, and only
+    // as the first thing it does after the thaw. Whether the loss-time request was used before the Pixoo answers its
+    // first read tells a late delivery from a re-send: afterwards the request can only arrive again.
+    const first = await until(() => hub(t, `/api/controllers/v1/${pixel.alias}/snapshot`), value => value.status === 200, 'the Pixoo did not answer after the thaw');
+    const usedBeforeFirstRead = JSON.stringify(first.body.nextRequestId) !== JSON.stringify(lost.requestId);
     if (replay) {
       // Negative control: a client re-sends the lost command as new work the moment the Pixoo answers again.
-      const fresh = await until(() => hub(t, `/api/controllers/v1/${pixel.alias}/snapshot`), value => value.status === 200, 'the Pixoo did not answer after the thaw');
-      const again = await hub(t, `/api/controllers/v1/${pixel.alias}/commands`, {...lost, requestId: fresh.body.nextRequestId, expectedConfigurationRevision: fresh.body.configurationRevision, expectedGeneration: fresh.body.generation});
+      const again = await hub(t, `/api/controllers/v1/${pixel.alias}/commands`, {...lost, requestId: first.body.nextRequestId, expectedConfigurationRevision: first.body.configurationRevision, expectedGeneration: first.body.generation});
       t.note(`control: re-sent the loss-time brightness command through the Hub as new work right after the thaw (${again.status})`);
     }
-    await t.expect('the dashboard shows the Pixoo current again without a reload', () => stale.waitFor({state: 'detached', timeout: 20000}));
+    await t.page.goto(t.url);
+    await openPixel(t);
+    await t.expect('the dashboard shows the Pixoo current again', async () => {
+      if (await stale.count()) throw new Error('the Pixoo is still marked Stale / unavailable');
+    });
     await consumersFollow(t, 'after recovery both consumers follow the owner again');
     const recovered = await settledWriters(t);
     const deltas = changed(baseline, recovered);
@@ -294,10 +304,11 @@ function lossStep(replay) {
       hubOutcome: sent.body?.error?.code ?? null,
       lossRequestId: lost.requestId,
       percent,
+      firstReadAfterThaw: {nextRequestId: first.body.nextRequestId, lossRequestUsedBefore: usedBeforeFirstRead},
       deliveredAtWriter: delivered,
       lastSuccessfulSend: lastSend ?? null,
       writerChanges: deltas,
-      note: 'A frozen consumer\'s kernel still accepts the TCP connection, so the Hub\'s one request can be processed once after the thaw (1) or not at all (0). Either is truthful for an uncertain result. Anything else reaching a writer fails the step.',
+      note: 'A frozen consumer\'s kernel still accepts the TCP connection, so the Hub\'s one request can take effect once, before the Pixoo answers its first read after the thaw (1), or not at all (0). Either is truthful for an uncertain result. Anything else reaching a writer, including that request arriving again later, fails the step.',
       pixooRevisionBeforeLoss: before.feed.revision,
       ownerRevisionDuringLoss: during,
     }, null, 2));
@@ -306,8 +317,10 @@ function lossStep(replay) {
       const other = deltas.filter(d => !(d.consumer === 'pixoo' && brightnessKeys.has(d.key)));
       if (other.length) throw new Error(`other writer counters changed: ${JSON.stringify(other)}`);
       if (delivered < 0 || delivered > 1) throw new Error(`${delivered} brightness commands reached the Pixoo writer`);
-      if (delivered === 1 && !(lastSend?.status === 'known' && JSON.stringify(lastSend.requestId) === JSON.stringify(lost.requestId))) {
-        throw new Error(`the brightness command that reached the writer is not the loss-time request ${JSON.stringify(lost.requestId)}: last send ${JSON.stringify(lastSend)}`);
+      if (delivered === 1) {
+        if (!usedBeforeFirstRead) throw new Error('a brightness command took effect after the Pixoo answered its first read after the thaw: the lost command was sent again, not delivered late');
+        if (!(lastSend?.status === 'known' && JSON.stringify(lastSend.requestId) === JSON.stringify(lost.requestId))) throw new Error(`the brightness command that reached the writer is not the loss-time request ${JSON.stringify(lost.requestId)}: last send ${JSON.stringify(lastSend)}`);
+        if (after.body?.state?.desired?.brightness?.value !== percent) throw new Error(`the Pixoo shows ${after.body?.state?.desired?.brightness?.value}%, not the loss-time ${percent}%`);
       }
       if (delivered === 0 && after.body?.state?.desired?.brightness?.value === percent) throw new Error(`the Pixoo shows the loss-time percent ${percent} without a delivery`);
     });
@@ -424,13 +437,13 @@ export const integratedSteps = {
     run: ownerStep(false),
   },
   'pixoo-loss': {
-    description: 'The Pixoo run is frozen and thawed by compose inject: the Hub shows it Stale / unavailable, a command sent during the loss stays uncertain and reaches the writer at most once as itself, nothing else reaches a writer, and recovery replays nothing',
+    description: 'The Pixoo run is frozen and thawed by compose inject: the Hub shows it Stale / unavailable, a command sent during the loss stays uncertain and takes effect at most once, only before the Pixoo answers its first read after the thaw, nothing else reaches a writer, and recovery replays nothing',
     scenario: 'integrated',
     timeoutMs: 150000,
     run: lossStep(false),
   },
   'control-replay-after-recovery': {
-    description: 'Negative control, through compose inject: right after the Pixoo is thawed a client re-sends the lost command as new work, and the writer assertion must fail',
+    description: 'Negative control, through compose inject: the moment the thawed Pixoo answers, a client re-sends the lost command as new work, and the writer assertion must fail',
     scenario: 'integrated',
     timeoutMs: 150000,
     run: lossStep(true),

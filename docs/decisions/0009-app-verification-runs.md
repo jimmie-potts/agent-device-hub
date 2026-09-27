@@ -84,9 +84,11 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
    under the Hub's proof root, and a cleanup stops only recorded runs, owner
    first. Consumer loss is `systemctl --user freeze` and `thaw` on the
    recorded unit. The orchestrator applies them when a capture step asks
-   through the Hub run's runtime directory. A preview's Hub configures its
-   own Places destinations (`placeLinks`), so no preview link leads to an
-   installed service.
+   through the Hub run's runtime directory. In an integrated preview no link
+   on the three paired pages leads to an installed service: the Hub
+   configures its own Places destinations (`placeLinks`), the wall's paired
+   run points its B.U.N.N.Y. link at the paired Hub, and a capture step
+   asserts both. Standalone consumer runs are out of that scope.
 
 ## Alternatives considered
 

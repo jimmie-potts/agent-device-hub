@@ -136,6 +136,7 @@ npm run build
 npm run -s verify:compose -- start --checkout nanoleaf=/abs/codex-nanoleaf --checkout pixoo=/abs/divoom-app-upgrade
 npm run -s verify:compose -- capture <composition-id> integrated-lifecycle
 npm run -s verify:compose -- capture <composition-id> integrated-command
+npm run -s verify:compose -- capture <composition-id> one-owner
 npm run -s verify:compose -- inject <composition-id> consumer-loss pixoo
 npm run -s verify:compose -- handoff <composition-id>
 npm run -s verify:compose -- stop <composition-id>
@@ -149,11 +150,12 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 
 | Step | UI entry | Driver action | Scenario | Expected observation |
 | --- | --- | --- | --- | --- |
-| `integrated-lifecycle` | Hub home, then the wall run's map, then the Pixoo run's Monitor tab, in one page | Post `session.started` and `question.continuing` for a new session through the Hub's ingest route | `integrated` | The Hub card shows the session and "Question · continuing". Both consumers read the owner's revision. The wall lists the session as `question` on a Line. The Pixoo Monitor lists it. Neither writer received a command |
-| `integrated-command` | `pixel` Brightness slider, then `wall` Layout style | Set brightness; switch the layout style | `integrated` | Queued or Sent. Exactly one `brightness.set` at the Pixoo writer. The wall's writer applies exactly one integration setting, with the physical outcome unknown. Nothing is sent twice |
-| `pixoo-loss` | `pixel` component | Through `inject … consumer-loss pixoo`: ask for the freeze; a client that read before the loss sends brightness; post an event; ask for the thaw | `integrated` | `Stale / unavailable` and no enabled slider. Health says unavailable. The Hub answers `uncertain-result`. The owner advances past the Pixoo's revision. After the thaw the page recovers without a reload and the Pixoo catches up. The command reached the writer at most once (`loss-command.json` records 0 or 1), and nothing more arrives |
-| `control-replay-after-recovery` | `pixel` component | Through `inject … --step control-replay-after-recovery`: as `pixoo-loss`, then re-send the lost command as new work | `integrated` | Negative control: "recovery replayed nothing" fails |
-| `control-second-owner` | The Pixoo run's Monitor tab | Post a lifecycle event straight to the Pixoo run with the controller credential the Hub holds, bypassing the Hub | `integrated` | Negative control: expects the Pixoo Monitor to list that session as a second owner's would, and fails because a Hub consumer lists only the Hub's sessions |
+| `integrated-lifecycle` | Hub home, then the wall run's map, then the Pixoo run's Monitor tab, in one page | Post `session.started` and `question.continuing` for a new session through the Hub's ingest route | `integrated` | The Hub card shows the session and "Question · continuing". Both consumers follow the owner. The wall lists the session as `question` on a Line, and its B.U.N.N.Y. link leads to the paired Hub. The Pixoo Monitor lists it. No link on the three pages targets an installed port. Neither writer received a command |
+| `integrated-command` | `pixel` Brightness slider, then `wall` Layout style | Set brightness; switch the layout style | `integrated` | Queued or Sent. Exactly one `brightness.set` at the Pixoo writer. The wall's writer applies exactly one integration setting, with the physical outcome unknown. Nothing else reaches either writer |
+| `one-owner` | The Pixoo run's Monitor tab | Post a session to the Hub; post another straight to the Pixoo run with the controller credential the Hub holds | `integrated` | The direct event is not accepted. The Pixoo follows the owner with exactly the Hub's sessions. Its Monitor lists the Hub's session and not the direct one |
+| `pixoo-loss` | `pixel` component | Through `inject … consumer-loss pixoo`: ask for the freeze; a client that read before the loss sends brightness at a unique percent; post an event; leave the page; ask for the thaw; read the Pixoo first | `integrated` | `Stale / unavailable` and no enabled slider. Health says unavailable. The Hub answers `uncertain-result`. The owner advances past the Pixoo's revision. After the thaw the dashboard shows the Pixoo current, and both consumers follow the owner. Nothing but the loss-time command reached a writer, and that at most once: every counter is compared, and a delivery must carry the loss-time request id and percent and must have taken effect before the Pixoo answered its first read. `loss-command.json` records it all. Nothing more arrives afterwards |
+| `control-replay-after-recovery` | `pixel` component | Through `inject … consumer-loss pixoo --step control-replay-after-recovery`: as `pixoo-loss`, then re-send the lost command as new work the moment the thawed Pixoo answers | `integrated` | Negative control: holds when it fails at "nothing but the loss-time command reached a writer, and that at most once" |
+| `control-second-owner` | The Pixoo run's Monitor tab | Through `inject … second-owner pixoo`: the orchestrator reseeds the Pixoo to its embedded owner, the one-owner checks run, and the orchestrator restores `hub-paired` | `integrated` | Negative control: holds when it fails at "the Pixoo reads its sessions only from the Hub: current at the owner's revision, with exactly the Hub's sessions" |
 
 ## Checks
 
@@ -191,8 +193,14 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   pinned Git checkouts. It covers:
   - a pin mismatch and a dirty checkout failing before anything is created;
   - pairing and readiness;
-  - the loss through `inject`, with the replay control failing;
-  - the second-owner control failing;
+  - `capture` and `inject` refusing any other step before a run changes;
+  - `one-owner`, and the loss through `inject`;
+  - both controls holding at their named assertions, the replay re-sent
+    right after the thaw and the second owner an embedded stand-in Pixoo;
+  - a Hub capture that dies mid-freeze: the consumer is thawed, the
+    handshake cleared and a result printed with exit 3;
+  - a checkout that changes during `start` failing a pinned start;
+  - a stop retried after one that could not stop a run;
   - extend, handoff, a unit left frozen in `doctor`, and stop with the Hub
     first;
   - expiry reported as `expired`, and a restart as a new composition linked

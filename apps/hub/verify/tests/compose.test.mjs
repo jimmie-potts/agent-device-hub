@@ -223,7 +223,7 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     assert.equal(replay.code, 0, `the replay control holds: ${JSON.stringify(replay.result)}`);
     assert.deepEqual(replay.result.control, {expected: 'nothing but the loss-time command reached a writer, and that at most once', held: true});
     assert.equal(replay.result.capture.outcome, 'failed');
-    assert.match(replay.result.capture.reason, /^assertion failed: nothing but the loss-time command reached a writer, and that at most once: .*(not the loss-time request|2 brightness commands)/);
+    assert.match(replay.result.capture.reason, /^assertion failed: nothing but the loss-time command reached a writer, and that at most once: (a brightness command took effect after the Pixoo answered its first read after the thaw|2 brightness commands)/);
     assert.equal(spawnSync('systemctl', ['--user', 'show', `app-verify-${c.services[1].runId}.service`, '-p', 'FreezerState', '--value'], {encoding: 'utf8'}).stdout.trim(), 'running', 'the orchestrator always thaws');
     const owner = await w.run('inject', id, 'second-owner', 'pixoo');
     assert.equal(owner.code, 0, `the second-owner control holds: ${JSON.stringify(owner.result)}`);

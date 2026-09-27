@@ -1152,10 +1152,18 @@ worktree after `npm run build`:
      on `start`.
 2. Run `start` with both `--checkout` paths, then
    `capture <id> integrated-lifecycle`, `capture <id> integrated-command`,
-   `inject <id> consumer-loss pixoo`, `handoff <id>` and `stop <id>`.
-3. Run the controls after handoff or in a separate composition:
-   `inject <id> consumer-loss pixoo --step control-replay-after-recovery` and
-   `capture <id> control-second-owner` must both exit 1.
+   `capture <id> one-owner`, `inject <id> consumer-loss pixoo`,
+   `handoff <id>` and `stop <id>`.
+3. Run the controls after `handoff`:
+   - `inject <id> consumer-loss pixoo --step control-replay-after-recovery`
+     must hold at "nothing but the loss-time command reached a writer, and
+     that at most once";
+   - `inject <id> second-owner pixoo` must hold at "the Pixoo reads its
+     sessions only from the Hub: current at the owner's revision, with
+     exactly the Hub's sessions".
+
+   `compose` exits 0 only for a held control and records the expected
+   assertion. A control that exits 1 did not hold, whatever its reason.
 
 The delivery evidence records the composition id, its `composition.json`,
 each run's verified set and the consumer revisions. A composition proves
