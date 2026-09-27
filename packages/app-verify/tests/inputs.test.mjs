@@ -77,10 +77,26 @@ test('bad inputs are usage errors that create nothing', async () => {
   }
 });
 
+test('a scenario that requires an input refuses to start without it, before the supervisor is consulted', async () => {
+  const box = await sandbox({options: {inputs: INPUTS}});
+  try {
+    const refused = await box.cli(['start', '--scenario', 'paired', '--input', 'label=a']);
+    assert.equal(refused.code, 2, refused.stdout);
+    assert.equal(refused.result.error, 'usage');
+    assert.equal(refused.result.detail, 'scenario paired requires input feed; give it with --input feed=<value>');
+    const help = await box.cli(['help']);
+    assert.deepEqual(help.result.scenarioInputs, {paired: ['feed']});
+    assert.deepEqual((await box.cli(['help'], {entry: await box.wrapper(box.repo, 'verify-plain.mjs', {})})).result.scenarioInputs, {});
+    assert.equal(existsSync(box.proofRoot), false, 'no proof directory was created');
+  } finally {
+    await box.close();
+  }
+});
+
 test('a plug-in that declares a secret-like or malformed input is refused before any operation', async () => {
   const box = await sandbox();
   try {
-    for (const [inputs, pattern] of [[{apiKey: {description: 'no'}}, /apiKey looks like a secret/], [{'two words': {description: 'no'}}, /input name two words/], [{label: {}}, /input label needs a description/]]) {
+    for (const [inputs, pattern] of [[{apiKey: {description: 'no'}}, /apiKey looks like a secret/], [{'two words': {description: 'no'}}, /input name two words/], [{label: {}}, /input label needs a description/], [{label: {description: 'a label'}}, /scenario paired requires feed, which is not a declared input/]]) {
       const refused = await box.cli(['help'], {entry: await box.wrapper(box.repo, 'verify-bad.mjs', {inputs})});
       assert.equal(refused.code, 1);
       assert.equal(refused.result.error, 'internal');
@@ -203,6 +219,44 @@ test('a plug-in that declares inputs records an empty map when none is given', {
     assert.deepEqual((await box.receipt(started.result.runId)).inputs, {});
     assert.deepEqual(await seen(started.result.url), {seeded: {}, launched: {}});
     assert.equal((await box.cli(['stop', started.result.runId])).code, 0);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a scenario-specific input missing on scenario, a fresh step or handoff --reset is a usage error that stops nothing', {skip}, async () => {
+  const box = await sandbox({options: {inputs: INPUTS}});
+  try {
+    const started = await box.cli(['start', '--lease', '10', '--input', 'label=first']);
+    assert.equal(started.code, 0, started.stderr);
+    const {runId, url} = started.result;
+    const before = await box.receipt(runId);
+    const refusals = [
+      [['scenario', runId, 'paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
+      [['capture', runId, 'fresh-paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
+      [['handoff', runId, '--reset', 'paired'], 'scenario paired requires input feed; give it with --input feed=<value>'],
+    ];
+    for (const [args, detail] of refusals) {
+      const refused = await box.cli(args);
+      assert.equal(refused.code, 2, `${args.join(' ')}: ${refused.stdout}`);
+      assert.equal(refused.result.detail, detail);
+    }
+    assert.deepEqual(await box.receipt(runId), before, 'the receipt is unchanged: nothing was stopped, captured or frozen');
+    assert.equal(existsSync(join(box.proofRoot, runId, 'verified')), false);
+    assert.deepEqual(await seen(url), {seeded: {label: 'first'}, launched: {label: 'first'}}, 'the run still serves');
+
+    // Given the input, the same reseed works, and the fresh step and restart reuse it.
+    const feed = 'http://127.0.0.1:41000/feed';
+    const paired = await box.cli(['scenario', runId, 'paired', '--input', `feed=${feed}`]);
+    assert.equal(paired.code, 0, paired.stderr);
+    assert.deepEqual(paired.result.inputs, {label: 'first', feed});
+    assert.equal((await box.cli(['capture', runId, 'fresh-paired'])).code, 0);
+    const restarted = await box.cli(['restart', runId]);
+    assert.equal(restarted.code, 0, restarted.stderr);
+    assert.equal(restarted.result.scenario, 'paired');
+    assert.deepEqual(restarted.result.inputs, {label: 'first', feed});
+    assert.equal((await box.cli(['stop', restarted.result.runId])).code, 0);
+    assert.deepEqual(units(box.app), []);
   } finally {
     await box.close();
   }

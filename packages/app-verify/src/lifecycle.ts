@@ -10,7 +10,7 @@ import {LockedError, ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
 import {RECEIPT_VERSION, type AppPlugin, type CheckRecord, type CleanupItem, type ProbeContext, type Receipt, type RunInputs, type RunState} from './types.js';
-import {errorText, hex256, iso, newRunId, pause, runIdPattern, UsageError, which} from './util.js';
+import {errorText, hex256, iso, newRunId, pause, redact, runIdPattern, UsageError, which} from './util.js';
 
 export {UsageError};
 
@@ -249,9 +249,9 @@ async function boundaryChecks(run: Run, scenario: string, url: string, port: num
     let record: CheckRecord;
     try {
       const outcome = await check.run(probeContext(run, scenario, url, port, AbortSignal.timeout(15000), seen));
-      record = outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: outcome.reason};
+      record = outcome.outcome === 'passed' ? {id: check.id, outcome: 'passed'} : {id: check.id, outcome: outcome.outcome, reason: redact(String(outcome.reason), run.roots)};
     } catch (error) {
-      record = {id: check.id, outcome: 'failed', reason: errorText(error)};
+      record = {id: check.id, outcome: 'failed', reason: redact(errorText(error), run.roots)};
     }
     checks.push(record);
     if (record.outcome === 'failed') {
@@ -472,7 +472,8 @@ export async function start(plugin: AppPlugin, io: Io, options: StartOptions): P
     return {code: EXIT.ok, receipt, value: {...operation, runId, state: 'running', url: announced.url, port, ...additions(plugin, seen), scenario: options.scenario, build: receipt.build, expiresAt: receipt.preview!.expiresAt, proofDir: run.store.dir, card: lines}};
   } catch (error) {
     const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
-    const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
+    // Recorded and printed: no absolute path outside the two roots, and a bounded length.
+    const failure = new Failure(caught.code, redact(withCause(caught.detail, await appCause(run)), run.roots));
     (failure as Failure & {checks?: CheckRecord[]}).checks = (caught as Failure & {checks?: CheckRecord[]}).checks;
     io.progress(`${runId}: start failed: ${failure.message}`);
     const cleaned = await cleanup(run, receipt, false);
@@ -554,20 +555,21 @@ export async function reseed(run: Run, io: Io, receipt: Receipt, scenario: strin
     return {code: EXIT.ok, value: {runId: run.runId, state: 'running', scenario, port: announced.port, url: announced.url, ...given, seededAt, receipt: updated}};
   } catch (error) {
     const caught = error instanceof Failure ? error : new Failure('launch-failed', errorText(error));
-    const failure = new Failure(caught.code, withCause(caught.detail, await appCause(run)));
+    const failure = new Failure(caught.code, redact(withCause(caught.detail, await appCause(run)), run.roots));
+    const detail = redact(failure.message, run.roots);
     io.progress(`${run.runId}: reseed failed, stopping the run: ${failure.message}`);
     const cleaned = await cleanup(run, receipt, false);
     await run.store.update(current => {
-      Object.assign(current, {state: 'stopped' satisfies RunState, failure: {cause: 'reset-failed', at: iso(), detail: `${failure.code}: ${failure.detail}`}, cleanup: {...cleaned, at: iso()}});
+      Object.assign(current, {state: 'stopped' satisfies RunState, failure: {cause: 'reset-failed', at: iso(), detail}, cleanup: {...cleaned, at: iso()}});
     });
     await run.store.event('reset-failed', {scenario, cause: failure.code, detail: failure.detail, cleanup: cleaned.result});
-    return {code: EXIT.failed, value: {runId: run.runId, state: 'stopped', cause: 'reset-failed', detail: `${failure.code}: ${failure.detail}`, cleanup: cleaned}};
+    return {code: EXIT.failed, value: {runId: run.runId, state: 'stopped', cause: 'reset-failed', detail, cleanup: cleaned}};
   }
 }
 
-/** The recorded inputs, checked against the plug-in before a relaunch reuses them: a usage error changes nothing. */
-export function reseedInputs(plugin: AppPlugin, receipt: Receipt): RunInputs {
-  return resolveInputs(plugin, {}, receipt.inputs ?? {});
+/** The recorded inputs for seeding `scenario`, checked before a relaunch reuses them: a usage error changes nothing. */
+export function reseedInputs(plugin: AppPlugin, receipt: Receipt, scenario: string): RunInputs {
+  return resolveInputs(plugin, {}, receipt.inputs ?? {}, scenario);
 }
 
 /** `given` replaces the recorded value of each input it names; the others are kept. */
@@ -575,7 +577,7 @@ export async function scenario(plugin: AppPlugin, io: Io, runId: string | undefi
   const run = await load(plugin, io, runId);
   if (!name || !has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name ?? '(none)'}; see help`);
   const receipt = await requireRunning(run);
-  const inputs = resolveInputs(plugin, given, receipt.inputs ?? {});
+  const inputs = resolveInputs(plugin, given, receipt.inputs ?? {}, name);
   const result = await reseed(run, io, receipt, name, inputs);
   const {receipt: _unused, ...value} = result.value;
   return {code: result.code, value: {operation: 'scenario', ...value}};
@@ -693,7 +695,7 @@ export async function restart(plugin: AppPlugin, io: Io, runId: string | undefin
   const run = await load(plugin, io, runId);
   const previous = await readReceipt(run);
   // Checked before the stop, so a plug-in that no longer accepts a recorded input leaves the run serving.
-  const inputs = reseedInputs(plugin, previous);
+  const inputs = reseedInputs(plugin, previous, previous.scenario.name);
   const stopped = await stop(plugin, io, run.runId);
   if (stopped.code !== EXIT.ok) return {code: stopped.code, value: {...stopped.value, operation: 'restart'}};
   const started = await start(plugin, io, {scenario: previous.scenario.name, leaseMinutes: previous.preview?.leaseMinutes ?? DEFAULT_LEASE_MINUTES, restarts: run.runId, inputs});

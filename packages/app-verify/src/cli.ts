@@ -76,6 +76,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
       case 'help':
         outcome = {code: EXIT.ok, value: {operation, app: plugin.app, command: plugin.command, coreVersion: VERSION, operations: OPERATIONS,
           inputs: Object.fromEntries(Object.entries(plugin.inputs ?? {}).map(([name, input]) => [name, {description: input.description, required: input.required === true}])),
+          scenarioInputs: Object.fromEntries(Object.entries(plugin.scenarios).filter(([, v]) => v.requiredInputs?.length).map(([k, v]) => [k, [...v.requiredInputs!]])),
           scenarios: Object.fromEntries(Object.entries(plugin.scenarios).map(([k, v]) => [k, v.description])), defaultScenario: plugin.defaultScenario,
           steps: Object.fromEntries(Object.entries(plugin.captureSteps).map(([k, v]) => [k, v.description])),
           exitCodes: {0: 'verified', 1: 'failed outcome', 2: 'usage error', 3: 'supervisor or browser tooling unavailable'}}};
@@ -84,7 +85,7 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
         arity(positional, 0, operation);
         const name = flags['--scenario'] ?? plugin.defaultScenario;
         if (!has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name}; see help`);
-        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given)});
+        outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given, {}, name)});
         break;
       }
       case 'doctor':

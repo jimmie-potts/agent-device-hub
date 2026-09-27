@@ -1084,7 +1084,8 @@ The suite has two parts:
   refused timer and a stray one), expiry, doctor staleness, restart, frozen
   proof, attachments, interrupted captures, receipt-less stop and a stop
   retried after `receipt-locked`, and, for 1.1, inputs kept across every
-  relaunch and extra endpoints (`tests/endpoints.test.mjs`). Without a
+  relaunch, scenario-specific inputs, redacted failure details and extra
+  endpoints (`tests/endpoints.test.mjs`). Without a
   manager they skip, each with the printed reason, unless
   `APP_VERIFY_REQUIRE_SYSTEMD=1` makes that a failure. The delivery evidence
   records them from the owner's WSL host.

@@ -57,8 +57,8 @@ No operation prints a token, a private path outside the receipt's two declared
 roots, or personal data. Exit status 0 means the outcome was verified, not
 merely requested; 1 is a failed outcome, 2 a usage error and 3 an unavailable
 supervisor or browser tooling. `help` lists the operations, the adapter's
-scenarios and its capture steps and, since 1.1, its declared inputs and the
-core version.
+scenarios and its capture steps and, since 1.1, its declared inputs, each
+scenario's required inputs and the core version.
 
 | Operation | Outcome | Failure it must report |
 | --- | --- | --- |
@@ -78,7 +78,16 @@ name, a missing required input, a value that is not 1 to 512 printable ASCII
 characters and a name matching `/token|secret|password|credential|key/i`.
 It records them in the receipt and the `seeded`, `unit-started` and
 `reseeded` events, and every reseed, `fresh` step, `handoff --reset` and
-`restart` reuses them.
+`restart` reuses them. A scenario can list `requiredInputs`, and seeding it
+without them is the same usage error, raised before anything stops.
+
+A credential, or a path to one, never travels as an input. A caller that must
+supply one writes it with mode 0600 into the run's runtime directory,
+`<runtime root>/<run-id>/`, outside `data/`, `tmp/` and `home/` so that a
+reseed keeps it. The plug-in reads it by a fixed file name from
+`ctx.runtimeDir`. `start` creates the directory, so the caller writes the file
+after `start` and before the `scenario` reseed that needs it, and `stop`
+deletes it with the directory.
 
 A ready line may also name **extra endpoints**: other loopback listeners of
 the same application, such as a fake controller that another run calls. They
@@ -168,7 +177,9 @@ values it cannot know yet to `null`: `owned.port`, `owned.mainPid`,
   add its application's own stable cause line from the tail of the app's
   stderr (`readiness.failureCause`), appended as `; app: <line>` when it is
   printable ASCII of at most 200 characters; the core never records raw log
-  text.
+  text. Since 1.1, `detail`, like a check's or capture's `reason`, has every
+  absolute path outside the two roots replaced with `<path>` and is capped at
+  1000 characters.
 - `cleanup.result` becomes `clean`, `partial` or `unknown` (a readback
   failed). `cleanup.at` records when, and `cleanup.items` lists one
   `{kind, name, outcome}` per lease timer, the unit and the runtime

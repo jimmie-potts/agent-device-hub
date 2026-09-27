@@ -94,6 +94,14 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
       endpoint: {description: 'Counter plus a controller listener announced as an extra endpoint', ...scenario({behavior: 'reference', start: 0, endpoint: 'bind'})},
       'endpoint-moves': {description: 'Controller endpoint that ignores its recorded port on relaunch', ...scenario({behavior: 'reference', start: 0, endpoint: 'moves'})},
       'endpoint-announce': {description: 'Announces the test\'s chosen endpoint port without binding it', ...scenario({behavior: 'reference', start: 0, endpoint: 'announce', announcePort})},
+      // Only with a declared `feed` input: the plug-in check refuses a scenario that requires an undeclared input.
+      ...(inputs?.feed || inputs?.label ? {paired: {description: 'Counter at 0 paired with a peer feed', requiredInputs: ['feed'], ...scenario({behavior: 'reference', start: 0})}} : {}),
+      'seed-leaks': {
+        description: 'Seeding fails like a child process whose error names private absolute paths',
+        seed: ({dataDir}) => {
+          throw new Error(`Command failed: /opt/private-tool/bin/seed --data ${dataDir} --config /home/someone/.config/private.json (see "/srv/private/log")`);
+        },
+      },
       'seed-fails': {
         description: 'Seeding throws',
         seed: () => {
@@ -194,6 +202,12 @@ export function createPlugin({root, app, playwright = defaultPlaywright(), pidFi
           await t.expect('the counter is shown', () => t.page.getByRole('status').isVisible());
         },
       },
+      ...(inputs?.feed ? {'fresh-paired': {
+        description: 'A fresh step pinned to the paired scenario',
+        scenario: 'paired',
+        fresh: true,
+        run: inputsShown,
+      }} : {}),
       'controller-answers': {
         description: 'The controller endpoint the ready line announced answers',
         run: async t => {

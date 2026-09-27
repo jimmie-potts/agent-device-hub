@@ -646,3 +646,31 @@ test('doctor reports an extra armed lease timer as stale', {skip}, async () => {
     await box.close();
   }
 });
+
+test('a failure detail keeps paths inside the two roots and replaces every other absolute path', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const failed = await box.cli(['start', '--scenario', 'seed-leaks']);
+    assert.equal(failed.code, 1, failed.stderr);
+    assert.equal(failed.result.cause, 'seed-failed');
+    const dataDir = join(box.stateRoot, failed.result.runId, 'data');
+    assert.equal(failed.result.detail, `Command failed: <path> --data ${dataDir} --config <path> (see "<path>")`);
+    const receipt = await box.receipt(failed.result.runId);
+    assert.equal(receipt.failure.detail, failed.result.detail);
+    assert.equal((await box.events(failed.result.runId)).find(e => e.event === 'start-failed').detail, failed.result.detail);
+
+    // A reseed that fails the same way records the same redacted detail.
+    const {runId} = (await box.cli(['start', '--lease', '5'])).result;
+    const reset = await box.cli(['scenario', runId, 'seed-leaks']);
+    assert.equal(reset.code, 1);
+    assert.equal(reset.result.detail, `seed-failed: Command failed: <path> --data ${join(box.stateRoot, runId, 'data')} --config <path> (see "<path>")`);
+    assert.equal((await box.receipt(runId)).failure.detail, reset.result.detail);
+    for (const result of [failed, reset]) {
+      const texts = [result.stdout, result.stderr, JSON.stringify(await box.receipt(result.result.runId)), JSON.stringify(await box.events(result.result.runId))];
+      for (const text of texts) assert.equal(/\/opt\/private-tool|\/home\/someone|\/srv\/private/.test(text), false, 'no private path is printed or recorded');
+    }
+    assert.deepEqual(units(box.app), []);
+  } finally {
+    await box.close();
+  }
+});

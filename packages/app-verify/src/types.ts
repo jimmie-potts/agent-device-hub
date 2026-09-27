@@ -75,6 +75,13 @@ export interface Scenario {
   /** One line for `help` and the card. */
   description: string;
   /**
+   * Optional (1.1): declared inputs this scenario cannot run without, even
+   * when the plug-in declares them optional. `start`, `scenario`, a `fresh`
+   * step, `handoff --reset` and `restart` refuse, as a usage error before
+   * anything stops, to seed it without them.
+   */
+  requiredInputs?: readonly string[];
+  /**
    * Write this scenario's state into the empty `dataDir`. Runs before the
    * application starts: on `start`, on `scenario` and on `handoff --reset`
    * (the core stops the application first and relaunches it on the same port
@@ -134,9 +141,9 @@ export interface ReadyLine {
   url: string;
   /**
    * Optional (1.1): other loopback listeners of the same application, such as
-   * a fake controller another run must reach, by name (a letter, then
-   * letters, digits, `_` or `-`; at most 16). Each is an
-   * `http://127.0.0.1:<port>/` URL. They are recorded as
+   * a fake controller another run must reach, by name. A name is a letter
+   * followed by up to 63 letters, digits, `_` or `-`, and a ready line names
+   * at most 16 endpoints. Each is an `http://127.0.0.1:<port>/` URL. They are recorded as
    * `receipt.owned.endpoints`, printed in the card, held to their ports on a
    * relaunch, refused on a reserved port and checked by `doctor`'s listener
    * read.

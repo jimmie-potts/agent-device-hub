@@ -23,6 +23,11 @@ export function checkDeclarations(plugin: AppPlugin): void {
     if (SECRET_LIKE.test(name)) throw new Error(`plug-in input ${name} looks like a secret; inputs are recorded in the receipt and must never carry a credential`);
     if (typeof declaration?.description !== 'string' || declaration.description.length === 0) throw new Error(`plug-in input ${name} needs a description`);
   }
+  for (const [scenario, definition] of Object.entries(plugin.scenarios)) {
+    for (const name of definition.requiredInputs ?? []) {
+      if (!Object.hasOwn(plugin.inputs ?? {}, name)) throw new Error(`plug-in scenario ${scenario} requires ${name}, which is not a declared input`);
+    }
+  }
 }
 
 /** Parse repeated `--input <name>=<value>` arguments. Format errors only; `resolveInputs` checks the rest. */
@@ -53,10 +58,11 @@ export function checkGiven(plugin: AppPlugin, given: Readonly<Record<string, unk
  * The inputs a run uses: `recorded` (a relaunch's earlier inputs, or none)
  * with each name in `given` replacing its value. Refuses, as a usage error, a
  * secret-like or undeclared name, a value that is not 1 to 512 printable ASCII
- * characters and a missing required input. The result lists names in
- * declaration order.
+ * characters, a missing required input and, when `scenario` names the
+ * scenario about to be seeded, a missing input it requires. The result lists
+ * names in declaration order.
  */
-export function resolveInputs(plugin: AppPlugin, given: Readonly<Record<string, unknown>>, recorded: Readonly<Record<string, unknown>> = {}): RunInputs {
+export function resolveInputs(plugin: AppPlugin, given: Readonly<Record<string, unknown>>, recorded: Readonly<Record<string, unknown>> = {}, scenario?: string): RunInputs {
   const declared = plugin.inputs ?? {};
   const merged: Record<string, unknown> = {...recorded, ...given};
   checkGiven(plugin, merged);
@@ -64,6 +70,10 @@ export function resolveInputs(plugin: AppPlugin, given: Readonly<Record<string, 
   for (const [name, declaration] of Object.entries(declared)) {
     if (Object.hasOwn(merged, name)) inputs[name] = merged[name] as string;
     else if (declaration.required) throw new UsageError(`input ${name} is required; give it with --input ${name}=<value>`);
+  }
+  const definition = scenario !== undefined && Object.hasOwn(plugin.scenarios, scenario) ? plugin.scenarios[scenario] : undefined;
+  for (const name of definition?.requiredInputs ?? []) {
+    if (!Object.hasOwn(inputs, name)) throw new UsageError(`scenario ${scenario} requires input ${name}; give it with --input ${name}=<value>`);
   }
   return inputs;
 }

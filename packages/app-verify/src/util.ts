@@ -67,6 +67,21 @@ export function which(program: string, path: string, cwd: string): string | unde
   return undefined;
 }
 
+/** Longest detail or reason the core records from an application, plug-in or tool error. */
+export const DETAIL_LIMIT = 1000;
+
+/**
+ * A detail fit for a receipt, event or result line: every absolute path
+ * outside the run's two roots becomes `<path>` (a tool's "Command failed:
+ * /abs/…" can name private files), and the text is capped at
+ * `DETAIL_LIMIT` characters. URLs and relative paths are kept.
+ */
+export function redact(text: string, roots: {runtime: string; proof: string}): string {
+  const inside = (path: string) => [roots.runtime, roots.proof].some(root => path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`));
+  const redacted = text.replace(/(^|[\s'"(=[,])(\/[^\s'"()[\],]+)/g, (_, before: string, path: string) => `${before}${inside(path) ? path : '<path>'}`);
+  return redacted.length > DETAIL_LIMIT ? `${redacted.slice(0, DETAIL_LIMIT - 3)}...` : redacted;
+}
+
 export function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   return text.split('\n')[0]!.slice(0, 500);

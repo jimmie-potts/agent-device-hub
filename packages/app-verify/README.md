@@ -71,7 +71,7 @@ executed one.
 | Field | What the adapter supplies |
 | --- | --- |
 | `app`, `repository`, `command`, `root` | Name used in run ids and unit names (lowercase, at most 16 characters); `owner/name`; the wrapper command printed in the card; the absolute checkout it serves |
-| `scenarios`, `defaultScenario` | Named synthetic seeds. `seed({dataDir, scenario, …})` writes into an empty private directory before the application starts |
+| `scenarios`, `defaultScenario` | Named synthetic seeds. `seed({dataDir, scenario, …})` writes into an empty private directory before the application starts. Optional `requiredInputs` (1.1) names declared inputs the scenario cannot run without |
 | `build` | `version`; the served `artifact` to hash: `{route}` read over loopback, `{file}` under `root`, or `{files: [...]}` hashed as `sha256sum <files> \| sha256sum` prints; an optional `prepare()` that builds before launch |
 | `launch(ctx)` | `{argv, env?, cwd?}` for the application process. Bind `127.0.0.1:ctx.port` (0 on start). Launch Node through `ctx.node`. `env` is visible in `systemctl show`, so never put a credential there. It overrides the core's `PATH`, `TMPDIR` and private `HOME` |
 | `readiness` | `line(stdoutLine)` returns `{url, endpoints?}` for the ready line: `url` must name `http://127.0.0.1:<port>`, and optional `endpoints` names other loopback listeners of the app (1.1); `probe(ctx)` is a loopback read of the app's own readiness route, reused as `doctor`'s health read; optional `failureCause(stderrTail)` returns the app's own stable cause line for a failed start |
@@ -103,6 +103,11 @@ What the core guarantees to every plug-in callback:
   ignored. Match only stable,
   non-secret cause lines, such as `/^hub-start-failed: [a-z0-9-]+$/m`, and
   never return the tail itself.
+- Since 1.1, every `failure.detail`, check `reason` and capture `reason` the
+  core records or prints has each absolute path outside the run's two roots
+  replaced with `<path>` and is capped at 1000 characters, so an error such as
+  a child process's `Command failed: /abs/…` cannot put a private path into
+  a receipt or event. URLs and paths inside the roots are kept.
 - The application runs as `app-verify-<run-id>.service` under the user
   manager with `KillMode=control-group`; its stdout and stderr go to
   `stdout.log` and `stderr.log` in `runtimeDir`, never into proof.
@@ -185,7 +190,7 @@ from 0.05 to 1440. Main result fields:
 
 | Operation | Result |
 | --- | --- |
-| `help` | `app`, `command`, `coreVersion`, `operations`, `inputs` (each with `description` and `required`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
+| `help` | `app`, `command`, `coreVersion`, `operations`, `inputs` (each with `description` and `required`), `scenarioInputs` (each scenario's `requiredInputs`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `inputs` (when the plug-in declares any), `endpoints` (when the ready line names any), `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
 | `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |
@@ -287,9 +292,22 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
     `/token|secret|password|credential|key/i`. Inputs are recorded in the
     receipt, events and frozen copy, so they never carry a credential, and a
     plug-in that declares a secret-like name is refused outright.
+  - A scenario may list `requiredInputs`: declared inputs it cannot run
+    without, even when they are optional for the plug-in. Seeding it without
+    them is a usage error on `start`, `scenario`, a `fresh` step,
+    `handoff --reset` and `restart`, raised before anything stops.
   - `receipt.inputs` is written whenever the plug-in declares inputs (`{}`
     when none was given). The `seeded`, `unit-started` and `reseeded` events
-    carry them, and `help` lists the declared inputs and `coreVersion`.
+    carry them. `help` lists the declared inputs, `scenarioInputs` (each
+    scenario's required inputs) and `coreVersion`.
+  - A credential, or a path to one, never travels as an input. A caller that
+    must supply one writes it with mode 0600 into the run's runtime directory
+    (`<runtime root>/<run-id>/`, the receipt's `roots.runtime` and
+    `owned.runtimeDir`), outside `data/`, `tmp/` and `home/` so that a reseed
+    keeps it. The plug-in reads it by a fixed file name from `ctx.runtimeDir`.
+    `start` creates that directory, so write the file after `start` and before
+    the reseed (`scenario`) that needs it; `stop` deletes it with the
+    directory.
 - **Extra endpoints.** A ready line may return `endpoints: {name: url}` for
   other loopback listeners of the same application, such as a fake controller
   another run must reach: at most 16, each `http://127.0.0.1:<port>/`.
@@ -308,6 +326,10 @@ run stays, and a 1.0 plug-in, receipt and caller work unchanged.
   start (recorded …, served …)`, when the digest differs from
   `build.artifactDigest`. The page is not driven when it already differs.
   `runCaptureStep` does the same when given `artifactDigest`.
+- **Redacted details.** A recorded or printed `failure.detail`, check
+  `reason` or capture `reason` keeps paths inside the two roots and URLs,
+  replaces every other absolute path with `<path>` and is capped at 1000
+  characters.
 - **Lock and stop follow-ups from 1.0's review.** A retried `stop` records
   the refused attempt's cleanup (P-S21); a swept prepared lock directory is
   retried (S25); a stale dead-breaker record cannot displace a live breaker

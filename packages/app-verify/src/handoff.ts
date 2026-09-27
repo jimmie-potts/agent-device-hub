@@ -171,7 +171,7 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
   }
   // Checked before the freeze: a plug-in that no longer accepts a recorded input is a usage error that changes nothing.
-  const inputs = reset !== undefined ? reseedInputs(plugin, receipt) : undefined;
+  const inputs = reset !== undefined ? reseedInputs(plugin, receipt, reset) : undefined;
   const verified = join(run.store.dir, 'verified'), partial = join(run.store.dir, PARTIAL);
   let manifest = '', committed: string | undefined;
   receipt = await run.store.update(async current => {

@@ -11,7 +11,7 @@ import {EXIT, Failure, has, load, reseed, reseedInputs, UsageError, type Io} fro
 import {artifactDigest} from './roots.js';
 import * as systemd from './systemd.js';
 import type {AppPlugin, CaptureOutcome, CaptureRecord, CaptureStep, CaptureStepOptions, CaptureStepResult, Receipt} from './types.js';
-import {errorText, iso} from './util.js';
+import {errorText, iso, redact} from './util.js';
 
 interface Assertion {
   name: string;
@@ -317,7 +317,7 @@ export async function runCaptureStep(plugin: AppPlugin, stepName: string, option
   const scenario = options.scenario ?? plugin.defaultScenario;
   if (step.scenario && step.scenario !== scenario) throw new Error(`${stepName} is pinned to scenario ${step.scenario}; the application was seeded with ${scenario}`);
   // The same rules as `start`: declared, not secret-like, printable ASCII, required ones present.
-  const inputs = Object.freeze(resolveInputs(plugin, options.inputs ?? {}));
+  const inputs = Object.freeze(resolveInputs(plugin, options.inputs ?? {}, {}, scenario));
   const endpoints: Record<string, string> = {};
   for (const [name, value] of Object.entries(options.endpoints ?? {})) {
     let endpoint: URL | undefined;
@@ -359,7 +359,7 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
   let fresh: {scenario: string; seededAt?: string; failed?: string} | undefined;
   if (step.fresh) {
     const name = step.scenario ?? current.scenario.name;
-    const inputs = reseedInputs(plugin, current);
+    const inputs = reseedInputs(plugin, current, name);
     io.progress(`${run.runId}: reseeding ${name} for fresh step ${stepName}`);
     const reseeded = await reseed(run, io, current, name, inputs);
     fresh = reseeded.code === EXIT.ok ? {scenario: name, seededAt: reseeded.value.seededAt as string} : {scenario: name, failed: `${reseeded.value.detail}`};
@@ -403,6 +403,8 @@ export async function capture(plugin: AppPlugin, io: Io, runId: string | undefin
     process.off('SIGTERM', onSignal);
   }
 
+  // The reason is recorded in the receipt and events: no absolute path outside the two roots.
+  if (finished.reason) finished.reason = redact(finished.reason, run.roots);
   const finishedAt = iso();
   await writeLog(dir, {runId: run.runId, n: record.n, step: stepName, description: step.description, scenario: receipt.scenario.name, candidate: receipt.build, ...(fresh ? {fresh} : {}), supervised: true, startedAt: record.startedAt}, finished);
   const final: CaptureRecord = {

@@ -128,3 +128,18 @@ test('capture records name their scenario, and fresh is only ever true', () => {
   value.captures[0].scenario = '';
   assert.match(validateReceipt(value).errors.join('\n'), /captures\[0\]\.scenario/);
 });
+
+test('recorded details keep root paths and URLs, replace other absolute paths and are capped', async () => {
+  const {redact} = await import('../dist/util.js');
+  const roots = {runtime: '/home/u/.local/state/app-verify', proof: '/home/u/repo/.local/evidence/verify'};
+  assert.equal(
+    redact("Command failed: /usr/bin/python3 /home/u/repo/scripts/seed.py --data=/home/u/.local/state/app-verify/r/data open '/etc/private' [/var/x] (/tmp/y) http://127.0.0.1:41705/api/x /home/u/repo/.local/evidence/verify/r/receipt.json", roots),
+    "Command failed: <path> <path> --data=/home/u/.local/state/app-verify/r/data open '<path>' [<path>] (<path>) http://127.0.0.1:41705/api/x /home/u/repo/.local/evidence/verify/r/receipt.json",
+  );
+  assert.equal(redact('/home/u/.local/state/app-verify-other/x', roots), '<path>', 'a sibling that only shares a prefix is outside the root');
+  assert.equal(redact('ratio 3/4 and a / b', roots), 'ratio 3/4 and a / b');
+  const long = redact('x'.repeat(5000), roots);
+  assert.equal(long.length, 1000);
+  assert.ok(long.endsWith('...'));
+  assert.equal(redact('short', roots), 'short');
+});
