@@ -20,30 +20,36 @@ const AXES = ['standards', 'specification'];
 const FINDING = /^- (\S+) \((P[0-3]), ([a-z]+), (unresolved|resolved|regression|accepted|deferred)\): /;
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 
-// A reviewer return's own verdict, read strictly so that anything unclear fails
-// closed. Blockquote lines and fenced code are quotations and never count, and
-// neither do double-quoted spans within a line when reading status statements.
+// A reviewer return's own verdict. Only explicit verdict lines can grant
+// satisfaction; status statements can only veto it.
 //
-// 1. Verdict lines: `Verdict: <phrase>` (or `Verdict -`, en or em dash), in any
-//    heading, list or bold markup, optionally after one word such as
-//    "Standards" or "Final" and with an optional parenthetical; or a bare
-//    `Verdict` heading with the phrase on the next non-empty line. The phrase
-//    is read up to the first `.`, `,`, `;`, `:`, `(` or dash, and must be
-//    satisfied, approve or approved.
-// 2. Explicit axis-status statements: "<axis> axis is (now) <status>", counted
-//    when the axis is the return's own or unnamed, or a line that opens with a
-//    bold or backticked status that is not a label (not followed by `:`).
-//    Statuses: satisfied, action-required, incomplete, not satisfied.
-// A return is satisfied when it has at least one verdict line or statement
-// and every verdict line and every statement is satisfied, so the two must
-// agree. Otherwise it is not satisfied, or states no verdict at all.
+// Verdict lines are the reviewer's own lines (not in fenced code, a blockquote
+// or a 4-space indent) reading `Verdict: <phrase>` (or `Verdict -`, en or em
+// dash) in any heading, list or bold markup, with an optional parenthetical
+// after `Verdict`, or a bare `Verdict` heading with the phrase on the next
+// non-empty line. The word before `Verdict` may be nothing, `Final`,
+// `Overall`, `My` or the return's own axis (`Specification verdict:`); a line
+// with any other prefix, such as another axis or `Coordinator`, is ignored.
+// The phrase is read up to the first `.`, `,`, `;`, `:`, `(` or dash and must
+// be satisfied, approve or approved.
+//
+// A veto is an "axis is <status>" statement for the return's own axis or no
+// named axis whose status is action-required, incomplete or not satisfied,
+// even when only the status is wrapped in markup or quotes. It is ignored only
+// when "axis is" lies inside fenced code, a blockquote or a balanced quoted
+// span (straight or curly double quotes, or inline code); a line whose quotes
+// or backticks do not balance is read whole.
+//
+// Result: 'satisfied' needs at least one own verdict line, every one of them
+// satisfied, and no veto; 'none' when there is no own verdict line and no
+// veto; otherwise 'not-satisfied'.
 export const SATISFIED_VERDICTS = ['satisfied', 'approve', 'approved'];
-const VERDICT_LINE = /^[\s#*_`-]*(?:(?:[A-Za-z]+\s+)?verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$|verdict[\s*_`]*$)/i;
-const STATUS = '(satisfied|action-required|incomplete|not[ -]satisfied)';
-const AXIS_STATEMENT = new RegExp(`(?:\\b(standards|specification)\\s+)?\\baxis is (?:now )?[*_\`]*${STATUS}\\b`, 'gi');
-const OPENING_STATUS = new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|\`)${STATUS}\\b(?![*_\`]*:)`, 'i');
+const VERDICT_PREFIXES = ['final', 'overall', 'my'];
+const VERDICT_LINE = /^[\s#*_`-]*(?:(?:([A-Za-z]+)\s+)?verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$|verdict[\s*_`]*$)/i;
+const QUOTE_MARKS = `"'\u2018\u2019\u201c\u201d`;
+const VETO = new RegExp(`(?:\\b(standards|specification)[*_\`]*\\s+)?\\baxis is (?:now )?[*_\`${QUOTE_MARKS}]*(action-required|incomplete|not[ -]satisfied)\\b`, 'gi');
 
-/** Lines that are the reviewer's own words: no blockquotes, no fenced code. */
+/** The reviewer's own lines, skipping fenced code and blockquotes, with an indentation flag. */
 function ownLines(text) {
   const lines = [];
   let fence = null;
@@ -55,9 +61,28 @@ function ownLines(text) {
       continue;
     }
     if (fence || /^\s*>/.test(line)) continue;
-    lines.push(line);
+    lines.push({ text: line, indented: /^(?: {4,}|\t)/.test(line) });
   }
   return lines;
+}
+
+/**
+ * Character ranges of balanced quoted spans: straight and curly double quotes
+ * and inline code. None when any of them does not balance on the line.
+ */
+function quotedSpans(line) {
+  const at = pattern => [...line.matchAll(pattern)].map(match => match.index);
+  const straight = at(/"/g);
+  const ticks = at(/`/g);
+  const opens = at(/\u201c/g);
+  const closes = at(/\u201d/g);
+  if (straight.length % 2 || ticks.length % 2 || opens.length !== closes.length || opens.some((open, index) => open > closes[index])) return [];
+  const spans = [];
+  for (const marks of [straight, ticks]) {
+    for (let index = 0; index < marks.length; index += 2) spans.push([marks[index], marks[index + 1]]);
+  }
+  opens.forEach((open, index) => spans.push([open, closes[index]]));
+  return spans;
 }
 
 /**
@@ -65,28 +90,33 @@ function ownLines(text) {
  * 'not-satisfied' or 'none'.
  */
 export function statedVerdict(text, axis = null) {
+  const own = axis ? String(axis).toLowerCase() : null;
   const lines = ownLines(text);
   const phrases = [];
-  lines.forEach((line, index) => {
+  lines.forEach(({ text: line, indented }, index) => {
+    if (indented) return;
     const match = line.match(VERDICT_LINE);
     if (!match) return;
-    let phrase = match[1] || '';
-    if (!phrase.trim()) phrase = lines.slice(index + 1).find(next => next.trim()) || '';
+    const prefix = match[1] ? match[1].toLowerCase() : null;
+    if (prefix && !VERDICT_PREFIXES.includes(prefix) && prefix !== own) return;
+    let phrase = match[2] || '';
+    if (!phrase.trim()) phrase = (lines.slice(index + 1).find(next => next.text.trim()) || { text: '' }).text;
     phrases.push(phrase.replace(/[*_`]/g, '').split(/[.;,:(\u2013\u2014]| - /)[0].trim().toLowerCase().replace(/\s+/g, ' '));
   });
-  const statuses = [];
-  const own = axis ? String(axis).toLowerCase() : null;
-  for (const line of lines.map(text => text.replace(/"[^"\n]*"|\u201c[^\u201d\n]*\u201d/g, '""'))) {
-    for (const match of line.matchAll(AXIS_STATEMENT)) {
+  let vetoed = false;
+  for (const { text: line } of lines) {
+    const spans = quotedSpans(line);
+    for (const match of line.matchAll(VETO)) {
       const named = match[1] ? match[1].toLowerCase() : null;
-      if (!named || !own || named === own) statuses.push(match[2].toLowerCase());
+      if (named && own && named !== own) continue;
+      const at = match.index + match[0].toLowerCase().indexOf('axis is');
+      if (spans.some(([start, end]) => at > start && at < end)) continue;
+      vetoed = true;
     }
-    const opening = line.match(OPENING_STATUS);
-    if (opening) statuses.push(opening[1].toLowerCase());
   }
-  if (!phrases.length && !statuses.length) return 'none';
-  const satisfied = phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) && statuses.every(status => status === 'satisfied');
-  return satisfied ? 'satisfied' : 'not-satisfied';
+  if (vetoed) return 'not-satisfied';
+  if (!phrases.length) return 'none';
+  return phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) ? 'satisfied' : 'not-satisfied';
 }
 
 function byTime(a, b) {

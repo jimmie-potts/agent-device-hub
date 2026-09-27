@@ -242,52 +242,50 @@ prints tokens, local paths or reviewer return text.
 | Guide-only exception | Every changed path, including rename sources, under `docs/work-guide/`; no Depot run; a `--guide-receipt` (the guide check's `guide-verification.json`) matching the committed guide HTML, with its screenshots and print check beside it; a `--guide-record` for that revision (see below). A merged guide-only PR needs a record for its head and one for its merge commit | [Guide-only CI exception](sdlc.md#guide-only-ci-exception) |
 | Independent review | The latest `report final <n>` comment from the delivery account in the [agent-skills#54](https://github.com/jimmie-potts/agent-skills/issues/54) format at `5d03ee40d119ba432dca39c17345d4ae00d0c2d7`. Each axis needs a complete retained return whose digest and provenance match the current comparison and whose own text states a satisfied verdict (see below). The requirements issue and `AGENTS.md`, `CLAUDE.md` and `docs/sdlc.md` must be unchanged since the review | [Review and merge](sdlc.md#review-and-merge) |
 | Published feedback | Outstanding change requests and unresolved review threads; the Codex security summary and other accounts' comments are listed, not gated | [Review and merge](sdlc.md#review-and-merge) |
-| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/`, `docs/skins/`, `controllers/tidbyt/src/` or `controllers/tidbyt/fixtures/golden/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), or `--ui`. Tidbyt modules that only queue, schedule, authenticate or transport frames are listed as non-UI in `NON_UI_PATHS` in `scripts/delivery-preflight/preflight.mjs`; a new Tidbyt module counts as UI until it is listed. `--ui-approval` must be a record (see below) whose `UI approved` line names one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
+| UI approval | Changes under `apps/dashboard/src/`, `docs/system-design/`, `docs/skins/`, `controllers/tidbyt/src/` or `controllers/tidbyt/fixtures/golden/`, to `scripts/build-dashboard.mjs` (the dashboard HTML shell), or `--ui`. Tidbyt modules that only queue, schedule, authenticate or transport frames are listed as non-UI in `NON_UI_PATHS` in `scripts/delivery-preflight/preflight.mjs`; a new Tidbyt module counts as UI until it is listed. `--ui-approval` must be a record (see below) whose first line approves one PR revision, with no UI path changed since | [UI approval scope](sdlc.md#ui-approval-scope) |
 | Proof artifacts | Each `--receipt` [app verification](app-verification.md) proof directory: a clean build of the head, a frozen verified set matching `SHA256SUMS`, and passed verified captures | [Frozen proof](app-verification.md#frozen-proof) |
 | Counterparts | The work issue's native blocked-by links and each `--counterpart` in an owned repository, which must be merged or closed as completed | [Authority and preparation](sdlc.md#authority-and-preparation) |
 | Live acceptance | `--finish-line installed`, `real-client` or `physical` stays unresolved; the owner records that evidence under its issue | [Installation and evidence](sdlc.md#installation-and-evidence) |
 
-A reviewer return's verdict is read only from the reviewer's own lines.
-Blockquote lines (`>`) and fenced code are quotations and never count, and
-double-quoted spans are ignored when reading status statements.
+Each retained return must carry its own verdict line. Only the reviewer's own
+lines count: not fenced code, blockquotes (`>`) or lines indented four spaces.
+A verdict line is `Verdict:` (or `Verdict -`, or an en or em dash) in any
+heading, list or bold markup, or a bare `Verdict` heading with the phrase on
+the next line, optionally prefixed by `Final`, `Overall`, `My` or the
+return's own axis (`Specification verdict:`). Other prefixes, such as
+another axis or `Coordinator`, are ignored. The phrase up to the first `.`,
+`,`, `;`, `:`, `(` or dash must be `satisfied`, `approve` or `approved`, on
+every own verdict line. A return without one states no verdict, and its axis
+stays unresolved; status statements never grant satisfaction.
 
-- Verdict lines: `Verdict:`, `Verdict -` or `Verdict` with an en or em dash,
-  in any heading, list or bold markup, optionally after one word such as
-  `Standards verdict:` or `Final verdict:`, and with an optional
-  parenthetical after `Verdict`. A bare `Verdict` heading takes its phrase
-  from the next non-empty line. The phrase is read up to the first `.`, `,`,
-  `;`, `:`, `(` or dash and must then be `satisfied`, `approve` or `approved`;
-  `Verdict: approve (no P0-P2)` counts, `Verdict: approve with changes` does
-  not.
-- Status statements: "<axis> axis is (now) <status>", counted when the axis is
-  the return's own or unnamed, and a line that opens with a bold or backticked
-  status that is not a label (`**satisfied.**` counts, `**Satisfied:**` does
-  not). Statuses are `satisfied`, `action-required`, `incomplete` and
-  `not satisfied`.
-
-A return is satisfied only when it has at least one verdict line or status
-statement and every one of them is satisfied, so verdict lines and statements
-must agree. Otherwise its axis stays unresolved. The summary row never
-approves an axis on its own.
+Statements can only veto. "<axis> axis is <status>" with `action-required`,
+`incomplete` or `not satisfied`, for the return's own axis or no named axis,
+makes the return not satisfied, even when only the status is wrapped in
+markup or quotes. It is ignored only when "axis is" lies inside fenced code, a
+blockquote or a balanced quoted span (straight or curly double quotes, or
+inline code); a line whose quotes do not balance is read whole. The summary
+row never approves an axis on its own.
 
 A UI approval or guide-only record is a comment or review on the PR written by
 the delivery account: the PR author, or the repository owner when a bot opened
 the PR. Bot comments, other accounts' comments and comments with an HTML marker,
 such as review reports and provider summaries, never count.
 
-A UI approval record contains exactly one whole line of this form,
-case-sensitive, with an optional list marker and trailing spaces:
+A UI approval record starts with its approval: the comment's first non-empty
+line is exactly one of these, case-sensitive, with an optional list marker and
+trailing spaces, and not indented, fenced or quoted. The body may continue
+after it.
 
 ```text
 UI approved: <full 40-character sha>
-UI approved by <name>: <full 40-character sha>
+UI approved by <login>: <full 40-character sha>
 ```
 
-Anything else, including a request for approval, a checklist, a revocation or
-an abbreviated SHA, is not approval. The owner writes this line from the
-delivery account, so the tool cannot tell a human from an agent using the same
-account; the form only prevents other comments from being misread as
-approval.
+Anything else is not approval, including a request that quotes this line
+further down, a free-text name or an abbreviated SHA. The owner writes the
+line from the delivery account, so the tool cannot tell a human from an agent
+using the same account; the form only prevents requests, templates and
+revocations from being misread as approval.
 
 A guide-only record names the full revision and the guide HTML SHA-256, and
 reports each of the four local checks in exactly this form: the command

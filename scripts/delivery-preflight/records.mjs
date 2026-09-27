@@ -73,20 +73,19 @@ export function guideRecordResults(body) {
   return results;
 }
 
-// A UI approval record has one documented line form, matched as a whole line
-// and case-sensitively: "UI approved: <full sha>" or "UI approved by <name>:
-// <full sha>", with an optional list marker and trailing spaces. Anything else
-// is not approval. The owner writes it from the delivery account, so the tool
+// A UI approval record starts with its approval: the comment's first non-empty
+// line must be exactly "UI approved: <full sha>" or "UI approved by <login>:
+// <full sha>" (case-sensitive, optional list marker, trailing spaces allowed,
+// no indentation, not fenced or quoted); the body may continue after it.
+// Anything else is not approval, including a request that quotes the line
+// further down. The owner writes it from the delivery account, so the tool
 // cannot tell a human from an agent on that account; the form only prevents
-// requests, checklists or revocations from being misread as approval.
-const UI_APPROVAL_LINE = /^[ \t]*(?:[-*][ \t]+)?UI approved(?: by [^:\n]+)?: ([0-9a-f]{40})[ \t]*$/;
+// requests, templates or revocations from being misread as approval.
+const UI_APPROVAL_LINE = /^(?:[-*] )?UI approved(?: by [A-Za-z0-9-]+)?: ([0-9a-f]{40})[ \t]*$/;
 
-/** PR revisions a record approves in the documented form. */
+/** The PR revision a record approves on its first line, as a list of zero or one. */
 export function approvedRevisions(body, commits) {
-  const named = new Set();
-  for (const line of body.split('\n')) {
-    const match = line.match(UI_APPROVAL_LINE);
-    if (match && commits.includes(match[1])) named.add(match[1]);
-  }
-  return [...named];
+  const first = body.split('\n').find(line => line.trim()) || '';
+  const match = first.match(UI_APPROVAL_LINE);
+  return match && commits.includes(match[1]) ? [match[1]] : [];
 }

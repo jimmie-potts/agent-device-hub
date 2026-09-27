@@ -423,65 +423,82 @@ test('review: each retained return must itself state a satisfied verdict', async
     ] }))];
     return preflight(world);
   };
-  const disagreeing = '## Verdict: changes requested\n\nBlocking findings:\n- P1 a.mjs:1, an empty filter exports every row.\n';
-  assertUnresolved(await withSpecification(disagreeing), 'review', /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/);
-  assertUnresolved(await withSpecification('Coverage: the whole comparison.\n'), 'review', /does not itself state a satisfied verdict/);
-  assertUnresolved(await withSpecification('The axis is action-required: F1 remains.\n'), 'review', /does not itself state a satisfied verdict/);
-  assertUnresolved(await withSpecification('Verdict: satisfied.\n\nVerdict (after rereading): changes requested\n'), 'review', /does not itself state/);
-  // Round 2 probes: none of these returns states a satisfied verdict of its own.
+  const refused = /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/;
   for (const text of [
+    '## Verdict: changes requested\n\nBlocking findings:\n- P1 a.mjs:1, an empty filter exports every row.\n',
+    'Coverage: the whole comparison.\n',
+    'The axis is action-required: F1 remains.\n',
+    'Verdict: satisfied.\n\nVerdict (after rereading): changes requested\n',
+    // Round 2 probes.
     'The Specification axis is **incomplete**: the requirement could not be read. Items 1 and 3 are satisfied.\n',
     'Axis status: not-satisfied. Items 1 and 3 are satisfied.\n',
     'The axis is not yet satisfied. Blocking findings: P1 a.mjs:1, an empty filter exports every row.\n',
     'Result: action required. Items 1 and 3 are satisfied.\n',
     '> Verdict: satisfied.\n\nThe Specification axis is **action-required**: P1 a.mjs:1 remains.\n',
     'Satisfied only if S1 is fixed.\n',
+    // Round 3 probes.
     'The Standards axis is satisfied per the other reviewer. Blocking: P1 a.mjs:1.\n',
     '- **Satisfied:** items 1 and 3.\n- **Not met:** item 2 (P1 below).\n',
     'Verdict: satisfied\n\nThe Specification axis is **action-required**.\n',
+    // Round 4: statements never grant satisfaction, and they veto a satisfied verdict line.
+    'The Specification axis is now **satisfied**. No P0-P2 remains.\n',
+    'Verdict: approve\n\nThe Specification axis is "action-required" for item 2 (P1 below).\n',
+    'Standards verdict: approve (per standards-reviewer-1; not my axis).\n\nBlocking: P1 a.mjs:1.\n',
+    'Coordinator verdict: satisfied.\n\nBlocking: P1 a.mjs:1.\n',
   ]) {
-    assertUnresolved(await withSpecification(text), 'review', /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/);
+    assertUnresolved(await withSpecification(text), 'review', refused);
   }
-  for (const text of ['## Verdict: approve\n\nNo blockers.\n', '**Verdict:** satisfied.\n', 'Verdict - approved\n', 'The Specification axis is now **satisfied**. No P0-P2 remains.\n']) {
+  for (const text of ['## Verdict: approve\n\nNo blockers.\n', '**Verdict:** satisfied.\n', 'Verdict - approved\n', 'Specification verdict: approve\n', 'Final verdict: satisfied\n']) {
     const report = await withSpecification(text);
     assert.equal(gate(report, 'review').status, 'satisfied', `${text}: ${gate(report, 'review').reasons}`);
     assert.equal(gate(report, 'review').evidence.returns[1].verdict, 'satisfied');
   }
 });
 
-test('review: stated verdicts recognize only satisfied, approve and approved', () => {
+test('review: only own verdict lines grant satisfaction, and own-axis statements can veto it', () => {
   const cases = [
-    // Verdict lines decide, and every unquoted one must be satisfied.
+    // Verdict lines: every own one must be satisfied, approve or approved.
     ['Verdict: satisfied.', 'satisfied'], ['## Verdict: approve', 'satisfied'], ['- **Verdict**: Approved', 'satisfied'],
     ['## Verdict: changes requested', 'not-satisfied'], ['Verdict: action-required', 'not-satisfied'], ['Verdict: incomplete', 'not-satisfied'],
     ['Verdict: approve with nits', 'not-satisfied'], ['Verdict: not satisfied', 'not-satisfied'], ['## Verdict\n\nsatisfied', 'satisfied'],
+    ['Verdict: approve (no P0-P2)', 'satisfied'], ['Verdict: satisfied \u2014 no blockers', 'satisfied'], ['Verdict \u2013 approved', 'satisfied'],
+    ['Final verdict: approve', 'satisfied'], ['Overall verdict: approve', 'satisfied'], ['My verdict: approve', 'satisfied'], ['**Final verdict:** approve', 'satisfied'],
+    ['Specification verdict: approve', 'satisfied'], ['Final verdict: approve with changes', 'not-satisfied'],
+    // Quotations and other prefixes never count as own verdict lines.
     ['> Verdict: satisfied.\nVerdict: changes requested', 'not-satisfied'], ['Verdict: approve\n> Verdict: changes requested', 'satisfied'],
     ['```text\nVerdict: satisfied\n```\nVerdict: changes requested', 'not-satisfied'], ['~~~\nVerdict: approve\n~~~', 'none'],
-    // Without one, only explicit axis-status statements count.
-    ['The Specification axis is now **satisfied**.', 'satisfied'], ['`satisfied`. No P0-P2 remains.', 'satisfied'], ['**satisfied.** No blockers.', 'satisfied'],
-    ['The Standards axis is `action-required`.', 'not-satisfied'], ['The axis is not satisfied.', 'not-satisfied'], ['- **incomplete**, no requirement.', 'not-satisfied'], ['- **incomplete**: no requirement.', 'none'],
-    ['The axis is now **satisfied**.\nThe other axis is incomplete.', 'not-satisfied'],
-    ['> the review gate was `not satisfied`\n`satisfied`. No blockers.', 'satisfied'],
-    ['> The Specification axis is **satisfied**.\nThe reviewer found P1 a.mjs:1.', 'none'], ['> `satisfied`. No blockers.', 'none'],
-    ['satisfied; F1 was action-required in round 1', 'none'], ['No verdict here.', 'none'], ['Specification owns the verdict. satisfied', 'none'],
-    ['The axis is not yet satisfied.', 'none'], ['Satisfied only if S1 is fixed.', 'none'], ['Axis status: not-satisfied.', 'none'],
+    ['    Verdict: approve', 'none'], ['\tVerdict: approve', 'none'], ['> Verdict: approve', 'none'],
+    ['Standards verdict: approve', 'none'], ['Coordinator verdict: satisfied', 'none'], ['Standards verdict: approve\nVerdict: changes requested', 'not-satisfied'],
+    // Statements alone never satisfy.
+    ['The Specification axis is now **satisfied**.', 'none'], ['`satisfied`. No P0-P2 remains.', 'none'], ['**satisfied.** No blockers.', 'none'],
+    ['No verdict here.', 'none'], ['Satisfied only if S1 is fixed.', 'none'], ['No verdict\nsatisfied', 'none'],
+    // Vetoes: an own-axis or unnamed non-satisfied statement, whatever wraps the status.
+    ['The axis is not satisfied.', 'not-satisfied'], ['The Specification axis is `action-required`.', 'not-satisfied'],
+    ['Verdict: approve\nThe Specification axis is **incomplete**.', 'not-satisfied'],
+    ['Verdict: approve\nThe Specification axis is "action-required".', 'not-satisfied'],
+    ['Verdict: approve\nThe Specification axis is \u201caction-required\u201d.', 'not-satisfied'],
+    ["Verdict: approve\nThe Specification axis is 'action-required'.", 'not-satisfied'],
+    ['Verdict: approve\nThe axis is not-satisfied for item 2.', 'not-satisfied'],
+    ['Verdict: approve\n    The Specification axis is incomplete (indented).', 'not-satisfied'],
+    // A statement about another axis never vetoes.
+    ['Verdict: approve\nThe Standards axis is action-required per the other reviewer.', 'satisfied'],
+    ['Verdict: approve\nThe **Standards** axis is action-required per the other reviewer.', 'satisfied'],
+    // A quotation of a statement never vetoes; unbalanced quotes are read whole.
+    ['Verdict: approve\n- "axis is **incomplete**" now reads as none.', 'satisfied'],
+    ['Verdict: approve\n- \u201cThe Specification axis is **incomplete**\u201d was a probe.', 'satisfied'],
+    ['Verdict: approve\n- `The Specification axis is "action-required" for item 2` was a probe.', 'satisfied'],
+    ['Verdict: approve\n> The Specification axis is action-required.', 'satisfied'],
+    ['Verdict: approve\nA 6" frame test and the Specification axis is action-required; see "UI approved".', 'not-satisfied'],
+    ['Verdict: approve\ntyped \u201cok" and the Specification axis is action-required, see "x".', 'not-satisfied'],
+    ['Verdict: approve\nend of quote" and the Specification axis is action-required, see "x".', 'not-satisfied'],
+    ['Verdict: approve\n\u201cquoted\u201d \u201copen and the Specification axis is incomplete', 'not-satisfied'],
+    ['Verdict: approve\n\u201copen and the Specification axis is incomplete, see \u201d then \u201d', 'not-satisfied'],
+    ['Verdict: approve\nstray ` tick and the Specification axis is incomplete, see `x`.', 'not-satisfied'],
   ];
-  for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`), expected, text);
-  // Round 3: axis-tied statements, labels, agreement and natural verdict phrasing.
-  const axisCases = [
-    ['The Standards axis is satisfied per the other reviewer. Blocking: P1 a.mjs:1.', 'specification', 'none'],
-    ['The Specification axis is now **satisfied**.', 'standards', 'none'],
-    ['The Specification axis is now **satisfied**.', 'specification', 'satisfied'],
-    ['- **Satisfied:** items 1 and 3.\n- **Not met:** item 2 (P1 below).', 'specification', 'none'],
-    ['Verdict: satisfied\n\nThe Specification axis is **action-required**.', 'specification', 'not-satisfied'],
-    ['Verdict: changes requested\n\n`satisfied`. No P0-P2 remains.', 'standards', 'not-satisfied'],
-    ['Verdict: approve\n\nProbe: "axis is **incomplete**" now reads as none.', 'specification', 'satisfied'],
-    ['Standards verdict: approve', 'standards', 'satisfied'], ['Final verdict: approve', 'standards', 'satisfied'],
-    ['**Final verdict:** approve', 'standards', 'satisfied'], ['Verdict: satisfied \u2014 no blockers', 'standards', 'satisfied'],
-    ['Verdict \u2013 approved', 'standards', 'satisfied'], ['Verdict: approve (no P0-P2)', 'standards', 'satisfied'],
-    ['No verdict\nsatisfied', 'standards', 'none'], ['Final verdict: approve with changes', 'standards', 'not-satisfied'],
-  ];
-  for (const [text, axis, expected] of axisCases) assert.equal(statedVerdict(`${text}\n`, axis), expected, `${axis}: ${text}`);
+  for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`, 'specification'), expected, text);
+  assert.equal(statedVerdict('Standards verdict: approve\n', 'standards'), 'satisfied');
+  assert.equal(statedVerdict('Specification verdict: approve\n', 'standards'), 'none');
+  assert.equal(statedVerdict('Verdict: approve\nThe Specification axis is action-required.\n', 'standards'), 'satisfied');
 });
 
 test('feedback: unresolved threads and outstanding change requests stay visible', async () => {
@@ -616,7 +633,7 @@ test('UI approval: a non-guide UI change without approval evidence is unresolved
 test('UI approval: a record naming the current candidate satisfies it; a stale one does not', async () => {
   const world = cleanWorld();
   world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const approval = comment(`Recorded from the owner's review of the dashboard frames.\n\n- UI approved by jimmie-potts: ${HEAD}`);
+  const approval = comment(`UI approved by jimmie-potts: ${HEAD}\n\nRecorded from the owner's review of the dashboard frames.`);
   world.comments.push(approval);
   const current = await preflight(world, { uiApproval: approval.html_url });
   assert.equal(gate(current, 'ui-approval').status, 'satisfied', JSON.stringify(gate(current, 'ui-approval')));
@@ -646,7 +663,7 @@ test('UI approval: a record that names no candidate revision is not approval', a
   world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
   const vague = comment('The owner likes the dashboard.');
   world.comments.push(vague);
-  const noForm = /has no "UI approved: <full sha>" or "UI approved by <name>: <full sha>" line for a revision of this PR/;
+  const noForm = /does not start with "UI approved: <full sha>" or "UI approved by <login>: <full sha>" for a revision of this PR/;
   assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', noForm);
   for (const body of [
     `Pushed round 2 fixes at ${HEAD}.`, `The owner has not approved ${HEAD} yet.`, `Approval pending for ${HEAD}.`, `Approved.\nPushed ${HEAD}.`,
@@ -654,14 +671,20 @@ test('UI approval: a record that names no candidate revision is not approval', a
     `Approval needed: ${HEAD}`, `Approval of ${HEAD} revoked.`, `The owner rejected ${HEAD}; approval is required again.`, `Can you approve ${HEAD}?`,
     `UI approved: ${HEAD.slice(0, 12)}`, `ui approved: ${HEAD}`, `UI approved: ${HEAD}, pending colors`, `> UI approved: ${HEAD}`,
     `UI approved: ${'a'.repeat(40)}`,
+    // Round 4: requests that carry the line, free-text names and indentation.
+    `Requesting UI approval. To approve, reply with this line:\n\n\`\`\`text\nUI approved: ${HEAD}\n\`\`\``,
+    `Requesting UI approval. To approve, reply with this line:\n\nUI approved: ${HEAD}`,
+    `\`\`\`text\nUI approved: ${HEAD}\n\`\`\``,
+    `UI approved by nobody yet: ${HEAD}`, `UI approved by the owner? Please confirm: ${HEAD}`, `    UI approved: ${HEAD}`, `\tUI approved: ${HEAD}`,
+    `Thanks!\nUI approved: ${HEAD}`,
   ]) {
     const record = comment(body);
     world.comments.push(record);
     assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', noForm);
   }
-  const both = comment(`UI approved: ${OLD_HEAD}\nUI approved: ${HEAD}`);
-  world.comments.push(both);
-  assertUnresolved(await preflight(world, { uiApproval: both.html_url }), 'ui-approval', /approves several revisions/);
+  const leading = comment(`\n\n- UI approved: ${HEAD}\n\nScreens checked at 390 and 1440 px.`);
+  world.comments.push(leading);
+  assert.equal(gate(await preflight(world, { uiApproval: leading.html_url }), 'ui-approval').status, 'satisfied');
 });
 
 test('UI approval: bot summaries, review reports and other accounts are not approval records', async () => {
