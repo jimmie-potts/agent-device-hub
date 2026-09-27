@@ -26,6 +26,7 @@ import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {consumerState} from './consumers.mjs';
+import {PAIRING} from './integrated.mjs';
 
 const run = promisify(execFile);
 export const HUB_ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '');
@@ -284,9 +285,8 @@ const runtimeDir = (env, service) => join(stateRoot(env), service.runId ?? '');
 const unitOf = service => `app-verify-${service.runId}.service`;
 
 // ---------------------------------------------------------------------------
-// Pairing credentials: generated here, written 0600 into each run's runtime directory, never printed or recorded.
-
-const PAIRING_FILES = {consumer: {feed: 'hub-feed-token', controller: 'hub-controller-token'}, owner: {feed: (/** @type {string} */ id) => `${id}-feed-token`, controller: (/** @type {string} */ id) => `${id}-controller-token`}};
+// Pairing credentials: generated here, written 0600 into each run's runtime directory under the names
+// PAIRING.files gives, never printed or recorded.
 
 /** @param {string} directory @param {string} name @param {string} value */
 async function writeSecret(directory, name, value) {
@@ -320,8 +320,8 @@ async function hubRead(env, hub, path) {
   return {status: response.status, body};
 }
 
-/** Controller aliases the Hub's integrated configuration uses for each consumer. @type {Record<string, string>} */
-const ALIASES = {nanoleaf: 'wall', pixoo: 'pixel'};
+/** The controller alias the Hub's integrated configuration gives a consumer. @param {string} consumer */
+const aliasOf = consumer => /** @type {Record<string, {alias: string}>} */ (PAIRING.controllers)[consumer]?.alias ?? consumer;
 
 /**
  * One pass of the pairing checks. Reads only: a snapshot read through the Hub
@@ -343,7 +343,7 @@ async function pairingChecks(env, composition) {
     add('hub-owner', false, `the Hub feed is unreadable (${/** @type {Error} */ (error).name})`);
   }
   for (const consumer of consumers(composition)) {
-    const alias = ALIASES[consumer.id];
+    const alias = aliasOf(consumer.id);
     try {
       const snapshot = await hubRead(env, hub, `/api/controllers/v1/${alias}/snapshot`);
       add(`hub-reads-${consumer.id}`, snapshot.status === 200, `the Hub's ${alias} snapshot answered ${snapshot.status}${snapshot.body?.error?.code ? ` ${snapshot.body.error.code}` : ''}`);
@@ -361,7 +361,7 @@ async function pairingChecks(env, composition) {
   try {
     const health = await hubRead(env, hub, '/api/hub/v1/health');
     const devices = Object.fromEntries((health.body?.devices ?? []).map((/** @type {{id: string, health: string}} */ d) => [d.id, d.health]));
-    const expected = consumers(composition).map(c => ALIASES[c.id]);
+    const expected = consumers(composition).map(c => aliasOf(c.id));
     add('hub-devices-current', health.status === 200 && expected.every(alias => devices[alias] === 'ready'), `health ${health.status}, devices ${JSON.stringify(devices)}`);
   } catch (error) {
     add('hub-devices-current', false, `health unreadable (${/** @type {Error} */ (error).name})`);
@@ -581,10 +581,10 @@ export async function start(options, io) {
     const hub = owner(composition);
     for (const consumer of consumers(composition)) {
       const feed = randomBytes(32).toString('base64url'), controller = randomBytes(32).toString('base64url');
-      await writeSecret(runtimeDir(env, consumer), PAIRING_FILES.consumer.feed, feed);
-      await writeSecret(runtimeDir(env, consumer), PAIRING_FILES.consumer.controller, controller);
-      await writeSecret(runtimeDir(env, hub), PAIRING_FILES.owner.feed(consumer.id), feed);
-      await writeSecret(runtimeDir(env, hub), PAIRING_FILES.owner.controller(consumer.id), controller);
+      await writeSecret(runtimeDir(env, consumer), PAIRING.files.consumer.feed, feed);
+      await writeSecret(runtimeDir(env, consumer), PAIRING.files.consumer.controller, controller);
+      await writeSecret(runtimeDir(env, hub), PAIRING.files.hub.feed(consumer.id), feed);
+      await writeSecret(runtimeDir(env, hub), PAIRING.files.hub.controller(consumer.id), controller);
     }
     await store.event('pairing-written', {services: composition.services.map(s => s.id)});
     // 3. Each consumer reseeds hub-paired with the Hub's feed; it announces its controller endpoint.
