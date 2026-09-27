@@ -33,6 +33,7 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
+      - run: npm run test:preflight
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'
         run: |
