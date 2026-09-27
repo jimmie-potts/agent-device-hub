@@ -20,13 +20,14 @@
 import {spawn, execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {lstat, mkdir, open, readdir, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {PAIRING, pause} from './integrated.mjs';
+import {DirectoryLock, LockedError} from './lock.mjs';
 import {CAPTURE_STEPS, CONTROLS, INJECTIONS} from './integrated-steps.mjs';
 
 const run = promisify(execFile);
@@ -221,68 +222,23 @@ class Store {
     await writeFile(join(this.dir, 'events.jsonl'), JSON.stringify({at: iso(), event, ...fields}) + '\n', {flag: 'a', mode: 0o600});
   }
   /**
-   * One writer at a time: an exclusive lock file naming its holder; a dead holder's lock is broken. The holder's pid
-   * is written first and linked into place, so no reader ever sees a lock without its holder.
-   */
-  async lock() {
-    const path = join(this.dir, '.composition.lock');
-    const mine = `${path}.${process.pid}.${randomBytes(4).toString('hex')}`;
-    await writeFile(mine, String(process.pid), {mode: 0o600});
-    for (let attempt = 0; attempt < 200; attempt++) {
-      try {
-        await link(mine, path);
-        await rm(mine, {force: true});
-        return async () => rm(path, {force: true});
-      } catch (error) {
-        if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') {
-          await rm(mine, {force: true});
-          throw error;
-        }
-        const text = await readFile(path, 'utf8').catch(failure => (/** @type {NodeJS.ErrnoException} */ (failure).code === 'ENOENT' ? null : ''));
-        // Released meanwhile: try again at once, removing nothing.
-        if (text === null) continue;
-        const holder = Number(text);
-        let alive = Number.isInteger(holder) && holder > 0;
-        if (alive) {
-          try {
-            process.kill(holder, 0);
-          } catch (probe) {
-            alive = /** @type {NodeJS.ErrnoException} */ (probe).code === 'EPERM';
-          }
-        }
-        if (alive) {
-          await pause(100);
-          continue;
-        }
-        // Break a dead holder's lock by moving it aside under a unique name, and delete only what still names that
-        // holder: a lock another waiter linked in the meantime goes back into place.
-        const aside = `${path}.dead.${process.pid}.${randomBytes(4).toString('hex')}`;
-        try {
-          await rename(path, aside);
-        } catch {
-          continue;
-        }
-        if ((await readFile(aside, 'utf8').catch(() => text)) !== text) await link(aside, path).catch(() => undefined);
-        await rm(aside, {force: true});
-      }
-    }
-    await rm(mine, {force: true});
-    throw new ComposeFailure('composition-locked', `another operation holds ${this.id}`);
-  }
-  /**
    * Read, change and write the record under the lock.
    * @param {(value: Composition) => void | Promise<void>} change @param {string} [event] @param {Record<string, unknown>} [fields]
    */
   async update(change, event, fields) {
-    const release = await this.lock();
     try {
-      const value = await this.read();
-      await change(value);
-      await this.write(value);
-      if (event) await this.event(event, fields);
-      return value;
-    } finally {
-      await release();
+      return await new DirectoryLock(this.dir, '.composition.lock').run(async stillHeld => {
+        const value = await this.read();
+        await change(value);
+        // Fencing: never write after losing the lock, so a displaced operation cannot overwrite another's update.
+        if (!(await stillHeld())) throw new ComposeFailure('composition-locked', `the lock on ${this.id} changed hands during this operation; nothing was written`);
+        await this.write(value);
+        if (event) await this.event(event, fields);
+        return value;
+      });
+    } catch (error) {
+      if (error instanceof LockedError) throw new ComposeFailure('composition-locked', `another operation holds ${this.id}; retry when it finishes`);
+      throw error;
     }
   }
 }
@@ -344,6 +300,24 @@ async function hubRead(env, hub, path) {
   return {status: response.status, body};
 }
 
+/**
+ * Why a consumer does not follow the Hub, naming each difference: connection, owner, revision, sessions and source.
+ * @param {import('./consumers.mjs').ConsumerState} state @param {number | undefined} revision @param {string[]} sessions
+ */
+function followDetail(state, revision, sessions) {
+  const parts = [`feed ${state.feed.connection}`];
+  if (state.feed.ownerId !== PAIRING.ownerId) parts.push(`owner ${state.feed.ownerId ?? 'none yet'}, not ${PAIRING.ownerId}`);
+  parts.push(`revision ${state.feed.revision ?? 'none yet'} (Hub ${revision})`);
+  if (state.feed.sessions) {
+    const mine = new Set(state.feed.sessions), hub = new Set(sessions);
+    const differing = [...mine].filter(key => !hub.has(key)).length + [...hub].filter(key => !mine.has(key)).length;
+    if (differing) parts.push(`its sessions differ from the Hub's: ${differing} session key(s) differ (${state.feed.sessions.length} here, ${sessions.length} on the Hub)`);
+  }
+  if (state.feed.source && state.feed.source !== 'shared') parts.push(`source ${state.feed.source}`);
+  if (state.feed.error) parts.push(state.feed.error);
+  return parts.join(', ');
+}
+
 /** The controller alias the Hub's integrated configuration gives a consumer. @param {string} consumer */
 const aliasOf = consumer => /** @type {Record<string, {alias: string}>} */ (PAIRING.controllers)[consumer]?.alias ?? consumer;
 
@@ -381,7 +355,7 @@ async function pairingChecks(env, composition) {
     try {
       const state = await consumerState(consumer.id, consumer.url ?? '');
       // The same rule as the steps: current, the owner, the Hub's revision and, where listed, exactly its sessions.
-      add(`${consumer.id}-feed-current`, follows(state, {revision: revision ?? -1, sessions}), `feed ${state.feed.connection} from ${state.feed.ownerId ?? 'no owner'} at revision ${state.feed.revision} (Hub ${revision})${state.feed.sessions ? `, ${state.feed.sessions.length} session(s) (Hub ${sessions.length})` : ''}${state.feed.source && state.feed.source !== 'shared' ? `, source ${state.feed.source}` : ''}${state.feed.error ? `, ${state.feed.error}` : ''}`);
+      add(`${consumer.id}-feed-current`, follows(state, {revision: revision ?? -1, sessions}), followDetail(state, revision, sessions));
     } catch (error) {
       add(`${consumer.id}-feed-current`, false, /** @type {Error} */ (error).message);
     }
@@ -813,8 +787,14 @@ export async function doctor(id, io) {
   if (composition.state !== 'running') return {code: EXIT.failed, value: {operation: 'doctor', compositionId: id, state: composition.state, failure: composition.failure, frozen, services: composition.services.map(publicService)}};
   /** @type {Record<string, string>} */
   const states = {};
+  // A Hub change reaches the consumers on their next poll, so the pairing checks get a few seconds, as readiness does.
+  let pairing = await pairingChecks(io.env, composition);
+  for (const deadline = Date.now() + 8000; pairing.some(c => c.outcome !== 'passed') && Date.now() < deadline;) {
+    await pause(1000);
+    pairing = await pairingChecks(io.env, composition);
+  }
   /** @type {Check[]} */
-  const checks = [...await pairingChecks(io.env, composition), ...await doctorChecks(io.env, composition, io.progress, states), ...frozen.map(s => ({id: `${s}-frozen`, outcome: /** @type {const} */ ('failed'), detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
+  const checks = [...pairing, ...await doctorChecks(io.env, composition, io.progress, states), ...frozen.map(s => ({id: `${s}-frozen`, outcome: /** @type {const} */ ('failed'), detail: `${s} is frozen by an interrupted loss injection; stop thaws it`}))];
   const ok = checks.every(c => c.outcome === 'passed');
   // Every lease elapsed: the composition expired as a whole, and stop removes what is left.
   const expired = composition.services.every(s => states[s.id] === 'expired');

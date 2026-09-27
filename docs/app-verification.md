@@ -677,8 +677,9 @@ The composition id is `compose-<UTC start>-<6 hex>`. The record never holds a
 token. The checkout paths are local operating state that `doctor`, `extend`
 and `stop` need.
 
-- `doctor <id>` runs each run's `doctor` and the readiness checks once. It
-  reports `degraded` with every failing check, for example a crashed consumer
+- `doctor <id>` runs each run's `doctor` and the readiness checks, giving the
+  pairing checks up to 8 s to settle after a recent change. It reports
+  `degraded` with every failing check, for example a crashed consumer
   or a unit left frozen. When every lease has elapsed it reports `expired`,
   and `stop` then records each run as expired. Without an id it lists every
   composition.
@@ -725,6 +726,11 @@ them for the steps and for readiness:
 | `pixoo-loss` | Through `inject … consumer-loss pixoo`, as described below |
 | `control-replay-after-recovery` | Negative control through `inject … consumer-loss pixoo --step control-replay-after-recovery`: the same loss, then a client re-sends the lost command as new work the moment the thawed Pixoo answers. It must fail at "nothing but the loss-time command reached a writer, and that at most once" |
 | `control-second-owner` | Negative control through `inject … second-owner pixoo`: the orchestrator reseeds the Pixoo run to its standalone scenario, its own embedded owner, then restores `hub-paired`. The one-owner checks run in between and must fail at "the Pixoo reads its sessions only from the Hub: current at the owner's revision, with exactly the Hub's sessions" |
+
+Only the delivery composition's runs, with the reference steps in their
+verified sets, are delivery receipts. The runs of a separate controls
+composition prove that the controls hold, and are never cited as delivery
+receipts.
 
 A control holds only when it fails at its named assertion. `compose` records
 the expected assertion and whether the control held, and exits 0 only for a

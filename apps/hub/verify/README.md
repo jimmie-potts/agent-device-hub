@@ -220,6 +220,10 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   orchestrator, not the real consumers; the local
   cross-repository run in [development](../../../docs/development.md#app-verification-and-preview-runs)
   does. Without a user manager it skips, like `runs.test.mjs`.
+- `lock.test.mjs` races eight processes for the composition lock
+  ([`lock.mjs`](lock.mjs)) while some die holding it: no two live holders
+  are ever inside at once, and a dead holder's lock is broken. It needs no
+  systemd and runs in CI.
 
 The hub keeps a Unix socket at `<state root>/<run-id>/data/h/bunny-launch.sock`,
 which must stay under 108 bytes. The default state root,

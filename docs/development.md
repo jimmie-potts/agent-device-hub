@@ -1168,6 +1168,8 @@ worktree after `npm run build`:
    assertion. A control that exits 1 did not hold, whatever its reason.
 
 The delivery evidence records the composition id, its `composition.json`,
-each run's verified set and the consumer revisions. A composition proves
+each run's verified set and the consumer revisions. Only the delivery
+composition's runs are delivery receipts; a controls composition's runs are
+not. A composition proves
 simulated cross-service behavior only, not installed or physical
 acceptance.
