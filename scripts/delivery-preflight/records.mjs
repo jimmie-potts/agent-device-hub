@@ -44,33 +44,47 @@ export async function readRecord(ctx, gate, url, label) {
   return { record, problems };
 }
 
-/** PR revisions a record names by full or abbreviated (7+) hex SHA. */
-export function namedRevisions(body, commits) {
-  const tokens = body.match(/\b[0-9a-f]{7,40}\b/g) || [];
-  return [...new Set(commits.filter(sha => tokens.some(token => sha.startsWith(token))))];
-}
-
 // The local checks the guide README asks the record to report, besides the
-// browser check that the guide receipt covers. One line per check, for example
-// "python3 docs/work-guide/work/build_guide.py: exit 0".
+// browser check that the guide receipt covers. Only one documented line form
+// counts: the check's command, a colon, and exactly `exit 0` or `passed`, for
+// example "- python3 docs/work-guide/work/build_guide.py: exit 0". Every line
+// that names a check must have that form, so any other wording leaves the
+// check unverified.
 export const GUIDE_RECORD_CHECKS = [
   ['build_guide.py', /\bbuild_guide\.py\b/],
   ['test_maintenance.py', /\btest_maintenance\.py\b/],
   ['check_places.cjs', /\bcheck_places\.cjs\b/],
   ['git diff --exit-code', /git diff --exit-code/],
 ];
-const PASS = /\bexit(?:ed)?(?: code| status)?\s*[:=]?\s*0\b|\bpass(?:ed|es)?\b|\bsucceeded\b/i;
-const FAIL = /\bfail(?:ed|s|ure|ing)?\b|\bexit(?:ed)?(?: code| status)?\s*[:=]?\s*[1-9]\d*\b|(?<!\b(?:0|no) )\berrors?\b|\bskipped\b|\bnot run\b|\btimed? ?out\b/i;
+const PASSING_LINE = /^\s*(?:[-*]\s+)?(.+):[ \t]*(?:exit 0|passed)[ \t]*$/;
 
-/** Classify each required check as passed, failed or unverified from the record's lines. */
+/** Classify each required check as passed or unverified from the record's lines. */
 export function guideRecordResults(body) {
   const lines = body.split('\n');
-  const results = { passed: [], failed: [], unverified: [] };
+  const results = { passed: [], unverified: [] };
   for (const [id, pattern] of GUIDE_RECORD_CHECKS) {
     const mentions = lines.filter(line => pattern.test(line));
-    if (mentions.some(line => FAIL.test(line))) results.failed.push(id);
-    else if (mentions.some(line => PASS.test(line))) results.passed.push(id);
-    else results.unverified.push(id);
+    const passing = mentions.length > 0 && mentions.every(line => {
+      const match = line.match(PASSING_LINE);
+      return Boolean(match) && pattern.test(match[1]);
+    });
+    results[passing ? 'passed' : 'unverified'].push(id);
   }
   return results;
+}
+
+// A UI approval record states approval of a revision on one line: an approval
+// word and the revision together, with no negation on that line.
+const APPROVAL_WORD = /\bapprov(?:e|ed|al)\b/i;
+const NEGATION = /\bnot\b|n't\b|\bnever\b|\bno\b|\bwithout\b|\bpending\b|\bawait(?:s|ing)?\b|\bunapproved\b/i;
+
+/** PR revisions a record names on an approval line, by full or abbreviated (7+) hex SHA. */
+export function approvedRevisions(body, commits) {
+  const named = new Set();
+  for (const line of body.split('\n')) {
+    if (!APPROVAL_WORD.test(line) || NEGATION.test(line)) continue;
+    const tokens = line.match(/\b[0-9a-f]{7,40}\b/g) || [];
+    for (const sha of commits) if (tokens.some(token => sha.startsWith(token))) named.add(sha);
+  }
+  return [...named];
 }

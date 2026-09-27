@@ -6,25 +6,35 @@ import { evaluateCi } from './ci.mjs';
 import { COMPARE_FILE_LIMIT, Gate, GUIDE_ROOT, SDLC, createReader, short, touchedPaths } from './context.mjs';
 import { QUERIES, ReadFailure } from './github.mjs';
 import { RECEIPT_VERSION, describeLocal, readAppReceipt } from './receipts.mjs';
-import { isBot, namedRevisions, readRecord } from './records.mjs';
+import { approvedRevisions, isBot, readRecord } from './records.mjs';
 import { POLICY_PATHS, REVIEW_FORMAT, collectReports, judgeRound, policyComponents, requirementReference } from './reviews.mjs';
 
 // Non-guide UI recognized by path: a directory prefix ends with "/", anything
-// else is one file. `--ui` declares UI elsewhere. Tidbyt frame rendering is
-// device UI (#189, #280), so its drawing sources and golden frames count.
+// else is one file. `--ui` declares UI elsewhere. Tidbyt frames are device UI
+// (#189, #280), so all of controllers/tidbyt/src/ counts except the modules
+// below, which queue, schedule, authenticate or transport frames without
+// deciding what they show. A new Tidbyt module is UI until it is listed here.
 export const UI_PATHS = [
   'apps/dashboard/src/',
   'scripts/build-dashboard.mjs',
   'docs/system-design/',
   'docs/skins/',
-  'controllers/tidbyt/src/render.ts',
-  'controllers/tidbyt/src/draw.ts',
-  'controllers/tidbyt/src/font.ts',
-  'controllers/tidbyt/src/status.ts',
-  'controllers/tidbyt/src/nowplaying.ts',
+  'controllers/tidbyt/src/',
   'controllers/tidbyt/fixtures/golden/',
 ];
-export const isUiPath = file => UI_PATHS.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry));
+export const NON_UI_PATHS = [
+  'controllers/tidbyt/src/cli.ts',
+  'controllers/tidbyt/src/connection.ts',
+  'controllers/tidbyt/src/controller.ts',
+  'controllers/tidbyt/src/credentials.ts',
+  'controllers/tidbyt/src/index.ts',
+  'controllers/tidbyt/src/nowplaying-publisher.ts',
+  'controllers/tidbyt/src/publisher.ts',
+  'controllers/tidbyt/src/publishing.ts',
+  'controllers/tidbyt/src/runner.ts',
+];
+export const isUiPath = file => !NON_UI_PATHS.includes(file)
+  && UI_PATHS.some(entry => (entry.endsWith('/') ? file.startsWith(entry) : file === entry));
 export const FINISH_LINES = ['source', 'installed', 'real-client', 'physical'];
 // The one bot-opened delivery: the nightly guide refresh, which carries no work issue.
 export const GUIDE_REFRESH_BRANCH = 'guide/nightly-refresh';
@@ -450,9 +460,11 @@ async function evaluateUi(ctx) {
   }
   const commits = await ctx.read(ui, () => ctx.github.getAll(`/repos/${ctx.repo}/pulls/${ctx.pr.number}/commits?per_page=100`));
   if (!commits.ok) return;
-  const named = namedRevisions(record.body, commits.value.map(item => item.sha));
+  const named = approvedRevisions(record.body, commits.value.map(item => item.sha));
   if (named.length !== 1) {
-    ui.unresolved(named.length ? `the approval record names several revisions of this PR (${named.map(short).join(', ')})` : 'the approval record names no revision of this PR');
+    ui.unresolved(named.length
+      ? `the approval record approves several revisions of this PR (${named.map(short).join(', ')})`
+      : 'the approval record has no line that approves one revision of this PR (an approval word and the revision, without negation)');
     return;
   }
   const [approved] = named;

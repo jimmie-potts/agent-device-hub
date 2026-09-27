@@ -193,6 +193,7 @@ async function evaluateGuideException(ctx, gate, { sha }) {
   if (!record.body.includes(digest)) gate.unresolved(`the guide record for ${short(sha)} does not name the HTML sha256 ${short(digest)}`);
   const results = guideRecordResults(record.body);
   gate.evidence.guideRecord.checks = results;
-  for (const check of results.failed) gate.unresolved(`the guide record reports ${check} failed`);
-  for (const check of results.unverified) gate.unresolved(`the guide record does not show a passing result for ${check}; it remains unverified`);
+  for (const check of results.unverified) {
+    gate.unresolved(`the guide record does not show ${check} in the form "<command>: exit 0" or "<command>: passed"; it remains unverified`);
+  }
 }

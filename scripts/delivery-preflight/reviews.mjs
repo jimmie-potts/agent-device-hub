@@ -20,31 +20,61 @@ const AXES = ['standards', 'specification'];
 const FINDING = /^- (\S+) \((P[0-3]), ([a-z]+), (unresolved|resolved|regression|accepted|deferred)\): /;
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 
-// Verdict phrases a reviewer return may state on a "Verdict:" line (any
-// heading, list or bold markup). Anything else on such a line is not satisfied.
+// A reviewer return's own verdict, read strictly so that anything unclear fails
+// closed. Blockquote lines and fenced code are quotations and never count.
+//
+// 1. Verdict lines: `Verdict: <phrase>` in any heading, list or bold markup,
+//    with an optional parenthetical, or a bare `Verdict` heading followed by
+//    the phrase on the next non-empty line. When any exist, every one must be
+//    satisfied, approve or approved.
+// 2. Otherwise, explicit axis-status statements: "<axis> axis is (now) <status>"
+//    or a line that opens with a bold or backticked status token, using the
+//    contract's satisfied, action-required, incomplete and not satisfied. At
+//    least one must exist, and every one must be satisfied.
+// 3. Otherwise the return states no verdict.
 export const SATISFIED_VERDICTS = ['satisfied', 'approve', 'approved'];
-const VERDICT_LINE = /^[\s>#*_`-]*verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$/i;
+const VERDICT_LINE = /^[\s#*_`-]*verdict(?:\s*\([^)]*\))?[\s*_`]*(?:[:\u2013\u2014-][\s*_`]*(.*)|$)/i;
+const STATUS = '(satisfied|action-required|incomplete|not[ -]satisfied)';
+const AXIS_STATEMENT = new RegExp(`\\baxis is (?:now )?[*_\`]*${STATUS}\\b`, 'gi');
+const OPENING_STATUS = new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|\`)${STATUS}\\b`, 'i');
 
-/**
- * The verdict a reviewer's own return states: 'satisfied', 'not-satisfied' or
- * 'none'. Verdict lines decide when present, and every one must be satisfied.
- * Without one, the text must use the contract's `satisfied` and none of
- * `action-required`, `changes requested` or `not satisfied`.
- */
+/** Lines that are the reviewer's own words: no blockquotes, no fenced code. */
+function ownLines(text) {
+  const lines = [];
+  let fence = null;
+  for (const line of String(text).split('\n')) {
+    const marker = line.match(/^\s*(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence || /^\s*>/.test(line)) continue;
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** The verdict a reviewer's own return states: 'satisfied', 'not-satisfied' or 'none'. */
 export function statedVerdict(text) {
-  const lines = String(text).split('\n');
+  const lines = ownLines(text);
   const phrases = [];
   lines.forEach((line, index) => {
     const match = line.match(VERDICT_LINE);
     if (!match) return;
-    let phrase = match[1];
+    let phrase = match[1] || '';
     if (!phrase.trim()) phrase = lines.slice(index + 1).find(next => next.trim()) || '';
     phrases.push(phrase.replace(/[*_`]/g, '').split(/[.;,:(]| - /)[0].trim().toLowerCase().replace(/\s+/g, ' '));
   });
   if (phrases.length) return phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) ? 'satisfied' : 'not-satisfied';
-  const lower = String(text).toLowerCase();
-  if (/\baction-required\b|\bchanges requested\b|\bnot satisfied\b|\bunsatisfied\b/.test(lower)) return 'not-satisfied';
-  return /\bsatisfied\b/.test(lower) ? 'satisfied' : 'none';
+  const statuses = [];
+  for (const line of lines) {
+    for (const match of line.matchAll(AXIS_STATEMENT)) statuses.push(match[1].toLowerCase());
+    const opening = line.match(OPENING_STATUS);
+    if (opening) statuses.push(opening[1].toLowerCase());
+  }
+  if (!statuses.length) return 'none';
+  return statuses.every(status => status === 'satisfied') ? 'satisfied' : 'not-satisfied';
 }
 
 function byTime(a, b) {

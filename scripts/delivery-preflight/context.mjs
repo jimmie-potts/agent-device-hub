@@ -1,6 +1,8 @@
 // Shared pieces for the preflight gates: the gate record, the read wrapper that
 // turns a failed read into a read-failure status, and revision formatting.
-import { ReadFailure } from './github.mjs';
+import { ReadFailure, redactPaths } from './github.mjs';
+
+export { redactPaths };
 
 /** A local proof file that cannot be read; carries only a label and an error code. */
 export class LocalReadFailure extends Error {

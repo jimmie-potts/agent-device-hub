@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { LocalReadFailure, short } from './context.mjs';
+import { LocalReadFailure, redactPaths, short } from './context.mjs';
 
 export const RECEIPT_VERSION = 'app-verification/1';
 export const GUIDE_HTML_PATH = 'docs/work-guide/outputs/agent-device-work-guides.html';
@@ -24,7 +24,7 @@ function guarded(label, fn) {
 
 /** A receipt-supplied reason, shortened and without absolute paths. */
 function tidy(reason) {
-  return String(reason).replace(/(?:~|\/)[^\s'"]*\/[^\s'"]*/g, '[path]').slice(0, 80);
+  return redactPaths(reason).slice(0, 80);
 }
 
 /** Name a local file without disclosing where it lives. */

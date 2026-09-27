@@ -97,9 +97,14 @@ function nextLink(link) {
   return null;
 }
 
+/** Replace absolute and home-relative paths in free text. */
+export function redactPaths(text) {
+  return String(text).replace(/(?:~|\/)[^\s'"]*\/[^\s'"]*/g, '[path]');
+}
+
 function describeError(error) {
   const message = error && error.message ? String(error.message) : String(error);
-  return message.replace(/(?:gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted: token]');
+  return redactPaths(message.replace(/(?:gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, '[redacted: token]'));
 }
 
 /**

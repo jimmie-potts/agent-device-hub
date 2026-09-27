@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViolation, assertQueryOnly } from '../scripts/delivery-preflight/github.mjs';
-import { runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
+import { main } from '../scripts/delivery-preflight/cli.mjs';
+import { NON_UI_PATHS, isUiPath, runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
 import { statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
@@ -275,6 +276,10 @@ test('identity: the bot-opened nightly guide refresh is the only PR without a wo
   world.pr.head.ref = 'guide/other';
   assertUnresolved(await preflight(world), 'identity', /no work issue/);
   world.pr.head.ref = 'guide/nightly-refresh';
+  world.pr.user = { login: OWNER, type: 'User' };
+  assertUnresolved(await preflight(world), 'identity', /no work issue/);
+  world.pr.user = { login: 'github-actions[bot]', type: 'Bot' };
+  world.pr.head.ref = 'guide/nightly-refresh';
   world.files.push({ filename: 'README.md', status: 'modified' });
   assertUnresolved(await preflight(world), 'identity', /no work issue/);
 });
@@ -423,6 +428,17 @@ test('review: each retained return must itself state a satisfied verdict', async
   assertUnresolved(await withSpecification('Coverage: the whole comparison.\n'), 'review', /does not itself state a satisfied verdict/);
   assertUnresolved(await withSpecification('The axis is action-required: F1 remains.\n'), 'review', /does not itself state a satisfied verdict/);
   assertUnresolved(await withSpecification('Verdict: satisfied.\n\nVerdict (after rereading): changes requested\n'), 'review', /does not itself state/);
+  // Round 2 probes: none of these returns states a satisfied verdict of its own.
+  for (const text of [
+    'The Specification axis is **incomplete**: the requirement could not be read. Items 1 and 3 are satisfied.\n',
+    'Axis status: not-satisfied. Items 1 and 3 are satisfied.\n',
+    'The axis is not yet satisfied. Blocking findings: P1 a.mjs:1, an empty filter exports every row.\n',
+    'Result: action required. Items 1 and 3 are satisfied.\n',
+    '> Verdict: satisfied.\n\nThe Specification axis is **action-required**: P1 a.mjs:1 remains.\n',
+    'Satisfied only if S1 is fixed.\n',
+  ]) {
+    assertUnresolved(await withSpecification(text), 'review', /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/);
+  }
   for (const text of ['## Verdict: approve\n\nNo blockers.\n', '**Verdict:** satisfied.\n', 'Verdict - approved\n', 'The Specification axis is now **satisfied**. No P0-P2 remains.\n']) {
     const report = await withSpecification(text);
     assert.equal(gate(report, 'review').status, 'satisfied', `${text}: ${gate(report, 'review').reasons}`);
@@ -432,10 +448,20 @@ test('review: each retained return must itself state a satisfied verdict', async
 
 test('review: stated verdicts recognize only satisfied, approve and approved', () => {
   const cases = [
+    // Verdict lines decide, and every unquoted one must be satisfied.
     ['Verdict: satisfied.', 'satisfied'], ['## Verdict: approve', 'satisfied'], ['- **Verdict**: Approved', 'satisfied'],
     ['## Verdict: changes requested', 'not-satisfied'], ['Verdict: action-required', 'not-satisfied'], ['Verdict: incomplete', 'not-satisfied'],
     ['Verdict: approve with nits', 'not-satisfied'], ['Verdict: not satisfied', 'not-satisfied'], ['## Verdict\n\nsatisfied', 'satisfied'],
-    ['satisfied; F1 was action-required in round 1', 'not-satisfied'], ['No verdict here.', 'none'], ['Specification owns the verdict. satisfied', 'satisfied'],
+    ['> Verdict: satisfied.\nVerdict: changes requested', 'not-satisfied'], ['Verdict: approve\n> Verdict: changes requested', 'satisfied'],
+    ['```text\nVerdict: satisfied\n```\nVerdict: changes requested', 'not-satisfied'], ['~~~\nVerdict: approve\n~~~', 'none'],
+    // Without one, only explicit axis-status statements count.
+    ['The Specification axis is now **satisfied**.', 'satisfied'], ['`satisfied`. No P0-P2 remains.', 'satisfied'], ['**satisfied.** No blockers.', 'satisfied'],
+    ['The Standards axis is `action-required`.', 'not-satisfied'], ['The axis is not satisfied.', 'not-satisfied'], ['- **incomplete**: no requirement.', 'not-satisfied'],
+    ['The axis is now **satisfied**.\nThe other axis is incomplete.', 'not-satisfied'],
+    ['> the review gate was `not satisfied`\n`satisfied`. No blockers.', 'satisfied'],
+    ['> The Specification axis is **satisfied**.\nThe reviewer found P1 a.mjs:1.', 'none'], ['> `satisfied`. No blockers.', 'none'],
+    ['satisfied; F1 was action-required in round 1', 'none'], ['No verdict here.', 'none'], ['Specification owns the verdict. satisfied', 'none'],
+    ['The axis is not yet satisfied.', 'none'], ['Satisfied only if S1 is fixed.', 'none'], ['Axis status: not-satisfied.', 'none'],
   ];
   for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`), expected, text);
 });
@@ -477,11 +503,28 @@ test('an unavailable API is a read failure, never success', async () => {
   assert.equal(none.exitCode, 2);
   assert.ok(none.gates.every(item => item.status !== 'satisfied'));
 
+  const leaky = cleanWorld();
+  leaky.failures.push({ match: /check-runs/, message: 'EACCES: open /home/someone/.config/gh/hosts.yml' });
+  const leaked = await preflight(leaky);
+  assert.equal(gate(leaked, 'ci-pr').status, 'read-failure');
+  assert.doesNotMatch(JSON.stringify(leaked), /someone|hosts\.yml/);
+  assert.ok(leaked.readFailures.some(failure => /\[path\]/.test(failure.detail)));
+
   const throttled = cleanWorld();
   throttled.failures.push({ match: /\/issues\/700\/comments/, status: 503 });
   const partial = await preflight(throttled);
   assert.equal(gate(partial, 'review').status, 'read-failure');
   assert.equal(partial.exitCode, 2);
+});
+
+test('a GraphQL response with errors is a read failure even when it carries partial data', async () => {
+  const world = cleanWorld();
+  world.graphqlErrors = true;
+  const report = await preflight(world);
+  assert.equal(report.result, 'read-failure');
+  assert.equal(gate(report, 'feedback').status, 'read-failure');
+  assert.equal(gate(report, 'identity').status, 'read-failure');
+  assert.ok(report.readFailures.some(failure => /GraphQL PullRequestState/.test(failure.what) && /reviewThreads/.test(failure.detail)));
 });
 
 // ---- Pagination ----
@@ -585,7 +628,12 @@ test('UI approval: a record that names no candidate revision is not approval', a
   world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
   const vague = comment('The owner likes the dashboard.');
   world.comments.push(vague);
-  assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', /names no revision of this PR/);
+  assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', /has no line that approves one revision of this PR/);
+  for (const body of [`Pushed round 2 fixes at ${HEAD}.`, `The owner has not approved ${HEAD} yet.`, `Approval pending for ${HEAD}.`, `Approved.\nPushed ${HEAD}.`]) {
+    const record = comment(body);
+    world.comments.push(record);
+    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', /has no line that approves one revision/);
+  }
 });
 
 test('UI approval: bot summaries, review reports and other accounts are not approval records', async () => {
@@ -612,6 +660,14 @@ test('UI approval: the dashboard shell and Tidbyt frame rendering are UI', async
   const credentials = cleanWorld();
   credentials.files.push({ filename: 'controllers/tidbyt/src/credentials.ts', status: 'modified' });
   assert.equal(gate(await preflight(credentials), 'ui-approval').status, 'not-applicable');
+});
+
+test('UI approval: Tidbyt sources are UI unless listed as known non-UI modules', () => {
+  for (const file of ['controllers/tidbyt/src/newframe.ts', 'controllers/tidbyt/src/webp.ts', 'controllers/tidbyt/src/draw.ts']) assert.ok(isUiPath(file), file);
+  for (const file of NON_UI_PATHS) assert.ok(!isUiPath(file), file);
+  const listed = fs.readdirSync(path.join(root, 'controllers/tidbyt/src')).map(name => `controllers/tidbyt/src/${name}`);
+  for (const file of NON_UI_PATHS) assert.ok(listed.includes(file), `${file} still exists`);
+  assert.ok(!isUiPath('controllers/tidbyt/tests/render.test.mjs'));
 });
 
 // ---- Counterparts ----
@@ -735,17 +791,33 @@ test('guide-only: a receipt for other HTML, a failed check or missing retained f
 
 test('guide-only: the record must show passing build, maintenance, Places and drift checks', async t => {
   const receipt = writeGuideEvidence(scratch(t));
+  const unverified = check => new RegExp(`does not show ${check.replace(/[.-]/g, '\\$&')} in the form "<command>: exit 0" or "<command>: passed"; it remains unverified`);
   const cases = [
-    [{ maintenance: 'FAILED (2 failures)' }, /reports test_maintenance.py failed/],
-    [{ drift: 'exit 1' }, /reports git diff --exit-code failed/],
-    [{ places: null }, /does not show a passing result for check_places.cjs; it remains unverified/],
-    [{ build: 'ran' }, /does not show a passing result for build_guide.py; it remains unverified/],
-    [{ build: null, maintenance: null, places: null, drift: null }, /test_maintenance.py; it remains unverified/],
+    [{ maintenance: 'FAILED (2 failures)' }, unverified('test_maintenance.py')],
+    [{ maintenance: '2 failures, 40 passed' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'did not pass' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'not passed' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'would have passed' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'never passed' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'exit 0.' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'exit 0 (2 skipped)' }, unverified('test_maintenance.py')],
+    [{ drift: 'exit 1' }, unverified('git diff --exit-code')],
+    [{ places: null }, unverified('check_places.cjs')],
+    [{ build: 'ran' }, unverified('build_guide.py')],
+    [{ build: null, maintenance: null, places: null, drift: null }, unverified('test_maintenance.py')],
   ];
   for (const [options, reason] of cases) {
     const world = guideOnlyWorld();
     assertUnresolved(await preflight(world, { guideReceipts: [receipt], guideRecords: [guideRecord(world, options)] }), 'ci-pr', reason);
   }
+  const contradicted = guideOnlyWorld();
+  const twice = comment(`${guideRecordBody(HEAD)}\n- python3 docs/work-guide/work/build_guide.py: exit 1`);
+  contradicted.comments.push(twice);
+  assertUnresolved(await preflight(contradicted, { guideReceipts: [receipt], guideRecords: [twice.html_url] }), 'ci-pr', unverified('build_guide.py'));
+  const passedForm = guideOnlyWorld();
+  const passed = comment(guideRecordBody(HEAD, { build: 'passed', maintenance: 'passed', places: 'passed', drift: 'passed' }));
+  passedForm.comments.push(passed);
+  assert.equal(gate(await preflight(passedForm, { guideReceipts: [receipt], guideRecords: [passed.html_url] }), 'ci-pr').status, 'satisfied');
   const hashless = guideOnlyWorld();
   const record = comment(guideRecordBody(HEAD).replace(sha256(GUIDE_HTML), 'unknown'));
   hashless.comments.push(record);
@@ -802,6 +874,16 @@ test('workflow filters treat ** as GitHub does, including dot-files', () => {
   const kept = expectedJobs([classes], { event: 'pull_request', branch: 'main', files: ['docs/x/y.md'], filesComplete: true });
   assert.deepEqual(kept.jobs.map(item => item.name), ['C / a']);
   assert.match(kept.notes.join(), /not evaluated; every job stays expected/);
+  const optional = parseWorkflow('q.yml', "name: Q\non:\n  pull_request:\n    paths-ignore: ['docs/a?.md']\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n");
+  const question = expectedJobs([optional], { event: 'pull_request', branch: 'main', files: ['docs/ab.md'], filesComplete: true });
+  assert.deepEqual(question.jobs.map(item => item.name), ['Q / a'], '? is zero-or-one in GitHub patterns, so it is not evaluated');
+  assert.match(question.notes.join(), /negation, \?, \+ or \[\]/);
+  for (const branches of ["['!main']", "['release/v?']", "['release/[0-9]']"]) {
+    const pushes = parseWorkflow('b.yml', `name: B\non:\n  push:\n    branches: ${branches}\njobs:\n  a:\n    runs-on: x\n    steps: [{run: 'true'}]\n`);
+    const result = expectedJobs([pushes], { event: 'push', branch: 'main', files: ['a'], filesComplete: true });
+    assert.deepEqual(result.jobs.map(item => item.name), ['B / a'], branches);
+    assert.match(result.notes.join(), /branch patterns .* are not evaluated/);
+  }
 });
 
 // ---- Proof artifacts (app-verification/1 receipts) ----
@@ -841,7 +923,17 @@ test('proof: a clean frozen receipt is identified by run id and checksums, never
   assert.ok(!JSON.stringify(missing).includes(directory));
 });
 
-test('proof: an unreadable verified set is a read failure that names no local path', async t => {
+test('proof: receipt reasons are shortened and never carry paths', async t => {
+  const directory = scratch(t);
+  const reason = `assertion failed reading /home/someone/private/screens/after.png and ~/secret/file.txt ${'x'.repeat(120)}`;
+  const proof = writeProof(directory, { captures: [{ n: 1, step: 'task-appears', set: 'verified', outcome: 'failed', reason }] });
+  const report = await preflight(cleanWorld(), { receipts: [proof] });
+  const text = gate(report, 'proof').reasons.join('\n');
+  assert.match(text, /assertion failed reading \[path\] and \[path\]/);
+  assert.doesNotMatch(JSON.stringify(report), /someone|secret|x{100}/);
+});
+
+test('proof: an unreadable verified set is a read failure that names no local path', { skip: process.getuid?.() === 0 && 'root ignores directory permissions' }, async t => {
   const directory = scratch(t);
   const proof = writeProof(directory);
   const locked = path.join(proof, 'verified', 'capture-1');
@@ -1002,6 +1094,22 @@ test('the CLI reports usage errors with their own exit status', () => {
     const result = spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env: { ...process.env, GH_TOKEN: '' } });
     assert.equal(result.status, 3, `${args.join(' ')}: ${result.stderr}`);
   }
+});
+
+test('the CLI reports an internal error without local paths', async () => {
+  const output = [];
+  const errors = [];
+  const code = await main({
+    argv: ['--pr', '1'],
+    run: async () => { throw new TypeError('cannot read /home/someone/.local/state/app-verify/run/receipt.json'); },
+    transport: async () => ({ status: 500, json: {} }),
+    stdout: { write: text => output.push(text) },
+    stderr: { write: text => errors.push(text) },
+  });
+  assert.equal(code, 3);
+  assert.deepEqual(output, []);
+  assert.match(errors.join(''), /stopped by an internal error: cannot read \[path\]/);
+  assert.doesNotMatch(errors.join(''), /someone/);
 });
 
 test('the CLI turns a missing credential into a read failure', () => {

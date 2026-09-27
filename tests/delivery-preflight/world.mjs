@@ -339,7 +339,8 @@ function graphql(world, body) {
   if (/reviewThreads/.test(query)) {
     const start = variables.after ? Number(variables.after) : 0;
     const end = start + world.threadPageSize;
-    return { status: 200, json: { data: { repository: { pullRequest: {
+    const errors = world.graphqlErrors ? { errors: [{ message: 'Something went wrong while resolving reviewThreads' }] } : {};
+    return { status: 200, json: { ...errors, data: { repository: { pullRequest: {
       closingIssuesReferences: { nodes: world.closingIssues.map(number => ({ number, repository: { nameWithOwner: REPO } })) },
       reviewThreads: {
         pageInfo: { hasNextPage: end < world.threads.length, endCursor: end < world.threads.length ? String(end) : null },

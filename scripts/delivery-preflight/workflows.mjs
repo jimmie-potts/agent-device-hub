@@ -24,10 +24,11 @@ export function parseWorkflow(file, text) {
   return { file, name: document.name ?? null, triggers: normalizeTriggers(on), jobs };
 }
 
-// GitHub filter patterns: `*` matches within one path segment, `**` across
-// segments (dot-files included), `?` one character. Negation, `+` and
-// character classes are not evaluated; a filter using them keeps every job.
-const UNSUPPORTED = /^!|[[\]+]/;
+// GitHub filter patterns: `*` matches within one path segment and `**` across
+// segments, dot-files included. Negation, `?` and `+` (zero-or-one and
+// one-or-more of the preceding character) and character classes are not
+// evaluated; a filter using any of them keeps every job expected.
+const UNSUPPORTED = /^!|[[\]+?]/;
 
 export function filterPattern(pattern) {
   let source = '';
@@ -43,8 +44,6 @@ export function filterPattern(pattern) {
       }
     } else if (char === '*') {
       source += '[^/]*';
-    } else if (char === '?') {
-      source += '[^/]';
     } else {
       source += char.replace(/[.^$|(){}\\]/g, '\\$&');
     }
@@ -62,7 +61,7 @@ function triggerApplies(trigger, { branch, files, filesComplete }) {
   const ignoredBranches = trigger['branches-ignore'];
   if (trigger.tags && !branches && !ignoredBranches) return { applies: false, reason: 'tag-only push trigger' };
   if (unsupported(branches) || unsupported(ignoredBranches)) {
-    return { applies: true, notes: ['branch patterns with negation, + or [] are not evaluated; every job stays expected'] };
+    return { applies: true, notes: ['branch patterns with negation, ?, + or [] are not evaluated; every job stays expected'] };
   }
   if (branches && !matches(branch, branches)) return { applies: false, reason: `branch ${branch} not in branches` };
   if (ignoredBranches && matches(branch, ignoredBranches)) return { applies: false, reason: `branch ${branch} in branches-ignore` };
@@ -71,7 +70,7 @@ function triggerApplies(trigger, { branch, files, filesComplete }) {
   if (paths && ignored) return { applies: true, notes: ['both paths and paths-ignore are set; every job stays expected'] };
   const patterns = paths || ignored;
   if (unsupported(patterns)) {
-    return { applies: true, notes: ['path patterns with negation, + or [] are not evaluated; every job stays expected'] };
+    return { applies: true, notes: ['path patterns with negation, ?, + or [] are not evaluated; every job stays expected'] };
   }
   if (!filesComplete && patterns) {
     notes.push('the changed-file list is incomplete, so path filters are not applied and every job stays expected');
