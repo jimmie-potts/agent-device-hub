@@ -464,7 +464,7 @@ async function evaluateUi(ctx) {
   if (named.length !== 1) {
     ui.unresolved(named.length
       ? `the approval record approves several revisions of this PR (${named.map(short).join(', ')})`
-      : 'the approval record has no line that approves one revision of this PR (an approval word and the revision, without negation)');
+      : 'the approval record has no "UI approved: <full sha>" or "UI approved by <name>: <full sha>" line for a revision of this PR');
     return;
   }
   const [approved] = named;

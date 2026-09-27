@@ -21,22 +21,27 @@ const FINDING = /^- (\S+) \((P[0-3]), ([a-z]+), (unresolved|resolved|regression|
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 
 // A reviewer return's own verdict, read strictly so that anything unclear fails
-// closed. Blockquote lines and fenced code are quotations and never count.
+// closed. Blockquote lines and fenced code are quotations and never count, and
+// neither do double-quoted spans within a line when reading status statements.
 //
-// 1. Verdict lines: `Verdict: <phrase>` in any heading, list or bold markup,
-//    with an optional parenthetical, or a bare `Verdict` heading followed by
-//    the phrase on the next non-empty line. When any exist, every one must be
+// 1. Verdict lines: `Verdict: <phrase>` (or `Verdict -`, en or em dash), in any
+//    heading, list or bold markup, optionally after one word such as
+//    "Standards" or "Final" and with an optional parenthetical; or a bare
+//    `Verdict` heading with the phrase on the next non-empty line. The phrase
+//    is read up to the first `.`, `,`, `;`, `:`, `(` or dash, and must be
 //    satisfied, approve or approved.
-// 2. Otherwise, explicit axis-status statements: "<axis> axis is (now) <status>"
-//    or a line that opens with a bold or backticked status token, using the
-//    contract's satisfied, action-required, incomplete and not satisfied. At
-//    least one must exist, and every one must be satisfied.
-// 3. Otherwise the return states no verdict.
+// 2. Explicit axis-status statements: "<axis> axis is (now) <status>", counted
+//    when the axis is the return's own or unnamed, or a line that opens with a
+//    bold or backticked status that is not a label (not followed by `:`).
+//    Statuses: satisfied, action-required, incomplete, not satisfied.
+// A return is satisfied when it has at least one verdict line or statement
+// and every verdict line and every statement is satisfied, so the two must
+// agree. Otherwise it is not satisfied, or states no verdict at all.
 export const SATISFIED_VERDICTS = ['satisfied', 'approve', 'approved'];
-const VERDICT_LINE = /^[\s#*_`-]*verdict(?:\s*\([^)]*\))?[\s*_`]*(?:[:\u2013\u2014-][\s*_`]*(.*)|$)/i;
+const VERDICT_LINE = /^[\s#*_`-]*(?:(?:[A-Za-z]+\s+)?verdict(?:\s*\([^)]*\))?[\s*_`]*[:\u2013\u2014-][\s*_`]*(.*)$|verdict[\s*_`]*$)/i;
 const STATUS = '(satisfied|action-required|incomplete|not[ -]satisfied)';
-const AXIS_STATEMENT = new RegExp(`\\baxis is (?:now )?[*_\`]*${STATUS}\\b`, 'gi');
-const OPENING_STATUS = new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|\`)${STATUS}\\b`, 'i');
+const AXIS_STATEMENT = new RegExp(`(?:\\b(standards|specification)\\s+)?\\baxis is (?:now )?[*_\`]*${STATUS}\\b`, 'gi');
+const OPENING_STATUS = new RegExp(`^\\s*(?:[-*]\\s+)?(?:\\*\\*|\`)${STATUS}\\b(?![*_\`]*:)`, 'i');
 
 /** Lines that are the reviewer's own words: no blockquotes, no fenced code. */
 function ownLines(text) {
@@ -55,8 +60,11 @@ function ownLines(text) {
   return lines;
 }
 
-/** The verdict a reviewer's own return states: 'satisfied', 'not-satisfied' or 'none'. */
-export function statedVerdict(text) {
+/**
+ * The verdict a reviewer's own return states for `axis`: 'satisfied',
+ * 'not-satisfied' or 'none'.
+ */
+export function statedVerdict(text, axis = null) {
   const lines = ownLines(text);
   const phrases = [];
   lines.forEach((line, index) => {
@@ -64,17 +72,21 @@ export function statedVerdict(text) {
     if (!match) return;
     let phrase = match[1] || '';
     if (!phrase.trim()) phrase = lines.slice(index + 1).find(next => next.trim()) || '';
-    phrases.push(phrase.replace(/[*_`]/g, '').split(/[.;,:(]| - /)[0].trim().toLowerCase().replace(/\s+/g, ' '));
+    phrases.push(phrase.replace(/[*_`]/g, '').split(/[.;,:(\u2013\u2014]| - /)[0].trim().toLowerCase().replace(/\s+/g, ' '));
   });
-  if (phrases.length) return phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) ? 'satisfied' : 'not-satisfied';
   const statuses = [];
-  for (const line of lines) {
-    for (const match of line.matchAll(AXIS_STATEMENT)) statuses.push(match[1].toLowerCase());
+  const own = axis ? String(axis).toLowerCase() : null;
+  for (const line of lines.map(text => text.replace(/"[^"\n]*"|\u201c[^\u201d\n]*\u201d/g, '""'))) {
+    for (const match of line.matchAll(AXIS_STATEMENT)) {
+      const named = match[1] ? match[1].toLowerCase() : null;
+      if (!named || !own || named === own) statuses.push(match[2].toLowerCase());
+    }
     const opening = line.match(OPENING_STATUS);
     if (opening) statuses.push(opening[1].toLowerCase());
   }
-  if (!statuses.length) return 'none';
-  return statuses.every(status => status === 'satisfied') ? 'satisfied' : 'not-satisfied';
+  if (!phrases.length && !statuses.length) return 'none';
+  const satisfied = phrases.every(phrase => SATISFIED_VERDICTS.includes(phrase)) && statuses.every(status => status === 'satisfied');
+  return satisfied ? 'satisfied' : 'not-satisfied';
 }
 
 function byTime(a, b) {
@@ -329,7 +341,7 @@ export function judgeRound(round, { current, work }) {
       continue;
     }
     // The summary row never approves an axis; each qualifying return must state it.
-    const unstated = qualifying.filter(item => statedVerdict(item.text) !== 'satisfied');
+    const unstated = qualifying.filter(item => statedVerdict(item.text, axis) !== 'satisfied');
     if (unstated.length) {
       reasons.push(`${axis}: retained return ${unstated.map(item => item.label).join(', ')} does not itself state a satisfied verdict (${SATISFIED_VERDICTS.join(', ')}), whatever the summary row says`);
     }
@@ -343,7 +355,7 @@ export function judgeRound(round, { current, work }) {
       label: item.label,
       axis: item.rows.Axis || null,
       return: item.rows.Return || null,
-      verdict: statedVerdict(item.text),
+      verdict: statedVerdict(item.text, item.rows.Axis),
       digest: item.digest,
       digestVerified: item.digestVerified,
       redactions: item.rows.Redactions || null,

@@ -56,7 +56,7 @@ export const GUIDE_RECORD_CHECKS = [
   ['check_places.cjs', /\bcheck_places\.cjs\b/],
   ['git diff --exit-code', /git diff --exit-code/],
 ];
-const PASSING_LINE = /^\s*(?:[-*]\s+)?(.+):[ \t]*(?:exit 0|passed)[ \t]*$/;
+const PASSING_LINE = /^\s*(?:[-*]\s+)?([^:]+):[ \t]*(?:exit 0|passed)[ \t]*$/;
 
 /** Classify each required check as passed or unverified from the record's lines. */
 export function guideRecordResults(body) {
@@ -73,18 +73,20 @@ export function guideRecordResults(body) {
   return results;
 }
 
-// A UI approval record states approval of a revision on one line: an approval
-// word and the revision together, with no negation on that line.
-const APPROVAL_WORD = /\bapprov(?:e|ed|al)\b/i;
-const NEGATION = /\bnot\b|n't\b|\bnever\b|\bno\b|\bwithout\b|\bpending\b|\bawait(?:s|ing)?\b|\bunapproved\b/i;
+// A UI approval record has one documented line form, matched as a whole line
+// and case-sensitively: "UI approved: <full sha>" or "UI approved by <name>:
+// <full sha>", with an optional list marker and trailing spaces. Anything else
+// is not approval. The owner writes it from the delivery account, so the tool
+// cannot tell a human from an agent on that account; the form only prevents
+// requests, checklists or revocations from being misread as approval.
+const UI_APPROVAL_LINE = /^[ \t]*(?:[-*][ \t]+)?UI approved(?: by [^:\n]+)?: ([0-9a-f]{40})[ \t]*$/;
 
-/** PR revisions a record names on an approval line, by full or abbreviated (7+) hex SHA. */
+/** PR revisions a record approves in the documented form. */
 export function approvedRevisions(body, commits) {
   const named = new Set();
   for (const line of body.split('\n')) {
-    if (!APPROVAL_WORD.test(line) || NEGATION.test(line)) continue;
-    const tokens = line.match(/\b[0-9a-f]{7,40}\b/g) || [];
-    for (const sha of commits) if (tokens.some(token => sha.startsWith(token))) named.add(sha);
+    const match = line.match(UI_APPROVAL_LINE);
+    if (match && commits.includes(match[1])) named.add(match[1]);
   }
   return [...named];
 }

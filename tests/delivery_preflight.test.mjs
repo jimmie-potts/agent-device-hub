@@ -436,6 +436,9 @@ test('review: each retained return must itself state a satisfied verdict', async
     'Result: action required. Items 1 and 3 are satisfied.\n',
     '> Verdict: satisfied.\n\nThe Specification axis is **action-required**: P1 a.mjs:1 remains.\n',
     'Satisfied only if S1 is fixed.\n',
+    'The Standards axis is satisfied per the other reviewer. Blocking: P1 a.mjs:1.\n',
+    '- **Satisfied:** items 1 and 3.\n- **Not met:** item 2 (P1 below).\n',
+    'Verdict: satisfied\n\nThe Specification axis is **action-required**.\n',
   ]) {
     assertUnresolved(await withSpecification(text), 'review', /specification: retained return specification-reviewer-1 does not itself state a satisfied verdict/);
   }
@@ -456,7 +459,7 @@ test('review: stated verdicts recognize only satisfied, approve and approved', (
     ['```text\nVerdict: satisfied\n```\nVerdict: changes requested', 'not-satisfied'], ['~~~\nVerdict: approve\n~~~', 'none'],
     // Without one, only explicit axis-status statements count.
     ['The Specification axis is now **satisfied**.', 'satisfied'], ['`satisfied`. No P0-P2 remains.', 'satisfied'], ['**satisfied.** No blockers.', 'satisfied'],
-    ['The Standards axis is `action-required`.', 'not-satisfied'], ['The axis is not satisfied.', 'not-satisfied'], ['- **incomplete**: no requirement.', 'not-satisfied'],
+    ['The Standards axis is `action-required`.', 'not-satisfied'], ['The axis is not satisfied.', 'not-satisfied'], ['- **incomplete**, no requirement.', 'not-satisfied'], ['- **incomplete**: no requirement.', 'none'],
     ['The axis is now **satisfied**.\nThe other axis is incomplete.', 'not-satisfied'],
     ['> the review gate was `not satisfied`\n`satisfied`. No blockers.', 'satisfied'],
     ['> The Specification axis is **satisfied**.\nThe reviewer found P1 a.mjs:1.', 'none'], ['> `satisfied`. No blockers.', 'none'],
@@ -464,6 +467,21 @@ test('review: stated verdicts recognize only satisfied, approve and approved', (
     ['The axis is not yet satisfied.', 'none'], ['Satisfied only if S1 is fixed.', 'none'], ['Axis status: not-satisfied.', 'none'],
   ];
   for (const [text, expected] of cases) assert.equal(statedVerdict(`${text}\n`), expected, text);
+  // Round 3: axis-tied statements, labels, agreement and natural verdict phrasing.
+  const axisCases = [
+    ['The Standards axis is satisfied per the other reviewer. Blocking: P1 a.mjs:1.', 'specification', 'none'],
+    ['The Specification axis is now **satisfied**.', 'standards', 'none'],
+    ['The Specification axis is now **satisfied**.', 'specification', 'satisfied'],
+    ['- **Satisfied:** items 1 and 3.\n- **Not met:** item 2 (P1 below).', 'specification', 'none'],
+    ['Verdict: satisfied\n\nThe Specification axis is **action-required**.', 'specification', 'not-satisfied'],
+    ['Verdict: changes requested\n\n`satisfied`. No P0-P2 remains.', 'standards', 'not-satisfied'],
+    ['Verdict: approve\n\nProbe: "axis is **incomplete**" now reads as none.', 'specification', 'satisfied'],
+    ['Standards verdict: approve', 'standards', 'satisfied'], ['Final verdict: approve', 'standards', 'satisfied'],
+    ['**Final verdict:** approve', 'standards', 'satisfied'], ['Verdict: satisfied \u2014 no blockers', 'standards', 'satisfied'],
+    ['Verdict \u2013 approved', 'standards', 'satisfied'], ['Verdict: approve (no P0-P2)', 'standards', 'satisfied'],
+    ['No verdict\nsatisfied', 'standards', 'none'], ['Final verdict: approve with changes', 'standards', 'not-satisfied'],
+  ];
+  for (const [text, axis, expected] of axisCases) assert.equal(statedVerdict(`${text}\n`, axis), expected, `${axis}: ${text}`);
 });
 
 test('feedback: unresolved threads and outstanding change requests stay visible', async () => {
@@ -598,13 +616,13 @@ test('UI approval: a non-guide UI change without approval evidence is unresolved
 test('UI approval: a record naming the current candidate satisfies it; a stale one does not', async () => {
   const world = cleanWorld();
   world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const approval = comment(`Owner UI approval, recorded by the delivery session: the owner approved the current candidate at head ${HEAD}.`);
+  const approval = comment(`Recorded from the owner's review of the dashboard frames.\n\n- UI approved by jimmie-potts: ${HEAD}`);
   world.comments.push(approval);
   const current = await preflight(world, { uiApproval: approval.html_url });
   assert.equal(gate(current, 'ui-approval').status, 'satisfied', JSON.stringify(gate(current, 'ui-approval')));
   assert.equal(gate(current, 'ui-approval').evidence.approvedRevision, HEAD);
 
-  const older = comment(`Owner approved the UI candidate at ${OLD_HEAD.slice(0, 7)}.`);
+  const older = comment(`UI approved: ${OLD_HEAD}  `);
   world.comments.push(older);
   world.compares[`${OLD_HEAD}...${HEAD}`] = { status: 'ahead', merge_base_commit: { sha: OLD_HEAD }, files: [{ filename: 'apps/dashboard/src/style.css', status: 'modified' }] };
   assertUnresolved(await preflight(world, { uiApproval: older.html_url }), 'ui-approval', /UI changed after the approved revision: apps\/dashboard\/src\/style\.css/);
@@ -628,12 +646,22 @@ test('UI approval: a record that names no candidate revision is not approval', a
   world.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
   const vague = comment('The owner likes the dashboard.');
   world.comments.push(vague);
-  assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', /has no line that approves one revision of this PR/);
-  for (const body of [`Pushed round 2 fixes at ${HEAD}.`, `The owner has not approved ${HEAD} yet.`, `Approval pending for ${HEAD}.`, `Approved.\nPushed ${HEAD}.`]) {
+  const noForm = /has no "UI approved: <full sha>" or "UI approved by <name>: <full sha>" line for a revision of this PR/;
+  assertUnresolved(await preflight(world, { uiApproval: vague.html_url }), 'ui-approval', noForm);
+  for (const body of [
+    `Pushed round 2 fixes at ${HEAD}.`, `The owner has not approved ${HEAD} yet.`, `Approval pending for ${HEAD}.`, `Approved.\nPushed ${HEAD}.`,
+    `Requesting UI approval for ${HEAD}: screenshots attached.`, `UI approval requested for ${HEAD}.`, `Please approve ${HEAD}.`,
+    `Approval needed: ${HEAD}`, `Approval of ${HEAD} revoked.`, `The owner rejected ${HEAD}; approval is required again.`, `Can you approve ${HEAD}?`,
+    `UI approved: ${HEAD.slice(0, 12)}`, `ui approved: ${HEAD}`, `UI approved: ${HEAD}, pending colors`, `> UI approved: ${HEAD}`,
+    `UI approved: ${'a'.repeat(40)}`,
+  ]) {
     const record = comment(body);
     world.comments.push(record);
-    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', /has no line that approves one revision/);
+    assertUnresolved(await preflight(world, { uiApproval: record.html_url }), 'ui-approval', noForm);
   }
+  const both = comment(`UI approved: ${OLD_HEAD}\nUI approved: ${HEAD}`);
+  world.comments.push(both);
+  assertUnresolved(await preflight(world, { uiApproval: both.html_url }), 'ui-approval', /approves several revisions/);
 });
 
 test('UI approval: bot summaries, review reports and other accounts are not approval records', async () => {
@@ -801,6 +829,8 @@ test('guide-only: the record must show passing build, maintenance, Places and dr
     [{ maintenance: 'never passed' }, unverified('test_maintenance.py')],
     [{ maintenance: 'exit 0.' }, unverified('test_maintenance.py')],
     [{ maintenance: 'exit 0 (2 skipped)' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'exit 1; rerun: exit 0' }, unverified('test_maintenance.py')],
+    [{ maintenance: 'FAILED; second run: passed' }, unverified('test_maintenance.py')],
     [{ drift: 'exit 1' }, unverified('git diff --exit-code')],
     [{ places: null }, unverified('check_places.cjs')],
     [{ build: 'ran' }, unverified('build_guide.py')],
@@ -1042,7 +1072,7 @@ test('every scenario issues only GET requests and GraphQL queries', async t => {
   await run(guide, { guideReceipts: [guideReceipt], guideRecords: [guideRecord(guide)] });
   const ui = cleanWorld();
   ui.files.push({ filename: 'apps/dashboard/src/main.tsx', status: 'modified' });
-  const approval = comment(`approved ${HEAD}`);
+  const approval = comment(`UI approved: ${HEAD}`);
   ui.comments.push(approval);
   await run(ui, { uiApproval: approval.html_url });
   for (const world of worlds) {
