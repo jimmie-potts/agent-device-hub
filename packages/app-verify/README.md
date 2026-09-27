@@ -173,14 +173,17 @@ from 0.05 to 1440. Main result fields:
 | --- | --- |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
-| `handoff` after an interrupted one | Finishes the freeze: rebuilds from `verified.partial/`, or adopts a complete `verified/` whose sums verify |
-| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `unreadable`, `not-frozen`), `windows` |
+| `handoff` after an interrupted one | Finishes the freeze. It rebuilds from `verified.partial/`, or commits an uncommitted `verified/` only when its digest and time match this run's `frozen` event and its copy matches the live receipt. It rebuilds if a later capture exists, and otherwise refuses with `proof-conflict`, changing nothing |
+| `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
 | `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
 | `scenario`, `extend`, `stop` | The new scenario and port, the new expiry and timer, or the final state and `cleanup` |
 
 An error that stops an operation before it acts prints
-`{"operation", "error", "detail"}`, for example `run-not-running`.
+`{"operation", "error", "detail"}`, for example `run-not-running`, or
+`receipt-locked` when another live operation holds the run's receipt for
+more than 10 s. A lock left by a killed operation (its holder's PID and
+start time no longer match) breaks at once.
 
 ## Capture without a supervisor
 

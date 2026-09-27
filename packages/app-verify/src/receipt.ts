@@ -1,8 +1,8 @@
 import {existsSync} from 'node:fs';
-import {appendFile, mkdir, readFile, rename, rmdir, stat, writeFile} from 'node:fs/promises';
+import {appendFile, mkdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {RECEIPT_VERSION, type Receipt} from './types.js';
-import {ANY_RUN_ID, KEBAB, iso, pause} from './util.js';
+import {ANY_RUN_ID, KEBAB, holder, holderAlive, iso, pause} from './util.js';
 
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const LOOPBACK = /^http:\/\/127\.0\.0\.1:\d{1,5}\//;
@@ -156,6 +156,11 @@ export function validateReceipt(value: unknown): {ok: true} | {ok: false; errors
   return errors.length ? {ok: false, errors} : {ok: true};
 }
 
+const LOCK_WAIT_MS = 10000;
+
+/** The receipt is held by another live operation. */
+export class LockedError extends Error {}
+
 /** The proof directory of one run: its receipt, events and captures. */
 export class ProofStore {
   constructor(readonly dir: string) {}
@@ -185,20 +190,30 @@ export class ProofStore {
     await appendFile(join(this.dir, 'events.jsonl'), JSON.stringify({at: iso(), event, ...fields}) + '\n');
   }
 
-  /** Read-modify-write under a directory lock shared by concurrent operations on this run. */
+  /**
+   * Read-modify-write under a directory lock shared by concurrent operations
+   * on this run. The lock names its holder's PID and start time, so a killed
+   * holder's lock breaks at once; a live holder is waited for up to 10 s.
+   */
   async update(change: (receipt: Receipt) => void | Promise<void>): Promise<Receipt> {
     const lock = join(this.dir, '.receipt.lock');
-    const deadline = Date.now() + 20000;
+    const deadline = Date.now() + LOCK_WAIT_MS;
     for (;;) {
       try {
         await mkdir(lock);
+        await writeFile(join(lock, 'holder'), await holder());
         break;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        // A lock older than a minute belongs to a killed operation.
+        const record = await readFile(join(lock, 'holder'), 'utf8').catch(() => undefined);
         const info = await stat(lock).catch(() => undefined);
-        if (info && Date.now() - info.mtimeMs > 60000) await rmdir(lock).catch(() => undefined);
-        if (Date.now() > deadline) throw new Error('receipt is locked by another operation');
+        // A dead holder, or a lock that never recorded one, belongs to a killed operation.
+        const dead = record !== undefined ? !(await holderAlive(record)) : info !== undefined && Date.now() - info.mtimeMs > 5000;
+        if (dead) {
+          await rm(lock, {recursive: true, force: true});
+          continue;
+        }
+        if (Date.now() > deadline) throw new LockedError(`another operation (${record?.trim().split(' ')[0] ? `pid ${record.trim().split(' ')[0]}` : 'starting'}) held the receipt lock for ${LOCK_WAIT_MS / 1000} s; retry when it finishes`);
         await pause(50);
       }
     }
@@ -208,7 +223,7 @@ export class ProofStore {
       await this.write(receipt);
       return receipt;
     } finally {
-      await rmdir(lock).catch(() => undefined);
+      await rm(lock, {recursive: true, force: true}).catch(() => undefined);
     }
   }
 }

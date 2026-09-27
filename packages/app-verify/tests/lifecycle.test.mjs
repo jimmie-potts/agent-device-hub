@@ -622,3 +622,20 @@ test('doctor reads an unattributed listener as unread, not as a mismatch', {skip
     await box.close();
   }
 });
+
+test('doctor reports an extra armed lease timer as stale', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    const {spawnSync} = await import('node:child_process');
+    const early = Math.ceil(Date.now() / 1000) + 300;
+    assert.equal(spawnSync('systemd-run', ['--user', `--unit=app-verify-${runId}-lease-7`, '--collect', '--quiet', `--on-calendar=@${early}`, '--', '/usr/bin/systemctl', '--user', 'stop', `app-verify-${runId}.service`]).status, 0);
+    const [row] = (await box.cli(['doctor', runId])).result.runs;
+    assert.equal(row.state, 'stale');
+    assert.deepEqual(row.reasons, ['extra-lease-timer'], 'the extra timer could stop the run before the recorded expiry');
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+    assert.deepEqual(units(box.app), [], 'stop removes every lease timer of the run');
+  } finally {
+    await box.close();
+  }
+});

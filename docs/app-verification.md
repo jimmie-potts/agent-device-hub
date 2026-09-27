@@ -67,7 +67,7 @@ scenarios and its capture steps.
 | `capture <run-id> <scenario-step>` | Drives the real page in the pinned Playwright Chromium against this run, asserts the step's expected observations, and writes a screenshot, a short video of the stateful interaction and the assertion log into a new `capture-<n>/` directory: before handoff in the proof directory, after handoff under `after-handoff/`. Failed assertions are preserved as failures with their screenshot | Missing browser tooling, a crashed page, a video that was not finalized, an assertion failure. Each is a `capture.outcome` of `failed` or `unavailable` with the reason, never a successful-looking screenshot |
 | `handoff <run-id> [--reset <scenario>]` | Freezes the verified set (moves the captures so far and a copy of the receipt into `verified/`, writes its `SHA256SUMS`, removes write permission from it, records `proof.frozenAt`), optionally reseeds the run's state so the human starts from known data, and prints the preview card: URL, run id, candidate, expiry, and how to extend or stop | A run whose verified set is already frozen accepts another `handoff` only to print the card again; it never rewrites the frozen set. A reset that fails stops the unit and timer, removes the runtime directory, records `state: stopped` with the cause in `events.jsonl` and `cleanup.result`, and keeps the frozen set, rather than serving half-seeded state |
 | `extend <run-id> [--lease <minutes>]` | Starts the next lease timer (`app-verify-<run-id>-lease-<k>.timer`), reads back that it elapses at the new expiry, then stops the old timer, so the run is never without a lease. Records the new expiry in the receipt and the printed card | A run whose unit is not active, or whose new timer cannot be started, is reported as such; the old lease and everything else stay untouched |
-| `stop <run-id>` | Stops every lease timer of the run and the supervisor unit, verifies each is gone, removes the runtime directory, and writes the final receipt with `cleanup.result`: `state: expired` when the lease had already stopped the unit, `stopped` otherwise. Frozen proof stays. Repeating `stop` reports the final state without rewriting it. With an unreadable or invalid receipt, `stop` still cleans up through the unit names the run id gives, reports `state: stale` and `receipt: unreadable`, and leaves the file as found for diagnosis. It removes only the runtime directory: a `HOME` or `TMPDIR` a plug-in moved elsewhere is the plug-in's to clean | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
+| `stop <run-id>` | Stops every lease timer of the run and the supervisor unit, verifies each is gone, returns the captures of an interrupted, never-frozen handoff from `verified.partial/` to the proof directory, removes the runtime directory, and writes the final receipt with `cleanup.result`: `state: expired` when the lease had already stopped the unit, `stopped` otherwise. Frozen proof stays. Repeating `stop` reports the final state without rewriting it. With an unreadable or invalid receipt, `stop` still cleans up through the unit names the run id gives, reports `state: stale` and `receipt: unreadable`, and leaves the file as found for diagnosis. It removes only the runtime directory: a `HOME` or `TMPDIR` a plug-in moved elsewhere is the plug-in's to clean | A unit that will not stop within its timeout is reported with its unit name for the owner; the adapter never kills by port, process name or a remembered PID |
 | `restart <run-id>` | `stop`, then `start` with the recorded scenario and candidate, producing a new run id whose receipt names the run it restarts | A changed working tree makes the new run a different candidate; the receipt says so instead of claiming continuity |
 
 Expiry is not an operation. The lease timer stops the unit, and the next
@@ -276,12 +276,30 @@ writes a copy of the receipt there whose capture paths already name their
 `verified/` locations, writes `SHA256SUMS` over exactly that directory,
 removes write permission from it recursively, records the manifest digest in a
 `frozen` event, renames it to `verified/` and records `proof.frozenAt`. Only a
-complete, summed set is ever named `verified/`. A handoff killed before the
-rename leaves `verified.partial/`, which the next `handoff` moves back and
-rebuilds; one killed after the rename but before the receipt records the
-freeze leaves a complete `verified/`, which the next `handoff` adopts when its
-sums verify, keeping its original `frozenAt`. Until then `doctor` reports
-`proof: partial`, never `tampered`.
+complete, summed set is ever named `verified/`.
+
+A handoff killed before the rename leaves `verified.partial/`. The next
+`handoff` moves its captures back and rebuilds, and `stop` of a run that was
+never frozen moves them back so nothing is stranded.
+
+A handoff killed after the rename but before the receipt records the freeze
+leaves a `verified/` that no receipt has committed. The next `handoff`
+commits it, keeping its original `frozenAt`, only when all of these hold:
+
+- its `SHA256SUMS` digest and time equal this run's latest `frozen` event;
+- its files match the manifest;
+- its receipt copy is valid, is this run's (same run id and start time), and
+  every frozen capture record in it equals the live one apart from the
+  `verified/` prefix.
+
+The commit is recorded as a `frozen-committed` event carrying the original
+digest, never as a second `frozen` event. If this run took a capture after
+that set was built, the set is this run's own, so `handoff` moves it back and
+rebuilds it with the new capture. Any other mismatch (a rewritten manifest or
+copy, a foreign set, a set without `SHA256SUMS`) refuses with
+`proof-conflict`, changes nothing and leaves the files for inspection. Until
+the retry `doctor` reports `proof: partial` when it would finish and
+`conflict` when it would refuse, never `tampered`.
 The live `receipt.json` and `events.jsonl` stay outside `verified/` and keep
 changing with lease and cleanup fields; a `capture` after handoff writes under
 `after-handoff/` and is labelled `set: after-handoff` in the receipt, so it can

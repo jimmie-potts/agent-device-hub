@@ -4,6 +4,7 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, open, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {delimiter, dirname, join} from 'node:path';
 import {card, windowsLoopback} from './card.js';
+import {latestFrozen, uncommitted, unwindPartial} from './handoff.js';
 import {ProofStore, validateReceipt} from './receipt.js';
 import {artifactDigest, candidate, resolveRoots, RootError, type Roots} from './roots.js';
 import * as systemd from './systemd.js';
@@ -538,6 +539,8 @@ export async function stop(plugin: AppPlugin, io: Io, runId: string | undefined)
     return {code: EXIT.ok, value: {operation: 'stop', runId: run.runId, state: receipt.state, cleanup: receipt.cleanup}};
   }
   if (!receipt && !anything) throw new Failure('unknown-run', `nothing is known about ${run.runId}`);
+  // A handoff interrupted before its set was complete can no longer finish once the run stops: put its captures back.
+  if (receipt && !receipt.proof.frozenAt) await unwindPartial(run.store.dir);
   const cleaned = await cleanup(run, receipt, live);
   let state: RunState = receipt?.state ?? 'stopped';
   if (receipt && live) {
@@ -600,30 +603,15 @@ export async function sums(directory: string): Promise<Map<string, string>> {
   return found;
 }
 
-/** The manifest digest the `frozen` event recorded at handoff, if any. */
-async function frozenManifest(proofDir: string): Promise<string | undefined> {
-  const text = await readFile(join(proofDir, 'events.jsonl'), 'utf8').catch(() => '');
-  let digest: string | undefined;
-  for (const line of text.split('\n')) {
-    try {
-      const event = JSON.parse(line) as {event?: string; manifest?: string};
-      if (event.event === 'frozen' && typeof event.manifest === 'string') digest = event.manifest;
-    } catch {
-      // A torn last line is not evidence either way.
-    }
-  }
-  return digest;
-}
-
 /**
  * The frozen set's integrity: `ok`, `tampered` (a file, the manifest or its
  * recorded digest differs, or an entry is not a regular file), `missing`
  * (the receipt says frozen but `verified/` or `SHA256SUMS` is gone) or
  * `not-frozen`.
  */
-export async function verifySums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'unreadable' | 'not-frozen'> {
+export async function verifySums(proofDir: string, receipt: Receipt | undefined): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'conflict' | 'unreadable' | 'not-frozen'> {
   try {
-    return await checkSums(proofDir, frozenAt);
+    return await checkSums(proofDir, receipt);
   } catch (error) {
     // One damaged proof file never hides the other runs doctor lists.
     if (!(error instanceof Failure)) return 'unreadable';
@@ -631,14 +619,18 @@ export async function verifySums(proofDir: string, frozenAt: string | null): Pro
   }
 }
 
-async function checkSums(proofDir: string, frozenAt: string | null): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'not-frozen'> {
+async function checkSums(proofDir: string, receipt: Receipt | undefined): Promise<'ok' | 'tampered' | 'missing' | 'partial' | 'conflict' | 'not-frozen'> {
   const verified = join(proofDir, 'verified');
   const manifest = join(verified, 'SHA256SUMS');
-  // A handoff that was interrupted before its receipt recorded frozenAt: rerunning handoff finishes it.
-  if (!frozenAt) return existsSync(verified) || existsSync(join(proofDir, 'verified.partial')) ? 'partial' : 'not-frozen';
+  if (!receipt?.proof.frozenAt) {
+    // An interrupted handoff: `partial` when rerunning handoff finishes it, `conflict` when it would refuse.
+    if (existsSync(verified)) return !receipt || (await uncommitted(proofDir, receipt)).kind === 'conflict' ? 'conflict' : 'partial';
+    return existsSync(join(proofDir, 'verified.partial')) ? 'partial' : 'not-frozen';
+  }
   if (!existsSync(manifest)) return 'missing';
   const text = await readFile(manifest, 'utf8');
-  const recorded = await frozenManifest(proofDir);
+  // The digest recorded before the rename; a later commit event never replaces it.
+  const recorded = (await latestFrozen(proofDir))?.manifest;
   if (recorded !== undefined && recorded !== 'sha256:' + hex256(text)) return 'tampered';
   const expected = new Map(text.trim().split('\n').filter(Boolean).map(line => {
     const [sum, ...path] = line.split('  ');
@@ -734,6 +726,11 @@ async function assess(run: Run, io: Io) {
         state = 'stale';
         reasons.push('lease-timer-missing');
       }
+      // Another armed lease could stop the run before the recorded expiry.
+      if (timers.some(t => t.name !== receipt!.owned.leaseTimer)) {
+        state = 'stale';
+        reasons.push('extra-lease-timer');
+      }
     }
     if (runtimeDir === 'missing') {
       state = 'stale';
@@ -801,7 +798,7 @@ async function assess(run: Run, io: Io) {
     listener,
     checks,
     failure: receipt?.failure ?? null,
-    proof: {frozenAt: receipt?.proof.frozenAt ?? null, sums: existsSync(run.store.dir) ? await verifySums(run.store.dir, receipt?.proof.frozenAt ?? null) : receipt?.proof.frozenAt ? 'missing' : 'not-frozen'},
+    proof: {frozenAt: receipt?.proof.frozenAt ?? null, sums: existsSync(run.store.dir) ? await verifySums(run.store.dir, receipt) : 'not-frozen'},
     windows,
   };
 }

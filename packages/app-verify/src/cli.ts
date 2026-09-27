@@ -1,6 +1,7 @@
 import {capture} from './capture.js';
 import {handoff} from './handoff.js';
 import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
+import {LockedError} from './receipt.js';
 import type {AppPlugin, RunOptions} from './types.js';
 import {APP_PATTERN, errorText} from './util.js';
 
@@ -120,6 +121,10 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
     }
     if (error instanceof Failure) {
       io.result({operation, error: error.code, detail: error.detail});
+      return EXIT.failed;
+    }
+    if (error instanceof LockedError) {
+      io.result({operation, error: 'receipt-locked', detail: error.message});
       return EXIT.failed;
     }
     io.result({operation, error: 'internal', detail: errorText(error)});

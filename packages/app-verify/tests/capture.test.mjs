@@ -327,7 +327,7 @@ test('doctor reports a frozen set as tampered or missing when its manifest, entr
   }
 });
 
-test('an interrupted handoff is reported as partial and a retry completes or adopts the freeze', {skip}, async () => {
+test('an interrupted handoff is reported as partial and a retry completes or commits the freeze', {skip}, async () => {
   const box = await sandbox();
   try {
     const {runId} = (await box.cli(['start', '--lease', '10'])).result;
@@ -355,15 +355,16 @@ test('an interrupted handoff is reported as partial and a retry completes or ado
     before.captures = before.captures.map(c => ({...c, screenshot: c.screenshot?.replace('verified/', '') ?? null, video: c.video?.replace('verified/', '') ?? null, log: c.log.replace('verified/', '')}));
     await writeFile(join(proof, 'receipt.json'), JSON.stringify(before, null, 2));
     assert.equal(await doctorSums(), 'partial');
-    // A rebuild would stamp a later second; adoption keeps the original.
+    // A rebuild would stamp a later second; committing keeps the original.
     await until(() => Date.now() > Date.parse(frozen.proof.frozenAt) + 1500, 'a later second', 5000);
     const adopted = await box.cli(['handoff', runId]);
     assert.equal(adopted.code, 0, adopted.stderr);
     const after = await box.receipt(runId);
-    assert.equal(after.proof.frozenAt, frozen.proof.frozenAt, 'the adopted set keeps the time it was frozen');
+    assert.equal(after.proof.frozenAt, frozen.proof.frozenAt, 'the committed set keeps the time it was frozen');
     assert.deepEqual(after.captures, frozen.captures, 'the receipt names the verified/ locations again');
-    assert.equal(await read(join(proof, 'verified', 'SHA256SUMS'), 'utf8'), manifest, 'the frozen set was adopted, not rebuilt');
-    assert.ok((await box.events(runId)).some(e => e.event === 'frozen' && e.adopted === true), 'the adoption is recorded');
+    assert.equal(await read(join(proof, 'verified', 'SHA256SUMS'), 'utf8'), manifest, 'the frozen set was committed, not rebuilt');
+    const events = await box.events(runId);
+    assert.ok(events.some(e => e.event === 'frozen-committed' && e.manifest === events.filter(f => f.event === 'frozen').at(-1).manifest), 'the commit is recorded with the digest from before the rename');
     assert.equal(await doctorSums(), 'ok');
     await box.cli(['stop', runId]);
   } finally {
@@ -385,6 +386,148 @@ test('doctor reports one run\'s unreadable proof on its own row and still lists 
     assert.equal(rows[runId].proof.sums, 'unreadable');
     assert.equal(rows[other.result.runId].state, 'failed', 'the other run still prints');
     await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+/** Put a frozen run back into the state a kill leaves after the rename and before the receipt commit. */
+async function uncommit(box, runId) {
+  const receipt = await box.receipt(runId);
+  receipt.proof.frozenAt = null;
+  receipt.captures = receipt.captures.map(c => ({...c, screenshot: c.screenshot?.replace('verified/', '') ?? null, video: c.video?.replace('verified/', '') ?? null, log: c.log.replace('verified/', '')}));
+  await writeFile(join(box.proofRoot, runId, 'receipt.json'), JSON.stringify(receipt, null, 2));
+}
+
+/** Every file under a directory with its sha256, to prove a refusal changed nothing. */
+function snapshot(directory) {
+  return spawnSync('sh', ['-c', 'find . -type f | sort | xargs sha256sum'], {cwd: directory, encoding: 'utf8'}).stdout;
+}
+
+test('an uncommitted verified set is refused as a conflict unless it is exactly this run\'s own freeze', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const refuse = async (runId, why) => {
+      const before = snapshot(join(box.proofRoot, runId));
+      const result = await box.cli(['handoff', runId]);
+      assert.equal(result.code, 1, why);
+      assert.equal(result.result.error, 'proof-conflict', why);
+      assert.equal(snapshot(join(box.proofRoot, runId)), before, `${why}: nothing changed`);
+      assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'conflict', why);
+      assert.equal((await box.receipt(runId)).proof.frozenAt, null, why);
+    };
+    /** A run with a passing and a failing capture, frozen, then put back into the uncommitted state. */
+    const frozenRun = async () => {
+      const runId = (await box.cli(['start', '--lease', '10'])).result.runId;
+      assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+      assert.equal((await box.cli(['capture', runId, 'control-wrong-expectation'])).code, 1);
+      assert.equal((await box.cli(['handoff', runId])).code, 0);
+      await uncommit(box, runId);
+      const verified = join(box.proofRoot, runId, 'verified');
+      spawnSync('chmod', ['-R', 'u+w', verified]);
+      return {runId, verified};
+    };
+    const rewrite = verified => spawnSync('sh', ['-c', 'find . -type f ! -name SHA256SUMS | sed "s#^./##" | sort | xargs sha256sum > SHA256SUMS'], {cwd: verified});
+    const flip = async verified => {
+      const copy = JSON.parse(await readFile(join(verified, 'receipt.json'), 'utf8'));
+      copy.captures[1].outcome = 'passed';
+      delete copy.captures[1].reason;
+      await writeFile(join(verified, 'receipt.json'), JSON.stringify(copy, null, 2) + '\n');
+    };
+    const runs = [];
+
+    let run = await frozenRun();
+    runs.push(run.runId);
+    await writeFile(join(run.verified, 'capture-1', 'assertions.json'), '{}');
+    rewrite(run.verified);
+    await refuse(run.runId, 'a tampered file with a rewritten manifest');
+
+    run = await frozenRun();
+    runs.push(run.runId);
+    await flip(run.verified);
+    await refuse(run.runId, 'a flipped outcome in the copy');
+
+    run = await frozenRun();
+    runs.push(run.runId);
+    await flip(run.verified);
+    rewrite(run.verified);
+    await refuse(run.runId, 'a flipped outcome with a rewritten manifest');
+
+    run = await frozenRun();
+    runs.push(run.runId);
+    await rm(join(run.verified, 'SHA256SUMS'));
+    await refuse(run.runId, 'a verified set without its manifest');
+
+    // A copied foreign set in a run that was never handed off.
+    const foreign = (await box.cli(['start', '--lease', '10'])).result.runId;
+    runs.push(foreign);
+    assert.equal((await box.cli(['capture', foreign, 'control-wrong-expectation'])).code, 1);
+    spawnSync('cp', ['-r', join(box.proofRoot, runs[0], 'verified'), join(box.proofRoot, foreign, 'verified')]);
+    await refuse(foreign, 'a copied foreign set');
+    for (const runId of runs) await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a capture taken between an interrupted handoff and its retry is frozen by a rebuild, never mislabelled', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    assert.equal((await box.cli(['handoff', runId])).code, 0);
+    const first = await box.receipt(runId);
+    await uncommit(box, runId);
+    const between = await box.cli(['capture', runId, 'read-only']);
+    assert.equal(between.code, 0, between.stderr);
+    assert.equal(between.result.set, 'verified');
+    await until(() => Date.now() > Date.parse(first.proof.frozenAt) + 1500, 'a later second', 5000);
+    const retried = await box.cli(['handoff', runId]);
+    assert.equal(retried.code, 0, retried.stderr);
+    const after = await box.receipt(runId);
+    assert.notEqual(after.proof.frozenAt, first.proof.frozenAt, 'the set was rebuilt');
+    assert.deepEqual(after.captures.map(c => [c.n, c.set, c.log]), [[1, 'verified', 'verified/capture-1/assertions.json'], [2, 'verified', 'verified/capture-2/assertions.json']]);
+    const verified = join(box.proofRoot, runId, 'verified');
+    assert.match(await readFile(join(verified, 'SHA256SUMS'), 'utf8'), /capture-2\/assertions\.json/);
+    assert.equal(spawnSync('sha256sum', ['-c', 'SHA256SUMS'], {cwd: verified}).status, 0);
+    assert.equal((await box.cli(['doctor', runId])).result.runs[0].proof.sums, 'ok');
+    await box.cli(['stop', runId]);
+  } finally {
+    await box.close();
+  }
+});
+
+test('a dead lock holder never blocks the next operation, a live one is named, and stop returns a partial set', {skip}, async () => {
+  const box = await sandbox();
+  try {
+    const {runId} = (await box.cli(['start', '--lease', '10'])).result;
+    assert.equal((await box.cli(['capture', runId, 'count-twice'])).code, 0);
+    const proof = join(box.proofRoot, runId);
+    const {mkdir} = await import('node:fs/promises');
+    const {holderRecord} = await import('./lock-holder.mjs');
+    // A lock left by a killed operation: its holder process is gone.
+    await mkdir(join(proof, '.receipt.lock'));
+    await writeFile(join(proof, '.receipt.lock', 'holder'), await holderRecord({dead: true}));
+    const began = Date.now();
+    const extended = await box.cli(['extend', runId, '--lease', '10']);
+    assert.equal(extended.code, 0, extended.stderr);
+    assert.ok(Date.now() - began < 5000, 'the dead holder\'s lock broke at once');
+    // A live holder (this test process) is waited for, then named, never reported as an internal error.
+    await mkdir(join(proof, '.receipt.lock'));
+    await writeFile(join(proof, '.receipt.lock', 'holder'), await holderRecord({dead: false}));
+    const blocked = await box.cli(['extend', runId, '--lease', '10']);
+    assert.equal(blocked.code, 1);
+    assert.equal(blocked.result.error, 'receipt-locked');
+    assert.match(blocked.result.detail, new RegExp(`pid ${process.pid}`));
+    await rm(join(proof, '.receipt.lock'), {recursive: true});
+    // A handoff interrupted mid-build, then stopped: the capture returns to the proof directory.
+    const {rename} = await import('node:fs/promises');
+    await mkdir(join(proof, 'verified.partial'));
+    await rename(join(proof, 'capture-1'), join(proof, 'verified.partial', 'capture-1'));
+    assert.equal((await box.cli(['stop', runId])).code, 0);
+    assert.equal(existsSync(join(proof, 'verified.partial')), false);
+    assert.ok(existsSync(join(proof, 'capture-1', 'assertions.json')), 'nothing is stranded');
+    assert.equal((await box.receipt(runId)).captures[0].log, 'capture-1/assertions.json');
   } finally {
     await box.close();
   }

@@ -1,6 +1,7 @@
 import {execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
+import {readFile} from 'node:fs/promises';
 import {delimiter, isAbsolute, join} from 'node:path';
 
 /** UTC time with second precision, as the receipt writes it: `2026-09-27T06:02:59Z`. */
@@ -66,4 +67,23 @@ export function which(program: string, path: string, cwd: string): string | unde
 export function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
   return text.split('\n')[0]!.slice(0, 500);
+}
+
+/** A process's start time in clock ticks since boot (`/proc/<pid>/stat` field 22), or undefined. */
+export async function startTime(pid: number): Promise<string | undefined> {
+  const text = await readFile(`/proc/${pid}/stat`, 'utf8').catch(() => undefined);
+  // The command name may contain spaces and parentheses; fields resume after the last ')'.
+  return text?.slice(text.lastIndexOf(')') + 2).split(' ')[19];
+}
+
+/** `<pid> <start time>`: identifies a live process even across PID reuse. */
+export async function holder(pid: number = process.pid): Promise<string> {
+  return `${pid} ${(await startTime(pid)) ?? 'unknown'}\n`;
+}
+
+/** Whether a `holder()` record names a process that is still the same live process. */
+export async function holderAlive(record: string): Promise<boolean> {
+  const [pidText, started] = record.trim().split(' ');
+  const pid = Number(pidText);
+  return Number.isInteger(pid) && pid > 0 && started !== undefined && started !== 'unknown' && (await startTime(pid)) === started;
 }
