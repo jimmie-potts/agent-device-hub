@@ -14,6 +14,18 @@
  * }} ConsumerState
  */
 
+import {PAIRING} from './integrated.mjs';
+
+/**
+ * Whether a consumer follows the Hub: its feed is current, names the owner, has applied the Hub's revision and,
+ * where the consumer lists them, exactly the Hub's sessions; the wall also says it reads the shared feed. Before its
+ * first accepted snapshot a consumer reports no owner or revision, which never follows. The owner name alone proves
+ * nothing: Pixoo's embedded owner uses it too.
+ * @param {ConsumerState} state @param {{revision: number, sessions: string[]}} owner
+ */
+export const follows = (state, owner) => state.feed.connection === 'current' && state.feed.ownerId === PAIRING.ownerId && state.feed.revision !== null && state.feed.revision === owner.revision &&
+  (state.feed.sessions === null || JSON.stringify(state.feed.sessions) === JSON.stringify(owner.sessions)) && (state.feed.source === null || state.feed.source === 'shared');
+
 /**
  * A session's identity as one comparable key. The Hub and every consumer name a session by the same five fields.
  * @param {{provider: string, client: string, hostId: string, sourceId: string, sessionId: string}} identity

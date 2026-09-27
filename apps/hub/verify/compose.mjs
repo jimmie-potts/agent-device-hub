@@ -25,7 +25,7 @@ import {homedir} from 'node:os';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
-import {consumerState} from './consumers.mjs';
+import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {PAIRING, pause} from './integrated.mjs';
 import {CAPTURE_STEPS, CONTROLS, INJECTIONS} from './integrated-steps.mjs';
 
@@ -343,11 +343,15 @@ async function pairingChecks(env, composition) {
   /** @type {Check[]} */
   const checks = [];
   const add = (/** @type {string} */ id, /** @type {boolean} */ ok, /** @type {string} */ detail) => checks.push(ok ? {id, outcome: 'passed'} : {id, outcome: 'failed', detail});
+  /** @type {number | undefined} */
   let revision;
+  /** @type {string[]} */
+  let sessions = [];
   try {
-    const sessions = await hubRead(env, hub, '/api/monitor/v1/sessions');
-    revision = sessions.body?.snapshot?.revision;
-    add('hub-owner', sessions.status === 200 && Number.isInteger(revision), `the Hub feed answered ${sessions.status}`);
+    const feed = await hubRead(env, hub, '/api/monitor/v1/sessions');
+    revision = feed.body?.snapshot?.revision;
+    sessions = (feed.body?.snapshot?.sessions ?? []).map((/** @type {any} */ s) => sessionKey(s.identity)).sort();
+    add('hub-owner', feed.status === 200 && Number.isInteger(revision), `the Hub feed answered ${feed.status}`);
   } catch (error) {
     add('hub-owner', false, `the Hub feed is unreadable (${/** @type {Error} */ (error).name})`);
   }
@@ -361,8 +365,8 @@ async function pairingChecks(env, composition) {
     }
     try {
       const state = await consumerState(consumer.id, consumer.url ?? '');
-      const current = state.feed.connection === 'current' && state.feed.revision === revision;
-      add(`${consumer.id}-feed-current`, current, `feed ${state.feed.connection} at revision ${state.feed.revision} (Hub ${revision})${state.feed.error ? `, ${state.feed.error}` : ''}`);
+      // The same rule as the steps: current, the owner, the Hub's revision and, where listed, exactly its sessions.
+      add(`${consumer.id}-feed-current`, follows(state, {revision: revision ?? -1, sessions}), `feed ${state.feed.connection} from ${state.feed.ownerId ?? 'no owner'} at revision ${state.feed.revision} (Hub ${revision})${state.feed.sessions ? `, ${state.feed.sessions.length} session(s) (Hub ${sessions.length})` : ''}${state.feed.source && state.feed.source !== 'shared' ? `, source ${state.feed.source}` : ''}${state.feed.error ? `, ${state.feed.error}` : ''}`);
     } catch (error) {
       add(`${consumer.id}-feed-current`, false, /** @type {Error} */ (error).message);
     }

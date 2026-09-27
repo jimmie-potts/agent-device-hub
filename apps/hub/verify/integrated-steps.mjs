@@ -15,7 +15,7 @@
 import {randomInt, randomBytes} from 'node:crypto';
 import {readFile, rename, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {consumerState, sessionKey} from './consumers.mjs';
+import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {INSTALLED_PORTS, PAIRING, pause} from './integrated.mjs';
 
 const SIGNED_IN = 'Control enabled · Local';
@@ -141,14 +141,6 @@ async function openPixooMonitor(t) {
   await t.page.goto(t.inputs['pixoo-preview']);
   await t.page.getByRole('navigation', {name: 'Controller views'}).getByRole('button', {name: 'Monitor', exact: true}).click({timeout: 15000});
 }
-
-/**
- * Whether one consumer follows the Hub: its feed is current, names the owner, has applied the Hub's revision and,
- * where the consumer lists them, exactly the Hub's sessions; the wall also says it reads the shared feed.
- * @param {import('./consumers.mjs').ConsumerState} state @param {{revision: number, sessions: string[]}} owner
- */
-const follows = (state, owner) => state.feed.connection === 'current' && state.feed.ownerId === PAIRING.ownerId && state.feed.revision === owner.revision &&
-  (state.feed.sessions === null || JSON.stringify(state.feed.sessions) === JSON.stringify(owner.sessions)) && (state.feed.source === null || state.feed.source === 'shared');
 
 /** Each consumer follows the Hub's current snapshot. @param {any} t @param {string} name @param {string[]} [only] */
 async function consumersFollow(t, name, only = CONSUMERS) {
