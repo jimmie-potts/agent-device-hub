@@ -107,7 +107,7 @@ Each browser session owns its command tickets, its change streams and its retain
 
 ## HTTP boundary
 
-All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, a supplied Origin must name that same host, and `Sec-Fetch-Site` must be absent, `none` or `same-origin`, so a page on another site or another loopback port cannot call them. The one exception is the dashboard page at `/`, which a link from another local app may open; see [Open B.U.N.N.Y. from another local app](#open-bunny-from-another-local-app). MCP accepts only the numeric-loopback host. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
+All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, and a supplied Origin must name that same host. MCP accepts only the numeric-loopback host. `Sec-Fetch-Site: cross-site` is refused on every route. `same-site` is refused too, with two exceptions. The dashboard page at `/` admits it for a top-level document navigation only; see [Open B.U.N.N.Y. from another local app](#open-bunny-from-another-local-app). `/mcp` admits it, but only with no Origin or the hub's own Origin. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
 
 | Route | Behavior |
 | --- | --- |
@@ -381,8 +381,8 @@ speculation-rules prefetch of the page with `Sec-Fetch-Site: none`, as it does
 for a bookmark, and a later click on the prefetching page's link shows the
 prefetched page. So a website can still open a signed-in dashboard when the
 owner clicks its link. Each such click opens one signed-in tab, and the opener
-policy severs any window handle that page holds. Refusing prefetches is a
-separate decision.
+policy severs any window handle that page holds. Whether to refuse prefetches
+is [#564](https://github.com/jimmie-potts/agent-device-hub/issues/564).
 
 If a link shows `{"error":{"code":"forbidden"}}`, first check that the running
 hub includes #561. Then read the navigation's request headers in the browser's

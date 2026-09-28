@@ -10,7 +10,7 @@ This change relaxes an authorization boundary. The owner decided on 2026-09-28 t
 
 **Goals:** a link from another local app on the same host name opens the dashboard, signed in when trusted-loopback is on. The assets, every API route, the session route and the launch exchange stay as strict as they are. The page cannot be framed, and the linking page cannot keep a handle to its tab. The verification follows the links instead of reading an `href`.
 
-**Non-Goals:** links from another host name, a `file://` guide or the public guide. They are `cross-site`, and the request says nothing about where it came from: `rel=noreferrer` sends no Referer. [#563](https://github.com/jimmie-potts/agent-device-hub/issues/563) tracks the guide's link, and [codex-nanoleaf#199](https://github.com/jimmie-potts/codex-nanoleaf/issues/199) a wall opened as `localhost`. Also out of scope: refusing browser prefetches, which arrive as `none` like a bookmark; LAN or phone access; a cookie; and any change to the wall's or Pixoo's own pages.
+**Non-Goals:** links from another host name, a `file://` guide or the public guide. They are `cross-site`, and the request says nothing about where it came from: `rel=noreferrer` sends no Referer. [#563](https://github.com/jimmie-potts/agent-device-hub/issues/563) tracks the guide's link, and [codex-nanoleaf#199](https://github.com/jimmie-potts/codex-nanoleaf/issues/199) a wall opened as `localhost`. Also out of scope: refusing browser prefetches, which arrive as `none` like a bookmark ([#564](https://github.com/jimmie-potts/agent-device-hub/issues/564)); LAN or phone access; a cookie; and any change to the wall's or Pixoo's own pages.
 
 ## Decisions
 
@@ -54,7 +54,7 @@ After this change, a page of that app can also open the dashboard with a link or
 
 Each load of the dashboard signs in and creates a session, so a page that could reload the dashboard repeatedly could fill the 16-session cap and evict the owner. The opener policy is what prevents that: the linking page loses its window handle on the first load and cannot navigate the tab again. The cap then bounds what remains. Each click or navigation from such a page opens one signed-in tab. The tab logs its session out on `pagehide` and otherwise expires in 8 hours. That is the residual this change accepts, and it matches what the owner's system browser opener already allows a local program.
 
-The cross-site refusal covers direct navigations only. Chromium sends a speculation-rules prefetch of the page with `Sec-Fetch-Site: none` and `Sec-Purpose: prefetch`, and a later click on the prefetching page's link shows the prefetched page, which then signs in. This predates the change: `none` is admitted for bookmarks and the system browser. So a website can still open one signed-in tab per click on its link, and the opener policy keeps it from holding a handle to that tab. Refusing prefetches is a separate decision.
+The cross-site refusal covers direct navigations only. Chromium sends a speculation-rules prefetch of the page with `Sec-Fetch-Site: none` and `Sec-Purpose: prefetch`, and a later click on the prefetching page's link shows the prefetched page, which then signs in. This predates the change: `none` is admitted for bookmarks and the system browser. So a website can still open one signed-in tab per click on its link, and the opener policy keeps it from holding a handle to that tab. Whether to refuse prefetches is [#564](https://github.com/jimmie-potts/agent-device-hub/issues/564).
 
 ## Acceptance examples
 
@@ -69,7 +69,7 @@ The cross-site refusal covers direct navigations only. Chromium sends a speculat
 ## Risks / Trade-offs
 
 - [A local page can open signed-in tabs] → One tab per click or navigation, because the opener policy severs its handle; a scripted reload loop cannot evict the owner. It could already open tabs through the system browser or post to the session route itself. Each tab logs out on `pagehide`, and sessions stay capped at 16 and expire in 8 hours.
-- [A website can open a signed-in tab through a prefetch] → Predates this change. One tab per click on its link, with no handle kept. Refusing prefetches is a separate decision.
+- [A website can open a signed-in tab through a prefetch] → Predates this change. One tab per click on its link, with no handle kept. Whether to refuse prefetches is [#564](https://github.com/jimmie-potts/agent-device-hub/issues/564).
 - [A link from another host name still shows Forbidden] → Open both apps under the same host name. The wall prints `http://127.0.0.1:8765`. The guide's B.U.N.N.Y. link from a file or the public edition stays refused; #563 tracks it, and codex-nanoleaf#199 a wall opened as `localhost`.
 - [A browser that sends no fetch metadata] → It is served as before. The rule only relaxes one `same-site` case.
 

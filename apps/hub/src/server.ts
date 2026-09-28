@@ -172,7 +172,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   // route keep sameOrigin. The page refuses framing, and Cross-Origin-Opener-Policy severs the linking page's window
   // handle, so it cannot re-navigate the tab to pile up sign-ins until the 16-session cap evicts the owner. Each link
   // click still opens one signed-in tab, retired on pagehide. Browsers set Sec-Fetch-*, and page scripts cannot. A
-  // cross-site navigation stays refused; a browser prefetch arrives as `none`, like a bookmark, and is admitted.
+  // cross-site navigation stays refused; a browser prefetch arrives as `none`, like a bookmark, and is admitted (Hub #564).
   const linkedPage=(req:IncomingMessage)=>hosts.includes(req.headers.host ?? '') && req.headers.origin === undefined &&
     req.headers['sec-fetch-site'] === 'same-site' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document';
   const issueLaunch=()=>{
