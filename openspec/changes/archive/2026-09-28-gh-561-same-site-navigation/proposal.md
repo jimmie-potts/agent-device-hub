@@ -1,8 +1,7 @@
 ## Why
+[Hub #561](https://github.com/jimmie-potts/agent-device-hub/issues/561): a link from another local app into B.U.N.N.Y. shows `{"error":{"code":"forbidden"}}`. The owner hit it on 2026-09-28 in the integrated preview `compose-20260928T173157Z-7ab0f8`, through the wall's B.U.N.N.Y. link. The installed wall links to `http://127.0.0.1:8788/` (codex-nanoleaf#191), so it very likely fails too; nobody probed the installed Hub.
 
-[Hub #561](https://github.com/jimmie-potts/agent-device-hub/issues/561): a link from another local app into B.U.N.N.Y. shows `{"error":{"code":"forbidden"}}`. The owner hit it on 2026-09-28 in the integrated preview `compose-20260928T173157Z-7ab0f8`: the wall page's B.U.N.N.Y. link to the paired Hub run opened that error. The installed wall links to `http://127.0.0.1:8788/` ([codex-nanoleaf#191](https://github.com/jimmie-potts/codex-nanoleaf/issues/191)), so it very likely fails the same way; nobody probed the installed Hub.
-
-The Hub serves `/`, `/dashboard.js` and `/dashboard.css` only when `Sec-Fetch-Site` is absent, `none` or `same-origin`. That rule dates from the first dashboard ([#127](https://github.com/jimmie-potts/agent-device-hub/pull/127)); trusted-loopback sign-in ([#419](https://github.com/jimmie-potts/agent-device-hub/pull/419)) moved it into `sameOrigin`. Chromium sends a link click from another port of the same host as a `same-site` top-level navigation, so the page is refused. [Hub #495](https://github.com/jimmie-potts/agent-device-hub/issues/495)'s `integrated-lifecycle` step read the link's `href` and never followed it, so the broken link passed.
+The page route accepts `Sec-Fetch-Site` only when absent, `none` or `same-origin`, a rule from the first dashboard (#127) that #419 moved into `sameOrigin`. Chromium sends a link from another port of the same host as `same-site`, so the page is refused. Hub #495's `integrated-lifecycle` step read the link's `href` without following it, so the broken link passed.
 
 ## What Changes
 
