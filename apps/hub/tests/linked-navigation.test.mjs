@@ -51,13 +51,15 @@ test('a link from another loopback app loads the page',async t=>{
  assert.equal(hub.resources().browserSessions,0,'loading the page issues no session by itself');
 });
 
-test('no page can frame the dashboard, however it was reached',async t=>{
+test('no page can frame the dashboard or keep a handle to its tab, however it was reached',async t=>{
  const {port,raw}=await fixture(t,{browserAccess:'trusted-loopback'});
  for(const [name,headers] of [['a bookmark',{...link,'sec-fetch-site':'none'}],['localhost',{...link,'sec-fetch-site':'none',host:`localhost:${port}`}],['a link from another loopback app',link]]){
   const page=await raw('/',{headers});
   assert.equal(page.status,200,name);
   assert.equal(page.headers['x-frame-options'],'DENY',name);
   assert.match(page.headers['content-security-policy'],/(^|; )frame-ancestors 'none'(;|$)/,name);
+  // A linking page must not keep a scriptable handle to the tab, or it could re-navigate it to pile up sign-ins.
+  assert.equal(page.headers['cross-origin-opener-policy'],'same-origin',name);
  }
 });
 

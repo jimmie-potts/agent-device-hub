@@ -100,12 +100,18 @@ try{
  }
  {
   // Hub #561: a link from another loopback app, like the wall's B.U.N.N.Y. link, opens the dashboard signed in, in a new tab.
-  // That app cannot frame the dashboard, and a link from another host name is cross-site and stays refused.
+  // That app cannot frame the dashboard or keep a handle to its tab, and a link from another host name is cross-site and stays refused.
   const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
   const hubPort=new URL(f.hub.url).port;
   const other=createServer((req,res)=>{
    const url=new URL(req.url,'http://other'),target=`http://${url.searchParams.get('to')==='localhost'?'localhost':'127.0.0.1'}:${hubPort}/`;
    res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
+   // A hostile local page: one click opens the Hub in a window it keeps a handle to, then it re-navigates that window every
+   // 10-30 ms, faster than each load's pagehide logout, to pile up sessions until the cap evicts the owner's (Hub #561 review).
+   if(url.pathname==='/attack')return res.end(`<!doctype html><html lang="en"><title>Hostile local app</title><button id="go">Open</button><script>
+    const hub=${JSON.stringify(target)};window.rounds=0;window.severed=false;
+    document.getElementById('go').onclick=()=>{const w=window.open(hub);const tick=()=>{if(w.closed){window.severed=true;return;}w.location=hub;window.rounds++;setTimeout(tick,10+Math.random()*20);};setTimeout(tick,20);};
+   </script></html>`);
    res.end(`<!doctype html><html lang="en"><title>Another local app</title><a href="${target}" target="_blank" rel="noopener noreferrer">B.U.N.N.Y.</a>${url.pathname==='/framed'?`<iframe title="Framed B.U.N.N.Y." src="${target}"></iframe>`:''}</html>`);
   });
   await new Promise(resolve=>other.listen(0,'127.0.0.1',resolve));
@@ -152,6 +158,30 @@ try{
     await page.close();
    }
    checks.push('another loopback app cannot frame the dashboard');
+
+   {
+    // Negative control: the owner is signed in, and a page on another loopback port drives a window it opened back to the
+    // Hub over and over. Cross-Origin-Opener-Policy must sever that handle, so the owner's session survives and the Hub
+    // never holds more than the owner's session and the one tab the click opened.
+    const owner=await context.newPage();owner.setDefaultTimeout(12000);
+    const issued=owner.waitForResponse(r=>r.url()===f.hub.url+'/api/dashboard/v1/session');
+    await owner.goto(f.hub.url);const token=(await (await issued).json()).token;await signedIn(owner);
+    const ownerStatus=async()=>(await fetch(f.hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${token}`}})).status;
+    assert.equal(await ownerStatus(),200);assert.equal(f.hub.resources().browserSessions,1);
+    const hostile=await context.newPage();hostile.setDefaultTimeout(12000);await hostile.goto(`http://127.0.0.1:${otherPort}/attack`);
+    await hostile.getByRole('button',{name:'Open',exact:true}).click();
+    let most=0,status=200;const started=Date.now();
+    // Without the opener policy this loop evicts the owner within about two seconds; watch for eight.
+    while(Date.now()-started<8000){most=Math.max(most,f.hub.resources().browserSessions);status=await ownerStatus();if(status!==200)break;await new Promise(r=>setTimeout(r,25));}
+    const attack=await hostile.evaluate(()=>({rounds:window.rounds,severed:window.severed}));
+    assert.equal(status,200,`the owner's session was evicted after ${Date.now()-started} ms: the hostile page re-navigated its window ${attack.rounds} times and the Hub held up to ${most} sessions`);
+    assert.ok(most<=2,`the Hub held ${most} sessions; only the owner's and the one opened tab may exist`);
+    assert.equal(attack.severed,true,'the opened tab no longer answers to the hostile page\'s handle');
+    await signedIn(owner);assert.equal(await owner.getByRole('button',{name:'Sign in again',exact:true}).count(),0);
+    for(const page of context.pages())if(page!==owner)await page.close({runBeforeUnload:true});
+    await owner.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===0,'every tab logs its session out');
+   }
+   checks.push('another loopback app cannot drive repeated sign-ins that evict the owner');
    assert.equal(f.writes.length,0,'following links sends no device command');
    assert.deepEqual(errors,[]);
   }finally{await context.close();await new Promise(resolve=>{other.close(resolve);other.closeAllConnections();});await f.close();}
