@@ -4,7 +4,7 @@ See `proposal.md` for the defect. The Hub listens on `127.0.0.1` only. Every bro
 
 Chromium computes `Sec-Fetch-Site` from the scheme and host of the page that started the request, ignoring the port. A link from `http://127.0.0.1:8765/` to `http://127.0.0.1:8788/` is `same-site`. A link from `http://localhost:8765/`, a `file://` page or an `https://` page is `cross-site`. `apps/dashboard/tests/trusted.mjs` asserts the first two in Chromium, and a logging-server probe recorded in the PR shows the rest.
 
-This change relaxes an authorization boundary. The owner decided on 2026-09-28 to deliver it, after being told it loosens the #276/#419 boundary ([#561 comment](https://github.com/jimmie-potts/agent-device-hub/issues/561#issuecomment-5877999564)). The acceptance examples below were fixed before implementation. Examples 6 and 7 were added after the first Standards review found the eviction loop and the prefetch path.
+This change relaxes an authorization boundary. The owner decided on 2026-09-28 to deliver it, after being told it loosens the #276/#419 boundary ([#561 comment](https://github.com/jimmie-potts/agent-device-hub/issues/561#issuecomment-5877999564)). Examples 1 to 5 below were fixed before implementation. Examples 6 and 7 were added, and failed first, after the first Standards review found the eviction loop.
 
 ## Goals / Non-Goals
 
