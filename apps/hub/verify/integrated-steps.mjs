@@ -166,6 +166,37 @@ async function installedLinks(t) {
   });
 }
 
+/** The wall's task row for a session: its title, status badge and Line (codex-nanoleaf bridge/wall.html). @param {any} page @param {string} title */
+const wallRow = (page, title) => page.locator('#taskList .task').filter({has: page.locator('.task-title', {hasText: title})});
+
+/**
+ * Click a link that opens a new tab, as the owner does, and run `loaded` on that tab (Hub #561). The navigation must
+ * reach `expected` and be answered 200; a refusal fails with the status and the start of the body the tab shows. The
+ * tab's screenshot is attached as `<name>.png` either way. The tab then closes with its unload handlers, so a signed-in
+ * Hub tab logs its session out, and its own video is discarded: the capture's one video is the step's page.
+ * @param {any} t @param {any} link @param {string} expected @param {(tab: any) => Promise<unknown>} loaded @param {string} name
+ */
+async function followLink(t, link, expected, loaded, name) {
+  const target = new URL(expected);
+  const opened = t.context.waitForEvent('page', {timeout: 10000});
+  const answered = t.context.waitForEvent('response', {predicate: (/** @type {any} */ r) => r.request().isNavigationRequest() && new URL(r.url()).origin === target.origin, timeout: 10000});
+  const [tab, response] = await Promise.all([opened, answered, link.click()]);
+  try {
+    tab.setDefaultTimeout(15000);
+    const site = (await response.request().allHeaders())['sec-fetch-site'];
+    t.note(`${name}: the tab's navigation to ${response.url()} (Sec-Fetch-Site ${site ?? 'absent'}) was answered ${response.status()}`);
+    if (response.url() !== target.href) throw new Error(`the tab opened ${response.url()}, not ${target.href}`);
+    if (response.status() !== 200) throw new Error(`the tab's page was answered ${response.status()}: ${(await response.text().catch(() => '')).slice(0, 120)}`);
+    await loaded(tab);
+  } finally {
+    const shot = await tab.screenshot({fullPage: true, timeout: 10000}).catch(() => undefined);
+    if (shot) await t.attach(`${name}.png`, shot);
+    await tab.close({runBeforeUnload: true});
+    if (!tab.isClosed()) await tab.waitForEvent('close', {timeout: 5000}).catch(() => tab.close());
+    await tab.video()?.delete();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The injection handshake with `compose inject`.
 
@@ -330,7 +361,7 @@ function lossStep(replay) {
 /** @type {Record<string, import('@jimmie-potts/app-verify').CaptureStep>} */
 export const integratedSteps = {
   'integrated-lifecycle': {
-    description: 'One synthetic session posted to the Hub shows on the Hub card, the wall\'s Line status and the Pixoo Monitor row, in one video across the three runs; no command is sent, and no link on the three pages leads to an installed service',
+    description: 'One synthetic session posted to the Hub shows on the Hub card, the wall\'s Line status and the Pixoo Monitor row, in one video across the three runs. The Hub\'s Places Wall link opens the paired wall run, and the wall\'s B.U.N.N.Y. link opens the paired Hub\'s dashboard signed in, each in a new tab. No command is sent, and no link on the three pages leads to an installed service',
     scenario: 'integrated',
     timeoutMs: 90000,
     run: async t => {
@@ -351,18 +382,25 @@ export const integratedSteps = {
       await pause(1500);
       await t.screenshot('hub');
       await consumersFollow(t, 'both consumers follow the owner with the new session');
+      // Follow each cross-app link as the owner does; an href alone does not show that the page it names opens (Hub #561).
+      await t.expect('the Hub\'s Places Wall link opens the paired wall run with the session, in a new tab', () => followLink(t, t.page.getByRole('navigation', {name: 'Places'}).getByRole('link', {name: 'Wall Local'}), wall, tab => wallRow(tab, s.title).locator('.badge[data-status="question"]').waitFor(), 'wall-from-hub'));
       await t.page.goto(wall);
       await t.expect('the wall lists the session as a question on a Line', async () => {
         // The wall's task list (codex-nanoleaf bridge/wall.html): the title, a status badge and the Line it was placed on.
-        const row = t.page.locator('#taskList .task').filter({has: t.page.locator('.task-title', {hasText: s.title})});
+        const row = wallRow(t.page, s.title);
         await row.locator('.badge[data-status="question"]').waitFor({timeout: 15000});
         await row.locator('.task-placement .line-badge').filter({hasText: /\d+$/}).waitFor({timeout: 15000});
       });
       installed.wall = await installedLinks(t);
+      const bunny = t.page.getByRole('link', {name: 'B.U.N.N.Y.', exact: true});
       await t.expect('the wall\'s B.U.N.N.Y. link leads to the paired Hub run', async () => {
-        const href = await t.page.getByRole('link', {name: 'B.U.N.N.Y.', exact: true}).getAttribute('href', {timeout: 5000});
+        const href = await bunny.getAttribute('href', {timeout: 5000});
         if (new URL(href ?? '', wall).href !== t.url) throw new Error(`it leads to ${href}`);
       });
+      await t.expect('the wall\'s B.U.N.N.Y. link opens the paired Hub\'s dashboard signed in, with the session, in a new tab', () => followLink(t, bunny, t.url, async tab => {
+        await tab.getByText(SIGNED_IN, {exact: true}).waitFor();
+        await tab.getByRole('heading', {name: s.title, exact: true}).waitFor();
+      }, 'hub-from-wall'));
       await pause(1500);
       await t.screenshot('wall');
       await openPixooMonitor(t);

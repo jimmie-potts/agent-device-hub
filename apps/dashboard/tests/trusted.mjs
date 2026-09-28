@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
 import {fixture} from './fixture.mjs';
 // Hub #276: with browserAccess "trusted-loopback" a bookmark opens B.U.N.N.Y. signed in, and reloads and tabs stay signed in.
+// Hub #561: so does a link from another loopback app on the same host name.
 const browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS;if(output)await mkdir(output,{recursive:true});
 const checks=[];
@@ -95,6 +97,64 @@ try{
    if(output)await page.screenshot({path:output+'/option-off.png',fullPage:true});
    checks.push('without the option the login page is unchanged');
   }finally{await context.close();await f.close();}
+ }
+ {
+  // Hub #561: a link from another loopback app, like the wall's B.U.N.N.Y. link, opens the dashboard signed in, in a new tab.
+  // That app cannot frame the dashboard, and a link from another host name is cross-site and stays refused.
+  const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
+  const hubPort=new URL(f.hub.url).port;
+  const other=createServer((req,res)=>{
+   const url=new URL(req.url,'http://other'),target=`http://${url.searchParams.get('to')==='localhost'?'localhost':'127.0.0.1'}:${hubPort}/`;
+   res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
+   res.end(`<!doctype html><html lang="en"><title>Another local app</title><a href="${target}" target="_blank" rel="noopener noreferrer">B.U.N.N.Y.</a>${url.pathname==='/framed'?`<iframe title="Framed B.U.N.N.Y." src="${target}"></iframe>`:''}</html>`);
+  });
+  await new Promise(resolve=>other.listen(0,'127.0.0.1',resolve));
+  const otherPort=other.address().port,toHub=response=>new URL(response.url()).port===hubPort;
+  /** Opens a page of the other app and clicks its B.U.N.N.Y. link, as the owner does. Returns the new tab and the Hub's answer to its navigation. */
+  async function follow(from){
+   const page=await context.newPage();page.setDefaultTimeout(12000);await page.goto(from);
+   const [tab,response]=await Promise.all([context.waitForEvent('page'),context.waitForEvent('response',r=>r.request().isNavigationRequest()&&toHub(r)),page.getByRole('link',{name:'B.U.N.N.Y.',exact:true}).click()]);
+   tab.setDefaultTimeout(12000);
+   return {page,tab,response,site:(await response.request().allHeaders())['sec-fetch-site']};
+  }
+  const errors=[];context.on('weberror',e=>errors.push(e.error().message));
+  try{
+   for(const [from,name] of [[`http://127.0.0.1:${otherPort}/`,'127.0.0.1'],[`http://localhost:${otherPort}/?to=localhost`,'localhost']]){
+    const {page,tab,response,site}=await follow(from);
+    assert.equal(site,'same-site',`Chromium sends a ${name} link to another port as same-site`);
+    assert.equal(response.status(),200,`the Hub serves the page linked from another ${name} app`);
+    await signedIn(tab);
+    assert.equal(f.hub.resources().browserSessions,1,'the linked tab signs in once');
+    if(output)await tab.screenshot({path:`${output}/linked-${name}.png`,fullPage:true});
+    await tab.close({runBeforeUnload:true});await page.close();await until(()=>f.hub.resources().browserSessions===0,'closing the linked tab logs its session out');
+   }
+   checks.push('a link from another loopback app opens the dashboard signed in');
+
+   {
+    const {page,tab,response,site}=await follow(`http://localhost:${otherPort}/`);
+    assert.equal(site,'cross-site','a localhost page linking to 127.0.0.1 is cross-site');
+    assert.equal(response.status(),403,'the Hub refuses a cross-site link');
+    await tab.getByText('forbidden',{exact:false}).waitFor();
+    assert.equal(f.hub.resources().browserSessions,0);
+    await tab.close();await page.close();
+   }
+   checks.push('a link from another host name is refused');
+
+   {
+    const page=await context.newPage();page.setDefaultTimeout(12000);
+    const framed=page.waitForResponse(toHub);await page.goto(`http://127.0.0.1:${otherPort}/framed`);
+    const response=await framed;
+    assert.equal((await response.request().allHeaders())['sec-fetch-dest'],'iframe');
+    assert.equal(response.status(),403,'the Hub refuses to be framed by another loopback app');
+    await page.frameLocator('iframe').getByText('forbidden',{exact:false}).waitFor();
+    assert.equal(await page.frameLocator('iframe').getByText('Control enabled · Local',{exact:true}).count(),0);
+    assert.equal(f.hub.resources().browserSessions,0,'a framed page never signs in');
+    await page.close();
+   }
+   checks.push('another loopback app cannot frame the dashboard');
+   assert.equal(f.writes.length,0,'following links sends no device command');
+   assert.deepEqual(errors,[]);
+  }finally{await context.close();await new Promise(resolve=>{other.close(resolve);other.closeAllConnections();});await f.close();}
  }
  const receipt={synthetic:true,physical:false,passed:true,checks};
  if(output)await writeFile(output+'/trusted.json',JSON.stringify(receipt,null,2));
