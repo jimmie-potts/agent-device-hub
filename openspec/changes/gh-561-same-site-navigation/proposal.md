@@ -1,0 +1,29 @@
+## Why
+
+[Hub #561](https://github.com/jimmie-potts/agent-device-hub/issues/561): a link from another local app into B.U.N.N.Y. shows `{"error":{"code":"forbidden"}}`. The owner hit it on 2026-09-28 in the integrated preview `compose-20260928T173157Z-7ab0f8`: the wall page's B.U.N.N.Y. link to the paired Hub run opened that error. The installed wall links to `http://127.0.0.1:8788/` ([codex-nanoleaf#191](https://github.com/jimmie-potts/codex-nanoleaf/issues/191)), so it very likely fails the same way; nobody probed the installed Hub.
+
+The Hub serves `/`, `/dashboard.js` and `/dashboard.css` only when `Sec-Fetch-Site` is absent, `none` or `same-origin`. That rule dates from the first dashboard ([#127](https://github.com/jimmie-potts/agent-device-hub/pull/127)); trusted-loopback sign-in ([#419](https://github.com/jimmie-potts/agent-device-hub/pull/419)) moved it into `sameOrigin`. Chromium sends a link click from another port of the same host as a `same-site` top-level navigation, so the page is refused. [Hub #495](https://github.com/jimmie-potts/agent-device-hub/issues/495)'s `integrated-lifecycle` step read the link's `href` and never followed it, so the broken link passed.
+
+## What Changes
+
+- The Hub also serves the page at `/` to a top-level document navigation from another page on the same site: `Sec-Fetch-Site: same-site`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`, no `Origin`, and a Host that is one of the loopback names.
+- Everything else keeps today's rule. A cross-site navigation, a frame, iframe, object or embed request, a fetch or subresource request, a same-site request with an Origin and any other Host are refused. The dashboard assets, every API route, the trusted-loopback session route and the launch exchange still refuse same-site requests.
+- The page's responses add `X-Frame-Options: DENY` to the existing `Content-Security-Policy: frame-ancestors 'none'`.
+- The Hub verification's `integrated-lifecycle` step clicks the Hub's Places Wall link and the wall's B.U.N.N.Y. link. It asserts that each opens its page in a new tab, the dashboard signed in and showing the step's session.
+
+Nothing new is granted; `design.md` has the threat model. Links from another host name stay refused, including a `localhost` page linking to `127.0.0.1`, a guide opened from a file and the public guide.
+
+## Capabilities
+
+### New Capabilities
+
+None.
+
+### Modified Capabilities
+
+- `standalone-hub-host`: adds a requirement for the dashboard page reached by a link from another local app.
+- `unified-dashboard`: the local owner browser launch requirement gains a scenario for opening the dashboard from another local app's link.
+
+## Impact
+
+Changes the page route in `apps/hub/src/server.ts`. Adds `apps/hub/tests/linked-navigation.test.mjs`, a Chromium check in `apps/dashboard/tests/trusted.mjs` and link-following assertions in `apps/hub/verify/integrated-steps.mjs`. Updates the hub README, the dashboard README, `docs/development.md`, `docs/app-verification.md` and the verification feature map. The dashboard UI, API, controller contracts, credentials, state and devices do not change. The installed Hub changes only when a named owner installs a reviewed package. The live check of the installed wall's link belongs to that installation.
