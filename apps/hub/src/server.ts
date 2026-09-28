@@ -167,10 +167,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     hosts.includes(req.headers.host ?? '') && (req.headers.origin === undefined ? !requireOrigin : req.headers.origin === 'http://' + req.headers.host) &&
     sites.includes(req.headers['sec-fetch-site'] as string | undefined);
   // Hub #561: a link from another loopback app, such as the wall's B.U.N.N.Y. link, is a same-site top-level navigation.
-  // It is admitted for the page at `/` only, and grants nothing: any local program can already open this page through the
-  // system browser, the page signs in only through the same-origin session or launch POST with X-Pixoo-Request, its assets
-  // and every API route keep sameOrigin, and the page refuses to be framed. Browsers set Sec-Fetch-*, and page scripts
-  // cannot. Cross-site stays refused, so a website cannot open sign-ins that evict the owner's sessions.
+  // It is admitted for the page at `/` only. Any local program can already open this page through the system browser; the
+  // page signs in only through its own same-origin session or launch POST with X-Pixoo-Request; its assets and every API
+  // route keep sameOrigin. The page refuses framing, and Cross-Origin-Opener-Policy severs the linking page's window
+  // handle, so it cannot re-navigate the tab to pile up sign-ins until the 16-session cap evicts the owner. Each link
+  // click still opens one signed-in tab, retired on pagehide. Browsers set Sec-Fetch-*, and page scripts cannot. A
+  // cross-site navigation stays refused; a browser prefetch arrives as `none`, like a bookmark, and is admitted.
   const linkedPage=(req:IncomingMessage)=>hosts.includes(req.headers.host ?? '') && req.headers.origin === undefined &&
     req.headers['sec-fetch-site'] === 'same-site' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document';
   const issueLaunch=()=>{
@@ -287,7 +289,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const asset = path === '/' ? 'index.html' : path.slice(1);
           const bytes = await readFile(new URL('../public/' + asset,import.meta.url)).catch(()=>null);
           if (!bytes) throw new HttpError('not-found',404);
-          res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
+          res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','cross-origin-opener-policy':'same-origin','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
           res.end(bytes);return;
         }
         if (path === '/mcp') {

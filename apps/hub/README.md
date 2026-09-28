@@ -270,8 +270,9 @@ The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-pott
 
 The packaged hub serves B.U.N.N.Y. at `/`, with fixed `/dashboard.js` and
 `/dashboard.css` assets and a restrictive same-origin content security policy.
-The page sends `frame-ancestors 'none'` and `X-Frame-Options: DENY`, so no page
-can frame it.
+The page sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and
+`Cross-Origin-Opener-Policy: same-origin`, so no page can frame it or keep a
+handle to its tab.
 `GET /api/dashboard/v1/context` authenticates with read scope and exposes only
 that principal's registered component aliases, control permission and configured
 monitor consumers. Native controller credentials and endpoint URLs are excluded.
@@ -358,13 +359,30 @@ route, the session route and the launch exchange still refuse same-site
 requests, and a frame, fetch or subresource request for the page is refused.
 A link from another host name, a guide opened from a file or the public guide
 is `cross-site` and is still refused.
+[#563](https://github.com/jimmie-potts/agent-device-hub/issues/563) tracks the
+guide's link, and
+[codex-nanoleaf#199](https://github.com/jimmie-potts/codex-nanoleaf/issues/199)
+a wall opened as `localhost`.
 
-This grants nothing new. Another local program can already open the page
-through the system browser. With `browserAccess` set, it can already post to
-the session route itself. The linking page cannot read, script or frame the
-dashboard, and sign-in stays the page's own same-origin request with
-`X-Pixoo-Request`. A website still cannot open the page, so it cannot use up
-the 16-session limit with sign-ins.
+Another local program can already open the page through the system browser.
+With `browserAccess` set, it can already post to the session route itself.
+After this change, a page of such an app can also open the dashboard with a
+link. It cannot read, script or frame the dashboard, and sign-in stays the
+page's own same-origin request with `X-Pixoo-Request`. The page's
+`Cross-Origin-Opener-Policy: same-origin` severs any window handle the linking
+page holds. Without it, a hostile local page could re-navigate a window it
+opened back to the hub faster than each load's `pagehide` logout, until the
+16-session limit evicted the owner's session. What remains: each click or
+navigation from such a page opens one signed-in tab. That tab logs out when it
+closes, and otherwise counts toward the limit until it expires.
+
+The cross-site refusal covers direct navigations only. Chromium sends a
+speculation-rules prefetch of the page with `Sec-Fetch-Site: none`, as it does
+for a bookmark, and a later click on the prefetching page's link shows the
+prefetched page. So a website can still open a signed-in dashboard when the
+owner clicks its link. Each such click opens one signed-in tab, and the opener
+policy severs any window handle that page holds. Refusing prefetches is a
+separate decision.
 
 If a link shows `{"error":{"code":"forbidden"}}`, first check that the running
 hub includes #561. Then read the navigation's request headers in the browser's

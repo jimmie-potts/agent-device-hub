@@ -7,10 +7,10 @@ The page route accepts `Sec-Fetch-Site` only when absent, `none` or `same-origin
 
 - The Hub also serves the page at `/` to a top-level document navigation from another page on the same site: `Sec-Fetch-Site: same-site`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`, no `Origin`, and a Host that is one of the loopback names.
 - Everything else keeps today's rule. A cross-site navigation, a frame, iframe, object or embed request, a fetch or subresource request, a same-site request with an Origin and any other Host are refused. The dashboard assets, every API route, the trusted-loopback session route and the launch exchange still refuse same-site requests.
-- The page's responses add `X-Frame-Options: DENY` to the existing `Content-Security-Policy: frame-ancestors 'none'`.
+- The page's responses add `X-Frame-Options: DENY` to the existing `Content-Security-Policy: frame-ancestors 'none'`, and `Cross-Origin-Opener-Policy: same-origin`, so a linking page cannot keep a handle to the tab and reload it until the session cap evicts the owner.
 - The Hub verification's `integrated-lifecycle` step clicks the Hub's Places Wall link and the wall's B.U.N.N.Y. link. It asserts that each opens its page in a new tab, the dashboard signed in and showing the step's session.
 
-Nothing new is granted; `design.md` has the threat model. Links from another host name stay refused, including a `localhost` page linking to `127.0.0.1`, a guide opened from a file and the public guide.
+`design.md` has the threat model and the residual: each click from another local app opens one signed-in tab. Direct links from another host name stay refused, including a `localhost` page linking to `127.0.0.1`, a guide opened from a file and the public guide (#563, codex-nanoleaf#199). The owner decided to deliver this on 2026-09-28 ([#561 comment](https://github.com/jimmie-potts/agent-device-hub/issues/561#issuecomment-5877999564)).
 
 ## Capabilities
 
