@@ -105,6 +105,9 @@ expiry the sidebar shows **Sign in again**. Neither signs in on its own. If the
 request fails, the page shows an alert with the launcher and token options.
 Without the setting the hub answers 404 and the login page is unchanged. See
 [Open B.U.N.N.Y. from a bookmark](../hub/README.md#open-bunny-from-a-bookmark).
+A link on another local app's page with the same host name, such as the wall's
+B.U.N.N.Y. link, opens the page the same way in a new tab. See
+[Open B.U.N.N.Y. from another local app](../hub/README.md#open-bunny-from-another-local-app).
 
 For manual access, provision a dedicated hub browser credential with `read`,
 optional `control`, and only the intended registered device aliases. Give the

@@ -154,6 +154,10 @@ On a visit without a launch code, the dashboard SHALL request a trusted-loopback
 - **WHEN** a trusted-loopback session is evicted or expires while the dashboard is open, or the owner disconnects
 - **THEN** the page offers one sign-in action, and activating it restores the dashboard with a new session
 
+#### Scenario: Opened from another local app's link
+- **WHEN** the hub has trusted-loopback access and the owner clicks a link to the dashboard on another loopback app's page with the same host name, such as the wall's B.U.N.N.Y. link
+- **THEN** a new tab shows the dashboard with control enabled, without a login form, and sends no device command
+
 ### Requirement: Explicit same-mode reapply
 The dashboard SHALL offer one explicit action to send the active mode again through the existing mode command. For a controller that declares controller v1 modes, including Nanoleaf, **Reapply <mode>** SHALL be available when the observed mode is known and no mode change is pending. It MUST submit exactly one controller v1 `mode.set` for that mode, which ends power and brightness overrides and reapplies that mode's policy. For Pixoo, **Start Monitor** SHALL be available when the integration snapshot shows Monitor configured, presentation not participating and no pending mode change. It MUST submit exactly one Pixoo integration mode operation for Monitor with that extension's guards. It MUST be disabled with the reason while desired screen power is known to be off. Each action MUST read fresh guards before sending, MUST NOT send any other command and MUST NOT be sent automatically. A result reporting that nothing needed reapplying MUST be shown as already in effect.
 

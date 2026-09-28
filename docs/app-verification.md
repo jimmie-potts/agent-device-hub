@@ -720,7 +720,7 @@ them for the steps and for readiness:
 
 | Step | What it proves |
 | --- | --- |
-| `integrated-lifecycle` | A session posted to the Hub's real ingest route shows on the Hub card, as a question on a wall Line and on the Pixoo Monitor. Both consumers follow the Hub's revision, and no writer received a command. No link on the three pages leads to an installed service, and the wall's B.U.N.N.Y. link leads to the paired Hub run |
+| `integrated-lifecycle` | A session posted to the Hub's real ingest route shows on the Hub card, as a question on a wall Line and on the Pixoo Monitor. Both consumers follow the Hub's revision, and no writer received a command. No link on the three pages leads to an installed service. The Hub's Places Wall link opens the paired wall run with the session, and the wall's B.U.N.N.Y. link opens the paired Hub's dashboard signed in with it, each in a new tab |
 | `integrated-command` | One brightness change from the dashboard reaches Pixoo's writer exactly once. One Nanoleaf integration setting is applied once, with its physical outcome unknown. Nothing else reaches either writer |
 | `one-owner` | A lifecycle event posted straight to the paired Pixoo, with the strongest Pixoo credential the composition holds, is not accepted. The Pixoo mirrors exactly the Hub's sessions at the Hub's revision, and its Monitor lists the Hub's session but not the direct one |
 | `pixoo-loss` | Through `inject … consumer-loss pixoo`, as described below |
@@ -794,8 +794,16 @@ capture and the recovery checks.
 In an integrated preview, no link on the three paired pages leads to an
 installed service: the Hub's Places come from `placeLinks`, and the wall's
 `hub-paired` run points its B.U.N.N.Y. link at the paired Hub
-(codex-nanoleaf#197). `integrated-lifecycle` asserts both. Standalone
-consumer runs are out of this scope and keep their own links.
+(codex-nanoleaf#197). `integrated-lifecycle` asserts both. It also clicks
+both links, because an `href` alone does not show that the page opens
+([#561](https://github.com/jimmie-potts/agent-device-hub/issues/561)). Each
+link opens a new tab. The navigation must be answered 200, and the tab must
+show the wall with the step's session or the Hub's dashboard signed in with
+it. The tab's screenshot is attached as `wall-from-hub.png` or
+`hub-from-wall.png`, and the capture's assertion log notes each navigation's
+`Sec-Fetch-Site` and status. The tab's own video is discarded, so the
+capture keeps one video. Standalone consumer runs are out of this scope and
+keep their own links.
 
 A composition is simulated integration evidence only. It is not
 installed-system acceptance or physical-device evidence. It is not a Windows

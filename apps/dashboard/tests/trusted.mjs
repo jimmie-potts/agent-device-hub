@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
 import {fixture} from './fixture.mjs';
 // Hub #276: with browserAccess "trusted-loopback" a bookmark opens B.U.N.N.Y. signed in, and reloads and tabs stay signed in.
+// Hub #561: so does a link from another loopback app on the same host name.
 const browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS;if(output)await mkdir(output,{recursive:true});
 const checks=[];
@@ -95,6 +97,94 @@ try{
    if(output)await page.screenshot({path:output+'/option-off.png',fullPage:true});
    checks.push('without the option the login page is unchanged');
   }finally{await context.close();await f.close();}
+ }
+ {
+  // Hub #561: a link from another loopback app, like the wall's B.U.N.N.Y. link, opens the dashboard signed in, in a new tab.
+  // That app cannot frame the dashboard or keep a handle to its tab, and a link from another host name is cross-site and stays refused.
+  const f=await fixture({empty:true,browserAccess:'trusted-loopback'}),context=await browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
+  const hubPort=new URL(f.hub.url).port;
+  const other=createServer((req,res)=>{
+   const url=new URL(req.url,'http://other'),target=`http://${url.searchParams.get('to')==='localhost'?'localhost':'127.0.0.1'}:${hubPort}/`;
+   res.writeHead(200,{'content-type':'text/html; charset=utf-8'});
+   // A hostile local page: one click opens the Hub in a window it keeps a handle to, then it re-navigates that window every
+   // 10-30 ms, faster than each load's pagehide logout, to pile up sessions until the cap evicts the owner's (Hub #561 review).
+   if(url.pathname==='/attack')return res.end(`<!doctype html><html lang="en"><title>Hostile local app</title><button id="go">Open</button><script>
+    const hub=${JSON.stringify(target)};window.rounds=0;window.severed=false;
+    document.getElementById('go').onclick=()=>{const w=window.open(hub);const tick=()=>{if(w.closed){window.severed=true;return;}w.location=hub;window.rounds++;setTimeout(tick,10+Math.random()*20);};setTimeout(tick,20);};
+   </script></html>`);
+   res.end(`<!doctype html><html lang="en"><title>Another local app</title><a href="${target}" target="_blank" rel="noopener noreferrer">B.U.N.N.Y.</a>${url.pathname==='/framed'?`<iframe title="Framed B.U.N.N.Y." src="${target}"></iframe>`:''}</html>`);
+  });
+  await new Promise(resolve=>other.listen(0,'127.0.0.1',resolve));
+  const otherPort=other.address().port,toHub=response=>new URL(response.url()).port===hubPort;
+  /** Opens a page of the other app and clicks its B.U.N.N.Y. link, as the owner does. Returns the new tab and the Hub's answer to its navigation. */
+  async function follow(from){
+   const page=await context.newPage();page.setDefaultTimeout(12000);await page.goto(from);
+   const [tab,response]=await Promise.all([context.waitForEvent('page'),context.waitForEvent('response',r=>r.request().isNavigationRequest()&&toHub(r)),page.getByRole('link',{name:'B.U.N.N.Y.',exact:true}).click()]);
+   tab.setDefaultTimeout(12000);
+   return {page,tab,response,site:(await response.request().allHeaders())['sec-fetch-site']};
+  }
+  const errors=[];context.on('weberror',e=>errors.push(e.error().message));
+  try{
+   for(const [from,name] of [[`http://127.0.0.1:${otherPort}/`,'127.0.0.1'],[`http://localhost:${otherPort}/?to=localhost`,'localhost']]){
+    const {page,tab,response,site}=await follow(from);
+    assert.equal(site,'same-site',`Chromium sends a ${name} link to another port as same-site`);
+    assert.equal(response.status(),200,`the Hub serves the page linked from another ${name} app`);
+    await signedIn(tab);
+    assert.equal(f.hub.resources().browserSessions,1,'the linked tab signs in once');
+    if(output)await tab.screenshot({path:`${output}/linked-${name}.png`,fullPage:true});
+    await tab.close({runBeforeUnload:true});await page.close();await until(()=>f.hub.resources().browserSessions===0,'closing the linked tab logs its session out');
+   }
+   checks.push('a link from another loopback app opens the dashboard signed in');
+
+   {
+    const {page,tab,response,site}=await follow(`http://localhost:${otherPort}/`);
+    assert.equal(site,'cross-site','a localhost page linking to 127.0.0.1 is cross-site');
+    assert.equal(response.status(),403,'the Hub refuses a cross-site link');
+    await tab.getByText('forbidden',{exact:false}).waitFor();
+    assert.equal(f.hub.resources().browserSessions,0);
+    await tab.close();await page.close();
+   }
+   checks.push('a link from another host name is refused');
+
+   {
+    const page=await context.newPage();page.setDefaultTimeout(12000);
+    const framed=page.waitForResponse(toHub);await page.goto(`http://127.0.0.1:${otherPort}/framed`);
+    const response=await framed;
+    assert.equal((await response.request().allHeaders())['sec-fetch-dest'],'iframe');
+    assert.equal(response.status(),403,'the Hub refuses to be framed by another loopback app');
+    await page.frameLocator('iframe').getByText('forbidden',{exact:false}).waitFor();
+    assert.equal(await page.frameLocator('iframe').getByText('Control enabled · Local',{exact:true}).count(),0);
+    assert.equal(f.hub.resources().browserSessions,0,'a framed page never signs in');
+    await page.close();
+   }
+   checks.push('another loopback app cannot frame the dashboard');
+
+   {
+    // Negative control: the owner is signed in, and a page on another loopback port drives a window it opened back to the
+    // Hub over and over. Cross-Origin-Opener-Policy must sever that handle, so the owner's session survives and the Hub
+    // never holds more than the owner's session and the one tab the click opened.
+    const owner=await context.newPage();owner.setDefaultTimeout(12000);
+    const issued=owner.waitForResponse(r=>r.url()===f.hub.url+'/api/dashboard/v1/session');
+    await owner.goto(f.hub.url);const token=(await (await issued).json()).token;await signedIn(owner);
+    const ownerStatus=async()=>(await fetch(f.hub.url+'/api/dashboard/v1/context',{headers:{authorization:`Bearer ${token}`}})).status;
+    assert.equal(await ownerStatus(),200);assert.equal(f.hub.resources().browserSessions,1);
+    const hostile=await context.newPage();hostile.setDefaultTimeout(12000);await hostile.goto(`http://127.0.0.1:${otherPort}/attack`);
+    await hostile.getByRole('button',{name:'Open',exact:true}).click();
+    let most=0,status=200;const started=Date.now();
+    // Without the opener policy this loop evicts the owner within about two seconds; watch for eight.
+    while(Date.now()-started<8000){most=Math.max(most,f.hub.resources().browserSessions);status=await ownerStatus();if(status!==200)break;await new Promise(r=>setTimeout(r,25));}
+    const attack=await hostile.evaluate(()=>({rounds:window.rounds,severed:window.severed}));
+    assert.equal(status,200,`the owner's session was evicted after ${Date.now()-started} ms: the hostile page re-navigated its window ${attack.rounds} times and the Hub held up to ${most} sessions`);
+    assert.ok(most<=2,`the Hub held ${most} sessions; only the owner's and the one opened tab may exist`);
+    assert.equal(attack.severed,true,'the opened tab no longer answers to the hostile page\'s handle');
+    await signedIn(owner);assert.equal(await owner.getByRole('button',{name:'Sign in again',exact:true}).count(),0);
+    for(const page of context.pages())if(page!==owner)await page.close({runBeforeUnload:true});
+    await owner.close({runBeforeUnload:true});await until(()=>f.hub.resources().browserSessions===0,'every tab logs its session out');
+   }
+   checks.push('another loopback app cannot drive repeated sign-ins that evict the owner');
+   assert.equal(f.writes.length,0,'following links sends no device command');
+   assert.deepEqual(errors,[]);
+  }finally{await context.close();await new Promise(resolve=>{other.close(resolve);other.closeAllConnections();});await f.close();}
  }
  const receipt={synthetic:true,physical:false,passed:true,checks};
  if(output)await writeFile(output+'/trusted.json',JSON.stringify(receipt,null,2));

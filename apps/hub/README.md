@@ -107,7 +107,7 @@ Each browser session owns its command tickets, its change streams and its retain
 
 ## HTTP boundary
 
-All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, a supplied Origin must name that same host, and cross-site fetch metadata is refused. MCP accepts only the numeric-loopback host. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
+All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `localhost:<port>` for the actual listener port, and a supplied Origin must name that same host. MCP accepts only the numeric-loopback host. `Sec-Fetch-Site: cross-site` is refused on every route. `same-site` is refused too, with two exceptions. The dashboard page at `/` admits it for a top-level document navigation only; see [Open B.U.N.N.Y. from another local app](#open-bunny-from-another-local-app). `/mcp` admits it, but only with no Origin or the hub's own Origin. Mutations require `X-Pixoo-Request: 1`. There is no CORS grant or raw URL/protocol proxy.
 
 | Route | Behavior |
 | --- | --- |
@@ -270,6 +270,9 @@ The reproducible package exposes `@jimmie-potts/hub/migration` and `@jimmie-pott
 
 The packaged hub serves B.U.N.N.Y. at `/`, with fixed `/dashboard.js` and
 `/dashboard.css` assets and a restrictive same-origin content security policy.
+The page sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and
+`Cross-Origin-Opener-Policy: same-origin`, so no page can frame it or keep a
+handle to its tab.
 `GET /api/dashboard/v1/context` authenticates with read scope and exposes only
 that principal's registered component aliases, control permission and configured
 monitor consumers. Native controller credentials and endpoint URLs are excluded.
@@ -338,6 +341,56 @@ must install a reviewed Hub package, and either wire the launcher shortcut or
 add `browserAccess` to its actual private configuration. Browser handoff tests
 use disposable stores and fake controllers; they do not qualify a personal
 service or device result.
+
+### Open B.U.N.N.Y. from another local app
+
+Hub [#561](https://github.com/jimmie-potts/agent-device-hub/issues/561) lets a
+link on another local app's page open B.U.N.N.Y., such as the wall's
+**B.U.N.N.Y.** link or a link between a verification preview's pages. Chromium
+sends that click as a `same-site` top-level navigation, because only the port
+differs. The hub serves `/` for it when the request also has
+`Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`, no Origin and a
+loopback Host. With
+[`browserAccess`](#open-bunny-from-a-bookmark) set, the new tab signs in as a
+bookmark does. Without it, the tab shows the launcher and token login page.
+
+Only the page itself is admitted. `/dashboard.js`, `/dashboard.css`, every API
+route, the session route and the launch exchange still refuse same-site
+requests, and a frame, fetch or subresource request for the page is refused.
+A link from another host name, a guide opened from a file or the public guide
+is `cross-site` and is still refused.
+[#563](https://github.com/jimmie-potts/agent-device-hub/issues/563) tracks the
+guide's link, and
+[codex-nanoleaf#199](https://github.com/jimmie-potts/codex-nanoleaf/issues/199)
+a wall opened as `localhost`.
+
+Another local program can already open the page through the system browser.
+With `browserAccess` set, it can already post to the session route itself.
+After this change, a page of such an app can also open the dashboard with a
+link. It cannot read, script or frame the dashboard, and sign-in stays the
+page's own same-origin request with `X-Pixoo-Request`. The page's
+`Cross-Origin-Opener-Policy: same-origin` severs any window handle the linking
+page holds. Without it, a hostile local page could re-navigate a window it
+opened back to the hub faster than each load's `pagehide` logout, until the
+16-session limit evicted the owner's session. What remains: each click or
+navigation from such a page opens one signed-in tab. That tab logs out when it
+closes, and otherwise counts toward the limit until it expires.
+
+The cross-site refusal covers direct navigations only. Chromium sends a
+speculation-rules prefetch of the page with `Sec-Fetch-Site: none`, as it does
+for a bookmark, and a later click on the prefetching page's link shows the
+prefetched page. So a website can still open a signed-in dashboard when the
+owner clicks its link. Each such click opens one signed-in tab, and the opener
+policy severs any window handle that page holds. Whether to refuse prefetches
+is [#564](https://github.com/jimmie-potts/agent-device-hub/issues/564).
+
+If a link shows `{"error":{"code":"forbidden"}}`, first check that the running
+hub includes #561. Then read the navigation's request headers in the browser's
+developer tools. `Sec-Fetch-Site: cross-site` means the linking page uses
+another host name or scheme, for example the wall opened as `localhost:8765`
+linking to `127.0.0.1:8788`. Open both apps under `127.0.0.1`, or use the
+bookmark. `Sec-Fetch-Dest: iframe` means a page tried to frame B.U.N.N.Y.,
+which stays refused.
 
 Optional `editorLinks` maps registered aliases to credential-free numeric-loopback
 HTTP editor links without query/fragment. Optional `placeLinks` (Hub #495) is for

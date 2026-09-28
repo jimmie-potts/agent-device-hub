@@ -166,6 +166,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
   const sameOrigin=(req:IncomingMessage,{requireOrigin=false,sites=[undefined,'none','same-origin']}:{requireOrigin?:boolean;sites?:(string|undefined)[]}={})=>
     hosts.includes(req.headers.host ?? '') && (req.headers.origin === undefined ? !requireOrigin : req.headers.origin === 'http://' + req.headers.host) &&
     sites.includes(req.headers['sec-fetch-site'] as string | undefined);
+  // Hub #561: a link from another loopback app, such as the wall's B.U.N.N.Y. link, is a same-site top-level navigation.
+  // It is admitted for the page at `/` only. Any local program can already open this page through the system browser; the
+  // page signs in only through its own same-origin session or launch POST with X-Pixoo-Request; its assets and every API
+  // route keep sameOrigin. The page refuses framing, and Cross-Origin-Opener-Policy severs the linking page's window
+  // handle, so it cannot re-navigate the tab to pile up sign-ins until the 16-session cap evicts the owner. Each link
+  // click still opens one signed-in tab, retired on pagehide. Browsers set Sec-Fetch-*, and page scripts cannot. A
+  // cross-site navigation stays refused; a browser prefetch arrives as `none`, like a bookmark, and is admitted (Hub #564).
+  const linkedPage=(req:IncomingMessage)=>hosts.includes(req.headers.host ?? '') && req.headers.origin === undefined &&
+    req.headers['sec-fetch-site'] === 'same-site' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document';
   const issueLaunch=()=>{
     if(closing)throw new Error('host-closing');
     pruneBrowser();if(launchCodes.size>=8)throw new Error('launch-capacity');
@@ -276,11 +285,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         if (req.method === 'GET' && !url.search && ['/', '/dashboard.js', '/dashboard.css'].includes(path)) {
-          if (!sameOrigin(req)) throw new HttpError('forbidden',403);
+          if (!sameOrigin(req) && !(path === '/' && linkedPage(req))) throw new HttpError('forbidden',403);
           const asset = path === '/' ? 'index.html' : path.slice(1);
           const bytes = await readFile(new URL('../public/' + asset,import.meta.url)).catch(()=>null);
           if (!bytes) throw new HttpError('not-found',404);
-          res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
+          res.writeHead(200,{'content-type':asset.endsWith('.html')?'text/html; charset=utf-8':asset.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','cross-origin-opener-policy':'same-origin','content-security-policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});
           res.end(bytes);return;
         }
         if (path === '/mcp') {

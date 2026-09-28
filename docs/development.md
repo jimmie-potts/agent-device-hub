@@ -676,6 +676,22 @@ limit and retirement, and in Chromium sign-in on load, reload, second tab,
 `pagehide` logout, eviction recovery, Disconnect, a failed request and the
 unchanged page without the option. They do not use the installed Hub.
 
+Hub #561 adds `apps/hub/tests/linked-navigation.test.mjs` to `npm run test:hub`
+and the packaged hub tests, and a linked-navigation block to
+`apps/dashboard/tests/trusted.mjs`. The hub test covers the page route's
+fetch-metadata cases. A same-site top-level document navigation loads `/` on
+either loopback name. Every page response refuses framing and sends
+`Cross-Origin-Opener-Policy: same-origin`. Cross-site, framed, fetched,
+Origin-carrying and foreign-Host requests are refused. The assets, the API
+routes, the session route and the launch exchange refuse same-site requests.
+In Chromium, another loopback app's link opens the dashboard signed in in a new
+tab, while a link from another host name and an iframe are refused. A negative
+control has a page on another loopback port re-navigate a window it opened to
+the Hub every 10 to 30 ms. The owner's session must survive and the Hub must
+hold at most two sessions; without the opener policy the owner is evicted
+within about two seconds. The existing Hub, package and Dashboard CI jobs run
+them.
+
 Hub #244 adds `apps/hub/tests/browser-sessions.test.mjs` and
 `apps/hub/tests/replay.test.mjs` to `npm run test:hub` and the packaged hub
 tests. They repeat launch, monitor read, command and logout, then cover expiry
