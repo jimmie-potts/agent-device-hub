@@ -14,6 +14,18 @@ change, apply the [scope defaults](docs/sdlc.md#scope-defaults), including in
 ordinary work without `plan-work` or `deliver-work`. A read-only request reports
 the assessment without writing.
 
+At accepted child completion, reopening, material scope/prerequisite change or
+ownership handoff, the coordinating writer applies the
+[tracker reconciliation checkpoint](docs/sdlc.md#tracker-reconciliation)
+before final closeout, including ordinary work without shared workflow skills.
+Read-only work reports discrepancies; tracker-only work stays within its named
+scope. Reconcile within the task's authority and verify writes by readback.
+
+For portfolio planning, Project maintenance or delivery of a Project item, read
+[Project maintenance](docs/project-maintenance.md). Read-only requests make no
+Project changes. Authorized delivery covers routine projection for selected
+work, within that procedure's field and ownership boundaries.
+
 For planning, edits or review under controllers/tidbyt or controllers/lifx,
 read that directory's README.md and AGENTS.md before working there, even when
 launched from the repository root. controllers/tidbyt holds the fake-tested cloud
