@@ -191,7 +191,14 @@ failure remains a reported tracker gap; it does not erase verified source delive
    missing acceptance or failed lookups prevent archive.
 2. Commit the candidate and open a PR with Refs #<issue>. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
-   closure before merged-revision CI.
+   closure before merged-revision CI: use no `close`, `fix` or `resolve`
+   keyword (or variant) before `#<n>` anywhere in the body, and note that a
+   branch named `...issue-<n>...` can link issue n at merge although the body
+   only says "Refs" (this happened to #87). Before a merge whose acceptance
+   follows it, query the PR's `closingIssuesReferences`; a closing keyword
+   anywhere in the body, including a "remaining work" bullet, links the issue.
+   Reword the body to clear a reference (the read can lag a few minutes), and
+   read back the issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
    fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
@@ -202,8 +209,15 @@ failure remains a reported tracker gap; it does not erase verified source delive
    Apply the UI approval scope below.
 5. Immediately recheck issue scope/dependencies, main and PR head. Refresh affected
    tests/reviews when either commit changes. Squash only the reviewed head with
-   gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
+   gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head> --body "<text>".
+   Always pass an explicit `--body`: by default the squash commit copies the PR
+   description, and a "close #n" line in it closes the issue at merge, before
+   the post-merge checks (this happened to #252). Use a short body with no
+   closing keyword, such as `Refs #<n>`.
    Never use --admin, a background merge service or account/privacy changes.
+   When main advances during review and a spec file conflicts, keep both sides
+   but reconcile a requirement that both changed into one paragraph; a stacked
+   resolution was a P2 finding on PR #421.
 6. Read back the main merge revision and verify its Depot evidence using the same
    rules, or record the guide-only exception evidence below. Close the delivered
    issue only after its acceptance is met, clear workflow labels and verify
@@ -279,6 +293,14 @@ Inspect relevant Depot job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.
 Use the [diagnostic access procedure](development.md#depot-diagnostic-access).
+To rerun one failed job on the same reviewed head, find the run with
+`depot ci run list --repo <repo> --sha <sha> --status failed`, read the job ID
+and attempt IDs from `depot ci status <run-id> --output json`, read the failed
+attempt with `depot ci logs <attempt-id>`, and rerun with
+`depot ci retry <run-id> --job <job-id>`. Record the first attempt's failure and
+the retry in the PR evidence instead of pushing an empty commit, which would
+change the reviewed head. GitHub's check-run rerequest endpoint is not a route:
+it returns 404 for the Depot app.
 If required diagnostic evidence is unavailable, report that gap and keep the
 merge or completion gate pending. A dashboard sign-in requirement alone does
 not block routine delivery whose check-run evidence is complete. Preserve the

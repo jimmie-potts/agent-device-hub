@@ -352,8 +352,12 @@ A `stale-generation` or `revision-conflict` after the fresh read has no
 effects. It is shown with an invitation to change the control again, and
 nothing is resubmitted.
 
-Refreshes preserve focus, selection and an unsent text draft. A control that
-sent keeps keyboard focus: while a command runs its group is disabled, and once
+Refreshes preserve focus, selection and an unsent text draft. Clicking a
+navigation link blurs a focused text field and so sends it, while hiding a page
+by route keeps its draft unsent. `ArrowDown` on a closed `<select>` fires a
+change per step in Chromium, which is why keyboard steps settle after a pause
+before sending. A control that sent keeps keyboard focus: while a command runs
+its group is disabled, and once
 the command settles focus returns to that control, or to the group's first
 enabled control when the control is locked or no longer rendered. Once the
 result and the refreshed snapshot arrive the control shows the current value
