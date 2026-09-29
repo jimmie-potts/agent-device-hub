@@ -8,7 +8,9 @@ owns this definition; GitHub and authored guide inputs remain authoritative.
 
 - Define a versioned record schema, field-source dictionary and read-only access interface.
 - Supply offline validation and synthetic success, invalid, unknown, stale and failure examples.
-- Document operation-specific evidence gates and a public planning projection.
+- Document operation-specific evidence gates and a compact public catalog for Jev.
+- Reuse existing issue sections; generate content identities and apply an explicit
+  public-data policy without per-issue manual refresh receipts.
 - Add maintenance guidance and execute the contract fixtures in existing CI.
 
 ## Capabilities

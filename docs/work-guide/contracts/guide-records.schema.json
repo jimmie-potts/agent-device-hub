@@ -6,11 +6,10 @@
   "required": [
     "schemaVersion",
     "datasetId",
-    "assembledAt",
     "repositories",
     "issues",
     "subguides",
-    "producerRevision"
+    "publicationPolicy"
   ],
   "properties": {
     "schemaVersion": {
@@ -18,10 +17,7 @@
     },
     "datasetId": {
       "type": "string",
-      "minLength": 1
-    },
-    "assembledAt": {
-      "$ref": "#/$defs/time"
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "repositories": {
       "type": "array",
@@ -47,6 +43,30 @@
     "producerRevision": {
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
+    },
+    "publicationPolicy": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "source"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          }
+        }
+      ]
     }
   },
   "$defs": {
@@ -270,7 +290,7 @@
           "enum": [
             "assigned",
             "unassigned",
-            "unreadable"
+            "invalid"
           ]
         },
         "topic": {
@@ -462,39 +482,6 @@
         "guide.topic"
       ]
     },
-    "publication": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "fields",
-        "issueUpdatedAt",
-        "reviewedAt",
-        "owner",
-        "source"
-      ],
-      "properties": {
-        "fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/publicField"
-          },
-          "uniqueItems": true
-        },
-        "issueUpdatedAt": {
-          "$ref": "#/$defs/time"
-        },
-        "reviewedAt": {
-          "$ref": "#/$defs/time"
-        },
-        "owner": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source": {
-          "$ref": "#/$defs/source"
-        }
-      }
-    },
     "issue": {
       "type": "object",
       "additionalProperties": false,
@@ -519,7 +506,7 @@
         "children",
         "blockedBy",
         "planning",
-        "publication"
+        "publicFields"
       ],
       "properties": {
         "id": {
@@ -623,15 +610,12 @@
           },
           "uniqueItems": true
         },
-        "publication": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/publication"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "publicFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/publicField"
+          }
         }
       }
     },
@@ -650,7 +634,7 @@
         "revision",
         "asOf",
         "owner",
-        "publication"
+        "publicFields"
       ],
       "properties": {
         "id": {
@@ -717,51 +701,17 @@
           "type": "string",
           "minLength": 1
         },
-        "publication": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "fields",
-                "revision",
-                "reviewedAt",
-                "owner",
-                "source"
-              ],
-              "properties": {
-                "fields": {
-                  "type": "array",
-                  "items": {
-                    "enum": [
-                      "title",
-                      "outcome",
-                      "nextStep"
-                    ]
-                  },
-                  "uniqueItems": true
-                },
-                "revision": {
-                  "type": "string",
-                  "minLength": 1,
-                  "pattern": "^[0-9a-f]{40}$"
-                },
-                "reviewedAt": {
-                  "$ref": "#/$defs/time"
-                },
-                "owner": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source": {
-                  "$ref": "#/$defs/source"
-                }
-              }
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "publicFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "title",
+              "outcome",
+              "nextStep"
+            ]
+          }
         }
       }
     },

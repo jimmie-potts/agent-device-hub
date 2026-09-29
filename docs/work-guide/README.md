@@ -75,7 +75,10 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 The [guide records contract](contracts/README.md) defines the versioned source
 dictionary, public-field selection and operation-specific evidence requirements
 for record consumers. New stories use the five feature-template sections and
-the Guide grammar below. Adapter integration must apply the same contract
+the Guide grammar below. Schema/dataset identifiers, fetch times and public-field
+selection are produced by code; authors do not add them to issue bodies. Jev
+search uses excerpts from these existing sections, without new search tags.
+Adapter integration must apply the same contract
 validation on every refresh, retain optional-data gaps, and report incomplete
 dependency reads without claiming readiness. Contract fixture validation is
 `node --test docs/work-guide/contracts/records.test.mjs` under Node 24 after

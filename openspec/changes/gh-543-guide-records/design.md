@@ -20,12 +20,21 @@ helpers, introduce a service or call an inference provider.
 - Keep source records local to the application. A separately constructed public
   projection uses selected public text and stable references, never wholesale
   bodies or execution prompts. Schema validation cannot certify text as public;
-  the producer must explicitly attest the allowlisted source selection.
+  the producer applies an explicitly configured public-data policy on every
+  refresh. Its selected field paths are computed results, not author-maintained
+  issue metadata or a human review requirement on every issue update.
 - Preserve unavailable collections as unknown, not empty. Dependency evidence
   has its own observation time, pagination and scope. A current issue fetch
   cannot renew an older graph observation.
-- Pin records to one dataset identity. Authored content has independent revision
-  and date; code-derived claims require complete source evidence for their scope.
+- Pin content to an automatically generated dataset identity, excluding fetch
+  observation times and optional producer diagnostics. Consumers recheck current
+  evidence when using a response; stable identity does not renew freshness.
+  Keep producerRevision optional and assembly time in logs only.
+- Send Jev every eligible catalog entry with literal excerpts and explicit
+  truncation markers. Keep full sections and evidence application-side. Later
+  provider integration must disclose incomplete coverage; do not silently use
+  a keyword shortlist or claim the fixtures prove semantic search quality.
+- Authored content has independent revision and date; code-derived claims require complete source evidence for their scope.
 - Exact schema versions are negotiated explicitly. Unknown versions and extra
   properties are rejected. A changed field meaning requires a new version and
   renewed approval rather than silently widening an existing contract.

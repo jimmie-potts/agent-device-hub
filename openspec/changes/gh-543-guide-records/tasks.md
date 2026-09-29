@@ -1,7 +1,7 @@
 ## 1. Contract candidate
 
 - [x] 1.1 Define schema, source dictionary, interface and version rules; verify positive and invalid fixtures against the reference validator.
-- [x] 1.2 Define operation gates and public projection; verify unknown, stale, conflict, privacy and graph fixtures.
+- [x] 1.2 Define operation gates, policy-derived public fields and compact search examples; verify unknown, stale, conflict, privacy and graph fixtures.
 - [x] 1.3 Supply the cross-interface journey with stable fixture references; inspect timeout, missing-data, mismatch, reset and reduced-motion expectations without claiming consumer implementation.
 - [x] 1.4 Update maintenance guidance and existing CI; run focused fixtures, shared checks and guide checks and record their actual results.
 

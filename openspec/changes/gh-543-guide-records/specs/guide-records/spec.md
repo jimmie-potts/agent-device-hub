@@ -19,6 +19,10 @@ and idea extensions.
 - **WHEN** a sub-guide references known issues
 - **THEN** it retains its authored identity, source revision, date and owner rather than inheriting issue freshness
 
+#### Scenario: Routine source refresh
+- **WHEN** source content is unchanged and only fetch observation times or optional producer diagnostics change
+- **THEN** the generated dataset identity stays stable while consumers still check the current independent freshness evidence
+
 ### Requirement: Evidence-specific operation gates
 The contract SHALL retain incomplete issues for browsing and SHALL withhold
 claims whose required evidence is unavailable, stale or conflicting. Readiness
@@ -45,6 +49,11 @@ excluded. Graph facts and exact counts SHALL be computed by code.
 #### Scenario: Unexpected projection field
 - **WHEN** a projection contains a raw body or an undeclared field
 - **THEN** validation rejects the projection
+
+#### Scenario: Compact complete catalog
+- **WHEN** the adapter applies an explicitly configured public-data policy to existing issue sections
+- **THEN** every eligible record appears in the compact catalog with literal selected excerpts and truncation markers, without requiring new issue tags or a manual review receipt for each update
+- **AND** full source text, dates and graph evidence remain available to application code; unavailable or omitted content cannot imply complete search coverage
 
 ### Requirement: Contract-only approval and lifecycle evidence
 The definition SHALL have offline success and failure fixtures, a cross-interface

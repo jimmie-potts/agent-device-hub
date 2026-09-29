@@ -1,5 +1,6 @@
 // Offline contract reference; never imported by a production consumer.
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import Ajv from 'ajv';
 
@@ -30,11 +31,31 @@ const instant = value => {
   return Date.parse(value);
 };
 
+// Content identity ignores fetch receipts and diagnostic build metadata, not facts.
+// Arrays in this schema are sets; canonical order does not depend on API pagination.
+export function datasetIdentity(value) {
+  const content = structuredClone(value);
+  delete content.datasetId;
+  delete content.producerRevision;
+  const observations = [...content.repositories.map(x => x.inventory),
+    ...content.issues.flatMap(x => [x.facts, x.parent.evidence, x.children.evidence, x.blockedBy.evidence])];
+  for (const evidence of observations) {
+    delete evidence.observedAt;
+    if (evidence.pagination) delete evidence.pagination.pages;
+  }
+  const canonical = x => {
+    if (Array.isArray(x)) return '[' + x.map(canonical).sort().join(',') + ']';
+    if (x !== null && typeof x === 'object') return '{' + Object.keys(x).sort()
+      .map(key => JSON.stringify(key) + ':' + canonical(x[key])).join(',') + '}';
+    return JSON.stringify(x);
+  };
+  return 'sha256:' + createHash('sha256').update(canonical(content)).digest('hex');
+}
+
 export function validateDataset(value, expectedDatasetId = value?.datasetId) {
   assert(value?.schemaVersion === VERSION, 'unsupported schemaVersion');
   assert(validate(value), ajv.errorsText(validate.errors, { separator: '; ' }));
   assert(value.datasetId === expectedDatasetId, 'dataset mismatch');
-  const assembled = instant(value.assembledAt);
   unique(value.repositories.map(x => x.name), 'repository');
   unique(value.issues.map(x => x.id), 'issue id');
   unique(value.issues.map(x => x.nodeId), 'issue nodeId');
@@ -44,7 +65,7 @@ export function validateDataset(value, expectedDatasetId = value?.datasetId) {
   const repositories = new Map(value.repositories.map(x => [x.name, x]));
   const issues = new Map(value.issues.map(x => [x.id, x]));
   const observation = evidence => {
-    if (evidence.observedAt !== null) assert(instant(evidence.observedAt) <= assembled, 'future observation');
+    if (evidence.observedAt !== null) instant(evidence.observedAt);
     if (evidence.state === 'fresh') assert(evidence.observedAt !== null, 'fresh without observation');
     if (evidence.state !== 'fresh' || !evidence.complete) assert(evidence.reason !== null, 'missing evidence reason');
     if (['unknown', 'failed'].includes(evidence.state)) assert(!evidence.complete, 'unavailable evidence marked complete');
@@ -67,7 +88,6 @@ export function validateDataset(value, expectedDatasetId = value?.datasetId) {
     assert(issue.id === `${issue.repository}#${issue.number}`, 'identity mismatch');
     assert(issue.url === `https://github.com/${issue.repository}/issues/${issue.number}`, 'URL identity mismatch');
     assert(instant(issue.createdAt) <= instant(issue.updatedAt), 'issue timestamp order');
-    assert(instant(issue.updatedAt) <= assembled, 'future issue');
     if (issue.closedAt !== null) assert(instant(issue.closedAt) <= instant(issue.updatedAt), 'closure timestamp order');
     if (issue.state === 'OPEN') assert(issue.closedAt === null && [null, 'reopened'].includes(issue.stateReason), 'open closure mismatch');
     observation(issue.facts);
@@ -100,18 +120,13 @@ export function validateDataset(value, expectedDatasetId = value?.datasetId) {
         if (relation.evidence.complete) assert(issues.has(id), 'complete collection has unresolved reference');
       }
     }
-    if (issue.publication) {
-      assert(instant(issue.publication.reviewedAt) <= assembled, 'future publication review');
-      instant(issue.publication.issueUpdatedAt);
-      assert(instant(issue.publication.reviewedAt) >= instant(issue.publication.issueUpdatedAt), 'publication review predates selected issue');
-    }
   }
   for (const guide of value.subguides) {
     assert(TOPICS.includes(guide.topic), 'unknown sub-guide topic');
-    assert(instant(guide.asOf) <= assembled, 'future editorial date');
+    instant(guide.asOf);
     for (const id of guide.members) assert(issues.has(id), 'unresolved sub-guide member');
-    if (guide.publication) assert(instant(guide.publication.reviewedAt) <= assembled, 'future editorial publication review');
   }
+  assert(value.datasetId === datasetIdentity(value), 'content identity mismatch');
   return value;
 }
 
@@ -135,8 +150,8 @@ export function eligibility(dataset, id, operation, policy) {
   const add = (code, source = issue.url) => reasons.push({ code, source });
   if (operation === 'browse') return { allowed: true, reasons };
   if (operation === 'discover') {
-    if (!issue.publication || issue.publication.issueUpdatedAt !== issue.updatedAt) add('public-selection-missing-or-stale');
-    else if (!issue.publication.fields.some(field => typeof get(issue, field) === 'string')) add('public-text-missing');
+    if (!dataset.publicationPolicy || !issue.publicFields.length) add('public-selection-missing');
+    else if (!issue.publicFields.some(field => typeof get(issue, field) === 'string')) add('public-text-missing');
     return { allowed: reasons.length === 0, reasons };
   }
   policyTime(policy);
@@ -174,18 +189,31 @@ export function eligibility(dataset, id, operation, policy) {
   return { allowed: reasons.length === 0, reasons };
 }
 
+// Compact search text is literal, not a new author-maintained or model-written summary.
+export const EXCERPT_CHARACTERS = 320;
 export function publicProjection(dataset) {
   validateDataset(dataset);
-  const issues = dataset.issues.filter(x => eligibility(dataset, x.id, 'discover').allowed).map(issue => ({
-    id: issue.id, url: issue.url, updatedAt: issue.updatedAt,
-    observedAt: issue.facts.observedAt, freshness: issue.facts.state,
-    fields: Object.fromEntries(issue.publication.fields.filter(field => get(issue, field) !== null).map(field => [field, get(issue, field)])),
-  }));
-  const subguides = dataset.subguides.filter(x => x.publication?.revision === x.revision).map(guide => ({
-    id: guide.id, revision: guide.revision, asOf: guide.asOf,
-    members: guide.members.filter(id => issues.some(x => x.id === id)),
-    fields: Object.fromEntries(guide.publication.fields.filter(field => typeof guide[field] === 'string').map(field => [field, guide[field]])),
-  }));
+  const excerpt = (record, paths) => {
+    const fields = {}; const truncatedFields = [];
+    for (const field of [...paths].sort()) {
+      const value = get(record, field);
+      if (value === null) continue;
+      if (typeof value === 'string') {
+        const characters = [...value];
+        fields[field] = characters.slice(0, EXCERPT_CHARACTERS).join('');
+        if (characters.length > EXCERPT_CHARACTERS) truncatedFields.push(field);
+      } else fields[field] = structuredClone(value);
+    }
+    return { fields, truncatedFields };
+  };
+  const issues = dataset.issues.filter(x => eligibility(dataset, x.id, 'discover').allowed)
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    .map(issue => ({ id: issue.id, ...excerpt(issue, issue.publicFields) }));
+  const publicIds = new Set(issues.map(x => x.id));
+  const subguides = dataset.subguides.filter(x => dataset.publicationPolicy && x.publicFields.length)
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    .map(guide => ({ id: guide.id, members: guide.members.filter(id => publicIds.has(id)).sort(),
+      ...excerpt(guide, guide.publicFields) }));
   return { schemaVersion: VERSION, datasetId: dataset.datasetId, issues, subguides };
 }
 

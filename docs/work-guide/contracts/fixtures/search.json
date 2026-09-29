@@ -1,0 +1,49 @@
+{
+  "description": "Synthetic source text and desired semantic distinctions; not a live Jev quality result.",
+  "records": [
+    {
+      "number": 900011,
+      "title": "Play a saved animation on Pixoo",
+      "note": "Play an existing GIF from the media library.",
+      "outcome": "The owner can display a saved animated image on Pixoo.",
+      "implementation": "Decode and play GIF frames through the existing playback controller.",
+      "deferrals": "Importing new files and reacting to agent events are separate work."
+    },
+    {
+      "number": 900012,
+      "title": "Import animated media",
+      "note": "Add a GIF file to the library while preserving its original.",
+      "outcome": "The owner can add an animated image for later playback.",
+      "implementation": "Validate an uploaded GIF and save its original with a library record.",
+      "deferrals": "This import flow does not start playback or add event reactions."
+    },
+    {
+      "number": 900013,
+      "title": "React to a completed agent task on Pixoo",
+      "note": "Use a saved animation for an explicit task-completion reaction.",
+      "outcome": "Pixoo can show an existing GIF when an agent task completes.",
+      "implementation": "Map the completion event to a saved animation through the designated controller.",
+      "deferrals": "New media imports and changes to the playback decoder are separate work."
+    }
+  ],
+  "queries": [
+    {
+      "question": "Which work plays an existing GIF, rather than importing one?",
+      "desiredNumber": 900011,
+      "supportField": "story.implementation.text",
+      "supportText": "Decode and play GIF frames through the existing playback controller."
+    },
+    {
+      "question": "How would I add an animated picture to my media library?",
+      "desiredNumber": 900012,
+      "supportField": "story.implementation.text",
+      "supportText": "Validate an uploaded GIF and save its original with a library record."
+    },
+    {
+      "question": "Show a reaction when an agent finishes its task",
+      "desiredNumber": 900013,
+      "supportField": "story.outcome.text",
+      "supportText": "Pixoo can show an existing GIF when an agent task completes."
+    }
+  ]
+}

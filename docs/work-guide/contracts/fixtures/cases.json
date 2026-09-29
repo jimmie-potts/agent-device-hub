@@ -135,25 +135,25 @@
   {
     "name": "unapproved public text",
     "set": {
-      "issues.0.publication": null
+      "issues.0.publicFields": []
     },
     "operation": "discover",
     "allowed": false,
-    "reason": "public-selection-missing-or-stale"
+    "reason": "public-selection-missing"
   },
   {
-    "name": "stale public selection",
+    "name": "public policy absent",
     "set": {
-      "issues.0.publication.issueUpdatedAt": "2026-09-28T12:00:00Z"
+      "publicationPolicy": null
     },
     "operation": "discover",
     "allowed": false,
-    "reason": "public-selection-missing-or-stale"
+    "reason": "public-selection-missing"
   },
   {
     "name": "raw body projection forbidden",
     "set": {
-      "issues.0.publication.fields": [
+      "issues.0.publicFields": [
         "body"
       ]
     },
@@ -192,9 +192,9 @@
     "reason": "story-evidence-incomplete"
   },
   {
-    "name": "unreadable guide preserves issue",
+    "name": "invalid guide preserves issue",
     "set": {
-      "issues.0.guide.state": "unreadable",
+      "issues.0.guide.state": "invalid",
       "issues.0.guide.topic": null,
       "issues.0.guide.note": null,
       "issues.0.guide.reason": "Unknown field"

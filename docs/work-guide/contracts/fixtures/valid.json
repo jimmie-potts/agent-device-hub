@@ -1,7 +1,6 @@
 {
   "schemaVersion": "guide-records/1.0",
-  "datasetId": "fixture:guide-records:one",
-  "assembledAt": "2026-09-29T12:00:00Z",
+  "datasetId": "sha256:ab7ec68c930c2e8172156c1beb9d8d5da0a2a31a8c49e2e673ee163ec9f16fea",
   "repositories": [
     {
       "name": "jimmie-potts/agent-device-hub",
@@ -185,20 +184,14 @@
         }
       },
       "planning": [],
-      "publication": {
-        "fields": [
-          "title",
-          "guide.note",
-          "story.outcome.text",
-          "guide.topic",
-          "labels",
-          "state"
-        ],
-        "issueUpdatedAt": "2026-09-29T12:00:00Z",
-        "reviewedAt": "2026-09-29T12:00:00Z",
-        "owner": "fixture-author",
-        "source": "https://github.com/example/planning"
-      }
+      "publicFields": [
+        "title",
+        "guide.note",
+        "story.outcome.text",
+        "guide.topic",
+        "labels",
+        "state"
+      ]
     },
     {
       "id": "jimmie-potts/agent-device-hub#900002",
@@ -326,20 +319,14 @@
         }
       },
       "planning": [],
-      "publication": {
-        "fields": [
-          "title",
-          "guide.note",
-          "story.outcome.text",
-          "guide.topic",
-          "labels",
-          "state"
-        ],
-        "issueUpdatedAt": "2026-09-29T12:00:00Z",
-        "reviewedAt": "2026-09-29T12:00:00Z",
-        "owner": "fixture-author",
-        "source": "https://github.com/example/planning"
-      }
+      "publicFields": [
+        "title",
+        "guide.note",
+        "story.outcome.text",
+        "guide.topic",
+        "labels",
+        "state"
+      ]
     }
   ],
   "subguides": [
@@ -358,8 +345,11 @@
       "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "asOf": "2026-09-29T12:00:00Z",
       "owner": "fixture-author",
-      "publication": null
+      "publicFields": []
     }
   ],
-  "producerRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  "publicationPolicy": {
+    "id": "fixture-public-planning/1",
+    "source": "https://github.com/example/planning/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-policy.md"
+  }
 }
