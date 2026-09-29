@@ -10,6 +10,7 @@
 //   npm run -s verify:compose -- doctor [<composition-id>]
 //   npm run -s verify:compose -- capture <composition-id> <step>
 //   npm run -s verify:compose -- inject <composition-id> consumer-loss <service> [--step <step>]
+//   npm run -s verify:compose -- reset <composition-id>
 //   npm run -s verify:compose -- handoff <composition-id>
 //   npm run -s verify:compose -- extend <composition-id> [--lease <minutes>]
 //   npm run -s verify:compose -- stop <composition-id>
@@ -17,6 +18,7 @@
 // Every operation prints one JSON result line on stdout and progress on
 // stderr. Exit 0 means the outcome was verified; 1 a failed outcome; 2 a usage
 // error; 3 an unavailable supervisor or adapter.
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn, execFile} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync} from 'node:fs';
@@ -27,11 +29,16 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {PAIRING, pause} from './integrated.mjs';
+import {processIdentity} from './adapter-runner.mjs';
 import {DirectoryLock, LockedError} from './lock.mjs';
 import {currentLease, thawWithLease} from './safety-thaw.mjs';
+import {FeedPauseError, liveFeedIdentity, releaseFeed, verifyPausedFeeds, withPausedFeeds} from './feed-pause.mjs';
 import {CAPTURE_STEPS, CONTROLS, INJECTIONS} from './integrated-steps.mjs';
 
 const run = promisify(execFile);
+/** @type {AsyncLocalStorage<{directory: string, parent: number, started: string}>} */
+const operationContext = new AsyncLocalStorage();
+const ADAPTER_RUNNER = fileURLToPath(new URL('adapter-runner.mjs', import.meta.url));
 export const HUB_ROOT = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '');
 export const DEFAULT_MANIFEST = fileURLToPath(new URL('compose.json', import.meta.url));
 export const EXIT = Object.freeze({ok: 0, failed: 1, usage: 2, unavailable: 3});
@@ -77,7 +84,7 @@ export class ComposeFailure extends Error {
  *   endpoints: Record<string, string> | null, proofDir: string | null, expiresAt: string | null, failure: {cause: string, detail: string | null} | null, cleanup: any,
  *   standalone?: string}} Service
  * @typedef {{compositionVersion: string, id: string, state: string, pinned: boolean, startedAt: string, updatedAt: string, restarts?: string, continuity?: string, manifest: unknown, lease: unknown,
- *   services: Service[], readiness: {outcome: string, checks: Check[], at: string} | null, captures: any[], injections: any[], failure: any, cleanup: any, handoff?: unknown, secrets: string}} Composition
+ *   services: Service[], readiness: {outcome: string, checks: Check[], at: string} | null, captures: any[], injections: any[], failure: any, cleanup: any, handoff?: unknown, reset?: {attempt: string, phase: string, service: string | null, startedAt: string, finishedAt?: string}, secrets: string}} Composition
  */
 
 /**
@@ -154,9 +161,13 @@ export async function checkoutIdentity(checkout) {
 export function invoke(service, args, {env, progress, onLine, timeoutMs = 20 * 60000}) {
   return new Promise((resolvePromise, reject) => {
     const [program, ...rest] = service.run;
-    const child = spawn(program ?? '', [...rest, ...args], {cwd: service.checkout, env, stdio: ['ignore', 'pipe', 'pipe']});
+    const context = operationContext.getStore();
+    const guarded = context ? [ADAPTER_RUNNER, '--run-adapter', JSON.stringify({...context, timeoutMs, argv: [program, ...rest, ...args]})] : null;
+    const child = spawn(guarded ? process.execPath : program ?? '', guarded ?? [...rest, ...args], {cwd: service.checkout, env, detached: Boolean(guarded), stdio: ['ignore', 'pipe', 'pipe']});
     let stdout = '', pending = '';
-    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    // The runner owns the timeout while it holds the barrier. Killing that
+    // guardian here would abandon its wrapper just as killing compose did.
+    const timer = guarded ? undefined : setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     child.stdout.on('data', chunk => (stdout += chunk));
     child.stderr.on('data', chunk => {
       pending += chunk;
@@ -250,6 +261,29 @@ async function loadComposition(env, id, hubRoot) {
   const store = new Store(await proofRoot(env, hubRoot), /** @type {string} */ (id));
   if (!existsSync(store.file)) throw new ComposeFailure('unknown-composition', `no composition.json for ${id}`);
   return {store, composition: await store.read()};
+}
+
+/** @template T @param {Store} store @param {() => Promise<T>} work @returns {Promise<T>} */
+async function exclusive(store, work) {
+  try {
+    return await new DirectoryLock(store.dir, '.operation.lock').run(async stillHeld => {
+      // Recovery waits for any orphan runner to stop its adapter group first.
+      await new DirectoryLock(store.dir, '.adapter.lock').run(async () => {});
+      const started = await processIdentity(process.pid);
+      if (!started) throw new ComposeFailure('composition-locked', 'operation process identity is unavailable');
+      const result = await operationContext.run({directory: store.dir, parent: process.pid, started}, work);
+      if (!await stillHeld()) throw new ComposeFailure('composition-locked', 'operation ownership changed');
+      return result;
+    });
+  } catch (error) {
+    if (error instanceof LockedError) throw new ComposeFailure('composition-locked', `another operation holds ${store.id}; retry when it finishes`);
+    throw error;
+  }
+}
+/** @template T @param {string | undefined} id @param {Io} io @param {() => Promise<T>} work @returns {Promise<T>} */
+async function operation(id, io, work) {
+  const {store} = await loadComposition(io.env, id, io.hubRoot);
+  return exclusive(store, work);
 }
 
 /** @param {Composition} composition @param {string} id @returns {Service} */
@@ -435,7 +469,7 @@ function card(composition) {
   for (const s of services) lines.push(`${s.id.padEnd(width)}  ${s.url ?? '(no URL)'}  run ${s.runId ?? '-'}  ${s.revision.slice(0, 8)} ${s.dirty ? 'dirty' : 'clean'}  ${s.scenario}${s.state && s.state !== 'running' ? `  ${s.state}` : ''}`);
   const expiries = /** @type {string[]} */ (services.map(s => s.expiresAt).filter(Boolean)).sort();
   if (expiries.length) lines.push(`Expires  ${expiries[0]} (earliest lease of the three runs)`);
-  lines.push(`Doctor   ${COMMAND} doctor ${composition.id}`, `Extend   ${COMMAND} extend ${composition.id}`, `Stop     ${COMMAND} stop ${composition.id}`);
+  lines.push(`Doctor   ${COMMAND} doctor ${composition.id}`, `Reset    ${COMMAND} reset ${composition.id}`, `Extend   ${COMMAND} extend ${composition.id}`, `Stop     ${COMMAND} stop ${composition.id}`);
   return lines;
 }
 
@@ -468,7 +502,7 @@ async function checkAdapter(service, env, progress) {
  * @param {{checkouts: Record<string, string>, lease?: number, unpinned?: boolean, restarts?: string, manifest?: string, hubRoot?: string, readyTimeoutMs?: number}} options
  * @param {Io} io @returns {Promise<Outcome>}
  */
-export async function start(options, io) {
+async function startUnlocked(options, io) {
   const {env, progress} = io;
   const {manifest, digest} = await loadManifest(options.manifest ?? DEFAULT_MANIFEST);
   const hubRoot = options.hubRoot ?? HUB_ROOT;
@@ -492,7 +526,7 @@ export async function start(options, io) {
   let previous;
   if (options.restarts !== undefined) {
     previous = (await loadComposition(env, options.restarts, hubRoot)).composition;
-    if (previous.state === 'running' || previous.state === 'starting') throw new UsageError(`${options.restarts} is ${previous.state}; stop it before restarting it`);
+    if (previous.state !== 'stopped' || previous.cleanup?.result !== 'clean') throw new UsageError(`${options.restarts} needs a clean stop before restarting it`);
   }
   const manager = await supervisor();
   if (!manager.available) throw new ComposeFailure('supervisor-unavailable', manager.reason ?? 'no usable user manager', null, EXIT.unavailable);
@@ -527,6 +561,7 @@ export async function start(options, io) {
   const store = new Store(await proofRoot(env, hubRoot), id);
   await mkdir(store.root, {recursive: true});
   await mkdir(store.dir, {mode: 0o700});
+  return exclusive(store, async () => {
   /** @type {Composition} */
   const composition = {
     compositionVersion: COMPOSITION_VERSION,
@@ -646,6 +681,7 @@ export async function start(options, io) {
     if (error instanceof UsageError) throw error;
     return failWith(error);
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +801,7 @@ async function stopRuns(store, env, progress, {reason}) {
 }
 
 /** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
-export async function stop(id, io) {
+async function stopUnlocked(id, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   // Only a clean stop is final. After a partial or unknown one, every run is stopped again: each adapter's stop is
   // idempotent and reports its final state, and one whose wrapper could not run gets its turn.
@@ -802,13 +838,13 @@ async function listCompositions(env, hubRoot) {
 }
 
 /** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
-export async function doctor(id, io) {
+async function doctorUnlocked(id, io) {
   if (id === undefined) return {code: EXIT.ok, value: {operation: 'doctor', compositions: await listCompositions(io.env, io.hubRoot)}};
   const {composition} = await loadComposition(io.env, id, io.hubRoot);
   /** @type {string[]} */
   const frozen = [];
   for (const service of composition.services) if (service.runId && (await freezerState(unitOf(service))).FreezerState === 'frozen') frozen.push(service.id);
-  if (composition.state !== 'running') return {code: EXIT.failed, value: {operation: 'doctor', compositionId: id, state: composition.state, failure: composition.failure, frozen, services: composition.services.map(publicService)}};
+  if (composition.state !== 'running') return {code: EXIT.failed, value: {operation: 'doctor', compositionId: id, state: composition.state, failure: composition.failure, reset: composition.reset ?? null, readiness: composition.readiness, frozen, services: composition.services.map(publicService)}};
   /** @type {Record<string, string>} */
   const states = {};
   // A Hub change reaches the consumers on their next poll, so the pairing checks get a few seconds, as readiness does.
@@ -842,7 +878,7 @@ async function captureStep(store, env, progress, hub, step) {
 }
 
 /** @param {string | undefined} id @param {string} step @param {Io} io @returns {Promise<Outcome>} */
-export async function capture(id, step, io) {
+async function captureUnlocked(id, step, io) {
   // Only the integrated steps: any other Hub step is pinned to a fixture scenario and would reseed the owner out of
   // `integrated` under the paired consumers, and the injection steps need `inject`.
   if (!CAPTURE_STEPS.includes(step)) throw new UsageError(`capture runs only ${CAPTURE_STEPS.join(', ')}; the loss and second-owner steps run through inject`);
@@ -853,7 +889,7 @@ export async function capture(id, step, io) {
 }
 
 /** @param {string | undefined} id @param {Io} io @returns {Promise<Outcome>} */
-export async function handoff(id, io) {
+async function handoffUnlocked(id, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
   /** @type {{id: string, runId: string | null, ok: boolean, frozenAt: string | null, verified: string | null, expiresAt: string | null, detail?: string}[]} */
@@ -872,7 +908,7 @@ export async function handoff(id, io) {
 }
 
 /** @param {string | undefined} id @param {number | undefined} leaseMinutes @param {Io} io @returns {Promise<Outcome>} */
-export async function extend(id, leaseMinutes, io) {
+async function extendUnlocked(id, leaseMinutes, io) {
   const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
   requireRunning(composition);
   /** @type {{id: string, runId: string | null, ok: boolean, expiresAt: string | null, detail?: string}[]} */
@@ -885,6 +921,112 @@ export async function extend(id, leaseMinutes, io) {
     for (const r of results) if (r.ok) serviceOf(c, r.id).expiresAt = r.expiresAt;
   }, 'extended', {ok: results.every(r => r.ok)});
   return {code: results.every(r => r.ok) ? EXIT.ok : EXIT.failed, value: {operation: 'extend', compositionId: id, services: results, card: card(value)}};
+}
+
+// Public operations take the same lock even when called without the CLI.
+/** @param {Parameters<typeof startUnlocked>[0]} options @param {Io} io */
+export async function start(options, io) {
+  return options.restarts ? operation(options.restarts, {...io, hubRoot: options.hubRoot ?? io.hubRoot}, () => startUnlocked(options, io)) : startUnlocked(options, io);
+}
+/** @param {string | undefined} id @param {Io} io */
+export const stop = (id, io) => operation(id, io, () => stopUnlocked(id, io));
+/** @param {string | undefined} id @param {Io} io */
+export const doctor = (id, io) => id === undefined ? doctorUnlocked(id, io) : operation(id, io, () => doctorUnlocked(id, io));
+/** @param {string | undefined} id @param {string} step @param {Io} io */
+export const capture = (id, step, io) => operation(id, io, () => captureUnlocked(id, step, io));
+/** @param {string | undefined} id @param {Io} io */
+export const handoff = (id, io) => operation(id, io, () => handoffUnlocked(id, io));
+/** @param {string | undefined} id @param {number | undefined} leaseMinutes @param {Io} io */
+export const extend = (id, leaseMinutes, io) => operation(id, io, () => extendUnlocked(id, leaseMinutes, io));
+/** @param {string | undefined} id @param {string} kind @param {string} serviceId @param {string | undefined} step @param {Io} io @param {number} [thawAfter] */
+export const inject = (id, kind, serviceId, step, io, thawAfter) => operation(id, io, () => injectUnlocked(id, kind, serviceId, step, io, thawAfter));
+
+// ---------------------------------------------------------------------------
+// reset: pause both live feeds, reseed their owner, then release fresh consumers.
+
+/** @param {Composition} composition */
+async function resetSourceIdentity(composition) {
+  for (const service of composition.services) {
+    const identity = await checkoutIdentity(service.checkout);
+    if (identity.revision !== service.revision || identity.dirty || service.dirty) throw new ComposeFailure('identity-mismatch', 'reset requires the unchanged clean recorded candidate', service.id);
+  }
+}
+/** @param {string | undefined} id @param {Io} io @param {{pauseTimeoutMs?: number, readyTimeoutMs?: number}} [options] */
+export async function reset(id, io, options = {}) {
+  return operation(id, io, async () => {
+    const {store, composition} = await loadComposition(io.env, id, io.hubRoot);
+    requireRunning(composition);
+    await resetSourceIdentity(composition);
+    const hub = owner(composition), paired = consumers(composition);
+    const pauseOptions = {runtimeRoot: stateRoot(io.env), timeoutMs: options.pauseTimeoutMs};
+    let phase = 'pause', affected = /** @type {string | null} */ (null);
+    const attempt = randomBytes(8).toString('hex');
+    await store.update(c => {
+      c.state = 'resetting'; c.readiness = null; c.failure = null;
+      for (const consumer of paired) serviceOf(c, consumer.id).state = 'pause-pending';
+      c.reset = {attempt, phase, service: null, startedAt: iso()};
+    }, 'reset-started', {attempt});
+    const enter = async (/** @type {string} */ next, /** @type {Service | undefined} */ service) => {
+      phase = next; affected = service?.id ?? null;
+      await store.update(c => {
+        if (c.reset) Object.assign(c.reset, {phase, service: affected});
+        if (service) serviceOf(c, service.id).state = 'resetting';
+      }, 'reset-phase', {attempt, phase, service: affected});
+    };
+    const reseed = async (/** @type {Service} */ service, /** @type {string[]} */ inputs) => {
+      const {code, result} = await invoke(service, ['scenario', service.runId ?? '', service.scenario, ...inputs], io);
+      await store.update(c => {
+        const row = serviceOf(c, service.id);
+        row.state = result.state ?? (code === EXIT.ok ? 'running' : 'unknown');
+        row.failure = code === EXIT.ok ? null : {cause: result.cause ?? result.error ?? 'reset-failed', detail: result.detail ?? null};
+        if (result.cleanup) row.cleanup = result.cleanup;
+      }, 'reset-service', {attempt, service: service.id, ok: code === EXIT.ok});
+      if (code !== EXIT.ok) throw new ComposeFailure('service-reset-failed', 'the recorded adapter did not complete reseeding', service.id);
+      if (result.runId !== service.runId || result.state !== 'running' || result.url !== service.url
+        || JSON.stringify(Object.entries(result.endpoints ?? {}).sort()) !== JSON.stringify(Object.entries(service.endpoints ?? {}).sort())) {
+        throw new ComposeFailure('reset-identity-mismatch', 'reseed did not preserve the recorded run and endpoints', service.id);
+      }
+      service.state = 'running';
+    };
+    try {
+      await liveFeedIdentity(hub, pauseOptions);
+      await withPausedFeeds(paired, pauseOptions, async tickets => {
+        await store.update(c => { for (const consumer of paired) serviceOf(c, consumer.id).state = 'paused'; }, 'feeds-paused', {attempt});
+        await resetSourceIdentity(composition);
+        await liveFeedIdentity(hub, pauseOptions);
+        await enter('owner', hub);
+        await verifyPausedFeeds(tickets, pauseOptions);
+        const inputs = paired.flatMap(c => ['--input', `${c.id}-controller=${c.endpoints?.controller}`, '--input', `${c.id}-preview=${c.url}`]);
+        await reseed(hub, inputs);
+        for (const ticket of tickets) {
+          const consumer = serviceOf(composition, ticket.service.id);
+          await enter('consumer', consumer);
+          await releaseFeed(ticket, pauseOptions);
+          await reseed(consumer, ['--input', `hub-feed=${hub.url}`]);
+        }
+      });
+      await enter('readiness', undefined);
+      const current = await store.read();
+      const checks = await awaitReady(io.env, current, io.progress, options.readyTimeoutMs ?? 60000);
+      const value = await store.update(c => {
+        c.state = 'running'; c.readiness = {outcome: 'passed', checks, at: iso()};
+        if (c.reset) Object.assign(c.reset, {phase: 'complete', service: null, finishedAt: iso()});
+      }, 'reset-complete', {attempt});
+      return {code: EXIT.ok, value: {operation: 'reset', compositionId: id, state: value.state, reset: value.reset, services: value.services.map(publicService), readiness: value.readiness, card: card(value)}};
+    } catch (error) {
+      const failure = error instanceof ComposeFailure ? error : error instanceof FeedPauseError
+        ? new ComposeFailure('feed-pause-failed', error.message, error.service)
+        : new ComposeFailure('reset-failed', 'reset could not complete; inspect the recorded phase and stop the composition', affected);
+      const value = await store.update(c => {
+        c.state = 'reset-failed'; c.failure = {cause: failure.failure, detail: failure.detail, phase, service: failure.service ?? affected, at: iso()};
+        if (failure.checks) c.readiness = {outcome: 'failed', checks: failure.checks, at: iso()};
+        if (c.reset) Object.assign(c.reset, {phase, service: failure.service ?? affected, finishedAt: iso()});
+        // A wrapper failure without a result does not establish that the unit stopped.
+        if (affected && serviceOf(c, affected).state === 'resetting') serviceOf(c, affected).state = 'unknown';
+      }, 'reset-failed', {attempt, phase, service: failure.service ?? affected, cause: failure.failure});
+      return {code: EXIT.failed, value: {operation: 'reset', compositionId: id, state: value.state, failure: value.failure, reset: value.reset, services: value.services.map(publicService), readiness: value.readiness}};
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -923,7 +1065,7 @@ export function verdict(step, record) {
  * @param {number} [thawAfter] seconds after a freeze at which the user manager thaws the consumer even if this process died
  * @returns {Promise<Outcome>}
  */
-export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
+async function injectUnlocked(id, kind, serviceId, step, io, thawAfter = 120) {
   const kinds = INJECTION_STEPS[kind];
   if (!kinds) throw new UsageError(`inject supports ${Object.keys(INJECTION_STEPS).join(' and ')}`);
   const steps = kinds[serviceId];
@@ -1100,6 +1242,7 @@ const OPERATIONS = [
   'doctor [<composition-id>]',
   'capture <composition-id> <step>',
   'inject <composition-id> consumer-loss|second-owner <service> [--step <step>] [--thaw-after <seconds>]',
+  'reset <composition-id>',
   'handoff <composition-id>',
   'extend <composition-id> [--lease <minutes>]',
   'stop <composition-id>',
@@ -1203,6 +1346,10 @@ export async function runCompose(argv, options = {}) {
       case 'inject':
         arity(positional, 3, operation);
         outcome = await inject(positional[0], positional[1] ?? '', positional[2] ?? '', flags['--step'], io, thawAfter(flags['--thaw-after']));
+        break;
+      case 'reset':
+        arity(positional, 1, operation);
+        outcome = await reset(positional[0], io, {readyTimeoutMs: options.readyTimeoutMs});
         break;
       case 'handoff':
         arity(positional, 1, operation);

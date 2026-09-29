@@ -146,6 +146,8 @@ npm run -s verify:compose -- capture <composition-id> integrated-command
 npm run -s verify:compose -- capture <composition-id> one-owner
 npm run -s verify:compose -- inject <composition-id> consumer-loss pixoo
 npm run -s verify:compose -- handoff <composition-id>
+npm run -s verify:compose -- reset <composition-id>
+npm run -s verify:compose -- doctor <composition-id>
 npm run -s verify:compose -- stop <composition-id>
 ```
 
@@ -157,6 +159,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 
 | Step | UI entry | Driver action | Scenario | Expected observation |
 | --- | --- | --- | --- | --- |
+| `reset <id>` (aggregate command) | Hub, wall and Pixoo previews | After a lifecycle/command capture and handoff, reset twice | `integrated` + two `hub-paired` runs | Both feeds drain before owner reseed; pages stay responsive while paused; the initial state returns, including a lower owner revision; readiness passes on the same run ids/ports/tokens; frozen hashes stay unchanged |
 | `integrated-lifecycle` | Hub home and its Places Wall link, then the wall run's map and its B.U.N.N.Y. link, then the Pixoo run's Monitor tab, in one page; each link opens a new tab | Post `session.started` and `question.continuing` for a new session through the Hub's ingest route; click the Places Wall link, then the wall's B.U.N.N.Y. link | `integrated` | The Hub card shows the session and "Question · continuing". Both consumers follow the owner. The Places Wall tab is answered 200 and lists the session as `question`. The wall lists the session as `question` on a Line. Its B.U.N.N.Y. link leads to the paired Hub, and its tab is answered 200 and shows the dashboard signed in with the session. The Pixoo Monitor lists it. No link on the three pages targets an installed port. Neither writer received a command |
 | `integrated-command` | `pixel` Brightness slider, then `wall` Layout style | Set brightness; switch the layout style | `integrated` | Queued or Sent. Exactly one `brightness.set` at the Pixoo writer. The wall's writer applies exactly one integration setting, with the physical outcome unknown. Nothing else reaches either writer |
 | `one-owner` | The Pixoo run's Monitor tab | Post a session to the Hub; post another straight to the Pixoo run with the controller credential the Hub holds | `integrated` | The direct event is not accepted. The Pixoo follows the owner with exactly the Hub's sessions. Its Monitor lists the Hub's session and not the direct one |
@@ -229,6 +232,18 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   orchestrator, not the real consumers; the local
   cross-repository run in [development](../../../docs/development.md#app-verification-and-preview-runs)
   does. Without a user manager it skips, like `runs.test.mjs`.
+- `feed-pause.test.mjs` holds one acknowledgment and rejects stale identities,
+  unsafe controls, missing drain evidence and expired leases without authorizing
+  owner reset. The held-ack regression also fails under a deliberate early-reset
+  mutation.
+- `reset.test.mjs` checks aggregate contention, incomplete-phase diagnosis,
+  dead-holder cleanup, orphan adapter descendants and a late runner whose parent
+  already died. These checks need no user manager.
+- The aggregate reset cases in `compose.test.mjs` use real user units. They
+  reset twice after frozen captures, hold the owner seed to read the paused
+  consumer pages/controllers, fail each phase and interrupt an active seed.
+  They check lower revision recovery, stable identities and tokens, frozen
+  hashes, truthful failure and owner-first cleanup.
 - `lock.test.mjs` races eight processes for the composition lock
   ([`lock.mjs`](lock.mjs)) while some die holding it: no two live holders
   are ever inside at once, and a dead holder's lock is broken. It needs no

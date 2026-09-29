@@ -6,6 +6,7 @@
 // Every run uses private roots, and each test stops only what it created.
 // Without a user manager these tests skip with the reason.
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
 import {mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile} from 'node:fs/promises';
@@ -166,7 +167,7 @@ test('a pin mismatch or a dirty checkout fails identity-mismatch before anything
     const adapters = await w.run('start', '--manifest', w.manifest, '--checkout', `nanoleaf=${w.nanoleaf.checkout}`, '--checkout', `pixoo=${w.pixoo.checkout}`, '--unpinned');
     assert.equal(adapters.code, 1);
     assert.equal(adapters.result.error, 'identity-mismatch');
-    assert.match(adapters.result.detail, /^nanoleaf: core 1\.1\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
+    assert.match(adapters.result.detail, /^nanoleaf: core 1\.2\.0, pinned 1\.0\.0; pixoo: no scenario no-such-scenario/);
     assert.equal(existsSync(join(w.base, 'p')) && (await readdir(join(w.base, 'p'))).length > 0, false, 'no composition or proof was created');
     assert.equal(existsSync(join(w.base, 's')), false, 'no runtime directory was created');
     assert.equal(w.units(), '', 'no unit was started');
@@ -695,3 +696,125 @@ process.exitCode = r.status ?? 3;
     }
   });
 }
+
+// #557 reset: real user-unit ordering with small consumer stand-ins. The
+// accepted real consumers are qualified separately by the documented recipe.
+const hubWithSeedFaults = [process.execPath, 'apps/hub/verify/tests/fixture-hub-reset.mjs'];
+const waitFor = async (read, predicate, detail, timeout = 15000) => {
+  for (const deadline = Date.now() + timeout; ;) {
+    const value = await read();
+    if (predicate(value)) return value;
+    if (Date.now() >= deadline) throw new Error(detail);
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+};
+const resetControl = (w, service, mode) => writeFile(join(w.base, 's', service.runId, 'fixture-reset.json'), JSON.stringify({mode}), {mode: 0o600});
+async function proofBytes(c) {
+  const entries = [];
+  for (const service of c.services) for (const path of await files(join(service.proofDir, 'verified'))) {
+    entries.push([path, createHash('sha256').update(await readFile(path)).digest('hex')]);
+  }
+  return Object.fromEntries(entries);
+}
+async function ownerSnapshot(w, hub) {
+  const token = (await readFile(join(w.base, 's', hub.runId, 'data/api-token'), 'utf8')).trim();
+  const response = await fetch(new URL('/api/monitor/v1/sessions', hub.url), {headers: {authorization: `Bearer ${token}`, 'x-pixoo-request': '1'}});
+  assert.equal(response.status, 200);
+  return (await response.json()).snapshot;
+}
+const stableRuns = c => c.services.map(s => ({id: s.id, runId: s.runId, url: s.url, endpoints: s.endpoints, proofDir: s.proofDir}));
+async function assertStopped(w, id) {
+  const stopped = await w.run('stop', id);
+  assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
+  assert.equal(stopped.result.cleanup.result, 'clean');
+  assert.deepEqual(stopped.result.cleanup.services.map(s => s.id), ['hub', 'pixoo', 'nanoleaf']);
+  for (const s of (await w.composition(id)).services) assert.equal(existsSync(join(w.base, 's', s.runId)), false);
+}
+
+test('aggregate reset waits for drains, keeps consumers responsive, accepts a lower owner revision and preserves frozen proof twice', {skip, timeout: 180000}, async () => {
+  const w = await world({hubRun: hubWithSeedFaults});
+  try {
+    const started = await w.start(); assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId, initial = await w.composition(id), hub = initial.services.find(s => s.id === 'hub');
+    const initialSnapshot = await ownerSnapshot(w, hub), identities = stableRuns(initial), tokens = await pairingTokens(w, initial);
+    const changed = await w.run('capture', id, 'integrated-lifecycle'); assert.equal(changed.code, 0, JSON.stringify(changed.result));
+    const before = await ownerSnapshot(w, hub); assert.ok(before.revision > initialSnapshot.revision);
+    assert.equal((await w.run('handoff', id)).code, 0);
+    const proof = await proofBytes(initial);
+    await resetControl(w, hub, 'hold');
+    const resetting = w.run('reset', id); resetting.catch(() => {});
+    await waitFor(() => w.composition(id), c => c.reset?.phase === 'owner', 'owner phase not reached');
+    await waitFor(() => readFile(join(w.base, 's', hub.runId, 'fixture-reset-entered')).then(() => true, () => false), Boolean, 'owner seed did not enter');
+    for (const s of initial.services.filter(s => s.role === 'consumer')) {
+      assert.equal((await fetch(s.url)).status, 200, `${s.id} preview responds while owner is stopped`);
+      const token = (await readFile(join(w.base, 's', s.runId, 'hub-controller-token'), 'utf8')).trim();
+      assert.equal((await fetch(new URL('controller/v1/snapshot', s.endpoints.controller), {headers: {authorization: `Bearer ${token}`}})).status, 200, `${s.id} controller responds`);
+      const request = JSON.parse(await readFile(join(w.base, 's', s.runId, 'feed-pause.request'), 'utf8'));
+      const ack = JSON.parse(await readFile(join(w.base, 's', s.runId, 'feed-pause.ack'), 'utf8'));
+      assert.equal(ack.nonce, request.nonce); assert.equal(ack.runId, s.runId); assert.ok(ack.pid > 0);
+      assert.equal(existsSync(join(w.base, 's', s.runId, 'feed-pause.release')), false);
+    }
+    await resetControl(w, hub, 'continue');
+    const first = await resetting; assert.equal(first.code, 0, JSON.stringify(first.result));
+    const after = await ownerSnapshot(w, hub); assert.equal(after.revision, initialSnapshot.revision); assert.ok(after.revision < before.revision);
+    assert.deepEqual(after.sessions, initialSnapshot.sessions);
+    for (const turn of [1, 2]) {
+      if (turn === 2) { const result = await w.run('reset', id); assert.equal(result.code, 0, JSON.stringify(result.result)); }
+      const c = await w.composition(id);
+      assert.equal(c.state, 'running'); assert.equal(c.reset.phase, 'complete');
+      assert.equal(c.readiness.outcome, 'passed'); assert.ok(c.readiness.checks.every(check => check.outcome === 'passed'));
+      assert.deepEqual(stableRuns(c), identities); assert.ok(JSON.stringify(await pairingTokens(w, c)) === JSON.stringify(tokens), 'pairing tokens changed');
+      assert.deepEqual(await proofBytes(c), proof);
+      for (const s of c.services) for (const name of ['request', 'ack', 'release']) assert.equal(existsSync(join(w.base, 's', s.runId, `feed-pause.${name}`)), false);
+    }
+    const phases = (await w.events(id)).filter(e => e.event === 'reset-phase').map(e => [e.phase, e.service]);
+    assert.deepEqual(phases, [...Array(2)].flatMap(() => [['owner', 'hub'], ['consumer', 'nanoleaf'], ['consumer', 'pixoo'], ['readiness', null]]));
+    await assertStopped(w, id); assert.deepEqual(await proofBytes(initial), proof);
+  } finally { await w.close(); }
+});
+
+for (const [phase, serviceId, mode] of [['pause', 'pixoo', 'hold-ack'], ['owner', 'hub', 'fail'], ['consumer', 'nanoleaf', 'fail'], ['consumer', 'pixoo', 'fail'], ['readiness', 'pixoo', 'no-feed']]) {
+  test(`aggregate reset failure in ${phase}/${serviceId} preserves evidence and remains stoppable`, {skip, timeout: 120000}, async () => {
+    const w = await world({hubRun: hubWithSeedFaults});
+    try {
+      const started = await w.start(); assert.equal(started.code, 0, JSON.stringify(started.result));
+      const id = started.result.compositionId, initial = await w.composition(id), target = initial.services.find(s => s.id === serviceId);
+      assert.equal((await w.run('handoff', id)).code, 0);
+      const proof = await proofBytes(initial);
+      await resetControl(w, target, mode);
+      const {reset} = await import('../compose.mjs');
+      const failed = await reset(id, {env: w.env, progress: () => {}}, {pauseTimeoutMs: 1500, readyTimeoutMs: 2000});
+      assert.equal(failed.code, 1, JSON.stringify(failed.value));
+      const c = await w.composition(id);
+      assert.equal(c.state, 'reset-failed'); assert.equal(c.failure.phase, phase);
+      if (phase !== 'readiness') assert.equal(c.failure.service, serviceId);
+      assert.notEqual(c.readiness?.outcome, 'passed'); assert.deepEqual(await proofBytes(c), proof);
+      if (phase === 'pause') assert.equal((await w.events(id)).some(e => e.event === 'reset-service'), false, 'owner never reseeded');
+      if (phase === 'owner' || phase === 'pause') for (const s of initial.services.filter(s => s.role === 'consumer')) assert.equal(existsSync(join(w.base, 's', s.runId, 'feed-pause.release')), false);
+      if (phase === 'owner' || phase === 'consumer') assert.equal(c.services.find(s => s.id === serviceId).state, 'stopped', 'failed seed reports the core cleanup result');
+      const replacement = await w.start('--restarts', id); assert.equal(replacement.code, 2); assert.equal(replacement.result.error, 'usage'); assert.match(replacement.result.detail, /clean stop/);
+      await assertStopped(w, id); assert.deepEqual(await proofBytes(initial), proof);
+    } finally { await w.close(); }
+  });
+}
+
+test('aggregate reset interrupted during owner reseed can diagnose and stop without a late relaunch', {skip, timeout: 120000}, async () => {
+  const w = await world({hubRun: hubWithSeedFaults}); let child;
+  try {
+    const started = await w.start(); assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId, c = await w.composition(id), hub = c.services.find(s => s.id === 'hub');
+    await resetControl(w, hub, 'hold');
+    child = spawn(process.execPath, [compose, 'reset', id], {cwd: root, env: w.env, stdio: 'ignore', detached: true});
+    await waitFor(() => readFile(join(w.base, 's', hub.runId, 'fixture-reset-entered')).then(() => true, () => false), Boolean, 'owner seed did not enter');
+    const exited = new Promise(resolve => child.once('exit', resolve)); process.kill(-child.pid, 'SIGKILL'); await exited;
+    const doctor = await w.run('doctor', id); assert.equal(doctor.code, 1);
+    assert.equal(doctor.result.state, 'resetting'); assert.equal(doctor.result.reset.phase, 'owner'); assert.equal(doctor.result.reset.service, 'hub');
+    assert.equal(doctor.result.readiness, null);
+    await assertStopped(w, id);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    for (const service of c.services) {
+      const state = spawnSync('systemctl', ['--user', 'show', `app-verify-${service.runId}.service`, '-p', 'ActiveState', '--value'], {encoding: 'utf8'}).stdout.trim();
+      assert.ok(['', 'inactive', 'failed'].includes(state), `${service.id} relaunched: ${state}`);
+    }
+  } finally { child?.kill('SIGKILL'); await w.close(); }
+});

@@ -597,6 +597,7 @@ npm run -s verify:compose -- start --checkout nanoleaf=<abs> --checkout pixoo=<a
 npm run -s verify:compose -- doctor [<composition-id>]
 npm run -s verify:compose -- capture <composition-id> <step>
 npm run -s verify:compose -- inject <composition-id> consumer-loss|second-owner pixoo [--step <step>] [--thaw-after <seconds>]
+npm run -s verify:compose -- reset <composition-id>
 npm run -s verify:compose -- handoff <composition-id>
 npm run -s verify:compose -- extend <composition-id> [--lease <minutes>]
 npm run -s verify:compose -- stop <composition-id>
@@ -668,7 +669,7 @@ serve a run's first seed: the runtime directory does not exist before
 seed by design. To restart a composition, stop it and start a new one with
 `--restarts <old id>`. The new record names the old one and says
 `same-candidate` or `different-candidate`, as the core's `restart` does, and
-a composition that is still running must be stopped first. A `start` killed
+the old composition must have `state: stopped` and `cleanup.result: clean` first, including after a failed start or reset. A `start` killed
 midway leaves `state: starting`, and `stop` removes the runs it recorded.
 
 A failure at any step stops only the runs the composition recorded, Hub
@@ -692,6 +693,7 @@ Examples of causes:
   version, scenario, run id, state, URL, endpoints, proof directory, expiry,
   failure and cleanup;
 - readiness checks, captures and injections;
+- the latest reset attempt, phase, affected service and start/finish times;
 - the composition's own failure and cleanup.
 
 The composition id is `compose-<UTC start>-<6 hex>`. The record never holds a
@@ -710,9 +712,9 @@ and `stop` need.
   would reseed the owner out of `integrated`, and the loss and second-owner
   steps need `inject`.
 - `handoff <id>` freezes each run's verified set and prints one card with the
-  three links. It never resets a run, because a reseeded Hub would restart
-  its agent state under the consumers. An aggregate reset is
-  [#557](https://github.com/jimmie-potts/agent-device-hub/issues/557).
+  three links. Use the separate `reset <id>` operation for an aggregate reset.
+- `reset <id>` returns the three runs to their paired starting state using
+  the ordered pause and reseed described below.
 - `extend <id>` extends all three leases.
 - `stop <id>` stops the Hub first, then the consumers. It thaws a frozen unit
   first and continues past a service it cannot stop. When a run's wrapper
@@ -724,6 +726,44 @@ and `stop` need.
   from what the pin check saw, because its checkout changed during `start`,
   fails a pinned start with `identity-mismatch` and marks an unpinned
   composition's service unpinned.
+
+### Reset and interrupted operations
+
+`reset <id>` requires the unchanged, clean recorded checkouts and a running
+composition. It records `resetting` and clears earlier readiness before effects.
+It writes a fresh private pause request for each consumer, then waits up to
+15 seconds for both feeds to drain. Requests and acknowledgments name the run
+and operation nonce; acknowledgments must also match the live unit's PID,
+process start, receipt and current lease. An existing, unsafe, stale or invalid
+control fails closed. The consumer pages and local controllers stay available.
+
+Once both pauses are verified, compose reseeds the Hub's `integrated` scenario
+with its recorded pairing inputs. After owner success, it writes one matching
+release and reseeds that consumer `hub-paired`, then does the same for the other.
+Only each consumer's stopped-process seed may consume its controls. The old
+process never resumes against the new owner's lower revision. Completion
+requires the ordinary composition readiness checks to pass again. Run ids,
+ports, pairing tokens, leases and frozen proof remain unchanged; reset does not
+extend a lease or freeze new captures. Use `handoff` to freeze captures first.
+
+A failure records `reset-failed`, the phase (`pause`, `owner`, `consumer` or
+`readiness`), the service where known, and each returned service state. A
+consumer awaiting drain is `pause-pending`; a verified drained consumer is
+`paused`; an interrupted reseed remains `resetting` or `unknown` until diagnosed
+or stopped. Remaining pauses stay in place. `doctor` exposes an incomplete reset
+without treating old readiness as current. Use `stop <id>` to clean every run
+owner-first before starting a replacement; do not remove controls to resume an
+unreseeded process.
+
+Operations on one composition serialize, including doctor's live probes.
+Contention waits up to 10 seconds, then reports `composition-locked` for retry.
+A wrapper runs behind a second lock held by its runner. If compose exits, that
+runner terminates the wrapper's process group before releasing its lock; a
+runner scheduled after its parent died never starts the wrapper. A later
+operation drains that barrier before probing or cleaning. An unkillable process
+keeps cleanup blocked rather than permitting a competing reseed. This protects
+ordinary aggregate operations and compose interruption; it does not coordinate
+direct per-run commands or hostile same-user process/control replacement.
 
 ### Cross-service proof and loss
 

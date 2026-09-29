@@ -1189,6 +1189,15 @@ removes the timer and service after an interrupted injection.
 `apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command
 ordering without a manager; it does not replace those real-unit cases.
 
+Hub #557 adds portable pause/identity and operation-interruption checks in
+`feed-pause.test.mjs` and `reset.test.mjs`, covered by the same CI test glob and
+verify type check. Its additional `compose.test.mjs` cases cover reset success,
+each failed phase and interrupted owner reseeding with real user units. Run
+those with `APP_VERIFY_REQUIRE_SYSTEMD=1` on the owner host; a skipped case is
+not qualification. The recorded qualification also retains the actual failing
+held-ack mutation and orphan-adapter regression, so the checks can detect the
+unsafe behavior they protect against.
+
 The cross-repository check with the real consumers runs locally from this
 worktree after `npm run build`:
 
@@ -1202,7 +1211,11 @@ worktree after `npm run build`:
 2. Run `start` with both `--checkout` paths, then
    `capture <id> integrated-lifecycle`, `capture <id> integrated-command`,
    `capture <id> one-owner`, `inject <id> consumer-loss pixoo`,
-   `handoff <id>` and `stop <id>`.
+   `handoff <id>`, `reset <id>`, `doctor <id>`, another `reset <id>` and
+   `stop <id>`. After each reset, require current feeds at the initial owner
+   revision, unchanged run ids/ports/pairing tokens and frozen proof hashes.
+   Read all three pages to confirm the changed session and device settings have
+   returned to their seeded state.
 3. Run the controls in a separate composition, so they never freeze or
    reseed the Pixoo of a preview already handed to the owner; otherwise run
    them after `handoff`:
@@ -1215,6 +1228,14 @@ worktree after `npm run build`:
 
    `compose` exits 0 only for a held control and records the expected
    assertion. A control that exits 1 did not hold, whatever its reason.
+
+For the reset qualification, `node apps/hub/verify/tests/qualify-reset.mjs
+<nanoleaf-checkout> <pixoo-checkout> <new-evidence-directory>` automates the
+three captures, handoff, two resets, page screenshots, feed/identity/token/hash
+checks and owner-first stop. Use a short disk-backed `TMPDIR` outside Git and
+run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
+must all pass; screenshots alone are not a pass. This driver uses disposable
+runs and the manifest pins, and preserves evidence after cleanup.
 
 The delivery evidence records the composition id, its `composition.json`,
 each run's verified set and the consumer revisions. Only the delivery
