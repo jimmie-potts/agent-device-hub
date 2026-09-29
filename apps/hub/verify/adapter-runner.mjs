@@ -27,9 +27,15 @@ async function groupAlive(group) {
 }
 const pause = (/** @type {number} */ ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-/** @param {{directory: string, parent: number, started: string, timeoutMs: number, argv: string[]}} config */
+/** @param {string} service */
+export function adapterLock(service) {
+  if (typeof service !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(service)) throw new Error('invalid adapter service identity');
+  return `.adapter-${service}.lock`;
+}
+
+/** @param {{directory: string, service: string, parent: number, started: string, timeoutMs: number, argv: string[]}} config */
 export async function runAdapter(config) {
-  return new DirectoryLock(config.directory, '.adapter.lock').run(async () => {
+  return new DirectoryLock(config.directory, adapterLock(config.service)).run(async () => {
     // Check inside the barrier: a runner scheduled after recovery must not start.
     if (await processIdentity(config.parent) !== config.started) return 1;
     const [program, ...args] = config.argv;

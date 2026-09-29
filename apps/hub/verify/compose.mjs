@@ -29,7 +29,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {PAIRING, pause} from './integrated.mjs';
-import {processIdentity} from './adapter-runner.mjs';
+import {adapterLock, processIdentity} from './adapter-runner.mjs';
 import {DirectoryLock, LockedError} from './lock.mjs';
 import {currentLease, thawWithLease} from './safety-thaw.mjs';
 import {FeedPauseError, liveFeedIdentity, releaseFeed, verifyPausedFeeds, withPausedFeeds} from './feed-pause.mjs';
@@ -162,7 +162,7 @@ export function invoke(service, args, {env, progress, onLine, timeoutMs = 20 * 6
   return new Promise((resolvePromise, reject) => {
     const [program, ...rest] = service.run;
     const context = operationContext.getStore();
-    const guarded = context ? [ADAPTER_RUNNER, '--run-adapter', JSON.stringify({...context, timeoutMs, argv: [program, ...rest, ...args]})] : null;
+    const guarded = context ? [ADAPTER_RUNNER, '--run-adapter', JSON.stringify({...context, service: service.id, timeoutMs, argv: [program, ...rest, ...args]})] : null;
     const child = spawn(guarded ? process.execPath : program ?? '', guarded ?? [...rest, ...args], {cwd: service.checkout, env, detached: Boolean(guarded), stdio: ['ignore', 'pipe', 'pipe']});
     let stdout = '', pending = '';
     // The runner owns the timeout while it holds the barrier. Killing that
@@ -263,12 +263,19 @@ async function loadComposition(env, id, hubRoot) {
   return {store, composition: await store.read()};
 }
 
-/** @template T @param {Store} store @param {() => Promise<T>} work @returns {Promise<T>} */
-async function exclusive(store, work) {
+/** @template T @param {Store} store @param {() => Promise<T>} work @param {string[]} [initialServices] @returns {Promise<T>} */
+async function exclusive(store, work, initialServices) {
   try {
     return await new DirectoryLock(store.dir, '.operation.lock').run(async stillHeld => {
-      // Recovery waits for any orphan runner to stop its adapter group first.
+      const services = initialServices ?? (await store.read()).services.map(s => s.id);
+      if (!services.length || new Set(services).size !== services.length || services.some(id => typeof id !== 'string' || !SERVICE_ID.test(id))) {
+        throw new ComposeFailure('composition-locked', 'recorded adapter service identities are invalid');
+      }
+      // Drain the old shared barrier too, for a runner started before this
+      // revision. Sibling services can run together inside one operation, but
+      // recovery waits for every service's orphan adapter group to stop.
       await new DirectoryLock(store.dir, '.adapter.lock').run(async () => {});
+      await Promise.all(services.map(id => new DirectoryLock(store.dir, adapterLock(id)).run(async () => {})));
       const started = await processIdentity(process.pid);
       if (!started) throw new ComposeFailure('composition-locked', 'operation process identity is unavailable');
       const result = await operationContext.run({directory: store.dir, parent: process.pid, started}, work);
@@ -695,7 +702,7 @@ async function startUnlocked(options, io) {
     if (error instanceof UsageError) throw error;
     return failWith(error);
   }
-  });
+  }, services.map(s => s.id));
 }
 
 // ---------------------------------------------------------------------------

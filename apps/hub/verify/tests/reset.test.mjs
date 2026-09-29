@@ -7,7 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import {DirectoryLock} from '../lock.mjs';
-import {processIdentity} from '../adapter-runner.mjs';
+import {processIdentity, runAdapter} from '../adapter-runner.mjs';
 import {createServer} from 'node:http';
 import {awaitReady, runCompose} from '../compose.mjs';
 
@@ -23,6 +23,63 @@ test('reset resolves a composition and reports a missing one without creating a 
   assert.equal(lines.length, 1);
   assert.equal(lines[0].operation, 'reset');
   assert.equal(lines[0].error, 'unknown-composition');
+});
+
+test('a capture can wait for a sibling consumer adapter within one aggregate operation', {timeout: 10000}, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'compose-siblings-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const armed = join(directory, 'armed'), released = join(directory, 'released');
+  const context = {directory, parent: process.pid, started: await processIdentity(process.pid), timeoutMs: 1500};
+  const capture = runAdapter({...context, service: 'hub', argv: [process.execPath, '--input-type=module', '-e', `
+    import {writeFileSync, existsSync} from 'node:fs';
+    writeFileSync(process.argv[1], 'capture waiting');
+    const poll = setInterval(() => { if (existsSync(process.argv[2])) { clearInterval(poll); console.log('{}'); } }, 10);
+  `, armed, released]});
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (const deadline = Date.now() + 1000; ;) {
+    try { await readFile(armed); break; } catch (error) { if (error.code !== 'ENOENT' || Date.now() > deadline) throw error; await delay(10); }
+  }
+  const scenario = runAdapter({...context, service: 'pixoo', argv: [process.execPath, '-e', "require('fs').writeFileSync(process.argv[1], 'scenario finished'); console.log('{}')", released]});
+  assert.deepEqual(await Promise.all([capture, scenario]), [0, 0], 'the consumer must answer before the waiting capture times out');
+});
+
+test('recovery drains every service adapter before changing the composition', {timeout: 10000}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'compose-drain-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const id = 'compose-20260929T120000Z-abcdef', directory = join(root, id);
+  await mkdir(directory);
+  const record = {id, state: 'resetting', services: ['nanoleaf', 'pixoo', 'hub'].map(id => ({id, role: id === 'hub' ? 'owner' : 'consumer', runId: null}))};
+  await writeFile(join(directory, 'composition.json'), JSON.stringify(record));
+  const context = {directory, parent: process.pid, started: await processIdentity(process.pid), timeoutMs: 5000};
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const waitFile = async file => {
+    for (const deadline = Date.now() + 2000; ;) {
+      try { await readFile(file); return; } catch (error) { if (error.code !== 'ENOENT' || Date.now() > deadline) throw error; await delay(10); }
+    }
+  };
+  const services = ['hub', 'pixoo'];
+  const adapters = services.map(service => runAdapter({...context, service, argv: [process.execPath, '--input-type=module', '-e', `
+    import {writeFileSync, existsSync} from 'node:fs';
+    writeFileSync(process.argv[1], 'entered');
+    const poll = setInterval(() => { if (existsSync(process.argv[2])) clearInterval(poll); }, 10);
+  `, join(directory, service + '.entered'), join(directory, service + '.release')]}));
+  let stopping;
+  try {
+    await Promise.all(services.map(service => waitFile(join(directory, service + '.entered'))));
+    const lines = []; let finished = false;
+    stopping = runCompose(['stop', id], {env: {...process.env, APP_VERIFY_PROOF_ROOT: root}, stdout: line => lines.push(JSON.parse(line)), stderr: () => {}}).finally(() => { finished = true; });
+    await waitFile(join(directory, '.operation.lock', 'holder'));
+    await writeFile(join(directory, 'hub.release'), 'release'); await adapters[0];
+    await delay(100);
+    assert.equal(finished, false, 'the other service barrier must still block cleanup');
+    assert.deepEqual(JSON.parse(await readFile(join(directory, 'composition.json'), 'utf8')), record);
+    await writeFile(join(directory, 'pixoo.release'), 'release'); await adapters[1];
+    assert.equal(await stopping, 0); assert.equal(lines[0].cleanup.result, 'clean');
+  } finally {
+    await Promise.all(services.map(service => writeFile(join(directory, service + '.release'), 'release')));
+    await Promise.all(adapters);
+    await stopping;
+  }
 });
 
 
@@ -100,8 +157,8 @@ test('an adapter runner delayed behind recovery never starts for its dead parent
   const started = await processIdentity(parent.pid);
   assert.ok(started);
   const marker = join(root, 'late'); let runner, ended;
-  await new DirectoryLock(root, '.adapter.lock').run(async () => {
-    const config = {directory: root, parent: parent.pid, started, timeoutMs: 3000,
+  await new DirectoryLock(root, '.adapter-hub.lock').run(async () => {
+    const config = {directory: root, service: 'hub', parent: parent.pid, started, timeoutMs: 3000,
       argv: [process.execPath, '-e', "require('fs').writeFileSync(process.argv[1], 'started')", marker]};
     runner = spawn(process.execPath, [fileURLToPath(new URL('../adapter-runner.mjs', import.meta.url)), '--run-adapter', JSON.stringify(config)], {stdio: 'ignore'});
     ended = once(runner, 'exit');

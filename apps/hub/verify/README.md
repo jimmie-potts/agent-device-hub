@@ -238,12 +238,16 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   mutation.
 - `reset.test.mjs` checks aggregate contention, incomplete-phase diagnosis,
   dead-holder cleanup, orphan adapter descendants and a late runner whose parent
-  already died. These checks need no user manager.
+  already died. It also verifies that sibling adapters can answer a waiting
+  capture and that recovery drains every service barrier. These checks need no
+  user manager.
 - The aggregate reset cases in `compose.test.mjs` use real user units. They
-  reset twice after frozen captures, hold the owner seed to read the paused
+  reset twice after a frozen `one-owner` capture, hold the owner seed to read the paused
   consumer pages/controllers, fail each phase and interrupt an active seed.
   They check lower revision recovery, stable identities and tokens, frozen
-  hashes, truthful failure and owner-first cleanup.
+  hashes, truthful failure and owner-first cleanup. The real-consumer driver
+  separately covers `integrated-lifecycle`, including the real Wall's task markup
+  and cross-app links that the stand-ins do not implement.
 - `lock.test.mjs` races eight processes for the composition lock
   ([`lock.mjs`](lock.mjs)) while some die holding it: no two live holders
   are ever inside at once, and a dead holder's lock is broken. It needs no

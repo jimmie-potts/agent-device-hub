@@ -757,10 +757,12 @@ unreseeded process.
 
 Operations on one composition serialize, including doctor's live probes.
 Contention waits up to 10 seconds, then reports `composition-locked` for retry.
-A wrapper runs behind a second lock held by its runner. If compose exits, that
+A wrapper runs behind a service-specific lock held by its runner. Sibling
+services within one aggregate command can run together, so a waiting Hub capture
+does not prevent its Pixoo injection from answering. If compose exits, each
 runner terminates the wrapper's process group before releasing its lock; a
 runner scheduled after its parent died never starts the wrapper. A later
-operation drains that barrier before probing or cleaning. An unkillable process
+operation drains every service barrier before probing or cleaning. An unkillable process
 keeps cleanup blocked rather than permitting a competing reseed. This protects
 ordinary aggregate operations and compose interruption; it does not coordinate
 direct per-run commands or hostile same-user process/control replacement.

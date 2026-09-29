@@ -737,7 +737,9 @@ test('aggregate reset waits for drains, keeps consumers responsive, accepts a lo
     const started = await w.start(); assert.equal(started.code, 0, JSON.stringify(started.result));
     const id = started.result.compositionId, initial = await w.composition(id), hub = initial.services.find(s => s.id === 'hub');
     const initialSnapshot = await ownerSnapshot(w, hub), identities = stableRuns(initial), tokens = await pairingTokens(w, initial);
-    const changed = await w.run('capture', id, 'integrated-lifecycle'); assert.equal(changed.code, 0, JSON.stringify(changed.result));
+    // The stand-ins support one-owner; integrated-lifecycle requires the real
+    // Wall's task markup and cross-app links, covered by qualify-reset.mjs.
+    const changed = await w.run('capture', id, 'one-owner'); assert.equal(changed.code, 0, JSON.stringify(changed.result));
     const before = await ownerSnapshot(w, hub); assert.ok(before.revision > initialSnapshot.revision);
     assert.equal((await w.run('handoff', id)).code, 0);
     const proof = await proofBytes(initial);
