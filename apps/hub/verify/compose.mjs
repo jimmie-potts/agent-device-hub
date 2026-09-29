@@ -657,12 +657,6 @@ async function freezerState(unit) {
   return Object.fromEntries(output.trim().split('\n').filter(Boolean).map(line => line.split('=')));
 }
 
-/** @param {string} unit */
-async function thaw(unit) {
-  await run('systemctl', ['--user', 'thaw', unit]).catch(() => undefined);
-  return (await freezerState(unit)).FreezerState;
-}
-
 /** The safety thaw of a run: a transient timer, owned by the user manager, that thaws its unit if nobody else does. @param {Service} service */
 const safetyThaw = service => `app-verify-${service.runId}-thaw`;
 const SAFETY_THAW = fileURLToPath(new URL('safety-thaw.mjs', import.meta.url));
@@ -729,8 +723,14 @@ async function stopRuns(store, env, progress, {reason}) {
     // A run left frozen by an interrupted loss injection is thawed first, so its unit stops cleanly.
     const unit = unitOf(service);
     if ((await freezerState(unit)).FreezerState === 'frozen') {
-      const after = await thaw(unit);
-      progress(`${store.id}: thawed ${unit} before stopping it (${after})`);
+      try {
+        const after = await thawWithLease(service.runId, receiptPath(service));
+        progress(`${store.id}: recovered ${unit} before adapter stop (${after.stopped ? 'stopped' : 'running with lease'})`);
+      } catch {
+        // The adapter and exact-name fallback still get a cleanup attempt.
+        // Keep the safety timer armed until unit removal is verified.
+        progress(`${store.id}: recovery of ${unit} could not be verified; attempting adapter stop`);
+      }
     }
     try {
       const {code, result} = await invoke(service, ['stop', service.runId], {env, progress});

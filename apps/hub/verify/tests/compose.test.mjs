@@ -592,12 +592,12 @@ test('a per-run lease shortened outside compose is checked before freeze', {skip
   }
 });
 
-for (const mode of ['prompt-stop', 'expired-safety-thaw', 'expired-step-thaw', 'early-safety-thaw']) {
+for (const mode of ['prompt-stop', 'expired-safety-thaw', 'expired-step-thaw', 'early-safety-thaw', 'expired-stop-stall']) {
   test(`an interrupted loss handles ${mode} without an unleased unit or thaw timer`, {skip, timeout: 300000}, async () => {
     // A small handshake driver avoids browser timing: these cases test the
     // orchestrator and real manager, not the already-covered capture assertions.
     const w = await world({hubRun: [process.execPath, 'scripts/verify.mjs']});
-    let orchestrator;
+    let orchestrator, stopper;
     try {
       const started = await w.start();
       assert.equal(started.code, 0, JSON.stringify(started.result));
@@ -647,10 +647,26 @@ process.exitCode = r.status ?? 3;
         await until(() => Date.now() > expiry + 1500);
         assert.equal(property(unit, 'FreezerState'), 'frozen');
       }
-      if (mode === 'prompt-stop' || mode === 'expired-safety-thaw') {
+      if (mode === 'prompt-stop' || mode === 'expired-safety-thaw' || mode === 'expired-stop-stall') {
         process.kill(-orchestrator.pid, 'SIGKILL');
         await exit;
         if (mode === 'expired-safety-thaw') await until(() => ['inactive', 'failed'].includes(property(unit, 'ActiveState')), 90000);
+        if (mode === 'expired-stop-stall') {
+          const entry = join(w.pixoo.checkout, 'scripts/verify.mjs');
+          const original = await readFile(entry, 'utf8');
+          const marker = join(w.base, 'stop-entered');
+          await writeFile(entry, `if (process.argv[2] === 'stop') { (await import('node:fs')).writeFileSync(${JSON.stringify(marker)}, 'entered'); await new Promise(() => setInterval(() => {}, 1000)); }\n` + original);
+          try {
+            stopper = spawn(process.execPath, [compose, 'stop', id], {cwd:root, env:w.env, stdio:'ignore', detached:true});
+            const stopped = new Promise(resolve => stopper.on('close', resolve));
+            await until(() => existsSync(marker));
+            assert.ok(['inactive', 'failed'].includes(property(unit, 'ActiveState')), 'expired consumer stopped before its wrapper can stall');
+            process.kill(-stopper.pid, 'SIGKILL');
+            await stopped;
+          } finally {
+            await writeFile(entry, original);
+          }
+        }
       } else {
         if (mode === 'early-safety-thaw') {
           // Start the actual timer service early, independently of the step.
@@ -670,6 +686,7 @@ process.exitCode = r.status ?? 3;
       }
     } finally {
       if (orchestrator?.pid) { try { process.kill(-orchestrator.pid, 'SIGKILL'); } catch {} }
+      if (stopper?.pid) { try { process.kill(-stopper.pid, 'SIGKILL'); } catch {} }
       await w.close();
     }
   });

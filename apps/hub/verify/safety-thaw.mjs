@@ -68,7 +68,10 @@ export async function thawWithLease(runId, receiptPath, ctl = control) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     await thawWithLease(process.argv[2] ?? '', process.argv[3] ?? '');
-  } catch {
+  } catch (error) {
+    const known = ['invalid owned run id', 'owned unit did not reach a safe state after thaw'];
+    const detail = error instanceof Error && known.includes(error.message) ? error.message : 'systemd query failed';
+    process.stderr.write(`app-verify safety thaw failed: ${detail}\n`);
     process.exitCode = 1;
   }
 }
