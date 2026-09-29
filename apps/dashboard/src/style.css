@@ -161,8 +161,13 @@ input[type=range]{padding:0;height:36px;accent-color:var(--accent)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* Independent columns keep the session list alongside compact controls. */
-.home-columns{display:grid;grid-template-columns:minmax(280px,2fr) minmax(0,3fr);gap:var(--space-m);align-items:start}
+.home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(240px,1fr);gap:var(--space-m);align-items:start}
 .home-devices,.home-sessions{display:grid;gap:var(--space-m);min-width:0}
+.home-devices{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr))}
+.home-devices .widget-head{flex-wrap:wrap}
+.home-devices .widget-head h2{flex-shrink:0}
+.home-sessions .filters{grid-template-columns:1fr}
+@media(min-width:1280px){.home-devices{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .home-status{display:flex;align-items:center;gap:var(--space-m);flex-wrap:wrap;font-size:var(--type-small);color:var(--muted-dense)}
 .device-glance{display:flex;gap:var(--space-m);align-items:center;justify-content:space-between;margin-bottom:var(--space-s)}
 .brightness-readout{display:flex;align-items:center;gap:var(--space-xs);font-size:var(--type-label)}
@@ -182,7 +187,6 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 .info-popover{position:absolute;right:0;top:100%;padding:var(--space-s) var(--space-m);width:280px;max-width:calc(100vw - 40px);background:var(--panel);border:1px solid var(--edge-strong);border-radius:var(--radius);color:var(--text);font-size:var(--type-small);line-height:1.5;overflow-wrap:anywhere;z-index:20}
 .tip-line{display:block}
 .device-glance .info-popover{right:auto;left:0}
-@media(max-width:1050px){.home-columns{grid-template-columns:minmax(240px,2fr) minmax(0,3fr)}.home-columns .filters{grid-template-columns:1fr}}
 @media(max-width:800px){.home-columns{display:flex;flex-direction:column}.home-sessions{order:-1;width:100%}.home-devices{width:100%}.session-head{flex-wrap:wrap}.home-status{gap:var(--space-s)}}
 
 .home-sessions>.widget{grid-column:1/-1}
