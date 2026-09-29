@@ -85,7 +85,7 @@ TRACKS = [
         dict(id='n-local', x=0, label='Local + Codex milestones', issues=[], guide='local-acceptance'),
         dict(id='n-codex', x=1, label='UI foundation delivered', issues=['H181', 'H182'], guide='bunny-controls', main=True),
         dict(id='n-controls', x=2, label='Alias fix · setup docs done', issues=['H247', 'H244', 'H245', 'H232', 'P67', 'N91'], guide='bunny-controls', main=True),
-        dict(id='n-music', x=3, label='Sonos done · later music', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H36', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
+        dict(id='n-music', x=3, label='Sonos done · later music', issues=['H233', 'H242', 'H37', 'H38', 'H39', 'H229', 'H571', 'H178', 'H40', 'H41', 'H35'], guide='controls-music', main=True),
         dict(id='n-assistant', x=4, label='Assistant + access', issues=['H45', 'H46', 'H47', 'H48'], guide='assistant-access', main=True),
     ]),
     ('B.U.N.N.Y. shell', [
@@ -133,7 +133,7 @@ TRACKS = [
         dict(id='n-hub-start', x=0, label='Hub start · 6 controllers', issues=['H357'], guide='assistant-access'),
     ]),
     ('Hub moments', [
-        dict(id='n-moments-send', x=0, label='Send moments · sources', issues=['H335', 'H293', 'H298', 'H352'], guide='assistant-access'),
+        dict(id='n-moments-send', x=0, label='1.1 reads · moment sender', issues=['H576', 'H335', 'H293', 'H298', 'H352'], guide='assistant-access'),
         dict(id='n-moments-rules', x=1, label='Rules + interrupt set', issues=['H358'], guide='assistant-access'),
         dict(id='n-moments-routines', x=3, label='Routines · automation UI', issues=['H359', 'H360', 'H369'], guide='assistant-access'),
     ]),
@@ -300,7 +300,7 @@ TRACKS = [
     ]),
     ('Hosting + migrations', [
         dict(id='n-host-keepalive', x=1, label='Keep-alive · stops · status', issues=['H356', 'H361', 'H403'], guide='hosting-migrations'),
-        dict(id='n-host', x=2, label='Linux server · ARM64 check', issues=['H44', 'P14'], guide='hosting-migrations'),
+        dict(id='n-host', x=2, label='Mac mini · ARM64 check', issues=['H44', 'P14'], guide='hosting-migrations'),
         dict(id='n-host-src', x=4, label='Source consolidation', issues=['H25', 'H26'], guide='hosting-migrations'),
     ]),
     ('Development workflow', [
@@ -384,7 +384,7 @@ TRACKS = [
         dict(id='n-guide-places', x=0, label='Places · polish · installed', issues=['H278', 'N189', 'H279', 'H313'], guide='work-guide'),
     ]),
     ('Guide automatic refresh', [
-        dict(id='n-guide-refresh', x=3, label='Manual refresh baseline', issues=[], guide='development-workflow'),
+        dict(id='n-guide-refresh', x=3, label='Nightly refresh delivered', issues=[], guide='development-workflow'),
     ]),
     ('Guide cleanup + clipboard check', [
         dict(id='n-guide-clipboard', x=0, label='Clipboard check completed', issues=[], guide='development-workflow'),

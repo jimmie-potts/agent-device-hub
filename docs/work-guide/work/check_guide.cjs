@@ -427,7 +427,8 @@ assert(executablePath,'Set GUIDE_CHROMIUM_PATH to an installed Chromium executab
      assert.deepEqual(Object.keys(staticSurfaces).sort(),Object.keys(staticLabels).sort(),'Every recommendation entry carries a work-surface badge');
      for(const [key,[surface,text]] of Object.entries(staticSurfaces)){const expected=recs[key].work_surface||null;
        assert.equal(surface,expected||'none',`${key} snapshot surface attribute`);assert.equal(decode(text),expected||'Not classified',`${key} snapshot surface text`);}
-     const renderedSurfaces=await page.locator('.surface-badge').evaluateAll(es=>es.map(e=>[e.dataset.key,e.dataset.surface,e.textContent]));
+     // The brief's unkeyed badge is checked below; only story badges belong to this snapshot comparison.
+     const renderedSurfaces=await page.locator('.surface-badge[data-key]').evaluateAll(es=>es.map(e=>[e.dataset.key,e.dataset.surface,e.textContent]));
      assert(renderedSurfaces.length>=liveTotal,'Topic rows and opening cards carry a work-surface badge');
      for(const [key,surface,text] of renderedSurfaces){const expected=(recs[key]||{}).work_surface||null;
        assert.equal(surface,expected||'none',`${key} live surface attribute`);assert.equal(text,expected||'Not classified',`${key} live surface text`);}
