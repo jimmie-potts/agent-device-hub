@@ -816,6 +816,12 @@ and `widgets.test.mjs` run under `npm run test:dashboard`; the browser suite
 adds the first-screen, width-reach, route, alias-collision, unknown-address and
 1,280 px height checks, and the matrix and local-controllers suites address
 navigation links and open the Details disclosure where a fact moved behind it.
+Hub #444 extends the existing Dashboard browser and CI check with six registered
+components. Their full widget bounds must fit the first screen at the owner's
+2,133 × 1,200 viewport, 1,440 × 900 and 1,280 × 720; merely starting in view
+is insufficient. The check also looks for text overlap at all three desktop
+sizes and keeps the 390 px Home check. It uses disposable Hub and fake-controller
+fixtures and contacts no physical device.
 The owner's design decision on the candidate removes the Apply buttons: the
 suites drive a select, slider, text field or Power button directly, a matrix
 scenario checks the home widget's quick actions, the shared lock and running

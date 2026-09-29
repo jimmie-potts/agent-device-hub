@@ -27,7 +27,7 @@ an ID, a name, a description, its sizes, its source kind (a registered
 controller alias, a hub route or a read-only external source from
 [#287](https://github.com/jimmie-potts/agent-device-hub/issues/287)), the reads
 it needs and whether it offers command actions. `homeLayout` is the developer
-placement: one `component-status` widget per registered component, with compact Mode and Power controls on the left and Sessions at the top right. The two columns grow independently. Sessions move first on narrow screens. Each session shows its title or label, project/provider and a named activity indicator; parent/child evidence, read evidence and label editing sit behind Details. Attention and retained notices stay visible. Empty attention occupies one line. Collector diagnostics move to a small feed indicator and remain on Connections. Status tooltips open on hover, focus or touch and dismiss with Escape or lost focus; their content is informational, with actions kept in Details. Known brightness uses a meter and numeric value; unknown values never become percentages.
+placement: one `component-status` widget per registered component, with compact Mode and Power controls in rows on the left and Sessions at the top right. The two columns grow independently. Six registered components fit fully in the first screen at the owner's 2,133 × 1,200 viewport and at 1,440 × 900 and 1,280 × 720. Sessions move first on narrow screens. Each session shows its title or label, project/provider and a named activity indicator; parent/child evidence, read evidence and label editing sit behind Details. Attention and retained notices stay visible. Empty attention occupies one line. Collector diagnostics move to a small feed indicator and remain on Connections. Status tooltips open on hover, focus or touch and dismiss with Escape or lost focus; their content is informational, with actions kept in Details. Known brightness uses a meter and numeric value; unknown values never become percentages.
 [#366](https://github.com/jimmie-potts/agent-device-hub/issues/366) makes
 placement the owner's; graph widgets
 ([#283](https://github.com/jimmie-potts/agent-device-hub/issues/283)) and the
@@ -434,8 +434,9 @@ credential, phone width and automated accessibility. `tests/layout.mjs` fails
 any visited view whose text blocks overlap, ignoring the content of closed
 disclosures, and measures how far a view's controls reach across the main
 column; the browser, Pixoo, wall and synthetic views use it too. The Hub #277
-checks in `tests/browser.mjs` assert that every component widget, its quick
-actions and the sessions widget start in the first screen at 1440 px, that the home, wall and
+checks in `tests/browser.mjs` assert that all six component widgets fit fully in
+the first screen at 2,133 × 1,200, 1,440 × 900 and 1,280 × 720, that their quick actions and
+the sessions widget start there, that the home, wall and
 pixel controls reach at least 70% of the main column, that the Connections
 cards sit side by side, that the wall and pixel pages are under 2,000 px tall at
 1280 px, and that routes, the back button, the alias collision and an unknown
