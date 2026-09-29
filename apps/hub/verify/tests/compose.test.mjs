@@ -279,7 +279,7 @@ test('a composition pairs three runs, is ready across the boundaries, survives a
     const stopped = await w.run('stop', id);
     assert.equal(stopped.code, 0, JSON.stringify(stopped.result));
     assert.deepEqual(stopped.result.cleanup.services.map(s => [s.id, s.result]), [['hub', 'clean'], ['pixoo', 'clean'], ['nanoleaf', 'clean']]);
-    assert.match(w.outputs.at(-1), /thawed app-verify-.+ before stopping it/);
+    assert.ok(w.outputs.at(-1).includes(`recovered ${pixooUnit} before adapter stop (running with lease)`), 'stop verified recovery of the frozen consumer before calling its adapter');
     const stops = (await w.events(id)).filter(e => e.event === 'service-stopped').map(e => e.service);
     assert.deepEqual(stops, ['hub', 'pixoo', 'nanoleaf'], 'the Hub stops first, then the consumers');
     for (const s of c.services) assert.equal(existsSync(join(w.base, 's', s.runId)), false, `${s.id} runtime directory removed`);
@@ -672,6 +672,10 @@ process.exitCode = r.status ?? 3;
           // Start the actual timer service early, independently of the step.
           const early = spawnSync('systemctl', ['--user', 'start', `${thawBase}.service`], {encoding: 'utf8'});
           assert.equal(early.status, 0, early.stderr);
+          // Starting the service acknowledges launch, not completion. Establish
+          // the early thaw before asking the step to thaw the same consumer.
+          await until(() => property(unit, 'FreezerState') === 'running');
+          assert.equal(property(unit, 'ActiveState'), 'active', 'early safety thaw preserves the consumer with a valid lease');
         }
         await writeFile(requestFile, JSON.stringify({service:'pixoo', phase:'thaw', seq:2}));
         assert.equal(await exit, 1, stdout);
