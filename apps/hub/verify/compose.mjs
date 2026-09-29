@@ -400,6 +400,12 @@ async function pairingChecks(env, composition) {
     const devices = Object.fromEntries((health.body?.devices ?? []).map((/** @type {{id: string, health: string}} */ d) => [d.id, d.health]));
     const expected = consumers(composition).map(c => aliasOf(c.id));
     add('hub-devices-current', health.status === 200 && expected.every(alias => devices[alias] === 'ready'), `health ${health.status}, devices ${JSON.stringify(devices)}`);
+    if (health.status === 200) {
+      for (const consumer of consumers(composition)) {
+        const alias = aliasOf(consumer.id);
+        add(`hub-health-${consumer.id}`, devices[alias] === 'ready', `the Hub's ${alias} health is ${devices[alias] ?? 'missing'}`);
+      }
+    }
   } catch (error) {
     add('hub-devices-current', false, `health unreadable (${/** @type {Error} */ (error).name})`);
   }
@@ -451,10 +457,11 @@ export async function awaitReady(env, composition, progress, timeoutMs) {
     if (Date.now() > deadline) {
       const failing = checks.filter(c => c.outcome !== 'passed');
       // Preserve a known failing service without guessing one when several
-      // boundaries fail. Aggregate health alone does not identify a service.
+      // boundaries fail. Per-device health is attributed only from a successful
+      // health response; an unreadable aggregate response names no consumer.
       const implicated = new Set(failing.flatMap(check => {
         if (check.id === 'hub-owner') return [owner(composition).id];
-        return composition.services.filter(s => [s.id + '-run', s.id + '-feed-current', 'hub-reads-' + s.id].includes(check.id)).map(s => s.id);
+        return composition.services.filter(s => [s.id + '-run', s.id + '-feed-current', 'hub-reads-' + s.id, 'hub-health-' + s.id].includes(check.id)).map(s => s.id);
       }));
       const service = implicated.size === 1 ? [...implicated][0] : null;
       const failure = new ComposeFailure('readiness-timeout', `not ready within ${Math.round(timeoutMs / 1000)} s: ${failing.map(c => `${c.id}: ${c.detail}`).join('; ')}`, service);

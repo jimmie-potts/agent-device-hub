@@ -119,22 +119,34 @@ test('readiness timeout names the sole failing consumer without inventing one fo
   await mkdir(join(root, 'hub-test', 'data'), {recursive: true});
   await writeFile(join(root, 'hub-test', 'data/api-token'), 'synthetic-read-token');
   let wallCurrent = true;
+  let pixelCurrent = false;
+  let wallHealth = 'ready';
+  let pixelHealth = 'ready';
+  let healthStatus = 200;
   const server = createServer((req, res) => {
     const body = req.url === '/api/monitor/v1/sessions' ? {snapshot: {revision: 7, sessions: []}}
-      : req.url === '/api/hub/v1/health' ? {devices: [{id: 'wall', health: 'ready'}, {id: 'pixel', health: 'ready'}]}
+      : req.url === '/api/hub/v1/health' ? {devices: [{id: 'wall', health: wallHealth}, {id: 'pixel', health: pixelHealth}]}
       : req.url === '/verify/state' ? {apiVersion: 'wall-verify/1', feed: {connection: wallCurrent ? 'current' : 'stale', ownerId: 'verify-owner', revision: 7, source: 'shared'}, integration: {applied: 0, queued: 0, failed: 0}}
-      : req.url === '/api/integration/v1/sessions' ? {connection: 'unavailable', ownerId: 'verify-owner', snapshot: null}
+      : req.url === '/api/integration/v1/sessions' ? {connection: pixelCurrent ? 'current' : 'unavailable', ownerId: 'verify-owner', snapshot: pixelCurrent ? {revision: 7, sessions: []} : null}
       : req.url === '/api/device/simulator' ? {mode: 'simulator', writer: {setBrightness: {admitted: 0}}} : {};
-    res.writeHead(200, {'content-type': 'application/json'}); res.end(JSON.stringify(body));
+    res.writeHead(req.url === '/api/hub/v1/health' ? healthStatus : 200, {'content-type': 'application/json'}); res.end(JSON.stringify(body));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
   const url = `http://127.0.0.1:${server.address().port}/`;
   const composition = {services: [{id: 'hub', role: 'owner', runId: 'hub-test', url}, {id: 'nanoleaf', role: 'consumer', url}, {id: 'pixoo', role: 'consumer', url}]};
-  const inspect = expected => assert.rejects(awaitReady({APP_VERIFY_STATE_ROOT: root}, composition, () => {}, 0), error => {
+  const inspect = (expected, failedCheck) => assert.rejects(awaitReady({APP_VERIFY_STATE_ROOT: root}, composition, () => {}, 0), error => {
     assert.equal(error.failure, 'readiness-timeout'); assert.equal(error.service, expected);
-    assert.ok(error.checks.some(check => check.id === 'pixoo-feed-current' && check.outcome === 'failed')); return true;
+    assert.ok(error.checks.some(check => check.id === failedCheck && check.outcome === 'failed')); return true;
   });
-  await inspect('pixoo');
-  wallCurrent = false; await inspect(null);
+  await inspect('pixoo', 'pixoo-feed-current');
+  wallCurrent = false; await inspect(null, 'pixoo-feed-current');
+  // Snapshot reads and both feeds succeed; only the later health read reports
+  // one failed controller. The failure must retain that consumer's identity.
+  wallCurrent = pixelCurrent = true; pixelHealth = 'unavailable';
+  await inspect('pixoo', 'hub-devices-current');
+  wallHealth = 'unavailable'; await inspect(null, 'hub-devices-current');
+  pixelHealth = 'ready'; await inspect('nanoleaf', 'hub-devices-current');
+  // A failed health response is not trustworthy per-device evidence.
+  healthStatus = 503; await inspect(null, 'hub-devices-current');
 });
