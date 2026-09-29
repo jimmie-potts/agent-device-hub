@@ -25,7 +25,7 @@
 #31 [CLOSED] Define agent-independent device controls after Codex integration acceptance
 #32 [CLOSED] Deliver Codex-first shared monitoring and integration controls
 #35 [OPEN] Track future personal assistant, music and hosting work
-#36 [OPEN] Defer Windows Apple Music as an optional playback source
+#36 [CLOSED] Defer Windows Apple Music as an optional playback source
 #37 [CLOSED] Add now-playing and music controls to the shared UI and Codex tools
 #38 [CLOSED] Show Apple Music now-playing cards on Pixoo and Tidbyt
 #39 [OPEN] Add song-change lighting effects and qualify Nanoleaf music scenes
@@ -33,9 +33,9 @@
 #41 [OPEN] Qualify audio capture and music visualizers for lights and displays
 #42 [CLOSED] Package and qualify the hub for always-on Docker hosting on the PC
 #43 [CLOSED] Adopt the Nanoleaf Linux runtime and update architecture documentation
-#44 [OPEN] Plan dedicated server hardware and migration from the PC
+#44 [OPEN] Host the runtime on a Mac mini and plan the migration from the PC
 #45 [OPEN] Run approved event rules and scheduled routines independently of conversation
-#46 [OPEN] Add a conversational assistant using shared device and automation tools
+#46 [OPEN] Add B.U.N.N.Y. conversation and device tools through the LangGraph assistant
 #47 [OPEN] Add phone access with tap-to-talk after local delivery
 #48 [OPEN] Explore ambient and wearable voice access after phone tap-to-talk
 #49 [CLOSED] Explore personal-service connectors beyond device control
@@ -160,7 +160,6 @@
 #308 [CLOSED] Show recommended creative and expansion stories in a guide Ideas section
 #309 [OPEN] Delete merged delivery branches on merge and prune the ones left behind
 #310 [OPEN] Record the 2026-09-25 delivery gotchas in the development and SDLC docs
-#311 [CLOSED] Reconcile story text made stale by the 2026-09-25 deliveries
 #312 [CLOSED] Qualify Claude Code and Codex CLI session ends on the installed Hub 0.3.5
 #313 [OPEN] Show installed revisions beside merged ones in the work guide
 #314 [OPEN] Produce a daily cross-session closeout digest
@@ -196,7 +195,7 @@
 #352 [OPEN] Add an email event source for message-arrived moments
 #353 [OPEN] Show Pixoo media and playlist previews on the B.U.N.N.Y. Pixoo page
 #355 [CLOSED] Port the wall map's Prism renderer into the dashboard as shared device art
-#356 [OPEN] Start the WSL runtime at boot with linger, an idle timeout and one scheduled task
+#356 [CLOSED] Start the WSL runtime at boot with linger, an idle timeout and one scheduled task
 #357 [CLOSED] Keep the hub starting when its MCP tool catalog grows past the response limit
 #358 [OPEN] Store event rules and the interrupt set, and arbitrate the moments they trigger
 #359 [OPEN] Run weekly scheduled routines through typed device commands with content-mode preconditions
@@ -261,6 +260,7 @@
 #445 [OPEN] Undo the last device change from its card
 #446 [OPEN] Show observation freshness as the Eyes badge on every widget and card
 #449 [OPEN] Show the public guide's edition and last verified publication receipt
+#450 [CLOSED] Keep LIFX status paints out of lighting.pending so the lighting snapshot stays valid
 #455 [OPEN] Repaint LIFX and Tidbyt status on each hub change notice
 #456 [OPEN] Clear Claude Code approval attention once the prompt is answered
 #457 [OPEN] Show what automatic status is painting on the LIFX page
@@ -286,3 +286,86 @@
 #483 [OPEN] Add two Wemo Mini F7C063 plugs to B.U.N.N.Y. after local qualification
 #484 [OPEN] Qualify Galaxy Lamps GPUS projector integration
 #485 [OPEN] Qualify BlissLights Sky Lite 2.0 Bluetooth integration
+#487 [OPEN] Retry transient issue-inventory drift in nightly guide refresh
+#488 [OPEN] PStack adoption: verifiable app previews and evidence-driven workflows
+#489 [OPEN] PStack phase 1: define the preview interface and prove it with Hub
+#490 [OPEN] PStack phase 2: add Nanoleaf, Pixoo and a combined app preview
+#491 [OPEN] PStack phase 3: use experiments and caller-first design in shared workflows
+#492 [OPEN] PStack phase 4: maintain verification, qualify adoption and measure outcomes
+#493 [CLOSED] Define the app verification interface and test preview lifecycle feasibility
+#494 [CLOSED] Add a reusable Hub verification driver with saved proof and preview handoff
+#495 [CLOSED] Add an integrated Hub–Nanoleaf–Pixoo verification preview
+#496 [CLOSED] Add a read-only delivery preflight for current evidence and pending gates
+#497 [CLOSED] Qualify app verification and preview handoff on the owner’s Windows/WSL hosts
+#498 [OPEN] Epic: Build B.U.N.N.Y.’s personal assistant on LangGraph
+#499 [OPEN] Add the LangGraph personal-agent runtime with resumable tasks
+#500 [OPEN] Add local voice conversation to the LangGraph assistant
+#501 [OPEN] Add inspectable personal preferences and memory to B.U.N.N.Y.
+#502 [OPEN] Delegate bounded coding tasks from B.U.N.N.Y. to Codex and Claude
+#503 [OPEN] Add scoped local computer actions for the B.U.N.N.Y. assistant
+#504 [OPEN] Evaluate the LangGraph assistant with bounded B.U.N.N.Y. scenarios
+#505 [OPEN] Report native B.U.N.N.Y. assistant tasks through shared agent state
+#506 [OPEN] Qualify B.U.N.N.Y. model portability with a hosted and an open-weight model
+#507 [OPEN] Retrieve owner-selected personal knowledge through authorized B.U.N.N.Y. tools
+#508 [OPEN] Install and verify the first B.U.N.N.Y. assistant daily-use workflow
+#509 [OPEN] Epic: Build Ask the guide with Jev-composed cards and sub-guides
+#510 [OPEN] Freeze Ask the guide evaluation cases and acceptance measures
+#511 [OPEN] Render reusable issue cards and sub-guide objects from guide records
+#512 [OPEN] Assemble a guide view from a typed request through Jev
+#513 [OPEN] Compose goal guides and explain prerequisites with the Pixoo GIF journey
+#514 [OPEN] Refine composed guides with follow-ups, pins and undo
+#515 [OPEN] Give composed guides B.U.N.N.Y. character and accessible motion
+#516 [OPEN] Evaluate and qualify the first Jev work-guide experience
+#517 [OPEN] Explore Jev-composed dashboard views as the widget catalog grows
+#518 [OPEN] Explore invoking composed guide and dashboard views from the LangGraph assistant
+#519 [OPEN] Explore semantic navigation, guided diagnosis and routine drafting with Jev
+#520 [OPEN] Explore Jev-composed views across personal information sources
+#521 [OPEN] Explore richer work selection and comparison in Ask the guide
+#522 [OPEN] Explore saved guide questions, change views and dashboard handoff
+#523 [OPEN] Explore authenticated Jev access from the published work guide
+#524 [OPEN] Explore Jev assistance for guide maintenance and new work discovery
+#525 [OPEN] Explore Jev checks that compare delivery claims with evidence
+#526 [OPEN] Explore Jev-assisted test gaps and test ordering
+#527 [OPEN] Explore Jev support for review focus, failure triage and context selection
+#528 [OPEN] Explore calibrated workflow evaluation and model-routing advice with Jev
+#529 [OPEN] Explore a Jev reaction audition panel with curated GIFs and personas
+#530 [OPEN] Explore Jev ranking within approved GIF and generated-art staging
+#531 [OPEN] Explore Jev-selected runtime moments and coordinated device looks
+#532 [OPEN] Explore an ambient B.U.N.N.Y. scene that reflects known system activity
+#533 [OPEN] Explore project emblems and evidence-backed milestone postcards
+#534 [OPEN] Explore question-driven architecture highlights and visual work journeys
+#535 [OPEN] Explore a semantic look gallery and restrained visual surprises
+#536 [CLOSED] Define outcome phases and Now/Next/Later portfolio planning rules
+#537 [CLOSED] Set up a cross-repository GitHub Project and seed the planning pilot
+#538 [OPEN] Maintain GitHub Project state during the B.U.N.N.Y. SDLC
+#539 [OPEN] Evaluate the portfolio pilot through delivery cycles and reassess phase priorities
+#540 [OPEN] Show a read-only portfolio board and phase map in the work guide
+#541 [OPEN] Epic: Adopt outcome-based phase planning with GitHub Projects
+#542 [OPEN] Adopt separate contract issues and a verifiable human approval gate
+#543 [OPEN] Contract: Define guide issue and sub-guide records
+#544 [OPEN] Contract: Define Ask the guide requests and query context
+#545 [OPEN] Contract: Define guide components and composed views
+#546 [OPEN] Contract: Define guide outcomes, failures and usage limits
+#547 [OPEN] Contract: Define Jev decision inputs and validated outputs
+#548 [OPEN] Contract: Define composed-guide state and follow-up transitions
+#549 [OPEN] Contract: Define guide evaluation cases and decision receipts
+#555 [OPEN] Close the remaining app-verify redaction edges
+#557 [OPEN] Reset a composed verification preview to its paired starting state
+#558 [OPEN] Space the advanced-editor hint below the Monitor card on device pages
+#559 [OPEN] Give an unbuilt verify wrapper a JSON result and hand off clickable proof links
+#560 [OPEN] Keep a composed consumer's lease and thaw record truthful around the safety thaw
+#561 [CLOSED] Links from other local apps into B.U.N.N.Y. are refused as Forbidden
+#563 [OPEN] Make the guide's B.U.N.N.Y. Local entry open or stop linking to a refused page
+#564 [OPEN] Decide whether a prefetched Hub page may sign in
+#565 [OPEN] Set up the Mac mini as the always-on runtime host
+#566 [OPEN] Reach the Mac-hosted runtime from the PC through an SSH tunnel
+#567 [OPEN] Push Codex Desktop read state from the PC to the Mac-hosted hub
+#568 [OPEN] Migrate the runtime from WSL to the Mac mini
+#569 [OPEN] Add a Messages event source on the Mac mini
+#570 [OPEN] Send a text from the Mac mini only after the owner approves the draft
+#571 [OPEN] Add the Mac mini's Music app as a playback source
+#572 [OPEN] Receive daily iPhone health summaries in the hub
+#573 [OPEN] Qualify Generation I Twinkly strings for local everyday control
+#574 [OPEN] Add qualified Twinkly everyday controls to B.U.N.N.Y.
+#575 [OPEN] Install and visibly verify Twinkly everyday controls
+#576 [OPEN] Read registered controllers at contract 1.1 with a 1.0 fallback

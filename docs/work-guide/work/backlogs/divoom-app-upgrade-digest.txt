@@ -1,7 +1,7 @@
 #11 [OPEN] Provide explicit authenticated HTTPS LAN access
 #12 [CLOSED] Validate local physical playback, recovery, and soak reliability
 #13 [OPEN] Let hub routines play a playlist or one rendition only while the Pixoo is in Media mode
-#14 [OPEN] Validate Docker and ARM64 always-on deployment
+#14 [OPEN] Validate the ARM64 Linux deployment on the Mac mini host
 #15 [OPEN] Plan playlist portability and UI convenience features
 #16 [OPEN] Investigate supported transition improvements
 #17 [OPEN] Connect ChatGPT to the local MCP server through a private tunnel
@@ -40,7 +40,7 @@
 #96 [OPEN] Expose the media catalog, playlist items and previews through the Pixoo integration extension
 #98 [CLOSED] Redesign the Pixoo monitor layout for readability and motion
 #102 [OPEN] Every monitor row is marked uncertain because hook sources never supply ordering evidence
-#106 [OPEN] Show session titles and project names on the Pixoo monitor
+#106 [CLOSED] Show session titles and project names on the Pixoo monitor
 #107 [OPEN] Cycle the Pixoo monitor through active and waiting sessions and summarize the rest
 #108 [OPEN] Show what the agent is asking on the Pixoo attention card
 #112 [OPEN] Characterize native SSE disconnect during registration and verify reservation release
@@ -48,3 +48,10 @@
 #114 [OPEN] Show the running Pixoo source revision in local Settings and diagnostics
 #115 [OPEN] Upgrade and roll back the Pixoo user service with one command under the install contract
 #117 [OPEN] Finish owned local branch and worktree cleanup with a verified outcome
+#118 [CLOSED] Add a Pixoo simulator verification adapter with media and Monitor proof
+#119 [OPEN] Show full values in the rendition Fit and Scaling selects at desktop width
+#120 [CLOSED] Add a hub-paired Pixoo verification scenario for the integrated preview
+#122 [OPEN] Keep the pager button label readable on hover
+#123 [OPEN] Close three small verification transport guard edges
+#125 [OPEN] Keep test-launched Pixoo servers and guarded listeners off installed ports
+#126 [OPEN] Name non-connection Hub feed failures and document the hub-sessions command rules

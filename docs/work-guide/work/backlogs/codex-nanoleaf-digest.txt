@@ -87,8 +87,15 @@
 #174 [CLOSED] Adopt device-mcp 1.0.1 so the MCP host keeps room for new tools
 #175 [OPEN] Change project colors and task projects from Codex through MCP
 #178 [OPEN] Expose each element's task status read-only on the integration route
+#179 [CLOSED] Use shared session titles and project names instead of local-only metadata
 #180 [OPEN] Say the hub dashboard now shows Panels controls in the controller guide
 #187 [OPEN] Install and verify the animation-control bundle on the approved Nanoleaf runtime
 #188 [OPEN] Check a saved animation against the current Lines layout before playing it
 #189 [CLOSED] Link the wall map header back to B.U.N.N.Y.
 #192 [OPEN] Finish owned local branch and worktree cleanup with a verified outcome
+#193 [CLOSED] Add a Nanoleaf verification adapter with wall proof and disposable previews
+#194 [CLOSED] Add a hub-paired wall verification scenario for the integrated preview
+#196 [OPEN] Widen the wall verification read-spacing margin and harden the rebinding guard
+#198 [OPEN] Test the paired page refusal at the handler and read the runtime directory from the receipt
+#199 [OPEN] Build the wall's B.U.N.N.Y. link from the page's own host name
+#200 [OPEN] Move the Nanoleaf installation to the Mac mini's Linux host
