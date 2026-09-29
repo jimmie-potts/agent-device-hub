@@ -200,8 +200,10 @@ wrapper runs under `fnm exec --using=.nvmrc`.
   - a Hub capture that dies mid-freeze: the consumer is thawed, the
     handshake cleared and a result printed with exit 3;
   - an orchestrator killed with its process group mid-freeze: the safety
-    thaw runs the consumer again within `--thaw-after`, so it can be
-    stopped;
+    thaw runs within `--thaw-after` (at least 60 s), stopping the consumer
+    if its current per-run lease has expired or cannot be verified;
+  - a consumer whose lease could end while frozen is never frozen
+    (`lease-too-short`);
   - a checkout that changes during `start` failing a pinned start;
   - a stop retried after one that could not stop a run;
   - extend, handoff, a unit left frozen in `doctor`, and stop with the Hub
@@ -229,3 +231,10 @@ The hub keeps a Unix socket at `<state root>/<run-id>/data/h/bunny-launch.sock`,
 which must stay under 108 bytes. The default state root,
 `~/.local/state/app-verify`, leaves room; a longer override fails the start
 with `hub-start-failed: socket-path-too-long`. The tests use a short root.
+
+The safety-thaw regression tests cover per-run leases changed outside the
+composition, expiry during a freeze, early safety thaw and removal of thaw
+timers after an interrupted injection. `safety-thaw.test.mjs` checks the
+receipt/timer decisions with a fake command boundary on every host;
+`compose.test.mjs` also requires a real user manager to verify freeze, expiry
+and cleanup. A skipped manager test is not evidence of that behavior.

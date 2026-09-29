@@ -1164,7 +1164,11 @@ Hub #495 composes one preview from the three adapters with
 tests (`apps/hub/verify/tests/compose.test.mjs`) run in
 `npm run test:hub:verify`. They use real user units with stand-in consumer
 adapters in disposable pinned Git checkouts and skip without a user manager,
-as on Depot's runner.
+as on Depot's runner. The safety-thaw cases also change a run's own lease
+without updating the composition, expire it during a freeze, and verify stop
+removes the timer and service after an interrupted injection.
+`apps/hub/verify/tests/safety-thaw.test.mjs` covers lease decisions and command
+ordering without a manager; it does not replace those real-unit cases.
 
 The cross-repository check with the real consumers runs locally from this
 worktree after `npm run build`:

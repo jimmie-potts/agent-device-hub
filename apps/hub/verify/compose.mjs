@@ -28,6 +28,7 @@ import {promisify} from 'node:util';
 import {consumerState, follows, sessionKey} from './consumers.mjs';
 import {PAIRING, pause} from './integrated.mjs';
 import {DirectoryLock, LockedError} from './lock.mjs';
+import {currentLease, thawWithLease} from './safety-thaw.mjs';
 import {CAPTURE_STEPS, CONTROLS, INJECTIONS} from './integrated-steps.mjs';
 
 const run = promisify(execFile);
@@ -656,31 +657,40 @@ async function freezerState(unit) {
   return Object.fromEntries(output.trim().split('\n').filter(Boolean).map(line => line.split('=')));
 }
 
-/** @param {string} unit */
-async function thaw(unit) {
-  await run('systemctl', ['--user', 'thaw', unit]).catch(() => undefined);
-  return (await freezerState(unit)).FreezerState;
-}
-
 /** The safety thaw of a run: a transient timer, owned by the user manager, that thaws its unit if nobody else does. @param {Service} service */
 const safetyThaw = service => `app-verify-${service.runId}-thaw`;
-const SYSTEMCTL = existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : '/bin/systemctl';
+const SAFETY_THAW = fileURLToPath(new URL('safety-thaw.mjs', import.meta.url));
+/** @param {Service} service */
+const receiptPath = service => join(service.proofDir ?? '', 'receipt.json');
+/** @param {Service} service @param {number} seconds */
+async function requireFreezeLease(service, seconds) {
+  const lease = await currentLease(service.runId ?? '', receiptPath(service));
+  const needed = (seconds + LOSS_STEP_SECONDS) * 1000;
+  if (!lease.valid || lease.expiry - Date.now() < needed) throw new ComposeFailure('lease-too-short', `${service.id}'s current lease ends at ${lease.expiresAt ?? 'an unverified time'}, within the ${Math.ceil(needed / 60000)} min a loss may take; extend the composition first`, service.id);
+  return lease;
+}
 
 /**
  * Arm the safety thaw before a freeze. systemd refuses to stop a frozen unit, so a unit left frozen by an
- * orchestrator that died would outlive its own lease; this timer thaws it after `seconds`, and the lease then works.
+ * orchestrator that died would outlive its own lease. The timer thaws and enforces the current per-run lease.
  * @param {Service} service @param {number} seconds
  */
 async function armSafetyThaw(service, seconds) {
   const name = safetyThaw(service);
-  await run('systemctl', ['--user', 'stop', `${name}.timer`]).catch(() => undefined);
-  const armed = await run('systemd-run', ['--user', `--unit=${name}`, '--collect', `--on-active=${seconds}s`, '--timer-property=AccuracySec=1s', `--description=app-verify safety thaw ${service.runId}`, SYSTEMCTL, '--user', 'thaw', unitOf(service)]).then(() => true, () => false);
+  if (!await disarmSafetyThaw(service)) return false;
+  const armed = await run('systemd-run', ['--user', `--unit=${name}`, '--collect', `--on-active=${seconds}s`, '--timer-property=AccuracySec=1s', `--description=app-verify safety thaw ${service.runId}`, process.execPath, SAFETY_THAW, service.runId ?? '', receiptPath(service)]).then(() => true, () => false);
   return armed && (await freezerState(`${name}.timer`)).ActiveState === 'active';
 }
 
 /** Disarm the safety thaw once the unit is running again. @param {Service} service */
 async function disarmSafetyThaw(service) {
-  await run('systemctl', ['--user', 'stop', `${safetyThaw(service)}.timer`]).catch(() => undefined);
+  const units = [`${safetyThaw(service)}.timer`, `${safetyThaw(service)}.service`];
+  for (const unit of units) await run('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
+  for (const unit of units) {
+    const state = await freezerState(unit);
+    if (state.LoadState !== 'not-found' && !['inactive', 'failed'].includes(state.ActiveState ?? '')) return false;
+  }
+  return true;
 }
 
 /**
@@ -690,7 +700,7 @@ async function disarmSafetyThaw(service) {
 async function stopByName(service) {
   const base = `app-verify-${service.runId}`;
   const listed = await run('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `${base}-lease*.timer`], {encoding: 'utf8'}).then(r => r.stdout, () => '');
-  const units = [...new Set([`${base}.service`, `${base}-lease.timer`, `${base}-thaw.timer`, ...listed.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(`${base}-lease`) && name.endsWith('.timer'))])];
+  const units = [...new Set([`${base}.service`, `${base}-lease.timer`, `${base}-thaw.timer`, `${base}-thaw.service`, ...listed.split('\n').map(line => line.trim().split(/\s+/)[0] ?? '').filter(name => name.startsWith(`${base}-lease`) && name.endsWith('.timer'))])];
   for (const unit of units) await run('systemctl', ['--user', 'stop', unit]).catch(() => undefined);
   const left = [];
   for (const unit of units) {
@@ -713,18 +723,32 @@ async function stopRuns(store, env, progress, {reason}) {
     // A run left frozen by an interrupted loss injection is thawed first, so its unit stops cleanly.
     const unit = unitOf(service);
     if ((await freezerState(unit)).FreezerState === 'frozen') {
-      const after = await thaw(unit);
-      progress(`${store.id}: thawed ${unit} before stopping it (${after})`);
+      try {
+        const after = await thawWithLease(service.runId, receiptPath(service));
+        progress(`${store.id}: recovered ${unit} before adapter stop (${after.stopped ? 'stopped' : 'running with lease'})`);
+      } catch {
+        // The adapter and exact-name fallback still get a cleanup attempt.
+        // Keep the safety timer armed until unit removal is verified.
+        progress(`${store.id}: recovery of ${unit} could not be verified; attempting adapter stop`);
+      }
     }
     try {
       const {code, result} = await invoke(service, ['stop', service.runId], {env, progress});
+      // Keep the safety net through the adapter stop: a crash after thaw must
+      // still enforce a lease that already fired while the unit was frozen.
+      const after = await freezerState(unit);
+      const disarmed = (after.LoadState === 'not-found' || ['inactive', 'failed'].includes(after.ActiveState ?? '')) && await disarmSafetyThaw(service);
       const cleanup = result.cleanup ?? null;
       const entry = {id: service.id, runId: service.runId, state: result.state ?? null, result: cleanup?.result ?? (code === EXIT.ok ? 'clean' : 'unknown'), ...(code === EXIT.ok ? {} : {detail: result.detail ?? result.error ?? `exit ${code}`})};
+      if (!disarmed) {
+        entry.result = 'unknown';
+        entry.detail = 'the safety thaw could not be verified stopped';
+      }
       results.push(entry);
       await store.update(c => {
         const s = serviceOf(c, service.id);
         s.state = result.state ?? s.state;
-        s.cleanup = cleanup ?? {result: entry.result};
+        s.cleanup = {...cleanup, result: entry.result, ...(entry.detail ? {detail: entry.detail} : {})};
       }, 'service-stopped', {service: service.id, runId: service.runId, state: result.state, cleanup: entry.result, reason});
     } catch (error) {
       // The wrapper cannot run: stop the run's exact unit and lease timers by name, as the core would. Its runtime
@@ -880,6 +904,8 @@ export async function extend(id, leaseMinutes, io) {
 
 /** @type {Record<string, Record<string, string[]>>} */
 const INJECTION_STEPS = INJECTIONS;
+/** The loss step's own budget in seconds (its capture timeout), which a lease must outlast with the safety thaw. */
+const LOSS_STEP_SECONDS = 180;
 
 /**
  * The verdict on a capture: a reference step must pass; a control must fail at its named assertion.
@@ -912,6 +938,11 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
   const unit = unitOf(target);
   const before = await freezerState(unit);
   if (before.ActiveState !== 'active' || before.FreezerState !== 'running') throw new ComposeFailure('run-not-running', `${unit} is ${before.ActiveState ?? 'unknown'}/${before.FreezerState ?? 'unknown'}`, serviceId);
+  // The lease stops its unit once; systemd refuses to stop a frozen unit, so a lease that ended inside the freeze would
+  // leave the consumer running with none. Freeze only a consumer whose lease outlasts the step and the safety thaw.
+  if (kind === 'consumer-loss') {
+    await requireFreezeLease(target, thawAfter);
+  }
   const directory = runtimeDir(io.env, hub);
   const requestFile = join(directory, PAIRING.files.inject.request), stateFile = join(directory, PAIRING.files.inject.state);
   await rm(requestFile, {force: true});
@@ -940,6 +971,12 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
       return answer('refused');
     }
     if (request.phase === 'freeze') {
+      try {
+        await requireFreezeLease(target, thawAfter);
+      } catch (error) {
+        problems.push(/** @type {Error} */ (error).message);
+        return answer('refused');
+      }
       if (!await armSafetyThaw(target, thawAfter)) {
         problems.push(`the safety thaw for ${unit} could not be armed, so it was not frozen`);
         return answer('refused');
@@ -954,8 +991,17 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
       return answer('frozen');
     }
     if (request.phase === 'thaw') {
-      const state = await thaw(unit);
-      if (state !== 'running') {
+      // Already running means the safety timer ended the loss before the step asked: its observations may be short.
+      const beforeThaw = await freezerState(unit);
+      const result = await thawWithLease(target.runId ?? '', receiptPath(target));
+      if (!result.leaseValid) problems.push('the consumer lease expired or could not be verified after thaw; its unit was stopped');
+      if (beforeThaw.FreezerState === 'running' || beforeThaw.ActiveState !== 'active') {
+        problems.push(`the safety thaw ran ${unit} before the step asked for the thaw; raise --thaw-after`);
+        await record({thawedAt: iso(), thawedBy: 'safety-timer'});
+        return answer(result.leaseValid ? 'thawed' : 'refused');
+      }
+      const state = result.freezerState;
+      if (!result.leaseValid || state !== 'running') {
         problems.push(`thaw left ${unit} ${state}`);
         return answer('refused');
       }
@@ -1001,12 +1047,18 @@ export async function inject(id, kind, serviceId, step, io, thawAfter = 120) {
     await capturing;
   } finally {
     // Always leave the consumer as the composition paired it.
-    if ((await freezerState(unit)).FreezerState !== 'running') {
-      const state = await thaw(unit);
-      await record({thawedAt: iso(), thawedBy: 'orchestrator'});
-      if (state !== 'running') problems.push(`the final thaw left ${unit} ${state}`);
+    if (kind === 'consumer-loss') {
+      const beforeFinal = await freezerState(unit);
+      try {
+        const result = await thawWithLease(target.runId ?? '', receiptPath(target));
+        if (beforeFinal.FreezerState === 'frozen') await record({thawedAt: iso(), thawedBy: 'orchestrator'});
+        if (!result.leaseValid) problems.push('the consumer lease expired or could not be verified after thaw; its unit was stopped');
+        if (!await disarmSafetyThaw(target)) problems.push('the safety thaw could not be verified stopped');
+      } catch (error) {
+        problems.push(/** @type {Error} */ (error).message);
+        // Keep the safety timer armed when thaw/stop could not be verified.
+      }
     }
-    if ((await freezerState(unit)).FreezerState === 'running') await disarmSafetyThaw(target);
     if (reseeded) {
       const {code, result} = await invoke(target, ['scenario', target.runId ?? '', target.scenario], {env: io.env, progress: io.progress}).catch(error => ({code: EXIT.failed, result: {error: /** @type {ComposeFailure} */ (error).failure ?? 'adapter-unavailable'}}));
       if (code === EXIT.ok) await record({restoredAt: iso()});
@@ -1104,7 +1156,8 @@ function lease(value) {
 function thawAfter(value) {
   if (value === undefined) return 120;
   const seconds = Number(value);
-  if (!/^\d+$/.test(value) || seconds < 10 || seconds > 600) throw new UsageError('--thaw-after takes whole seconds from 10 to 600');
+  // At least a minute: the loss step holds the freeze while it waits up to 20 s for the stale mark and sends one command.
+  if (!/^\d+$/.test(value) || seconds < 60 || seconds > 600) throw new UsageError('--thaw-after takes whole seconds from 60 to 600');
   return seconds;
 }
 
@@ -1186,4 +1239,3 @@ export async function runCompose(argv, options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   process.exitCode = await runCompose(process.argv.slice(2));
 }
-

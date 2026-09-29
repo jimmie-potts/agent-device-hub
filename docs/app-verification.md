@@ -754,16 +754,27 @@ second owner back), removes the files, records the injection and prints one
 result line; a capture that ended without a result exits 3.
 
 systemd 259 refuses to stop a frozen unit ("Cannot perform operation on
-frozen unit"), so a unit left frozen would outlive its own lease. Before
-each freeze the orchestrator therefore arms a safety thaw: a transient timer
-under the user manager, `app-verify-<run-id>-thaw.timer`, that thaws the unit
-after `--thaw-after` seconds (default 120). A freeze is refused when it
-cannot be armed. If the orchestrator itself dies mid-loss, for example with
-its terminal, the consumer is running again within that bound and its lease
-can stop it. `stop` thaws before stopping, and `doctor` reports a unit that
-is still frozen. On this PC (WSL 2, cgroup v2, systemd 259)
-both commands work: a frozen run keeps its unit and listener, but its
-process stops and answers nothing.
+frozen unit"), so its one-shot lease can fire without stopping it. Before
+each freeze the orchestrator arms a safety thaw: a transient timer under the
+user manager, `app-verify-<run-id>-thaw.timer`, that runs after
+`--thaw-after` seconds (60 to 600, default 120). A freeze is refused when
+that timer cannot be armed, or when the consumer's current per-run receipt
+and armed lease timer cannot verify enough time for the safety thaw plus
+the loss step's 180 s budget. This check runs both before injection and when
+the step requests the freeze. Extend the composition first if it is refused.
+
+A per-run lease can change independently of the composition, even during a
+freeze. Every thaw path therefore thaws first, then checks the current receipt
+and its named lease timer. If the lease expired or cannot be verified, it
+stops that exact owned unit and reads back the result. This also applies when
+the orchestrator dies and the safety timer performs the thaw. The receipt and
+runtime directory remain for the run's ordinary `stop` cleanup.
+
+If the safety timer thaws before the step requests it, the injection records
+`thawedBy: "safety-timer"` and fails; it cannot claim the step's full loss window.
+`stop` thaws before stopping and disarms each recorded run's safety thaw timer
+and service after the adapter stops the run. Unverified cleanup is never
+reported as clean. `doctor` reports a unit that is still frozen.
 
 The step asserts:
 
