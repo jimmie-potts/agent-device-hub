@@ -438,7 +438,7 @@ async function doctorChecks(env, composition, progress, states = {}) {
  * Wait until every pairing and run check passes, or report the last failing checks.
  * @param {Env} env @param {Composition} composition @param {Progress} progress @param {number} timeoutMs @returns {Promise<Check[]>}
  */
-async function awaitReady(env, composition, progress, timeoutMs) {
+export async function awaitReady(env, composition, progress, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   /** @type {Check[]} */
   let checks = [];
@@ -450,7 +450,14 @@ async function awaitReady(env, composition, progress, timeoutMs) {
     }
     if (Date.now() > deadline) {
       const failing = checks.filter(c => c.outcome !== 'passed');
-      const failure = new ComposeFailure('readiness-timeout', `not ready within ${Math.round(timeoutMs / 1000)} s: ${failing.map(c => `${c.id}: ${c.detail}`).join('; ')}`);
+      // Preserve a known failing service without guessing one when several
+      // boundaries fail. Aggregate health alone does not identify a service.
+      const implicated = new Set(failing.flatMap(check => {
+        if (check.id === 'hub-owner') return [owner(composition).id];
+        return composition.services.filter(s => [s.id + '-run', s.id + '-feed-current', 'hub-reads-' + s.id].includes(check.id)).map(s => s.id);
+      }));
+      const service = implicated.size === 1 ? [...implicated][0] : null;
+      const failure = new ComposeFailure('readiness-timeout', `not ready within ${Math.round(timeoutMs / 1000)} s: ${failing.map(c => `${c.id}: ${c.detail}`).join('; ')}`, service);
       failure.checks = checks;
       throw failure;
     }

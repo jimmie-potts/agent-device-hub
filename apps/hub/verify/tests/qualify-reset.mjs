@@ -130,6 +130,11 @@ try {
     }
     await compose('doctor', id); await pages(c, `reset-${turn}`, changedTitles);
   }
+  // Complete the maintained real-consumer recipe after freezing proof.
+  await compose('inject', id, 'consumer-loss', 'pixoo');
+  await compose('inject', id, 'consumer-loss', 'pixoo', '--step', 'control-replay-after-recovery');
+  await compose('inject', id, 'second-owner', 'pixoo');
+  await compose('doctor', id);
   const stop = await compose('stop', id); stopped = stop.cleanup.result === 'clean'; assert.ok(stopped);
   assert.deepEqual(stop.cleanup.services.map(s => s.id), ['hub', 'pixoo', 'nanoleaf']);
   assert.deepEqual(await hashes(initial), frozen);

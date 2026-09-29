@@ -1275,7 +1275,8 @@ worktree after `npm run build`:
 For the reset qualification, `node apps/hub/verify/tests/qualify-reset.mjs
 <nanoleaf-checkout> <pixoo-checkout> <new-evidence-directory>` automates the
 three captures, handoff, two resets, page screenshots, feed/identity/token/hash
-checks and owner-first stop. Use a short disk-backed `TMPDIR` outside Git and
+checks, the loss/replay/second-owner injections above, and owner-first stop.
+Use a short disk-backed `TMPDIR` outside Git and
 run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
 must all pass; screenshots alone are not a pass. This driver uses disposable
 runs and the manifest pins, and preserves evidence after cleanup.

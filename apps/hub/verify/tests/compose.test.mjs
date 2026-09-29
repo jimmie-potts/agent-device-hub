@@ -787,7 +787,7 @@ for (const [phase, serviceId, mode] of [['pause', 'pixoo', 'hold-ack'], ['owner'
       assert.equal(failed.code, 1, JSON.stringify(failed.value));
       const c = await w.composition(id);
       assert.equal(c.state, 'reset-failed'); assert.equal(c.failure.phase, phase);
-      if (phase !== 'readiness') assert.equal(c.failure.service, serviceId);
+      assert.equal(c.failure.service, serviceId);
       assert.notEqual(c.readiness?.outcome, 'passed'); assert.deepEqual(await proofBytes(c), proof);
       if (phase === 'pause') assert.equal((await w.events(id)).some(e => e.event === 'reset-service'), false, 'owner never reseeded');
       if (phase === 'owner' || phase === 'pause') for (const s of initial.services.filter(s => s.role === 'consumer')) assert.equal(existsSync(join(w.base, 's', s.runId, 'feed-pause.release')), false);

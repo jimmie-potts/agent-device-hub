@@ -8,7 +8,8 @@ import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
 import {DirectoryLock} from '../lock.mjs';
 import {processIdentity} from '../adapter-runner.mjs';
-import {runCompose} from '../compose.mjs';
+import {createServer} from 'node:http';
+import {awaitReady, runCompose} from '../compose.mjs';
 
 test('reset resolves a composition and reports a missing one without creating a run', async t => {
   const root = await mkdtemp(join(tmpdir(), 'compose-reset-'));
@@ -109,4 +110,31 @@ test('an adapter runner delayed behind recovery never starts for its dead parent
   const [code] = await ended;
   assert.equal(code, 1);
   await assert.rejects(readFile(marker), {code: 'ENOENT'});
+});
+
+
+test('readiness timeout names the sole failing consumer without inventing one for mixed failures', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'compose-readiness-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  await mkdir(join(root, 'hub-test', 'data'), {recursive: true});
+  await writeFile(join(root, 'hub-test', 'data/api-token'), 'synthetic-read-token');
+  let wallCurrent = true;
+  const server = createServer((req, res) => {
+    const body = req.url === '/api/monitor/v1/sessions' ? {snapshot: {revision: 7, sessions: []}}
+      : req.url === '/api/hub/v1/health' ? {devices: [{id: 'wall', health: 'ready'}, {id: 'pixel', health: 'ready'}]}
+      : req.url === '/verify/state' ? {apiVersion: 'wall-verify/1', feed: {connection: wallCurrent ? 'current' : 'stale', ownerId: 'verify-owner', revision: 7, source: 'shared'}, integration: {applied: 0, queued: 0, failed: 0}}
+      : req.url === '/api/integration/v1/sessions' ? {connection: 'unavailable', ownerId: 'verify-owner', snapshot: null}
+      : req.url === '/api/device/simulator' ? {mode: 'simulator', writer: {setBrightness: {admitted: 0}}} : {};
+    res.writeHead(200, {'content-type': 'application/json'}); res.end(JSON.stringify(body));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); });
+  const url = `http://127.0.0.1:${server.address().port}/`;
+  const composition = {services: [{id: 'hub', role: 'owner', runId: 'hub-test', url}, {id: 'nanoleaf', role: 'consumer', url}, {id: 'pixoo', role: 'consumer', url}]};
+  const inspect = expected => assert.rejects(awaitReady({APP_VERIFY_STATE_ROOT: root}, composition, () => {}, 0), error => {
+    assert.equal(error.failure, 'readiness-timeout'); assert.equal(error.service, expected);
+    assert.ok(error.checks.some(check => check.id === 'pixoo-feed-current' && check.outcome === 'failed')); return true;
+  });
+  await inspect('pixoo');
+  wallCurrent = false; await inspect(null);
 });
