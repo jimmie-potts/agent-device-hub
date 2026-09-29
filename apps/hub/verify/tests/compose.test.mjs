@@ -569,3 +569,108 @@ test('a consumer whose lease could end while frozen is never frozen', {skip, tim
     await w.close();
   }
 });
+
+
+test('a per-run lease shortened outside compose is checked before freeze', {skip, timeout: 240000}, async () => {
+  const w = await world();
+  try {
+    const started = await w.start();
+    assert.equal(started.code, 0, JSON.stringify(started.result));
+    const id = started.result.compositionId;
+    const c = await w.composition(id);
+    const pixoo = c.services[1];
+    const shortened = spawnSync(process.execPath, ['scripts/verify.mjs', 'extend', pixoo.runId, '--lease', '1'], {cwd: w.pixoo.checkout, env: w.env, encoding: 'utf8'});
+    assert.equal(shortened.status, 0, shortened.stdout + shortened.stderr);
+    assert.equal((await w.composition(id)).services[1].expiresAt, pixoo.expiresAt, 'composition still has its old long lease');
+    const refused = await w.run('inject', id, 'consumer-loss', 'pixoo');
+    assert.equal(refused.code, 1, JSON.stringify(refused.result));
+    assert.equal(refused.result.error, 'lease-too-short');
+    assert.deepEqual((await w.composition(id)).injections, [], 'refused before arming');
+    assert.equal((await w.run('stop', id)).code, 0);
+  } finally {
+    await w.close();
+  }
+});
+
+for (const mode of ['prompt-stop', 'expired-safety-thaw', 'expired-step-thaw', 'early-safety-thaw']) {
+  test(`an interrupted loss handles ${mode} without an unleased unit or thaw timer`, {skip, timeout: 300000}, async () => {
+    // A small handshake driver avoids browser timing: these cases test the
+    // orchestrator and real manager, not the already-covered capture assertions.
+    const w = await world({hubRun: [process.execPath, 'scripts/verify.mjs']});
+    let orchestrator;
+    try {
+      const started = await w.start();
+      assert.equal(started.code, 0, JSON.stringify(started.result));
+      const id = started.result.compositionId;
+      const c = await w.composition(id);
+      const pixoo = c.services[1], hub = c.services[2];
+      const unit = `app-verify-${pixoo.runId}.service`;
+      const thawBase = `app-verify-${pixoo.runId}-thaw`;
+      const requestFile = join(w.base, 's', hub.runId, 'compose-inject-request');
+      const stateFile = join(w.base, 's', hub.runId, 'compose-inject-state');
+      const driver = join(w.base, 'capture-driver.mjs');
+      await writeFile(driver, `import {writeFile, readFile} from 'node:fs/promises';
+const request = ${JSON.stringify(requestFile)}, state = ${JSON.stringify(stateFile)};
+await writeFile(request, JSON.stringify({service:'pixoo',phase:'freeze',seq:1}));
+for (;;) {
+  const value = JSON.parse(await readFile(state, 'utf8').catch(() => '{}'));
+  if (value.phase === 'thawed' || value.phase === 'refused') break;
+  await new Promise(r => setTimeout(r, 100));
+}
+console.log(JSON.stringify({outcome:'passed',n:1}));
+`);
+      const wrapper = join(w.base, 'hub-wrapper.mjs');
+      await writeFile(wrapper, `import {spawnSync} from 'node:child_process';
+const r = spawnSync(process.execPath, process.argv[2] === 'capture' ? [${JSON.stringify(driver)}] : [${JSON.stringify(join(root, 'scripts/verify.mjs'))}, ...process.argv.slice(2)], {stdio:'inherit'});
+process.exitCode = r.status ?? 3;
+`);
+      c.services[2].run = [process.execPath, wrapper];
+      await writeFile(join(w.base, 'p', id, 'composition.json'), JSON.stringify(c));
+      orchestrator = spawn(process.execPath, [compose, 'inject', id, 'consumer-loss', 'pixoo', '--thaw-after', '60'], {cwd: root, env: w.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true});
+      let stdout = '';
+      orchestrator.stdout.on('data', b => stdout += b);
+      orchestrator.stderr.resume();
+      const exit = new Promise(resolve => orchestrator.on('close', resolve));
+      const property = (name, field) => spawnSync('systemctl', ['--user', 'show', name, '-p', field, '--value'], {encoding: 'utf8'}).stdout.trim();
+      const until = async (check, timeout = 15000) => {
+        const end = Date.now() + timeout;
+        while (!await check()) {
+          assert.ok(Date.now() < end, `timed out in ${mode}`);
+          await new Promise(r => setTimeout(r, 100));
+        }
+      };
+      await until(async () => property(unit, 'FreezerState') === 'frozen' && JSON.parse(await readFile(stateFile, 'utf8').catch(() => '{}')).phase === 'frozen', 60000);
+      if (mode.startsWith('expired-')) {
+        const shortened = spawnSync(process.execPath, ['scripts/verify.mjs', 'extend', pixoo.runId, '--lease', '0.05'], {cwd: w.pixoo.checkout, env: w.env, encoding: 'utf8'});
+        assert.equal(shortened.status, 0, shortened.stdout + shortened.stderr);
+        const expiry = Date.parse(JSON.parse(shortened.stdout.trim()).expiresAt);
+        await until(() => Date.now() > expiry + 1500);
+        assert.equal(property(unit, 'FreezerState'), 'frozen');
+      }
+      if (mode === 'prompt-stop' || mode === 'expired-safety-thaw') {
+        process.kill(-orchestrator.pid, 'SIGKILL');
+        await exit;
+        if (mode === 'expired-safety-thaw') await until(() => ['inactive', 'failed'].includes(property(unit, 'ActiveState')), 90000);
+      } else {
+        if (mode === 'early-safety-thaw') {
+          // Start the actual timer service early, independently of the step.
+          const early = spawnSync('systemctl', ['--user', 'start', `${thawBase}.service`], {encoding: 'utf8'});
+          assert.equal(early.status, 0, early.stderr);
+        }
+        await writeFile(requestFile, JSON.stringify({service:'pixoo', phase:'thaw', seq:2}));
+        assert.equal(await exit, 1, stdout);
+        const result = JSON.parse(stdout.trim());
+        if (mode === 'early-safety-thaw') assert.equal(result.thawedBy, 'safety-timer');
+        else assert.match(result.problems.join(' '), /lease expired/);
+      }
+      assert.equal((await w.run('stop', id)).code, 0);
+      for (const service of c.services) {
+        const left = spawnSync('systemctl', ['--user', 'list-units', '--all', '--plain', '--no-legend', `app-verify-${service.runId}-thaw.*`], {encoding:'utf8'}).stdout.trim();
+        assert.equal(left, '', `${service.id} retains no safety timer or service`);
+      }
+    } finally {
+      if (orchestrator?.pid) { try { process.kill(-orchestrator.pid, 'SIGKILL'); } catch {} }
+      await w.close();
+    }
+  });
+}
