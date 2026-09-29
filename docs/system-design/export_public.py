@@ -67,7 +67,7 @@ def public_html(name, content):
         content = SKIN.inject_places(content, 'reference', Path(name), public=True)
     else:
         raise ValueError(f'Missing source Places navigation in {name}')
-    # The authored atlas uses a sibling path inside the private Hub repository.
+    # The authored atlas uses a sibling path inside the Hub repository.
     # Pages places the nine reviewed viewers directly under /architecture/.
     if "../work-guide/outputs/architecture/" in content:
         if name not in ("index.html", "full-system-design.html"):

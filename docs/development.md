@@ -125,7 +125,9 @@ tidbyt-agent-status, tidbyt-status-installation, lifx-controller and hub-playbac
 OpenSpec 1.12.0 is pinned locally. Use npm run openspec -- <arguments>. Its wrapper
 isolates configuration and suppresses telemetry/completion migration. Initialize
 using init --tools none --profile core --no-animation. Do not generate local
-skill integrations or run a global OpenSpec installation.
+skill integrations or run a global OpenSpec installation. OpenSpec 1.12 rejects
+a MODIFIED requirement delta that drops or renames one of its scenarios; use a
+REMOVED delta for the old requirement plus an ADDED delta for the new one.
 
 Use npm's default cache and Playwright's default browser cache (on Linux and
 WSL, `~/.npm` and `~/.cache/ms-playwright`), not directories under `/tmp`, which
@@ -216,6 +218,15 @@ depot ci logs <attempt-id> --timestamps
 See the [CLI reference](https://depot.dev/docs/cli/reference/depot-ci) for optional
 organization selection and log export. These are read operations; access does
 not itself authorize dispatch, retry, cancellation, secret changes or SSH.
+`depot ci logs <attempt-id> --timestamps` returns a failed attempt's full log
+even when the status output shows `download_available` as false. A delivery
+authorized to rerun one failed job on the reviewed head finds the run with
+`depot ci run list --repo <repo> --sha <sha> --status failed` and reruns it
+with `depot ci retry <run-id> --job <job-id>`; the job ID comes from
+`depot ci status <run-id> --output json`, and the `job_key` such as
+`ci.yml:dashboard:matrix-0` is not accepted. An installed CLI that is already
+logged in needs no `DEPOT_TOKEN`. See the [SDLC](sdlc.md#depot-ci-evidence) for
+the evidence to record.
 
 An owner provisions authentication outside Git and supplies `DEPOT_TOKEN` through
 the agent's secure environment, or uses `depot login` for local development.
@@ -528,6 +539,9 @@ Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cl
 controller. Use Node 24 and Python 3.12 or 3.14. Run `npm run build`,
 `npm run typecheck` and `npm run test:tidbyt`. After installing
 `requirements-contracts.txt`, which pins Pillow, run `npm run test:tidbyt:python`.
+If the system Python lacks Pillow, create a virtual environment, install
+`requirements-contracts.txt` into it and run the command with that environment
+active (the #222 and #241 closeouts both hit this).
 Keep running the shared controller-contract and workflow checks alongside them.
 The combined contracts/state CI jobs run `npm run test:tidbyt:built` and
 `npm run test:tidbyt:python` on both Python versions.
@@ -622,6 +636,11 @@ fake loopback controllers. They do not start installed services or operate
 devices. The source includes supervised child release, fenced import, route readiness,
 interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
+The hub and setup suites refuse a `TMPDIR` inside any Git checkout and fail
+with `store-in-checkout`, so a task-scoped `.local/scratch` folder does not
+work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such as
+`~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
+`npm run test:setup`.
 
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
@@ -830,12 +849,32 @@ link, and the lifecycle unit test carries the form wording. The overlap check ig
 1,280 px is recorded in the browser receipt. Human UI approval of the candidate
 is required before merge and is recorded in the PR.
 
+Browser suite gotchas, learned in #277:
+
+- Chromium compiles the `pattern` attribute with the `v` flag, so an unescaped
+  hyphen at the end of a class such as `[A-Za-z0-9_.-]` makes the pattern fail
+  to compile, and the browser silently skips it. Write `[A-Za-z0-9_.\-]`. The
+  Project ID field had this since #151 and the hub's own validation masked it.
+- The suites use `page.locator('section:visible')` and expect exactly one
+  match, so a page must never nest a `<section>`; panels are
+  `div[role=group]`. Every page except Connections stays mounted and hidden, so
+  an unscoped exact-text lookup can match the hidden home. Scope it to the
+  visible section.
+- `textOverlaps` in `apps/dashboard/tests/layout.mjs` must skip the content of a
+  closed `<details>`, which Chromium still reports with boxes.
+- Playwright's `fill()` on a range input dispatches only `input` and `change`,
+  with no pointer or key events. `getByLabel('X', {exact: true})` fails for
+  `<label>X<select>` because the option text joins the label; use
+  `getByRole('combobox', {name})`.
+
 ## Shared monitoring setup checks
 
 Hub #8 adds local setup operations to the hub package. `npm run test:setup`
 builds and runs isolated configuration, credential and hook tests; CI runs
 `npm run test:setup:built` after its fresh build. The hub package check also
 executes these tests in the offline installed archive. Use Node 24 on Linux/WSL.
+These tests also refuse a `TMPDIR` inside a Git checkout; see
+[Standalone hub checks](#standalone-hub-checks).
 Temporary synthetic settings and fake transports never qualify personal hooks.
 
 For the optional cross-repository source check, build the exact Pixoo archive
@@ -898,6 +937,10 @@ real dashboard and MCP. It tests shared lifecycle semantics, labels, monitor
 acknowledgment, native settings/modes, duplicate/late events, one disconnected
 consumer and host restart. The JSON report records tested revisions, scenarios,
 failures and cleanup. Retain failed reports; do not overwrite them on reruns.
+To check whether one of its services or another node process is still running,
+do not use `pgrep -f <pattern>`: it also matches the agent's own shell, whose
+command line contains the pattern. Read `/proc/<pid>/cmdline` for each
+candidate node process instead.
 
 This local cross-repository check needs explicit prepared private sources; ordinary
 CI retains its existing component, contract, browser and package tests without
