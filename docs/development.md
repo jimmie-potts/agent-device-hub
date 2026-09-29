@@ -220,8 +220,9 @@ organization selection and log export. These are read operations; access does
 not itself authorize dispatch, retry, cancellation, secret changes or SSH.
 `depot ci logs <attempt-id> --timestamps` returns a failed attempt's full log
 even when the status output shows `download_available` as false. A delivery
-authorized to rerun one failed job on the reviewed head uses
-`depot ci retry <run-id> --job <job-id>`; the job ID comes from
+authorized to rerun one failed job on the reviewed head finds the run with
+`depot ci run list --repo <repo> --sha <sha> --status failed` and reruns it
+with `depot ci retry <run-id> --job <job-id>`; the job ID comes from
 `depot ci status <run-id> --output json`, and the `job_key` such as
 `ci.yml:dashboard:matrix-0` is not accepted. An installed CLI that is already
 logged in needs no `DEPOT_TOKEN`. See the [SDLC](sdlc.md#depot-ci-evidence) for
@@ -538,7 +539,7 @@ Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cl
 controller. Use Node 24 and Python 3.12 or 3.14. Run `npm run build`,
 `npm run typecheck` and `npm run test:tidbyt`. After installing
 `requirements-contracts.txt`, which pins Pillow, run `npm run test:tidbyt:python`.
-The system Python has no Pillow: create a virtual environment, install
+If the system Python lacks Pillow, create a virtual environment, install
 `requirements-contracts.txt` into it and run the command with that environment
 active (the #222 and #241 closeouts both hit this).
 Keep running the shared controller-contract and workflow checks alongside them.
@@ -635,9 +636,9 @@ fake loopback controllers. They do not start installed services or operate
 devices. The source includes supervised child release, fenced import, route readiness,
 interrupted coordinator recovery and rollback tests. Full integrated performance
 qualification remains #30; source checks do not install or activate personal hooks.
-The hub and setup suites refuse a `TMPDIR` inside any Git checkout (for example
-`store-in-checkout`), so a task-scoped `.local/scratch` folder does not work
-for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such as
+The hub and setup suites refuse a `TMPDIR` inside any Git checkout and fail
+with `store-in-checkout`, so a task-scoped `.local/scratch` folder does not
+work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such as
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
 `npm run test:setup`.
 

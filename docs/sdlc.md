@@ -192,13 +192,13 @@ failure remains a reported tracker gap; it does not erase verified source delive
 2. Commit the candidate and open a PR with Refs #<issue>. Record base, head,
    merge-base, diff command, clean worktree and validation. Avoid automatic issue
    closure before merged-revision CI: use no `close`, `fix` or `resolve`
-   keyword (or variant) before `#<n>` anywhere in the body, and note that a
-   branch named `...issue-<n>...` can link issue n at merge although the body
-   only says "Refs" (this happened to #87). Before a merge whose acceptance
-   follows it, query the PR's `closingIssuesReferences`; a closing keyword
-   anywhere in the body, including a "remaining work" bullet, links the issue.
-   Reword the body to clear a reference (the read can lag a few minutes), and
-   read back the issue state, not just its labels.
+   keyword (or variant) before `#<n>` anywhere in the body, including inside an
+   ordinary sentence. PR #261 closed #87 at merge because its body said "the
+   only wording fix #87 needs". Before a merge whose acceptance follows it,
+   query the PR's `closingIssuesReferences`; a closing keyword anywhere in the
+   body, including a "remaining work" bullet, links the issue. Reword the body
+   to clear a reference (the read can lag a few minutes), and read back the
+   issue state, not just its labels.
 3. Obtain independent read-only Standards and Specification reviews of the same
    fixed comparison through code-review. Fix P0-P2 findings; record lower-priority
    dispositions and reassess changed candidates. Self-review cannot authorize merge.
@@ -293,14 +293,12 @@ Inspect relevant Depot job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.
 Use the [diagnostic access procedure](development.md#depot-diagnostic-access).
-To rerun one failed job on the same reviewed head, find the run with
-`depot ci run list --repo <repo> --sha <sha> --status failed`, read the job ID
-and attempt IDs from `depot ci status <run-id> --output json`, read the failed
-attempt with `depot ci logs <attempt-id>`, and rerun with
-`depot ci retry <run-id> --job <job-id>`. Record the first attempt's failure and
-the retry in the PR evidence instead of pushing an empty commit, which would
-change the reviewed head. GitHub's check-run rerequest endpoint is not a route:
-it returns 404 for the Depot app.
+A rerun of one failed job on the same reviewed head needs the delivery's
+authorization; the commands are in the
+[diagnostic access procedure](development.md#depot-diagnostic-access). Record
+the first attempt's failure and the retry in the PR evidence instead of pushing
+an empty commit, which would change the reviewed head. GitHub's check-run
+rerequest endpoint is not a route: it returns 404 for the Depot app.
 If required diagnostic evidence is unavailable, report that gap and keep the
 merge or completion gate pending. A dashboard sign-in requirement alone does
 not block routine delivery whose check-run evidence is complete. Preserve the

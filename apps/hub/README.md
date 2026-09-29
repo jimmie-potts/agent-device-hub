@@ -446,7 +446,7 @@ only forward the two controller v1 media commands.
 Checked with Codex CLI 0.156. `<name>` is a server name of your choice and `<VAR>` an environment variable that holds a configured token with the `read` and `control` scopes.
 
 - Without a config edit, add `-c mcp_servers.<name>.url="http://127.0.0.1:8788/mcp"` and `-c mcp_servers.<name>.bearer_token_env_var="<VAR>"` to the command, with the token only in that process's environment. The persistent form is `codex mcp add <name> --url <url> --bearer-token-env-var <VAR>`.
-- The hub annotates its write tools as destructive. With `approval_policy="never"` Codex refuses them before anything reaches the hub, then reports the result as uncertain. For a non-interactive check, approve only the chosen tool with `-c mcp_servers.<name>.tools.<prefix>_playback_command.approval_mode="approve"`.
+- The hub annotates its write tools as destructive. With `approval_policy="never"` Codex refuses them before anything reaches the hub, then reports the result as uncertain. For a non-interactive check, approve only the chosen tool with `-c mcp_servers.<name>.tools.<prefix>_playback_command.approval_mode="approve"`. That tool also needs the playback source in the token's `devices` list.
 - `codex exec` waits on stdin. Run it with `< /dev/null`, or it sits at "Reading additional input from stdin..." until killed.
 
 ## Session retirement and archive admission
