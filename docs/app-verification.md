@@ -425,12 +425,28 @@ documented entrypoints.
    Expires   2026-09-27 08:02:59Z (in 1 h 58 min)
    Extend    npm run -s verify -- extend hub-20260927T060259Z-3f9a1c
    Stop      npm run -s verify -- stop hub-20260927T060259Z-3f9a1c
+   Proof     task-appears verified/capture-1/after.png http://127.0.0.1:41705/__app-verify/proof/hub-20260927T060259Z-3f9a1c/capture-1/after.png
+   Proof     task-appears verified/capture-1/interaction.webm http://127.0.0.1:41705/__app-verify/proof/hub-20260927T060259Z-3f9a1c/capture-1/interaction.webm
    ```
 
-5. The agent's handoff message links the two capture files at their frozen
-   `verified/capture-<n>/` paths and the card. The agent session ends; the
-   run is expected to keep serving because its unit belongs to the user
-   manager.
+5. Link the screenshot and video URLs from the handoff's `proofUrls`, include
+   the preview card, and attach those same frozen files when the chat client
+   supports attachments. Do not rely on a filesystem or `file://` link alone:
+   some chat clients cannot open it. State whether attachments were actually
+   included. The HTTP links use the preview's existing loopback origin and
+   work only while its lease is active; the user manager keeps the preview
+   running after the agent session ends. Stop or expiry closes both preview
+   and proof access. Also name the retained `verified/capture-<n>/` paths for
+   later use: those files survive stop with their checksums unchanged.
+
+The Hub opts into app-verify 1.2 proof serving. Only passed frozen captures
+are exposed; private state, live receipts, failed captures and later captures
+have no proof URL. PNG/JPEG and WebM/MP4 display in the browser; other allowed
+attachments download. Reads refuse tampering and symlinks, with a 128 MiB
+artifact limit. No directory index or separate proof service is created.
+Adapters pinned to earlier versions retain their existing handoff: attach
+their frozen files where supported and state that HTTP proof links are not
+available for that adapter.
 
 ### Human: explore, extend, let it expire or stop
 

@@ -72,7 +72,10 @@ async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
   return value;
 }
 
-export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}) {
+/** In-process verification mount; installed configuration cannot supply it. */
+export type PreviewProof = {prefix: '/__app-verify/proof/'; handle(request:IncomingMessage,response:ServerResponse):Promise<void>};
+
+export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}, previewProof?:PreviewProof) {
   if (migration !== undefined && (!object(migration) || migration.staged !== true || Object.keys(migration).some(key=>!['staged','released'].includes(key)))) throw new Error('invalid-migration');
   const imported = migration?.released ? consumeReleasedState(migration.released) : undefined;
   let staged = migration?.staged === true;
@@ -282,6 +285,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
       let streaming = false;
       try {
         if (!req.url?.startsWith('/') || req.url.startsWith('//')) throw new HttpError('invalid-input',400);
+        if (previewProof && req.url.startsWith(previewProof.prefix)) {await previewProof.handle(req,res);return;}
         const url = new URL(req.url,origin), path = url.pathname;
         if (url.origin !== origin) throw new HttpError('invalid-input',400);
         if (req.method === 'GET' && !url.search && ['/', '/dashboard.js', '/dashboard.css'].includes(path)) {

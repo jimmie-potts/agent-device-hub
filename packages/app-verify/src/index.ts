@@ -2,6 +2,7 @@ export * from './types.js';
 export {runCli} from './cli.js';
 export {validateReceipt} from './receipt.js';
 export {runCaptureStep} from './capture.js';
+export {createProofHandler, proofLinks, PROOF_PREFIX, type ProofHandler, type ProofLink} from './proof.js';
 
 export {VERSION} from './version.js';
 

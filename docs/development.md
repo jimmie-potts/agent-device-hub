@@ -1162,7 +1162,18 @@ reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
   dashboard inputs;
 - its wrapper test checks the unbuilt core's single JSON result and exit 3,
   built delegation, and distinct reporting of a broken core dependency;
+- its proof test checks both verification launchers, the unchanged installed
+  CLI, same-port reuse, retained proof after shutdown and Chromium image/video
+  loading. Core `tests/proof.test.mjs` checks commitment, checksum and path
+  confinement, symlink refusal, methods, origins, ranges, later captures and
+  failed captures. Both existing test globs include these cases;
 - its run tests use real user units and skip there with the printed reason.
+
+For #559, the real-manager run test also checks handoff URLs after reseed,
+repeat handoff and stop. The focused expiry test proves that a frozen proof
+URL closes when the run's own lease expires. Use `APP_VERIFY_REQUIRE_SYSTEMD=1`
+on the owner host so these checks cannot pass by skipping. These are disposable
+verification runs; no installed Hub or device is involved.
 
 The Nanoleaf and Pixoo adapters document theirs in their own repositories.
 

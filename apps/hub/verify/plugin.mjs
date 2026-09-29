@@ -163,11 +163,11 @@ const scenario = (/** @type {Record<string, unknown>} */ definition, /** @type {
 export const BUILD_SOURCES = [
   ':(glob)apps/hub/src/**',
   ':(glob)apps/dashboard/src/**',
-  ...['agent-state', 'contracts', 'lifecycle-contracts', 'mcp'].map(name => `:(glob)packages/${name}/src/**`),
+  ...['agent-state', 'contracts', 'lifecycle-contracts', 'mcp', 'app-verify'].map(name => `:(glob)packages/${name}/src/**`),
   'docs/skins/places.json',
   'scripts/build-dashboard.mjs',
 ];
-export const BUILD_OUTPUTS = ['apps/hub/dist/server.js', 'apps/hub/public/dashboard.js', 'packages/agent-state/dist/index.js', 'packages/contracts/dist/index.js', 'packages/lifecycle-contracts/dist/index.js', 'packages/mcp/dist/index.js'];
+export const BUILD_OUTPUTS = ['packages/app-verify/dist/proof.js', 'apps/hub/dist/cli-runner.js', 'apps/hub/dist/server.js', 'apps/hub/public/dashboard.js', 'packages/agent-state/dist/index.js', 'packages/contracts/dist/index.js', 'packages/lifecycle-contracts/dist/index.js', 'packages/mcp/dist/index.js'];
 
 /**
  * The newest tracked source must be older than the oldest build output the run
@@ -193,6 +193,7 @@ export async function buildCurrent(at = root) {
 
 export default definePlugin({
   app: 'hub',
+  servesProof: true,
   repository: 'jimmie-potts/agent-device-hub',
   command: 'npm run -s verify --',
   root,
@@ -210,7 +211,10 @@ export default definePlugin({
   },
   inputs: INPUTS,
   build: {version, artifact: {route: '/dashboard.js'}},
-  launch: ({node, dataDir, port, scenario: name}) => (name === 'integrated' ? launchIntegrated({node, dataDir, port}) : {argv: [node, serve, '--data', dataDir, '--port', String(port)]}),
+  launch: async ({node, dataDir, port, scenario: name, proofDir, runId}) => {
+    await writeFile(join(dataDir, 'proof.json'), JSON.stringify({proofDir, runId}), {mode: 0o600});
+    return name === 'integrated' ? launchIntegrated({node, dataDir, port}) : {argv: [node, serve, '--data', dataDir, '--port', String(port)]};
+  },
   readiness: {
     line: line => {
       try {

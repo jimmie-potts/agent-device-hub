@@ -3,6 +3,7 @@ import {existsSync} from 'node:fs';
 import {chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {card} from './card.js';
+import {proofLinks} from './proof.js';
 import {EXIT, Failure, has, load, reseed, reseedInputs, sums, type Io} from './lifecycle.js';
 import {validateReceipt} from './receipt.js';
 import * as systemd from './systemd.js';
@@ -166,9 +167,10 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
   if (receipt.proof.frozenAt) {
     // A second handoff only prints the card again; it never rewrites the frozen set.
     if (reset !== undefined) throw new Failure('already-frozen', `the verified set was frozen at ${receipt.proof.frozenAt}; use the scenario operation to reseed`);
-    const lines = card(receipt, plugin.command);
+    const proofUrls = plugin.servesProof ? proofLinks(receipt) : undefined;
+    const lines = [...card(receipt, plugin.command), ...(proofUrls ?? []).map(f => `Proof     ${f.step} ${f.path} ${f.url}`)];
     for (const line of lines) io.progress(line);
-    return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
+    return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified: join(run.store.dir, 'verified'), url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines, ...(proofUrls ? {proofUrls} : {})}};
   }
   // Checked before the freeze: a plug-in that no longer accepts a recorded input is a usage error that changes nothing.
   const inputs = reset !== undefined ? reseedInputs(plugin, receipt, reset) : undefined;
@@ -227,7 +229,8 @@ export async function handoff(plugin: AppPlugin, io: Io, runId: string | undefin
     }
     receipt = reseeded.value.receipt as Receipt;
   }
-  const lines = card(receipt, plugin.command);
+  const proofUrls = plugin.servesProof ? proofLinks(receipt) : undefined;
+  const lines = [...card(receipt, plugin.command), ...(proofUrls ?? []).map(f => `Proof     ${f.step} ${f.path} ${f.url}`)];
   for (const line of lines) io.progress(line);
-  return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified, scenario: receipt.scenario.name, url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines}};
+  return {code: EXIT.ok, value: {operation: 'handoff', runId: run.runId, frozenAt: receipt.proof.frozenAt, verified, scenario: receipt.scenario.name, url: receipt.preview?.url, expiresAt: receipt.preview?.expiresAt, card: lines, ...(proofUrls ? {proofUrls} : {})}};
 }
