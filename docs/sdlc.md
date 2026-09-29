@@ -178,6 +178,11 @@ authority; narrower user scope prevails. The checkpoint grants no additional
 installation, device, publication, Project configuration or cross-repository
 policy-write authority.
 
+At authorized planning, implementation, review and closeout checkpoints, follow
+[Project maintenance](project-maintenance.md) for selected Project items. Run the
+native checkpoint before projecting its resulting state. Project synchronization
+failure remains a reported tracker gap; it does not erase verified source delivery.
+
 ## Review and merge
 
 1. Complete authorized changes, relevant checks and applicable OpenSpec artifacts.
