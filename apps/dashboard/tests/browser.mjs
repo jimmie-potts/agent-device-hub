@@ -4,7 +4,7 @@ import AxeBuilder from '@axe-core/playwright';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {fixture} from './fixture.mjs';
 import {textOverlaps,controlReach} from './layout.mjs';
-const f=await fixture();const browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const f=await fixture();const browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1440,height:900},reducedMotion:'reduce'});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const output=process.env.DASHBOARD_RECEIPTS??'/tmp/gh6-dashboard-receipts';await mkdir(output,{recursive:true});
 // Successful sequential edits start only after the owning snapshot is observed.
 // The separate concurrent-edit scenario deliberately retains its stale draft.
@@ -16,8 +16,8 @@ async function applyNano(act){
 }
 const timings=[],renderTimings=[];let feedConnections=0;page.on('request',r=>{if(r.url().endsWith('/changes'))feedConnections++;});
 try {
- await page.route('**/api/dashboard/v1/context',async route=>{const response=await route.fetch();if(response.status()!==200){await route.fulfill({response});return;}const value=await response.json();for(const id of ['synthetic','activity','connections'])value.components.push({id,kind:'sensor',controllerId:'test',deviceId:id,health:'unknown',pending:0});await route.fulfill({response,json:value});});
- await page.route(/\/api\/controllers\/v1\/(synthetic|activity|connections)\/snapshot$/,async route=>{const value=structuredClone(f.states.wall);value.identity={controllerId:'test',deviceId:'sensor',sourceId:'test',controllerEpoch:'epoch'};value.capabilities={power:{supported:false},brightness:{supported:false},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};await route.fulfill({json:value});});
+ await page.route('**/api/dashboard/v1/context',async route=>{const response=await route.fetch();if(response.status()!==200){await route.fulfill({response});return;}const value=await response.json();for(const id of ['synthetic','activity','connections','pendant-1'])value.components.push({id,kind:'sensor',controllerId:'test',deviceId:id,health:'unknown',pending:0});await route.fulfill({response,json:value});});
+ await page.route(/\/api\/controllers\/v1\/(synthetic|activity|connections|pendant-1)\/snapshot$/,async route=>{const value=structuredClone(f.states.wall);value.identity={controllerId:'test',deviceId:'sensor',sourceId:'test',controllerEpoch:'epoch'};if(route.request().url().includes('/synthetic/'))value.capabilities={power:{supported:false},brightness:{supported:false},media:{supported:false},zones:{supported:false},scenes:{supported:false},preview:{supported:false},modes:{supported:false}};await route.fulfill({json:value});});
  await page.goto(f.hub.url);await page.getByText('Use a separately provisioned access token').click();await page.getByLabel('Hub browser access token').fill(f.token);await page.getByRole('button',{name:'Connect',exact:true}).click();
  await page.getByRole('heading',{name:'Build the integration',exact:true}).waitFor();
  const places=page.getByRole('navigation',{name:'Places'});
@@ -26,15 +26,27 @@ try {
  assert.equal(await places.getByRole('link',{name:'Wall Local'}).getAttribute('href'),'http://127.0.0.1:8765/');
  assert.equal(await places.getByRole('link',{name:'Guide'}).getAttribute('href'),'https://jimmie-potts.github.io/agent-device-guide/');
  assert.equal(f.writes.length,0,'Places are read-only navigation');
- // Hub #277: the home is a widget grid whose component widgets, their quick actions and the sessions sit in the first screen at 1440 px.
+ // Hub #444: all six component widgets fit fully in the first desktop screen; quick actions and Sessions remain visible.
  await page.getByRole('heading',{name:'Home',exact:true}).waitFor();
  const widgets=page.locator('article[data-widget=component-status]');await widgets.first().getByLabel('Device mode').waitFor();
- assert.deepEqual(await widgets.evaluateAll(all=>all.map(w=>w.querySelector('h2').textContent)),['wall','pixel','synthetic','activity','connections']);
- assert.ok(await widgets.evaluateAll(all=>all.every(w=>w.getBoundingClientRect().top<innerHeight)),'every component widget starts in the first screen');
+ assert.deepEqual(await widgets.evaluateAll(all=>all.map(w=>w.querySelector('h2').textContent)),['wall','pixel','synthetic','activity','connections','pendant-1']);
+ const widgetBounds=await widgets.evaluateAll(all=>all.map(w=>({id:w.querySelector('h2').textContent,x:w.getBoundingClientRect().x,top:w.getBoundingClientRect().top,bottom:w.getBoundingClientRect().bottom})));
+ assert.ok(widgetBounds.every(w=>w.bottom<=900),'all six component widgets fit entirely in the first screen at 1440 × 900: '+JSON.stringify(widgetBounds));
  assert.ok(await page.locator('article[data-widget=sessions]').evaluate(w=>w.getBoundingClientRect().top<innerHeight),'the sessions widget starts in the first screen');
  for(const id of ['wall','pixel'])assert.ok(await widgets.filter({has:page.getByRole('heading',{name:id,exact:true})}).evaluate(w=>[...w.querySelectorAll('select,button')].every(b=>b.getBoundingClientRect().bottom<innerHeight)),id+' quick actions end in the first screen');
  assert.ok(await controlReach(page)>=0.7,'the home fills the width');assert.deepEqual(await textOverlaps(page),[],'home text never overlaps');
  await page.screenshot({path:output+'/home-desktop.png',fullPage:true});
+ await page.setViewportSize({width:1280,height:720});
+ const compactBounds=await widgets.evaluateAll(all=>all.map(w=>({id:w.querySelector('h2').textContent,bottom:w.getBoundingClientRect().bottom})));
+ assert.ok(compactBounds.every(w=>w.bottom<=720),'all six component widgets fit entirely in the first screen at 1280 × 720: '+JSON.stringify(compactBounds));
+ assert.deepEqual(await textOverlaps(page),[],'the compact desktop home has no text overlap');
+ await page.screenshot({path:output+'/home-compact-desktop.png',fullPage:true});
+ await page.setViewportSize({width:2133,height:1200});
+ const ownerBounds=await widgets.evaluateAll(all=>all.map(w=>({id:w.querySelector('h2').textContent,bottom:w.getBoundingClientRect().bottom})));
+ assert.ok(ownerBounds.every(w=>w.bottom<=1200),'all six component widgets fit entirely in the first screen at the owner’s 2133 × 1200 viewport: '+JSON.stringify(ownerBounds));
+ assert.deepEqual(await textOverlaps(page),[],'the owner-sized desktop home has no text overlap');
+ await page.screenshot({path:output+'/home-owner-desktop.png',fullPage:true});
+ await page.setViewportSize({width:1440,height:900});
  // Hash routes: every page has an address, the back button walks the history, and a component alias named like a built-in page opens only that component (Hub #247).
  assert.equal(new URL(page.url()).hash,'');
  await page.getByRole('link',{name:'activity sensor',exact:true}).click();await page.locator('section:visible .section-heading h2',{hasText:/^activity$/}).waitFor();
