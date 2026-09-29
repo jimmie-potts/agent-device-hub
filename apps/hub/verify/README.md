@@ -21,7 +21,9 @@ Chromium (`npx playwright install chromium`). Use Node 24 from the repository
 root, with `npm run -s` so stdout carries only the JSON result line.
 
 `start` serves the built candidate and does not build, so run `npm run build`
-first. The `build-current` check fails the start when a tracked build source
+first. If the verification core is not built, the wrapper prints one JSON
+result with `state: unavailable`, exits 3 and names `npm run build`; it creates
+no preview. The `build-current` check fails the start when a tracked build source
 is newer than the build it would serve. The sources are `apps/hub/src`,
 `apps/dashboard/src`, the packages the hub imports (`agent-state`,
 `contracts`, `lifecycle-contracts`, `mcp`), `docs/skins/places.json` and

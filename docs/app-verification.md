@@ -451,6 +451,11 @@ claims to be the same candidate.
 
 ### Failed start
 
+After `npm ci`, if the Hub wrapper's verification core has not been built,
+`npm run -s verify -- start` prints one JSON result with `state: unavailable`
+and `error: core-build-missing`, then exits 3. Its detail tells the caller to
+run `npm run build` from the repository root. No preview is created.
+
 `start` on a checkout whose build is broken reports
 `{"state":"failed","cause":"readiness-timeout","cleanup":{"result":"clean"}}`.
 The unit is gone, no timer exists, and the runtime directory was removed even

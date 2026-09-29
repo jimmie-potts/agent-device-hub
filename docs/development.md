@@ -1154,6 +1154,8 @@ reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
   `replay-on-recovery`), plus the two `control-*` steps;
 - its build test checks the build-freshness sources against esbuild's
   dashboard inputs;
+- its wrapper test checks the unbuilt core's single JSON result and exit 3,
+  built delegation, and distinct reporting of a broken core dependency;
 - its run tests use real user units and skip there with the printed reason.
 
 The Nanoleaf and Pixoo adapters document theirs in their own repositories.
