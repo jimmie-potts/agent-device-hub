@@ -163,6 +163,26 @@ review and verification gates. Explicit `plan-work` and `deliver-work` use
 their applicable checkpoints within the user's authority; ordinary work does
 not implicitly invoke those skills.
 
+## Tracker reconciliation
+
+At accepted child completion, reopening, material scope or prerequisite change,
+and ownership handoff, the task's coordinating writer reads and applies the
+[native issue procedure](tracker-reconciliation.md) before the final closeout
+report. This applies to ordinary Codex and Claude work whether or not a shared
+workflow skill is invoked.
+
+Read-only work reports discrepancies without writing. Tracker-only work stays
+within the named records and sections. Normal authorized delivery includes
+routine reconciliation of affected trackers under this repository's existing
+authority; narrower user scope prevails. The checkpoint grants no additional
+installation, device, publication, Project configuration or cross-repository
+policy-write authority.
+
+At authorized planning, implementation, review and closeout checkpoints, follow
+[Project maintenance](project-maintenance.md) for selected Project items. Run the
+native checkpoint before projecting its resulting state. Project synchronization
+failure remains a reported tracker gap; it does not erase verified source delivery.
+
 ## Review and merge
 
 1. Complete authorized changes, relevant checks and applicable OpenSpec artifacts.
@@ -185,8 +205,10 @@ not implicitly invoke those skills.
    gh pr merge <number> --repo jimmie-potts/agent-device-hub --squash --match-head-commit <head>.
    Never use --admin, a background merge service or account/privacy changes.
 6. Read back the main merge revision and verify its Depot evidence using the same
-   rules, or record the guide-only exception evidence below. Close only the delivered
-   issue after its acceptance is met, clear workflow labels and verify closure.
+   rules, or record the guide-only exception evidence below. Close the delivered
+   issue only after its acceptance is met, clear workflow labels and verify
+   closure. Apply [tracker reconciliation](#tracker-reconciliation) to affected
+   related issues; each retains its own acceptance gate.
    Do not close future implementation or device acceptance issues with a bootstrap.
 7. Clean up this delivery's own worktree and scratch as described in
    [Cleanup after delivery](#cleanup-after-delivery).

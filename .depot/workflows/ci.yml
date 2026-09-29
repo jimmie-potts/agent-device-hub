@@ -33,6 +33,8 @@ jobs:
       - run: npm ci
       - run: npm run check:workflow
       - run: npm run test:workflow
+      - name: Validate guide record contract fixtures
+        run: node --test docs/work-guide/contracts/records.test.mjs
       - run: npm run test:preflight
       - name: Check isolated Linux hook qualification
         if: runner.os == 'Linux'

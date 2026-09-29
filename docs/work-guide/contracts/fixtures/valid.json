@@ -1,0 +1,355 @@
+{
+  "schemaVersion": "guide-records/1.0",
+  "datasetId": "sha256:ab7ec68c930c2e8172156c1beb9d8d5da0a2a31a8c49e2e673ee163ec9f16fea",
+  "repositories": [
+    {
+      "name": "jimmie-potts/agent-device-hub",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues?state=open",
+        "observedAt": "2026-09-29T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 1,
+          "totalCount": 1,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "name": "jimmie-potts/codex-nanoleaf",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/codex-nanoleaf/issues?state=open",
+        "observedAt": "2026-09-29T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 0,
+          "totalCount": 0,
+          "hasNextPage": false
+        }
+      }
+    },
+    {
+      "name": "jimmie-potts/divoom-app-upgrade",
+      "scope": "primary",
+      "inventory": {
+        "source": "https://api.github.com/repos/jimmie-potts/divoom-app-upgrade/issues?state=open",
+        "observedAt": "2026-09-29T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": {
+          "pages": 1,
+          "itemCount": 0,
+          "totalCount": 0,
+          "hasNextPage": false
+        }
+      }
+    }
+  ],
+  "issues": [
+    {
+      "id": "jimmie-potts/agent-device-hub#900001",
+      "nodeId": "FIXTURE_I_900001",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900001,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+      "title": "Synthetic example 900001",
+      "body": "## Outcome and real setup\n\nBrowse a synthetic guide.\n\n## Smallest useful implementation\n\nRead the existing records.\n\n## Behavior and protections to preserve\n\nKeep the full guide available.\n\n## Observable acceptance and planned evidence\n\nAn incomplete graph withholds readiness.\n\n## Meaningful deferrals\n\nNone\n\n## Guide\n\n**Topic:** work-guide\n**Note:** Synthetic planning example.\n",
+      "state": "OPEN",
+      "stateReason": null,
+      "createdAt": "2026-09-29T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": null,
+      "labels": [
+        "enhancement",
+        "status:ready"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900001",
+        "observedAt": "2026-09-29T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Browse a synthetic guide.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Read the existing records.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "present",
+          "heading": "Behavior and protections to preserve",
+          "text": "Keep the full guide available.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An incomplete graph withholds readiness.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "present",
+          "heading": "Meaningful deferrals",
+          "text": "None",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+          "parser": "story-sections/1",
+          "reason": null
+        }
+      },
+      "guide": {
+        "state": "assigned",
+        "topic": "work-guide",
+        "note": "Synthetic planning example.",
+        "workaround": null,
+        "highlight": null,
+        "extends": [],
+        "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900001",
+        "parser": "guide-section/1",
+        "reason": null
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900001/parent",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900001/sub_issues",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [
+          "jimmie-potts/agent-device-hub#900002"
+        ],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900001/dependencies/blocked_by",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 1,
+            "totalCount": 1,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "guide.note",
+        "story.outcome.text",
+        "guide.topic",
+        "labels",
+        "state"
+      ]
+    },
+    {
+      "id": "jimmie-potts/agent-device-hub#900002",
+      "nodeId": "FIXTURE_I_900002",
+      "repository": "jimmie-potts/agent-device-hub",
+      "number": 900002,
+      "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+      "title": "Synthetic example 900002",
+      "body": "## Outcome and real setup\n\nBrowse a synthetic guide.\n\n## Smallest useful implementation\n\nRead the existing records.\n\n## Behavior and protections to preserve\n\nKeep the full guide available.\n\n## Observable acceptance and planned evidence\n\nAn incomplete graph withholds readiness.\n\n## Meaningful deferrals\n\nNone\n\n## Guide\n\n**Topic:** work-guide\n**Note:** Synthetic planning example.\n",
+      "state": "CLOSED",
+      "stateReason": "completed",
+      "createdAt": "2026-09-29T12:00:00Z",
+      "updatedAt": "2026-09-29T12:00:00Z",
+      "closedAt": "2026-09-29T12:00:00Z",
+      "labels": [
+        "enhancement"
+      ],
+      "facts": {
+        "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900002",
+        "observedAt": "2026-09-29T12:00:00Z",
+        "state": "fresh",
+        "complete": true,
+        "reason": null,
+        "pagination": null
+      },
+      "story": {
+        "outcome": {
+          "state": "present",
+          "heading": "Outcome and real setup",
+          "text": "Browse a synthetic guide.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "implementation": {
+          "state": "present",
+          "heading": "Smallest useful implementation",
+          "text": "Read the existing records.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "protections": {
+          "state": "present",
+          "heading": "Behavior and protections to preserve",
+          "text": "Keep the full guide available.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "acceptance": {
+          "state": "present",
+          "heading": "Observable acceptance and planned evidence",
+          "text": "An incomplete graph withholds readiness.",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+          "parser": "story-sections/1",
+          "reason": null
+        },
+        "deferrals": {
+          "state": "present",
+          "heading": "Meaningful deferrals",
+          "text": "None",
+          "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+          "parser": "story-sections/1",
+          "reason": null
+        }
+      },
+      "guide": {
+        "state": "assigned",
+        "topic": "work-guide",
+        "note": "Synthetic planning example.",
+        "workaround": null,
+        "highlight": null,
+        "extends": [],
+        "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900002",
+        "parser": "guide-section/1",
+        "reason": null
+      },
+      "parent": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900002/parent",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "children": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900002/sub_issues",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "blockedBy": {
+        "ids": [],
+        "evidence": {
+          "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900002/dependencies/blocked_by",
+          "observedAt": "2026-09-29T12:00:00Z",
+          "state": "fresh",
+          "complete": true,
+          "reason": null,
+          "pagination": {
+            "pages": 1,
+            "itemCount": 0,
+            "totalCount": 0,
+            "hasNextPage": false
+          }
+        }
+      },
+      "planning": [],
+      "publicFields": [
+        "title",
+        "guide.note",
+        "story.outcome.text",
+        "guide.topic",
+        "labels",
+        "state"
+      ]
+    }
+  ],
+  "subguides": [
+    {
+      "id": "work-guide",
+      "kind": "topic",
+      "topic": "work-guide",
+      "title": "Work guide",
+      "members": [
+        "jimmie-potts/agent-device-hub#900001",
+        "jimmie-potts/agent-device-hub#900002"
+      ],
+      "outcome": "Find recorded work.",
+      "nextStep": "Inspect the synthetic issue.",
+      "source": "https://github.com/example/planning",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "asOf": "2026-09-29T12:00:00Z",
+      "owner": "fixture-author",
+      "publicFields": []
+    }
+  ],
+  "publicationPolicy": {
+    "id": "fixture-public-planning/1",
+    "source": "https://github.com/example/planning/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/public-policy.md"
+  }
+}
