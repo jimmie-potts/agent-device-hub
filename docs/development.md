@@ -91,6 +91,16 @@ SchemaSpy assets. The public-repository PR copies the exported bytes verbatim.
 
 ## Workflow commands
 
+Guide record contract fixtures run with Node 24 after `npm ci`:
+`node --test docs/work-guide/contracts/records.test.mjs`. The Depot workflow
+job runs this check separately from OpenSpec validation. It exercises schema
+versions, identity, incomplete/stale evidence, operation gates and the public
+planning allowlist using synthetic records; it does not qualify the later
+normalizer, renderer, protected endpoint or a live provider. Contract delivery
+also runs shared build/type/controller/workflow checks and the guide's existing
+build, maintenance and browser checks. See the
+[field dictionary](work-guide/contracts/README.md).
+
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
 not report v24, prefix each command with `fnm exec --using=.nvmrc --`, for
 example `fnm exec --using=.nvmrc -- npm ci`. fnm reads `.nvmrc` from the current

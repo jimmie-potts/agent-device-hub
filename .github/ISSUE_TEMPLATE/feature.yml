@@ -8,6 +8,9 @@ body:
         Size the story for one operator, the selected installation and its
         configured devices. A small story may answer each prompt in a few
         sentences. See the scope defaults in docs/sdlc.md.
+        Guide record consumers preserve these five sections and the strict Guide
+        fields. See docs/work-guide/contracts/README.md for the versioned field
+        dictionary and missing-data rules; do not invent acceptance for placeholders.
   - type: textarea
     id: outcome
     attributes:

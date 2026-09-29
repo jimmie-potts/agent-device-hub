@@ -72,6 +72,17 @@ even without a tracker `deferred` label. Its issue scope and acceptance stay int
 
 ## Guide sections
 
+The [guide records contract](contracts/README.md) defines the versioned source
+dictionary, public-field selection and operation-specific evidence requirements
+for record consumers. New stories use the five feature-template sections and
+the Guide grammar below. Adapter integration must apply the same contract
+validation on every refresh, retain optional-data gaps, and report incomplete
+dependency reads without claiming readiness. Contract fixture validation is
+`node --test docs/work-guide/contracts/records.test.mjs` under Node 24 after
+`npm ci`. The definition alone does not implement an adapter, audit the backlog,
+change the snapshot builder or establish human approval; its delivery PR owns
+approval evidence for the exact definition.
+
 A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
 one of the twelve ids `guide_paths.py` defines), `**Note:** ...` (optional,
 one-line reading note), `**Workaround:** ...` (optional; shown only where a
