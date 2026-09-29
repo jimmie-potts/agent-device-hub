@@ -43,6 +43,10 @@ npm install --save-dev file:vendor/jimmie-potts-app-verify-1.1.0.tgz
 Version 1.1 only adds to 1.0: a 1.0 plug-in runs unchanged, and receipts stay
 `app-verification/1`. See [What 1.1 adds](#what-11-adds).
 
+The workspace source is now 1.2.0, with optional frozen-proof HTTP delivery.
+The release example above remains the published 1.1 adoption path; this source
+change does not publish a 1.2 release or update another repository's pin.
+
 Then add a wrapper, for example `scripts/verify.mjs`:
 
 ```js
@@ -205,7 +209,7 @@ from 0.05 to 1440. Main result fields:
 | `handoff` after an interrupted one | Finishes the freeze. It rebuilds from `verified.partial/`, or commits an uncommitted `verified/` only when its digest and time match this run's `frozen` event and its copy matches the live receipt. It rebuilds if a later capture exists, and otherwise refuses with `proof-conflict`, changing nothing |
 | `doctor` | `runs`: per run `state` (a receipt state or `stale`), `reasons`, `unit`, `leaseTimer`, `runtimeDir`, `inputs` (when recorded), `preview` with `remainingMinutes`, `health`, `artifact` (`matches`, `changed`, `unread`), `listener` (the unit's listening ports against the recorded one and, under `endpoints`, each recorded endpoint's port; any missing one is `listener-mismatch`), `checks` (those marked `doctor: true`), `failure`, `proof.sums` (`ok`, `tampered`, `missing`, `partial` for an interrupted handoff that a rerun finishes, `conflict` for an uncommitted set a rerun would refuse, `unreadable`, `not-frozen`); `reasons` include `extra-lease-timer` when another armed lease could end the run early, `windows` |
 | `capture` | `n`, `step`, `set` (`verified` or `after-handoff`), `outcome`, `reason`, and absolute `screenshot`, `video`, `log`, `attachments`, `captureDir` |
-| `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card` |
+| `handoff` | `frozenAt`, `verified` directory, `url`, `expiresAt`, `card`; opt-in `proofUrls` (1.2) |
 | `scenario`, `extend`, `stop` | The new scenario, port, `inputs` and `endpoints`; the new expiry and timer; or the final state and `cleanup` |
 
 An error that stops an operation before it acts prints
@@ -282,6 +286,35 @@ inside a checkout.
 
 `npm run test:app-verify:package` packs the archive and runs the packaged
 suite from an isolated consumer.
+
+## What 1.2 adds
+
+An adapter may set `servesProof: true` when its launcher mounts
+`createProofHandler({proofDir, runId})` on the preview's existing HTTP listener.
+The helper returns `{prefix, handle}`; dispatch raw request targets starting
+with `prefix` to `handle(request, response)` within the app's normal request
+admission and close path. `launch(context)` receives the core's resolved
+`proofDir` in addition to its existing fields. Pass that path and `runId` to
+the child through its private data directory. The helper owns no server or
+lease and must not be mounted on an installed service.
+
+After handoff, `proofUrls` contains `{capture, step, path, url}` for each passed
+frozen capture's screenshot, video, assertion log and attachment. `path` is
+relative to the run's proof directory; the card prints a `Proof` line for each
+URL. `proofLinks(receipt)` builds the same list. Adapters without `servesProof`
+keep their existing output. The receipt remains `app-verification/1`.
+
+The Linux helper serves only committed files under
+`/__app-verify/proof/<run-id>/capture-<n>/<filename>`. It checks the frozen
+event's manifest digest, frozen receipt and requested bytes, and refuses links,
+unrelated paths, later captures, failed captures and expired receipts. GET and
+HEAD support a single byte range. Host must be the bound `127.0.0.1:<port>`;
+Origin, when supplied, must match. Cross-site document navigation is allowed
+for owner links, while cross-site subresources are refused. PNG/JPEG/WebM/MP4
+display inline; other types download with script execution disabled. Reads
+never change proof. At most two reads run concurrently; metadata is bounded to
+16 MiB and each artifact to 128 MiB. Oversized or invalid proof returns 404,
+and capacity returns 503. Retained local files remain available after stop.
 
 ## What 1.1 adds
 

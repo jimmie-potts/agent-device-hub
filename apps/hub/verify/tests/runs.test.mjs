@@ -142,6 +142,15 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.equal(handoff.result.card[0], `Preview   ${url}   run ${runId}`);
     assert.equal(handoff.result.card[3], `Extend    npm run -s verify -- extend ${runId}`);
     assert.equal(new URL(handoff.result.url).search + new URL(handoff.result.url).hash, '', 'the preview URL carries no code or token');
+    assert.equal(handoff.result.proofUrls.length, 3, 'only the passed capture is linked');
+    for (const proof of handoff.result.proofUrls) {
+      assert.equal(new URL(proof.url).origin, new URL(url).origin);
+      const response = await fetch(proof.url);
+      assert.equal(response.status, 200, proof.path);
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(r.base, 'p', runId, proof.path)));
+    }
+    const repeated = await r.verify('handoff', runId);
+    assert.deepEqual(repeated.result.proofUrls, handoff.result.proofUrls);
     const resetToken = await r.token(runId);
     assert.notEqual(resetToken, token, 'the reset seeds a new run-generated credential');
     await collect(runId);
@@ -177,6 +186,7 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     assert.equal((await r.receipt(runId)).state, 'stopped');
     assert.equal(existsSync(join(r.base, 's', runId)), false, 'the runtime directory and its credentials are gone');
     assert.ok(existsSync(join(r.base, 'p', runId, 'verified/SHA256SUMS')), 'the frozen proof survives the runtime cleanup');
+    await assert.rejects(fetch(handoff.result.proofUrls[0].url), 'the old listener no longer serves proof');
     await collect(restarted.result.runId);
     const stopped = await r.verify('stop', restarted.result.runId);
     assert.equal(stopped.result.cleanup.result, 'clean');
@@ -199,6 +209,34 @@ test('a Hub run starts, captures stateful proof, hands off a signed-in preview a
     await browser.close();
     await r.close();
   }
+});
+
+test('frozen proof URLs close at lease expiry while local proof remains', {skip, timeout: 90000}, async () => {
+  const r = await roots();
+  try {
+    const started = await r.start('--lease', '5');
+    assert.equal(started.code, 0, started.stderr);
+    const {runId} = started.result;
+    const captured = await r.verify('capture', runId, 'task-appears');
+    assert.equal(captured.code, 0, captured.stderr);
+    const handed = await r.verify('handoff', runId);
+    assert.equal(handed.code, 0, handed.stderr);
+    const proof = handed.result.proofUrls.find(p => p.path.endsWith('/after.png'));
+    const bytes = Buffer.from(await (await fetch(proof.url)).arrayBuffer());
+    const extended = await r.verify('extend', runId, '--lease', '0.05');
+    assert.equal(extended.code, 0, extended.stderr);
+    const deadline = Date.parse(extended.result.expiresAt) + 12000;
+    let refused = false;
+    while (Date.now() < deadline) {
+      try {await (await fetch(proof.url)).arrayBuffer();} catch {refused = true; break;}
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    assert.equal(refused, true, 'lease expiry removes the proof listener');
+    assert.deepEqual(await readFile(join(r.base, 'p', runId, proof.path)), bytes);
+    const stopped = await r.verify('stop', runId);
+    assert.equal(stopped.result.state, 'expired');
+    assert.equal(stopped.result.cleanup.result, 'clean');
+  } finally {await r.close();}
 });
 
 test('two Hub runs share nothing, and reseeding one leaves the other unchanged', {skip, timeout: 180000}, async () => {

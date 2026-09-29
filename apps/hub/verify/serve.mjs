@@ -20,6 +20,7 @@
 import {createServer, request as httpRequest} from 'node:http';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {createProofHandler} from '@jimmie-potts/app-verify';
 import {fixture} from '../../dashboard/tests/fixture.mjs';
 import {startupFailureCode} from '../dist/startup-failure.js';
 
@@ -98,7 +99,9 @@ async function duplicatingRelay(target) {
 const relays = [];
 let f, unsolicited = false;
 try {
+  const proof = JSON.parse(await readFile(join(data, 'proof.json'), 'utf8').catch(error => {if (error.code === 'ENOENT') return 'null'; throw error;}));
   f = await fixture({
+    ...(proof ? {previewProof: createProofHandler(proof)} : {}),
     empty: scenario.empty === true,
     browserAccess: scenario.browserAccess ?? 'trusted-loopback',
     token, reader, port, directory,

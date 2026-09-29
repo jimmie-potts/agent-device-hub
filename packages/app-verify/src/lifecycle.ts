@@ -68,7 +68,7 @@ export class Run {
     return systemd.unitName(this.runId);
   }
   paths() {
-    return {runId: this.runId, root: this.plugin.root, runtimeDir: this.runtimeDir, dataDir: this.dataDir};
+    return {runId: this.runId, root: this.plugin.root, runtimeDir: this.runtimeDir, dataDir: this.dataDir, proofDir: this.store.dir};
   }
 }
 

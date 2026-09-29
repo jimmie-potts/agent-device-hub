@@ -21,10 +21,12 @@ Chromium (`npx playwright install chromium`). Use Node 24 from the repository
 root, with `npm run -s` so stdout carries only the JSON result line.
 
 `start` serves the built candidate and does not build, so run `npm run build`
-first. The `build-current` check fails the start when a tracked build source
+first. If the verification core is not built, the wrapper prints one JSON
+result with `state: unavailable`, exits 3 and names `npm run build`; it creates
+no preview. The `build-current` check fails the start when a tracked build source
 is newer than the build it would serve. The sources are `apps/hub/src`,
 `apps/dashboard/src`, the packages the hub imports (`agent-state`,
-`contracts`, `lifecycle-contracts`, `mcp`), `docs/skins/places.json` and
+`contracts`, `lifecycle-contracts`, `mcp`, `app-verify`), `docs/skins/places.json` and
 `scripts/build-dashboard.mjs`. `tests/build.test.mjs` proves that every input
 esbuild bundles into the dashboard is among them.
 
@@ -56,7 +58,12 @@ writes `after.png`, `interaction.webm` and `assertions.json` under the
 canonical checkout's `.local/evidence/verify/<run-id>/`, and `capture` exits
 non-zero unless every assertion passed and the video was finalized.
 `handoff` freezes those captures into `verified/` with `SHA256SUMS`, reseeds
-the run and prints the card for the owner. Opening the preview from the
+the run and prints the card and read-only proof URLs for the owner. Both the
+ordinary fixture launcher and integrated CLI launcher mount the core's proof
+handler on the Hub listener. Links expose only passed frozen captures, share
+the preview's lease and stop boundary, and leave local proof unchanged.
+Include those URLs in the handoff and attach the frozen media when supported;
+filesystem links alone are not a reliable chat handoff. Opening the preview from the
 Windows browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s
 qualification.
 

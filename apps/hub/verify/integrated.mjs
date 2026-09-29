@@ -9,7 +9,7 @@ import {lstat, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+const cli = fileURLToPath(new URL('./integrated-serve.mjs', import.meta.url));
 
 /** The installed services' ports (docs/app-verification.md). A run never uses or targets them. */
 export const INSTALLED_PORTS = Object.freeze([8788, 8765, 8787, 8791, 41230, 41231]);
@@ -120,7 +120,7 @@ export async function seedIntegrated({runtimeDir, dataDir, inputs}) {
 }
 
 /**
- * Launch the real hub CLI. Its configuration needs the port, which only the
+ * Launch the real Hub CLI lifecycle with the verification-only proof mount. Its configuration needs the port, which only the
  * launch knows: 0 on start, the recorded one on a relaunch.
  * @param {{node: string, dataDir: string, port: number}} context
  */

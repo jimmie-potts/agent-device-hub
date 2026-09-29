@@ -91,6 +91,8 @@ export interface Scenario {
 }
 
 export interface LaunchContext extends RunPaths {
+  /** Resolved retained proof directory for this run (1.2). Never put private runtime data here. */
+  proofDir: string;
   scenario: string;
   /**
    * The port to bind on 127.0.0.1: `0` on `start` (the kernel picks one and the
@@ -336,6 +338,8 @@ export interface BrowserOptions {
 
 /** Everything the core needs from one application. */
 export interface AppPlugin {
+  /** Opt in (1.2) only when launch mounts createProofHandler on the preview listener. */
+  servesProof?: true;
   /** Lowercase name used in run ids and unit names: `hub`, `wall`, `pixoo`. At most 16 characters. */
   app: string;
   /** GitHub `owner/name`, recorded in the receipt. */

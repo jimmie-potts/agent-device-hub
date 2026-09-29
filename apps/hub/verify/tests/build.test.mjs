@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../../../..', import.meta.url));
 test('a newer package source, Places manifest or dashboard build script fails build-current', async () => {
   const repo = await realpath(await mkdtemp(join(tmpdir(), 'hub-build-')));
   try {
-    const sources = ['apps/hub/src/server.ts', 'apps/dashboard/src/main.tsx', 'packages/agent-state/src/index.ts', 'packages/contracts/src/types.ts', 'packages/lifecycle-contracts/src/index.ts', 'packages/mcp/src/index.ts', 'docs/skins/places.json', 'scripts/build-dashboard.mjs'];
+    const sources = ['apps/hub/src/server.ts', 'apps/dashboard/src/main.tsx', 'packages/agent-state/src/index.ts', 'packages/contracts/src/types.ts', 'packages/lifecycle-contracts/src/index.ts', 'packages/mcp/src/index.ts', 'packages/app-verify/src/proof.ts', 'docs/skins/places.json', 'scripts/build-dashboard.mjs'];
     for (const file of [...sources, ...BUILD_OUTPUTS]) {
       await mkdir(dirname(join(repo, file)), {recursive: true});
       await writeFile(join(repo, file), '');
@@ -31,7 +31,7 @@ test('a newer package source, Places manifest or dashboard build script fails bu
     await age(sources, 0);
     await age(BUILD_OUTPUTS, 10);
     assert.deepEqual(await buildCurrent(repo), {outcome: 'passed'});
-    for (const newer of ['packages/agent-state/src/index.ts', 'packages/contracts/src/types.ts', 'docs/skins/places.json', 'scripts/build-dashboard.mjs']) {
+    for (const newer of ['packages/app-verify/src/proof.ts', 'packages/agent-state/src/index.ts', 'packages/contracts/src/types.ts', 'docs/skins/places.json', 'scripts/build-dashboard.mjs']) {
       await age([newer], 20);
       assert.deepEqual(await buildCurrent(repo), {outcome: 'failed', reason: `${newer} is newer than the build; run npm run build`}, newer);
       await age([newer], 0);
