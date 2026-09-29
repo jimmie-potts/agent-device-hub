@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {consumerState, follows, sessionKey} from '../consumers.mjs';
 import {HUB_ROOT} from '../compose.mjs';
+import {qualificationSnapshot} from '../qualification.mjs';
 
 const [nanoleaf, pixoo, output] = process.argv.slice(2).map(value => resolve(value));
 assert.ok(nanoleaf && pixoo && output, 'need nanoleaf checkout, Pixoo checkout and fresh evidence directory');
@@ -76,18 +77,19 @@ async function hubJson(hub, route) {
   const response = await fetch(new URL(route, hub.url), {headers: {authorization: `Bearer ${token}`, 'x-pixoo-request': '1'}});
   assert.equal(response.status, 200); return response.json();
 }
-const snapshot = async hub => (await hubJson(hub, '/api/monitor/v1/sessions')).snapshot;
+const snapshot = hub => qualificationSnapshot(route => hubJson(hub, route));
 async function settings(hub) {
   return {pixel: (await hubJson(hub, '/api/controllers/v1/pixel/snapshot')).state.desired, wall: (await hubJson(hub, '/api/controllers/v1/wall/integration/snapshot')).settings};
 }
 const identities = c => c.services.map(s => ({id: s.id, runId: s.runId, url: s.url, endpoints: s.endpoints}));
-async function pages(c, label, absentTitles = []) {
+async function pages(c, label, absentTitles = [], presentTitles = []) {
   for (const service of c.services) {
     const page = await browser.newPage({viewport: {width: 1280, height: 900}});
     try {
       const response = await page.goto(service.url); assert.equal(response.status(), 200, `${service.id} page`);
       if (service.id === 'hub') await page.getByText('Control enabled · Local', {exact: true}).waitFor();
       if (service.id === 'pixoo') await page.getByRole('navigation', {name: 'Controller views'}).getByRole('button', {name: 'Monitor', exact: true}).click();
+      if (presentTitles.length) await page.waitForFunction(titles => titles.some(title => document.body.innerText.includes(title)), presentTitles, {timeout: 15000});
       await page.waitForTimeout(1500);
       const text = await page.locator('body').innerText(); assert.ok(text.trim().length > 10);
       for (const title of absentTitles) assert.ok(!text.includes(title), `${service.id} still shows changed session`);
@@ -109,7 +111,7 @@ try {
   assert.notDeepEqual(await settings(hub), baselineSettings, 'capture changed controller settings');
   const changedTitles = changed.sessions.map(s => s.label ?? s.title?.value).filter(Boolean);
   assert.ok(changedTitles.length > 0);
-  await pages(initial, 'changed');
+  await pages(initial, 'changed', [], changedTitles);
   await compose('handoff', id);
   const frozen = await hashes(initial);
   for (const turn of [1, 2]) {

@@ -1280,6 +1280,10 @@ Use a short disk-backed `TMPDIR` outside Git and
 run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
 must all pass; screenshots alone are not a pass. This driver uses disposable
 runs and the manifest pins, and preserves evidence after cleanup.
+It requests snapshot 1.2 for the shared session titles, confirms a changed title
+is visible on each page before reset, then checks those titles are absent after
+each reset. A portable real-Hub HTTP test covers that version negotiation;
+the default snapshot 1.0 route continues to omit shared titles.
 
 The delivery evidence records the composition id, its `composition.json`,
 each run's verified set and the consumer revisions. Only the delivery
