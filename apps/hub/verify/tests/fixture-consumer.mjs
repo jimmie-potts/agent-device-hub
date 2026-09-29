@@ -9,7 +9,7 @@
 // A test creates a disposable Git checkout whose wrapper calls
 // `createPlugin({root, kind, app, fault})`, so the orchestrator starts it
 // through a wrapper in its own pinned checkout, exactly as a real consumer.
-import {lstat, readFile, writeFile} from 'node:fs/promises';
+import {lstat, readFile, rm, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {definePlugin} from '@jimmie-potts/app-verify';
@@ -31,7 +31,15 @@ async function token(runtimeDir, name) {
 export function createPlugin({root, kind, app, fault}) {
   if (fault !== undefined && !FAULTS.includes(fault)) throw new Error(`unknown stand-in fault ${fault}`);
   const seed = paired => async ({runtimeDir, dataDir, scenario, inputs}) => {
-    const value = {name: scenario, kind, fault: fault ?? null};
+    const control = await readFile(join(runtimeDir, 'fixture-reset.json'), 'utf8').then(JSON.parse, () => ({}));
+    const request = await readFile(join(runtimeDir, 'feed-pause.request'), 'utf8').then(JSON.parse, () => null);
+    if (request) {
+      const release = JSON.parse(await readFile(join(runtimeDir, 'feed-pause.release'), 'utf8'));
+      if (JSON.stringify(release) !== JSON.stringify(request)) throw new Error('release does not match pause');
+      if (control.mode === 'fail') throw new Error('requested consumer seed failure');
+      for (const name of ['request', 'ack', 'release']) await rm(join(runtimeDir, `feed-pause.${name}`));
+    }
+    const value = {name: scenario, kind, fault: control.mode === 'no-feed' ? 'no-feed' : fault ?? null};
     if (paired) {
       const feed = new URL(inputs['hub-feed']);
       if (feed.protocol !== 'http:' || feed.hostname !== '127.0.0.1' || feed.pathname !== '/') throw new Error('hub-feed must be http://127.0.0.1:<port>/');
@@ -51,7 +59,7 @@ export function createPlugin({root, kind, app, fault}) {
       'hub-paired': {description: 'A consumer of the paired Hub feed with a controller endpoint', requiredInputs: ['hub-feed'], seed: seed(true)},
     },
     build: {version: '0.0.0', artifact: {file: 'served.txt'}},
-    launch: ({node, dataDir, port, endpointPorts}) => ({argv: [node, serve, '--data', dataDir, '--port', String(port), '--controller-port', String(endpointPorts.controller ?? 0)], cwd: fileURLToPath(new URL('../../../..', import.meta.url))}),
+    launch: ({node, dataDir, runtimeDir, runId, port, endpointPorts}) => ({argv: [node, serve, '--data', dataDir, '--runtime', runtimeDir, '--run-id', runId, '--port', String(port), '--controller-port', String(endpointPorts.controller ?? 0)], cwd: fileURLToPath(new URL('../../../..', import.meta.url))}),
     readiness: {
       line: line => {
         try {

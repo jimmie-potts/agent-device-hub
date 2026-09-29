@@ -6,7 +6,7 @@
       "role": "consumer",
       "app": "wall",
       "repository": "jimmie-potts/codex-nanoleaf",
-      "revision": "6e6b4fae815b431b03cb263014dfa95e9a23cfee",
+      "revision": "4ddf14bcec94abd145919c8f8d6de332a4b19b9c",
       "coreVersion": "1.1.0",
       "scenario": "hub-paired",
       "run": ["node", "scripts/verify.mjs"]
@@ -16,7 +16,7 @@
       "role": "consumer",
       "app": "pixoo",
       "repository": "jimmie-potts/divoom-app-upgrade",
-      "revision": "1b4115c3b4f22220102382278052d55b6d287b9c",
+      "revision": "59a3eb71e2969a548b69fe6423a1cd9655624387",
       "coreVersion": "1.1.0",
       "scenario": "hub-paired",
       "run": ["fnm", "exec", "--using=.nvmrc", "--", "node", "scripts/verify.mjs"]

@@ -3,11 +3,12 @@
 // controller v1 endpoint the Hub calls with the paired controller token, and
 // polls the Hub's shared session feed with the paired feed token.
 import {createServer} from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile, rename, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {validate} from '@jimmie-potts/device-contracts';
 
 const argument = name => process.argv[process.argv.indexOf(name) + 1];
+const runtime = argument('--runtime'), runId = argument('--run-id');
 const data = argument('--data'), port = Number(argument('--port')), controllerPort = Number(argument('--controller-port'));
 const scenario = JSON.parse(await readFile(join(data, 'scenario.json'), 'utf8'));
 if (scenario.fault === 'start-fails') {
@@ -112,8 +113,27 @@ if ((paired && scenario.fault !== 'no-controller') || controllerPort) {
   await new Promise(resolve => controller.listen(controllerPort, '127.0.0.1', resolve));
   endpoints = {controller: scenario.fault === 'installed-endpoint' ? 'http://127.0.0.1:8765/' : `http://127.0.0.1:${controller.address().port}/`};
 }
-const timer = setInterval(() => void poll(), 1000);
-void poll();
+let busy = false, lastPoll = 0;
+async function tick() {
+  if (busy || !paired) return;
+  busy = true;
+  try {
+    const request = await readFile(join(runtime, 'feed-pause.request'), 'utf8').then(JSON.parse, error => { if (error.code === 'ENOENT') return null; throw error; });
+    if (request) {
+      const control = await readFile(join(runtime, 'fixture-reset.json'), 'utf8').then(JSON.parse, () => ({}));
+      if (control.mode !== 'hold-ack' && request.runId === runId && request.version === 1) {
+        const ack = join(runtime, 'feed-pause.ack');
+        await writeFile(ack + '.tmp', JSON.stringify({...request, pid: process.pid}), {mode: 0o600});
+        await rename(ack + '.tmp', ack);
+      }
+      return;
+    }
+    if (Date.now() - lastPoll >= 1000) { lastPoll = Date.now(); await poll(); }
+  } catch { /* An invalid request stays gated. */ }
+  finally { busy = false; }
+}
+const timer = setInterval(() => void tick(), 25);
+void tick();
 const stop = () => {
   clearInterval(timer);
   main.close();
