@@ -111,9 +111,9 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 
 | Route | Behavior |
 | --- | --- |
-| `GET /api/monitor/v1/sessions` | Selected-owner envelope; `matches` only with a search filter; optional `q` up to 120 characters and `provider` |
+| `GET /api/monitor/v1/sessions` | Selected-owner envelope; `matches` only with a search filter; optional `q` up to 120 characters and `provider`. Its `nextRequestId` belongs to the principal that read it |
 | `POST /api/monitor/v1/events` | Shared lifecycle event, maximum 2048 bytes, ingest scope |
-| `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment, explicit approval recovery or quiesce, using the latest server-issued request ID |
+| `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment, explicit approval recovery or quiesce, using the latest server-issued request ID. The ID is per principal: a command sent with a different credential than the one that read the sessions gets 410 `request-expired`, even moments later. Read the sessions and send the command with the same token |
 | `GET /api/monitor/v1/changes` | Bounded SSE notifications pushed as each revision commits, plus a 1-second heartbeat and resync; fetch a current sessions snapshot rather than replaying effects |
 | `GET /api/hub/v1/health` | Shared collector health and separate controller status, without refreshing device observations |
 | `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias |
@@ -440,6 +440,14 @@ its optional local MCP endpoint remains available independently. These hub tools
 only forward the two controller v1 media commands.
 
 `npm run test:hub:mcp` exercises synthetic Codex/Claude protocol profiles for MCP 2025-11-25 and 2025-06-18, scoped discovery, Host/Origin checks, credential replacement, HTTP/MCP replay, native settings, independent controller failure, bounded concurrency, disconnect and stale evidence. The reproducible hub archive bundles MCP and its dependency closure; `npm run test:hub:package` repeats these tests after offline installation. These are source and loopback checks, not installed Codex/Claude, Windows/WSL client routing or physical acceptance. Feed this coverage into Hub #9; installed qualification remains #8 and device-owned acceptance.
+
+### Point a Codex client at `/mcp`
+
+Checked with Codex CLI 0.156. `<name>` is a server name of your choice and `<VAR>` an environment variable that holds a configured token with the `read` and `control` scopes.
+
+- Without a config edit, add `-c mcp_servers.<name>.url="http://127.0.0.1:8788/mcp"` and `-c mcp_servers.<name>.bearer_token_env_var="<VAR>"` to the command, with the token only in that process's environment. The persistent form is `codex mcp add <name> --url <url> --bearer-token-env-var <VAR>`.
+- The hub annotates its write tools as destructive. With `approval_policy="never"` Codex refuses them before anything reaches the hub, then reports the result as uncertain. For a non-interactive check, approve only the chosen tool with `-c mcp_servers.<name>.tools.<prefix>_playback_command.approval_mode="approve"`. That tool also needs the playback source in the token's `devices` list.
+- `codex exec` waits on stdin. Run it with `< /dev/null`, or it sits at "Reading additional input from stdin..." until killed.
 
 ## Session retirement and archive admission
 
