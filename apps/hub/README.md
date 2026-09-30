@@ -141,7 +141,23 @@ Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `
 - Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
 - A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
 - Every other reader keeps the 1.0 shape and sends no parameter. That includes the dashboard's polls and the route without a parameter.
-- Reads and negotiation never send a command. The hub does not send moment commands yet.
+- Reads and negotiation never send a command.
+
+### Moment sender
+
+`sendMoment(client, moment)` in `src/moment-sender.ts` sends one contract 1.1 moment to one device ([Hub #335](https://github.com/jimmie-potts/agent-device-hub/issues/335)). It is an internal module with no route, MCP tool, page or stored state, and it applies no policy: rules, routines, agent proposals and the owner's own sends arbitrate before they call it. To reach several devices, a caller computes one start with `hubMonotonicNow()`, passes it as `startAtHubMs` to one call per device and waits for all of them, for example with `Promise.allSettled`.
+
+One call:
+
+1. Waits at most 2.5 s for the controller's one slot. Only sends wait; reads keep the immediate `capacity` rejection.
+2. Reads a fresh snapshot through the negotiated 1.1 read in the same slot.
+3. Sends nothing unless the snapshot is 1.1 and declares `moments` supported with the mood and a long enough `maxDurationMs`.
+4. Builds one `requestV1_1` from the snapshot's ticket, revision and generation. `start.epoch` is the controller's clock epoch and `start.atMs` is `sampledAtMs` plus the hub time from the snapshot's arrival to `startAtHubMs`, which defaults to that arrival. `toleranceMs` defaults to 10,000.
+5. POSTs it once and never resends it.
+
+The result is the controller's `receiptV1_1`, a not-sent reason (`1.0-only`, `moments-unsupported`, `unsupported-capability`, `capacity` or `unavailable`) or `uncertain`. Each result carries the `momentId` and the computed start, which is null only when no snapshot was read. A typed controller refusal without a receipt is not sent and keeps the controller's code in `failure`. Invalid input, such as a flourish with `coversStatus:true` or a start more than 60 s ahead, throws `invalid-request` before any read.
+
+Only the POST runs after the start is computed, so the slot wait and the read never use up the device's start window. A call can take about 8.5 s in the worst case (the wait, two 2 s reads and a 2 s POST), which is longer than the hub's 3 s HTTP response bound; a caller behind a route needs its own bound.
 
 ## Playback
 

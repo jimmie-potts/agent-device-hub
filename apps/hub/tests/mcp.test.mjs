@@ -492,7 +492,12 @@ test('status reads at controller contract 1.1 and shows moments, and a 1.0-only 
  assert.equal(legacy.reads.versioned(),1);assert.equal(legacy.reads(),5);
  assert.equal(modern.commands.length+legacy.commands.length,0);
  assert.ok(modern.requests.concat(legacy.requests).every(request=>request.method==='GET'));
- // Command tools keep sending API 1.0 requests.
+ // Command tools keep sending API 1.0 requests, which a 1.1 controller still admits with a 1.0 receipt.
  const sent=await c.call(name+'_power_set',{...guards(modern.snapshot11()),on:true});
- assert.equal(modern.commands.length,1);assert.equal(modern.commands[0].apiVersion,'1.0');assert.equal(sent.isError,true);
+ assert.equal(modern.commands.length,1);assert.equal(modern.commands[0].apiVersion,'1.0');assert.equal(sent.isError,false);
+ assert.equal(sent.structuredContent.data.result.apiVersion,'1.0');assert.equal(sent.structuredContent.data.result.outcome,'queued');
+ // An owner's typed refusal is still returned as the tool's error.
+ modern.answerNext({failure:'unsupported-capability'});
+ const refused=await c.call(name+'_power_set',{...guards(modern.snapshot11()),on:false});
+ assert.equal(modern.commands.length,2);assert.equal(modern.commands[1].apiVersion,'1.0');assert.equal(refused.isError,true);
 });
