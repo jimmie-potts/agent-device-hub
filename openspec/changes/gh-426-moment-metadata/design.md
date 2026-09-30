@@ -10,6 +10,8 @@ Retain a bounded event's display context in the private log without changing arb
 
 Extend the existing flat event with optional `pullRequestTitle` and `meetingTitle` (160 Unicode scalars each) and `repositoryName` (80). Reuse #424's display-text validation, including credential screening. Empty, malformed, credential-like or overlong values reject the event before deduplication. Absent fields preserve the old event shape. A nested parallel metadata envelope would duplicate the canonical event and is unnecessary for these three declared fields.
 
+Read each own metadata property's descriptor, validate its data value and copy that same value. Omit inherited fields and reject accessors without invoking them. This prevents an in-process object from supplying unchecked inherited text or changing a getter's value between validation and copying.
+
 Store only these fields under `event` in the existing log `detail` JSON and project them back onto the log entry's event. This uses the existing owner lease and bounded 5,000-entry log without new tables or database migration. Dedicated columns would require migration without a query requirement. Existing null detail and receipt/start detail remain readable.
 
 Preserve #335's strict sender and controller wire shape. Event metadata identifies a logged moment; device-specific text rendering needs its own contract and issue. The lifecycle source still supplies neutral IDs, and hooks remain bounded and fail open. Metadata never changes event identity or enables replay.

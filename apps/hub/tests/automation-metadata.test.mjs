@@ -84,3 +84,17 @@ test('#426 blocked moments retain event titles without handing metadata or a mom
   assert.deepEqual(calls,[]);
  }finally{await opened.close();}
 });
+
+test('#426 validates and copies the same own metadata values without invoking accessors',()=>{
+ const own={id:'own-values',source:'github',kind:'pull-request.merged',delivery:'live'};
+ for(const value of ['token=private-value','x'.repeat(1000)]){
+  const inherited=Object.assign(Object.create({pullRequestTitle:value,repositoryName:value,meetingTitle:value}),own);
+  assert.deepEqual(parseEvent(inherited),own,'inherited display fields do not enter the normalized event');
+ }
+ for(const field of ['pullRequestTitle','repositoryName','meetingTitle']){
+  let reads=0;const accessor={...own};
+  Object.defineProperty(accessor,field,{enumerable:true,get(){reads++;return reads===1?'Safe name':'token=private-value';}});
+  assert.equal(parseEvent(accessor),null,'metadata accessors are not normalized event data');
+  assert.equal(reads,0,'validation does not execute source accessors');
+ }
+});

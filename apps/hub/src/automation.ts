@@ -62,21 +62,26 @@ const screenedId = (value:unknown): value is string => id(value) && !credentialL
 const keysWithin = (value:Record<string,unknown>, required:string[], allowed:string[]) =>
   required.every(key => Object.hasOwn(value,key)) && Object.keys(value).every(key => allowed.includes(key));
 
-/** Copy only declared event display fields; neither sender output nor raw event objects enter the log. */
-function eventText(value:EventText): EventText {
-  return {...(value.pullRequestTitle === undefined ? {} : {pullRequestTitle:value.pullRequestTitle}),
-    ...(value.repositoryName === undefined ? {} : {repositoryName:value.repositoryName}),
-    ...(value.meetingTitle === undefined ? {} : {meetingTitle:value.meetingTitle})};
+/** Validate and copy the same own data values; inherited fields and source accessors never enter the log. */
+function eventText(value:EventText): EventText|null {
+  const result:EventText = {};
+  for (const [field,bound] of [['pullRequestTitle',160],['repositoryName',80],['meetingTitle',160]] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(value,field);
+    if (!descriptor) continue;
+    if (!('value' in descriptor) || !validDisplayText(descriptor.value,bound)) return null;
+    result[field] = descriptor.value;
+  }
+  return result;
 }
 export function parseEvent(value:unknown): HubEvent|null {
   if (!object(value) || !keysWithin(value,['id','source','kind','delivery'],['id','source','kind','alias','agent','task','delivery','pullRequestTitle','repositoryName','meetingTitle']) ||
       !screenedId(value.id) || !source(value.source) || !eventKind(value.kind) || !['live','replay'].includes(value.delivery as string) ||
-      !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id) ||
-      !optional(value,'pullRequestTitle',item => validDisplayText(item,160)) || !optional(value,'repositoryName',item => validDisplayText(item,80)) ||
-      !optional(value,'meetingTitle',item => validDisplayText(item,160))) return null;
+      !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id)) return null;
+  const text = eventText(value as EventText);
+  if (!text) return null;
   return {id:value.id,source:value.source,kind:value.kind,...(value.alias === undefined ? {} : {alias:value.alias as string}),
     ...(value.agent === undefined ? {} : {agent:value.agent as string}),...(value.task === undefined ? {} : {task:value.task as string}),
-    ...eventText(value as EventText),delivery:value.delivery as HubEvent['delivery']};
+    ...text,delivery:value.delivery as HubEvent['delivery']};
 }
 function parseTrigger(value:unknown): EventTrigger {
   if (!object(value) || !keysWithin(value,['source','kind'],['source','kind','alias']) || !source(value.source) || !eventKind(value.kind) || !optional(value,'alias',screenedId)) fail('invalid-trigger');
@@ -169,7 +174,7 @@ function entry(row:LogRow): LogEntry {
   const detail = row.detail === null ? {} : JSON.parse(row.detail) as {event?:EventText; receipt?:LogEntry['receipt']; failure?:{code:string}; start?:MomentStart};
   return {seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
     ...(row.eventAlias === null ? {} : {alias:row.eventAlias}),...(row.agent === null ? {} : {agent:row.agent}),...(row.task === null ? {} : {task:row.task}),
-    ...eventText(detail.event ?? {})},
+    ...(eventText(detail.event ?? {}) ?? {})},
     momentId:row.momentId,priorityClass:row.priorityClass,coversStatus:row.coversStatus,target:row.target,outcome:row.outcome,
     ...(row.reason === null ? {} : {reason:row.reason}),...(detail.receipt ? {receipt:detail.receipt} : {}),...(detail.failure ? {failure:detail.failure} : {}),...(detail.start ? {start:detail.start} : {})};
 }
@@ -208,7 +213,7 @@ export function createAutomation(options:AutomationOptions) {
   };
 
   const logRow = (rule:Rule, event:HubEvent, moment:MomentIntent, target:string, outcome:LogRow['outcome'], reason:string|null, detail:object|null): NewLogRow => {
-    const text = eventText(event), hasText = Object.keys(text).length > 0;
+    const text = eventText(event)!, hasText = Object.keys(text).length > 0;
     return {atMs:options.clock(),ruleId:rule.id,eventSource:event.source,eventId:event.id,eventKind:event.kind,eventAlias:event.alias ?? null,
       agent:event.agent ?? null,task:event.task ?? null,momentId:moment.momentId,priorityClass:moment.priorityClass,coversStatus:moment.coversStatus,
       target,outcome,reason,detail:detail === null && !hasText ? null : JSON.stringify({...detail,...(hasText ? {event:text} : {})})};
