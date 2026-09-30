@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { definitionDigest as recordsOneDigest } from '../digest.mjs';
 import { validateDataset, datasetIdentity, placementOf, projectOf, eligibility, publicProjection, validateProjection,
-  dependents, primaryPage, recentlyDone } from './records.mjs';
+  dependents, primaryPage, recentlyDone, publicationGate, prerequisiteState, ORDERED } from './records.mjs';
 import { CATALOG, catalogIdentity, validateView, resolveView, rebindView, allowedLink, literalText, epicCounts } from './views.mjs';
 import { definitionDigest } from './digest.mjs';
+import { releaseIdentity, validateRelease, checkBinding, compatibility, mayInvokeModel, acceptReply, fileHash } from './release.mjs';
 
 const json = name => JSON.parse(readFileSync(new URL(name, import.meta.url)));
 const policy = { asOf: '2026-09-30T12:01:00Z', maxAgeMs: 300_000 };
@@ -36,9 +37,10 @@ function produced(dataset) {
   dataset.datasetId = datasetIdentity(dataset);
   return dataset;
 }
-function records(changes = {}, recompute = true) {
+function records(changes = {}, recompute = true, all = {}) {
   const dataset = json('./fixtures/dataset.json');
   for (const [path, content] of Object.entries(changes)) setPath(dataset, path, content);
+  for (const [path, content] of Object.entries(all)) for (const issue of dataset.issues) setPath(issue, path, content);
   if (recompute) return produced(dataset);
   dataset.datasetId = datasetIdentity(dataset);
   return dataset;
@@ -65,7 +67,7 @@ test('valid records place every issue by its nearest explicit epic', () => {
   assert.deepEqual(states[N102], ['epic', H(900100), [], null], 'cross-repository child');
   assert.deepEqual(states[P104], ['epic', H(900100), [H(900103)], null], 'deep descendant keeps its full path');
   assert.deepEqual(states[H(900105)], ['standalone', null, [H(900110)], null], 'an old closed parent keeps the path');
-  assert.deepEqual(states[H(900108)], ['unresolved', null, [], 'parent-unknown']);
+  assert.deepEqual(states[H(900108)], ['unresolved', null, [], 'ancestor-missing'], 'a parent outside the Guide');
   assert.ok(find(dataset, H(900109)).body.includes('## Guide'), 'legacy Guide metadata stays inert body text');
 });
 
@@ -80,12 +82,23 @@ test('every open issue has exactly one primary page', () => {
 });
 
 for (const fixture of json('./fixtures/record-cases.json')) test(`records: ${fixture.name}`, () => {
-  const dataset = records(fixture.set ?? {}, fixture.recompute !== false);
+  const dataset = records(fixture.set ?? {}, fixture.recompute !== false, fixture.setAll);
+  if (fixture.gate) {
+    const gate = publicationGate(dataset); const codes = list => [...new Set(list.map(x => x.code))].sort();
+    assert.equal(gate.publishable, fixture.gate.publishable, JSON.stringify(gate));
+    if (fixture.gate.fatal) assert.deepEqual(codes(gate.fatal), fixture.gate.fatal);
+    if (fixture.gate.gaps) assert.deepEqual(codes(gate.gaps), fixture.gate.gaps);
+    if (!gate.publishable) return;
+  }
   if (fixture.invalid) { assert.throws(() => validateDataset(dataset), new RegExp(fixture.invalid)); return; }
   validateDataset(dataset);
   for (const [id, placement] of Object.entries(fixture.placement ?? {})) assert.deepEqual(find(dataset, id).placement, placement, id);
   for (const [id, state] of Object.entries(fixture.phase ?? {})) assert.equal(find(dataset, id).project.phase.state, state, id);
   for (const [id, state] of Object.entries(fixture.commitment ?? {})) assert.equal(find(dataset, id).project.commitment.state, state, id);
+  for (const [id, [noOpenBlocker, outcomesAccepted]] of Object.entries(fixture.prerequisites ?? {})) {
+    const state = prerequisiteState(dataset, find(dataset, id));
+    assert.deepEqual([state.noOpenBlocker, state.outcomesAccepted], [noOpenBlocker, outcomesAccepted], id);
+  }
   if (fixture.recent) assert.deepEqual(dataset.issues.filter(x => recentlyDone(dataset, x)).map(x => x.id), fixture.recent);
   for (const [id, [allowed, reason]] of Object.entries(fixture.ready ?? {})) {
     const result = eligibility(dataset, id, 'ready', policy);
@@ -128,6 +141,25 @@ test('fetch-only refresh keeps content identity; content changes replace it', ()
   validateDataset(dataset);
   find(dataset, H(900101)).project.commitment.value = 'Later';
   assert.notEqual(datasetIdentity(dataset), original, 'an owner selection change is content');
+});
+
+test('sets are order-free while declared sequences keep their order', () => {
+  const dataset = json('./fixtures/dataset.json');
+  const original = dataset.datasetId;
+  assert.deepEqual(ORDERED, ['project.phases', 'project.commitments', 'issues[].placement.path']);
+  dataset.issues.reverse(); dataset.repositories.reverse();
+  for (const issue of dataset.issues) { issue.labels.reverse(); issue.children.ids?.reverse(); issue.publicFields.reverse(); }
+  assert.equal(datasetIdentity(dataset), original, 'issue enumeration, labels, child sets and page order are sets');
+  dataset.project.phases.reverse();
+  assert.notEqual(datasetIdentity(dataset), original, "reversing the owner's Phase order changes identity");
+  const flat = records({ 'issues.@900100.labels': ['enhancement', 'status:in-progress'] });
+  const deep = find(flat, 'jimmie-potts/divoom-app-upgrade#900104');
+  const before = datasetIdentity(flat);
+  deep.placement.path.reverse();
+  assert.notEqual(datasetIdentity(flat), before, 'ancestry order is meaningful');
+  assert.throws(() => validateDataset({ ...flat, datasetId: datasetIdentity(flat) }), /placement mismatch/);
+  const reordered = { ...CATALOG, pages: { ...CATALOG.pages, home: { ...CATALOG.pages.home, groups: [...CATALOG.pages.home.groups].reverse() } } };
+  assert.notEqual(catalogIdentity(reordered), catalogIdentity(CATALOG), 'catalog sequences keep their order');
 });
 
 test('exact dependent sets are unknown until the whole inventory is fresh', () => {
@@ -332,6 +364,62 @@ test('ordinary browsing needs no model call and the default view is ordinary', (
   answer.datasetId = dataset.datasetId;
   resolveView(validateView(answer, { dataset }), { dataset, policy });
   assert.equal(providerCalls, 1);
+});
+
+// Release binding
+
+const releaseFiles = () => ({ 'records.json': readFileSync(new URL('./fixtures/dataset.json', import.meta.url)),
+  'catalog.json': readFileSync(new URL('./catalog.json', import.meta.url)),
+  'epics/jimmie-potts/agent-device-hub/900100/view.json': readFileSync(new URL('./fixtures/epic-page.json', import.meta.url)) });
+const supports = { release: ['guide-release/1.0'], records: ['guide-records/2.0'], views: ['guide-views/1.0'] };
+
+test('one release binds pages, records, catalog and assets with generator provenance', () => {
+  const manifest = json('./fixtures/release.json'); const dataset = json('./fixtures/dataset.json');
+  validateRelease(manifest, { dataset, catalogId: catalogIdentity(CATALOG), files: releaseFiles() });
+  checkBinding(manifest, json('./fixtures/epic-page.json'));
+  assert.match(manifest.generator.revision, /^[0-9a-f]{40}$/);
+  const rebuilt = { ...structuredClone(manifest), builtAt: '2026-09-30T12:09:00Z' };
+  rebuilt.artifacts.reverse();
+  assert.equal(releaseIdentity(rebuilt), manifest.releaseId, 'build time and artifact order are not release content');
+  assert.notEqual(releaseIdentity({ ...manifest, generator: { ...manifest.generator, revision: 'b'.repeat(40) } }), manifest.releaseId);
+});
+
+test('mixed-release inputs are rejected', () => {
+  const manifest = json('./fixtures/release.json'); const dataset = json('./fixtures/dataset.json');
+  const changed = records({ 'issues.@900101.title': 'Changed title' });
+  assert.throws(() => validateRelease(manifest, { dataset: changed }), code('mixed-release'));
+  assert.throws(() => validateRelease(manifest, { catalogId: 'sha256:' + '1'.repeat(64) }), code('mixed-release'));
+  assert.throws(() => validateRelease(manifest, { files: { ...releaseFiles(), 'records.json': Buffer.from('{}') } }), code('mixed-release'));
+  assert.throws(() => validateRelease(manifest, { files: { 'assets/old.js': Buffer.from('x') } }), code('mixed-release'));
+  assert.throws(() => checkBinding(manifest, { ...json('./fixtures/composed.json'), datasetId: changed.datasetId }), code('mixed-release'));
+  assert.throws(() => validateRelease({ ...manifest, releaseId: 'sha256:' + '2'.repeat(64) }), code('release-identity'));
+  assert.throws(() => validateRelease({ ...manifest, schemaVersion: 'guide-release/2.0' }), code('release-unsupported'));
+  assert.ok(dataset.datasetId === manifest.datasetId);
+});
+
+test('clients keep one supported release and never call Jev with unsupported data', () => {
+  const pinned = json('./fixtures/release.json');
+  const newer = { ...pinned, releaseId: 'sha256:' + '3'.repeat(64) };
+  const future = { ...newer, recordsVersion: 'guide-records/3.0' };
+  assert.equal(compatibility({ incoming: pinned, supports }), 'load');
+  assert.equal(compatibility({ pinned, incoming: pinned, supports }), 'current');
+  assert.equal(compatibility({ pinned, incoming: newer, supports }), 'newer-available', 'the open view stays on its release until reload');
+  assert.equal(compatibility({ pinned, incoming: newer, supports, pinnedAssetsAvailable: false }), 'reload-required');
+  assert.equal(compatibility({ pinned, incoming: future, supports }), 'update-required', 'an old client keeps its validated view');
+  assert.equal(compatibility({ incoming: future, supports }), 'unavailable');
+  assert.equal(mayInvokeModel(pinned, supports), true);
+  assert.equal(mayInvokeModel(future, supports), false);
+  assert.equal(acceptReply({ requestReleaseId: pinned.releaseId, currentReleaseId: pinned.releaseId, replyReleaseId: pinned.releaseId }), 'accept');
+  assert.equal(acceptReply({ requestReleaseId: pinned.releaseId, currentReleaseId: newer.releaseId, replyReleaseId: pinned.releaseId }), 'obsolete',
+    'a deployment during an outstanding request makes the reply obsolete');
+});
+
+test('cards report open blockers and unaccepted outcomes as separate facts', () => {
+  const { dataset, value } = view({ base: 'composed', records: { 'issues.@900101.blockedBy.ids': ['jimmie-potts/agent-device-hub#900107'] } });
+  const item = node(resolveView(value, { dataset, policy }), 'next-card');
+  assert.deepEqual([item.prerequisites.noOpenBlocker, item.prerequisites.outcomesAccepted, item.prerequisites.unaccepted],
+    [true, false, ['jimmie-potts/agent-device-hub#900107']]);
+  assert.equal(item.reasons.find(x => x.code === 'ready-candidate').state, 'withheld');
 });
 
 // Compatibility and approval

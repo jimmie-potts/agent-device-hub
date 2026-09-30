@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
 export const artifacts = ['README.md', 'records.schema.json', 'records.mjs', 'catalog.json', 'views.schema.json',
-  'views.mjs', 'digest.mjs', 'fixtures/dataset.json', 'fixtures/record-cases.json', 'fixtures/epic-page.json',
-  'fixtures/composed.json', 'fixtures/view-cases.json'];
+  'views.mjs', 'release.schema.json', 'release.mjs', 'digest.mjs', 'fixtures/dataset.json', 'fixtures/record-cases.json',
+  'fixtures/epic-page.json', 'fixtures/composed.json', 'fixtures/view-cases.json', 'fixtures/release.json'];
 export function definitionDigest(specPath) {
   const hash = createHash('sha256');
   for (const path of artifacts) {

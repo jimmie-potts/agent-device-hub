@@ -22,6 +22,11 @@ this definition.
   or rows, plus sections, dependency lists, boards and task briefs; coverage
   rules that keep ordinary pages complete; typed reasons and evidence; bounds,
   routes and stable rejection codes.
+- Define the publication boundary between fatal core-collection failures and
+  optional enrichment gaps; separate "no open blocker" from "prerequisite outcome
+  accepted"; declare which lists are sets and which are sequences for identity;
+  and define `guide-release/1.0`, a release manifest binding pages, records,
+  catalog and assets with generator provenance and client compatibility rules.
 - Supply offline references, a synthetic dataset, a deterministic ordinary
   epic page, a composed example over the same records and positive and negative
   fixtures, and run them in existing CI.

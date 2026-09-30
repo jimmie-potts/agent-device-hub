@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import Ajv from 'ajv';
 import { VERSION as RECORDS_VERSION, WORKFLOW, LABELS, isEpic, isFresh, validateDataset, eligibility,
-  publicProjection, dependents, primaryPage, recentlyDone, recentWindow } from './records.mjs';
+  publicProjection, dependents, primaryPage, recentlyDone, recentWindow, prerequisiteState } from './records.mjs';
 
 const read = name => JSON.parse(readFileSync(new URL(name, import.meta.url)));
 const schema = read('./views.schema.json');
@@ -35,8 +35,12 @@ export const PREDICATES = {
   open,
   active: issue => open(issue) && workflow(issue).some(x => ['status:in-progress', 'status:review'].includes(x)),
   'open-bug': issue => open(issue) && issue.labels.includes(LABELS.bug),
-  blocked: (issue, { lookup }) => open(issue) && (issue.labels.includes('blocked') || issue.blockedBy.ids === null
-    || issue.blockedBy.ids.some(id => !lookup.has(id) || open(lookup.get(id)))),
+  // Blocked covers open, missing or unknown blockers and prerequisites whose outcome needs reconciliation.
+  blocked: (issue, { dataset }) => {
+    if (!open(issue)) return false;
+    const state = prerequisiteState(dataset, issue);
+    return issue.labels.includes('blocked') || state.noOpenBlocker !== true || state.outcomesAccepted !== true;
+  },
   later: issue => open(issue) && issue.labels.some(x => ['deferred', LABELS.idea].includes(x)),
   closed: issue => !open(issue),
   recent: (issue, { dataset }) => recentlyDone(dataset, issue),
@@ -263,9 +267,8 @@ function recentEvidence(dataset) {
 // Counts come from placement, so repeated cards never change them.
 export function epicCounts(dataset, epicId, policy) {
   const members = dataset.issues.filter(x => open(x) && x.id !== epicId && primaryPage(x) === `epic:${epicId}`);
-  const lookup = new Map(dataset.issues.map(x => [x.id, x]));
   return { open: members.length, active: members.filter(PREDICATES.active).length,
-    blocked: members.filter(x => PREDICATES.blocked(x, { lookup })).length,
+    blocked: members.filter(x => PREDICATES.blocked(x, { dataset })).length,
     ready: members.filter(x => eligibility(dataset, x.id, 'ready', policy).allowed).length,
     recentlyDone: dataset.issues.filter(x => recentlyDone(dataset, x) && x.placement.epic === epicId).length };
 }
@@ -314,7 +317,7 @@ export function resolveView(value, { dataset, policy, catalog = CATALOG } = {}) 
       Object.assign(node, { link: allowedLink(record.url), route: route(record, catalog),
         workflow: open(record) ? workflow(record) : [], state: record.state, stateReason: record.stateReason,
         closedAt: record.closedAt, placement: structuredClone(record.placement), phase: structuredClone(record.project.phase),
-        commitment: structuredClone(record.project.commitment),
+        commitment: structuredClone(record.project.commitment), prerequisites: prerequisiteState(dataset, record),
         reasons: (component.reasons ?? []).map(reason => resolveReason(dataset, record, reason, policy)),
         actions: ['open-brief', ...(allowedLink(record.url) ? ['open-source'] : [])] });
       if (component.kind === 'issue-card') Object.assign(node, { presentation: component.presentation, primary: component.primary });

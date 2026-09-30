@@ -104,7 +104,9 @@ build, maintenance and browser checks. See the
 Epic Guide contract fixtures run the same way:
 `node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs`, as a
 separate step in the same Depot job. They exercise `guide-records/2.0` placement,
-Project values, the seven-day Recently done window, readiness and projection, and
+Project values, the seven-day Recently done window, prerequisite acceptance, the
+publication gate, order-aware identity, readiness and projection, the
+`guide-release/1.0` binding, and
 `guide-views/1.0` catalog and schema agreement, the shared issue card and epic
 component, coverage, reasons, boards, briefs and rejection codes, using synthetic
 records. They do not qualify the collector, browser, Project access or a

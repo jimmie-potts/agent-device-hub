@@ -4,6 +4,7 @@
 - [x] 1.2 Define `guide-views/1.0` with pages, groups, coverage, components, reasons, bounds, routes and rejection codes; verify the ordinary and composed examples and the rejection fixtures.
 - [x] 1.3 Write the field dictionary, producer and consumer responsibilities, journey and migration obligations; record the retain/change/defer review of PR #645.
 - [x] 1.4 Update maintenance guidance and CI; run the contract fixtures, workflow checks and shared checks and record their actual results.
+- [x] 1.5 Define the publication boundary, prerequisite acceptance, set and sequence identity and the `guide-release/1.0` binding; verify gate, prerequisite, permutation and release fixtures.
 
 ## 2. Human approval
 

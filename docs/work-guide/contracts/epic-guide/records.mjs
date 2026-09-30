@@ -44,7 +44,10 @@ const inWindow = (dataset, time) => {
 export const recentlyDone = (dataset, issue) => issue.state === 'CLOSED' && issue.stateReason === 'completed'
   && inWindow(dataset, issue.closedAt);
 
-// Content identity ignores fetch receipts and diagnostic build metadata, not facts.
+// Lists are unordered sets unless declared here; these keep owner or ancestry order.
+export const ORDERED = ['project.phases', 'project.commitments', 'issues[].placement.path'];
+
+// Content identity ignores fetch receipts, collection time and build metadata, not facts.
 export function datasetIdentity(value) {
   const content = structuredClone(value);
   delete content.datasetId;
@@ -56,13 +59,16 @@ export function datasetIdentity(value) {
     delete evidence.observedAt;
     if (evidence.pagination) delete evidence.pagination.pages;
   }
-  const canonical = x => {
-    if (Array.isArray(x)) return '[' + x.map(canonical).sort().join(',') + ']';
+  const canonical = (x, path) => {
+    if (Array.isArray(x)) {
+      const items = x.map(item => canonical(item, path + '[]'));
+      return '[' + (ORDERED.includes(path) ? items : items.sort()).join(',') + ']';
+    }
     if (x !== null && typeof x === 'object') return '{' + Object.keys(x).sort()
-      .map(key => JSON.stringify(key) + ':' + canonical(x[key])).join(',') + '}';
+      .map(key => JSON.stringify(key) + ':' + canonical(x[key], path ? `${path}.${key}` : key)).join(',') + '}';
     return JSON.stringify(x);
   };
-  return 'sha256:' + createHash('sha256').update(canonical(content)).digest('hex');
+  return 'sha256:' + createHash('sha256').update(canonical(content, '')).digest('hex');
 }
 
 // Nearest containing epic through the native parent chain; a parent alone is never an epic.
@@ -200,6 +206,28 @@ export function isFresh(evidence, policy) {
     && age >= 0 && age <= policy.maxAgeMs;
 }
 
+// A prerequisite's outcome is accepted only by a completed closure of that issue's own scope.
+// Further gates (installation, physical or owner acceptance) are separate blocking issues.
+export function prerequisiteOutcome(blocker) {
+  if (blocker.state === 'OPEN') return 'open';
+  if (blocker.stateReason === 'completed') return 'accepted';
+  return blocker.stateReason === null ? 'closure-unknown' : 'not-completed';
+}
+
+// Two separate facts: whether any native blocker is still open or unknown, and whether every
+// closed prerequisite's outcome is accepted. Neither implies the other.
+export function prerequisiteState(dataset, issue) {
+  const lookup = new Map(dataset.issues.map(x => [x.id, x]));
+  const ids = issue.blockedBy.ids;
+  if (ids === null) return { noOpenBlocker: null, outcomesAccepted: null, open: [], unaccepted: [], missing: [] };
+  const targets = ids.map(id => [id, lookup.get(id)]);
+  const missing = targets.filter(([, x]) => !x).map(([id]) => id);
+  const open = targets.filter(([, x]) => x?.state === 'OPEN').map(([id]) => id);
+  const unaccepted = targets.filter(([, x]) => x && x.state === 'CLOSED' && prerequisiteOutcome(x) !== 'accepted').map(([id]) => id);
+  return { noOpenBlocker: missing.length ? null : open.length === 0,
+    outcomesAccepted: missing.length ? null : unaccepted.length === 0, open, unaccepted, missing };
+}
+
 // Reference decision only. No scheduler, renderer, normalizer or provider call.
 export function eligibility(dataset, id, operation, policy) {
   validateDataset(dataset);
@@ -230,7 +258,10 @@ export function eligibility(dataset, id, operation, policy) {
       const blocker = lookup.get(target);
       if (!blocker) add('dependency-target-missing', record.blockedBy.evidence.source);
       else {
-        if (operation === 'ready' && blocker.state !== 'CLOSED') add('open-prerequisite', blocker.url);
+        if (operation === 'ready') {
+          const outcome = prerequisiteOutcome(blocker);
+          if (outcome !== 'accepted') add(outcome === 'open' ? 'open-prerequisite' : `prerequisite-${outcome}`, blocker.url);
+        }
         visit(blocker, next);
       }
     }
@@ -298,4 +329,41 @@ export function primaryPage(issue) {
   if (issue.placement.state === 'epic') return `epic:${issue.placement.epic}`;
   if (issue.placement.state === 'root') return `epic:${issue.id}`;
   return 'not-in-epic';
+}
+
+// The publication boundary: core issue collections must be complete; enrichment may degrade to gaps.
+export function publicationGate(dataset) {
+  const fatal = []; const gaps = [];
+  const add = (list, code, source) => list.push({ code, source });
+  try { validateDataset(dataset); } catch (error) { add(fatal, 'records-invalid', error.message); return { publishable: false, fatal, gaps }; }
+  const primary = new Set(dataset.repositories.filter(x => x.scope === 'primary').map(x => x.name));
+  for (const repository of dataset.repositories.filter(x => primary.has(x.name))) {
+    const { inventory, recentClosures } = repository;
+    if (inventory.state !== 'fresh' || !inventory.complete) add(fatal, 'inventory-incomplete', inventory.source);
+    if (recentClosures.state !== 'fresh' || !recentClosures.complete) add(gaps, 'recent-closures-incomplete', recentClosures.source);
+  }
+  const lookup = new Map(dataset.issues.map(x => [x.id, x]));
+  const repositoryOf = id => id.split('#')[0];
+  for (const issue of dataset.issues.filter(x => x.state === 'OPEN' && primary.has(x.repository))) {
+    for (const kind of ['parent', 'blockedBy']) {
+      const relation = issue[kind];
+      // A read that failed leaves the core graph unknown; a known edge to an outside issue is only a gap.
+      if (relation.ids === null) { add(fatal, 'relationship-read-failed', relation.evidence.source); continue; }
+      for (const id of relation.ids.filter(id => !lookup.has(id)))
+        add(primary.has(repositoryOf(id)) ? fatal : gaps, primary.has(repositoryOf(id)) ? 'reference-missing' : 'reference-unresolved', `${issue.url} → ${id}`);
+    }
+    for (const key of ['implementation', 'protections', 'deferrals'])
+      if (['conflict', 'unsupported'].includes(issue.story[key].state)) add(gaps, 'optional-section-malformed', issue.story[key].source);
+    const execution = issue.planning.filter(x => x.kind === 'execution');
+    // A missing recommendation is normal; one that exists but cannot be used is a visible gap.
+    if (execution.length > 1 || (execution.length === 1 && execution[0].state !== 'current')) add(gaps, 'recommendation-unusable', issue.url);
+  }
+  const { project } = dataset;
+  if (!project.public) add(gaps, 'project-not-public', project.source ?? 'no Project configured');
+  else if (!project.evidence.complete || !['fresh', 'stale'].includes(project.evidence.state)) add(gaps, 'project-unavailable', project.evidence.source);
+  else if (project.evidence.state === 'stale') add(gaps, 'project-cached', `${project.evidence.source} observed ${project.evidence.observedAt}`);
+  // Unsafe projection is fatal: selections need a configured policy and must equal its allowlist exactly.
+  if (!dataset.publicationPolicy && dataset.issues.some(x => x.publicFields.length)) add(fatal, 'projection-unsafe', 'public fields selected without a policy');
+  try { validateProjection(publicProjection(dataset), dataset); } catch (error) { add(fatal, 'projection-unsafe', error.message); }
+  return { publishable: fatal.length === 0, fatal, gaps };
 }

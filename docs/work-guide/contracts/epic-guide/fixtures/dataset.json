@@ -1,6 +1,6 @@
 {
   "schemaVersion": "guide-records/2.0",
-  "datasetId": "sha256:77eeda37efb5af3ea382b7eb15574d5435c52ddba857edb1757a0afbc012ec33",
+  "datasetId": "sha256:13754f97c33a4b87dcb5ab29f7bf9e2b741916732290c6d7c574679a66a80a61",
   "asOf": "2026-09-30T12:00:00Z",
   "repositories": [
     {
@@ -1291,7 +1291,7 @@
       "repository": "jimmie-potts/agent-device-hub",
       "number": 900108,
       "url": "https://github.com/jimmie-potts/agent-device-hub/issues/900108",
-      "title": "Parent unavailable during collection",
+      "title": "Follow a parent outside the Guide",
       "body": "## Outcome and real setup\n\nSynthetic outcome for 900108.\n\n## Smallest useful implementation\n\nSynthetic implementation for 900108.\n\n## Observable acceptance and planned evidence\n\nAn observable synthetic check passes.",
       "state": "OPEN",
       "stateReason": null,
@@ -1353,13 +1353,15 @@
         }
       },
       "parent": {
-        "ids": null,
+        "ids": [
+          "example-org/elsewhere#12"
+        ],
         "evidence": {
           "source": "https://api.github.com/repos/jimmie-potts/agent-device-hub/issues/900108/parent",
           "observedAt": "2026-09-30T12:00:00Z",
-          "state": "failed",
+          "state": "fresh",
           "complete": false,
-          "reason": "Parent read returned an error",
+          "reason": "Parent is outside the Guide repositories",
           "pagination": null
         }
       },
@@ -1408,7 +1410,7 @@
         "state": "unresolved",
         "epic": null,
         "path": [],
-        "reason": "parent-unknown"
+        "reason": "ancestor-missing"
       },
       "project": {
         "member": false,

@@ -64,6 +64,12 @@
         ],
         "reason": "ancestor-missing"
       }
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "reference-missing"
+      ]
     }
   },
   {
@@ -322,6 +328,366 @@
       "jimmie-potts/agent-device-hub#900105": [
         false,
         "story-evidence-incomplete"
+      ]
+    }
+  },
+  {
+    "name": "the fixture is publishable with its visible gaps",
+    "gate": {
+      "publishable": true,
+      "fatal": [],
+      "gaps": [
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    }
+  },
+  {
+    "name": "a truncated open-issue inventory blocks publication",
+    "set": {
+      "repositories.0.inventory.complete": false,
+      "repositories.0.inventory.reason": "Page 2 unavailable",
+      "repositories.0.inventory.pagination.hasNextPage": true
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "inventory-incomplete"
+      ]
+    }
+  },
+  {
+    "name": "a failed parent read blocks publication",
+    "set": {
+      "issues.@900103.parent.ids": null,
+      "issues.@900103.parent.evidence.state": "failed",
+      "issues.@900103.parent.evidence.complete": false,
+      "issues.@900103.parent.evidence.reason": "Parent read failed",
+      "issues.@900103.parent.evidence.pagination": null
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "relationship-read-failed"
+      ]
+    }
+  },
+  {
+    "name": "public fields without a policy are an unsafe projection",
+    "set": {
+      "publicationPolicy": null
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "projection-unsafe"
+      ]
+    }
+  },
+  {
+    "name": "a malformed optional section stays browsable and does not hold readiness",
+    "set": {
+      "issues.@900101.story.implementation": {
+        "state": "conflict",
+        "heading": null,
+        "text": null,
+        "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900101",
+        "parser": "story-sections/1",
+        "reason": "Two Implementation sections"
+      }
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "optional-section-malformed",
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        null
+      ]
+    }
+  },
+  {
+    "name": "a denied Project read stays browsable with unknown values",
+    "set": {
+      "project.evidence.state": "failed",
+      "project.evidence.complete": false,
+      "project.evidence.reason": "Projects API denied"
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "project-unavailable",
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900100": "unknown"
+    }
+  },
+  {
+    "name": "a partial Project read is never spliced",
+    "set": {
+      "project.evidence.complete": false,
+      "project.evidence.reason": "Page 2 of Project items unavailable",
+      "project.evidence.pagination.hasNextPage": true
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "project-unavailable",
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900100": "unknown"
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900101": "unknown"
+    }
+  },
+  {
+    "name": "a cached Project snapshot keeps its values and original time",
+    "set": {
+      "project.evidence.state": "stale",
+      "project.evidence.observedAt": "2026-09-29T12:00:00Z",
+      "project.evidence.reason": "Cached from the last complete permitted read"
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "project-cached",
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900100": "assigned"
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900100": "selected"
+    }
+  },
+  {
+    "name": "a verified empty Project is unselected, not unknown",
+    "set": {
+      "project.evidence.pagination.itemCount": 0,
+      "project.evidence.pagination.totalCount": 0
+    },
+    "setAll": {
+      "project.member": false
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900100": "unassigned"
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900100": "unselected",
+      "jimmie-potts/agent-device-hub#900101": "unselected"
+    }
+  },
+  {
+    "name": "an incomplete seven-day read is a visible gap",
+    "set": {
+      "repositories.1.recentClosures.complete": false,
+      "repositories.1.recentClosures.reason": "Page unavailable",
+      "repositories.1.recentClosures.pagination.hasNextPage": true
+    },
+    "gate": {
+      "publishable": true,
+      "gaps": [
+        "recent-closures-incomplete",
+        "recommendation-unusable",
+        "reference-unresolved"
+      ]
+    }
+  },
+  {
+    "name": "invalid records never publish",
+    "set": {
+      "issues.@900101.labels": "status:ready"
+    },
+    "gate": {
+      "publishable": false,
+      "fatal": [
+        "records-invalid"
+      ]
+    }
+  },
+  {
+    "name": "a completed prerequisite accepts its own scope",
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        null
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        true
+      ]
+    }
+  },
+  {
+    "name": "a completed prerequisite with a still-open acceptance gate withholds readiness",
+    "set": {
+      "issues.@900101.blockedBy.ids": [
+        "jimmie-potts/agent-device-hub#900106",
+        "jimmie-potts/agent-device-hub#900103"
+      ],
+      "issues.@900101.blockedBy.evidence.pagination.itemCount": 2,
+      "issues.@900101.blockedBy.evidence.pagination.totalCount": 2
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "open-prerequisite"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "name": "a not-planned prerequisite needs reconciliation",
+    "set": {
+      "issues.@900101.blockedBy.ids": [
+        "jimmie-potts/agent-device-hub#900107"
+      ],
+      "issues.@900101.blockedBy.evidence.pagination.itemCount": 1,
+      "issues.@900101.blockedBy.evidence.pagination.totalCount": 1
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "prerequisite-not-completed"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        false
+      ]
+    }
+  },
+  {
+    "name": "a duplicate prerequisite without a linked replacement needs reconciliation",
+    "set": {
+      "issues.@900106.stateReason": "duplicate"
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "prerequisite-not-completed"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        false
+      ]
+    }
+  },
+  {
+    "name": "a duplicate reconciled by linking its accepted replacement",
+    "set": {
+      "issues.@900106.stateReason": "duplicate",
+      "issues.@900101.blockedBy.ids": [
+        "jimmie-potts/agent-device-hub#900111"
+      ],
+      "issues.@900101.blockedBy.evidence.pagination.itemCount": 1,
+      "issues.@900101.blockedBy.evidence.pagination.totalCount": 1
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        null
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        true
+      ]
+    }
+  },
+  {
+    "name": "a duplicate still linked beside its replacement stays unreconciled",
+    "set": {
+      "issues.@900106.stateReason": "duplicate",
+      "issues.@900101.blockedBy.ids": [
+        "jimmie-potts/agent-device-hub#900106",
+        "jimmie-potts/agent-device-hub#900111"
+      ],
+      "issues.@900101.blockedBy.evidence.pagination.itemCount": 2,
+      "issues.@900101.blockedBy.evidence.pagination.totalCount": 2
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "prerequisite-not-completed"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        false
+      ]
+    }
+  },
+  {
+    "name": "a reopened prerequisite is open again",
+    "set": {
+      "issues.@900106.state": "OPEN",
+      "issues.@900106.stateReason": "reopened",
+      "issues.@900106.closedAt": null,
+      "repositories.0.inventory.pagination.itemCount": 7,
+      "repositories.0.inventory.pagination.totalCount": 7
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "open-prerequisite"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        true
+      ]
+    }
+  },
+  {
+    "name": "an unknown closure reason withholds readiness",
+    "set": {
+      "issues.@900106.stateReason": null
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "prerequisite-closure-unknown"
+      ]
+    },
+    "prerequisites": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        false
       ]
     }
   }

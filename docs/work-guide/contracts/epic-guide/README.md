@@ -1,6 +1,6 @@
 # Epic Guide records and components contract
 
-Versions `guide-records/2.0` and `guide-views/1.0`. Owning work:
+Versions `guide-records/2.0`, `guide-views/1.0` and `guide-release/1.0`. Owning work:
 [Hub #545](https://github.com/jimmie-potts/agent-device-hub/issues/545), under
 [epic #509](https://github.com/jimmie-potts/agent-device-hub/issues/509). The
 schemas, catalog, this dictionary, the offline references and the fixtures in
@@ -144,13 +144,93 @@ never selects a Commitment.
 prerequisites, ready) with these ready-gate changes: the issue must be open,
 carry exactly `status:ready` among the workflow labels, have no `blocked`,
 `deferred` or `idea` label, have present Outcome and Acceptance sections with
-non-placeholder acceptance, and have fresh facts and a fresh, complete, closed
-prerequisite chain. Missing Implementation, Protections or Deferrals sections do
-not withhold readiness. Ordinary browsing never needs any of this evidence.
+non-placeholder acceptance, and have fresh facts and a fresh, complete
+prerequisite chain in which every native blocker's outcome is accepted. Missing
+Implementation, Protections or Deferrals sections do not withhold readiness.
+Ordinary browsing never needs any of this evidence.
+
+### Prerequisite acceptance
+
+Two facts stay separate, and `prerequisiteState` reports both:
+
+- **No open blocker:** no native blocker is open, missing from the dataset or
+  unknown.
+- **Outcomes accepted:** every closed native blocker's outcome is accepted.
+
+Neither implies the other: a closed blocker is not automatically an accepted
+outcome, and accepted outcomes say nothing about blockers still open.
+`prerequisiteOutcome` decides each blocker from existing tracker facts only,
+with no new ledger:
+
+| Blocker | Outcome | Ready-gate reason |
+| --- | --- | --- |
+| Open, including reopened | `open` | `open-prerequisite` |
+| Closed as `completed` | `accepted`, for that issue's own stated scope | none |
+| Closed as `not_planned`, `duplicate` or another reason | `not-completed` | `prerequisite-not-completed` |
+| Closed with no recorded reason | `closure-unknown` | `prerequisite-closure-unknown` |
+
+A completed closure accepts only that issue's own acceptance criteria, which the
+repository requires before closing. Any further required gate, such as
+installation, physical acceptance or owner approval, must be its own issue that
+the dependent is natively blocked by. "Completed, but required acceptance
+missing" is then that gate issue still being open. Checklist ticks are not
+evidence: many completed issues close without them.
+
+A not-planned, duplicate or unknown-reason prerequisite needs reconciliation.
+Either the owner links the dependent to an accepted replacement and removes the
+old link, or removes the link as an explicit scope change. GitHub records no
+duplicate target, so a replacement counts only through that native link. While
+the old link remains, readiness stays withheld. Source, installed and physical
+acceptance remain separate issues and are never inferred from one another.
+
+### Publication boundary
+
+`publicationGate` decides whether a validated dataset may become a new release.
+Fatal failures keep the last good release; optional enrichment only adds visible
+gaps and leaves every issue browsable.
+
+| Condition | Result | Code |
+| --- | --- | --- |
+| The dataset fails validation (schema, required fields, identity, private Project values) | Fatal | `records-invalid` |
+| A primary repository's open-issue inventory is incomplete or not fresh | Fatal | `inventory-incomplete` |
+| An open primary issue's parent or blocker read failed (unknown list) | Fatal | `relationship-read-failed` |
+| A parent or blocker points into a primary repository but is missing from the dataset | Fatal | `reference-missing` |
+| Public fields are selected without a policy, or the projection differs from its allowlist | Fatal | `projection-unsafe` |
+| A parent or blocker is in a repository outside the Guide and was not collected | Gap; the reference stays unknown and withholds dependent claims | `reference-unresolved` |
+| A repository's seven-day closed-issue read is incomplete | Gap; Recently done shows as partial | `recent-closures-incomplete` |
+| An optional story section (Implementation, Protections, Deferrals) is malformed | Gap | `optional-section-malformed` |
+| An execution recommendation exists but is stale, unknown, unsupported or duplicated | Gap; briefs use the generic commands | `recommendation-unusable` |
+| The Project is not public | Gap; Project values unknown | `project-not-public` |
+| The Project read failed, was denied or is partial | Gap; values unknown, never spliced | `project-unavailable` |
+| A permitted cached Project snapshot is used | Gap; values kept with their original observation time | `project-cached` |
+
+A missing recommendation is normal and not a gap. A verified empty Project, a
+complete read with no items, is not a gap: every value is unselected or
+unassigned, not unknown. A cached snapshot keeps its own `observedAt`, separate
+from the collection's `asOf` and the release's build time. #540 decides whether a
+cache is still permitted; a private Project is never collected.
+
+### Model projection
 
 The Jev projection is 1.0's projection over issues only, with the same
 320-character literal excerpts. It never includes bodies, Project values,
 placement, credentials or other unselected metadata.
+
+## Sets and sequences
+
+Content identity treats every list as an unordered set except the sequences in
+`ORDERED`, which keep their order:
+
+- `project.phases`, the owner's Phase order;
+- `project.commitments`, the Commitment option order;
+- `issues[].placement.path`, ancestry from the epic down.
+
+Reordering issues, repositories, labels, relationship IDs, public fields or API
+pages leaves `datasetId` unchanged. Reversing the Phase order or an ancestry
+path changes it. Collection time (`asOf`), observation times, pagination page
+counts and optional producer diagnostics are not content. In the catalog and in
+views every list is a sequence, so reordering groups, columns or children
+changes `catalogId` or the view.
 
 ## Views 1.0
 
@@ -273,6 +353,44 @@ resolves from current facts. On failure the view stays visible, marked out of
 date with the rejection code, and is never shown as current. A provider response
 bound to replaced records is still rejected.
 
+### Release binding
+
+A deployment is one release: its pages, `records.json`, catalog and assets,
+described by a `guide-release/1.0` manifest ([release.schema.json](release.schema.json),
+reference [release.mjs](release.mjs)). The manifest records:
+
+- the records and views versions;
+- the `datasetId`, `catalogId` and `asOf` it was built from;
+- the generator repository and full commit;
+- the build time;
+- every published artifact's path, kind and SHA-256.
+
+`releaseId` hashes everything except itself and the build time, with artifacts
+as a set, so a rebuild of identical content from the same generator has the same
+identity. #317 owns promotion order.
+
+`validateRelease` rejects with `release-unsupported`, `release-schema`,
+`release-identity` or `mixed-release`. Consumers apply these rules:
+
+- **Mixed releases are rejected.** A page, record, catalog or asset must match
+  its release's manifest: the same dataset and catalog identities, and a file
+  hash that matches the listed artifact. An unlisted or altered file is
+  `mixed-release`.
+- **An open client stays on one release.** `compatibility` returns `load` on a
+  fresh open, `current` for the same release, and `newer-available` when a new
+  supported release appears; the open view stays on its release until a full
+  reload. It returns `reload-required` when the open release's assets are gone,
+  and `update-required` (or `unavailable` with nothing open) when the new
+  release uses a version the client does not support. The client keeps its
+  validated view and never combines releases.
+- **No model call on unsupported data.** `mayInvokeModel` is true only for a
+  release whose release, records and views versions the client fully supports.
+- **Replies bind to a release.** An Ask reply counts only if it names the release
+  its request was made against and that release is still current (`acceptReply`).
+  A deployment during an outstanding request makes the reply `obsolete`, and it
+  is discarded before validation or rendering. #547 defines the request and
+  reply shapes, and #512 implements this rule in the Hub.
+
 ### Rejection codes
 
 `validateView` stops at the first failure: version and schema, then binding,
@@ -298,12 +416,12 @@ A rejected view is never partly rendered.
 
 | Party | Responsibility |
 | --- | --- |
-| This definition | Both schemas, the catalog, placement, Project and readiness rules, reasons, coverage, routes and rejection codes. |
+| This definition | The records, views and release schemas, the catalog, placement, Project, prerequisite and readiness rules, the publication boundary, sets and sequences, reasons, coverage, routes, release binding and rejection codes. |
 | Collector and browser (#511) | Collects complete records, including the seven-day closed slice and the older records resolution needs. Computes placement and Project states, audits the live inventory and builds ordinary pages that satisfy coverage. Implements each component once, so the browser and Ask render the same issue card and epic component, and renders every text literally. Its large-epic fixture proves compact rendering and full reachability. |
-| Project access (#540) | Verifies Project visibility and a least-privilege read path, and supplies `project.*`. Until then, Project values stay unknown. |
+| Project access (#540) | Verifies Project visibility and a least-privilege read path, and supplies `project.*`, including whether a cached snapshot is still permitted. Until then, Project values stay unknown. Preserves the owner's Phase order. |
 | Intake (#646) | Documents the `epic` and `idea` labels and form mappings to these story sections. |
-| Publication (#317, #654) | Builds and deploys artifacts from validated datasets and runs hosted checks. A failed build publishes nothing. |
-| Ask (#512 and its contracts) | Later produces composed `answer` views from Jev decisions over the public projection, then validates them here before display. |
+| Publication (#317, #654) | Builds datasets that pass `publicationGate`, writes the release manifest, promotes releases in order and runs hosted checks. A fatal gate publishes nothing new. |
+| Ask v1 (#547, #510, #512) | #547 defines the Ask request, result, failures and reset over this dataset and catalog. #510 freezes the evaluation cases. #512 turns Jev decisions into composed `answer` views, validates them here, applies the release rules and verifies older-Hub behavior. |
 
 ## Journey
 
@@ -323,8 +441,9 @@ A rejected view is never partly rendered.
    visibly out of date. A failed collection keeps the last good dataset and
    pages.
 
-Timeouts, provider failures and late replies after a reset belong to the Ask
-contracts. This definition only guarantees that nothing unvalidated renders.
+Timeouts, provider failures and late replies after a reset belong to #547.
+This definition guarantees that nothing unvalidated renders, and that no reply
+from another release is accepted.
 
 ## Compatibility, migration and retirement
 
@@ -337,8 +456,8 @@ contracts. This definition only guarantees that nothing unvalidated renders.
   sections.
 - `guide-records/1.0` artifacts are retired only after no accepted consumer
   needs them, with their approval evidence preserved.
-- The Ask contracts (#544, #546, #547, #548, #549) must be reconciled against
-  `guide-views/1.0` before Ask pickup; nothing here approves them.
+- #547's Ask v1 contract builds on this definition and needs its own approval;
+  nothing here approves it.
 
 ## Fixtures and approval
 
@@ -351,11 +470,15 @@ contracts. This definition only guarantees that nothing unvalidated renders.
   before it;
 - a not-planned closure inside the window, and a reopened issue;
 - an old closed parent and an old closed blocker kept for resolution;
+- a parent outside the Guide, which leaves placement unresolved and is a
+  publication gap, not a failure;
 - a stale execution recommendation;
 - a legacy story with a `## Guide` section.
 
 `fixtures/record-cases.json` and `fixtures/view-cases.json` apply named changes
-and record the expected result. `fixtures/epic-page.json` is the deterministic
+and record the expected result, including publication-gate outcomes and every
+prerequisite case. `fixtures/release.json` is the release manifest for the
+fixture dataset, catalog and epic page. `fixtures/epic-page.json` is the deterministic
 ordinary example and `fixtures/composed.json` the composed example.
 
 Run `node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs` under

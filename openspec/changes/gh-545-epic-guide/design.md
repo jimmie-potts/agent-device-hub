@@ -34,6 +34,22 @@ Ask request, decision and state contracts.
   An epic page is exactly one full epic component, and issues inside an epic
   component must belong to that epic. The browser and Ask share these inputs,
   so #511 implements each component once.
+- Owner decision, 2026-09-30: a completed closure accepts a prerequisite's own
+  scope, and any further required gate is a separate blocking issue. Not-planned,
+  duplicate and unknown-reason prerequisites withhold readiness until the owner
+  re-links an accepted replacement or removes the link. The live tracker ruled out
+  the alternatives: 14 of 76 recently completed Hub issues had every acceptance
+  box ticked, and duplicate closures record no native target.
+- Owner decision, 2026-09-30: the seven-day closed-issue read is optional
+  enrichment, so its failure is a visible gap. Incomplete open-issue inventory,
+  failed relationship reads of open issues, missing references into primary
+  repositories, invalid records and unsafe projection are fatal to a new release.
+- Content identity sorts sets but keeps declared sequences (Phase order,
+  Commitment options, ancestry paths); catalogs and views keep every order.
+- A release manifest hashes everything but its build time. Clients stay on one
+  release, report newer, reload-required or update-required states, call Jev
+  only on fully supported releases and discard replies from another release.
+  #317 owns promotion order; #547 defines the reply shape.
 - Readiness keeps 1.0's evidence gates but needs only Outcome and Acceptance,
   matching the #646 forms; the `idea` label replaces editorial highlights.
 - Views carry references and presentation only. Ordinary pages are code-built
@@ -68,6 +84,8 @@ Ask request, decision and state contracts.
 - Coverage makes ordinary pages long for large epics → compact rows, a bounded
   initial set, Show more and shareable filters belong to #511; the contract
   forbids truncation, not grouping, and exposes section totals.
+- Native links carry prerequisite acceptance → owners must file further gates
+  as blocking issues and re-link replacements; nothing is inferred from prose.
 - The seven-day window depends on `asOf` → a closure ages out of Recently done
   without other edits, and the per-repository count changes with it.
 - The Ask contracts still describe the old design → reconciliation happens

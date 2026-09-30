@@ -61,6 +61,37 @@ Unreadable or private Project data SHALL be unknown, never empty.
 - **WHEN** an epic member records a Phase different from its epic's
 - **THEN** its Phase is a conflict that keeps the recorded value, and neither Phase nor Commitment affects readiness
 
+### Requirement: Publication boundary
+A new release SHALL require complete, fresh open-issue inventories, readable
+relationship lists for open issues, collected references into the primary
+repositories, valid records and a safe projection. Optional enrichment failures
+SHALL become visible gaps that keep every issue browsable.
+
+#### Scenario: Truncated inventory
+- **WHEN** a primary repository's open-issue pagination is incomplete
+- **THEN** the dataset is not publishable and the last good release stays
+
+#### Scenario: Degraded enrichment
+- **WHEN** the Project read is denied or partial, a recommendation is stale, an optional section is malformed or the seven-day closed read is incomplete
+- **THEN** the dataset is publishable with those gaps listed, and Project values are unknown rather than spliced or emptied
+
+#### Scenario: Cached Project snapshot
+- **WHEN** a permitted cached Project snapshot is used
+- **THEN** its values keep their original observation time, separate from the collection time
+
+### Requirement: Prerequisite acceptance
+The records SHALL report "no open native blocker" and "prerequisite outcomes
+accepted" as separate facts. Only a completed closure SHALL accept a
+prerequisite's own scope; further gates SHALL be separate blocking issues.
+
+#### Scenario: Not-planned or duplicate prerequisite
+- **WHEN** a native blocker closed as not planned or as a duplicate, or with no reason
+- **THEN** readiness is withheld until the dependent is re-linked to an accepted replacement or the link is removed
+
+#### Scenario: Open acceptance gate
+- **WHEN** a prerequisite is completed but a separate required-acceptance issue that blocks the dependent is still open
+- **THEN** readiness is withheld with an open-prerequisite reason
+
 ### Requirement: Evidence-based readiness and projection
 Readiness SHALL require an open issue with exactly `status:ready`, no blocked,
 deferred or idea label, present Outcome and Acceptance, and fresh complete
@@ -125,6 +156,37 @@ an execution recommendation only when exactly one current recommendation exists.
 #### Scenario: Stale recommendation
 - **WHEN** an issue's execution recommendation is stale or missing
 - **THEN** the brief offers the four generic commands and marks the recommendation unused
+
+### Requirement: Sets and sequences
+Content identity SHALL ignore the order of set-valued lists and SHALL preserve
+declared sequences: the owner's Phase order, Commitment options and ancestry
+paths.
+
+#### Scenario: Reordered sets
+- **WHEN** issues, labels, relationship IDs or API pages arrive in another order
+- **THEN** the dataset identity is unchanged
+
+#### Scenario: Reordered Phases
+- **WHEN** the owner reverses the Phase order
+- **THEN** the dataset identity changes
+
+### Requirement: Release binding
+Each deployment SHALL be one release whose manifest binds records, catalog,
+pages and assets with versions and generator provenance. Clients SHALL reject
+mixed-release input, keep one validated release, invoke the model only on fully
+supported releases and discard replies bound to another release.
+
+#### Scenario: Deployment during an open session
+- **WHEN** a new release appears while a browser is open
+- **THEN** the open view stays on its release until a full reload, or asks for a reload when its assets are gone
+
+#### Scenario: Unsupported release
+- **WHEN** an older client meets a release with an unsupported records version
+- **THEN** it keeps its validated view, shows an update state and does not invoke the model
+
+#### Scenario: Outstanding request across a deployment
+- **WHEN** an Ask reply names a release that is no longer current
+- **THEN** the reply is discarded as obsolete
 
 ### Requirement: Contract approval and compatibility
 The definition SHALL have offline fixtures and an approval record binding its
