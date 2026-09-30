@@ -73,7 +73,9 @@
     "verify": "node scripts/verify.mjs",
     "verify:compose": "node apps/hub/verify/compose.mjs",
     "test:hub:verify": "npm run build && npm run test:hub:verify:built",
-    "test:hub:verify:built": "node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs"
+    "test:hub:verify:built": "node --test --test-concurrency=1 apps/hub/verify/tests/*.test.mjs",
+    "verify:host": "node scripts/verify-host.mjs",
+    "test:verify-host": "node --test scripts/tests/verify-host.test.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

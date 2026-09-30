@@ -149,3 +149,4 @@ jobs:
       - run: npm run test:app-verify:built
       - run: npm run test:app-verify:package:built
       - run: npm run test:hub:verify:built
+      - run: npm run test:verify-host
