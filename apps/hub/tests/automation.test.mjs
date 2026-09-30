@@ -33,7 +33,7 @@ function fakeSender(answer=()=>({kind:'receipt',receipt:{...validReceipt,outcome
 async function open({sender,targets,clock,monotonic,directory}={}){
  directory??=await mkdtemp(join(tmpdir(),'hub-automation-'));
  const hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers,...(clock?{clock}:{})},undefined,undefined,
-  {...(sender?{sender:sender.send}:{}),targets:targets??(async()=>({presentation:'content',alert:'none'})),...(monotonic?{monotonic}:{})});
+  {...(sender===null?{sender:null}:sender?{sender:sender.send}:{}),targets:targets??(async()=>({presentation:'content',alert:'none'})),...(monotonic?{monotonic}:{})});
  const call=async(method,path,body,credential=token,headers={})=>{
   const response=await fetch(hub.url+path,{method,headers:{authorization:`Bearer ${credential}`,...(method==='GET'?{}:{'x-pixoo-request':'1'}),...(body===undefined?{}:{'content-type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})});
   return {status:response.status,body:await response.json()};
@@ -338,7 +338,7 @@ test('each target is handed the moment once; failures are logged per target and 
    assert.ok(next.entries[0].seq<page.entries[1].seq);
   }finally{await reopened.hub.close();}
   // Without a composed sender nothing is handed over and the log says why.
-  const bare=await open({directory});
+  const bare=await open({directory,sender:null});
   try{
    bare.hub.automation.submit(live('pr-4'));await bare.hub.automation.settled();
    assert.deepEqual((await log(bare.call)).slice(0,3).map(e=>`${e.target}:${e.outcome}:${e.reason}`).sort(),['cube:blocked:sender-unavailable','panel:blocked:sender-unavailable','wall:blocked:sender-unavailable']);
@@ -366,7 +366,7 @@ test('newly applied lifecycle events reach the rules once and never delay ingest
  }finally{await hub.close();await rm(directory,{recursive:true,force:true});}
 });
 
-test('against the shared fake controllers, the composed reader blocks 1.0-only, Quiet and alerted status targets with no controller command (AC2 to AC4)',async t=>{
+test('against the shared fake controllers, the composed reader and the real #335 sender deliver to capable targets only (AC2 to AC4)',async t=>{
  // Hub #576 fakes: 1.1 controllers in Work, Quiet and Free, and a 1.0-only controller.
  const work=await startFakeController({serves:'1.1',controllerId:'c-wall',deviceId:'d-wall'});t.after(work.close);
  const quiet=await startFakeController({serves:'1.1',controllerId:'c-panel',deviceId:'d-panel',mode:'Quiet'});t.after(quiet.close);
@@ -377,6 +377,7 @@ test('against the shared fake controllers, the composed reader blocks 1.0-only, 
  const configs=[work.config({id:'wall'}),quiet.config({id:'panel'}),free.config({id:'cube'}),legacy.config({id:'lamp'})];
  const start=async sender=>{
   const hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:configs},undefined,undefined,sender?{sender:sender.send}:undefined);
+  // Without an injected sender the hub composes the real #335 `sendMoment`.
   const call=async(method,path,body,credential=token)=>{const response=await fetch(hub.url+path,{method,headers:{authorization:`Bearer ${credential}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,body:await response.json()};};
   return {hub,call};
  };
@@ -399,11 +400,25 @@ test('against the shared fake controllers, the composed reader blocks 1.0-only, 
   assert.equal(legacy.reads.versioned(),1,'the 1.0-only verdict holds for its epoch');
   assert.ok(fakes.every(fake=>fake.reads()>0),'the composed reader read every target');
   await hub.close();
-  // Without a composed sender every unblocked target is logged and nothing is sent. The stored attention still blocks the wall.
+  assert.deepEqual(fakes.map(fake=>fake.commands.length),[0,0,0,0],'the fake sender made no controller command');
+  // With the real sender, only the capable content target receives one 1.1 moment; the stored attention still blocks the wall.
   ({hub,call}=await start());
   hub.automation.submit(live('pr-3'));await hub.automation.settled();
-  assert.deepEqual(await latest(4),['cube:blocked:sender-unavailable','lamp:blocked:1.0-only','panel:blocked:quiet','wall:blocked:alert']);
-  assert.deepEqual(fakes.map(fake=>fake.commands.length),[0,0,0,0],'no controller command from any path');
+  assert.deepEqual(await latest(4),['cube:receipt:','lamp:blocked:1.0-only','panel:blocked:quiet','wall:blocked:alert']);
+  assert.deepEqual(fakes.map(fake=>fake.commands.length),[0,0,1,0],'one moment POST, to the capable target only');
+  const [sent]=free.moments();
+  assert.equal(sent.apiVersion,'1.1');
+  assert.equal(sent.command.coversStatus,true);assert.equal(sent.command.mood,'celebrate');assert.equal(sent.command.priorityClass,'event');
+  assert.equal(sent.command.start.epoch,free.snapshot11().sampleClock.epoch,'the start is in the device clock');
+  const delivered=(await log(call)).find(e=>e.target==='cube');
+  assert.equal(delivered.momentId,sent.command.momentId);assert.equal(delivered.receipt.requestId.sequence,sent.requestId.sequence);
+  assert.deepEqual(delivered.start,sent.command.start);
+  // A typed refusal without admission is logged as not sent with its code, and nothing is resent.
+  free.answerNext({failure:'capacity',status:429});
+  hub.automation.submit(live('pr-4'));await hub.automation.settled();
+  const refused=(await log(call)).find(e=>e.target==='cube');
+  assert.deepEqual([refused.outcome,refused.reason,refused.failure],['not-sent','capacity',{code:'capacity'}]);
+  assert.equal(free.moments().length,2,'one POST per event, no retry');
  }finally{await hub?.close();}
 });
 

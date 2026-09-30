@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
-import {validate, type FailureCode, type MomentFailureCode, type ReceiptV1_1} from '@jimmie-potts/device-contracts';
+import {validate, type ReceiptV1_1} from '@jimmie-potts/device-contracts';
+import type {MomentInput, MomentResult, MomentStart} from './moment-sender.js';
 import {id, object, exact} from './common.js';
 import type {AutomationStore, LogRow, NewLogRow, RuleRow} from './automation-store.js';
 
@@ -18,21 +19,11 @@ export type AutomationSettings = {
   budgets:{perAgentTask:number; perAgentHour:number; globalHour:number; deviceSpacingMs:number};
 };
 
-/** The moment one call hands to the #335 sender; identical for every target of one arbitrated moment. */
-export type MomentIntent = {momentId:string; mood:string; palette?:string[]; durationMs:number; priorityClass:'event'|'flourish'; coversStatus:boolean};
-export type MomentStart = {domain:'controller-monotonic'; epoch:string; atMs:number; toleranceMs:number};
-export type MomentNotSentReason = '1.0-only'|'moments-unsupported'|'unsupported-capability'|'capacity'|'unavailable';
-/** One call's moment: the intent plus the #335 sender's optional hub-monotonic start instant and start tolerance. */
-export type MomentInput = MomentIntent & {startAtHubMs?:number; toleranceMs?:number};
-export type MomentResult =
-  | {kind:'receipt'; momentId:string; start:MomentStart|null; receipt:ReceiptV1_1}
-  | {kind:'not-sent'; momentId:string; start:MomentStart|null; reason:MomentNotSentReason; failure?:FailureCode|MomentFailureCode}
-  | {kind:'uncertain'; momentId:string; start:MomentStart|null};
+/** The moment one call hands to the sender, before the start instant; identical for every target of one arbitrated moment. */
+export type MomentIntent = Omit<MomentInput,'startAtHubMs'|'toleranceMs'>;
 /**
- * The #335 shared moment sender, local to this module until #335 merges: one moment, one target device, one typed result.
+ * The shared moment sender for one target alias: #335's `sendMoment` bound to that alias's controller client at composition.
  * It owns 1.1 negotiation, the controller-clock start, tickets and guards, and applies no policy; this module arbitrates.
- * Composition binds #335's `sendMoment(client, moment, options?)` as `(target, moment) => sendMoment(clients.get(target)!, moment)`
- * and its `hubMonotonicNow` as the `monotonic` clock.
  */
 export type MomentSender = (target:string, moment:MomentInput) => Promise<MomentResult>;
 /**

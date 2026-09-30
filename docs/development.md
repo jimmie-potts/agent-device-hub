@@ -658,6 +658,18 @@ No registered controller serves 1.1 yet, so these checks are fake-controller
 evidence only; installed and controller-adoption acceptance stay with
 codex-nanoleaf#158 and divoom-app-upgrade#92.
 
+The moment sender for #335 is covered by `apps/hub/tests/moment-sender.test.mjs`,
+the slot-wait cases in `apps/hub/tests/controllers.test.mjs` and the moment command
+cases in `apps/hub/tests/controller-versions.test.mjs`, which the same hub suites
+already include, so they need no new CI job. The shared fake now admits commands
+through the contract's reference `admit`, and its `answerNext`, `hold` and
+`moments()` script a device's answer, stall a request and list the moment POSTs.
+The cases inject the hub-monotonic clock and cover the bounded slot wait, the
+request built from the snapshot, the not-sent reasons with no POST, ambiguous
+answers with exactly one POST, independent devices and no command after a hub
+restart. They are fake-controller evidence; a live moment needs a controller that
+serves 1.1 and a caller such as #336 or #358.
+
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
@@ -947,9 +959,10 @@ source, an injected target reader and a fake moment sender with the #335
 single-device shape. They cover restart persistence and one-time seeding,
 route scopes and typed errors, duplicate and replayed events, each arbitration
 block, independent per-target hand-off with no retry, and the lifecycle
-source. The fake controller scenarios check that blocked moments make no
-controller command. No test sends a real moment, starts an installed service
-or contacts a device. Also run the standalone hub, hub MCP and shared
+source. The shared fake controller scenarios run the composed reader and the
+real `sendMoment`: blocked targets get no controller command, the capable
+target gets exactly one 1.1 moment, and a typed refusal is logged without a
+resend. No test starts an installed service or contacts a device. Also run the standalone hub, hub MCP and shared
 monitoring setup checks above, plus the shared build, type, contract and
 workflow checks.
 

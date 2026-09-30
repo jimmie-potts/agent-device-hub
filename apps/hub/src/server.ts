@@ -18,6 +18,7 @@ import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
 import {createSonosSource,sonosConfiguration} from './sonos.js';
 import {createAutomation,type Automation,type MomentSender,type TargetReader} from './automation.js';
+import {sendMoment,hubMonotonicNow} from './moment-sender.js';
 import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
@@ -77,11 +78,11 @@ async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
 /** In-process verification mount; installed configuration cannot supply it. */
 export type PreviewProof = {prefix: '/__app-verify/proof/'; handle(request:IncomingMessage,response:ServerResponse):Promise<void>};
 /**
- * Hub #358 composition points that installed configuration cannot supply. `sender` is the #335 shared moment sender; until it
- * is composed, arbitrated moments are logged as `sender-unavailable` and nothing reaches a device. `targets` replaces the
- * snapshot-based target reader, and `monotonic` the hub-monotonic clock used for start instants.
+ * Hub #358 test seams that installed configuration cannot supply. `sender` replaces the #335 `sendMoment` binding, and
+ * null composes none, so arbitrated moments are logged as `sender-unavailable`. `targets` replaces the snapshot-based target
+ * reader, and `monotonic` the `hubMonotonicNow` clock used for start instants.
  */
-export type AutomationDependencies = {sender?:MomentSender; targets?:TargetReader; monotonic?:()=>number};
+export type AutomationDependencies = {sender?:MomentSender|null; targets?:TargetReader; monotonic?:()=>number};
 
 /** A newly applied lifecycle event as an intake event: neutral IDs only, never titles, labels or prompts. */
 function lifecycleEvent(envelope:Envelope) {
@@ -160,11 +161,17 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     const moments = !read ? 'unknown' : read.apiVersion !== '1.1' ? '1.0-only' : read.capabilities.moments.supported ? 'supported' : 'unsupported';
     return {presentation,alert,moments};
   };
+  // The #335 sender, bound per alias to that device's own controller client, slot and tickets.
+  const moments:MomentSender = (target,moment) => {
+    const client = clients.get(target);
+    return client ? sendMoment(client,moment) : Promise.resolve({kind:'not-sent',momentId:moment.momentId,start:null,reason:'unavailable'});
+  };
+  const sender = automationDependencies?.sender === null ? undefined : automationDependencies?.sender ?? moments;
   let automation:Automation;
   try {
     automation = createAutomation({store:lease!.automation,routed:() => [...clients.keys()],targets:automationDependencies?.targets ?? readTarget,
-      ...(automationDependencies?.sender ? {sender:automationDependencies.sender} : {}),clock:options.clock ?? Date.now,
-      monotonic:automationDependencies?.monotonic ?? (() => performance.now()),active:() => !staged && !closing && !exported});
+      ...(sender ? {sender} : {}),clock:options.clock ?? Date.now,
+      monotonic:automationDependencies?.monotonic ?? hubMonotonicNow,active:() => !staged && !closing && !exported});
   } catch (error) { await owner.shutdown();throw error; }
   const snapshot = (version:'1.0'|'1.1'|'1.2'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const replay = createReplayLedgers();

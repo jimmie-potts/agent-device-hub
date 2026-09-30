@@ -14,6 +14,7 @@
 - [x] 3.3 Write failing hand-off tests with a fake sender of the #335 shape (AC4): one call per target with one shared start instant, a thrown send, `moment-blocked`, `moment-missed` and `unsupported-capability` receipts, not-sent and uncertain results each logged while other targets are still handed over, no retry, and `sender-unavailable` without a sender. Then implement hand-off and the log and see them pass.
 - [x] 3.4 Forward newly applied lifecycle events to the intake, and verify with a hub test that a rule on `agent.turn.ended` fires once while a duplicate lifecycle event does not.
 - [x] 3.5 Run the AC2 to AC5 scenarios against the shared 1.1 fake controllers from #576, where it has landed, with the composed target reader, and verify that blocked moments make zero controller command POSTs.
+- [x] 3.6 Compose #335's `sendMoment` once it merged, and verify against the shared fake controllers that only the capable target receives one 1.1 moment and that a typed refusal is logged without a resend.
 
 ## 4. Documentation and delivery checks
 
