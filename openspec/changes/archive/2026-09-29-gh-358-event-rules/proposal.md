@@ -1,6 +1,6 @@
 ## Why
 
-[Hub #358](https://github.com/jimmie-potts/agent-device-hub/issues/358), child 1 of [#45](https://github.com/jimmie-potts/agent-device-hub/issues/45), delivers the part of [ADR 0006](../../../docs/decisions/0006-hub-moments-and-interludes.md) that the hub owns. Owner-approved event rules turn normalized events into moments without an open conversation or a model call. The owner's interrupt set decides which event kinds may cover status presentation. The hub arbitrates each moment before it reaches a device. Today the hub has no rules store, no event intake and no arbitration, so no event can trigger a moment.
+[Hub #358](https://github.com/jimmie-potts/agent-device-hub/issues/358), child 1 of [#45](https://github.com/jimmie-potts/agent-device-hub/issues/45), delivers the part of [ADR 0006](https://github.com/jimmie-potts/agent-device-hub/blob/main/docs/decisions/0006-hub-moments-and-interludes.md) that the hub owns. Owner-approved event rules turn normalized events into moments without an open conversation or a model call. The owner's interrupt set decides which event kinds may cover status presentation. The hub arbitrates each moment before it reaches a device. Today the hub has no rules store, no event intake and no arbitration, so no event can trigger a moment.
 
 ## What Changes
 
