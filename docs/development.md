@@ -944,6 +944,28 @@ rejections, replay and ambiguous results without automatic retries. The existing
 MCP and contracts/state CI jobs run these cases directly and in the offline hub
 archive; they require no new CI job or shared package change.
 
+## Hub automation checks
+
+Hub #358 adds event rules, the interrupt set, event intake, arbitration and the
+automation log. `npm run test:hub:automation` builds and runs
+`apps/hub/tests/automation.test.mjs` on its own. The file also runs in
+`npm run test:hub`, in the CI `test:hub:built` step and in the packaged hub
+tests through the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI
+job. Set `TMPDIR` outside any Git checkout, as for the
+[standalone hub checks](#standalone-hub-checks).
+
+The tests use disposable private stores, synthetic credentials, a fake event
+source, an injected target reader and a fake moment sender with the #335
+single-device shape. They cover restart persistence and one-time seeding,
+route scopes and typed errors, duplicate and replayed events, each arbitration
+block, independent per-target hand-off with no retry, and the lifecycle
+source. The shared fake controller scenarios run the composed reader and the
+real `sendMoment`: blocked targets get no controller command, the capable
+target gets exactly one 1.1 moment, and a typed refusal is logged without a
+resend. No test starts an installed service or contacts a device. Also run the standalone hub, hub MCP and shared
+monitoring setup checks above, plus the shared build, type, contract and
+workflow checks.
+
 ## Bounded cross-device compatibility
 
 Hub #9 adds verification tooling for the standalone Linux/WSL setup. Build this
