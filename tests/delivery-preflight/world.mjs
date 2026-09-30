@@ -71,7 +71,7 @@ export function suite(suiteId, sha, branch, overrides = {}) {
   };
 }
 
-// ---- #54 review reports (agent-skills@5d03ee40d119ba432dca39c17345d4ae00d0c2d7) ----
+// ---- #54 review reports (agent-skills@3c418136f641caed4f785b0552fab05ae29b37de) ----
 
 export function comparison(base = BASE, head = HEAD, mergeBase = base) {
   return `base ${base}; head ${head}; merge-base ${mergeBase}`;
