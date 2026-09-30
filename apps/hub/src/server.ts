@@ -506,8 +506,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();
         try{await playback?.close();}catch(error){playbackFailure=error;}
-        await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
+        // Automation stops before the controller clients close, so no evaluation reads or sends through a closing client.
         await automation.close();
+        await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();
         if(launchFailure)throw launchFailure;

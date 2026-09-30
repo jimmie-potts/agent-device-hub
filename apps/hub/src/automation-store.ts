@@ -96,7 +96,6 @@ export class AutomationStore {
   }
   settings(): unknown { this.check(); const row = this.statements.settings.get(); return row ? JSON.parse(String(row.payload)) : undefined; }
   replaceSettings(value: unknown): void { this.check(); this.statements.writeSettings.run(JSON.stringify(value)); }
-  seenEvent(key: string): boolean { this.check(); return this.statements.seenEvent.get(key) !== undefined; }
   /** Persists an event key before evaluation; returns false when the key was already recorded. */
   recordEvent(key: string): boolean {
     return this.transaction(() => {

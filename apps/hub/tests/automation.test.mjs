@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {startHub} from '../dist/server.js';
 import {startFakeController} from './fake-controller.mjs';
+import {DatabaseSync} from 'node:sqlite';
 
 // Hub #358: event rules, the interrupt set, intake, arbitration, hand-off and the automation log.
 const token='a'.repeat(43),readToken='b'.repeat(43),wallToken='c'.repeat(43),ingestToken='d'.repeat(43);
@@ -103,6 +104,12 @@ test('routes enforce scopes, the write header, device grants and typed errors (A
   await bad({...rule(),action:{...rule().action,targets:[]}},'invalid-action');
   await bad({...rule(),action:{...rule().action,coversStatus:true}},'invalid-action');
   await bad({...rule(),action:{...rule().action,targets:['wall','attic']}},'unknown-target');
+  // Owner-chosen IDs pass the lifecycle contract's credential screen too.
+  await bad({...rule(),action:{...rule().action,mood:'ghp_'+'a'.repeat(36)}},'invalid-action');
+  await bad({...rule(),trigger:{source:'github',kind:'ci.failed',alias:'ghp_'+'a'.repeat(36)}},'invalid-trigger');
+  assert.deepEqual(hub.automation.submit(live('ghp_'+'a'.repeat(36))),{accepted:false,reason:'invalid-event'});
+  const widest=Array.from({length:64},(_,index)=>'k'+String(index).padStart(2,'0')+'.'+'a'.repeat(60));
+  assert.equal((await call('PUT','/api/automation/v1/interrupt-set',{kinds:widest})).status,200,'the largest valid interrupt set fits the body limit');
   assert.deepEqual(await call('PUT','/api/automation/v1/interrupt-set',{kinds:['ci.failed','ci.failed']}),{status:400,body:{error:{code:'invalid-interrupt-set'}}});
   assert.deepEqual(await call('PUT','/api/automation/v1/interrupt-set',{kinds:['CI failed']}),{status:400,body:{error:{code:'invalid-interrupt-set'}}});
   for(const settings of [{...DEFAULT_SETTINGS,noFlourishes:1},{...DEFAULT_SETTINGS,quietHours:{...DEFAULT_SETTINGS.quietHours,start:'24:00'}},
@@ -173,11 +180,15 @@ test('events handled before shutdown are not reprocessed after a restart, and a 
  let opened=await open({sender});const {directory}=opened;
  try{
   await opened.call('POST','/api/automation/v1/rules',rule());
+  // An event that matches no rule yet is still remembered across the restart.
+  assert.deepEqual(opened.hub.automation.submit(live('rr-7',{kind:'review.requested'})),{accepted:true,matched:0});
   assert.equal(opened.hub.automation.submit(live('pr-7')).accepted,true);
   await opened.hub.automation.settled();assert.equal(sender.calls.length,2);
   await opened.hub.close();
   sender=fakeSender();opened=await open({sender,directory});
   assert.deepEqual(opened.hub.automation.submit(live('pr-7')),{accepted:false,reason:'duplicate'});
+  await opened.call('POST','/api/automation/v1/rules',rule({name:'Review requested',trigger:{source:'github',kind:'review.requested'}}));
+  assert.deepEqual(opened.hub.automation.submit(live('rr-7',{kind:'review.requested'})),{accepted:false,reason:'duplicate'});
   for(let index=0;index<5;index++)assert.deepEqual(opened.hub.automation.submit(live('history-'+index,{delivery:'replay'})),{accepted:false,reason:'replay'});
   await opened.hub.automation.settled();
   assert.equal(sender.calls.length,0);
@@ -289,7 +300,8 @@ test('each target is handed the moment once; failures are logged per target and 
   assert.equal(by('cube').outcome,'receipt');
   assert.ok(!JSON.stringify(entries).includes('PRIVATE_CANARY'));
   // Every typed sender result is logged for its own target.
-  const answers={wall:{kind:'receipt',receipt:{...validReceipt,outcome:'failed',failure:{code:'moment-missed'}}},panel:{kind:'receipt',receipt:{...validReceipt,outcome:'failed',failure:{code:'unsupported-capability'}}},cube:{kind:'not-sent',reason:'1.0-only'}};
+  const start={domain:'controller-monotonic',epoch:'runtime-1',atMs:4000,toleranceMs:10000};
+  const answers={wall:{kind:'receipt',start,receipt:{...validReceipt,outcome:'failed',failure:{code:'moment-missed'}}},panel:{kind:'receipt',receipt:{...validReceipt,outcome:'failed',failure:{code:'unsupported-capability'}}},cube:{kind:'not-sent',reason:'1.0-only'}};
   sender.calls.length=0;
   const second=fakeSender(({target})=>answers[target]);
   const reopened=await (async()=>{await hub.close();return open({sender:second,directory});})();
@@ -297,8 +309,10 @@ test('each target is handed the moment once; failures are logged per target and 
    reopened.hub.automation.submit(live('pr-2'));await reopened.hub.automation.settled();
    entries=await log(reopened.call);
    assert.deepEqual(entries.slice(0,3).map(e=>`${e.target}:${e.outcome}:${e.reason}`).sort(),['cube:not-sent:1.0-only','panel:receipt:unsupported-capability','wall:receipt:moment-missed']);
+   assert.deepEqual(entries.find(e=>e.target==='wall').start,start,'a valid controller start is kept');
+   assert.equal(entries.find(e=>e.target==='cube').start,undefined);
    // A receipt outside the contract is not stored; its content never reaches the log.
-   answers.wall={kind:'uncertain'};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity'};
+   answers.wall={kind:'uncertain',start:{...start,extra:'PRIVATE_CANARY'}};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity'};
    reopened.hub.automation.submit(live('pr-3'));await reopened.hub.automation.settled();
    entries=await log(reopened.call);
    assert.deepEqual(entries.slice(0,3).map(e=>`${e.target}:${e.outcome}:${e.reason ?? ''}`).sort(),['cube:not-sent:capacity','panel:uncertain:invalid-result','wall:uncertain:']);
@@ -429,4 +443,15 @@ test('disabling a rule stops events already waiting in the queue',async()=>{
   assert.deepEqual(sender.calls.map(c=>c.target),['wall'],'only the event already in evaluation is handed over');
   assert.deepEqual((await log(call)).map(e=>e.event.id),['first']);
  }finally{release();await hub.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('a stored rule that no longer validates stops startup with invalid-state',async()=>{
+ const opened=await open();const {directory}=opened;
+ try{
+  await opened.call('POST','/api/automation/v1/rules',rule());
+  await opened.hub.close();
+  const db=new DatabaseSync(join(directory,'state.sqlite'));
+  try{db.prepare("UPDATE rules SET action='{}'").run();}finally{db.close();}
+  await assert.rejects(startHub({directory,ownerId:'owner',consumers:[],credentials,controllers}),/invalid-state/);
+ }finally{await opened.hub.close();await rm(directory,{recursive:true,force:true});}
 });

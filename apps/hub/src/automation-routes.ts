@@ -69,7 +69,7 @@ export async function automationRoute(automation: Automation, request: Request):
   if (path === 'interrupt-set') {
     if (!noQuery) throw new HttpError('invalid-input',400);
     if (method === 'GET') return {status:200,body:{kinds:automation.interruptSet()}};
-    if (method === 'PUT') return write(async () => ({status:200,body:{kinds:automation.replaceInterruptSet(await request.body(4096))}}));
+    if (method === 'PUT') return write(async () => ({status:200,body:{kinds:automation.replaceInterruptSet(await request.body(8192))}}));
     return undefined;
   }
   if (path === 'settings') {

@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: Readonly<AutomationSettings> = Object.freeze({noF
   budgets:{perAgentTask:1,perAgentHour:2,globalHour:6,deviceSpacingMs:300000}});
 export const RULE_LIMIT = 64;
 export const START_LEAD_MS = 1000;
-const QUEUE_LIMIT = 32, RECENT_LIMIT = 4096, HOUR_MS = 3600000;
+const QUEUE_LIMIT = 32, RECENT_LIMIT = 4096, HOUR_MS = 3600000, CLOSE_WAIT_MS = 10000;
 
 export class AutomationError extends Error {
   constructor(readonly code:string, readonly status:number) { super(code); }
@@ -57,24 +57,26 @@ const sourcePattern = /^[a-z][a-z0-9-]{0,31}$/;
 const eventKind = (value:unknown): value is string => typeof value === 'string' && value.length <= 64 && kindPattern.test(value);
 const source = (value:unknown): value is string => typeof value === 'string' && sourcePattern.test(value);
 const optional = (value:Record<string,unknown>, key:string, check:(item:unknown)=>boolean) => !Object.hasOwn(value,key) || check(value[key]);
+/** An ID that also passes the lifecycle contract's credential screen, for owner- or source-chosen names that are stored. */
+const screenedId = (value:unknown): value is string => id(value) && validDisplayText(value,128);
 const keysWithin = (value:Record<string,unknown>, required:string[], allowed:string[]) =>
   required.every(key => Object.hasOwn(value,key)) && Object.keys(value).every(key => allowed.includes(key));
 
 export function parseEvent(value:unknown): HubEvent|null {
   if (!object(value) || !keysWithin(value,['id','source','kind','delivery'],['id','source','kind','alias','agent','task','delivery']) ||
-      !id(value.id) || !source(value.source) || !eventKind(value.kind) || !['live','replay'].includes(value.delivery as string) ||
-      !optional(value,'alias',id) || !optional(value,'agent',id) || !optional(value,'task',id)) return null;
+      !screenedId(value.id) || !source(value.source) || !eventKind(value.kind) || !['live','replay'].includes(value.delivery as string) ||
+      !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id)) return null;
   return {id:value.id,source:value.source,kind:value.kind,...(value.alias === undefined ? {} : {alias:value.alias as string}),
     ...(value.agent === undefined ? {} : {agent:value.agent as string}),...(value.task === undefined ? {} : {task:value.task as string}),delivery:value.delivery as HubEvent['delivery']};
 }
 function parseTrigger(value:unknown): EventTrigger {
-  if (!object(value) || !keysWithin(value,['source','kind'],['source','kind','alias']) || !source(value.source) || !eventKind(value.kind) || !optional(value,'alias',id)) fail('invalid-trigger');
+  if (!object(value) || !keysWithin(value,['source','kind'],['source','kind','alias']) || !source(value.source) || !eventKind(value.kind) || !optional(value,'alias',screenedId)) fail('invalid-trigger');
   const trigger = value as Record<string,unknown>;
   return {source:trigger.source as string,kind:trigger.kind as string,...(trigger.alias === undefined ? {} : {alias:trigger.alias as string})};
 }
 function parseAction(value:unknown, routed:readonly string[]|null): MomentAction {
   if (!object(value) || !keysWithin(value,['mood','priorityClass','durationMs','targets'],['mood','priorityClass','durationMs','palette','targets']) ||
-      !id(value.mood) || !['event','flourish'].includes(value.priorityClass as string) ||
+      !screenedId(value.mood) || !['event','flourish'].includes(value.priorityClass as string) ||
       !Number.isInteger(value.durationMs) || (value.durationMs as number) < 1000 || (value.durationMs as number) > 300000 ||
       !optional(value,'palette',item => Array.isArray(item) && item.length >= 1 && item.length <= 8 && item.every(color => typeof color === 'string' && /^#[0-9a-f]{6}$/.test(color))) ||
       !Array.isArray(value.targets) || value.targets.length < 1 || value.targets.length > 16 || !value.targets.every(id) || new Set(value.targets).size !== value.targets.length) fail('invalid-action');
@@ -271,6 +273,8 @@ export function createAutomation(options:AutomationOptions) {
   }
   async function drain() {
     while (queue.length) {
+      // After a release or during shutdown, waiting events are dropped rather than evaluated by a retiring owner.
+      if (closed || !options.active()) { queue.length = 0; return; }
       const {event,matched} = queue.shift()!;
       for (const queued of matched) {
         // The owner may have disabled, edited or deleted the rule while the event waited: use its current definition.
@@ -303,13 +307,13 @@ export function createAutomation(options:AutomationOptions) {
       if (closed || !options.active()) return {accepted:false,reason:'unavailable'};
       const key = `${event.source}:${event.id}`;
       if (recent.has(key)) return {accepted:false,reason:'duplicate'};
-      const candidates = matching(event);
       try {
-        // Persist before evaluation so a crash or restart never evaluates a matched event twice.
-        if (candidates.length ? !store.recordEvent(key) : store.seenEvent(key)) { remember(key); return {accepted:false,reason:'duplicate'}; }
+        // Persist every accepted key before evaluation, so a crash or restart never evaluates an event again, including one
+        // that matched no rule before a rule for it was created.
+        if (!store.recordEvent(key)) { remember(key); return {accepted:false,reason:'duplicate'}; }
       } catch { return {accepted:false,reason:'unavailable'}; }
       remember(key);
-      const matched = candidates.filter(rule => rule.enabled);
+      const matched = matching(event).filter(rule => rule.enabled);
       if (!matched.length) return {accepted:true,matched:0};
       if (queue.length >= QUEUE_LIMIT) {
         const rows = matched.flatMap(rule => { const moment = intent(rule,event); return rule.action.targets.map(target => logRow(rule,event,moment,target,'blocked','capacity',null)); });
@@ -344,6 +348,16 @@ export function createAutomation(options:AutomationOptions) {
     settings: () => structuredClone(settings),
     replaceSettings(value:unknown) { const next = parseSettings(value); store.replaceSettings(next); settings = next; return structuredClone(next); },
     log: (limit:number, before?:number) => store.readLog(limit,before).map(entry),
-    async close() { closed = true; queue.length = 0; while (running) await running; }
+    /**
+     * Stops intake, drops waiting events and waits for the current evaluation, at most `CLOSE_WAIT_MS`: the sender's own caps
+     * normally settle it sooner. After the bound, a late result can no longer be logged, because the store is released.
+     */
+    async close() {
+      closed = true; queue.length = 0;
+      let timer: NodeJS.Timeout | undefined;
+      const bound = new Promise<void>(resolve => { timer = setTimeout(resolve,CLOSE_WAIT_MS); });
+      await Promise.race([(async () => { while (running) await running; })(),bound]);
+      clearTimeout(timer);
+    }
   };
 }
