@@ -86,7 +86,7 @@ try {
  });
  await scenario('a stale guard is a typed conflict whose ticket adopts no other client’s receipt; uncertain results never retry',async(f,page)=>{
   // Serve the last observed Pixoo snapshot while frozen so the browser's guards are deterministically stale. A poll still in flight when the context closes is abandoned instead of crashing the runner.
-  let frozen=null,freeze=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
+  let frozen=null,freeze=false;await page.route(/\/api\/controllers\/v1\/pixel\/snapshot(\?apiVersion=1\.1)?$/,async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await until(()=>frozen!==null);freeze=true;
   const external={apiVersion:'1.0',controllerId:'pixel-controller',deviceId:'pixel',...guard(f),command:{kind:'brightness.set',percent:70}};assert.equal((await fetch(f.hub.url+'/api/controllers/v1/pixel/commands',{method:'POST',headers:f.headers,body:JSON.stringify(external)})).status,200);
   const before=f.writes.length;await visible(page,'button','Pause').click();await page.locator('section:visible [role=status]').filter({hasText:'revision-conflict'}).waitFor();assert.equal(f.writes.length,before+1);
@@ -246,7 +246,7 @@ try {
  },{panels:true});
  await scenario('a Nanoleaf scene rejected after Free was observed is a typed failure; pending switches, conflicts and uncertain results never retry',async(f,page)=>{
   f.states.wall.state.desired.mode={status:'known',value:'Free'};f.nano.mode='Free';
-  let frozen=null,freeze=false;await page.route('**/api/controllers/v1/wall/snapshot',async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
+  let frozen=null,freeze=false;await page.route(/\/api\/controllers\/v1\/wall\/snapshot(\?apiVersion=1\.1)?$/,async route=>{try{if(freeze&&frozen){await route.fulfill({json:frozen});return;}const response=await route.fetch();frozen=await response.json();await route.fulfill({response,json:frozen});}catch{await route.abort().catch(()=>{});}});
   await page.getByRole('link',{name:'wall nanoleaf',exact:true}).click();await page.getByRole('combobox',{name:'Saved scene',exact:true,disabled:false}).filter({visible:true}).waitFor();await until(()=>frozen!==null);freeze=true;const scene=page.getByRole('combobox',{name:'Saved scene',exact:true}).filter({visible:true});
   // The controller left Free after the browser observed it: typed failure before any write, action stays available.
   f.states.wall.state.desired.mode={status:'known',value:'Work'};f.nano.mode='Work';
@@ -338,7 +338,7 @@ try {
  await scenario('forms and actions share one lifecycle: a failed fresh read sends nothing, a failed refresh keeps the result, and a double activation sends once',async(f,page)=>{
   await page.getByRole('link',{name:'pixel pixoo',exact:true}).click();const brightness=page.getByLabel('Brightness (%)').filter({visible:true});await brightness.waitFor();await visible(page,'button','Pause').waitFor();
   // While failing, every Pixoo snapshot read answers 503. A poll still in flight when the context closes is abandoned instead of crashing the runner.
-  let failing=false;await page.route('**/api/controllers/v1/pixel/snapshot',async route=>{try{if(failing){await route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}});return;}await route.continue();}catch{await route.abort().catch(()=>{});}});
+  let failing=false;await page.route(/\/api\/controllers\/v1\/pixel\/snapshot(\?apiVersion=1\.1)?$/,async route=>{try{if(failing){await route.fulfill({status:503,json:{error:{code:'controller-unavailable'}}});return;}await route.continue();}catch{await route.abort().catch(()=>{});}});
   const status=page.locator('section:visible [role=status]'),enabled=name=>page.getByRole('button',{name,exact:true,disabled:false}).filter({visible:true});
   // The fresh read taken just before sending fails: nothing is sent and the draft is kept. Once reads recover, one explicit apply sends with current guards.
   let before=f.writes.length;failing=true;await brightness.fill('40');
