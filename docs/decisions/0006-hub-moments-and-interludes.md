@@ -154,9 +154,19 @@ MCP tools are unchanged.
 
 ### Privacy
 
-- Events carry only a kind, neutral aliases and, for a meeting reminder, its
-  start time. They never carry pull request titles, repository content,
-  calendar titles or attendees.
+- Events carry a kind, neutral aliases and, for a meeting reminder, its
+  start time. They never carry repository content, calendar attendees,
+  credentials, tokens or secrets.
+
+  Amended September 30, 2026 (privacy): this bullet originally said events
+  never carry pull request titles or calendar titles. On September 25, 2026
+  the owner retired that rule under
+  [#424](https://github.com/jimmie-potts/agent-device-hub/issues/424):
+  session titles, project names, pull request titles and meeting titles may
+  enter shared data, and credentials, tokens and secrets may not. #45 and its
+  children [#358](https://github.com/jimmie-potts/agent-device-hub/issues/358)
+  were updated on that date; the moment log's optional title fields are
+  [#426](https://github.com/jimmie-potts/agent-device-hub/issues/426).
 - A Pixoo image search that an agent proposes
   ([divoom #94](https://github.com/jimmie-potts/divoom-app-upgrade/issues/94))
   uses generic mood tags only, never task or repository text.
