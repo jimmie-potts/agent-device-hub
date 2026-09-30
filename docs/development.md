@@ -1281,6 +1281,12 @@ not qualification. The recorded qualification also retains the actual failing
 held-ack mutation and orphan-adapter regression, so the checks can detect the
 unsafe behavior they protect against.
 
+Hub #649 adds core-written receipt regressions for default runtime labels and
+ordinary shareable proof permissions. These run in the same portable test glob.
+They preserve private runtime/control checks and reject unsafe proof ownership,
+links, write permissions, oversized files and mismatched identity. Lease checks
+use the same bounded receipt snapshot already checked by the reset guard.
+
 The cross-repository check with the real consumers runs locally from this
 worktree after `npm run build`:
 
@@ -1320,6 +1326,14 @@ Use a short disk-backed `TMPDIR` outside Git and
 run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
 must all pass; screenshots alone are not a pass. This driver uses disposable
 runs and the manifest pins, and preserves evidence after cleanup.
+Append `--host-defaults`, with absolute `PYTHON` and `FNM_BIN` environment
+paths, to qualify the documented `verify:host --host` route using the core's
+default runtime and canonical proof roots. This mode requires the same explicit
+host authority as preview launches. It records command-unit cleanup, verifies
+unchanged lease expiries, and copies each frozen proof set into its evidence
+directory. It stops only the recorded composition; it never deletes the shared
+runtime root. This default-storage case is required for receipt compatibility
+changes; a private temporary-root fixture alone does not cover it.
 It requests snapshot 1.2 for the shared session titles, confirms a changed title
 is visible on each page before reset, then checks those titles are absent after
 each reset. A portable real-Hub HTTP test covers that version negotiation;
