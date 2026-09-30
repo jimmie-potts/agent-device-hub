@@ -4,7 +4,7 @@
 
 ## 2. Fake controller extensions
 
-- [x] 2.1 Extend `apps/hub/tests/fake-controller.mjs` with reference-`admit` moment admission, `answerNext`, `hold` and `moments()`, keeping the existing negotiation cases and the 1.0 command answers. Existing controller-version and MCP tests pass unchanged.
+- [x] 2.1 Extend `apps/hub/tests/fake-controller.mjs` with reference-`admit` command admission, `answerNext`, `hold` and `moments()`, keeping the existing negotiation cases. The controller-version tests pass unchanged. The fake now admits 1.0 commands instead of refusing every POST, so the MCP status case expects a queued 1.0 receipt and checks a scripted typed refusal separately.
 
 ## 3. 1.1 command path
 

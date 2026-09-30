@@ -36,9 +36,11 @@ export type MomentInput = {
 };
 
 /**
- * Why a moment was not sent. The sender decides these from the slot, the snapshot read or the snapshot itself and then
- * sends no POST, except that `capacity`, `unsupported-capability` and `unavailable` also cover a controller that refused
- * the POST without admitting it; the result's `failure` then carries the controller's code.
+ * Why a moment was not sent. Usually the sender decides before any POST: `capacity` when the slot wait expires,
+ * `unavailable` when the snapshot read fails for any reason (a controller's own 429 included), and `1.0-only`,
+ * `moments-unsupported` or `unsupported-capability` from the snapshot. One case follows a POST: a controller that refuses
+ * it with a typed failure and no receipt admitted nothing, so the result is `capacity`, `unsupported-capability` or
+ * `unavailable` and its `failure` carries the controller's code. `failure` is absent whenever no POST was made.
  */
 export type MomentNotSentReason = '1.0-only'|'moments-unsupported'|'unsupported-capability'|'capacity'|'unavailable';
 
