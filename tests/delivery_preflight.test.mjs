@@ -13,7 +13,7 @@ import { MAX_PAGES, QUERIES, createReadOnlyClient, fetchTransport, ReadOnlyViola
 import { main } from '../scripts/delivery-preflight/cli.mjs';
 import { NON_UI_PATHS, isUiPath, runPreflight } from '../scripts/delivery-preflight/preflight.mjs';
 import { renderText } from '../scripts/delivery-preflight/report.mjs';
-import { statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
+import { parseReport, statedVerdict } from '../scripts/delivery-preflight/reviews.mjs';
 import { expectedJobs, filterPattern, parseWorkflow } from '../scripts/delivery-preflight/workflows.mjs';
 import {
   BASE, EXPECTED_JOBS, GUIDE_HTML, HEAD, ISSUE, MERGE, NEWER_MAIN, OLD_HEAD, OWNER, POLICY, PR, REPO,
@@ -80,7 +80,7 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.equal(gate(report, 'counterparts').status, 'satisfied');
   assert.equal(gate(report, 'live-acceptance').status, 'not-applicable');
   assert.equal(gate(report, 'ci-main').status, 'not-applicable');
-  assert.equal(report.formats.reviewReports, 'jimmie-potts/agent-skills@5d03ee40d119ba432dca39c17345d4ae00d0c2d7');
+  assert.equal(report.formats.reviewReports, 'jimmie-potts/agent-skills@3c418136f641caed4f785b0552fab05ae29b37de');
   assert.equal(report.formats.receipt, 'app-verification/1');
   assert.equal(report.readAt, READ_AT.toISOString());
   assert.match(report.notice, /not authorization/);
@@ -394,6 +394,90 @@ test('review: the latest final round decides, and a later stale round supersedes
   assert.equal(gate(report, 'review').status, 'satisfied');
   assert.deepEqual(gate(report, 'review').evidence.rounds.map(r => [r.round, r.head]), [['final 1', OLD_HEAD], ['final 2', HEAD]]);
 });
+
+// Finding lines in the agent-skills@3c418136f641caed4f785b0552fab05ae29b37de
+// form: one or more axes joined by `+`, and optional axis-qualified aliases.
+const findingLine = (axes, state, { id = 'F1', severity = 'P2', aliases = '' } = {}) =>
+  `- ${id} (${severity}, ${axes}, ${state}): a.mjs:1, breaks${aliases}; first final 1, latest final 1`;
+
+function parsedFindings(findings) {
+  const parsed = parseReport(reviewReport({ findings }));
+  return { findings: parsed.findings, problems: parsed.problems };
+}
+
+test('review: a finding line keeps every listed axis in each state', () => {
+  assert.deepEqual(parsedFindings(findingLine('standards', 'resolved')), {
+    findings: [{ id: 'F1', severity: 'P2', axes: ['standards'], state: 'resolved', aliases: [] }], problems: [],
+  });
+  for (const state of ['unresolved', 'resolved', 'regression']) {
+    assert.deepEqual(parsedFindings(findingLine('standards+specification', state)), {
+      findings: [{ id: 'F1', severity: 'P2', axes: ['standards', 'specification'], state, aliases: [] }], problems: [],
+    }, state);
+  }
+  for (const state of ['accepted', 'deferred']) {
+    const { findings, problems } = parsedFindings(findingLine('specification+standards', state, { severity: 'P3' }));
+    assert.deepEqual([findings.map(item => [item.axes, item.state]), problems], [[[['specification', 'standards'], state]], []], state);
+  }
+  const aliased = parsedFindings(findingLine('standards+specification', 'resolved', { id: '71-F1', aliases: '; aliases standards:S-1, specification:S-3' }));
+  assert.deepEqual(aliased, {
+    findings: [{ id: '71-F1', severity: 'P2', axes: ['standards', 'specification'], state: 'resolved', aliases: [
+      { axis: 'standards', id: 'S-1' }, { axis: 'specification', id: 'S-3' },
+    ] }], problems: [],
+  });
+});
+
+test('review: malformed finding lines are unreadable', () => {
+  for (const line of [
+    findingLine('both', 'unresolved'),
+    findingLine('standards+standards', 'unresolved'),
+    findingLine('standards+', 'unresolved'),
+    findingLine('+specification', 'unresolved'),
+    findingLine('standards,specification', 'unresolved'),
+    findingLine('standards + specification', 'unresolved'),
+    findingLine('Standards', 'unresolved'),
+    findingLine('standards', 'open'),
+    findingLine('standards', 'unresolved', { id: 'F_1' }),
+    findingLine('standards', 'unresolved', { id: 'F--1' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases specification:S-1' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases standards:S_1' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases standards S-1' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases standards:S-1,standards:S-2' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases standards:S-1, standards:S-1' }),
+    findingLine('standards', 'unresolved', { aliases: '; aliases ' }),
+    '- F1 (P2, standards, unresolved): a.mjs:1, breaks; aliases standards:S-1',
+  ]) {
+    assert.deepEqual(parsedFindings(line), { findings: [], problems: ['finding line 1 is unreadable'] }, line);
+  }
+});
+
+test('review: an alias may not name another finding', () => {
+  const second = findingLine('standards', 'resolved', { id: 'F2', aliases: '; aliases standards:S-1' });
+  assert.deepEqual(parsedFindings([findingLine('standards', 'resolved', { aliases: '; aliases standards:S-1' }), second].join('\n')).problems,
+    ['finding F2 alias standards:S-1 also names F1']);
+  assert.deepEqual(parsedFindings([findingLine('standards', 'resolved', { aliases: '; aliases standards:F2' }), second.replace('; aliases standards:S-1', '')].join('\n')).problems,
+    ['finding F1 alias standards:F2 is the ID of F2']);
+  // Another axis may reuse the same raw ID for a different condition.
+  assert.deepEqual(parsedFindings([
+    findingLine('standards', 'resolved', { aliases: '; aliases standards:S-1' }),
+    findingLine('specification', 'resolved', { id: 'F2', aliases: '; aliases specification:S-1' }),
+  ].join('\n')).problems, []);
+});
+
+test('review: a satisfied round with a resolved multi-axis finding passes', async () => {
+  const world = cleanWorld();
+  world.comments = [comment(reviewReport({ round: 2,
+    findings: findingLine('standards+specification', 'resolved', { aliases: '; aliases standards:S-1' }).replace('first final 1, latest final 1', 'first final 1, latest final 2') }))];
+  const found = gate(await preflight(world), 'review');
+  assert.equal(found.status, 'satisfied', JSON.stringify(found.reasons));
+});
+
+for (const state of ['unresolved', 'regression']) {
+  test(`review: an ${state} multi-axis finding is an open blocker even under a clean summary`, async () => {
+    const world = cleanWorld();
+    world.comments = [comment(reviewReport({ findings: findingLine('standards+specification', state) }))];
+    assertUnresolved(await preflight(world), 'review', /^open P0-P2 findings: F1 \(P2\)$/);
+  });
+}
 
 function splitReport(text) {
   const [marker, ...body] = text.split('\n');

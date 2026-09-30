@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 
 import { short } from './context.mjs';
 
-export const REVIEW_FORMAT = 'jimmie-potts/agent-skills@5d03ee40d119ba432dca39c17345d4ae00d0c2d7';
+export const REVIEW_FORMAT = 'jimmie-potts/agent-skills@3c418136f641caed4f785b0552fab05ae29b37de';
 export const POLICY_PATHS = ['AGENTS.md', 'CLAUDE.md', 'docs/sdlc.md'];
 
 const MARKER = /^<!-- deliver-work (\S+) report final ([1-9]\d*)(?: part ([1-9]\d*)\/([1-9]\d*))?; head ([0-9a-f]{40}) -->$/;
@@ -17,7 +17,13 @@ const ROWS = ['Work', 'Round', 'Comparison', 'Requirements', 'Policy', 'Standard
 const RETURN_ROWS = ['Axis', 'Comparison', 'Requirements', 'Policy', 'Return', 'Digest', 'Redactions'];
 const PROVENANCE = ['Comparison', 'Requirements', 'Policy'];
 const AXES = ['standards', 'specification'];
-const FINDING = /^- (\S+) \((P[0-3]), ([a-z]+), (unresolved|resolved|regression|accepted|deferred)\): /;
+// `- <ID> (<severity>, <axes>, <state>): <file:line>, <failure condition>[; aliases <axis>:<raw ID>, ...]; first <round>, latest <round>`,
+// where the axes are one or more lowercase axis names joined by `+`, each
+// listed once and never `both`, and each alias names a listed axis.
+const ID = '[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*';
+const FINDING = new RegExp(`^- (${ID}) \\((P[0-3]), ([a-z]+(?:\\+[a-z]+)*), (unresolved|resolved|regression|accepted|deferred)\\): (.*)$`);
+const ALIAS = new RegExp(`^([a-z]+):(${ID})$`);
+const ALIASES = '; aliases ';
 const WRAPPER = /^(?:<details>|<\/details>|<summary>.*<\/summary>)$/;
 
 // A reviewer return's own verdict. Only explicit verdict lines can grant
@@ -211,6 +217,41 @@ function readTable(lines, start) {
 
 const skippable = line => line.trim() === '' || WRAPPER.test(line.trim());
 
+/** One finding line, or null when it breaks the ID, axis or alias rules. */
+function readFinding(line) {
+  const match = line.match(FINDING);
+  if (!match) return null;
+  const [, id, severity, axisList, state, rest] = match;
+  const axes = axisList.split('+');
+  if (axes.includes('both') || new Set(axes).size !== axes.length) return null;
+  const aliases = [];
+  const at = rest.indexOf(ALIASES);
+  if (at >= 0) {
+    const clause = rest.slice(at + ALIASES.length).match(/^([^;]*); first /);
+    if (!clause) return null;
+    for (const item of clause[1].split(', ')) {
+      const alias = item.match(ALIAS);
+      if (!alias || !axes.includes(alias[1]) || aliases.some(seen => seen.axis === alias[1] && seen.id === alias[2])) return null;
+      aliases.push({ axis: alias[1], id: alias[2] });
+    }
+  }
+  return { id, severity, axes, state, aliases };
+}
+
+/** Aliases that name another finding, by its ID or by the same axis-qualified raw ID. */
+function aliasConflicts(findings) {
+  const problems = [];
+  findings.forEach((finding, index) => {
+    for (const alias of finding.aliases) {
+      const named = findings.find(other => other !== finding && other.id === alias.id);
+      const earlier = findings.slice(0, index).find(other => other.aliases.some(seen => seen.axis === alias.axis && seen.id === alias.id));
+      if (named) problems.push(`finding ${finding.id} alias ${alias.axis}:${alias.id} is the ID of ${named.id}`);
+      else if (earlier) problems.push(`finding ${finding.id} alias ${alias.axis}:${alias.id} also names ${earlier.id}`);
+    }
+  });
+  return problems;
+}
+
 /** Parse one assembled report into its result and retained returns. */
 export function parseReport(text, { split = false } = {}) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
@@ -229,10 +270,11 @@ export function parseReport(text, { split = false } = {}) {
   const findingsAt = lines.indexOf('**Findings:**', index);
   if (findingsAt >= 0) {
     for (index = findingsAt + 1; index < lines.length && lines[index].trim() !== ''; index += 1) {
-      const match = lines[index].match(FINDING);
-      if (match) findings.push({ id: match[1], severity: match[2], axis: match[3], state: match[4] });
+      const finding = readFinding(lines[index]);
+      if (finding) findings.push(finding);
       else if (lines[index].trim() !== 'none') problems.push(`finding line ${findings.length + 1} is unreadable`);
     }
+    problems.push(...aliasConflicts(findings));
   } else {
     problems.push('no findings list');
   }
