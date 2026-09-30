@@ -16,7 +16,8 @@ export async function isolateWallReads(page,f){
  let armed=false,released=false,order,wallOrdered=false,firstWall=true,startCount=0;
  const active=new Set();
  const wallPattern='**/api/controllers/v1/wall/**';
- const pixelPattern='**/api/controllers/v1/pixel/snapshot';
+ // The device read asks for contract 1.1 (Hub #336).
+ const pixelPattern=/\/api\/controllers\/v1\/pixel\/snapshot(\?apiVersion=1\.1)?$/;
  const pixelRequest=()=>f.requests.slice(startCount).find(r=>r.id==='pixel'&&r.url==='/controller/v1/snapshot');
  const wallRoute=async route=>{
   if(armed&&!released){

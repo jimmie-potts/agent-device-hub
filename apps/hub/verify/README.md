@@ -54,10 +54,17 @@ npm run -s verify -- capture <run-id> task-appears
 npm run -s verify -- capture <run-id> command-reaches-fake
 npm run -s verify -- capture <run-id> uncertain-no-replay
 npm run -s verify -- capture <run-id> offline-recovers
+npm run -s verify -- capture <run-id> moment-plays
+npm run -s verify -- capture <run-id> moment-blocked-on-status
+npm run -s verify -- capture <run-id> moment-uncertain-no-replay
 npm run -s verify -- handoff <run-id> --reset lifecycle-basic
 npm run -s verify -- doctor
 npm run -s verify -- stop <run-id>
 ```
+
+Each step reseeds its own scenario, so one run can capture all seven. A
+change to the Moments card hands off with `--reset moments`, so the owner opens
+the moment-capable wall.
 
 `start` prints the run id, URL, port and build identity (`sourceRevision`,
 `dirty`, the `/dashboard.js` digest) and, on stderr, the preview card. A
@@ -87,7 +94,12 @@ fakes' observations come from the run's control listener, which only the
 run's API token can read. `GET /commands` lists every command-shaped request
 a fake received, including those it refused while offline or uncertain.
 `GET /writes` gives the parsed commands. Count checks wait until the count has
-held still for a second, so a late command is counted.
+held still for a second, so a late command is counted. In the `moments`
+scenario ([Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336))
+the wall fake serves controller contract 1.1 with moments. It declares the
+core moods plus `cozy`, up to 30 s, and can play over status. Its writer is the
+contract's reference `moment` operation on a live clock, and `POST /mode` sets
+the wall's mode as if it changed on the wall itself.
 
 | Step | UI entry | Driver action | Scenario | Expected observation |
 | --- | --- | --- | --- | --- |
@@ -95,6 +107,9 @@ held still for a second, so a late command is counted.
 | `command-reaches-fake` | `pixel` component, Brightness slider | Set brightness to 30 | `lifecycle-basic`, fresh | Queued or Sent status; exactly one `brightness.set` of 30 reached the Pixoo fake; the slider shows 30 |
 | `uncertain-no-replay` | `pixel` component, Brightness slider, Reload current values | Make the fake drop the response; set 25; wait 5.5 s; restore; reload | `lifecycle-basic`, fresh | "Result unknown … (uncertain-result)"; the form stays locked; one command, never retried; reload shows 60 and sends nothing |
 | `offline-recovers` | `pixel` component | Open while the fake answers 503; restore it | `pixel-offline`, fresh | "Stale / unavailable", then recovery without a reload; no command |
+| `moment-plays` | `wall` component, Moments card | Choose 5 s; press Celebrate; wait for the end | `moments`, fresh | "Celebrate: Scheduled on wall." or "Sent to wall."; the live line shows "Playing Celebrate, n s left", then "Last: Celebrate, completed …"; exactly one moment reached the wall fake: `celebrate`, 5,000 ms, `coversStatus` true, `event`, no palette; no other command |
+| `moment-blocked-on-status` | `wall` component, Moments card | Switch off Play over agent status; press Setback; set the wall to Quiet; switch it on; press Reminder | `moments`, fresh | "Not played: wall is in Work.", then "Not played: wall is in Quiet."; the live line still says "No moment yet."; exactly those two moments, the first with `coversStatus` false, and nothing resent |
+| `moment-uncertain-no-replay` | `wall` component, Moments card, Reload current values | Make the fake drop the response; press Celebrate; wait 5.5 s; restore; reload | `moments`, fresh | "Result unknown … (uncertain-result)"; the card stays locked; one command, never retried; reload unlocks the card and sends nothing |
 | `control-installed-links` | `wall` component page | Open it with a seeded editor link and a Places link to the installed wall | `control-installed-links`, fresh | Negative control: the installed-port link check catches both links and reports `failed` |
 | `control-missing-session` | Home | Open the preview | `lifecycle-basic` | Negative control: expects an unseeded session, reports `failed` |
 
@@ -106,8 +121,8 @@ fault, never the environment, and an unknown fault refuses to start. CI's
 | Fault | Broken behavior | Reference step and the assertion that fails |
 | --- | --- | --- |
 | `write-on-read` | An unsolicited brightness command goes through the hub shortly after the Pixoo fake is first read | `task-appears`: "read-only browsing sent no controller command" |
-| `duplicate-forward` | A loopback relay in front of the Pixoo fake forwards every command twice | `command-reaches-fake`: "the fake received exactly one brightness.set of 30"; `uncertain-no-replay`: "the uncertain command reached the fake once and was not retried" |
-| `replay-on-recovery` | Clearing an offline Pixoo sends a brightness command through the hub; clearing an uncertain one re-sends the value the controller already holds (60), so the reloaded value is unchanged and only the count sees the replay | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay`: "recovery replayed nothing" |
+| `duplicate-forward` | A loopback relay in front of the Pixoo fake forwards every command twice; in `moments`, a second relay does the same in front of the wall fake | `command-reaches-fake`: "the fake received exactly one brightness.set of 30"; `uncertain-no-replay`: "the uncertain command reached the fake once and was not retried"; `moment-plays`: "the fake received exactly one celebrate moment of 5 s over status, with no palette"; `moment-blocked-on-status`: "the fake received exactly the two blocked moments and nothing was resent"; `moment-uncertain-no-replay`: "the uncertain moment reached the fake once and was not retried" |
+| `replay-on-recovery` | Clearing an offline Pixoo sends a brightness command through the hub; clearing an uncertain one re-sends the value the controller already holds (60), so the reloaded value is unchanged and only the count sees the replay. In `moments`, clearing an uncertain wall sends a new moment through the hub's moment route instead | `offline-recovers`: "recovery sent no command"; `uncertain-no-replay` and `moment-uncertain-no-replay`: "recovery replayed nothing" |
 
 Runs serve no per-device editor links, so a preview never sends the owner to
 an installed service's port. The dashboard's Places navigation follows the
@@ -184,7 +199,7 @@ wrapper runs under `fnm exec --using=.nvmrc`.
 `npm run test:hub:verify` builds, then runs [`tests/`](tests):
 
 - `steps.test.mjs` judges steps with `runCaptureStep` against a freshly
-  seeded `serve.mjs` per step, without a supervisor. The four reference steps
+  seeded `serve.mjs` per step, without a supervisor. The seven reference steps
   pass on the correct app and fail at their named assertions under each
   fault above; the two `control-*` steps fail for their stated reasons; and no
   run credential appears in any of their logs. It needs only Chromium and runs

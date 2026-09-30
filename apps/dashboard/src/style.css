@@ -195,3 +195,6 @@ button.status-indicator{font-size:var(--type-label);font-weight:500;padding:var(
 @media(max-width:380px){.widget .quick-controls{grid-template-columns:1fr}}
 
 @media(min-width:801px){.home-devices{grid-column:1;grid-row:1}.home-sessions{grid-column:2;grid-row:1}}
+/* Hub #336: the Moments card's "Play over agent status" switch, a native checkbox with the switch role. */
+label.check{display:flex;align-items:center;gap:var(--space-s);color:var(--text)}
+label.check input{width:18px;height:18px;padding:0;flex:none;accent-color:var(--accent)}

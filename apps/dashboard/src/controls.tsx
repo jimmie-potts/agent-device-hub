@@ -1,6 +1,6 @@
 import React, {useCallback,useEffect,useId,useReducer,useRef,useState,useSyncExternalStore} from 'react';
 import type {Snapshot as StateSnapshot,SessionSnapshot} from '../../../packages/agent-state/src/types';
-import type {Snapshot,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
+import type {Snapshot,SnapshotV1_1,Mode,Command,MediaAction} from '../../../packages/contracts/src/types';
 import {Api,type ReceiptEvidence,makeCommand,generalReasons,brightnessDraft,sceneOptions,nanoleafContentReason,lightingCommand,lightingReasons,observedColor,type Lighting,type GeneralReasons,type Context,type Component} from './client';
 import type {GeometryRead} from './art/nanoleaf';
 import {actionWording,blocked,commandTransition,formWording,initialCommand,runCommand,unreadable,type Attempt,type CommandEvent,type CommandState,type Prepared,type ResultOptions} from './lifecycle';
@@ -9,7 +9,8 @@ export type Monitor={snapshot:StateSnapshot;nextRequestId:string;ownerId:string}
 export type Nano={apiVersion:string;identity:Snapshot['identity'];revision:string;configurationRevision:number;mode:string;settings:{style?:string;coverage?:string};source:string;projects:{id:string;color:string}[];tasks:{id:string;projectId:string|null;overrideProjectId:string|null}[];elements:{id:string;projectId:string|null;signature:number}[];pending:unknown[];wallPending:unknown;outcomes:{requestId:{epoch:string;sequence:number};outcome:string;failure?:{code:string}}[];nextRequestId:{epoch:string;sequence:number};scenes?:{id:string;name?:string}[];capabilities:Record<string,{supported:boolean}>};
 export type Pixoo={apiVersion:string;identity:{controllerId:string;deviceId:string};configurationRevision:number;generation:number;nextRequestId:string;configuration:{mode:string;filter:{q?:string;provider?:string;projectId?:string;session?:SessionSnapshot['identity']};cadenceMs:number};pendingMode:string|null;sourceConnection:string;participating:boolean;inFlight:number;lastOutcome:null|{status:string;code?:string};capabilities:{modes:string[];filters:string[];minimumCadenceMs:number;maximumCadenceMs:number}};
 /** A LIFX device keeps its lighting snapshot; its controller part is the device's snapshot. */
-export type Device={snapshot?:Snapshot;integration?:Nano|Pixoo;lighting?:Lighting;error?:string;received?:number;busy?:boolean;
+/** snapshot is the device read the general controls use. The dashboard reads at controller contract 1.1 (Hub #336); a 1.1 answer carries every 1.0 field, and its extra moment entries in `pending` and `lastOutcome` only ever meet kind and code checks here. momentSnapshot is that same read when it was a 1.1 snapshot, for the Moments card. */
+export type Device={snapshot?:Snapshot;momentSnapshot?:SnapshotV1_1;integration?:Nano|Pixoo;lighting?:Lighting;error?:string;received?:number;busy?:boolean;
  /** Nanoleaf only: the saved element geometry for the shared device art, read once per session after the first poll and again only after a non-final failure (Hub #355). */
  geometry?:GeometryRead};
 /** Resolves with the device record from a read that started after the call. */

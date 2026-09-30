@@ -265,9 +265,11 @@ through the existing hub route with the observed request ticket, configuration
 revision and generation. A declared control that is unavailable is disabled and names the read-only
 scope, stale or external-control evidence, or the device mode.
 Only declared capabilities get a form; one line names the undeclared ones, such
-as "Not declared by this controller: media and scenes." A component that declares
+as "Not declared by this controller: scenes and moments." A component that declares
 none of them, such as the Tidbyt or the synthetic sensor fixture, shows only "No
-general controls" ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)).
+general controls" ([#330](https://github.com/jimmie-potts/agent-device-hub/issues/330)),
+or "No general controls or moments" when it also declares no moments. Moments
+join the line without changing whether the general cards show.
 Power is one button that names the action left: Turn off while the desired
 power is on, Turn on while it is off; with desired power unknown it uses the
 last observed value with its age, and with both unknown it offers both buttons
@@ -338,6 +340,39 @@ scene the controller rejects because its mode changed after the browser observed
 Free is a typed failure that stays available for a fresh explicit action.
 Physical acceptance on the installed wall is
 [Hub #155](https://github.com/jimmie-potts/agent-device-hub/issues/155).
+
+## Moments
+
+[Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336) adds a
+Moments card after the general cards. It shows only when the device's snapshot,
+which the page reads with `?apiVersion=1.1`, is a 1.1 snapshot that declares
+`moments` supported, whether or not the general cards show. The home widget
+does not show it. The card offers:
+
+- one button each for `celebrate`, `setback` and `reminder`, labelled with the
+  title-cased ID;
+- a "More moods" menu for any other declared mood, where a pointer choice sends
+  at once and a keyboard choice only on Enter;
+- 5, 10 and 30 s presets within the device's `maxDurationMs`, 10 s by default;
+- a "Play over agent status" switch, on by default, only when the device can play
+  over status. Otherwise the card sends `coversStatus: false`. No palette is sent.
+
+Each press reads the device again and sends exactly one moment through
+`POST /api/controllers/v1/<alias>/moment` and the shared command lifecycle. The
+result lines keep receipts' transmission-only meaning: "Celebrate: Scheduled on
+wall.", "Not played: wall is in Quiet.", "Not played: it missed its start
+window.", "Not sent: this controller serves API 1.0." and "Result unknown…" with
+"Reload current values", which locks the card and never resends. A press while a
+moment plays sends a new moment, which the device lets supersede the old one.
+
+The live line is the device's own `state.moment`: "Scheduled: Celebrate",
+"Playing Celebrate, 7 s left", and the last ending (completed, pre-empted by an
+alert, superseded or interrupted) with its age, computed in the controller's
+clock. The snapshot's last moment has no mood, so the line names it only for a
+moment ID this page sent. While the page is visible and a moment is current, the
+page re-reads that device every second, stopping 5 s after the moment ends.
+Otherwise the normal 5 s poll applies. No controller serves 1.1 yet;
+codex-nanoleaf#158 and divoom-app-upgrade#92 own that adoption.
 
 ## Intent and observation
 
