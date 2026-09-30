@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { datasetIdentity } from '../reference.mjs';
 import { definitionDigest as recordsDigest } from '../digest.mjs';
-import { CATALOG, catalogIdentity, fullGuideView, validateView, resolveView, semanticContent, allowedLink } from './reference.mjs';
+import { CATALOG, catalogIdentity, fullGuideView, validateView, resolveView, rebindView, semanticContent, allowedLink } from './reference.mjs';
 import { definitionDigest } from './digest.mjs';
 
 const json = url => JSON.parse(readFileSync(url));
@@ -142,6 +142,24 @@ test('reduced motion keeps identical facts, reasons, order and actions', () => {
   assert.deepEqual(semanticContent(resolveView(view, { dataset, policy })), semanticContent(moving));
   view.components[1].density = 'compact';
   assert.notDeepEqual(semanticContent(resolveView(view, { dataset, policy })), semanticContent(moving));
+});
+
+test('a content refresh re-binds the open view only when it fully revalidates', () => {
+  const { dataset, view } = scenario();
+  const refreshed = scenario({ records: { 'issues.0.title': 'Changed title' } }).dataset;
+  assert.throws(() => validateView(view, { dataset: refreshed }), code('dataset-mismatch'));
+  const rebound = rebindView(view, { dataset: refreshed });
+  assert.equal(rebound.datasetId, refreshed.datasetId);
+  assert.equal(view.datasetId, dataset.datasetId);
+  assert.deepEqual({ ...rebound, datasetId: view.datasetId }, view);
+  assert.deepEqual(semanticContent(resolveView(rebound, { dataset: refreshed, policy })), semanticContent(resolveView(view, { dataset, policy })));
+  const moved = scenario({ records: { 'subguides.0.members': ['jimmie-potts/agent-device-hub#900001'] } }).dataset;
+  assert.throws(() => rebindView(view, { dataset: moved }), code('membership'));
+  const private_ = scenario({ records: { 'issues.0.publicFields': ['labels'] } }).dataset;
+  assert.throws(() => rebindView(view, { dataset: private_ }), code('evidence-not-public'));
+  const other = { ...CATALOG, groups: { ...CATALOG.groups, ideas: { ...CATALOG.groups.ideas, heading: 'Other' } } };
+  assert.throws(() => rebindView(view, { dataset: refreshed, catalog: other }), code('catalog-mismatch'));
+  assert.deepEqual(rebindView(fullGuideView(), { dataset: refreshed }), fullGuideView());
 });
 
 test('one record may appear in several instances without changing its facts or membership', () => {

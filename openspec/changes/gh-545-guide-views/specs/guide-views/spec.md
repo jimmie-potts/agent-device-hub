@@ -16,6 +16,10 @@ Views SHALL carry no issue facts, URLs or free text.
 - **WHEN** a view names another dataset, catalog or version
 - **THEN** validation rejects it with a stable code and the current view stays
 
+#### Scenario: Records refresh under an open view
+- **WHEN** record content changes while a composed view is on screen
+- **THEN** the view moves to the new records only if it passes complete validation against them; otherwise it stays visible, marked out of date, and is never shown as current
+
 #### Scenario: Same record twice
 - **WHEN** one issue appears under two sections
 - **THEN** each instance has its own ID, both resolve to the same record, and no membership or count changes

@@ -67,7 +67,7 @@
       "children": ["subguide-panel"]
     },
     "candidates": {
-      "heading": "Candidate work",
+      "heading": "Possible next work",
       "children": ["issue-card"],
       "requiresReason": "ready-candidate"
     },
@@ -122,6 +122,7 @@
     },
     "ready-candidate": {
       "template": "Ready by current recorded evidence",
+      "withheldTemplate": "Readiness not established",
       "evidence": "none",
       "components": ["issue-card"],
       "claim": "guide-records ready gate"

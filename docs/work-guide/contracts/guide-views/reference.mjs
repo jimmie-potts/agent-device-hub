@@ -134,6 +134,12 @@ export function validateView(value, { dataset, catalog = CATALOG } = {}) {
   return value;
 }
 
+// Only the view already on screen may move to changed records, and only if it fully revalidates.
+export function rebindView(value, { dataset, catalog = CATALOG } = {}) {
+  if (value?.layout === 'full-guide') return validateView(value);
+  return validateView({ ...structuredClone(value), datasetId: dataset?.datasetId }, { dataset, catalog });
+}
+
 // Browser links come only from referenced records and only to GitHub pages.
 export function allowedLink(url) {
   try {

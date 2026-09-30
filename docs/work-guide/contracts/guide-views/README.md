@@ -49,13 +49,13 @@ properties, unknown enum values and unsupported versions are rejected.
 | `schemaVersion` | This definition | Exactly `guide-views/1.0`. Any other value is `unsupported-version`. |
 | `layout` | Full guide: code. Composed: application from the validated decision | `full-guide`, `stack` or `board`, as the catalog describes. Layout never changes reading order, which is root order then child order. |
 | `recordsVersion` | Application | Exactly `guide-records/1.0` and equal to the dataset's `schemaVersion`. |
-| `datasetId` | Application, copied from the dataset the decision was made against | Must equal the current validated dataset's `datasetId`, or the view is `dataset-mismatch`. It binds content, not freshness; freshness is checked at resolution. |
+| `datasetId` | Application: the dataset the decision was made against, or the dataset a later re-bind validated | Must equal the current validated dataset's `datasetId`, or the view is `dataset-mismatch`. It binds content, not freshness; freshness is checked at resolution. See "Refresh and re-binding". |
 | `catalogId` | Application, from `catalogIdentity(catalog)` | SHA-256 of the canonical catalog JSON (object keys sorted, arrays kept in authored order). Must equal the renderer's catalog, or the view is `catalog-mismatch`. |
 | `transition` | Decision, validated by the application | Motion into this view: `none`, `assemble` or `rearrange`. Presentation only; excluded from the view's facts and actions. |
 | `root` | Decision | 1-6 instance IDs of `section` components, in reading order. A group appears at most once. |
 | `components[]` | Decision; the application assigns instance IDs | 1-48 components. Each has an `id` and a `kind` with that kind's properties below. |
 | `components[].id` | Application | Stable component-instance ID, `^[a-z][a-z0-9-]{0,31}$`, unique in the view. It is opaque, never parsed as a record ID, and a record shown twice has two instance IDs. #548 decides which instance IDs survive a refinement. |
-| `section.group` | Decision | One catalog group. The group fixes the heading text (a catalog template) and the allowed child kinds. `candidates` children need a `ready-candidate` reason; `ideas` children must be Guide ideas. |
+| `section.group` | Decision | One catalog group. The group fixes the heading text (a catalog template) and the allowed child kinds. `candidates` ("Possible next work") children need a `ready-candidate` reason, which does not by itself establish readiness; `ideas` children must be Guide ideas. |
 | `section.sequence` | Decision | `none`, or `suggested`: children are numbered as a suggested reading or work order, labelled as not a recorded dependency. |
 | `section.disclosure`, `subguide-panel.disclosure` | Decision | Initial `open` or `collapsed` state. The reader can toggle it; it hides nothing from search, print or assistive technology. |
 | `section.children`, `subguide-panel.children` | Decision | Instance IDs, at most 12, in order. Sections take 1-12; a panel may take none. |
@@ -83,7 +83,7 @@ template filled with references; there is no model-written explanation.
 | `guide-contains` | panel | 1-4 `{relation: "contains", record}` | The sub-guide lists each issue. | `supported` authored membership. |
 | `recorded-relation` | card | 1-4 `{relation, record}` with `blocks`, `blocked-by`, `parent-of` or `child-of` | The other issue exists and the native edge is observed in the owning collection: `blocks` in the other issue's `blockedBy`, `blocked-by` in this issue's `blockedBy`, `parent-of` in `children`, `child-of` in `parent`. | `supported` when the owning collection is fresh under the consumer's policy; otherwise `stale` with a source-linked reason. |
 | `idea-extends` | card | 1-4 `{relation: "extends", record}` | The card is a Guide idea whose `Extends` lists the record. | `supported`; never a prerequisite. |
-| `ready-candidate` | card | none | Allowed on any card; required in `candidates`. | Code runs the guide-records `ready` gate at use. `withheld` lists every failed gate with its source. |
+| `ready-candidate` | card | none | Allowed on any card; required in `candidates`. | Code runs the guide-records `ready` gate at use. `withheld` shows "Readiness not established" and lists every failed gate with its source. The card stays in its section. |
 
 Observed relation edges are shown even when their collection is incomplete, as
 guide-records allows. A missing edge is never shown as "no blockers". Validation
@@ -150,9 +150,32 @@ returns an ordered model: each node's instance ID, kind, parent, depth, position
 disclosure, record reference, template heading, computed dependency list,
 resolved reasons, link and available actions. The consumer supplies the
 guide-records freshness policy (`asOf` and positive `maxAgeMs`); a composed view
-cannot choose one. Resolution runs again whenever the dataset refreshes or time
-passes, so an accepted view can age into `stale` or `withheld` reasons without
-being rejected.
+cannot choose one. Resolution runs again as time passes and after every
+refresh, so an accepted view can age into `stale` or `withheld` reasons.
+
+## Refresh and re-binding
+
+A refresh that only renews observation times keeps the same `datasetId`, and
+the view on screen simply resolves again. A refresh that changes any record
+content, anywhere in the three repositories, produces a new `datasetId`. The
+view on screen is then bound to replaced records and would fail as
+`dataset-mismatch`.
+
+`rebindView(view, {dataset, catalog})` handles that case for the view already
+on screen. It copies the view with the new `datasetId` and runs the complete
+validation against the new records. If that passes, the copy replaces the view
+and resolves from current facts. If it fails, it rejects with the same code
+validation would give (for example `unknown-record`, `membership` or
+`evidence-not-public`). #548 then keeps the last rendered view visible, marked
+out of date with that code, and offers Full guide or a new question. It never
+shows that view as current.
+
+Re-binding never changes the catalog, records version, components or reasons.
+It applies only to a view the owner already has. A provider response that
+arrives bound to replaced records is still rejected, as guide-records requires,
+because it was chosen from content the owner no longer has. A question match
+cites a field, not its text: after a re-bind the card shows the current text,
+and the match remains a relevance hint.
 
 Views contain no URLs. The only links are a card's issue `url` and a panel's
 authored `source`, and only when they parse as `https://github.com/` pages with
@@ -209,7 +232,7 @@ defines the invalidation).
 | Application (#512) | Assigns instance IDs, adds code-derived reasons and dependency lists, binds `datasetId` and `catalogId`, and validates before handing the view to the renderer. |
 | Request and outcome contracts (#544, #546) | Carry the question, timeouts and failures. A rejection code becomes a visible outcome; the current view is kept. |
 | View state (#548) | Holds the current view, request generation, pins and undo. It decides which instance IDs survive a refinement, and it rejects late responses after a reset. |
-| Renderer (#511) | Implements each component kind and the Full guide baseline, resolves facts from records, and revalidates on dataset refresh. |
+| Renderer (#511) | Implements each component kind and the Full guide baseline, resolves facts from records, resolves again on every refresh and re-binds the current view after a content change. |
 | Visual treatment (#515) | Implements the motion presets within their bounds, with the reduced-motion equivalent. |
 
 ## Compatibility, fixtures and approval

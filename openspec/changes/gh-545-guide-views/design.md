@@ -25,6 +25,11 @@ the existing guide or the guide-records definition.
 - Four component kinds (section, sub-guide panel, issue card, dependency list)
   and five groups cover the first slice. Nesting rules cap the depth at three.
   Other kinds wait for a consumer that needs them.
+- A content refresh replaces the dataset identity. The view already on screen
+  may re-bind to the new records only by passing complete validation against
+  them; a pending provider response bound to replaced records is still
+  rejected, as guide-records requires. A failed re-bind leaves the last view
+  visible and marked out of date under #548.
 - Separate validation (reject and keep the current view) from resolution
   (recompute each claim at use). An accepted view can age into stale or
   withheld reasons without being rejected. Freshness policy comes from the
