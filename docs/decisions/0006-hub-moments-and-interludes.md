@@ -154,12 +154,23 @@ MCP tools are unchanged.
 
 ### Privacy
 
-- Events carry only a kind, neutral aliases and, for a meeting reminder, its
-  start time. They never carry pull request titles, repository content,
-  calendar titles or attendees.
-- A Pixoo image search that an agent proposes
+- The owner-approved policy in [Hub #424](https://github.com/jimmie-potts/agent-device-hub/issues/424)
+  and [Hub #426](https://github.com/jimmie-potts/agent-device-hub/issues/426)
+  supersedes the original title and repository-text exclusions. Normalized
+  events may carry optional `pullRequestTitle` and `meetingTitle` (160 Unicode
+  scalars each) and `repositoryName` (80), retained in the private moment log.
+  Values must pass the shared display-text and credential checks. These fields
+  do not change event identity, replay protection or the controller 1.1 wire
+  contract. Device-specific text rendering remains separately scoped.
+- A proposed Pixoo image search
   ([divoom #94](https://github.com/jimmie-potts/divoom-app-upgrade/issues/94))
-  uses generic mood tags only, never task or repository text.
+  may combine mood tags with task text, repository names and pull request
+  titles. This policy does not implement search or content capture.
+- Credentials, tokens and secrets remain excluded. Calendar attendees' contact
+  details require separate owner approval. Only declared contract fields are
+  transmitted. Prompt, response and transcript
+  capture requires its separate implementation under
+  [Hub #425](https://github.com/jimmie-potts/agent-device-hub/issues/425).
 
 ## Owner decisions
 

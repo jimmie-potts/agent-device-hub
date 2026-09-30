@@ -8,7 +8,8 @@ import type {AutomationStore, LogRow, NewLogRow, RuleRow} from './automation-sto
 // Hub #358: owner-approved event rules, the interrupt set, event intake, arbitration and hand-off (ADR 0006).
 
 /** A normalized event from an in-process source. `delivery:'replay'` never reaches a rule. */
-export type HubEvent = {id:string; source:string; kind:string; alias?:string; agent?:string; task?:string; delivery:'live'|'replay'};
+export type EventText = {pullRequestTitle?:string; repositoryName?:string; meetingTitle?:string};
+export type HubEvent = EventText & {id:string; source:string; kind:string; alias?:string; agent?:string; task?:string; delivery:'live'|'replay'};
 export type EventTrigger = {source:string; kind:string; alias?:string};
 export type MomentAction = {mood:string; priorityClass:'event'|'flourish'; durationMs:number; palette?:string[]; targets:string[]};
 export type Rule = {id:string; name:string; enabled:boolean; kind:'event'; trigger:EventTrigger; action:MomentAction; createdAtMs:number; updatedAtMs:number};
@@ -61,12 +62,21 @@ const screenedId = (value:unknown): value is string => id(value) && !credentialL
 const keysWithin = (value:Record<string,unknown>, required:string[], allowed:string[]) =>
   required.every(key => Object.hasOwn(value,key)) && Object.keys(value).every(key => allowed.includes(key));
 
+/** Copy only declared event display fields; neither sender output nor raw event objects enter the log. */
+function eventText(value:EventText): EventText {
+  return {...(value.pullRequestTitle === undefined ? {} : {pullRequestTitle:value.pullRequestTitle}),
+    ...(value.repositoryName === undefined ? {} : {repositoryName:value.repositoryName}),
+    ...(value.meetingTitle === undefined ? {} : {meetingTitle:value.meetingTitle})};
+}
 export function parseEvent(value:unknown): HubEvent|null {
-  if (!object(value) || !keysWithin(value,['id','source','kind','delivery'],['id','source','kind','alias','agent','task','delivery']) ||
+  if (!object(value) || !keysWithin(value,['id','source','kind','delivery'],['id','source','kind','alias','agent','task','delivery','pullRequestTitle','repositoryName','meetingTitle']) ||
       !screenedId(value.id) || !source(value.source) || !eventKind(value.kind) || !['live','replay'].includes(value.delivery as string) ||
-      !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id)) return null;
+      !optional(value,'alias',screenedId) || !optional(value,'agent',id) || !optional(value,'task',id) ||
+      !optional(value,'pullRequestTitle',item => validDisplayText(item,160)) || !optional(value,'repositoryName',item => validDisplayText(item,80)) ||
+      !optional(value,'meetingTitle',item => validDisplayText(item,160))) return null;
   return {id:value.id,source:value.source,kind:value.kind,...(value.alias === undefined ? {} : {alias:value.alias as string}),
-    ...(value.agent === undefined ? {} : {agent:value.agent as string}),...(value.task === undefined ? {} : {task:value.task as string}),delivery:value.delivery as HubEvent['delivery']};
+    ...(value.agent === undefined ? {} : {agent:value.agent as string}),...(value.task === undefined ? {} : {task:value.task as string}),
+    ...eventText(value as EventText),delivery:value.delivery as HubEvent['delivery']};
 }
 function parseTrigger(value:unknown): EventTrigger {
   if (!object(value) || !keysWithin(value,['source','kind'],['source','kind','alias']) || !source(value.source) || !eventKind(value.kind) || !optional(value,'alias',screenedId)) fail('invalid-trigger');
@@ -152,13 +162,14 @@ const startProjection = (start:unknown): MomentStart|null => validate('momentSta
   {domain:'controller-monotonic',epoch:(start as MomentStart).epoch,atMs:(start as MomentStart).atMs,toleranceMs:(start as MomentStart).toleranceMs} : null;
 const NOT_SENT: readonly string[] = ['1.0-only','moments-unsupported','unsupported-capability','capacity','unavailable'];
 
-export type LogEntry = {seq:number; atMs:number; ruleId:string; event:{source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
+export type LogEntry = {seq:number; atMs:number; ruleId:string; event:EventText & {source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
   momentId:string; priorityClass:string; coversStatus:boolean; target:string; outcome:LogRow['outcome']; reason?:string;
   receipt?:ReturnType<typeof receiptProjection>; failure?:{code:string}; start?:MomentStart};
 function entry(row:LogRow): LogEntry {
-  const detail = row.detail === null ? {} : JSON.parse(row.detail) as {receipt?:LogEntry['receipt']; failure?:{code:string}; start?:MomentStart};
+  const detail = row.detail === null ? {} : JSON.parse(row.detail) as {event?:EventText; receipt?:LogEntry['receipt']; failure?:{code:string}; start?:MomentStart};
   return {seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
-    ...(row.eventAlias === null ? {} : {alias:row.eventAlias}),...(row.agent === null ? {} : {agent:row.agent}),...(row.task === null ? {} : {task:row.task})},
+    ...(row.eventAlias === null ? {} : {alias:row.eventAlias}),...(row.agent === null ? {} : {agent:row.agent}),...(row.task === null ? {} : {task:row.task}),
+    ...eventText(detail.event ?? {})},
     momentId:row.momentId,priorityClass:row.priorityClass,coversStatus:row.coversStatus,target:row.target,outcome:row.outcome,
     ...(row.reason === null ? {} : {reason:row.reason}),...(detail.receipt ? {receipt:detail.receipt} : {}),...(detail.failure ? {failure:detail.failure} : {}),...(detail.start ? {start:detail.start} : {})};
 }
@@ -196,10 +207,12 @@ export function createAutomation(options:AutomationOptions) {
     if (recent.size > RECENT_LIMIT) recent.delete(recent.values().next().value!);
   };
 
-  const logRow = (rule:Rule, event:HubEvent, moment:MomentIntent, target:string, outcome:LogRow['outcome'], reason:string|null, detail:object|null): NewLogRow => ({
-    atMs:options.clock(),ruleId:rule.id,eventSource:event.source,eventId:event.id,eventKind:event.kind,eventAlias:event.alias ?? null,
-    agent:event.agent ?? null,task:event.task ?? null,momentId:moment.momentId,priorityClass:moment.priorityClass,coversStatus:moment.coversStatus,
-    target,outcome,reason,detail:detail === null ? null : JSON.stringify(detail)});
+  const logRow = (rule:Rule, event:HubEvent, moment:MomentIntent, target:string, outcome:LogRow['outcome'], reason:string|null, detail:object|null): NewLogRow => {
+    const text = eventText(event), hasText = Object.keys(text).length > 0;
+    return {atMs:options.clock(),ruleId:rule.id,eventSource:event.source,eventId:event.id,eventKind:event.kind,eventAlias:event.alias ?? null,
+      agent:event.agent ?? null,task:event.task ?? null,momentId:moment.momentId,priorityClass:moment.priorityClass,coversStatus:moment.coversStatus,
+      target,outcome,reason,detail:detail === null && !hasText ? null : JSON.stringify({...detail,...(hasText ? {event:text} : {})})};
+  };
   const intent = (rule:Rule, event:HubEvent): MomentIntent => ({momentId:momentId(rule,event),mood:rule.action.mood,
     ...(rule.action.palette ? {palette:[...rule.action.palette]} : {}),durationMs:rule.action.durationMs,priorityClass:rule.action.priorityClass,
     coversStatus:rule.action.priorityClass === 'event' && interruptSet.has(event.kind)});

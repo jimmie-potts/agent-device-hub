@@ -45,6 +45,26 @@ const rule=(overrides={})=>({name:'Merged pull request',kind:'event',enabled:tru
 const live=(id,overrides={})=>({id,source:'github',kind:'pull-request.merged',delivery:'live',...overrides});
 const log=async call=>(await call('GET','/api/automation/v1/log')).body.entries;
 
+test('#426 moment title fixtures survive log readback and restart without entering controller intents',async()=>{
+ const events=JSON.parse(await readFile(new URL('../fixtures/moment-title-events.json',import.meta.url),'utf8'));
+ const sender=fakeSender();let opened=await open({sender});const {directory}=opened;
+ try{
+  for(const event of events)await opened.call('POST','/api/automation/v1/rules',rule({trigger:{source:event.source,kind:event.kind}}));
+  for(const event of events)assert.deepEqual(opened.hub.automation.submit(event),{accepted:true,matched:1});
+  await opened.hub.automation.settled();
+  const entries=await log(opened.call);
+  assert.equal(entries.length,4);
+  for(const {delivery,...event} of events)assert.deepEqual(entries.filter(e=>e.event.id===event.id).map(e=>e.event),[event,event]);
+  assert.equal(sender.calls.length,4);
+  for(const {moment} of sender.calls)assert.deepEqual(Object.keys(moment).sort(),['coversStatus','durationMs','momentId','mood','palette','priorityClass','startAtHubMs']);
+  await opened.hub.close();opened=await open({sender,directory});
+  assert.deepEqual(await log(opened.call),entries);
+  assert.deepEqual(opened.hub.automation.submit({...events[0],pullRequestTitle:'Renamed after delivery'}),{accepted:false,reason:'duplicate'});
+  assert.deepEqual(opened.hub.automation.submit({...events[1],id:'history',delivery:'replay'}),{accepted:false,reason:'replay'});
+  await opened.hub.automation.settled();assert.equal(sender.calls.length,4);
+ }finally{await opened.hub.close();await rm(directory,{recursive:true,force:true});}
+});
+
 test('rules, the interrupt set and settings persist across a restart and defaults seed exactly once (AC1)',async()=>{
  let opened=await open();const {directory}=opened;
  try{

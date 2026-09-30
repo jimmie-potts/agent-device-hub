@@ -1007,6 +1007,15 @@ resend. No test starts an installed service or contacts a device. Also run the s
 monitoring setup checks above, plus the shared build, type, contract and
 workflow checks.
 
+Hub #426 adds `automation-metadata.test.mjs` to the same hub and offline-package
+test patterns. It exercises the real intake and SQLite log with the PR and
+meeting fixtures in `apps/hub/fixtures/moment-title-events.json`: bounded
+Unicode display fields, credential rejection before deduplication, legacy log
+rows, restart readback, blocked moments and duplicate/replay protection. The
+fixture cases in `automation.test.mjs` also read the metadata through the
+authenticated log route and verify that controller intents retain their strict
+1.1 shape. No new CI job is needed; the existing hub suites run both files.
+
 ## Bounded cross-device compatibility
 
 Hub #9 adds verification tooling for the standalone Linux/WSL setup. Build this

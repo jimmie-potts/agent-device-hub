@@ -2,7 +2,7 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 
 /** One stored rule row. Trigger and action hold validated JSON; `automation.ts` owns their meaning. */
 export type RuleRow = {id:string; name:string; enabled:boolean; kind:string; trigger:string; action:string; createdAtMs:number; updatedAtMs:number};
-/** One automation log row, written by arbitration. `detail` holds JSON built only from allowlisted fields. */
+/** One automation log row, written by arbitration. `detail` holds allowlisted event display fields and sender evidence. */
 export type LogRow = {seq:number; atMs:number; ruleId:string; eventSource:string; eventId:string; eventKind:string; eventAlias:string|null;
   agent:string|null; task:string|null; momentId:string; priorityClass:string; coversStatus:boolean; target:string;
   outcome:'blocked'|'receipt'|'not-sent'|'uncertain'; reason:string|null; detail:string|null};
