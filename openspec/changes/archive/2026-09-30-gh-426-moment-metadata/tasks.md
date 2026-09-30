@@ -7,6 +7,6 @@
 ## 2. Policy and delivery
 
 - [x] 2.1 Amend ADR 0006 and the owning application/development guides; preserve #425 and source-only boundaries.
-- [ ] 2.2 Run required local checks, validate and synchronize the capability delta, then archive the change before independent review.
+- [x] 2.2 Run required local checks, validate and synchronize the capability delta, then archive the change before independent review.
 
 Revision-specific reviews, PR/main CI and tracker reconciliation are recorded in delivery evidence and the PR, outside the reviewed commit.
