@@ -7,6 +7,7 @@ import {createHash, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto'
 import {createAgentState, type Consumer, type Identity, type DurableState} from '@jimmie-potts/agent-state';
 import {HubStorage, type HubLease} from './storage.js';
 import {ControllerClient, type ControllerConfig} from './controllers.js';
+import {MOMENT_RESPONSE_BOUND_MS,ownerMomentInput,sendOwnerMoment} from './moment-route.js';
 import {prepareActivation,type ActivationPlan} from './migration-routes.js';
 import {consumeReleasedState,type ReleasedState} from './migration.js';
 import {createHubMcp, HOST_SERVICE, type HubMcp} from './mcp.js';
@@ -323,6 +324,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     void (async () => {
       if (closing || active >= 32) { rejected = Math.min(Number.MAX_SAFE_INTEGER,rejected+1);json(res,503,{error:{code:'capacity'}});return; }
       active++;
+      const started = performance.now();
       const timer = setTimeout(() => res.destroy(),3000);
       let streaming = false;
       try {
@@ -357,7 +359,7 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const input=await body(req,16);if(!object(input)||!exact(input,[]))throw new HttpError('invalid-input',400);
           pruneBrowser();json(res,200,openBrowserSession());return;
         }
-        const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands)$/.exec(path);
+        const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands|moment)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
         const lightingRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/lighting\/(snapshot|commands)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
@@ -437,6 +439,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         } else if (route && !url.search && req.method === 'POST' && route[2] === 'commands') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
           const response = await client.command(await admitted(65536));json(res,response.status,response.body);
+        } else if (route && !url.search && req.method === 'POST' && route[2] === 'moment') {
+          // Hub #336: the owner's explicit moment for this one device, through the #335 sender, answered inside the 3 s cap.
+          const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
+          const input = ownerMomentInput(await admitted(1024));
+          json(res,200,await sendOwnerMoment(client,input,MOMENT_RESPONSE_BOUND_MS - (performance.now() - started)));
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);

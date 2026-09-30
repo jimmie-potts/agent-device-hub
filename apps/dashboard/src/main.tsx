@@ -2,14 +2,16 @@ import React, {useEffect,useId,useLayoutEffect,useMemo,useRef,useState,useSyncEx
 import {createRoot} from 'react-dom/client';
 import placesManifest from '../../../docs/skins/places.json';
 import type {SessionSnapshot} from '../../../packages/agent-state/src/types';
-import type {Snapshot} from '../../../packages/contracts/src/types';
+import type {Snapshot,SnapshotV1_1} from '../../../packages/contracts/src/types';
 import {Api,ApiError,safeEditorUrl,playbackControls,playbackEvidence,playbackRequest,isPlaybackReceipt,observedColor,type Lighting,type Context,type Component,type PlaybackAction,type PlaybackReceipt,type PlaybackSnapshot} from './client';
 import {actionWording} from './lifecycle';
-import {age,nano,pixoo,title,listed,Badge,Facts,EditForm,TextField,Select,options,useCommandLifecycle,resetLifecycles,deviceControls,hasModeControl,undeclaredCapabilities,lightingNote,ModeCard,PowerCard,BrightnessCard,MediaCard,SceneCard,LightingCards,NanoAssignments,PixooMonitor,type Monitor,type Nano,type Pixoo,type Device,type Refresh,type DeviceControls} from './controls';
+import {age,nano,pixoo,title,Badge,Facts,EditForm,TextField,Select,options,useCommandLifecycle,resetLifecycles,deviceControls,hasModeControl,undeclaredCapabilities,lightingNote,ModeCard,PowerCard,BrightnessCard,MediaCard,SceneCard,LightingCards,NanoAssignments,PixooMonitor,type Monitor,type Nano,type Pixoo,type Device,type Refresh,type DeviceControls} from './controls';
 import {parseRoute,routeHash,type Route} from './routes';
 import {NanoleafArt} from './art/NanoleafArt';
 import {geometryRead,type Geometry} from './art/nanoleaf';
 import {homeLayout,widgetDefinition,type WidgetSize} from './widgets';
+import {MomentsCard,resetMoments} from './MomentsCard';
+import {declaredMoments,undeclaredLine} from './moments';
 import './style.css';
 
 const key=(s:SessionSnapshot)=>JSON.stringify([s.identity,s.generation]);
@@ -58,7 +60,7 @@ function statusItems(d:DeviceControls,now:number):[string,React.ReactNode][]{
 }
 const health=(d:DeviceControls)=><Badge warning={!!d.device.error}>{d.device.error?'Stale / unavailable':d.snapshot?.serviceHealth??'Unknown'}</Badge>;
 /** One component's page: identity and health, the status strip, the rare facts behind Details, every control as a card, and the device's own panels. */
-function ComponentView({component,device,context,api,refresh,now,sessions}:{component:Component;device:Device;context:Context;api:Api;refresh:Refresh;now:number;sessions:SessionSnapshot[]}){
+function ComponentView({component,device,context,api,refresh,now,sessions,visible}:{component:Component;device:Device;context:Context;api:Api;refresh:Refresh;now:number;sessions:SessionSnapshot[];visible:boolean}){
  const d=deviceControls(component,device,context,api,refresh);
  const {snapshot,integr,local}=d;
  // The shared device art keeps its own selection; picking an element there also selects it in the Assignments panel.
@@ -68,6 +70,9 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  const undeclared=snapshot?undeclaredCapabilities(snapshot):[];
  const note=component.kind==='lifx'?lightingNote(d):undefined;
  const cards=!!snapshot&&(hasModeControl(d)||undeclared.length<4||(component.kind==='lifx'&&!note));
+ // The Moments card shows whenever the 1.1 snapshot declares moments, whether or not the general cards do (Hub #336).
+ const moments=!!declaredMoments(device.momentSnapshot);
+ const undeclaredText=snapshot?undeclaredLine(device.momentSnapshot??snapshot):undefined;
  return <><header className="section-heading"><div><p className="eyebrow">COMPONENT / {component.kind}</p><h2>{component.id}</h2><p className="muted">{component.controllerId} / {component.deviceId}</p></div>{health(d)}</header>
  <Facts className="strip" items={statusItems(d,now)}/>
  {device.error&&<p role="status" className="warning">{device.error}. Last evidence is retained. Other components remain independent.</p>}
@@ -81,10 +86,10 @@ function ComponentView({component,device,context,api,refresh,now,sessions}:{comp
  {component.kind==='nanoleaf'&&<NanoleafArt title={component.id} read={device.geometry} snapshot={nano(integr)?integr:undefined} stale={!!device.error} selection={artSelection} onSelect={setPickedElement}/>}
  {component.kind==='tidbyt'&&<p className="hint">The local controller host publishes the agent status and now-playing tiles to this Tidbyt. They follow agent activity and what is playing; this view has nothing to change on the display.</p>}
  <p className="eyebrow general">CONTROLS</p>
- {cards&&<div className="cards"><ModeCard d={d}/><PowerCard d={d}/><BrightnessCard d={d}/><MediaCard d={d}/><SceneCard d={d}/>{component.kind==='lifx'&&<LightingCards d={d}/>}</div>}
+ {(cards||moments)&&<div className="cards">{cards&&<><ModeCard d={d}/><PowerCard d={d}/><BrightnessCard d={d}/><MediaCard d={d}/><SceneCard d={d}/>{component.kind==='lifx'&&<LightingCards d={d}/>}</>}<MomentsCard d={d} now={now} visible={visible}/></div>}
  {snapshot?<>
   {!local&&!hasModeControl(d)&&<p className="hint">Mode control unavailable: no supported integration mode declared.</p>}
-  {undeclared.length===4?<p className="hint undeclared">No general controls: this controller declares no power, brightness, media or scenes.</p>:undeclared.length>0&&<p className="hint undeclared">Not declared by this controller: {listed(undeclared)}.</p>}
+  {undeclaredText&&<p className="hint undeclared">{undeclaredText}</p>}
  </>:<p className="hint">General controls unavailable: no controller snapshot.</p>}
  {note&&<p className="hint">{note}</p>}
  {!local&&!nano(integr)&&!pixoo(integr)&&<p className="hint">Settings unavailable: this component has no supported integration extension.</p>}
@@ -200,7 +205,7 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
  const [context,setContext]=useState<Context>(),[monitor,setMonitor]=useState<Monitor>(),[devices,setDevices]=useState<Record<string,Device>>({}),[error,setError]=useState(''),[feed,setFeed]=useState(false),[now,setNow]=useState(Date.now()),[received,setReceived]=useState(0);
  const route=useRoute();
  // One session's shared control state never shows in the next: disconnecting unmounts the dashboard and forgets it. Signing in again keeps the dashboard mounted, so a lock from before the session ended stays until its explicit reload.
- useEffect(()=>()=>resetLifecycles(),[]);
+ useEffect(()=>()=>{resetLifecycles();resetMoments();},[]);
  const refreshRef=useRef<()=>Promise<void>>(async()=>{}),deviceRefresh=useRef<(id:string)=>Promise<Device|undefined>>(async()=>undefined);
  useEffect(()=>{
   const stop=new AbortController();let busy=false,again=false,waiters:(()=>void)[]=[];const deviceBusy=new Set<string>(),deviceAgain=new Set<string>(),deviceWaiters=new Map<string,(()=>void)[]>(),latest=new Map<string,Device>();let current:Context|undefined,latestMonitor:Monitor|undefined;
@@ -211,9 +216,10 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
    deviceBusy.add(c.id);let polled=false;
    // A LIFX read is one lighting snapshot; its controller part guards the general and lighting controls alike.
    try {if(c.kind==='lifx'){const lighting=await api.request<Lighting>(`/api/controllers/v1/${c.id}/lighting/snapshot`,undefined,stop.signal);update(c.id,{snapshot:lighting.controller,lighting,error:undefined,received:Date.now()});polled=true;}
-    else {const snapshot=await api.request<Snapshot>(`/api/controllers/v1/${c.id}/snapshot`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
+    // The read asks for controller contract 1.1; the hub answers a 1.0 controller's snapshot unchanged (Hub #576, #336).
+    else {const read=await api.request<Snapshot|SnapshotV1_1>(`/api/controllers/v1/${c.id}/snapshot?apiVersion=1.1`,undefined,stop.signal);let integration:Nano|Pixoo|undefined;
     if(['nanoleaf','pixoo'].includes(c.kind))integration=await api.request<Nano|Pixoo>(`/api/controllers/v1/${c.id}/integration/snapshot`,undefined,stop.signal);
-    update(c.id,{snapshot,integration,error:undefined,received:Date.now()});polled=true;}
+    update(c.id,{snapshot:read as Snapshot,momentSnapshot:read.apiVersion==='1.1'?read:undefined,integration,error:undefined,received:Date.now()});polled=true;}
    }catch(e){update(c.id,{error:e instanceof ApiError?e.code:'unavailable'});}
    // The device art draws from the geometry route (codex-nanoleaf#169). One read per session after a successful poll, through the same per-device queue; a device without a layout or an owner without the route is final, any other failure is retried after the next successful poll.
    if(polled&&c.kind==='nanoleaf'&&!latest.get(c.id)?.geometry?.final&&!stop.signal.aborted){try{const geometry=await api.request<Geometry>(`/api/controllers/v1/${c.id}/integration/geometry`,undefined,stop.signal);update(c.id,{geometry:geometryRead({geometry})});}catch(e){update(c.id,{geometry:geometryRead(e instanceof ApiError?{error:e.code,status:e.status}:{error:'unavailable',status:0})});}}
@@ -236,7 +242,7 @@ function Dashboard({api,disconnect,renew}:{api:Api;disconnect:()=>void;renew?:()
  const known=route.kind==='home'||route.kind==='connections'||(route.kind==='component'&&components.some(c=>c.id===route.id))||(route.kind==='playback'&&playback?.sourceId===route.sourceId);
  const view={context,control:context?{...context,control:context.control&&!error}:undefined};
  return <div className="shell"><a className="skip" href="#main" onClick={e=>{e.preventDefault();document.getElementById('main')?.focus();}}>Skip to content</a><aside><div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div><nav aria-label="Main navigation"><NavLink route={{kind:'home'}} current={route}>Home <span>{sessions.length}</span></NavLink><p className="nav-label">COMPONENTS</p>{components.map(c=><NavLink key={c.id} route={{kind:'component',id:c.id}} current={route}>{c.id}<small>{c.kind}</small></NavLink>)}{playback&&<><p className="nav-label">MUSIC</p><NavLink route={{kind:'playback',sourceId:playback.sourceId}} current={route}>{playback.sourceId}<small>now playing</small></NavLink></>}<NavLink route={{kind:'connections'}} current={route}>Connections</NavLink></nav><PlacesNav context={context}/><div className="sidebar-foot"><Badge warning={!feed||!!error}>{error?'Connection stale':feed?'Feed connected':'Reconnecting'}</Badge><p>Inspection sends no device commands.</p>{renew&&error==='unauthenticated'&&<button onClick={renew}>Sign in again</button>}<button className="secondary" onClick={disconnect}>Disconnect</button></div></aside><main id="main" tabIndex={-1} data-revision={monitor?.snapshot.revision} data-received={received}><header className="top"><span>YOUR WORKSPACE / INTEGRATION</span><span>{context?.control?'Control enabled':'Read only'} · Local</span></header>
- {components.map(c=><section key={c.id} hidden={!(route.kind==='component'&&route.id===c.id)} aria-label={c.id}>{view.control&&<ComponentView component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions}/>}</section>)}
+ {components.map(c=><section key={c.id} hidden={!(route.kind==='component'&&route.id===c.id)} aria-label={c.id}>{view.control&&<ComponentView component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} sessions={sessions} visible={route.kind==='component'&&route.id===c.id}/>}</section>)}
  {playback&&<section key={'playback:'+playback.sourceId} hidden={!(route.kind==='playback'&&route.sourceId===playback.sourceId)} aria-label="Now playing"><PlaybackView api={api} sourceId={playback.sourceId} control={!!context?.control&&!error} now={now}/></section>}
  <section hidden={route.kind!=='home'} aria-label="Home"><header className="page"><h1>Home</h1><div className="home-status"><span>{sessions.filter(s=>s.activity==='active').length} active · {components.length} components</span><CollectorIndicator monitor={monitor} feed={feed} received={received} now={now} error={error}/></div></header>{error&&<p role="alert" className="warning">{error}. Last observations are stale; edits are disabled.</p>}
  <div className="home-columns"><div className="home-sessions"><SessionsWidget sessions={sessions} monitor={monitor} context={context} api={api} refresh={()=>refreshRef.current()} stale={stale} elapsed={elapsed} size="medium"/><AttentionWidget sessions={sessions} size="small"/></div><div className="home-devices">{homeLayout(components).filter(p=>p.widget==='component-status').map(p=>{const c=components.find(c=>c.id===p.instance);return c&&view.control?<ComponentWidget key={'component:'+c.id} component={c} device={devices[c.id]??{}} context={view.control} api={api} refresh={()=>deviceRefresh.current(c.id)} now={now} size={p.size}/>:null;})}</div></div></section>

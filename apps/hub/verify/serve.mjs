@@ -12,11 +12,14 @@
 // - `write-on-read`: an unsolicited brightness command goes through the hub
 //   shortly after the Pixoo fake is first read.
 // - `duplicate-forward`: a loopback relay in front of the Pixoo fake forwards
-//   every command twice.
+//   every command twice. In a scenario with `moments` (Hub #336) a second relay
+//   does the same in front of the wall fake.
 // - `replay-on-recovery`: clearing an offline or uncertain Pixoo re-sends a
 //   brightness command through the hub. After an uncertain result it re-sends
 //   the value the controller already holds (60), so the reloaded value is
-//   unchanged and only the command count can catch the replay.
+//   unchanged and only the command count can catch the replay. In a scenario
+//   with `moments`, clearing an uncertain wall instead sends a new moment
+//   through the hub's moment route.
 import {createServer, request as httpRequest} from 'node:http';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -65,6 +68,11 @@ async function sendThroughHub(percent) {
   }
 }
 
+/** A moment through the hub's owner route, as a buggy client that "recovers" by sending again would. */
+async function momentThroughHub() {
+  await fetch(`${f.hub.url}/api/controllers/v1/wall/moment`, {method: 'POST', headers: f.headers, body: JSON.stringify({mood: 'celebrate', durationMs: 5000, coversStatus: true})}).catch(() => undefined);
+}
+
 /** A relay that forwards reads once and every command twice to the fake behind it. */
 async function duplicatingRelay(target) {
   const upstream = new URL(target);
@@ -103,6 +111,8 @@ try {
   f = await fixture({
     ...(proof ? {previewProof: createProofHandler(proof)} : {}),
     empty: scenario.empty === true,
+    // Hub #336: the wall fake serves controller contract 1.1 with moments; the scenario may narrow its capability.
+    ...(scenario.moments ? {moments: scenario.moments} : {}),
     browserAccess: scenario.browserAccess ?? 'trusted-loopback',
     token, reader, port, directory,
     // No editor links, and no Local Places destination but B.U.N.N.Y. itself: a preview must never send the owner to an installed service's port.
@@ -113,7 +123,7 @@ try {
       unsolicited = true;
       setTimeout(() => void sendThroughHub(45), 1000);
     }} : {}),
-    ...(scenario.fault === 'duplicate-forward' ? {endpointFor: (id, url) => (id === 'pixel' ? duplicatingRelay(url) : url)} : {}),
+    ...(scenario.fault === 'duplicate-forward' ? {endpointFor: (id, url) => (id === 'pixel' || (id === 'wall' && scenario.moments) ? duplicatingRelay(url) : url)} : {}),
   });
 } catch (error) {
   // Like the hub CLI: a stable, path-free cause from the hub's own helper, never a path or value.
@@ -151,8 +161,13 @@ const control = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && request.url === '/uncertain') {
       f.setUncertain(input.on === true);
-      if (input.on !== true && scenario.fault === 'replay-on-recovery') await sendThroughHub(60);
+      if (input.on !== true && scenario.fault === 'replay-on-recovery') await (scenario.moments ? momentThroughHub() : sendThroughHub(60));
       return send(200, {uncertain: input.on === true});
+    }
+    // Hub #336: the wall's mode changed elsewhere, as when the owner uses the wall's own controls; the fake's moment writer follows it.
+    if (request.method === 'POST' && request.url === '/mode' && ['Work', 'Quiet', 'Free'].includes(input.mode)) {
+      f.setMode('wall', input.mode);
+      return send(200, {device: 'wall', mode: input.mode});
     }
     if (request.method === 'POST' && request.url === '/event' && EVENTS.has(input.kind)) {
       const extra = input.kind === 'question.continuing' ? {event: {kind: input.kind, attention: {status: 'known', id: 'question'}}}
