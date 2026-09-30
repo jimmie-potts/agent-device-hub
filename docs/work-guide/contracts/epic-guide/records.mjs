@@ -30,12 +30,27 @@ const instant = value => {
 };
 export const isEpic = issue => issue.labels.includes(LABELS.epic);
 
+// Recently done is a fixed UTC window ending at the dataset's as-of time, both ends inclusive.
+export const RECENT_DAYS = 7;
+export function recentWindow(dataset) {
+  const end = Date.parse(dataset.asOf);
+  return { start: new Date(end - RECENT_DAYS * 86_400_000).toISOString().replace('.000Z', 'Z'), end: dataset.asOf };
+}
+const inWindow = (dataset, time) => {
+  const { start, end } = recentWindow(dataset);
+  return time !== null && Date.parse(time) >= Date.parse(start) && Date.parse(time) <= Date.parse(end);
+};
+// Only a current completed closure counts; not planned, other reasons and reopened issues do not.
+export const recentlyDone = (dataset, issue) => issue.state === 'CLOSED' && issue.stateReason === 'completed'
+  && inWindow(dataset, issue.closedAt);
+
 // Content identity ignores fetch receipts and diagnostic build metadata, not facts.
 export function datasetIdentity(value) {
   const content = structuredClone(value);
   delete content.datasetId;
   delete content.producerRevision;
-  const observations = [content.project.evidence, ...content.repositories.map(x => x.inventory),
+  delete content.asOf;
+  const observations = [content.project.evidence, ...content.repositories.flatMap(x => [x.inventory, x.recentClosures]),
     ...content.issues.flatMap(x => [x.facts, x.parent.evidence, x.children.evidence, x.blockedBy.evidence])];
   for (const evidence of observations) {
     delete evidence.observedAt;
@@ -102,8 +117,9 @@ export function validateDataset(value, expectedDatasetId = value?.datasetId) {
     === JSON.stringify([...PRIMARY].sort()), 'primary repository scope mismatch');
   const repositories = new Map(value.repositories.map(x => [x.name, x]));
   const issues = new Map(value.issues.map(x => [x.id, x]));
+  const asOf = instant(value.asOf);
   const observation = evidence => {
-    if (evidence.observedAt !== null) instant(evidence.observedAt);
+    if (evidence.observedAt !== null) assert(instant(evidence.observedAt) <= asOf, 'observation after dataset asOf');
     if (evidence.state === 'fresh') assert(evidence.observedAt !== null, 'fresh without observation');
     if (evidence.state !== 'fresh' || !evidence.complete) assert(evidence.reason !== null, 'missing evidence reason');
     if (['unknown', 'failed'].includes(evidence.state)) assert(!evidence.complete, 'unavailable evidence marked complete');
@@ -124,6 +140,13 @@ export function validateDataset(value, expectedDatasetId = value?.datasetId) {
       assert(repository.inventory.pagination !== null, 'inventory pagination missing');
       assert(repository.inventory.pagination.itemCount === value.issues.filter(x => x.repository === repository.name && (repository.scope === 'reference' || x.state === 'OPEN')).length,
         'inventory pagination count mismatch');
+    }
+    // The collector reads every issue closed in the window, whatever its reason, so the count is checkable.
+    observation(repository.recentClosures);
+    if (repository.recentClosures.complete) {
+      assert(repository.recentClosures.pagination !== null, 'recent closure pagination missing');
+      assert(repository.recentClosures.pagination.itemCount === value.issues.filter(x => x.repository === repository.name
+        && x.state === 'CLOSED' && inWindow(value, x.closedAt)).length, 'recent closure count mismatch');
     }
   }
   for (const issue of value.issues) {

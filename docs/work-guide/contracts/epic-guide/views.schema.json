@@ -89,7 +89,7 @@
             "$ref": "#/$defs/section"
           },
           {
-            "$ref": "#/$defs/epicSummary"
+            "$ref": "#/$defs/epic"
           },
           {
             "$ref": "#/$defs/issueCard"
@@ -185,29 +185,6 @@
           "items": {
             "$ref": "#/$defs/instance"
           }
-        }
-      }
-    },
-    "epicSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "kind",
-        "record"
-      ],
-      "properties": {
-        "id": {
-          "$ref": "#/$defs/instance"
-        },
-        "kind": {
-          "const": "epic-summary"
-        },
-        "record": {
-          "$ref": "#/$defs/issueRef"
-        },
-        "reasons": {
-          "$ref": "#/$defs/reasons"
         }
       }
     },
@@ -477,6 +454,43 @@
         "evidence": {
           "type": "array",
           "maxItems": 0
+        }
+      }
+    },
+    "epic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "record",
+        "presentation",
+        "children"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/instance"
+        },
+        "kind": {
+          "const": "epic"
+        },
+        "record": {
+          "$ref": "#/$defs/issueRef"
+        },
+        "presentation": {
+          "enum": [
+            "summary",
+            "full"
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instance"
+          }
+        },
+        "reasons": {
+          "$ref": "#/$defs/reasons"
         }
       }
     }

@@ -35,6 +35,7 @@ and their parser, native `parent`, `children` and `blockedBy`, `planning`,
 | `subguides` removed | Epics replace topic and track sub-guides. |
 | `placement` added per issue | One canonical primary placement from the native parent chain and the explicit epic label. |
 | `project` added per issue and for the dataset | Phase and Commitment are owner planning values with their own source and unknown states. |
+| `asOf` and `repositories[].recentClosures` added | Recently done is a seven-day window ending at the dataset's as-of time, with its own completeness receipt. |
 | Ready gate needs Outcome and Acceptance, not all five sections | The new intake forms (#646) make the other three conditional. Guide placement and editorial highlights no longer gate readiness; the `idea` label does. |
 | `publicFields` drops `guide.*` paths | Those fields no longer exist. |
 
@@ -47,6 +48,8 @@ their 1.0 dictionary entries unchanged.
 | Field | Source and owner | Meaning and unavailable behavior |
 | --- | --- | --- |
 | `schemaVersion` | This definition | Exactly `guide-records/2.0`. |
+| `asOf` | Collector, one UTC time per collection | The time the dataset describes. Every observation is at or before it. It anchors Recently done and is excluded from content identity, like observation times. |
+| `repositories[].recentClosures` | Paginated REST `GET /repos/{owner}/{repo}/issues?state=closed&since=<window start>`, filtered to closures in the window | Observation of every issue closed in the window, whatever its reason. When complete, its item count equals the dataset's closed issues from that repository with `closedAt` in the window. Incomplete or failed reads leave Recently done visibly partial. |
 | `project.source` | Collector configuration (#540) | The named Project, or null when none is configured. |
 | `project.public` | Collector, from a verified visibility read (#540) | `true` only after the Project's public visibility is verified. While false, the collector does not read the Project: its evidence is not fresh, and every issue's Project values are unknown. Private Project content cannot enter a dataset, which may itself be published. |
 | `project.evidence` | Projects API read | Observation of all Project items, with the 1.0 observation rules. Failed, denied, partial or stale reads are distinct states; none of them means an empty portfolio. |
@@ -92,6 +95,25 @@ epic's page for `epic`, its own page for `root`, and Not in an epic for
 `standalone` and `unresolved`. A nested epic's primary page is its containing
 epic, where it appears as a sub-epic; it also has its own page. Closed issues
 keep their placement for Recently done but have no primary page.
+
+## Recently done
+
+An issue is **recently done** when it is currently closed with reason `completed`
+and its `closedAt` falls in the seven days ending at `asOf`: from exactly
+`asOf` minus 7×24 hours through `asOf`, both inclusive, in UTC. `recentWindow`
+and `recentlyDone` define it. Not-planned and other closure reasons never
+qualify, and a reopened issue is open, so it no longer qualifies either.
+
+The collector includes, alongside every open issue:
+
+- every issue closed in the window, whatever its reason, so that the
+  `recentClosures` count can be checked;
+- older closed records that ancestry or dependency resolution needs, such as a
+  closed parent or blocker.
+
+Older records are retained for resolution only. The dataset is not a historical
+archive, and the window never prunes a record that placement or prerequisites
+need.
 
 ## Phase and Commitment
 
@@ -145,14 +167,14 @@ reference for validation and resolution.
 | `datasetId` | View producer | The validated dataset the view was built against; otherwise `dataset-mismatch`. |
 | `catalogId` | View producer, from `catalogIdentity` | SHA-256 of the canonical catalog (keys sorted, arrays in authored order); otherwise `catalog-mismatch`. |
 | `origin` | View producer | `ordinary` for code-built browser pages; `composed` for Ask answers. Each page kind allows one origin. |
-| `page.kind`, `page.record` | View producer | `home`, `epic` (record must carry the `epic` label), `not-in-epic`, `all`, `portfolio`, `issue` (a task brief) or `answer` (composed). |
+| `page.kind`, `page.record` | View producer | `home`, `epic` (record must carry the `epic` label), `not-in-epic`, `all`, `portfolio`, `issue` (a task brief) or `answer` (composed). Each page kind names the component kinds allowed at its root; an epic page's root is exactly one full `epic` component for that epic. |
 | `layout` | View producer | `stack` or `columns`; reading order is always root order, then child order. |
 | `root`, `components[].children` | View producer | Instance IDs in order. |
 | `components[].id` | View producer | Stable instance ID, `^[a-z][a-z0-9-]{0,31}$`, unique in the view and never parsed as a record ID. One record shown twice has two instance IDs. |
 | `section.group`, `section.record` | View producer | A catalog group allowed on the page. The group fixes the template heading, the allowed child kinds and a record predicate. `parent-group` names the grouping issue in `record`; others leave it null. |
 | `section.sequence`, `section.disclosure` | View producer | `suggested` numbers children as "Suggested reading order, not a recorded dependency"; `disclosure` is the initial open or collapsed state. |
-| `issue-card.presentation`, `issue-card.primary` | View producer | `card` or `row` presentation of the same facts and actions. `primary` marks the issue's canonical placement; see coverage. |
-| `epic-summary.record` | View producer | An epic; its counts are computed at resolution. |
+| `issue-card.presentation`, `issue-card.primary` | View producer | One card for any issue kind (work, bug, idea or epic), as a `card` or a compact `row` with the same facts and actions. `primary` marks the issue's canonical placement; see coverage. |
+| `epic.record`, `epic.presentation`, `epic.children` | View producer | An epic's data plus its child references. `summary` shows the epic with its computed counts and has no children. `full` composes sections from the catalog's epic groups, which hold the shared issue cards, rows, nested epics and dependency lists. Every issue inside an epic component must have that epic as its nearest epic (`membership`). |
 | `dependency-list` | View producer | `prerequisites` or `dependents`, `direct` or `transitive`; code computes the list. |
 | `board.by` | View producer | `commitment`, `phase` or `workflow`; code places each child in a column. |
 | `task-brief.record` | View producer | Only as the root of an `issue` page for the same record. |
@@ -161,24 +183,32 @@ reference for validation and resolution.
 ### Pages, groups and coverage
 
 Each page kind lists its allowed groups in the catalog. Each group's predicate
-must hold for every card or summary in it, checked against the records (for
-example `active` for In progress, `closed` for Recently done, `descendant` for a
+must hold for every card or epic in it, checked against the records (for
+example `active` for In progress, `recent` for Recently done, `descendant` for a
 parent group, `not-in-epic` for Not in an epic). `up-next` also requires a
-`ready-candidate` reason, which resolution evaluates.
+`ready-candidate` reason, which resolution evaluates. Sections at a page's root
+use the page's groups; sections inside an `epic` component use the epic groups.
 
 Coverage makes ordinary pages complete, never truncated:
 
 - **Epic and Not in an epic pages** (`primary` coverage) list every open issue
   whose primary page they are exactly once, as a primary card or, for a nested
-  epic, as a sub-epic summary. A primary card for any other issue is
-  `coverage`.
+  epic, as a sub-epic. A primary card for any other issue is `coverage`. An epic
+  page also lists every recently done issue whose nearest epic it is, exactly
+  once, in Recently done.
 - **All issues** (`complete` coverage) lists every open issue exactly once, with
   no primary cards.
 - **Other pages** may repeat cards but may not mark any as primary. Composed
   views never define placement.
 
-Unique counts come from placement (`epicCounts`), so repeated cards never change
-them.
+Unique counts come from placement (`epicCounts`: open, active, blocked, ready
+and recently done), so repeated cards never change them.
+
+Large epics stay short through the renderer, not by dropping issues. #511
+chooses compact rows, a bounded initial set, Show more or pagination, and
+shareable filters. Routes may carry renderer-defined query parameters for those
+filters, but a filter never changes placement or counts. Every section's
+resolved `total` stays visible, and the full set stays searchable and reachable.
 
 ### Reasons
 
@@ -187,7 +217,7 @@ model-written explanation.
 
 | Code | Components | Evidence | Validation | Resolution |
 | --- | --- | --- | --- | --- |
-| `question-match` | card, epic summary | 1-4 `{field}` | Each field is in the record's Jev projection entry. | `supported` relevance only; never readiness. |
+| `question-match` | card, epic | 1-4 `{field}` | Each field is in the record's Jev projection entry. | `supported` relevance only; never readiness. |
 | `epic-member` | card | 1 `{epic}` | The record's nearest epic is that epic. | `supported`. |
 | `recorded-relation` | card | 1-4 `{relation, record}`: `blocks`, `blocked-by`, `parent-of`, `child-of` | The native edge is observed in the owning collection. | `supported` when that collection is fresh under the policy; otherwise `stale` with a source. |
 | `ready-candidate` | card | none | Required in Up next. | The records ready gate at use; `withheld` shows "Readiness not established" with every failed gate. |
@@ -197,16 +227,18 @@ model-written explanation.
 Composed views are limited to 48 components, 6 root components, 12 children per
 component, 3 reasons and 4 evidence references. Ordinary pages have no count
 bound, because coverage requires them to list everything. All views are at most
-three levels deep (section, board, card); ancestry beyond that stays in each
-card's `path`.
+four levels deep (for example section, epic, section, card); ancestry beyond
+that stays in each card's `path`.
 
 ### Resolution, routes and links
 
 `resolveView(view, {dataset, policy})` revalidates, then returns an ordered
 model. Each node has its instance ID, kind, parent, depth, position and record
-reference. Cards and summaries add the GitHub link, Guide route, workflow
-labels, state and closure reason, placement, Phase, Commitment, resolved reasons
-and actions; summaries add counts. Dependency lists add computed IDs and
+reference. Cards and epics add the GitHub link, Guide route, workflow labels,
+state, closure reason and time, placement, Phase, Commitment, resolved reasons
+and actions; epics add their presentation and counts. Sections add their
+template heading and `total`, and Recently done adds its window and whether the
+closed-issue reads were complete. Dependency lists add computed IDs and
 completeness, boards add their columns, and briefs add their commands and
 recommendation state. The consumer supplies the freshness policy, as in 1.0.
 
@@ -254,10 +286,11 @@ then page rules and the tree walk, then records and evidence, then coverage.
 | `size-exceeded`, `depth-exceeded` | A composed bound or the depth bound is exceeded. |
 | `duplicate-instance`, `unknown-component`, `cycle`, `multiple-parents`, `orphan` | Broken tree identity or structure. |
 | `nesting-not-allowed`, `duplicate-sibling` | A kind under a parent or group that does not allow it, or the same record twice under one parent. |
-| `unknown-record`, `group-requirement` | A missing record, or a record that fails its group's predicate or required reason. |
+| `unknown-record`, `group-requirement` | A missing record, or a record that fails its group's predicate or required reason, or a non-epic in an `epic` component. |
+| `membership` | An issue inside an `epic` component whose nearest epic is a different one. |
 | `reason-required`, `reason-not-allowed`, `duplicate-reason` | Reason rules for the component and origin. |
 | `evidence-not-public`, `evidence-unverified` | Evidence Jev never received, or a membership or relation the records do not contain. |
-| `coverage` | An ordinary page omits or repeats a placed issue, or a page claims a placement it does not own. |
+| `coverage` | An ordinary page omits or repeats a placed issue or a recent completion, or a page claims a placement it does not own. |
 
 A rejected view is never partly rendered.
 
@@ -266,7 +299,7 @@ A rejected view is never partly rendered.
 | Party | Responsibility |
 | --- | --- |
 | This definition | Both schemas, the catalog, placement, Project and readiness rules, reasons, coverage, routes and rejection codes. |
-| Collector and browser (#511) | Collects complete records, computes placement and Project states, audits the live inventory, builds ordinary pages that satisfy coverage, renders every component literally and runs the browser checks. |
+| Collector and browser (#511) | Collects complete records, including the seven-day closed slice and the older records resolution needs. Computes placement and Project states, audits the live inventory and builds ordinary pages that satisfy coverage. Implements each component once, so the browser and Ask render the same issue card and epic component, and renders every text literally. Its large-epic fixture proves compact rendering and full reachability. |
 | Project access (#540) | Verifies Project visibility and a least-privilege read path, and supplies `project.*`. Until then, Project values stay unknown. |
 | Intake (#646) | Documents the `epic` and `idea` labels and form mappings to these story sections. |
 | Publication (#317, #654) | Builds and deploys artifacts from validated datasets and runs hosted checks. A failed build publishes nothing. |
@@ -280,9 +313,12 @@ A rejected view is never partly rendered.
 2. **Browse.** Home epic summaries lead to epic pages. Each open issue is on
    exactly one epic page or on Not in an epic, and briefs work with or without a
    recommendation.
-3. **Ask, later.** A composed `answer` view reuses the same components. The
-   [composed fixture](fixtures/composed.json) is a fake-provider example over the
-   same records, not a measure of Jev quality.
+3. **Ask, later.** Jev selects existing record references and allowed component
+   kinds. Code turns them into a composed `answer` view, validates it, and the
+   shared renderer shows the same issue cards and epic components as the
+   browser. The [composed fixture](fixtures/composed.json) is a fake-provider
+   example over the same records, with an epic composing an Up next group; it
+   is not a measure of Jev quality.
 4. **Refresh.** Ordinary pages rebuild. A composed view re-binds or stays
    visibly out of date. A failed collection keeps the last good dataset and
    pages.
@@ -311,7 +347,10 @@ contracts. This definition only guarantees that nothing unvalidated renders.
 - a Hub epic with a Nanoleaf child whose Phase conflicts;
 - a Pixoo descendant under a non-epic group;
 - standalone and unresolved issues;
-- completed and not-planned closures;
+- a completion exactly at the seven-day window start, and another one second
+  before it;
+- a not-planned closure inside the window, and a reopened issue;
+- an old closed parent and an old closed blocker kept for resolution;
 - a stale execution recommendation;
 - a legacy story with a `## Guide` section.
 

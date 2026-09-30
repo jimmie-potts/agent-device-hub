@@ -1,8 +1,8 @@
 {
   "schemaVersion": "guide-views/1.0",
   "recordsVersion": "guide-records/2.0",
-  "datasetId": "sha256:4ca494bc399f7c1b068beaf131559b97f5d5f980dd9b0ea345794e5e32ad4dbe",
-  "catalogId": "sha256:d029e2df638f7e6f2ee9e54e85ca84e42ca787a716f5cdc023f8fd091d6563f3",
+  "datasetId": "sha256:77eeda37efb5af3ea382b7eb15574d5435c52ddba857edb1757a0afbc012ec33",
+  "catalogId": "sha256:40d7e6c93955b97961e6d35a4bc643db51d06141c46aa2198d477b84faeee31f",
   "origin": "composed",
   "page": {
     "kind": "answer",
@@ -23,14 +23,17 @@
       "disclosure": "open",
       "children": [
         "browser-epic",
-        "next-card",
         "wall-card"
       ]
     },
     {
       "id": "browser-epic",
-      "kind": "epic-summary",
+      "kind": "epic",
       "record": "jimmie-potts/agent-device-hub#900100",
+      "presentation": "full",
+      "children": [
+        "epic-next"
+      ],
       "reasons": [
         {
           "code": "question-match",
@@ -40,6 +43,17 @@
             }
           ]
         }
+      ]
+    },
+    {
+      "id": "epic-next",
+      "kind": "section",
+      "group": "up-next",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "open",
+      "children": [
+        "next-card"
       ]
     },
     {

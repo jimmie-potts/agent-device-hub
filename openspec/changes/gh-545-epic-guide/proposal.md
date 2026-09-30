@@ -14,11 +14,14 @@ this definition.
 - Define `guide-records/2.0`: explicit `epic` label, native parent membership,
   nearest-epic placement with deep, cross-repository, standalone and unresolved
   cases, Project Phase and Commitment with inheritance, conflict and unknown
-  states, and a ready gate matched to the new intake forms.
-- Define `guide-views/1.0`: a catalog of pages, sections, epic summaries, issue
-  cards and rows, dependency lists, boards and task briefs; coverage rules that
-  keep ordinary pages complete; typed reasons and evidence; bounds, routes and
-  stable rejection codes.
+  states, a seven-day Recently done window anchored at the dataset's as-of time
+  with its own completeness receipt, and a ready gate matched to the new intake
+  forms.
+- Define `guide-views/1.0`: one issue card for any issue kind, an epic
+  component that takes epic data and child references and composes those cards
+  or rows, plus sections, dependency lists, boards and task briefs; coverage
+  rules that keep ordinary pages complete; typed reasons and evidence; bounds,
+  routes and stable rejection codes.
 - Supply offline references, a synthetic dataset, a deterministic ordinary
   epic page, a composed example over the same records and positive and negative
   fixtures, and run them in existing CI.

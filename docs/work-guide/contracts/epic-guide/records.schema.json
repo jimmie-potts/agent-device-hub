@@ -9,7 +9,8 @@
     "repositories",
     "issues",
     "publicationPolicy",
-    "project"
+    "project",
+    "asOf"
   ],
   "properties": {
     "schemaVersion": {
@@ -108,6 +109,9 @@
           }
         }
       }
+    },
+    "asOf": {
+      "$ref": "#/$defs/time"
     }
   },
   "$defs": {
@@ -555,7 +559,8 @@
       "required": [
         "name",
         "scope",
-        "inventory"
+        "inventory",
+        "recentClosures"
       ],
       "properties": {
         "name": {
@@ -568,6 +573,9 @@
           ]
         },
         "inventory": {
+          "$ref": "#/$defs/observation"
+        },
+        "recentClosures": {
           "$ref": "#/$defs/observation"
         }
       }

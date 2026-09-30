@@ -24,6 +24,29 @@ path, root epic, standalone, or unresolved with a reason.
 - **WHEN** a parent list is unknown, a parent is missing from the dataset, or the chain repeats an issue
 - **THEN** placement is unresolved with that reason and the issue stays browsable on Not in an epic
 
+### Requirement: Seven-day Recently done
+The records SHALL carry a dataset as-of time and a per-repository receipt for
+issues closed in the seven days ending at it. Recently done SHALL be the issues
+currently closed as completed with a closure time inside that inclusive UTC
+window. Older closed records SHALL be retained only when ancestry or
+dependencies need them.
+
+#### Scenario: Window boundary
+- **WHEN** one issue closed as completed exactly seven days before the as-of time and another one second earlier
+- **THEN** the first is recently done and the second is not
+
+#### Scenario: Other closures
+- **WHEN** an issue closed as not planned inside the window, or was reopened
+- **THEN** it is not recently done
+
+#### Scenario: Older required records
+- **WHEN** an open issue's parent or blocker closed long before the window
+- **THEN** the closed record is retained for placement and prerequisites without appearing as recently done
+
+#### Scenario: Incomplete closed-issue read
+- **WHEN** a repository's closed-in-window read is incomplete
+- **THEN** Recently done is shown as partial with a source-linked reason
+
 ### Requirement: Project planning values
 The records SHALL carry Phase and Commitment from the portfolio Project as owner
 intent. An epic's Phase SHALL be authoritative for its members; a differing
@@ -54,17 +77,28 @@ fields and never bodies, Project values or credentials.
 
 ### Requirement: Shared components with complete ordinary pages
 Ordinary pages and composed views SHALL use one catalog and one resolution over
-the same records. Views SHALL contain only references and catalog choices. Each
-open issue SHALL appear exactly once as a primary placement on its epic page or
-on Not in an epic, and repeated cards SHALL NOT change unique counts.
+the same records, with one issue card for every issue kind and one epic
+component that takes epic data and child references and composes those cards.
+Views SHALL contain only references and catalog choices. Each open issue SHALL
+appear exactly once as a primary placement on its epic page or on Not in an
+epic, each epic page SHALL list its recent completions, and repeated cards
+SHALL NOT change unique counts.
 
 #### Scenario: Complete epic page
 - **WHEN** an epic page omits a placed issue or marks another page's issue as primary
 - **THEN** validation rejects it with `coverage`
 
+#### Scenario: Large epic
+- **WHEN** an epic has more placed issues than a composed view may hold
+- **THEN** its ordinary page still lists every one with a visible total, and a composed view holding them all is rejected with `size-exceeded`
+
+#### Scenario: Issue from another epic
+- **WHEN** an epic component's group contains an issue whose nearest epic is different
+- **THEN** validation rejects it with `membership`
+
 #### Scenario: Same record in two views
 - **WHEN** an issue appears on its epic page and in a composed answer
-- **THEN** both resolve to the same record, route, link, placement and Project values, and epic counts are unchanged
+- **THEN** both resolve to the same issue card and epic component inputs, route, link, placement and Project values, and epic counts are unchanged
 
 #### Scenario: Unreadable Project on a board
 - **WHEN** a Commitment board is resolved without readable Project data

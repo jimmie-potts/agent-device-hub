@@ -2,7 +2,7 @@
   "catalogVersion": "guide-views/1.0",
   "recordsVersion": "guide-records/2.0",
   "bounds": {
-    "maxDepth": 3,
+    "maxDepth": 4,
     "composed": {
       "maxComponents": 48,
       "maxRootComponents": 6,
@@ -16,73 +16,364 @@
     "columns": "Sections side by side where width allows and one column on narrow screens; reading order is unchanged."
   },
   "pages": {
-    "home": { "record": "none", "origin": "ordinary", "groups": ["epics", "current-work", "newly-added", "open-defects"], "coverage": "none" },
-    "epic": { "record": "epic", "origin": "ordinary", "groups": ["in-progress", "up-next", "blocked", "backlog", "later", "recently-done", "parent-group", "sub-epics", "relationships"], "coverage": "primary" },
-    "not-in-epic": { "record": "none", "origin": "ordinary", "groups": ["not-in-epic", "backlog", "parent-group"], "coverage": "primary" },
-    "all": { "record": "none", "origin": "ordinary", "groups": ["all"], "coverage": "complete" },
-    "portfolio": { "record": "none", "origin": "ordinary", "groups": ["portfolio"], "coverage": "none" },
-    "issue": { "record": "issue", "origin": "ordinary", "groups": ["relationships"], "coverage": "none", "brief": true },
-    "answer": { "record": "none", "origin": "composed", "groups": ["matches", "relationships"], "coverage": "none" }
+    "home": {
+      "record": "none",
+      "origin": "ordinary",
+      "groups": [
+        "epics",
+        "current-work",
+        "newly-added",
+        "open-defects"
+      ],
+      "coverage": "none",
+      "root": [
+        "section"
+      ]
+    },
+    "epic": {
+      "record": "epic",
+      "origin": "ordinary",
+      "root": [
+        "epic"
+      ],
+      "groups": [],
+      "coverage": "primary"
+    },
+    "not-in-epic": {
+      "record": "none",
+      "origin": "ordinary",
+      "groups": [
+        "not-in-epic",
+        "backlog",
+        "parent-group"
+      ],
+      "coverage": "primary",
+      "root": [
+        "section"
+      ]
+    },
+    "all": {
+      "record": "none",
+      "origin": "ordinary",
+      "groups": [
+        "all"
+      ],
+      "coverage": "complete",
+      "root": [
+        "section"
+      ]
+    },
+    "portfolio": {
+      "record": "none",
+      "origin": "ordinary",
+      "groups": [
+        "portfolio"
+      ],
+      "coverage": "none",
+      "root": [
+        "section"
+      ]
+    },
+    "issue": {
+      "record": "issue",
+      "origin": "ordinary",
+      "groups": [
+        "relationships"
+      ],
+      "coverage": "none",
+      "brief": true,
+      "root": [
+        "section",
+        "task-brief"
+      ]
+    },
+    "answer": {
+      "record": "none",
+      "origin": "composed",
+      "groups": [
+        "matches",
+        "relationships"
+      ],
+      "coverage": "none",
+      "root": [
+        "section"
+      ]
+    }
   },
   "components": {
     "section": {
       "record": "optional",
-      "parents": ["root"],
-      "children": ["epic-summary", "issue-card", "dependency-list", "board"],
-      "properties": { "sequence": ["none", "suggested"], "disclosure": ["open", "collapsed"] }
+      "parents": [
+        "root",
+        "epic"
+      ],
+      "children": [
+        "epic",
+        "issue-card",
+        "dependency-list",
+        "board"
+      ],
+      "properties": {
+        "sequence": [
+          "none",
+          "suggested"
+        ],
+        "disclosure": [
+          "open",
+          "collapsed"
+        ]
+      }
     },
-    "epic-summary": {
+    "epic": {
       "record": "epic",
-      "parents": ["section", "board"],
-      "children": [],
-      "requiredData": ["id", "url", "title", "state", "labels", "story", "placement", "project"]
+      "parents": [
+        "root",
+        "section",
+        "board"
+      ],
+      "children": [
+        "section"
+      ],
+      "properties": {
+        "presentation": [
+          "summary",
+          "full"
+        ]
+      },
+      "groups": [
+        "in-progress",
+        "up-next",
+        "blocked",
+        "backlog",
+        "later",
+        "recently-done",
+        "parent-group",
+        "sub-epics",
+        "relationships"
+      ],
+      "requiredData": [
+        "id",
+        "url",
+        "title",
+        "state",
+        "labels",
+        "story",
+        "placement",
+        "project"
+      ],
+      "description": "Epic data plus child references; a summary, or its groups composing the shared issue cards."
     },
     "issue-card": {
       "record": "issue",
-      "parents": ["section", "board"],
+      "parents": [
+        "section",
+        "board"
+      ],
       "children": [],
-      "properties": { "presentation": ["card", "row"] },
-      "requiredData": ["id", "url", "title", "state", "stateReason", "labels", "facts", "blockedBy", "placement", "project"]
+      "properties": {
+        "presentation": [
+          "card",
+          "row"
+        ]
+      },
+      "requiredData": [
+        "id",
+        "url",
+        "title",
+        "state",
+        "stateReason",
+        "labels",
+        "facts",
+        "blockedBy",
+        "placement",
+        "project"
+      ],
+      "description": "One card for any issue kind, shown as a card or a compact row."
     },
     "dependency-list": {
       "record": "issue",
-      "parents": ["section"],
+      "parents": [
+        "section"
+      ],
       "children": [],
-      "properties": { "direction": ["prerequisites", "dependents"], "scope": ["direct", "transitive"] },
-      "requiredData": ["id", "url", "state", "facts", "blockedBy"]
+      "properties": {
+        "direction": [
+          "prerequisites",
+          "dependents"
+        ],
+        "scope": [
+          "direct",
+          "transitive"
+        ]
+      },
+      "requiredData": [
+        "id",
+        "url",
+        "state",
+        "facts",
+        "blockedBy"
+      ]
     },
     "board": {
       "record": "none",
-      "parents": ["section"],
-      "children": ["epic-summary", "issue-card"],
-      "properties": { "by": ["commitment", "phase", "workflow"] }
+      "parents": [
+        "section"
+      ],
+      "children": [
+        "epic",
+        "issue-card"
+      ],
+      "properties": {
+        "by": [
+          "commitment",
+          "phase",
+          "workflow"
+        ]
+      }
     },
     "task-brief": {
       "record": "issue",
-      "parents": ["root"],
+      "parents": [
+        "root"
+      ],
       "children": [],
-      "commands": ["explain", "plan", "implement", "review"],
-      "requiredData": ["id", "url", "title", "planning"]
+      "commands": [
+        "explain",
+        "plan",
+        "implement",
+        "review"
+      ],
+      "requiredData": [
+        "id",
+        "url",
+        "title",
+        "planning"
+      ]
     }
   },
   "groups": {
-    "epics": { "heading": "Epics", "children": ["epic-summary"], "requires": "root-epic" },
-    "current-work": { "heading": "Current work", "children": ["issue-card"], "requires": "active" },
-    "newly-added": { "heading": "Newly added", "children": ["issue-card"], "requires": "open" },
-    "open-defects": { "heading": "Open defects", "children": ["issue-card"], "requires": "open-bug" },
-    "in-progress": { "heading": "In progress", "children": ["issue-card"], "requires": "active" },
-    "up-next": { "heading": "Up next", "children": ["issue-card"], "requires": "open", "requiresReason": "ready-candidate" },
-    "blocked": { "heading": "Blocked", "children": ["issue-card"], "requires": "blocked" },
-    "backlog": { "heading": "Other open work", "children": ["issue-card"], "requires": "open" },
-    "later": { "heading": "Later", "children": ["issue-card"], "requires": "later" },
-    "recently-done": { "heading": "Recently done", "children": ["issue-card"], "requires": "closed" },
-    "parent-group": { "heading": "{record}", "record": true, "children": ["issue-card"], "requires": "descendant" },
-    "sub-epics": { "heading": "Epics inside this epic", "children": ["epic-summary"], "requires": "nested-epic" },
-    "not-in-epic": { "heading": "Not in an epic", "children": ["issue-card"], "requires": "not-in-epic" },
-    "all": { "heading": "All issues", "children": ["issue-card"], "requires": "open" },
-    "portfolio": { "heading": "Portfolio", "children": ["board"], "requires": "none" },
-    "matches": { "heading": "Relevant to your question", "children": ["issue-card", "epic-summary"], "requires": "none" },
-    "relationships": { "heading": "Recorded relationships", "children": ["dependency-list"], "requires": "none" }
+    "epics": {
+      "heading": "Epics",
+      "children": [
+        "epic"
+      ],
+      "requires": "root-epic"
+    },
+    "current-work": {
+      "heading": "Current work",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "active"
+    },
+    "newly-added": {
+      "heading": "Newly added",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "open"
+    },
+    "open-defects": {
+      "heading": "Open defects",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "open-bug"
+    },
+    "in-progress": {
+      "heading": "In progress",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "active"
+    },
+    "up-next": {
+      "heading": "Up next",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "open",
+      "requiresReason": "ready-candidate"
+    },
+    "blocked": {
+      "heading": "Blocked",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "blocked"
+    },
+    "backlog": {
+      "heading": "Other open work",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "open"
+    },
+    "later": {
+      "heading": "Later",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "later"
+    },
+    "recently-done": {
+      "heading": "Recently done",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "recent"
+    },
+    "parent-group": {
+      "heading": "{record}",
+      "record": true,
+      "children": [
+        "issue-card"
+      ],
+      "requires": "descendant"
+    },
+    "sub-epics": {
+      "heading": "Epics inside this epic",
+      "children": [
+        "epic"
+      ],
+      "requires": "nested-epic"
+    },
+    "not-in-epic": {
+      "heading": "Not in an epic",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "not-in-epic"
+    },
+    "all": {
+      "heading": "All issues",
+      "children": [
+        "issue-card"
+      ],
+      "requires": "open"
+    },
+    "portfolio": {
+      "heading": "Portfolio",
+      "children": [
+        "board"
+      ],
+      "requires": "none"
+    },
+    "matches": {
+      "heading": "Relevant to your question",
+      "children": [
+        "issue-card",
+        "epic"
+      ],
+      "requires": "none"
+    },
+    "relationships": {
+      "heading": "Recorded relationships",
+      "children": [
+        "dependency-list"
+      ],
+      "requires": "none"
+    }
   },
   "predicates": {
     "none": "No record condition.",
@@ -94,8 +385,10 @@
     "closed": "The issue is closed, with its closure reason kept.",
     "descendant": "The section's record appears in the issue's placement path.",
     "root-epic": "The epic has root placement.",
-    "nested-epic": "The epic's nearest containing epic is the page's epic.",
-    "not-in-epic": "The issue's placement is standalone or unresolved."
+    "nested-epic": "The epic's nearest containing epic is the enclosing epic.",
+    "not-in-epic": "The issue's placement is standalone or unresolved.",
+    "recent": "The issue is closed as completed within the seven days ending at the dataset's as-of time.",
+    "member": "Inside an epic component, the issue's nearest epic is that epic."
   },
   "sequences": {
     "none": "No order is claimed.",
@@ -106,34 +399,67 @@
     "dependents": "Recorded dependents of {record}"
   },
   "boards": {
-    "commitment": { "columns": "project.commitments", "extra": ["Unselected", "Unknown"] },
-    "phase": { "columns": "project.phases", "extra": ["Unassigned", "Conflict", "Unknown"] },
-    "workflow": { "columns": ["status:backlog", "status:ready", "status:in-progress", "status:review"], "extra": ["Closed", "No single status"] }
+    "commitment": {
+      "columns": "project.commitments",
+      "extra": [
+        "Unselected",
+        "Unknown"
+      ]
+    },
+    "phase": {
+      "columns": "project.phases",
+      "extra": [
+        "Unassigned",
+        "Conflict",
+        "Unknown"
+      ]
+    },
+    "workflow": {
+      "columns": [
+        "status:backlog",
+        "status:ready",
+        "status:in-progress",
+        "status:review"
+      ],
+      "extra": [
+        "Closed",
+        "No single status"
+      ]
+    }
   },
   "reasons": {
     "question-match": {
       "template": "Matches your question in {fields}",
       "evidence": "field",
-      "components": ["issue-card", "epic-summary"],
+      "components": [
+        "issue-card",
+        "epic"
+      ],
       "claim": "relevance"
     },
     "epic-member": {
       "template": "Part of {epic}",
       "evidence": "epic",
-      "components": ["issue-card"],
+      "components": [
+        "issue-card"
+      ],
       "claim": "native parent membership"
     },
     "recorded-relation": {
       "template": "{relation} {record}",
       "evidence": "native-relation",
-      "components": ["issue-card"],
+      "components": [
+        "issue-card"
+      ],
       "claim": "native GitHub relationship"
     },
     "ready-candidate": {
       "template": "Ready by current recorded evidence",
       "withheldTemplate": "Readiness not established",
       "evidence": "none",
-      "components": ["issue-card"],
+      "components": [
+        "issue-card"
+      ],
       "claim": "guide-records ready gate"
     }
   },

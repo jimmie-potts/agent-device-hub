@@ -9,7 +9,7 @@
   {
     "name": "retired Guide metadata is not a field",
     "set": {
-      "issues.9.guide": {
+      "issues.@900109.guide": {
         "topic": "work-guide"
       }
     },
@@ -18,7 +18,7 @@
   {
     "name": "producer placement that disagrees with native parents",
     "set": {
-      "issues.4.parent.ids": [
+      "issues.@900104.parent.ids": [
         "jimmie-potts/agent-device-hub#900100"
       ]
     },
@@ -28,11 +28,11 @@
   {
     "name": "parent cycle leaves placement unresolved",
     "set": {
-      "issues.3.parent.ids": [
+      "issues.@900103.parent.ids": [
         "jimmie-potts/divoom-app-upgrade#900104"
       ],
-      "issues.3.parent.evidence.pagination.itemCount": 1,
-      "issues.3.parent.evidence.pagination.totalCount": 1
+      "issues.@900103.parent.evidence.pagination.itemCount": 1,
+      "issues.@900103.parent.evidence.pagination.totalCount": 1
     },
     "placement": {
       "jimmie-potts/divoom-app-upgrade#900104": {
@@ -48,12 +48,12 @@
   {
     "name": "missing ancestor leaves placement unresolved",
     "set": {
-      "issues.3.parent.ids": [
+      "issues.@900103.parent.ids": [
         "jimmie-potts/agent-device-hub#1"
       ],
-      "issues.3.parent.evidence.complete": false,
-      "issues.3.parent.evidence.reason": "Ancestor not collected",
-      "issues.3.parent.evidence.pagination": null
+      "issues.@900103.parent.evidence.complete": false,
+      "issues.@900103.parent.evidence.reason": "Ancestor not collected",
+      "issues.@900103.parent.evidence.pagination": null
     },
     "placement": {
       "jimmie-potts/divoom-app-upgrade#900104": {
@@ -69,7 +69,7 @@
   {
     "name": "a parent without the epic label is not an epic",
     "set": {
-      "issues.0.labels": [
+      "issues.@900100.labels": [
         "enhancement",
         "status:in-progress"
       ]
@@ -97,7 +97,7 @@
   {
     "name": "nearest epic wins for a nested epic",
     "set": {
-      "issues.3.labels": [
+      "issues.@900103.labels": [
         "epic",
         "maintenance",
         "status:backlog"
@@ -123,6 +123,22 @@
     }
   },
   {
+    "name": "an old closed parent stays available for ancestry",
+    "placement": {
+      "jimmie-potts/agent-device-hub#900105": {
+        "state": "standalone",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900110"
+        ],
+        "reason": null
+      }
+    },
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ]
+  },
+  {
     "name": "cross-repository child keeps its conflicting recorded Phase visible",
     "phase": {
       "jimmie-potts/codex-nanoleaf#900102": "conflict",
@@ -132,8 +148,8 @@
   {
     "name": "a child Phase under an unassigned epic is a conflict",
     "set": {
-      "issues.0.project.phase.recorded": null,
-      "issues.1.project.phase.recorded": "Ask the guide"
+      "issues.@900100.project.phase.recorded": null,
+      "issues.@900101.project.phase.recorded": "Ask the guide"
     },
     "phase": {
       "jimmie-potts/agent-device-hub#900101": "conflict",
@@ -149,7 +165,7 @@
   {
     "name": "unknown Phase option",
     "set": {
-      "issues.0.project.phase.recorded": "Invented phase"
+      "issues.@900100.project.phase.recorded": "Invented phase"
     },
     "invalid": "unknown phase option"
   },
@@ -193,12 +209,50 @@
     }
   },
   {
+    "name": "seven-day window includes its start and excludes one second earlier",
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ]
+  },
+  {
+    "name": "the window moves with the as-of time",
+    "set": {
+      "asOf": "2026-09-30T12:00:01Z",
+      "repositories.0.recentClosures.pagination.itemCount": 1,
+      "repositories.0.recentClosures.pagination.totalCount": 1
+    },
+    "recent": []
+  },
+  {
+    "name": "closed-in-window count must match the collected slice",
+    "set": {
+      "issues.@900112.closedAt": "2026-09-23T12:00:00Z"
+    },
+    "invalid": "recent closure count mismatch"
+  },
+  {
+    "name": "observations cannot postdate the dataset as-of time",
+    "set": {
+      "asOf": "2026-09-30T11:59:59Z"
+    },
+    "invalid": "observation after dataset asOf"
+  },
+  {
     "name": "missing conditional sections do not withhold readiness",
     "ready": {
       "jimmie-potts/agent-device-hub#900101": [
         true,
         null
       ],
+      "jimmie-potts/agent-device-hub#900105": [
+        true,
+        null
+      ]
+    }
+  },
+  {
+    "name": "an old closed blocker is retained and satisfies the prerequisite",
+    "ready": {
       "jimmie-potts/agent-device-hub#900105": [
         true,
         null
@@ -217,7 +271,7 @@
   {
     "name": "placeholder acceptance withholds readiness",
     "set": {
-      "issues.1.story.acceptance.text": "TBD"
+      "issues.@900101.story.acceptance.text": "TBD"
     },
     "ready": {
       "jimmie-potts/agent-device-hub#900101": [
@@ -227,20 +281,23 @@
     }
   },
   {
-    "name": "closed not planned is not ready and keeps its reason",
+    "name": "closed not planned is not ready, not recently done, and keeps its reason",
     "ready": {
       "jimmie-potts/agent-device-hub#900107": [
         false,
         "issue-closed"
       ]
-    }
+    },
+    "recent": [
+      "jimmie-potts/agent-device-hub#900111"
+    ]
   },
   {
     "name": "incomplete blocker pagination withholds readiness",
     "set": {
-      "issues.1.blockedBy.evidence.complete": false,
-      "issues.1.blockedBy.evidence.reason": "Page unavailable",
-      "issues.1.blockedBy.evidence.pagination.hasNextPage": true
+      "issues.@900101.blockedBy.evidence.complete": false,
+      "issues.@900101.blockedBy.evidence.reason": "Page unavailable",
+      "issues.@900101.blockedBy.evidence.pagination.hasNextPage": true
     },
     "ready": {
       "jimmie-potts/agent-device-hub#900101": [
@@ -252,7 +309,7 @@
   {
     "name": "missing outcome withholds readiness",
     "set": {
-      "issues.5.story.outcome": {
+      "issues.@900105.story.outcome": {
         "state": "missing",
         "heading": null,
         "text": null,

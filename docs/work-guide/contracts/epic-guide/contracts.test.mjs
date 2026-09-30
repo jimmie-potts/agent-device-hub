@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { definitionDigest as recordsOneDigest } from '../digest.mjs';
 import { validateDataset, datasetIdentity, placementOf, projectOf, eligibility, publicProjection, validateProjection,
-  dependents, primaryPage } from './records.mjs';
+  dependents, primaryPage, recentlyDone } from './records.mjs';
 import { CATALOG, catalogIdentity, validateView, resolveView, rebindView, allowedLink, literalText, epicCounts } from './views.mjs';
 import { definitionDigest } from './digest.mjs';
 
@@ -16,13 +16,16 @@ const H = n => `jimmie-potts/agent-device-hub#${n}`;
 const N102 = 'jimmie-potts/codex-nanoleaf#900102';
 const P104 = 'jimmie-potts/divoom-app-upgrade#900104';
 const code = name => error => error.message.startsWith(name + ':');
+// Paths address array items by identity with '@': issues by number, components by instance ID.
+const step = (object, key) => key.startsWith('@')
+  ? object.find(x => x.id === key.slice(1) || x.id?.endsWith('#' + key.slice(1))) : object[key];
 const setPath = (value, path, content) => {
   const keys = path.split('.'); const last = keys.pop();
-  keys.reduce((object, key) => object[key], value)[last] = content;
+  keys.reduce(step, value)[last] = content;
 };
 const dropPath = (value, path) => {
   const keys = path.split('.'); const last = keys.pop();
-  delete keys.reduce((object, key) => object[key], value)[last];
+  delete keys.reduce(step, value)[last];
 };
 // The producer recomputes placement and Project states after any source change, as the adapter must.
 function produced(dataset) {
@@ -44,6 +47,7 @@ function view(fixture) {
   const dataset = records(fixture.records ?? {});
   const value = json(`./fixtures/${fixture.base}.json`);
   if (!fixture.keepDatasetId) value.datasetId = dataset.datasetId;
+  value.components = value.components.filter(x => !(fixture.remove ?? []).includes(x.id));
   value.components.push(...(fixture.add ?? []));
   for (const [path, content] of Object.entries(fixture.set ?? {})) setPath(value, path, content);
   for (const path of fixture.drop ?? []) dropPath(value, path);
@@ -60,7 +64,7 @@ test('valid records place every issue by its nearest explicit epic', () => {
   assert.deepEqual(states[H(900100)], ['root', null, [], null]);
   assert.deepEqual(states[N102], ['epic', H(900100), [], null], 'cross-repository child');
   assert.deepEqual(states[P104], ['epic', H(900100), [H(900103)], null], 'deep descendant keeps its full path');
-  assert.deepEqual(states[H(900105)], ['standalone', null, [], null]);
+  assert.deepEqual(states[H(900105)], ['standalone', null, [H(900110)], null], 'an old closed parent keeps the path');
   assert.deepEqual(states[H(900108)], ['unresolved', null, [], 'parent-unknown']);
   assert.ok(find(dataset, H(900109)).body.includes('## Guide'), 'legacy Guide metadata stays inert body text');
 });
@@ -82,6 +86,7 @@ for (const fixture of json('./fixtures/record-cases.json')) test(`records: ${fix
   for (const [id, placement] of Object.entries(fixture.placement ?? {})) assert.deepEqual(find(dataset, id).placement, placement, id);
   for (const [id, state] of Object.entries(fixture.phase ?? {})) assert.equal(find(dataset, id).project.phase.state, state, id);
   for (const [id, state] of Object.entries(fixture.commitment ?? {})) assert.equal(find(dataset, id).project.commitment.state, state, id);
+  if (fixture.recent) assert.deepEqual(dataset.issues.filter(x => recentlyDone(dataset, x)).map(x => x.id), fixture.recent);
   for (const [id, [allowed, reason]] of Object.entries(fixture.ready ?? {})) {
     const result = eligibility(dataset, id, 'ready', policy);
     assert.equal(result.allowed, allowed, JSON.stringify(result.reasons));
@@ -113,9 +118,9 @@ test('public projection carries only selected fields and never Project values or
 test('fetch-only refresh keeps content identity; content changes replace it', () => {
   const dataset = json('./fixtures/dataset.json');
   const original = dataset.datasetId;
-  for (const evidence of [dataset.project.evidence, ...dataset.repositories.map(x => x.inventory),
+  for (const evidence of [dataset.project.evidence, ...dataset.repositories.flatMap(x => [x.inventory, x.recentClosures]),
     ...dataset.issues.flatMap(x => [x.facts, x.parent.evidence, x.children.evidence, x.blockedBy.evidence])]) {
-    evidence.observedAt = '2026-09-30T12:01:00Z';
+    evidence.observedAt = '2026-09-30T11:59:00Z';
     if (evidence.pagination) evidence.pagination.pages += 1;
   }
   dataset.issues.reverse();
@@ -159,9 +164,12 @@ test('the ordinary epic page lists each placed issue once and counts from placem
   assert.deepEqual(primary, [H(900101), H(900103), H(900109), N102, P104].sort());
   assert.equal(node(model, 'wall-titles').route.issue, 'epics/jimmie-potts/agent-device-hub/900100/#jimmie-potts/codex-nanoleaf/900102');
   assert.deepEqual(node(model, 'pixoo-previews').placement.path, [H(900103)], 'depth bound never truncates ancestry');
-  assert.equal(node(model, 'retired-layout').stateReason, 'not_planned');
+  assert.deepEqual([node(model, 'layout-draft').stateReason, node(model, 'layout-draft').closedAt], ['completed', '2026-09-23T12:00:00Z']);
+  assert.deepEqual([node(model, 'done').window, node(model, 'done').complete, node(model, 'done').total],
+    [{ start: '2026-09-23T12:00:00Z', end: '2026-09-30T12:00:00Z' }, true, 1]);
+  assert.equal(node(model, 'browser').presentation, 'full');
   assert.deepEqual([node(model, 'epic-pages-prerequisites').ids, node(model, 'epic-pages-prerequisites').complete], [[H(900106)], true]);
-  assert.deepEqual(epicCounts(dataset, H(900100), policy), { open: 5, active: 2, blocked: 0, ready: 1 });
+  assert.deepEqual(epicCounts(dataset, H(900100), policy), { open: 5, active: 2, blocked: 0, ready: 1, recentlyDone: 1 });
   assert.ok(!JSON.stringify(model).includes(find(dataset, H(900101)).title), 'the model carries references, not copied text');
 });
 
@@ -171,6 +179,9 @@ test('ordinary and composed views resolve the same records through the same comp
   const composed = node(resolveView(answer.value, answer), 'next-card');
   for (const key of ['record', 'route', 'link', 'workflow', 'placement', 'phase', 'commitment', 'actions'])
     assert.deepEqual(composed[key], ordinary[key], key);
+  const ordinaryEpic = node(resolveView(epic.value, epic), 'browser');
+  const composedEpic = node(resolveView(answer.value, answer), 'browser-epic');
+  for (const key of ['record', 'route', 'link', 'counts', 'phase', 'commitment', 'presentation']) assert.deepEqual(composedEpic[key], ordinaryEpic[key], key);
   assert.equal(node(resolveView(answer.value, answer), 'answer').sequence, CATALOG.sequences.suggested);
 });
 
@@ -178,7 +189,7 @@ test('home repeats cards without changing unique counts', () => {
   const { dataset, value } = view({ base: 'epic-page' });
   const home = { ...value, page: { kind: 'home', record: null }, root: ['epics', 'current', 'recent'], components: [
     { id: 'epics', kind: 'section', group: 'epics', record: null, sequence: 'none', disclosure: 'open', children: ['browser'] },
-    { id: 'browser', kind: 'epic-summary', record: H(900100) },
+    { id: 'browser', kind: 'epic', record: H(900100), presentation: 'summary', children: [] },
     { id: 'current', kind: 'section', group: 'current-work', record: null, sequence: 'none', disclosure: 'open', children: ['wall', 'legacy'] },
     { id: 'wall', kind: 'issue-card', record: N102, presentation: 'row', primary: false },
     { id: 'legacy', kind: 'issue-card', record: H(900109), presentation: 'row', primary: false },
@@ -212,7 +223,7 @@ test('boards reuse cards and place them by Commitment, Phase or workflow without
   const board = by => ({ ...value, page: { kind: 'portfolio', record: null }, root: ['portfolio'], components: [
     { id: 'portfolio', kind: 'section', group: 'portfolio', record: null, sequence: 'none', disclosure: 'open', children: ['board'] },
     { id: 'board', kind: 'board', by, children: ['browser', 'pages', 'wall', 'bug', 'unknown-parent'] },
-    { id: 'browser', kind: 'epic-summary', record: H(900100) },
+    { id: 'browser', kind: 'epic', record: H(900100), presentation: 'summary', children: [] },
     ...[['pages', H(900101)], ['wall', N102], ['bug', H(900105)], ['unknown-parent', H(900108)]]
       .map(([id, record]) => ({ id, kind: 'issue-card', record, presentation: 'card', primary: false }))] });
   const columns = by => Object.fromEntries(node(resolveView(board(by), { dataset, policy }), 'board').columns.map(x => [x.name, x.children]));
@@ -246,6 +257,37 @@ for (const fixture of json('./fixtures/view-cases.json')) test(`views: ${fixture
   if ('complete' in fixture) assert.equal(claim.complete, fixture.complete);
   const reasons = claim.withheld ?? claim.reasons;
   assert.ok(reasons.some(x => x.code === fixture.withheld && x.source.startsWith('https://')), JSON.stringify(reasons));
+});
+
+test('a large epic page lists every placed issue while a composed view stays bounded', () => {
+  const dataset = json('./fixtures/dataset.json');
+  const epic = find(dataset, H(900100)); const template = find(dataset, H(900103));
+  const extra = Array.from({ length: 40 }, (_, n) => {
+    const issue = structuredClone(template); const number = 901000 + n;
+    Object.assign(issue, { number, id: H(number), nodeId: `FIXTURE_I_${number}`, url: `https://github.com/jimmie-potts/agent-device-hub/issues/${number}`,
+      title: `Large epic item ${n}` });
+    issue.children = { ids: [], evidence: { ...template.children.evidence, pagination: { pages: 1, itemCount: 0, totalCount: 0, hasNextPage: false } } };
+    return issue;
+  });
+  dataset.issues.push(...extra);
+  epic.children.ids.push(...extra.map(x => x.id));
+  epic.children.evidence.pagination.itemCount = epic.children.evidence.pagination.totalCount = epic.children.ids.length;
+  dataset.repositories[0].inventory.pagination.itemCount += 40; dataset.repositories[0].inventory.pagination.totalCount += 40;
+  produced(dataset);
+  const page = json('./fixtures/epic-page.json'); page.datasetId = dataset.datasetId;
+  const cards = extra.map((x, n) => ({ id: `large-${n}`, kind: 'issue-card', record: x.id, presentation: 'row', primary: true }));
+  page.components.push(...cards);
+  page.components.find(x => x.id === 'other-work').children.push(...cards.map(x => x.id));
+  const model = resolveView(page, { dataset, policy });
+  assert.equal(node(model, 'other-work').total, 41);
+  assert.equal(node(model, 'browser').counts.open, 45);
+  page.components.find(x => x.id === 'other-work').children.pop(); page.components.pop();
+  assert.throws(() => validateView(page, { dataset }), code('coverage'), 'an ordinary page never truncates');
+  const answer = json('./fixtures/composed.json'); answer.datasetId = dataset.datasetId;
+  const bounded = cards.slice(0, 13).map(x => ({ ...x, primary: false, reasons: [{ code: 'epic-member', evidence: [{ epic: H(900100) }] }] }));
+  answer.components.push(...bounded.map(x => ({ ...x, id: x.id + '-a' })));
+  answer.components.find(x => x.id === 'answer').children.push(...bounded.map(x => x.id + '-a'));
+  assert.throws(() => validateView(answer, { dataset }), code('size-exceeded'));
 });
 
 test('composed views stay within their bounds; ordinary pages are never truncated', () => {
