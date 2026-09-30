@@ -148,3 +148,18 @@ probes run on 2026-09-27 and the operations, receipt and failure behavior.
   means stopping it and starting a new one.
 - Windows browser access is proven for HTTP by `curl.exe` only. The owner's
   click in a real browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s evidence.
+
+## Codex host-command route
+
+Owner decision under [#610](https://github.com/jimmie-potts/agent-device-hub/issues/610),
+2026-09-29: development coordinators can explicitly route existing verification
+commands through bounded transient user command units. Each preview keeps its
+separate unit and lease; command cleanup never implies preview cleanup. This
+adds no installed broker or permanent service. It is trusted Linux-user host
+execution, outside Codex's denied-path enforcement.
+
+Desktop/WSL, interactive WSL CLI and WSL `codex exec` coordinators are the
+qualification targets. Delegated workers request preview operations through
+their coordinator; reviewer restrictions remain. Source setup is documented in
+the [host-route contract](../app-verification.md#explicit-host-route-for-codex-development-coordinators);
+personal activation and fresh/parallel host acceptance remain separate.
