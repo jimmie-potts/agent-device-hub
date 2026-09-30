@@ -16,4 +16,4 @@
 
 ## 5. Delivery
 
-- [ ] 5.1 Update `apps/hub/README.md` and the standalone hub section of `docs/development.md`, run the hub, setup, hub MCP, MCP, contract, package and workflow checks from the worktree root, and synchronize and archive the specification.
+- [x] 5.1 Update `apps/hub/README.md` and the standalone hub section of `docs/development.md`, run the hub, setup, hub MCP, MCP, contract, package and workflow checks from the worktree root, and synchronize and archive the specification.
