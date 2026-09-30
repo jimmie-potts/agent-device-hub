@@ -1,6 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
-import {validate, type ReceiptV1_1} from '@jimmie-potts/device-contracts';
+import {validate, type FailureCode, type MomentFailureCode, type ReceiptV1_1} from '@jimmie-potts/device-contracts';
 import {id, object, exact} from './common.js';
 import type {AutomationStore, LogRow, NewLogRow, RuleRow} from './automation-store.js';
 
@@ -26,7 +26,7 @@ export type MomentNotSentReason = '1.0-only'|'moments-unsupported'|'unsupported-
 export type MomentInput = MomentIntent & {startAtHubMs?:number; toleranceMs?:number};
 export type MomentResult =
   | {kind:'receipt'; momentId:string; start:MomentStart|null; receipt:ReceiptV1_1}
-  | {kind:'not-sent'; momentId:string; start:MomentStart|null; reason:MomentNotSentReason; failure?:{code:string}}
+  | {kind:'not-sent'; momentId:string; start:MomentStart|null; reason:MomentNotSentReason; failure?:FailureCode|MomentFailureCode}
   | {kind:'uncertain'; momentId:string; start:MomentStart|null};
 /**
  * The #335 shared moment sender, local to this module until #335 merges: one moment, one target device, one typed result.
@@ -255,8 +255,8 @@ export function createAutomation(options:AutomationOptions) {
       return logRow(rule,event,moment,target,'receipt',receipt.failure?.code ?? null,{receipt:receiptProjection(receipt),...extra});
     }
     if (value.kind === 'not-sent' && NOT_SENT.includes(value.reason as string)) {
-      // A failure outside the contract's typed codes is not stored; the reason still is.
-      const failure = validate('failureV1_1',value.failure) ? {failure:{code:(value.failure as {code:string}).code}} : null;
+      // #335 reports the controller's failure as a bare contract code. A value outside those codes is not stored; the reason still is.
+      const failure = validate('failureCodeV1_1',value.failure) ? {failure:{code:value.failure as string}} : null;
       return logRow(rule,event,moment,target,'not-sent',value.reason as string,extra || failure ? {...extra,...failure} : null);
     }
     if (value.kind === 'uncertain') return logRow(rule,event,moment,target,'uncertain',null,extra);

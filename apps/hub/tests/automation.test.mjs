@@ -317,7 +317,7 @@ test('each target is handed the moment once; failures are logged per target and 
    assert.deepEqual(entries.find(e=>e.target==='wall').start,start,'a valid controller start is kept');
    assert.equal(entries.find(e=>e.target==='cube').start,undefined);
    // A receipt outside the contract is not stored; its content never reaches the log.
-   answers.wall={kind:'uncertain',start:{...start,extra:'PRIVATE_CANARY'}};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity',failure:{code:'capacity'}};
+   answers.wall={kind:'uncertain',start:{...start,extra:'PRIVATE_CANARY'}};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity',failure:'capacity'};
    reopened.hub.automation.submit(live('pr-3'));await reopened.hub.automation.settled();
    entries=await log(reopened.call);
    assert.deepEqual(entries.slice(0,3).map(e=>`${e.target}:${e.outcome}:${e.reason ?? ''}`).sort(),['cube:not-sent:capacity','panel:uncertain:invalid-result','wall:uncertain:']);
@@ -326,7 +326,7 @@ test('each target is handed the moment once; failures are logged per target and 
    assert.equal(entries.find(e=>e.target==='cube').start,undefined);
    assert.equal(second.calls.length,6,'one call per target per event, no retries');
    // A failure outside the contract's codes is not stored.
-   answers.cube={kind:'not-sent',reason:'unavailable',failure:{code:'PRIVATE_CANARY'}};
+   answers.cube={kind:'not-sent',reason:'unavailable',failure:'PRIVATE_CANARY'};
    reopened.hub.automation.submit(live('pr-3b'));await reopened.hub.automation.settled();
    const dropped=(await log(reopened.call)).find(e=>e.target==='cube');
    assert.deepEqual([dropped.outcome,dropped.reason,dropped.failure],['not-sent','unavailable',undefined]);
