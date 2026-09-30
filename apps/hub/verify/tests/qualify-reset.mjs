@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import {spawn, execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
+import {cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {homedir, tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
@@ -13,7 +13,9 @@ import {consumerState, follows, sessionKey} from '../consumers.mjs';
 import {HUB_ROOT} from '../compose.mjs';
 import {qualificationSnapshot} from '../qualification.mjs';
 
-const [nanoleaf, pixoo, output] = process.argv.slice(2).map(value => resolve(value));
+const [nanoleaf, pixoo, output] = process.argv.slice(2, 5).map(value => resolve(value));
+const hostDefaults = process.argv[5] === '--host-defaults';
+assert.ok(process.argv.length <= 6 && (process.argv[5] === undefined || hostDefaults), 'optional final argument is --host-defaults');
 assert.ok(nanoleaf && pixoo && output, 'need nanoleaf checkout, Pixoo checkout and fresh evidence directory');
 assert.ok(!existsSync(output), 'evidence path must be new');
 const manifest = JSON.parse(await readFile(new URL('../compose.json', import.meta.url), 'utf8'));
@@ -25,29 +27,42 @@ for (const [id, path] of [['hub', HUB_ROOT], ['nanoleaf', nanoleaf], ['pixoo', p
   if (pin !== 'self') assert.equal(git(path, 'rev-parse', 'HEAD'), pin, `${id} pin`);
 }
 await mkdir(output, {recursive: true, mode: 0o700});
-const runtime = await mkdtemp(join(tmpdir(), 'cr-'));
+if (hostDefaults) assert.ok(process.env.PYTHON && process.env.FNM_BIN, '--host-defaults needs absolute PYTHON and FNM_BIN paths');
+const runtime = hostDefaults ? join(homedir(), '.local/state/app-verify') : await mkdtemp(join(tmpdir(), 'cr-'));
 assert.ok(Buffer.byteLength(join(runtime, 'hub-20260929T120000Z-abcdef', 'data/h/bunny-launch.sock')) <= 107, 'TMPDIR must be short enough for the Hub socket');
-const env = {...process.env, APP_VERIFY_STATE_ROOT: runtime, APP_VERIFY_PROOF_ROOT: join(output, 'proof'), APP_VERIFY_WINDOWS_CHECK: 'off'};
-let sequence = 0, id, browser, stopped = false;
-const observations = {revision, consumerPins: manifest.services.filter(s => s.role === 'consumer').map(s => ({id: s.id, revision: s.revision})), results: []};
+const env = {...process.env, APP_VERIFY_WINDOWS_CHECK: 'off'};
+if (hostDefaults) { delete env.APP_VERIFY_STATE_ROOT; delete env.APP_VERIFY_PROOF_ROOT; }
+else Object.assign(env, {APP_VERIFY_STATE_ROOT: runtime, APP_VERIFY_PROOF_ROOT: join(output, 'proof')});
+let sequence = 0, id, compositionDir, browser, stopped = false;
+const observations = {revision, storage: hostDefaults ? 'host-defaults' : 'isolated-overrides', consumerPins: manifest.services.filter(s => s.role === 'consumer').map(s => ({id: s.id, revision: s.revision})), results: []};
 const persist = () => writeFile(join(output, 'qualification.json'), JSON.stringify(observations, null, 2) + '\n');
 async function compose(...args) {
   const name = `${String(++sequence).padStart(2, '0')}-${args[0]}`;
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../compose.mjs', import.meta.url)), ...args], {cwd: HUB_ROOT, env, stdio: ['ignore', 'pipe', 'pipe']});
+  const argv = hostDefaults
+    ? [join(HUB_ROOT, 'scripts/verify-host.mjs'), '--host', '--app', 'compose', '--checkout', HUB_ROOT, '--python', process.env.PYTHON, '--fnm', process.env.FNM_BIN, '--', ...args]
+    : [fileURLToPath(new URL('../compose.mjs', import.meta.url)), ...args];
+  await writeFile(join(output, name + '.intent.json'), JSON.stringify({argv: [process.execPath, ...argv], cwd: HUB_ROOT}) + '\n');
+  const child = spawn(process.execPath, argv, {cwd: HUB_ROOT, env, stdio: ['ignore', 'pipe', 'pipe']});
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
   child.stderr.on('data', chunk => { stderr += chunk; });
   const code = await new Promise((resolveCode, reject) => { child.on('error', reject); child.on('close', resolveCode); });
   await writeFile(join(output, name + '.log'), stderr + stdout);
   const lines = stdout.trim().split('\n'); assert.equal(lines.length, 1, `${name}: one result line`);
-  const value = JSON.parse(lines[0]);
-  if (value.compositionId) id ??= value.compositionId;
-  observations.results.push({operation: args[0], code, result: value}); await persist();
+  const wrapper = JSON.parse(lines[0]);
+  const value = hostDefaults ? wrapper.result : wrapper;
+  if (value?.compositionId) id ??= value.compositionId;
+  if (value?.compositionDir) compositionDir ??= value.compositionDir;
+  observations.results.push({operation: args[0], code, result: value, ...(hostDefaults ? {host: wrapper} : {})}); await persist();
+  if (hostDefaults) {
+    assert.equal(wrapper.cleanup, 'verified', 'host command cleanup');
+    assert.equal(wrapper.temporaryCleanup, 'removed', 'host temporary cleanup');
+  }
   assert.equal(code, 0, `${name}: ${JSON.stringify(value)}`);
   console.log(`${name}: passed`);
   return value;
 }
-const record = () => readFile(join(env.APP_VERIFY_PROOF_ROOT, id, 'composition.json'), 'utf8').then(JSON.parse);
+const record = () => readFile(join(compositionDir, 'composition.json'), 'utf8').then(JSON.parse);
 async function files(dir) {
   const result = [];
   for (const item of await readdir(dir, {withFileTypes: true})) {
@@ -81,7 +96,7 @@ const snapshot = hub => qualificationSnapshot(route => hubJson(hub, route));
 async function settings(hub) {
   return {pixel: (await hubJson(hub, '/api/controllers/v1/pixel/snapshot')).state.desired, wall: (await hubJson(hub, '/api/controllers/v1/wall/integration/snapshot')).settings};
 }
-const identities = c => c.services.map(s => ({id: s.id, runId: s.runId, url: s.url, endpoints: s.endpoints}));
+const identities = c => c.services.map(s => ({id: s.id, runId: s.runId, url: s.url, endpoints: s.endpoints, expiresAt: s.expiresAt}));
 async function pages(c, label, absentTitles = [], presentTitles = []) {
   for (const service of c.services) {
     const page = await browser.newPage({viewport: {width: 1280, height: 900}});
@@ -141,6 +156,10 @@ try {
   assert.deepEqual(stop.cleanup.services.map(s => s.id), ['hub', 'pixoo', 'nanoleaf']);
   assert.deepEqual(await hashes(initial), frozen);
   for (const service of initial.services) assert.equal(existsSync(join(runtime, service.runId)), false);
+  if (hostDefaults) for (const service of initial.services) {
+    await cp(join(service.proofDir, 'verified'), join(output, 'proof', service.id, 'verified'), {recursive: true, errorOnExist: true});
+    execFileSync('sha256sum', ['-c', 'SHA256SUMS'], {cwd: join(output, 'proof', service.id, 'verified'), stdio: 'pipe'});
+  }
   for (const path of await files(output)) {
     const content = await readFile(path);
     for (const token of Object.values(pairing)) assert.equal(content.includes(Buffer.from(token)), false, 'pairing credential escaped into evidence');
@@ -153,5 +172,6 @@ try {
     try { const result = await compose('stop', id); stopped = result.cleanup.result === 'clean'; }
     catch { console.error(`cleanup failed; retained runtime ${runtime}; use compose stop ${id}`); }
   }
-  if (stopped || !id) await rm(runtime, {recursive: true, force: true});
+  // The default root is shared with other sessions: only compose stop owns our runs.
+  if (!hostDefaults && (stopped || !id)) await rm(runtime, {recursive: true, force: true});
 }
