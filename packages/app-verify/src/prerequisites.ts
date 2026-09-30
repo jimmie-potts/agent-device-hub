@@ -3,7 +3,7 @@ import {constants} from 'node:fs';
 import {existsSync} from 'node:fs';
 import {access} from 'node:fs/promises';
 import {createRequire} from 'node:module';
-import {dirname, join} from 'node:path';
+import {dirname, join, delimiter, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import type {AppPlugin, PrerequisiteCheck, PrerequisiteResult} from './types.js';
 import {resolveRoots, RootError} from './roots.js';
@@ -11,12 +11,13 @@ import {exec, KEBAB, which} from './util.js';
 import {VERSION} from './version.js';
 
 type Env = Readonly<Record<string, string | undefined>>;
-type Probe = {access: typeof access; exec: typeof exec; which: typeof which; resolveRoots: typeof resolveRoots};
+type Probe = {access: typeof access; exec: typeof exec; which: typeof which; resolveRoots: typeof resolveRoots; currentEnv?: () => Env};
 const localProbe: Probe = {access, exec, which, resolveRoots};
 type Phase = PrerequisiteCheck['phase'];
 const phases: readonly Phase[] = ['launch', 'capture', 'handoff'];
 const statuses = new Set<PrerequisiteCheck['status']>(['present', 'missing', 'unknown', 'unsupported']);
 const managerStates = new Set(['running', 'degraded', 'starting', 'initializing']);
+const CORE_IDS = new Set(['linux-host', 'node-runtime', 'user-manager', 'systemd-run-tool', 'lease-systemctl-tool', 'proof-root', 'runtime-root', 'storage-roots', 'proof-write', 'runtime-write', 'playwright-module', 'chromium-file', 'ffmpeg-file', 'adapter-prerequisites', 'host-launch', 'loopback-listener', 'listener-ownership', 'browser-execution', 'video-finalization', 'windows-browser', 'windows-interop']);
 const rootNext = 'Choose an accessible, ignored proof root and a private runtime root outside Git.';
 
 const row = (id: string, phase: Phase, status: PrerequisiteCheck['status'], reason: string, next?: string): PrerequisiteCheck =>
@@ -38,7 +39,7 @@ async function rootAccess(path: string, id: string, phase: Phase, probe: Probe):
 }
 
 /** Validate plug-in output before it becomes a human-facing result. Never print a thrown error. */
-function adapterChecks(value: unknown): PrerequisiteCheck[] | undefined {
+function adapterChecks(value: unknown): PrerequisiteCheck[] | 'missing-action' | undefined {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) return undefined;
   const seen = new Set<string>();
   const checked: PrerequisiteCheck[] = [];
@@ -46,8 +47,10 @@ function adapterChecks(value: unknown): PrerequisiteCheck[] | undefined {
     if (!item || typeof item !== 'object') return undefined;
     const {id, phase, status, reason, next} = item as Partial<PrerequisiteCheck>;
     if (typeof id !== 'string' || !KEBAB.test(id) || seen.has(id) || !phases.includes(phase as Phase) || !statuses.has(status as PrerequisiteCheck['status'])) return undefined;
+    if (CORE_IDS.has(id) || (id === 'app-build' && phase !== 'launch')) return undefined;
     if (typeof reason !== 'string' || !KEBAB.test(reason)) return undefined;
     if (next !== undefined && (typeof next !== 'string' || next.length > 120 || /[\r\n\0\/\\]/.test(next))) return undefined;
+    if (status === 'missing' && (typeof next !== 'string' || !next.trim())) return 'missing-action';
     seen.add(id);
     checked.push({id, phase: phase as Phase, status: status as PrerequisiteCheck['status'], reason, ...(next ? {next} : {})});
   }
@@ -76,30 +79,41 @@ export async function inspectPrerequisitesWith(plugin: AppPlugin, env: Env, prob
   checks.push(row('node-runtime', 'launch', nodeMajor >= 22 ? 'present' : 'missing', nodeMajor >= 22 ? 'node-supported' : 'node-too-old',
     nodeMajor >= 22 ? undefined : 'Use Node 22 or later; the Hub uses Node 24.'));
 
-  const systemctl = probe.which('systemctl', '/usr/bin:/bin', '/');
-  if (!systemctl) checks.push(row('user-manager', 'launch', 'missing', 'systemctl-missing', 'Install the Linux systemd tools.'));
-  else {
-    const answer = await probe.exec(systemctl, ['--user', 'is-system-running'], {timeoutMs: 10000, env: env as NodeJS.ProcessEnv});
-    const state = answer.stdout.trim();
-    checks.push(managerStates.has(state)
-      ? row('user-manager', 'launch', 'present', 'manager-visible')
-      : row('user-manager', 'launch', state === 'offline' ? 'missing' : 'unknown', state === 'offline' ? 'manager-offline' : 'manager-unreadable', 'Check the local user manager in the selected execution host.'));
+  const actualEnv = probe.currentEnv?.() ?? process.env;
+  const pathDiffers = env.PATH !== actualEnv.PATH;
+  const managerDiffers = ['PATH', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'].some(key => env[key] !== actualEnv[key]);
+  // execFile uses the process PATH, with the platform default when it is absent.
+  const lifecyclePath = actualEnv.PATH ?? '/usr/bin:/bin';
+  async function tool(name: string, id: string, fixed = false): Promise<PrerequisiteCheck> {
+    const path = fixed ? '/usr/bin:/bin' : lifecyclePath;
+    // A fixed lease uses which() once. execFile searches through non-executable
+    // PATH entries, including empty/relative entries against the process cwd.
+    const routes = fixed ? [path] : path.split(delimiter).map(part => resolve(part || '.'));
+    let denied = false;
+    for (const route of routes) {
+      const located = probe.which(name, route, process.cwd());
+      if (!located) continue;
+      try {
+        await probe.access(located, constants.X_OK);
+        return row(id, 'launch', 'present', 'tool-executable');
+      } catch { denied = true; if (fixed) break; }
+    }
+    return row(id, 'launch', denied ? 'unknown' : 'missing', denied ? 'tool-unreadable' : 'tool-missing', 'Check executable Linux systemd tools on the selected host.');
   }
-  const systemdRun = probe.which('systemd-run', '/usr/bin:/bin', '/');
-  let systemdRunStatus: PrerequisiteCheck['status'] = 'missing';
-  let systemdRunReason = 'tool-missing';
-  if (systemdRun) {
-    try {
-      await probe.access(systemdRun, constants.X_OK);
-      systemdRunStatus = 'present';
-      systemdRunReason = 'tool-executable';
-    } catch (error) {
-      systemdRunReason = (error as NodeJS.ErrnoException).code === 'EACCES' ? 'tool-not-executable' : 'tool-unreadable';
-      systemdRunStatus = systemdRunReason === 'tool-not-executable' ? 'missing' : 'unknown';
+  if (managerDiffers) checks.push(row('user-manager', 'launch', 'unknown', 'manager-environment-differs'));
+  else {
+    const systemctl = await tool('systemctl', 'user-manager');
+    if (systemctl.status !== 'present') checks.push(systemctl);
+    else {
+      const answer = await probe.exec('systemctl', ['--user', 'is-system-running'], {timeoutMs: 10000});
+      const state = answer.stdout.trim();
+      checks.push(managerStates.has(state)
+        ? row('user-manager', 'launch', 'present', 'manager-visible')
+        : row('user-manager', 'launch', state === 'offline' ? 'missing' : 'unknown', state === 'offline' ? 'manager-offline' : 'manager-unreadable', 'Check the local user manager in the selected execution host.'));
     }
   }
-  checks.push(row('systemd-run-tool', 'launch', systemdRunStatus, systemdRunReason,
-    systemdRunStatus === 'present' ? undefined : 'Install the Linux systemd tools.'));
+  checks.push(pathDiffers ? row('systemd-run-tool', 'launch', 'unknown', 'path-environment-differs') : await tool('systemd-run', 'systemd-run-tool'));
+  checks.push(await tool('systemctl', 'lease-systemctl-tool', true));
 
   try {
     const roots = await probe.resolveRoots(plugin, env);
@@ -117,16 +131,27 @@ export async function inspectPrerequisitesWith(plugin: AppPlugin, env: Env, prob
 
   const require = createRequire(join(plugin.root, 'package.json'));
   let browser: {executablePath?: () => string} | undefined;
+  let moduleReason = 'module-unavailable';
   for (const name of plugin.browser?.modules ?? ['playwright', '@playwright/test']) {
+    let located: string;
+    try { located = require.resolve(name); } catch { continue; }
+    if (name !== 'playwright' && name !== '@playwright/test') {
+      moduleReason = 'custom-module-uninspected';
+      break;
+    }
+    // Standard installed dependencies are trusted checkout code. Never execute
+    // arbitrary custom browser modules merely to inspect prerequisites.
     try {
-      const located = require.resolve(name);
       const loaded = await import(pathToFileURL(located).href) as {chromium?: typeof browser; default?: {chromium?: typeof browser}};
       browser = loaded.chromium ?? loaded.default?.chromium;
-      if (browser) break;
-    } catch { /* A missing or unreadable module cannot be used for capture. */ }
+      moduleReason = browser ? 'module-resolved' : 'module-unreadable';
+    } catch { moduleReason = 'module-unreadable'; }
+    break;
   }
-  if (!browser) checks.push(row('playwright-module', 'capture', 'missing', 'module-unavailable', 'Install the checkout dependencies.'));
-  else {
+  if (!browser) {
+    checks.push(row('playwright-module', 'capture', moduleReason === 'module-unavailable' ? 'missing' : 'unknown', moduleReason, 'Inspect the selected checkout browser dependency.'));
+    checks.push(row('chromium-file', 'capture', 'unknown', 'module-uninspected'));
+  } else {
     checks.push(row('playwright-module', 'capture', 'present', 'module-resolved'));
     const browserEnvironmentDiffers = ['PLAYWRIGHT_BROWSERS_PATH', 'HOME', 'XDG_CACHE_HOME']
       .some(key => env[key] !== process.env[key]);
@@ -143,11 +168,13 @@ export async function inspectPrerequisitesWith(plugin: AppPlugin, env: Env, prob
       checks.push(row('chromium-file', 'capture', code === 'ENOENT' || code === 'EACCES' ? 'missing' : 'unknown', code === 'ENOENT' ? 'file-missing' : code === 'EACCES' ? 'file-denied' : 'file-unreadable', 'Install the checkout Chromium build.'));
     }
   }
+  checks.push(row('ffmpeg-file', 'capture', 'unknown', 'no-public-location-api', 'Install Playwright Chromium and verify video in an authorized bounded capture.'));
 
   if (plugin.prerequisites) {
     try {
       const adapted = adapterChecks(await plugin.prerequisites.inspect());
-      if (!adapted || adapted.some(check => checks.some(existing => existing.id === check.id))) checks.push(row('adapter-prerequisites', 'launch', 'unknown', 'adapter-check-invalid'));
+      if (adapted === 'missing-action') checks.push(row('adapter-prerequisites', 'launch', 'missing', 'adapter-check-missing-action', 'Add a non-secret next action to the adapter prerequisite check.'));
+      else if (!adapted || adapted.some(check => checks.some(existing => existing.id === check.id))) checks.push(row('adapter-prerequisites', 'launch', 'unknown', 'adapter-check-invalid'));
       else checks.push(...adapted);
     } catch {
       checks.push(row('adapter-prerequisites', 'launch', 'unknown', 'adapter-check-failed'));

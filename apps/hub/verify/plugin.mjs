@@ -179,7 +179,8 @@ export async function buildCurrent(at = root) {
   if (sources.length === 0) return {outcome: /** @type {const} */ ('failed'), reason: 'no build sources matched; the check cannot vouch for the build'};
   let newest = 0, newestFile = '';
   for (const file of sources) {
-    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs ?? 0;
+    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
+    if (time === undefined) return {outcome: /** @type {const} */ ('failed'), reason: `${file} is missing or unreadable; restore the source and run npm run build`};
     if (time > newest) [newest, newestFile] = [time, file];
   }
   let oldest = Infinity;

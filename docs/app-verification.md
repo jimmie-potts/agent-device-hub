@@ -69,6 +69,14 @@ summaries remain `unproven` even when every inspected requirement is present.
 Its exit 0 means inspection completed; a known missing requirement exits 3.
 Older pinned consumers that omit it from `help.operations` are unsupported.
 
+The diagnostic trusts the installed standard Playwright dependency and the
+adapter's read-only hook. Custom browser modules are resolved without executing
+their initialization; their browser-file evidence stays unknown. Video tooling
+is explicitly uninspected because Playwright exposes no public ffmpeg path API.
+Adapter text must be fixed, non-secret metadata; shape validation does not
+sanitize arbitrary private values. A missing adapter check must include a next
+action, and adapter checks cannot replace core evidence.
+
 | Operation | Outcome | Failure it must report |
 | --- | --- | --- |
 | `prerequisites` (1.3) | Local read-only checks with `present`, `missing`, `unknown` or `unsupported` status and separate launch, capture and handoff summaries; writes, host launch, listener ownership, browser execution, video finalization and Windows handoff stay unproven | Known missing local requirements name a next action; unreadable or uninspected evidence stays unknown |
@@ -938,6 +946,7 @@ installed by the dispatcher.
 For example, replacing the placeholder paths with prepared assigned checkouts:
 
 ```bash
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- prerequisites
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- start --scenario lifecycle-basic
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- doctor
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app nanoleaf --checkout /absolute/wall-worktree --python /absolute/venv/bin/python -- start
@@ -952,6 +961,14 @@ explicit `--unpinned` option still labels development-only evidence. Separate
 concurrent previews use separate worktrees and build outputs, including both
 consumer checkouts for each composition. One coordinator controls each run;
 do not capture, reset or stop another coordinator's run.
+
+The `prerequisites` adapter operation is read-only. Invoking it through
+`verify:host` still creates the dispatcher's bounded command unit and temporary
+directory, then checks their cleanup. That host routing effect requires the
+same explicit authority as other host commands. Use the direct local command
+for inspection without a host command unit. Composition has no aggregate
+prerequisite command; inspect each selected adapter, checking help support for
+older consumers first.
 
 The launcher clears the manager environment with `/usr/bin/env -i`, selects
 Node from its own Node-24 process and supplies only the Linux home, a tool PATH,

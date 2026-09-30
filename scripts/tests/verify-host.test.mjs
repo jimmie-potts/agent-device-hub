@@ -33,6 +33,16 @@ async function checkout(t, name = 'agent-device-hub') {
 }
 const args = root => ['--host', '--app', 'hub', '--checkout', root, '--', 'start'];
 
+test('prerequisites is routed to the selected standalone adapter', async t => {
+  const root = await checkout(t);
+  const plan = await prepare([...args(root).slice(0, -1), 'prerequisites']);
+  assert.deepEqual(plan.adapterArgs, [join(root, 'scripts/verify.mjs'), 'prerequisites']);
+  const fixture = supervisor({launch: {code: 0, stdout: '{"operation":"prerequisites","scope":"local-read-only"}'}});
+  const result = await runHost(plan, fixture);
+  assert.equal(result.value.result.operation, 'prerequisites');
+  assert.equal(result.value.cleanup, 'verified');
+});
+
 test('host effects require explicit opt-in and a named existing adapter', async t => {
   const root = await checkout(t);
   await assert.rejects(prepare(args(root).slice(1)), /--host/);

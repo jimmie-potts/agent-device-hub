@@ -86,7 +86,7 @@ executed one.
 | `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start. `doctor: true` also re-runs a check in `doctor`; set it only for read-only checks |
 | `captureSteps` | Named steps. `run(t)` drives `t.page` and records each expected observation with `await t.expect(name, fn)`. `t.screenshot(name)` and `t.attach(name, content)` add files to the capture. `scenario` and `fresh` control the starting state |
 | `browser.modules` | Optional module names that export `chromium`, resolved from `root`. Default `playwright`, then `@playwright/test` |
-| `prerequisites.inspect()` | Optional (1.3), read-only local checks such as build freshness. Return stable check ids, phase (`launch`, `capture`, `handoff`), status (`present`, `missing`, `unknown`, `unsupported`) and a short non-secret reason/next action. It must not build, launch, write or probe the app. An absent hook reports `app-build: unsupported` |
+| `prerequisites.inspect()` | Optional (1.3), trusted read-only local checks such as build freshness. Return stable check ids, phase (`launch`, `capture`, `handoff`), status (`present`, `missing`, `unknown`, `unsupported`) and fixed non-secret reason/next text. Missing checks require an actionable next step. Core IDs are reserved except the delegated `app-build` slot. Shape validation does not sanitize secrets. The hook must not build, launch, write or probe the app. An absent hook reports `app-build: unsupported` |
 
 What the core guarantees to every plug-in callback:
 

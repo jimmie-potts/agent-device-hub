@@ -38,6 +38,9 @@ test('a newer package source, Places manifest or dashboard build script fails bu
       assert.deepEqual(await inspectBuildPrerequisite(repo), [{id: 'app-build', phase: 'launch', status: 'missing', reason: 'build-missing-or-stale', next: 'Run npm run build from the checkout.'}], newer);
       await age([newer], 0);
     }
+    await rm(join(repo, sources[0]));
+    assert.equal((await buildCurrent(repo)).outcome, 'failed', 'a deleted tracked input cannot qualify retained outputs');
+    assert.equal((await inspectBuildPrerequisite(repo))[0].status, 'missing');
   } finally {
     await rm(repo, {recursive: true, force: true});
   }

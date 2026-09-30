@@ -11,7 +11,7 @@ import {promisify} from 'node:util';
 import {inspectTemporary} from './verify-host-command.mjs';
 
 const APPS = {hub: 'agent-device-hub', compose: 'agent-device-hub', nanoleaf: 'codex-nanoleaf', pixoo: 'divoom-app-upgrade'};
-const SINGLE = ['help', 'start', 'doctor', 'scenario', 'capture', 'handoff', 'extend', 'stop', 'restart'];
+const SINGLE = ['help', 'prerequisites', 'start', 'doctor', 'scenario', 'capture', 'handoff', 'extend', 'stop', 'restart'];
 const COMPOSE = ['help', 'start', 'doctor', 'capture', 'inject', 'reset', 'handoff', 'extend', 'stop'];
 const SYSTEMCTL = '/usr/bin/systemctl', SYSTEMD_RUN = '/usr/bin/systemd-run';
 const USABLE = ['running', 'degraded', 'starting', 'initializing'];

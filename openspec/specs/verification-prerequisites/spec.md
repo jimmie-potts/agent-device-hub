@@ -38,3 +38,27 @@ An optional adapter prerequisite hook SHALL be explicitly read-only and return v
 #### Scenario: Old consumer
 - **WHEN** a pinned consumer's help lists no prerequisites operation
 - **THEN** capability discovery returns unsupported and the caller retains the existing start-time checks rather than claiming diagnostic adoption
+
+#### Scenario: Adapter conflicts with core evidence
+- **WHEN** an adapter returns a reserved core ID or a missing check without an actionable next step
+- **THEN** inspection rejects or supplies a fixed remedy for that check without overriding unproven core evidence or directing the caller to launch with an unresolved prerequisite
+
+#### Scenario: Custom browser initialization
+- **WHEN** a configured nonstandard browser module resolves locally
+- **THEN** inspection does not execute its initialization and reports uninspected browser-file evidence as unknown
+
+#### Scenario: Lifecycle and lease tool routes
+- **WHEN** lifecycle tools are missing from the effective process PATH or the supplied host environment differs
+- **THEN** the diagnostic retains missing or unknown lifecycle evidence separately from the fixed-path lease tool observation
+
+#### Scenario: Video tooling cannot be inspected
+- **WHEN** the supported browser dependency exposes no public read-only video-tool path inspection
+- **THEN** an explicit unknown video dependency check names the next action without claiming capture capability
+
+#### Scenario: Tracked source disappears
+- **WHEN** a tracked build input is missing or unreadable while old build outputs remain
+- **THEN** the Hub build prerequisite is missing rather than current
+
+#### Scenario: Explicit host routing
+- **WHEN** a coordinator explicitly requests the standalone prerequisite operation through the trusted host dispatcher
+- **THEN** the dispatcher selects the requested adapter and preserves the command-unit cleanup contract while the adapter inspection remains read-only

@@ -343,7 +343,7 @@ export interface PrerequisiteCheck {
   status: 'present' | 'missing' | 'unknown' | 'unsupported';
   /** Stable kebab-case cause, without paths, values or tool output. */
   reason: string;
-  /** A short, non-secret action for the first missing requirement. */
+  /** A fixed, non-secret action; required for adapter checks with status missing. */
   next?: string;
 }
 

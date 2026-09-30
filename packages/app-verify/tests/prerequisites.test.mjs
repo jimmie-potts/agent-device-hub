@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readdir, rm} from 'node:fs/promises';
+import {access, mkdir, mkdtemp, readdir, rm, writeFile, symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
@@ -112,7 +112,9 @@ test('missing supervisor/tool and denied storage parents are deterministic negat
 
 test('browser executable location is unknown when inspected environment differs',async t=>{
   const {plugin,env}=await fixture(t);
-  plugin.browser={modules:[resolve('node_modules/playwright')]};
+  await mkdir(join(plugin.root,'node_modules'));
+  await symlink(resolve('node_modules/playwright'),join(plugin.root,'node_modules/playwright'));
+  plugin.browser={modules:['playwright']};
   const changed={...env,PLAYWRIGHT_BROWSERS_PATH:'/app-verify-different-browser-cache'};
   const result=await inspectPrerequisites(plugin,changed);
   assert.equal(result.checks.find(check=>check.id==='playwright-module')?.status,'present');
@@ -128,4 +130,63 @@ test('a read-only adapter check appears beside unproven runtime phases',async t=
   assert.equal(result.phases.launch.operation,'unproven');
   assert.equal(result.phases.capture.operation,'unproven');
   assert.equal(result.phases.handoff.operation,'unproven');
+});
+
+function observedProbe(env) {
+  return {currentEnv:()=>env, which:(name,path)=>path==='/usr/bin:/bin'?'/usr/bin/'+name:'/chosen/'+name,
+    access:async()=>{},exec:async()=>({code:0,stdout:'running',stderr:''}),
+    resolveRoots:async()=>({proof:'/unused-proof',runtime:'/unused-runtime',labels:{proof:'test',runtime:'test'}})};
+}
+test('adapter cannot replace core evidence, including conditional and late rows',async t=>{
+  const {plugin,env}=await fixture(t);
+  for(const id of ['host-launch','windows-browser','storage-roots','ffmpeg-file']) {
+    plugin.prerequisites={inspect:async()=>[{id,phase:'launch',status:'present',reason:'claimed'}]};
+    const result=await inspectPrerequisitesWith(plugin,env,observedProbe(env));
+    assert.equal(result.checks.find(c=>c.id==='adapter-prerequisites')?.reason,'adapter-check-invalid');
+    assert.equal(new Set(result.checks.map(c=>c.id)).size,result.checks.length);
+    assert.notEqual(result.checks.find(c=>c.id===id)?.status,'present');
+  }
+});
+test('tool inspection distinguishes lifecycle PATH from fixed lease tools',async t=>{
+  const {plugin,env}=await fixture(t);env.PATH='/chosen';
+  const paths=[],calls=[];const probe=observedProbe(env);
+  probe.which=(name,path)=>{paths.push([name,path]);return path==='/usr/bin:/bin'?'/usr/bin/'+name:'/chosen/'+name;};
+  probe.exec=async(...args)=>{calls.push(args);return {code:0,stdout:'running',stderr:''};};
+  const result=await inspectPrerequisitesWith(plugin,env,probe);
+  assert.ok(paths.some(([name,path])=>name==='systemd-run'&&path==='/chosen'));
+  assert.ok(paths.some(([name,path])=>name==='systemctl'&&path==='/usr/bin:/bin'));
+  assert.equal(calls[0][0],'systemctl');assert.equal(calls[0][2].env,undefined);
+  assert.equal(result.checks.find(c=>c.id==='lease-systemctl-tool')?.status,'present');
+  probe.which=(name,path)=>path==='/usr/bin:/bin'?'/usr/bin/'+name:undefined;
+  const missing=await inspectPrerequisitesWith(plugin,env,probe);
+  assert.equal(missing.checks.find(c=>c.id==='systemd-run-tool')?.status,'missing');
+  assert.equal(missing.checks.find(c=>c.id==='lease-systemctl-tool')?.status,'present');
+});
+test('alternate host environment does not acquire actual manager evidence',async t=>{
+  const {plugin,env}=await fixture(t);
+  for(const key of ['PATH','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS']) {
+    const probe=observedProbe(env);probe.exec=()=>{throw new Error('unexpected manager execution');};
+    const result=await inspectPrerequisitesWith(plugin,{...env,[key]:'/different'},probe);
+    assert.equal(result.checks.find(c=>c.id==='user-manager')?.reason,'manager-environment-differs');
+    if(key==='PATH')assert.equal(result.checks.find(c=>c.id==='systemd-run-tool')?.status,'unknown');
+  }
+});
+test('missing adapter action produces a contract remedy, not a launch instruction',async t=>{
+  const {plugin,env}=await fixture(t);
+  plugin.browser={modules:[resolve('package.json')]};
+  plugin.prerequisites={inspect:async()=>[{id:'app-build',phase:'launch',status:'missing',reason:'build-missing'}]};
+  const result=await inspectPrerequisitesWith(plugin,env,observedProbe(env));
+  assert.equal(result.checks.find(c=>c.id==='adapter-prerequisites')?.status,'missing');
+  assert.match(result.next,/next action/);
+  assert.equal((await cli(plugin,['prerequisites'],env)).code,3);
+});
+test('custom browser initialization is never executed and video tooling remains explicit',async t=>{
+  const {root,plugin,env}=await fixture(t);const marker=join(root,'side-effect');const module=join(root,'custom.cjs');
+  await writeFile(module,`require('node:fs').writeFileSync(${JSON.stringify(marker)},'effect');module.exports={chromium:{executablePath:()=>'/fake'}}`);
+  plugin.browser={modules:[module]};
+  const result=await inspectPrerequisitesWith(plugin,env,observedProbe(env));
+  await assert.rejects(access(marker),{code:'ENOENT'});
+  assert.equal(result.checks.find(c=>c.id==='playwright-module')?.status,'unknown');
+  assert.equal(result.checks.find(c=>c.id==='chromium-file')?.status,'unknown');
+  const video=result.checks.find(c=>c.id==='ffmpeg-file');assert.equal(video?.status,'unknown');assert.ok(video.next);
 });
