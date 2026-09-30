@@ -137,7 +137,7 @@ Retired phrases are maintained in `work/guide_retired.py` as exact,
 case-insensitive terms with a retirement story, date and note. The build warns
 for every matching open story; closed stories are excluded. A match in a rendered
 Guide note, workaround or highlight fails, as does a retirement key missing from
-the saved snapshot. The nightly report includes these warnings. Add a term when
+the saved snapshot. The refresh report includes these warnings. Add a term when
 a delivery retires it; the scanner never edits stories or guesses intent.
 
 A story with a valid topic but no authored roadmap or subtrack position remains
@@ -459,46 +459,19 @@ no-change result instead of creating an empty publication PR.
 
 ## Nightly refresh
 
-`.github/workflows/guide-refresh.yml` runs at 03:00 `America/New_York`, including
-daylight-saving changes, and accepts manual dispatches. It collects complete
-backlog/history inputs in a disposable directory, validates them, and creates or
-updates one `documentation` PR from `guide/nightly-refresh`. A failed read stops
-before any push. Identical inputs and output leave a complete existing PR alone;
-a retry repairs a missing PR or validation result after an interrupted publish.
-The workflow has `contents: write`, `pull-requests: write` and owner-authorized
-`checks: write`, the last solely for validation on the exact rolling commit.
-It also needs `issues: read` for the REST issue inventory; without it, the
-workflow token can return only pull requests from that endpoint. Issue writes
-remain disabled.
-Repository Actions settings must allow PR creation. No personal token is used.
+The old nightly refresh was retired on 2026-09-30 at the owner's request,
+without waiting for the replacement Guide. Its GitHub Actions workflow is
+disabled and `.github/workflows/guide-refresh.yml` is removed from source.
+The rolling PR was closed without merge. No scheduled refresh or manual
+workflow dispatch updates `guide/nightly-refresh` now.
 
-The workflow never merges, publishes, edits issues, renders diagrams or rewrites
-Direction. The existing Direction checker and normal build still fail on stale
-prose. `build_guide.py --validate-inputs --validation-result <path>` checks the
-remaining inputs without writing output; it returns a distinct Direction-only
-failure only when those checks pass. Such a candidate retains the previous HTML,
-opens a red PR naming `needs owner rewrite of guide_direction.py`, and explicitly
-reports fresh generation/browser validation as blocked. Baseline maintenance
-checks are evidence for the source code, not fresh output. Fresh maintenance
-then runs with a structured result: only a default build failure confirmed by
-the typed input-only Direction diagnostic can block a dependent test. Every
-other failure, skip, interruption or missing completion receipt prevents a push.
-Blocked test identities are recorded; they are not reported as passing.
-
-The manual `replay` mode reuses the rolling snapshot to exercise no-change
-handling. `direction-failure` closes one cited key only in saved fixture data,
-marks the PR as a non-live validation fixture that must not merge, and exercises
-the red-check path. These modes require an explicit dispatch. Restore the branch
-with a successful `live` dispatch after the failure exercise. Run logs, reports
-and browser receipts are retained as workflow artifacts; publication remains a
-separate owner-authorized procedure.
-
-History generation uses paginated read-only queries and stable ordering. The
-first conversion reports any changed, removed or reordered historical entries.
-The rolling PR itself and incidental repository push metadata cannot keep the
-refresh changing its own inputs. An unchanged read retains the previous dated
-observation rather than advancing the guide's freshness line without a new
-snapshot.
+The last saved guide output remains dated; retirement does not refresh or
+publish it. Manual collection/build helpers, publisher regression fixtures,
+owner-written Direction and its failure checks remain until the replacement
+Guide's consumer audit determines what can be removed. Do not invoke
+`nightly_run.py` or `nightly_publish.py` to resume the retired rolling-PR flow.
+An explicitly authorized manual guide revision can still use the procedure
+below. Public publication remains a separate authorized action.
 
 ## Refresh and validate a guide revision
 
@@ -510,8 +483,7 @@ the former per-delivery `updates.md` ledger is retired. Read-only questions and
 reviews do not independently authorize document writes. Device-repository work
 needs a linked Hub PR only when its authorized scope includes a guide update.
 
-1. Start from the rolling "Nightly guide refresh" PR when one exists, inspect its
-   report and exact-commit check, and resolve any owner-written Direction update.
+1. Start an isolated branch from current main for the authorized manual revision.
    Read current issue states and acceptance evidence. Refresh the backlog using
    the helper below when status or scope changes, then reconcile primary coverage
    and narrative in `work/build_guide.py`. Review `work/guide_direction.py`:
