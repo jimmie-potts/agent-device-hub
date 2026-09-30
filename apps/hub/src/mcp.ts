@@ -59,7 +59,7 @@ export function createHubMcp(options:Options):McpHandler {
  const names=new Map<string,string>([[HOST_SERVICE,'hub']]);
  for(const [alias,client] of options.clients){
   const bound={controllerId:client.config.controllerId,deviceId:client.config.deviceId};
-  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription('Read this device owner\'s validated controller snapshot. Its power, brightness, mode and media tools take their request identity and revision/generation guards from this snapshot.'),shape({}),()=>client.snapshot())};
+  const extensions:Record<string,ServiceExtension>={status:extension(alias,'read',readDescription('Read this device owner\'s validated controller snapshot at controller contract 1.1 where the owner serves it, otherwise at 1.0. A 1.1 snapshot adds the moments capability and the moment state. Its power, brightness, mode and media tools take their request identity and revision/generation guards from this snapshot.'),shape({}),()=>client.snapshot('1.1'))};
   const guards={requestId:ticket,expectedConfigurationRevision:count,expectedGeneration:ticket};
   function command(name:string,purpose:string,fields:Record<string,object>,make:(args:Record<string,unknown>)=>unknown){
    extensions[name]=extension(alias,'control',writeDescription(purpose+' Take the request identity and revision/generation guards from the latest status result. An unsupported capability returns the owner\'s rejection.'),shape({...guards,...fields}),async args=>(await client.command({apiVersion:'1.0',...bound,requestId:args.requestId,expectedConfigurationRevision:args.expectedConfigurationRevision,expectedGeneration:args.expectedGeneration,command:make(args)})).body);

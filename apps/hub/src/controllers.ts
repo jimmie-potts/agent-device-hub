@@ -1,4 +1,4 @@
-import {validate, type Request, type Receipt, type Snapshot} from '@jimmie-potts/device-contracts';
+import {validate, type Request, type Receipt, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
 import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
 import {validateIntegrationSnapshot,validateIntegrationReceipt,validateIntegrationGeometry} from './integration.js';
@@ -8,6 +8,8 @@ import {validateLightingRequest,validateLightingSnapshot} from './lifx-lighting.
 export type ControllerKind = 'pixoo'|'nanoleaf'|'tidbyt'|'lifx';
 export const CONTROLLER_KINDS: readonly ControllerKind[] = ['pixoo','nanoleaf','tidbyt','lifx'];
 export type ControllerConfig = {id:string; kind:ControllerKind; controllerId:string; deviceId:string; endpoint:string; token:string};
+/** What the hub has learned about the contract versions a controller serves. `1.0-only` and `1.1` name the controller epoch of the answer. */
+export type Negotiation = {verdict:'unknown'} | {verdict:'1.0-only'|'1.1'; epoch:string};
 
 /** One bounded slot per device, with no queue shared by different controllers. */
 export class ControllerClient {
@@ -15,6 +17,8 @@ export class ControllerClient {
   private abort?: AbortController;
   private stopped = false;
   private health: 'unknown'|'ready'|'unavailable' = 'unknown';
+  /** In memory only: a new client, and so a hub start, holds none and probes on its first 1.1 read. */
+  private served?: {version:'1.0'|'1.1'; epoch:string};
   readonly config: Readonly<ControllerConfig>;
   constructor(config: ControllerConfig, readonly timeoutMs = 2000) {
     const url = loopbackEndpoint(config.endpoint);
@@ -26,10 +30,19 @@ export class ControllerClient {
   status() { return {id:this.config.id,kind:this.config.kind,controllerId:this.config.controllerId,deviceId:this.config.deviceId,health:this.health,pending:this.busy ? 1 : 0}; }
   /** `integration` selects the device's integration API; `lighting` selects the LIFX `lifx-light` profile route. */
   /** `optional` marks a read route an older owner may lack: its 404 means unsupported, not unavailable. */
-  private async request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+  private request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+    return this.exclusive(() => this.send(path,body,integration,optional));
+  }
+  /** Holds the controller's one slot for `run`, which may make several reads, so no other caller interleaves. */
+  private async exclusive<T>(run: () => Promise<T>): Promise<T> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
     if (this.busy) throw new HttpError('capacity',429);
     this.busy = true;
+    try { return await run(); } finally { this.busy = false; }
+  }
+  /** One bounded call inside a held slot. */
+  private async send(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+    if (this.stopped) throw new HttpError('controller-unavailable',503);
     const abort = new AbortController(); this.abort = abort;
     const timer = setTimeout(() => abort.abort(),this.timeoutMs);
     try {
@@ -58,15 +71,52 @@ export class ControllerClient {
       if (error instanceof HttpError) throw error;
       this.health = 'unavailable';
       throw new HttpError(body === undefined ? 'controller-unavailable' : 'uncertain-result',503);
-    } finally { clearTimeout(timer); this.busy = false; this.abort = undefined; }
+    } finally { clearTimeout(timer); this.abort = undefined; }
   }
-  async snapshot(): Promise<Snapshot> {
+  /** The contract versions this controller has answered with, for reporting and for the sender that needs a 1.1 read. */
+  negotiation(): Negotiation {
+    return this.served ? {verdict:this.served.version === '1.0' ? '1.0-only' : '1.1',epoch:this.served.epoch} : {verdict:'unknown'};
+  }
+  /** One snapshot read inside a held slot. A 1.1 read sends `apiVersion=1.1`; the answer is checked against the schema of the version it declares. */
+  private async readSnapshot(version: '1.0'|'1.1'): Promise<Snapshot|SnapshotV1_1> {
     // Multi-device owners take the configured device ID; Pixoo serves one device.
-    const {value:result} = await this.request('/snapshot' + (this.config.kind !== 'pixoo' ? '?deviceId=' + encodeURIComponent(this.config.deviceId) : ''));
-    if (!validate('snapshot',result) || (result as Snapshot).identity.controllerId !== this.config.controllerId || (result as Snapshot).identity.deviceId !== this.config.deviceId) {
+    const query = [...(this.config.kind !== 'pixoo' ? ['deviceId=' + encodeURIComponent(this.config.deviceId)] : []),...(version === '1.1' ? ['apiVersion=1.1'] : [])];
+    const {value:result} = await this.send('/snapshot' + (query.length ? '?' + query.join('&') : ''));
+    const definition = version === '1.1' && object(result) && result.apiVersion === '1.1' ? 'snapshotV1_1' : 'snapshot';
+    if (!validate(definition,result) || (result as Snapshot).identity.controllerId !== this.config.controllerId || (result as Snapshot).identity.deviceId !== this.config.deviceId) {
       this.health = 'unavailable'; throw new HttpError('incompatible-controller',502);
     }
-    this.health = 'ready'; return result as Snapshot;
+    this.health = 'ready'; return result as Snapshot|SnapshotV1_1;
+  }
+  /**
+   * Reads at 1.1 where the controller serves it, else at 1.0 (contract 1.1, "Moments"). Only an `invalid-request` refusal of the versioned
+   * read makes a controller `1.0-only`, for the epoch of the unversioned answer. Later reads in that epoch send no version parameter;
+   * a different epoch probes again. Timeouts, 5xx answers and malformed answers never create, change or clear a verdict.
+   */
+  private negotiatedSnapshot(): Promise<Snapshot|SnapshotV1_1> {
+    return this.exclusive(async () => {
+      let plain: Snapshot|undefined;
+      if (this.served?.version === '1.0') {
+        plain = await this.readSnapshot('1.0') as Snapshot;
+        if (plain.identity.controllerEpoch === this.served.epoch) return plain;
+      }
+      let answer: Snapshot|SnapshotV1_1;
+      try { answer = await this.readSnapshot('1.1'); }
+      catch (error) {
+        if (!(error instanceof HttpError) || error.code !== 'invalid-request' || error.status !== 400) throw error;
+        plain ??= await this.readSnapshot('1.0') as Snapshot;
+        this.served = {version:'1.0',epoch:plain.identity.controllerEpoch};
+        return plain;
+      }
+      this.served = {version:answer.apiVersion === '1.1' ? '1.1' : '1.0',epoch:answer.identity.controllerEpoch};
+      return answer;
+    });
+  }
+  /** The 1.0 shape by default, with no version parameter sent. `snapshot('1.1')` returns the 1.1 snapshot from a controller that serves it, else the 1.0 snapshot. */
+  async snapshot(): Promise<Snapshot>;
+  async snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>;
+  async snapshot(version: '1.0'|'1.1' = '1.0'): Promise<Snapshot|SnapshotV1_1> {
+    return version === '1.1' ? this.negotiatedSnapshot() : this.exclusive(() => this.readSnapshot('1.0'));
   }
   async command(value: unknown): Promise<{status:number;body:Receipt}> {
     if (!validate('request',value)) throw new HttpError('invalid-request',400);

@@ -116,7 +116,7 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 | `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment, explicit approval recovery or quiesce, using the latest server-issued request ID. The ID is per principal: a command sent with a different credential than the one that read the sessions gets 410 `request-expired`, even moments later. Read the sessions and send the command with the same token |
 | `GET /api/monitor/v1/changes` | Bounded SSE notifications pushed as each revision commits, plus a 1-second heartbeat and resync; fetch a current sessions snapshot rather than replaying effects |
 | `GET /api/hub/v1/health` | Shared collector health and separate controller status, without refreshing device observations |
-| `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias |
+| `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias, in the 1.0 shape. `?apiVersion=1.1` returns the 1.1 snapshot, with `capabilities.moments` and `state.moment`, from an owner that serves controller contract 1.1 and the 1.0 snapshot from one that does not; see [Controller contract versions](#controller-contract-versions). Another value, a repeated `apiVersion` or another parameter answers 400 `invalid-request` |
 | `POST /api/controllers/v1/:id/commands` | Validated controller v1 command and its original receipt/status |
 | `GET /api/controllers/v1/:id/integration/snapshot` | Validated Nanoleaf or Pixoo settings snapshot |
 | `GET /api/controllers/v1/:id/integration/geometry` | Validated Nanoleaf element geometry for the alias's device: saved elements, their zones and display points, and the Lines' connector graph. `nanoleaf` aliases only; an owner without the route answers 422 `unsupported-capability` |
@@ -131,6 +131,17 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 
 Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, command bodies 65536 bytes and requests three seconds. Replay retains at most 256 entries and 262144 fingerprint bytes across principals; pending entries cannot be evicted. Repeated quiesce tickets share one immutable export. Native controller calls have a two-second deadline and one MiB response limit. Slow streams disconnect after five seconds of backpressure. Credential replacement closes streams, retires every browser session and removed credential's tickets, and reauthorizes future requests before replay. Restart changes the command epoch.
+
+### Controller contract versions
+
+The hub reads each registered controller at controller contract 1.1 where the controller serves it, and at 1.0 where it does not ([Hub #576](https://github.com/jimmie-potts/agent-device-hub/issues/576)).
+
+Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`. The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. A 400 `invalid-request` answer means the controller serves only 1.0, as the Nanoleaf controller and the local controller host do today. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
+
+- Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
+- A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
+- Every other reader keeps the 1.0 shape and sends no parameter. That includes the dashboard's polls and the route without a parameter.
+- Reads and negotiation never send a command. The hub does not send moment commands yet.
 
 ## Playback
 
@@ -411,7 +422,7 @@ Set the optional private configuration field `mcp` to `true` to mount `/mcp` on 
 
 | Suffix | Behavior |
 | --- | --- |
-| `_status` | Validated native controller v1 snapshot |
+| `_status` | Validated native controller v1 snapshot, read at contract 1.1 where the owner serves it (adds `capabilities.moments` and `state.moment`), otherwise at 1.0 |
 | `_power_set`, `_brightness_set`, `_mode_set` | Native request ticket, configuration revision and generation guards; unsupported capabilities return the owner's rejection |
 | `_media_start` | Forward controller v1 `media.start` with `playlistId` and the same native guards |
 | `_media_control` | Forward controller v1 `media.control` with `action` and the same native guards |

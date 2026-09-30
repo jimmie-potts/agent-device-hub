@@ -380,10 +380,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const client = clients.get(lightingRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           if (lightingRoute[2] === 'snapshot') json(res,200,await client.lightingSnapshot());
           else {const response = await client.lightingCommand(await admitted(65536));json(res,response.status,response.body);}
-        } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
+        } else if (route && req.method === 'GET' && route[2] === 'snapshot') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
-          if (route[2] === 'snapshot') json(res,200,await client.snapshot());
-          else {const response = await client.command(await admitted(65536));json(res,response.status,response.body);}
+          // Default readers keep the 1.0 shape. `apiVersion=1.1` opts in and alone is accepted, once (Hub #576).
+          const versions = url.searchParams.getAll('apiVersion');
+          if ([...url.searchParams.keys()].some(name => name !== 'apiVersion') || versions.length > 1 || (versions.length === 1 && !['1.0','1.1'].includes(versions[0]))) throw new HttpError('invalid-request',400);
+          json(res,200,versions[0] === '1.1' ? await client.snapshot('1.1') : await client.snapshot());
+        } else if (route && !url.search && req.method === 'POST' && route[2] === 'commands') {
+          const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
+          const response = await client.command(await admitted(65536));json(res,response.status,response.body);
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);

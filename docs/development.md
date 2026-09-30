@@ -643,6 +643,21 @@ work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
 `npm run test:setup`.
 
+Controller contract 1.1 reads for #576 are covered by
+`apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
+`apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
+packaged hub tests already include, so they need no new CI job. They run over
+loopback HTTP against the shared fake controller in
+`apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
+`'1.0'` and `'1.0-negotiating'`, epoch restarts, injected timeouts and 5xx answers,
+and a log of every request and command). Import it from a test instead of writing
+another ad hoc server; it is not a `*.test.mjs` suite. The cases cover negotiation
+and the `1.0-only` verdict per controller epoch, unchanged 1.0 readers, the strict
+`apiVersion` parameter on the snapshot route, MCP `status` and zero command POSTs.
+No registered controller serves 1.1 yet, so these checks are fake-controller
+evidence only; installed and controller-adoption acceptance stay with
+codex-nanoleaf#158 and divoom-app-upgrade#92.
+
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
