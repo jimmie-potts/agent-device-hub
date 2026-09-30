@@ -1,9 +1,27 @@
-import test from 'node:test';
+import test, {before, after} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, writeFile, rm, copyFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {prepare, runHost} from '../verify-host.mjs';
+import {runHost} from '../verify-host.mjs';
+import {execFileSync} from 'node:child_process';
+import {pathToFileURL} from 'node:url';
+
+// Exercise the real launcher in a short, isolated Git checkout. CI checkout
+// paths can be longer than the supported browser socket path; small source
+// fixtures here contain no dependencies, browser profiles or captures.
+let sourceRoot, prepare;
+before(async () => {
+  sourceRoot = await mkdtemp(join(tmpdir(), 'vh-src-'));
+  execFileSync('/usr/bin/git', ['init', '-q', sourceRoot]);
+  await writeFile(join(sourceRoot, '.git/info/exclude'), '.local/\n');
+  await mkdir(join(sourceRoot, 'scripts'));
+  for (const name of ['verify-host.mjs', 'verify-host-command.mjs']) {
+    await copyFile(new URL('../' + name, import.meta.url), join(sourceRoot, 'scripts', name));
+  }
+  ({prepare} = await import(pathToFileURL(join(sourceRoot, 'scripts/verify-host.mjs')).href));
+});
+after(async () => { if (sourceRoot) await rm(sourceRoot, {recursive:true, force:true}); });
 
 async function checkout(t, name = 'agent-device-hub') {
   const root = await mkdtemp(join(tmpdir(), 'verify-host-'));
@@ -211,5 +229,19 @@ test('unconfirmed temporary cleanup cannot report success', async t => {
 
 test('post-stop argv uses literal systemd words without shell or environment expansion', async () => {
   const {unitWord} = await import('../verify-host.mjs');
-  assert.equal(unitWord('space $NAME %u "quote" \\path'), '"space $NAME %%u \\"quote\\" \\\\path"');
+  assert.equal(unitWord('space $NAME %u "quote" \\path'), '"space $NAME %u \\"quote\\" \\\\path"');
+});
+
+
+test('unsupported long canonical checkout refuses before host effects', async t => {
+  const root = await checkout(t);
+  const longRoot = join(root, 'a'.repeat(80));
+  await mkdir(join(longRoot, 'scripts'), {recursive:true});
+  execFileSync('/usr/bin/git', ['init', '-q', longRoot]);
+  await writeFile(join(longRoot, '.git/info/exclude'), '.local/\n');
+  for (const name of ['verify-host.mjs', 'verify-host-command.mjs']) {
+    await copyFile(new URL('../' + name, import.meta.url), join(longRoot, 'scripts', name));
+  }
+  const module = await import(pathToFileURL(join(longRoot, 'scripts/verify-host.mjs')).href);
+  await assert.rejects(module.prepare(args(root)), /too long/);
 });

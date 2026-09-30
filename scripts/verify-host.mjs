@@ -76,8 +76,9 @@ export async function prepare(argv) {
 
 function clientGitEnv(home) { return {HOME: home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8'}; }
 // ExecStopPost uses systemd's command grammar: ':' disables environment
-// expansion and doubled '%' preserves literal specifiers. It is never a shell.
-export function unitWord(value) { if (/[\x00-\x1f\x7f]/.test(value)) throw new Error('invalid systemd word'); return '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%') + '"'; }
+// expansion. Transient properties transmit literal '%' through D-Bus; only
+// unit-file text doubles specifiers. This is never a shell.
+export function unitWord(value) { if (/[\x00-\x1f\x7f]/.test(value)) throw new Error('invalid systemd word'); return '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"') + '"'; }
 
 // execFile never invokes a shell. Killing this directly owned client is not
 // preview cleanup; the exact user unit is stopped and read back separately.
