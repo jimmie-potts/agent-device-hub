@@ -3,6 +3,8 @@ import {constants} from 'node:fs';
 import {lstat, realpath, open} from 'node:fs/promises';
 import {resolve, join, dirname} from 'node:path';
 import {validateExport, type Storage, type StorageLease, type DurableState, type Commit} from '@jimmie-potts/agent-state';
+import {AutomationStore} from './automation-store.js';
+import {DEFAULT_INTERRUPT_SET, DEFAULT_SETTINGS} from './automation.js';
 
 // Closing any descriptor for an inode releases this process's POSIX locks.
 // Reserve the directory before probing SQLite files, including failed attempts.
@@ -94,11 +96,14 @@ export class HubStorage implements Storage {
           db!.exec('COMMIT');
         } catch (error) { db!.exec('ROLLBACK'); throw error; }
       };
+      // Hub #358 rules, interrupt set, settings and automation log share this connection and lease.
+      const automation = new AutomationStore(db,() => check(),{interruptSet:[...DEFAULT_INTERRUPT_SET],settings:DEFAULT_SETTINGS});
       const lease: HubLease = {
         load: async abort => { check(abort); return load(); },
         commit: async (change, abort) => commit(change, abort),
         fenced: () => { check(); return selectFence.get()?.active === 1; },
         setFence: active => { check(); writeFence.run(active ? 1 : 0); },
+        automation,
         release: async () => {
           if (released) return;
           db!.close(); lock!.exec('ROLLBACK'); lock!.close(); released = true;heldDirectories.delete(reservation);
@@ -117,4 +122,5 @@ export class HubStorage implements Storage {
 export interface HubLease extends StorageLease {
   fenced(): boolean;
   setFence(active: boolean): void;
+  readonly automation: AutomationStore;
 }
