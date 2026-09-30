@@ -198,3 +198,67 @@ test('reads, retries and reconnects against either controller send no command',a
   assert.equal(modern.commands.length+legacy.commands.length,0);
   assert.ok(modern.requests.concat(legacy.requests).every(r=>r.method==='GET'));
 });
+
+// Hub #335: the 1.1 moment command path. One POST, and only a receiptV1_1 for the same device and ticket is an answer.
+const momentRequest=(snapshot,command={})=>({apiVersion:'1.1',controllerId:snapshot.identity.controllerId,deviceId:snapshot.identity.deviceId,
+  requestId:snapshot.nextRequestId,expectedConfigurationRevision:snapshot.configurationRevision,expectedGeneration:snapshot.generation,
+  command:{kind:'moment',momentId:'evt-1',mood:'celebrate',durationMs:5000,priorityClass:'event',coversStatus:true,
+    start:{domain:'controller-monotonic',epoch:snapshot.sampleClock.epoch,atMs:snapshot.sampleClock.sampledAtMs,toleranceMs:10000},...command}});
+
+test('a moment command posts once and returns the receipt for its ticket',async t=>{
+  const {fake,client}=await pair(t,{serves:'1.1'});
+  const request=momentRequest(fake.snapshot11());
+  const {status,body}=await client.momentCommand(request);
+  assert.equal(status,202);assert.ok(validate('receiptV1_1',body));
+  assert.equal(body.apiVersion,'1.1');assert.equal(body.outcome,'queued');assert.deepEqual(body.requestId,request.requestId);
+  assert.deepEqual(fake.moments(),[request]);assert.equal(client.status().health,'ready');
+  // A moment changes no desired configuration, so the revision stays and only the ticket advances.
+  assert.equal(fake.snapshot11().configurationRevision,request.expectedConfigurationRevision);
+  assert.equal(fake.snapshot11().nextRequestId.sequence,request.requestId.sequence+1);
+  // A typed non-2xx receipt is an answer too.
+  const stale=momentRequest(fake.snapshot11(),{momentId:'evt-2'});stale.expectedConfigurationRevision++;
+  const conflict=await client.momentCommand(stale);
+  assert.equal(conflict.status,409);assert.equal(conflict.body.outcome,'failed');assert.deepEqual(conflict.body.failure,{code:'revision-conflict'});
+  // A device's moment failure arrives as a receipt.
+  fake.answerNext({receipt:{outcome:'failed',failure:{code:'moment-missed'}}});
+  const missed=await client.momentCommand(momentRequest(fake.snapshot11(),{momentId:'evt-3'}));
+  assert.equal(missed.status,200);assert.deepEqual(missed.body.failure,{code:'moment-missed'});
+  assert.equal(fake.commands.length,3);
+});
+
+test('an ambiguous moment answer is uncertain after exactly one POST',async t=>{
+  const {fake,client}=await pair(t,{serves:'1.1'},80);
+  const answers=[{mode:'timeout'},{mode:'drop'},{body:'not a receipt',status:200}];
+  for(const answer of answers){
+    fake.answerNext(answer);const before=fake.commands.length;
+    await assert.rejects(client.momentCommand(momentRequest(fake.snapshot11(),{momentId:`evt-${before}`})),error=>error.code==='uncertain-result'&&error.status===503);
+    assert.equal(fake.commands.length,before+1);assert.equal(client.status().health,'unavailable');
+  }
+  // A receipt for another ticket, another device or at 1.0 is not this request's answer.
+  const request=momentRequest(fake.snapshot11(),{momentId:'evt-other'});
+  const receipt={apiVersion:'1.1',controllerId:request.controllerId,deviceId:request.deviceId,requestId:request.requestId,configurationRevision:4,
+    generation:request.expectedGeneration,outcome:'queued',priorEffects:'none',completedOperations:[],uncertainOperations:[]};
+  for(const body of [{...receipt,requestId:{...receipt.requestId,sequence:receipt.requestId.sequence+1}},{...receipt,deviceId:'other'},{...receipt,apiVersion:'1.0'}]){
+    fake.answerNext({body,status:202});const before=fake.commands.length;
+    await assert.rejects(client.momentCommand(request),error=>error.code==='uncertain-result');
+    assert.equal(fake.commands.length,before+1);
+  }
+  // A typed refusal without a receipt keeps its code, as on the 1.0 path.
+  fake.answerNext({failure:'request-order'});
+  await assert.rejects(client.momentCommand(request),error=>error.code==='request-order'&&error.status===409);
+});
+
+test('invalid moment requests are refused before any POST and the 1.0 command path is unchanged',async t=>{
+  const {fake,client}=await pair(t,{serves:'1.1'});
+  const request=momentRequest(fake.snapshot11());
+  for(const invalid of [{...request,apiVersion:'1.0'},{...request,command:{kind:'power.set',on:true}},momentRequest(fake.snapshot11(),{priorityClass:'flourish',coversStatus:true}),
+    momentRequest(fake.snapshot11(),{durationMs:999}),momentRequest(fake.snapshot11(),{title:'PR merged'}),{...request,address:'192.0.2.1'}])
+    await assert.rejects(client.momentCommand(invalid),error=>error.code==='invalid-request'&&error.status===400);
+  await assert.rejects(client.momentCommand({...request,deviceId:'other'}),error=>error.code==='unknown-device'&&error.status===404);
+  await assert.rejects(client.command(request),error=>error.code==='invalid-request');
+  assert.equal(fake.commands.length,0);
+  // A 1.0-only controller refuses a 1.1 envelope before admission.
+  const {fake:legacy,client:old}=await pair(t,{serves:'1.0'});
+  await assert.rejects(old.momentCommand(momentRequest(legacy.snapshot11())),error=>error.code==='invalid-request'&&error.status===400);
+  assert.equal(legacy.commands.length,1);assert.equal(legacy.snapshot10().nextRequestId.sequence,1);
+});

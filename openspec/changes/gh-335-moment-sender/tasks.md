@@ -8,7 +8,7 @@
 
 ## 3. 1.1 command path
 
-- [ ] 3.1 Add tests that fail first for `momentCommand`: a receipt for the ticket after one POST, `uncertain-result` for a timeout, a dropped connection and a receipt for another ticket, a typed non-2xx receipt, and local rejection of a 1.0 envelope or another device. Implement it; the 1.0 `command()` tests pass unchanged.
+- [x] 3.1 Add tests that fail first for `momentCommand`: a receipt for the ticket after one POST, `uncertain-result` for a timeout, a dropped connection and a receipt for another ticket, a typed non-2xx receipt, and local rejection of a 1.0 envelope or another device. Implement it; the 1.0 `command()` tests pass unchanged.
 
 ## 4. Moment sender
 

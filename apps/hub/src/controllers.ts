@@ -1,4 +1,4 @@
-import {validate, type Request, type Receipt, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
+import {validate, type Request, type Receipt, type RequestV1_1, type ReceiptV1_1, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
 import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
 import {validateIntegrationSnapshot,validateIntegrationReceipt,validateIntegrationGeometry} from './integration.js';
@@ -14,7 +14,12 @@ export type Negotiation = {verdict:'unknown'} | {verdict:'1.0-only'|'1.1'; epoch
 /** The longest a send waits for a controller's busy slot. Reads never wait. */
 export const MAX_SLOT_WAIT_MS = 2500;
 /** A held controller slot: its calls run inside the hold, and none is accepted after the hold ends. */
-export type ControllerSlot = {snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>};
+export type ControllerSlot = {
+  /** The negotiated read: a 1.1 snapshot from a controller that serves it, else the 1.0 snapshot. */
+  snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>;
+  /** One 1.1 moment request, POSTed once. */
+  momentCommand(value: unknown): Promise<{status:number;body:ReceiptV1_1}>;
+};
 
 /** One bounded slot per device, with no queue shared by different controllers. Only sends wait for it, in arrival order and for a bounded time. */
 export class ControllerClient {
@@ -68,7 +73,10 @@ export class ControllerClient {
     return this.exclusive(async () => {
       let held = true;
       const within = <R>(call: () => Promise<R>): Promise<R> => held ? call() : Promise.reject(new Error('slot-released'));
-      try { return await use({snapshot: () => within(() => this.negotiatedRead())}); } finally { held = false; }
+      try {
+        return await use({snapshot: () => within(() => this.negotiatedRead()),
+          momentCommand: value => within(async () => this.postMoment(this.momentRequest(value)))});
+      } finally { held = false; }
     },waitMs);
   }
   /** One bounded call inside a held slot. */
@@ -84,7 +92,7 @@ export class ControllerClient {
       const value = await responseJson(response,1024 * 1024);
       if (!response.ok) {
         // A typed receipt can describe an admitted rejection. Preserve its ticket below.
-        if (body !== undefined && (integration === true ? validateIntegrationReceipt(value) : validate('receipt',value))) return {status:response.status,value};
+        if (body !== undefined && (integration === true ? validateIntegrationReceipt(value) : validate('receipt',value) || validate('receiptV1_1',value))) return {status:response.status,value};
         if (integration && this.config.kind === 'pixoo' && object(value) && object(value.error)) {
           const codes:Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-input':400,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'monitor-unavailable':503};
           if (typeof value.error.code === 'string' && codes[value.error.code] === response.status) throw new HttpError(value.error.code,response.status);
@@ -159,6 +167,28 @@ export class ControllerClient {
       this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
     }
     this.health = 'ready'; return {status:response.status,body:receipt};
+  }
+  /** A 1.1 `moment` request for this controller's device, checked before it takes the slot. */
+  private momentRequest(value: unknown): RequestV1_1 {
+    if (!validate('requestV1_1',value)) throw new HttpError('invalid-request',400);
+    const request = value as RequestV1_1;
+    if (request.command.kind !== 'moment') throw new HttpError('invalid-request',400);
+    if (request.controllerId !== this.config.controllerId || request.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
+    return request;
+  }
+  /** POSTs once inside a held slot. Only a `receiptV1_1` for the same device and ticket answers it; anything else is `uncertain-result`. */
+  private async postMoment(request: RequestV1_1): Promise<{status:number;body:ReceiptV1_1}> {
+    const response = await this.send('/commands',request);const receipt = response.value as ReceiptV1_1;
+    if (!validate('receiptV1_1',receipt) || receipt.controllerId !== request.controllerId || receipt.deviceId !== request.deviceId ||
+        receipt.requestId.epoch !== request.requestId.epoch || receipt.requestId.sequence !== request.requestId.sequence) {
+      this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
+    }
+    this.health = 'ready'; return {status:response.status,body:receipt};
+  }
+  /** Contract 1.1 `moment` command, taking the slot without waiting. The 1.0 `command()` path is separate and unchanged. */
+  async momentCommand(value: unknown): Promise<{status:number;body:ReceiptV1_1}> {
+    const request = this.momentRequest(value);
+    return this.exclusive(() => this.postMoment(request));
   }
   private requireIntegration() {
     if (this.config.kind !== 'nanoleaf') throw new HttpError('unsupported-capability',422);
