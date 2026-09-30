@@ -3,8 +3,11 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chmod, link, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import test from 'node:test';
-import {withPausedFeeds, releaseFeed} from '../feed-pause.mjs';
+import {withPausedFeeds, releaseFeed, liveFeedIdentity} from '../feed-pause.mjs';
+import {ProofStore} from '../../../../packages/app-verify/dist/receipt.js';
+import {resolveRoots} from '../../../../packages/app-verify/dist/roots.js';
 
 async function fixture(t) {
   const base = await mkdtemp(join(tmpdir(), 'hub-pause-'));
@@ -51,6 +54,87 @@ const ack = async (service, value, override = {}) => {
   await rename(path + '.tmp', path);
 };
 const options = f => ({runtimeRoot: f.runtimeRoot, control: f.control, timeoutMs: 250});
+
+async function coreFixture(t, defaults) {
+  const f = await fixture(t);
+  const roots = await resolveRoots({root: fileURLToPath(new URL('../../../../', import.meta.url))}, {
+    HOME: f.runtimeRoot,
+    APP_VERIFY_PROOF_ROOT: f.services[0].proofDir,
+    ...(!defaults ? {APP_VERIFY_STATE_ROOT: f.runtimeRoot} : {}),
+  });
+  const s = f.services[0];
+  f.runtimeRoot = roots.runtime;
+  s.runtime = join(roots.runtime, s.runId);
+  await mkdir(s.runtime, {recursive: true, mode: 0o700});
+  await chmod(s.proofDir, 0o775);
+  Object.assign(s.receipt, {
+    receiptVersion: 'app-verification/1', app: s.id, repository: 'example/consumer', roots: roots.labels,
+    startedAt: '2026-09-29T12:00:00Z',
+    build: {sourceRevision: 'a'.repeat(40), dirty: false, artifactDigest: null, version: '1.0.0'},
+    scenario: {name: 'hub-paired', version: '1', seededAt: '2026-09-29T12:00:00Z'},
+    components: [], checks: [], captures: [], proof: {frozenAt: null}, failure: null,
+    cleanup: {result: null}, secrets: 'none recorded',
+  });
+  Object.assign(s.receipt.owned, {proofDir: s.runId, port: 41234});
+  Object.assign(s.receipt.preview, {url: 'http://127.0.0.1:41234/', leaseMinutes: 10});
+  s.receipt.preview.expiresAt = s.receipt.preview.expiresAt.replace('.000Z', 'Z');
+  await new ProofStore(s.proofDir).write(s.receipt);
+  // Exercise the core's shareable mode even when the test runner has a private umask.
+  await chmod(join(s.proofDir, 'receipt.json'), 0o644);
+  return {f, s, options: {...options(f), runtimeLabel: roots.labels.runtime}};
+}
+
+for (const defaults of [true, false]) {
+  test(`core-written receipt authorizes reset with ${defaults ? 'default' : 'explicit'} runtime roots and shareable proof`, async t => {
+    const {s, options: opts} = await coreFixture(t, defaults);
+    const live = await liveFeedIdentity(s, opts);
+    assert.deepEqual(live, {runtime: s.runtime, pid: s.pid, started: 8101});
+    assert.equal((await stat(join(s.proofDir, 'receipt.json'))).mode & 0o777, 0o644);
+  });
+}
+
+for (const [name, change] of [
+  ['group-writable receipt', async s => chmod(join(s.proofDir, 'receipt.json'), 0o664)],
+  ['world-writable proof directory', async s => chmod(s.proofDir, 0o777)],
+  ['nonprivate runtime', async s => chmod(s.runtime, 0o755)],
+  ['linked receipt', async s => link(join(s.proofDir, 'receipt.json'), join(s.proofDir, 'copy'))],
+  ['symlink receipt', async s => {
+    const path = join(s.proofDir, 'receipt.json');
+    await rename(path, path + '.saved'); await symlink(path + '.saved', path);
+  }],
+  ['symlink proof directory', async s => {
+    await rename(s.proofDir, s.proofDir + '.saved'); await symlink(s.proofDir + '.saved', s.proofDir);
+  }],
+  ['oversized receipt', async s => writeFile(join(s.proofDir, 'receipt.json'), ' '.repeat(4 * 1024 * 1024 + 1))],
+  ['wrong runtime label', async s => {
+    s.receipt.roots.runtime = '/another/runtime';
+    await new ProofStore(s.proofDir).write(s.receipt);
+  }],
+  ['wrong unit', async s => {
+    s.receipt.owned.unit = 'app-verify-other.service';
+    await writeFile(join(s.proofDir, 'receipt.json'), JSON.stringify(s.receipt));
+  }],
+]) {
+  test(`${name} cannot authorize reset from shareable core proof`, async t => {
+    const {s, options: opts} = await coreFixture(t, true);
+    await change(s);
+    await assert.rejects(liveFeedIdentity(s, opts), /current run identity or lease/);
+  });
+}
+
+test('a default runtime label cannot authorize an explicit-root composition', async t => {
+  const {s, options: opts} = await coreFixture(t, false);
+  s.receipt.roots.runtime = '~/.local/state/app-verify';
+  await new ProofStore(s.proofDir).write(s.receipt);
+  await assert.rejects(liveFeedIdentity(s, opts), /current run identity or lease/);
+});
+
+test('foreign ownership cannot authorize shareable proof', async t => {
+  const {s, options: opts} = await coreFixture(t, true);
+  const foreign = process.getuid() + 1;
+  t.mock.method(process, 'getuid', () => foreign);
+  await assert.rejects(liveFeedIdentity(s, opts), /current run identity or lease/);
+});
 
 test('owner reset waits for both drained live consumers and leaves controls for seed', async t => {
   const f = await fixture(t); let ownerCalls = 0;

@@ -979,7 +979,9 @@ export async function reset(id, io, options = {}) {
     requireRunning(composition);
     await resetSourceIdentity(composition);
     const hub = owner(composition), paired = consumers(composition);
-    const pauseOptions = {runtimeRoot: stateRoot(io.env), timeoutMs: options.pauseTimeoutMs};
+    const pauseOptions = {runtimeRoot: stateRoot(io.env),
+      runtimeLabel: io.env.APP_VERIFY_STATE_ROOT ? stateRoot(io.env) : '~/.local/state/app-verify',
+      timeoutMs: options.pauseTimeoutMs};
     let phase = 'pause', affected = /** @type {string | null} */ (null);
     const attempt = randomBytes(8).toString('hex');
     await store.update(c => {

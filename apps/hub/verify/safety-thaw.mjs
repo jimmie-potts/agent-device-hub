@@ -29,10 +29,22 @@ const properties = text => Object.fromEntries(text.trim().split('\n').filter(Boo
  * @param {string} runId @param {string} receiptPath @param {Control} [ctl]
  */
 export async function currentLease(runId, receiptPath, ctl = control) {
-  const {unit, lease} = names(runId);
+  names(runId);
   try {
     if (!isAbsolute(receiptPath)) throw new Error('receipt path must be absolute');
     const receipt = JSON.parse(await readFile(receiptPath, 'utf8'));
+    return await currentLeaseForReceipt(runId, receipt, ctl);
+  } catch {
+    return {valid: false, expiresAt: null, expiry: NaN};
+  }
+}
+
+/** Check a caller's already validated receipt snapshot against its live timer.
+ * @param {string} runId @param {any} receipt @param {Control} [ctl]
+ */
+export async function currentLeaseForReceipt(runId, receipt, ctl = control) {
+  const {unit, lease} = names(runId);
+  try {
     const timer = receipt.owned?.leaseTimer;
     const suffix = typeof timer === 'string' && timer.startsWith(lease) ? timer.slice(lease.length) : '';
     if (receipt.runId !== runId || receipt.owned?.unit !== unit || !/^(?:-[2-9]\d*|-1\d+)?\.timer$/.test(suffix)) throw new Error('receipt ownership mismatch');
