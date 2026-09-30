@@ -73,6 +73,9 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `GET /api/playback/v1/snapshot` | `read` | the playback ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
+| `GET /api/automation/v1/rules`, `GET .../rules/:id`, `GET .../interrupt-set`, `GET .../settings`, `GET .../log` | `read` | none |
+| `POST /api/automation/v1/rules`, `PUT .../rules/:id`, `POST .../rules/:id/enable` | `control` | every alias in the rule's `targets` |
+| `POST .../rules/:id/disable`, `DELETE .../rules/:id`, `PUT .../interrupt-set`, `PUT .../settings` | `control` | none |
 
 `GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead. With [`browserAccess`](#open-bunny-from-a-bookmark) set, `POST /api/dashboard/v1/session` signs the page in without a code.
 
@@ -116,7 +119,7 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 | `POST /api/monitor/v1/commands` | Label, exact notice acknowledgment, explicit approval recovery or quiesce, using the latest server-issued request ID. The ID is per principal: a command sent with a different credential than the one that read the sessions gets 410 `request-expired`, even moments later. Read the sessions and send the command with the same token |
 | `GET /api/monitor/v1/changes` | Bounded SSE notifications pushed as each revision commits, plus a 1-second heartbeat and resync; fetch a current sessions snapshot rather than replaying effects |
 | `GET /api/hub/v1/health` | Shared collector health and separate controller status, without refreshing device observations |
-| `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias |
+| `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias, in the 1.0 shape. `?apiVersion=1.1` returns the 1.1 snapshot, with `capabilities.moments` and `state.moment`, from an owner that serves controller contract 1.1 and the 1.0 snapshot from one that does not; see [Controller contract versions](#controller-contract-versions). Another value, a repeated `apiVersion` or another parameter answers 400 `invalid-request` |
 | `POST /api/controllers/v1/:id/commands` | Validated controller v1 command and its original receipt/status |
 | `GET /api/controllers/v1/:id/integration/snapshot` | Validated Nanoleaf or Pixoo settings snapshot |
 | `GET /api/controllers/v1/:id/integration/geometry` | Validated Nanoleaf element geometry for the alias's device: saved elements, their zones and display points, and the Lines' connector graph. `nanoleaf` aliases only; an owner without the route answers 422 `unsupported-capability` |
@@ -131,6 +134,69 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 Integration routes answer 422 `unsupported-capability` for `tidbyt` and `lifx` aliases without contacting the owner.
 
 Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, command bodies 65536 bytes and requests three seconds. Replay retains at most 256 entries and 262144 fingerprint bytes across principals; pending entries cannot be evicted. Repeated quiesce tickets share one immutable export. Native controller calls have a two-second deadline and one MiB response limit. Slow streams disconnect after five seconds of backpressure. Credential replacement closes streams, retires every browser session and removed credential's tickets, and reauthorizes future requests before replay. Restart changes the command epoch.
+
+### Controller contract versions
+
+The hub reads each registered controller at controller contract 1.1 where the controller serves it, and at 1.0 where it does not ([Hub #576](https://github.com/jimmie-potts/agent-device-hub/issues/576)).
+
+Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`. The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. A 400 `invalid-request` answer means the controller serves only 1.0, as the Nanoleaf controller and the local controller host do today. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
+
+- Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
+- A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
+- Every other reader keeps the 1.0 shape and sends no parameter. That includes the dashboard's polls and the route without a parameter.
+- Reads and negotiation never send a command. [Automation rules](#automation-rules) read their targets through this negotiated read.
+
+### Moment sender
+
+`sendMoment(client, moment)` in `src/moment-sender.ts` sends one contract 1.1 moment to one device ([Hub #335](https://github.com/jimmie-potts/agent-device-hub/issues/335)). It is an internal module with no route, MCP tool, page or stored state, and it applies no policy: rules, routines, agent proposals and the owner's own sends arbitrate before they call it. To reach several devices, a caller computes one start with `hubMonotonicNow()`, passes it as `startAtHubMs` to one call per device and waits for all of them, for example with `Promise.allSettled`.
+
+One call:
+
+1. Waits at most 2.5 s for the controller's one slot. Only sends wait; reads keep the immediate `capacity` rejection.
+2. Reads a fresh snapshot through the negotiated 1.1 read in the same slot.
+3. Sends nothing unless the snapshot is 1.1 and declares `moments` supported with the mood and a long enough `maxDurationMs`.
+4. Builds one `requestV1_1` from the snapshot's ticket, revision and generation. `start.epoch` is the controller's clock epoch and `start.atMs` is `sampledAtMs` plus the hub time from the snapshot's arrival to `startAtHubMs`, which defaults to that arrival. `toleranceMs` defaults to 10,000.
+5. POSTs it once and never resends it.
+
+The result is the controller's `receiptV1_1`, a not-sent reason (`1.0-only`, `moments-unsupported`, `unsupported-capability`, `capacity` or `unavailable`) or `uncertain`. Each result carries the `momentId` and the computed start, which is null only when no snapshot was read. A typed controller refusal without a receipt is not sent and keeps the controller's code in `failure`. Invalid input, such as a flourish with `coversStatus:true` or a start more than 60 s ahead, throws `invalid-request` before any read.
+
+Only the POST runs after the start is computed, so the slot wait and the read never use up the device's start window. A call can take about 8.5 s in the worst case (the wait, two 2 s reads and a 2 s POST), which is longer than the hub's 3 s HTTP response bound; a caller behind a route needs its own bound.
+
+## Automation rules
+
+The hub stores owner-approved event rules and turns matching events into arbitrated moments, without an open conversation or a model call ([Hub #358](https://github.com/jimmie-potts/agent-device-hub/issues/358), [ADR 0006](../../docs/decisions/0006-hub-moments-and-interludes.md)). Rules, the interrupt set, the settings and the automation log live in the hub's private store under the owner lease. They do not move with a released-state migration.
+
+A moment that passes arbitration reaches each target through the [moment sender](#moment-sender), so a device receives it only when its controller serves contract 1.1 and declares `moments`. No rule exists until the owner creates one.
+
+### Rules
+
+A rule is `{name, kind:"event", enabled?, trigger, action}`:
+
+- `name`: display text of up to 80 characters. Text that looks like a credential is refused.
+- `trigger`: `{source, kind, alias?}`. `source` is a lowercase source name such as `github` or `agent-lifecycle`. `kind` is a lowercase dotted event kind such as `pull-request.merged`. `alias` narrows the rule to one source alias.
+- `action`: `{mood, priorityClass, durationMs, palette?, targets}`. `priorityClass` is `event` or `flourish`. `durationMs` runs from 1,000 to 300,000. `palette` holds 1 to 8 `#rrggbb` colors. `targets` lists 1 to 16 registered controller aliases.
+
+The hub assigns `id` (`rule-<uuid>`) and the `createdAtMs` and `updatedAtMs` times. `enabled` defaults to `false`. `PUT .../rules/:id` replaces the definition and keeps `enabled`; `enable` and `disable` take the body `{}`. The hub holds at most 64 rules and answers 429 `capacity` beyond that. `kind:"routine"` is reserved for [#359](https://github.com/jimmie-potts/agent-device-hub/issues/359). Only these routes store a rule as given; any other creator's rule is stored disabled.
+
+Invalid input answers 400 with `invalid-rule`, `invalid-trigger`, `invalid-action`, `unknown-target`, `invalid-interrupt-set` or `invalid-settings`, and a missing rule answers 404 `unknown-rule`. A staged migration destination answers writes with 503 `owner-quiesced`.
+
+### Interrupt set and settings
+
+`PUT .../interrupt-set` takes `{kinds:[...]}`, up to 64 event kinds. A moment may cover status presentation (`coversStatus:true`) only when its class is `event` and its event kind is in this set. The first start seeds `pull-request.merged`, `ci.failed` and `meeting.reminder`, once. An owner edit, including an empty set, is never re-seeded.
+
+`PUT .../settings` replaces `{noFlourishes, quietHours:{enabled, start, end, timeZone}, budgets:{perAgentTask, perAgentHour, globalHour, deviceSpacingMs}}`. A window whose end precedes its start crosses midnight, and equal start and end cover the whole day. The seeded defaults are flourishes allowed, quiet hours off (`22:00` to `07:00`, host time zone when `timeZone` is `null`), 1 flourish per agent task, 2 per agent per hour, 6 per hour overall and 300,000 ms between flourishes on one device.
+
+### Events and arbitration
+
+Sources inside the hub call one intake with `{id, source, kind, alias?, agent?, task?, delivery}`. `delivery:"replay"` is dropped before any rule. The source and ID of every accepted event are persisted before evaluation, keeping the newest 10,000, so an ID the same source already submitted is dropped, before or after a restart. Moods, aliases and event IDs in which a word starts with a recognizable token prefix, such as `ghp_`, are refused. The hub's lifecycle ingest is the first source: each newly applied lifecycle event arrives as source `agent-lifecycle` and kind `agent.<lifecycle kind>`, such as `agent.turn.ended`, with neutral IDs only.
+
+For each enabled matching rule, the hub checks in order: the no-flourish switch (flourishes only), quiet hours (every class), the per-agent task, per-agent hourly and overall hourly budgets (flourishes only), and then for each target whether it can play moments (`1.0-only` or `moments-unsupported`), the device spacing (flourishes only), a Quiet presentation and an active alert on status presentation. The composed target reader uses the negotiated 1.1 read from [Controller contract versions](#controller-contract-versions). A controller that answers only at 1.0 cannot play moments. The reader maps the desired mode (Work and Monitor are status, Free and Media content, Quiet quiet). It treats outstanding attention in the hub's agent state as an active alert. Unknown evidence never blocks at the hub; the device still applies its own precedence. Accepted events are evaluated one at a time from a queue of 32.
+
+An unblocked moment goes to each target once, concurrently, through `sendMoment` with one `hubMonotonicNow()` start instant plus a 1,000 ms lead, and is never retried. Evaluation runs outside every request's response path, so the sender's worst case of about 8.5 s per device never holds an HTTP answer.
+
+### Automation log
+
+`GET .../log?limit=<1-500>&before=<seq>` returns up to `limit` entries (default 100), newest first, with `next` when more may exist. Each entry has the rule ID, the event's source, ID, kind, alias, agent and task, the moment ID, class and `coversStatus`, the target, an outcome and, when the sender computed one, the controller `start`. The outcome is `blocked` with a reason, `receipt` with the receipt's request ID, outcome, prior effects and any failure code, `not-sent` with the sender's reason and any failure code, or `uncertain`. The log keeps the newest 5,000 entries and holds no credentials or tokens.
 
 ## Playback
 
@@ -411,7 +477,7 @@ Set the optional private configuration field `mcp` to `true` to mount `/mcp` on 
 
 | Suffix | Behavior |
 | --- | --- |
-| `_status` | Validated native controller v1 snapshot |
+| `_status` | Validated native controller v1 snapshot, read at contract 1.1 where the owner serves it (adds `capabilities.moments` and `state.moment`), otherwise at 1.0 |
 | `_power_set`, `_brightness_set`, `_mode_set` | Native request ticket, configuration revision and generation guards; unsupported capabilities return the owner's rejection |
 | `_media_start` | Forward controller v1 `media.start` with `playlistId` and the same native guards |
 | `_media_control` | Forward controller v1 `media.control` with `action` and the same native guards |

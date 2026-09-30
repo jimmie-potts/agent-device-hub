@@ -6,7 +6,7 @@ import {constants} from 'node:fs';
 import {link, lstat, open, realpath, rm} from 'node:fs/promises';
 import {isAbsolute, join, resolve} from 'node:path';
 import {promisify} from 'node:util';
-import {currentLease} from './safety-thaw.mjs';
+import {currentLeaseForReceipt} from './safety-thaw.mjs';
 
 const exec = promisify(execFile);
 /** @param {string[]} args */
@@ -16,7 +16,7 @@ const RUN_ID = /^[a-z][a-z0-9-]{0,15}-\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 /** @typedef {{id: string, runId: string | null, proofDir: string | null}} PausedService */
 /** @typedef {{version: number, runId: string, nonce: string}} Request */
 /** @typedef {{service: PausedService, request: Request, runtime: string, pid: number, started: number}} PauseTicket */
-/** @typedef {{runtimeRoot: string, control?: (args: string[]) => Promise<string>, timeoutMs?: number}} PauseOptions */
+/** @typedef {{runtimeRoot: string, runtimeLabel?: string, control?: (args: string[]) => Promise<string>, timeoutMs?: number}} PauseOptions */
 
 export class FeedPauseError extends Error {
   /** @param {string} message @param {string} service */
@@ -25,18 +25,18 @@ export class FeedPauseError extends Error {
 /** @param {string} reason @param {PausedService} service */
 const fail = (reason, service) => new FeedPauseError(reason, service.id);
 
-/** @param {string} path */
-async function privateDirectory(path) {
+/** @param {string} path @param {number} [forbiddenMode] */
+async function ownedDirectory(path, forbiddenMode = 0o077) {
   if (!isAbsolute(path) || resolve(path) !== path || await realpath(path) !== path) throw new Error('unsafe directory');
   const info = await lstat(path);
-  if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & 0o077)) throw new Error('unsafe directory');
+  if (!info.isDirectory() || info.uid !== process.getuid?.() || (info.mode & forbiddenMode)) throw new Error('unsafe directory');
 }
-/** @param {string} path @param {number} limit @returns {Promise<any>} */
-async function privateJson(path, limit) {
+/** @param {string} path @param {number} limit @param {number} [forbiddenMode] @returns {Promise<any>} */
+async function ownedJson(path, limit, forbiddenMode = 0o077) {
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await handle.stat();
-    if (!info.isFile() || info.uid !== process.getuid?.() || info.nlink !== 1 || (info.mode & 0o077) || info.size > limit) throw new Error('unsafe file');
+    if (!info.isFile() || info.uid !== process.getuid?.() || info.nlink !== 1 || (info.mode & forbiddenMode) || info.size > limit) throw new Error('unsafe file');
     const bytes = Buffer.alloc(limit + 1);
     const {bytesRead} = await handle.read(bytes, 0, bytes.length, 0);
     if (bytesRead > limit) throw new Error('oversized file');
@@ -63,19 +63,23 @@ const properties = text => Object.fromEntries(text.trim().split('\n').filter(Boo
 }));
 
 /** Receipt, runtime, current lease and the same live process. @param {PausedService} service @param {PauseOptions} options */
-export async function liveFeedIdentity(service, {runtimeRoot, control = systemctl}) {
+export async function liveFeedIdentity(service, {runtimeRoot, runtimeLabel = runtimeRoot, control = systemctl}) {
   try {
     if (!RUN_ID.test(service.runId ?? '') || !service.proofDir) throw new Error('invalid run');
     const runId = /** @type {string} */ (service.runId), runtime = join(runtimeRoot, runId);
-    await privateDirectory(runtimeRoot); await privateDirectory(runtime); await privateDirectory(service.proofDir);
+    await ownedDirectory(runtimeRoot); await ownedDirectory(runtime);
+    // Proof is shareable metadata, unlike the private runtime and pause controls.
+    // Core receipts are 0644, and ordinary owned proof directories can be 0775.
+    await ownedDirectory(service.proofDir, 0o002);
     const receiptPath = join(service.proofDir, 'receipt.json');
-    const receipt = await privateJson(receiptPath, 4 * 1024 * 1024);
+    const receipt = await ownedJson(receiptPath, 4 * 1024 * 1024, 0o022);
     const unit = `app-verify-${runId}.service`;
-    if (receipt.runId !== runId || receipt.state !== 'running' || receipt.roots?.runtime !== runtimeRoot
+    if (receipt.runId !== runId || receipt.state !== 'running' || receipt.roots?.runtime !== runtimeLabel
       || receipt.owned?.runtimeDir !== runId || receipt.owned.unit !== unit
       || !Number.isSafeInteger(receipt.owned.mainPid) || receipt.owned.mainPid <= 0
       || !Number.isSafeInteger(receipt.owned.mainStartMonotonic) || receipt.owned.mainStartMonotonic <= 0) throw new Error('invalid receipt');
-    if (!(await currentLease(runId, receiptPath, control)).valid) throw new Error('lease unavailable');
+    // Use the same bounded, ownership-checked snapshot; do not reopen shareable proof.
+    if (!(await currentLeaseForReceipt(runId, receipt, control)).valid) throw new Error('lease unavailable');
     const state = properties(await control(['show', unit, '-p', 'LoadState', '-p', 'ActiveState', '-p', 'FreezerState', '-p', 'MainPID', '-p', 'ExecMainStartTimestampMonotonic']));
     if (state.LoadState !== 'loaded' || state.ActiveState !== 'active' || state.FreezerState !== 'running'
       || Number(state.MainPID) !== receipt.owned.mainPid || Number(state.ExecMainStartTimestampMonotonic) !== receipt.owned.mainStartMonotonic) throw new Error('process changed');
@@ -87,9 +91,9 @@ export async function liveFeedIdentity(service, {runtimeRoot, control = systemct
 async function acknowledged(ticket, options) {
   const {service, request, runtime} = ticket;
   try {
-    if (!matches(await privateJson(join(runtime, 'feed-pause.request'), 4096), request, false)) throw new Error('request changed');
+    if (!matches(await ownedJson(join(runtime, 'feed-pause.request'), 4096), request, false)) throw new Error('request changed');
     let ack;
-    try { ack = await privateJson(join(runtime, 'feed-pause.ack'), 4096); }
+    try { ack = await ownedJson(join(runtime, 'feed-pause.ack'), 4096); }
     catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return false; throw error; }
     if (!matches(ack, request, true) || ack.pid !== ticket.pid) throw new Error('ack mismatch');
     const live = await liveFeedIdentity(service, options);

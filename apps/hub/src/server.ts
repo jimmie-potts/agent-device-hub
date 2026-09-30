@@ -1,4 +1,4 @@
-import {validateEvent,validDisplayText} from '@jimmie-potts/agent-lifecycle-contracts';
+import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
 import {enrichCodexTitle} from '@jimmie-potts/agent-state/providers';
 import {readFile} from 'node:fs/promises';
 import {createServer, type IncomingMessage, type ServerResponse} from 'node:http';
@@ -17,6 +17,9 @@ import {archivedSession,codexDesktopOptions,startDesktopRead,type CodexDesktopOp
 import {createPlayback,type PlaybackSource} from './playback.js';
 import {createSonySource,sonyConfiguration} from './sony.js';
 import {createSonosSource,sonosConfiguration} from './sonos.js';
+import {createAutomation,type Automation,type MomentSender,type TargetReader} from './automation.js';
+import {sendMoment,hubMonotonicNow} from './moment-sender.js';
+import {AUTOMATION_PREFIX,automationRoute} from './automation-routes.js';
 
 type Scope = 'read'|'ingest'|'control'|'admin';
 export type Credential = {id:string; digest:string; scopes:Scope[]; devices:string[]};
@@ -74,8 +77,24 @@ async function body(req: IncomingMessage, maximum: number): Promise<unknown> {
 
 /** In-process verification mount; installed configuration cannot supply it. */
 export type PreviewProof = {prefix: '/__app-verify/proof/'; handle(request:IncomingMessage,response:ServerResponse):Promise<void>};
+/**
+ * Hub #358 test seams that installed configuration cannot supply. `sender` replaces the #335 `sendMoment` binding, and
+ * null composes none, so arbitrated moments are logged as `sender-unavailable`. `targets` replaces the snapshot-based target
+ * reader, and `monotonic` the `hubMonotonicNow` clock used for start instants.
+ */
+export type AutomationDependencies = {sender?:MomentSender|null; targets?:TargetReader; monotonic?:()=>number};
 
-export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}, previewProof?:PreviewProof) {
+/** A newly applied lifecycle event as an intake event: neutral IDs only, never titles, labels or prompts. */
+function lifecycleEvent(envelope:Envelope) {
+  const key = deduplicationKey(envelope);
+  if (!key) return undefined;
+  const {provider,client,hostId,sourceId,sessionId} = envelope.identity;
+  return {id:key.key,source:'agent-lifecycle',kind:'agent.' + envelope.event.kind,
+    agent:createHash('sha256').update(JSON.stringify([provider,client,hostId,sourceId,sessionId])).digest('hex').slice(0,32),
+    ...(envelope.turn.status === 'known' ? {task:envelope.turn.id} : {}),delivery:'live' as const};
+}
+
+export async function startHub(options: HubOptions, migration?:{staged:true;released?:ReleasedState}, previewProof?:PreviewProof, automationDependencies?:AutomationDependencies) {
   if (migration !== undefined && (!object(migration) || migration.staged !== true || Object.keys(migration).some(key=>!['staged','released'].includes(key)))) throw new Error('invalid-migration');
   const imported = migration?.released ? consumeReleasedState(migration.released) : undefined;
   let staged = migration?.staged === true;
@@ -131,6 +150,29 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
+  // Hub #358: rules and the log share the owner lease. The composed target reader uses the negotiated 1.1 read (#576): a
+  // 1.0 answer means the controller cannot play moments, and a 1.1 answer declares `moments`. It maps the desired mode to a
+  // device-neutral presentation and takes the alert from this hub's agent state, because controller snapshots carry none.
+  const readTarget:TargetReader = async alias => {
+    const alert = owner.snapshot().sessions.some(session => session.attention.length > 0) ? 'active' : 'none';
+    const read = await clients.get(alias)?.snapshot('1.1').catch(() => undefined);
+    const mode = read?.state.desired.mode;
+    const presentation = mode?.status !== 'known' ? 'unknown' : mode.value === 'Work' || mode.value === 'Monitor' ? 'status' : mode.value === 'Quiet' ? 'quiet' : 'content';
+    const moments = !read ? 'unknown' : read.apiVersion !== '1.1' ? '1.0-only' : read.capabilities.moments.supported ? 'supported' : 'unsupported';
+    return {presentation,alert,moments};
+  };
+  // The #335 sender, bound per alias to that device's own controller client, slot and tickets.
+  const moments:MomentSender = (target,moment) => {
+    const client = clients.get(target);
+    return client ? sendMoment(client,moment) : Promise.resolve({kind:'not-sent',momentId:moment.momentId,start:null,reason:'unavailable'});
+  };
+  const sender = automationDependencies?.sender === null ? undefined : automationDependencies?.sender ?? moments;
+  let automation:Automation;
+  try {
+    automation = createAutomation({store:lease!.automation,routed:() => [...clients.keys()],targets:automationDependencies?.targets ?? readTarget,
+      ...(sender ? {sender} : {}),clock:options.clock ?? Date.now,
+      monotonic:automationDependencies?.monotonic ?? hubMonotonicNow,active:() => !staged && !closing && !exported});
+  } catch (error) { await owner.shutdown();throw error; }
   const snapshot = (version:'1.0'|'1.1'|'1.2'='1.0') => {const value=owner.snapshot(version);return staged && !preparingConsumers && value.collector==='running' ? {...value,collector:'quiesced' as const} : value;};
   const replay = createReplayLedgers();
   let exported: Promise<DurableState> | undefined;
@@ -350,6 +392,12 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           live(principal); // Enrichment may yield while this credential is revoked.
           const result = await owner.ingest(input);
           json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
+          // Only a newly applied event reaches the rules, after the ingest answer is sent, so intake never delays or changes it.
+          if (result.ok && result.outcome === 'applied' && checked.ok) try { const event = lifecycleEvent(checked.value);if (event) automation.submit(event); } catch {}
+        } else if (path.startsWith(AUTOMATION_PREFIX)) {
+          const response = await automationRoute(automation,{method:req.method ?? '',url,devices:principal.devices,body:admitted,writable:!staged && !exported});
+          if (!response) throw new HttpError('not-found',404);
+          json(res,response.status,response.body);
         } else if (req.method === 'POST' && path === '/api/monitor/v1/commands' && !url.search) {
           json(res,200,await command(principal,await admitted(65536)));
         } else if (req.method === 'GET' && path === '/api/monitor/v1/changes' && !url.search) {
@@ -380,10 +428,15 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           const client = clients.get(lightingRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           if (lightingRoute[2] === 'snapshot') json(res,200,await client.lightingSnapshot());
           else {const response = await client.lightingCommand(await admitted(65536));json(res,response.status,response.body);}
-        } else if (route && !url.search && ((req.method === 'GET' && route[2] === 'snapshot') || (req.method === 'POST' && route[2] === 'commands'))) {
+        } else if (route && req.method === 'GET' && route[2] === 'snapshot') {
           const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
-          if (route[2] === 'snapshot') json(res,200,await client.snapshot());
-          else {const response = await client.command(await admitted(65536));json(res,response.status,response.body);}
+          // Default readers keep the 1.0 shape. `apiVersion=1.1` opts in and alone is accepted, once (Hub #576).
+          const versions = url.searchParams.getAll('apiVersion');
+          if ([...url.searchParams.keys()].some(name => name !== 'apiVersion') || versions.length > 1 || (versions.length === 1 && !['1.0','1.1'].includes(versions[0]))) throw new HttpError('invalid-request',400);
+          json(res,200,versions[0] === '1.1' ? await client.snapshot('1.1') : await client.snapshot());
+        } else if (route && !url.search && req.method === 'POST' && route[2] === 'commands') {
+          const client = clients.get(route[1]);if (!client) throw new HttpError('unknown-device',404);
+          const response = await client.command(await admitted(65536));json(res,response.status,response.body);
         } else throw new HttpError('not-found',404);
       } catch (error) {
         const safe = error instanceof HttpError ? error : new HttpError('unavailable',503);
@@ -426,6 +479,11 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     directory:options.directory,
     validateCredentials(input:Credential[]) { credentials(input); },
     staged:() => staged,
+    /**
+     * Hub #358 in-process intake for event sources, which run inside this process; there is no HTTP route. `propose` stores a
+     * rule disabled, as every creator other than the owner's route does. `settled` resolves once accepted events are evaluated.
+     */
+    automation:{submit:(event:unknown) => automation.submit(event),propose:(rule:unknown) => automation.create(rule,false),settled:() => automation.settled()},
     /** In-process counts for lifecycle tests. There is no HTTP route, and no credential or session content is included. */
     resources:() => ({requests:active,browserSessions:browserSessions.size,launchCodes:launchCodes.size,streams:streams.size,...replay.counts()}),
     prepareConsumers() {
@@ -455,6 +513,8 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         try{await closeBrowserLaunch?.();}catch(error){launchFailure=error;}
         await desktopRead?.close();
         try{await playback?.close();}catch(error){playbackFailure=error;}
+        // Automation stops before the controller clients close, so no evaluation reads or sends through a closing client.
+        await automation.close();
         await mcp?.close();for (const client of clients.values()) client.close();for (const stream of streams) stream.destroy();
         await new Promise<void>((resolve,reject) => {server.close(error => error ? reject(error) : resolve());server.closeAllConnections();});
         await owner.shutdown();

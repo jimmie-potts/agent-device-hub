@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {startHub} from '../dist/server.js';
+import {startFakeController} from './fake-controller.mjs';
 
 const token='a'.repeat(43), hash=value=>createHash('sha256').update(value).digest('hex');
 const credential={id:'operator',digest:hash(token),scopes:['read','control','ingest'],devices:[]};
@@ -467,4 +468,36 @@ test('session tools expose title/project metadata and the scalar label bound',as
  const after=(await c.call('hub_sessions')).structuredContent.data.result;assert.equal(after.snapshot.sessions[0].labelOrigin,'user');
  assert.equal((await c.call('hub_label',{request_id:after.nextRequestId,identity:event.identity,label:'x'.repeat(81)})).isError,true);
  await c.close();
+});
+
+test('status reads at controller contract 1.1 and shows moments, and a 1.0-only controller keeps the 1.0 shape (Hub #576)',async t=>{
+ const modern=await startFakeController({serves:'1.1',controllerId:'modern-owner',moment:{current:{status:'playing',momentId:'evt-merge',requestId:{epoch:'requests-1',sequence:2},mood:'celebrate',priorityClass:'event',coversStatus:true,endAt:{domain:'controller-monotonic',epoch:'clock-1',atMs:21000}},last:{status:'none'}}});
+ const legacy=await startFakeController({serves:'1.0',controllerId:'legacy-owner'});
+ t.after(async()=>{await modern.close();await legacy.close();});
+ const hub=await fixture(t,{controllers:[modern.config({id:'modern'}),legacy.config({id:'legacy'})],credentials:[{...credential,devices:['modern','legacy']}]});
+ const c=client(hub);await c.initialize();
+ const tools=(await c.rpc('tools/list',{})).body.result.tools;
+ const name=await prefix(c,'modern'),other=await prefix(c,'legacy');
+ assert.match(tools.find(tool=>tool.name===name+'_status').description,/contract 1\.1 where the owner serves it, otherwise at 1\.0/);
+ const upgraded=await c.call(name+'_status');
+ assert.equal(upgraded.isError,false);
+ assert.deepEqual(upgraded.structuredContent.data.result,modern.snapshot11());
+ assert.equal(upgraded.structuredContent.data.result.capabilities.moments.supported,true);
+ assert.equal(upgraded.structuredContent.data.result.state.moment.current.status,'playing');
+ const old=await c.call(other+'_status');
+ assert.equal(old.isError,false);assert.deepEqual(old.structuredContent.data.result,legacy.snapshot10());
+ assert.equal(old.structuredContent.data.result.capabilities.moments,undefined);assert.equal(old.structuredContent.data.result.state.moment,undefined);
+ // Repeated status reads probe a 1.0-only controller once per epoch, and no read sends a command.
+ for(let i=0;i<3;i++)await c.call(other+'_status');
+ assert.equal(legacy.reads.versioned(),1);assert.equal(legacy.reads(),5);
+ assert.equal(modern.commands.length+legacy.commands.length,0);
+ assert.ok(modern.requests.concat(legacy.requests).every(request=>request.method==='GET'));
+ // Command tools keep sending API 1.0 requests, which a 1.1 controller still admits with a 1.0 receipt.
+ const sent=await c.call(name+'_power_set',{...guards(modern.snapshot11()),on:true});
+ assert.equal(modern.commands.length,1);assert.equal(modern.commands[0].apiVersion,'1.0');assert.equal(sent.isError,false);
+ assert.equal(sent.structuredContent.data.result.apiVersion,'1.0');assert.equal(sent.structuredContent.data.result.outcome,'queued');
+ // An owner's typed refusal is still returned as the tool's error.
+ modern.answerNext({failure:'unsupported-capability'});
+ const refused=await c.call(name+'_power_set',{...guards(modern.snapshot11()),on:false});
+ assert.equal(modern.commands.length,2);assert.equal(modern.commands[1].apiVersion,'1.0');assert.equal(refused.isError,true);
 });

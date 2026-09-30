@@ -280,3 +280,94 @@ The host SHALL serve the dashboard page at `/` when the request's `Sec-Fetch-Sit
 #### Scenario: Assets and API from another local app
 - **WHEN** another loopback app requests the dashboard assets, an API route, the session route or the launch exchange with same-site fetch metadata
 - **THEN** the host refuses it as forbidden, issues no session and leaves an unused launch code valid
+
+### Requirement: Controller snapshot version negotiation
+The host's per-device controller client SHALL read a controller's snapshot with `apiVersion=1.1` when asked for a 1.1 read, and SHALL validate an answer that declares `apiVersion` 1.1 against `snapshotV1_1` and an answer that declares 1.0 against the 1.0 snapshot schema, in each case with the configured controller and device identity. A 400 `invalid-request` answer to the versioned read SHALL mean the controller serves only 1.0: the client SHALL read again without the parameter and SHALL remember a `1.0-only` verdict for the controller epoch of that answer. A 1.0 answer to the versioned read SHALL produce the same verdict without a second read. While a verdict holds, the client SHALL read without the parameter and SHALL NOT probe again as long as the answer carries the same controller epoch. It SHALL probe again when the answer carries a different epoch, and a new client SHALL hold no verdict. A timeout, a 5xx answer, a malformed answer or any other failure SHALL NOT create, change or clear a verdict. Reads without a version request SHALL send no version parameter. Negotiation SHALL run inside the client's single bounded slot per controller and SHALL send no command.
+
+#### Scenario: 1.1 controller
+- **WHEN** the client reads a controller that serves 1.1 at 1.1
+- **THEN** it returns the snapshot validated against `snapshotV1_1` after one read
+
+#### Scenario: 1.0-only controller
+- **WHEN** the client reads at 1.1 a controller that answers the versioned read with `invalid-request`
+- **THEN** it makes exactly one further read without the parameter, returns that 1.0 snapshot and records a `1.0-only` verdict, and later reads in the same epoch make no versioned read
+
+#### Scenario: Controller restarts serving 1.1
+- **WHEN** a controller with a `1.0-only` verdict restarts with a new epoch and now serves 1.1
+- **THEN** the next 1.1 read returns the 1.1 snapshot and clears the verdict
+
+#### Scenario: Transient failure
+- **WHEN** a versioned or unversioned read times out or the controller answers 5xx
+- **THEN** the read fails as unavailable and the verdict is unchanged, so a failed probe is repeated on the next read
+
+#### Scenario: No commands
+- **WHEN** snapshot reads, negotiation, reconnects or dashboard polls run against a 1.1 or 1.0-only controller
+- **THEN** the controller receives no command request
+
+### Requirement: Versioned controller snapshot route
+`GET /api/controllers/v1/<alias>/snapshot` SHALL return the 1.0 snapshot shape unless the request carries `apiVersion=1.1`, and SHALL send no version parameter to the controller for that default read. With `apiVersion=1.1` it SHALL return the negotiated snapshot: the 1.1 snapshot, including `capabilities.moments` and `state.moment`, for a controller that serves 1.1, and the 1.0 snapshot for a 1.0-only controller. `apiVersion=1.0` SHALL behave as the default. Any other `apiVersion` value, a repeated `apiVersion` or another query parameter SHALL answer 400 `invalid-request` before the controller is contacted, after the same authorization as other controller routes. The route SHALL keep its existing authorization, read scope and errors.
+
+#### Scenario: Default readers
+- **WHEN** a dashboard or other reader reads the snapshot route without a parameter for a 1.1 controller or a 1.0-only controller
+- **THEN** it receives the closed 1.0 shape and the controller sees no version parameter
+
+#### Scenario: Opt-in 1.1
+- **WHEN** a reader adds `apiVersion=1.1`
+- **THEN** it receives `capabilities.moments` and `state.moment` from a 1.1 controller, and a 1.0 snapshot from a 1.0-only controller
+
+#### Scenario: Strict parameters
+- **WHEN** the request has `apiVersion=1.2`, an empty value, two `apiVersion` values or an extra parameter
+- **THEN** the hub answers 400 `invalid-request` and sends nothing to the controller
+
+### Requirement: Bounded controller slot wait for sends
+The host's per-device controller client SHALL keep one slot per controller. A send MAY wait for a busy slot for at most 2,500 ms, in arrival order, and SHALL fail with `capacity` without contacting the controller when the bound expires. Every read, including dashboard polls, the controller snapshot route and MCP tools, SHALL keep the immediate `capacity` rejection while the slot is held, including while sends are waiting. Closing the client SHALL fail waiting sends as unavailable.
+
+#### Scenario: Send waits for a read
+- **WHEN** a send starts while a dashboard read holds the controller's slot and the read finishes within the bound
+- **THEN** the send takes the slot after the read and makes exactly one command POST
+
+#### Scenario: Slot held past the bound
+- **WHEN** the slot stays held for longer than 2,500 ms after a send starts waiting
+- **THEN** the send returns `capacity` and the controller receives no command POST
+
+#### Scenario: Reads do not wait
+- **WHEN** a dashboard or route read arrives while the slot is held or sends are waiting
+- **THEN** it is rejected with `capacity` at once
+
+### Requirement: Controller 1.1 moment command path
+The controller client SHALL send a 1.1 command only after validating it as `requestV1_1` for the configured controller and device, SHALL POST it to the controller's `/commands` exactly once, and SHALL return the answer only when it validates as `receiptV1_1` with the request's controller, device and ticket, for a 2xx answer or a typed non-2xx receipt. A mismatched or malformed answer, a timeout or a lost response SHALL be `uncertain-result` with no further POST. A typed refusal without a receipt SHALL keep its code. The 1.0 command path SHALL be unchanged and SHALL keep sending `apiVersion` 1.0.
+
+#### Scenario: Receipt for the ticket
+- **WHEN** a 1.1 controller answers a moment request with a `receiptV1_1` for the same ticket
+- **THEN** the client returns that receipt after one POST
+
+#### Scenario: Ambiguous answer
+- **WHEN** the controller times out, drops the connection or answers a receipt for another ticket
+- **THEN** the client reports `uncertain-result` after exactly one POST
+
+### Requirement: Hub moment sender
+The host SHALL provide an internal moment sender that sends one moment to one controller per call and adds no route, MCP tool, page, durable state or arbitration. The caller SHALL supply `momentId`, `mood`, optional `palette`, `durationMs`, `priorityClass`, `coversStatus`, an optional start instant on the hub's monotonic clock that defaults to the snapshot's arrival, and an optional `toleranceMs` that defaults to 10,000. The sender SHALL reject invalid input, including a `flourish` with `coversStatus:true`, a `toleranceMs` above 60,000 or a start more than 60,000 ms ahead, before any controller read. For valid input it SHALL wait for the controller's slot within the bounded send wait, read a fresh snapshot through the negotiated 1.1 read inside the same slot, and send nothing unless the snapshot is 1.1 and declares `moments` supported with the requested mood and a `maxDurationMs` of at least `durationMs`. It SHALL then build one `requestV1_1` with the snapshot's `nextRequestId`, configuration revision and generation, the caller's fields unchanged, `start.epoch` from `sampleClock.epoch` and `start.atMs` as `sampleClock.sampledAtMs` plus the hub-monotonic difference between the snapshot's arrival and the start instant, and POST it once. Each call SHALL return exactly one result carrying the `momentId` and the computed start, or no start when no snapshot was read: the controller's receipt; not sent, with `1.0-only`, `moments-unsupported`, `unsupported-capability`, `capacity` or `unavailable`; or `uncertain`. The sender SHALL never resend a moment, and a hub start, reconnect or read SHALL send no moment.
+
+#### Scenario: Request built from the snapshot
+- **WHEN** a caller sends a moment to a 1.1 controller that declares `moments` supported
+- **THEN** exactly one POST carries a valid `requestV1_1` whose ticket, expected revision and generation equal the snapshot read just before it, whose `start.epoch` is the snapshot's clock epoch and whose `start.atMs` is `sampledAtMs` plus the hub-clock difference between the snapshot's arrival and the start instant
+
+#### Scenario: Same hub instant on two devices
+- **WHEN** a caller gives the same start instant to two calls for controllers with different clocks
+- **THEN** each request names that hub instant in its own controller's clock
+
+#### Scenario: Not sent
+- **WHEN** the target serves only 1.0, declares moments unsupported, lacks the mood or allows a shorter duration
+- **THEN** the call returns the matching not-sent reason and the controller receives no command POST
+
+#### Scenario: Ambiguity and receipts
+- **WHEN** the POST times out or loses its response, or the controller answers with a failed receipt such as `moment-missed`, `moment-blocked`, `moment-duplicate`, `revision-conflict` or `stale-generation`, or a typed refusal such as `request-order`
+- **THEN** the call returns `uncertain` or the typed answer after exactly one POST and sends nothing more
+
+#### Scenario: Independent devices
+- **WHEN** a caller sends one moment to three devices concurrently and one is offline
+- **THEN** the other two are sent and each call returns its own result
+
+#### Scenario: No replay
+- **WHEN** the hub restarts, reconnects or serves snapshot reads and dashboard polls
+- **THEN** no controller receives a command POST

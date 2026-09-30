@@ -1,4 +1,4 @@
-import {validate, type Request, type Receipt, type Snapshot} from '@jimmie-potts/device-contracts';
+import {validate, type Request, type Receipt, type RequestV1_1, type ReceiptV1_1, type Snapshot, type SnapshotV1_1} from '@jimmie-potts/device-contracts';
 import {HttpError, id, loopbackEndpoint, responseJson, object, exact} from './common.js';
 import {validatePixooRequest,validatePixooSnapshot} from './pixoo-integration.js';
 import {validateIntegrationSnapshot,validateIntegrationReceipt,validateIntegrationGeometry} from './integration.js';
@@ -8,13 +8,29 @@ import {validateLightingRequest,validateLightingSnapshot} from './lifx-lighting.
 export type ControllerKind = 'pixoo'|'nanoleaf'|'tidbyt'|'lifx';
 export const CONTROLLER_KINDS: readonly ControllerKind[] = ['pixoo','nanoleaf','tidbyt','lifx'];
 export type ControllerConfig = {id:string; kind:ControllerKind; controllerId:string; deviceId:string; endpoint:string; token:string};
+/** What the hub has learned about the contract versions a controller serves. `1.0-only` and `1.1` name the controller epoch of the answer. */
+export type Negotiation = {verdict:'unknown'} | {verdict:'1.0-only'|'1.1'; epoch:string};
 
-/** One bounded slot per device, with no queue shared by different controllers. */
+/** The longest a send waits for a controller's busy slot. Reads never wait. */
+export const MAX_SLOT_WAIT_MS = 2500;
+/** A held controller slot: its calls run inside the hold, and none is accepted after the hold ends. */
+export type ControllerSlot = {
+  /** The negotiated read: a 1.1 snapshot from a controller that serves it, else the 1.0 snapshot. */
+  snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>;
+  /** One 1.1 moment request, POSTed once. */
+  momentCommand(value: unknown): Promise<{status:number;body:ReceiptV1_1}>;
+};
+
+/** One bounded slot per device, with no queue shared by different controllers. Only sends wait for it, in arrival order and for a bounded time. */
 export class ControllerClient {
   private busy = false;
+  /** Sends waiting for the slot. A release hands the slot straight to the oldest, so a read never slips in between. */
+  private waiters: {grant(): void; fail(error: HttpError): void}[] = [];
   private abort?: AbortController;
   private stopped = false;
   private health: 'unknown'|'ready'|'unavailable' = 'unknown';
+  /** In memory only: a new client, and so a hub start, holds none and probes on its first 1.1 read. */
+  private served?: {version:'1.0'|'1.1'; epoch:string};
   readonly config: Readonly<ControllerConfig>;
   constructor(config: ControllerConfig, readonly timeoutMs = 2000) {
     const url = loopbackEndpoint(config.endpoint);
@@ -26,10 +42,46 @@ export class ControllerClient {
   status() { return {id:this.config.id,kind:this.config.kind,controllerId:this.config.controllerId,deviceId:this.config.deviceId,health:this.health,pending:this.busy ? 1 : 0}; }
   /** `integration` selects the device's integration API; `lighting` selects the LIFX `lifx-light` profile route. */
   /** `optional` marks a read route an older owner may lack: its 404 means unsupported, not unavailable. */
-  private async request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+  private request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+    return this.exclusive(() => this.send(path,body,integration,optional));
+  }
+  /**
+   * Holds the controller's one slot for `run`, which may make several calls, so no other caller interleaves.
+   * With `waitMs` 0, as every read uses, a busy slot is an immediate `capacity`. A send may wait up to `waitMs`.
+   */
+  private async exclusive<T>(run: () => Promise<T>, waitMs = 0): Promise<T> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
-    if (this.busy) throw new HttpError('capacity',429);
-    this.busy = true;
+    if (!this.busy) this.busy = true;
+    else if (waitMs <= 0) throw new HttpError('capacity',429);
+    else await new Promise<void>((resolve,reject) => {
+      const waiter = {grant: () => { clearTimeout(timer); resolve(); }, fail: (error: HttpError) => { clearTimeout(timer); reject(error); }};
+      const timer = setTimeout(() => { this.waiters.splice(this.waiters.indexOf(waiter),1); reject(new HttpError('capacity',429)); },waitMs);
+      this.waiters.push(waiter);
+    });
+    try { return await run(); } finally { this.release(); }
+  }
+  private release() {
+    const next = this.waiters.shift();
+    if (next) next.grant(); else this.busy = false;
+  }
+  /**
+   * Holds this controller's one slot for `use`, waiting at most `waitMs` (up to MAX_SLOT_WAIT_MS) for a busy slot.
+   * Only sends call this; a wait that expires is `capacity` with nothing sent to the controller.
+   */
+  hold<T>(waitMs: number, use: (slot: ControllerSlot) => Promise<T>): Promise<T> {
+    if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > MAX_SLOT_WAIT_MS) throw new Error('invalid-slot-wait');
+    return this.exclusive(async () => {
+      let held = true;
+      const within = <R>(call: () => Promise<R>): Promise<R> => held ? call() : Promise.reject(new Error('slot-released'));
+      try {
+        return await use({snapshot: () => within(() => this.negotiatedRead()),
+          momentCommand: value => within(async () => this.postMoment(this.momentRequest(value)))});
+      } finally { held = false; }
+    },waitMs);
+  }
+  /** One bounded call inside a held slot. */
+  private async send(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
+    if (this.stopped) throw new HttpError('controller-unavailable',503);
     const abort = new AbortController(); this.abort = abort;
     const timer = setTimeout(() => abort.abort(),this.timeoutMs);
     try {
@@ -40,7 +92,7 @@ export class ControllerClient {
       const value = await responseJson(response,1024 * 1024);
       if (!response.ok) {
         // A typed receipt can describe an admitted rejection. Preserve its ticket below.
-        if (body !== undefined && (integration === true ? validateIntegrationReceipt(value) : validate('receipt',value))) return {status:response.status,value};
+        if (body !== undefined && (integration === true ? validateIntegrationReceipt(value) : validate('receipt',value) || validate('receiptV1_1',value))) return {status:response.status,value};
         if (integration && this.config.kind === 'pixoo' && object(value) && object(value.error)) {
           const codes:Record<string,number> = {'unauthenticated':401,'forbidden':403,'invalid-input':400,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-expired':410,'request-order':409,'capacity':429,'monitor-unavailable':503};
           if (typeof value.error.code === 'string' && codes[value.error.code] === response.status) throw new HttpError(value.error.code,response.status);
@@ -58,15 +110,51 @@ export class ControllerClient {
       if (error instanceof HttpError) throw error;
       this.health = 'unavailable';
       throw new HttpError(body === undefined ? 'controller-unavailable' : 'uncertain-result',503);
-    } finally { clearTimeout(timer); this.busy = false; this.abort = undefined; }
+    } finally { clearTimeout(timer); this.abort = undefined; }
   }
-  async snapshot(): Promise<Snapshot> {
+  /** The contract versions this controller has answered with, for reporting and for the sender that needs a 1.1 read. */
+  negotiation(): Negotiation {
+    return this.served ? {verdict:this.served.version === '1.0' ? '1.0-only' : '1.1',epoch:this.served.epoch} : {verdict:'unknown'};
+  }
+  /** One snapshot read inside a held slot. A 1.1 read sends `apiVersion=1.1`; the answer is checked against the schema of the version it declares. */
+  private async readSnapshot(version: '1.0'|'1.1'): Promise<Snapshot|SnapshotV1_1> {
     // Multi-device owners take the configured device ID; Pixoo serves one device.
-    const {value:result} = await this.request('/snapshot' + (this.config.kind !== 'pixoo' ? '?deviceId=' + encodeURIComponent(this.config.deviceId) : ''));
-    if (!validate('snapshot',result) || (result as Snapshot).identity.controllerId !== this.config.controllerId || (result as Snapshot).identity.deviceId !== this.config.deviceId) {
+    const query = [...(this.config.kind !== 'pixoo' ? ['deviceId=' + encodeURIComponent(this.config.deviceId)] : []),...(version === '1.1' ? ['apiVersion=1.1'] : [])];
+    const {value:result} = await this.send('/snapshot' + (query.length ? '?' + query.join('&') : ''));
+    const definition = version === '1.1' && object(result) && result.apiVersion === '1.1' ? 'snapshotV1_1' : 'snapshot';
+    if (!validate(definition,result) || (result as Snapshot).identity.controllerId !== this.config.controllerId || (result as Snapshot).identity.deviceId !== this.config.deviceId) {
       this.health = 'unavailable'; throw new HttpError('incompatible-controller',502);
     }
-    this.health = 'ready'; return result as Snapshot;
+    this.health = 'ready'; return result as Snapshot|SnapshotV1_1;
+  }
+  /**
+   * Reads at 1.1 where the controller serves it, else at 1.0 (contract 1.1, "Moments"). Only an `invalid-request` refusal of the versioned
+   * read makes a controller `1.0-only`, for the epoch of the unversioned answer. Later reads in that epoch send no version parameter;
+   * a different epoch probes again. Timeouts, 5xx answers and malformed answers never create, change or clear a verdict.
+   * The caller holds the slot, so the probe and its fallback read are one turn.
+   */
+  private async negotiatedRead(): Promise<Snapshot|SnapshotV1_1> {
+    let plain: Snapshot|undefined;
+    if (this.served?.version === '1.0') {
+      plain = await this.readSnapshot('1.0') as Snapshot;
+      if (plain.identity.controllerEpoch === this.served.epoch) return plain;
+    }
+    let answer: Snapshot|SnapshotV1_1;
+    try { answer = await this.readSnapshot('1.1'); }
+    catch (error) {
+      if (!(error instanceof HttpError) || error.code !== 'invalid-request' || error.status !== 400) throw error;
+      plain ??= await this.readSnapshot('1.0') as Snapshot;
+      this.served = {version:'1.0',epoch:plain.identity.controllerEpoch};
+      return plain;
+    }
+    this.served = {version:answer.apiVersion === '1.1' ? '1.1' : '1.0',epoch:answer.identity.controllerEpoch};
+    return answer;
+  }
+  /** The 1.0 shape by default, with no version parameter sent. `snapshot('1.1')` returns the 1.1 snapshot from a controller that serves it, else the 1.0 snapshot. */
+  async snapshot(): Promise<Snapshot>;
+  async snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>;
+  async snapshot(version: '1.0'|'1.1' = '1.0'): Promise<Snapshot|SnapshotV1_1> {
+    return this.exclusive(() => version === '1.1' ? this.negotiatedRead() : this.readSnapshot('1.0'));
   }
   async command(value: unknown): Promise<{status:number;body:Receipt}> {
     if (!validate('request',value)) throw new HttpError('invalid-request',400);
@@ -79,6 +167,28 @@ export class ControllerClient {
       this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
     }
     this.health = 'ready'; return {status:response.status,body:receipt};
+  }
+  /** A 1.1 `moment` request for this controller's device, checked before it takes the slot. */
+  private momentRequest(value: unknown): RequestV1_1 {
+    if (!validate('requestV1_1',value)) throw new HttpError('invalid-request',400);
+    const request = value as RequestV1_1;
+    if (request.command.kind !== 'moment') throw new HttpError('invalid-request',400);
+    if (request.controllerId !== this.config.controllerId || request.deviceId !== this.config.deviceId) throw new HttpError('unknown-device',404);
+    return request;
+  }
+  /** POSTs once inside a held slot. Only a `receiptV1_1` for the same device and ticket answers it; anything else is `uncertain-result`. */
+  private async postMoment(request: RequestV1_1): Promise<{status:number;body:ReceiptV1_1}> {
+    const response = await this.send('/commands',request);const receipt = response.value as ReceiptV1_1;
+    if (!validate('receiptV1_1',receipt) || receipt.controllerId !== request.controllerId || receipt.deviceId !== request.deviceId ||
+        receipt.requestId.epoch !== request.requestId.epoch || receipt.requestId.sequence !== request.requestId.sequence) {
+      this.health = 'unavailable'; throw new HttpError('uncertain-result',503);
+    }
+    this.health = 'ready'; return {status:response.status,body:receipt};
+  }
+  /** Contract 1.1 `moment` command, taking the slot without waiting. The 1.0 `command()` path is separate and unchanged. */
+  async momentCommand(value: unknown): Promise<{status:number;body:ReceiptV1_1}> {
+    const request = this.momentRequest(value);
+    return this.exclusive(() => this.postMoment(request));
   }
   private requireIntegration() {
     if (this.config.kind !== 'nanoleaf') throw new HttpError('unsupported-capability',422);
@@ -159,5 +269,8 @@ export class ControllerClient {
     }
     this.health = 'ready'; return {status:response.status,body:receipt};
   }
-  close() { this.stopped = true; this.abort?.abort(); }
+  close() {
+    this.stopped = true; this.abort?.abort();
+    for (const waiter of this.waiters.splice(0)) waiter.fail(new HttpError('controller-unavailable',503));
+  }
 }

@@ -651,6 +651,33 @@ work for them. Set `TMPDIR` to a folder under `~/.cache/agent-device-hub/`, such
 `~/.cache/agent-device-hub/<task>-tmp`, before `npm run test:hub` or
 `npm run test:setup`.
 
+Controller contract 1.1 reads for #576 are covered by
+`apps/hub/tests/controller-versions.test.mjs` and the `status` case at the end of
+`apps/hub/tests/mcp.test.mjs`, which `test:hub:built`, `test:hub:mcp:built` and the
+packaged hub tests already include, so they need no new CI job. They run over
+loopback HTTP against the shared fake controller in
+`apps/hub/tests/fake-controller.mjs` (`startFakeController({serves})`, with `'1.1'`,
+`'1.0'` and `'1.0-negotiating'`, epoch restarts, injected timeouts and 5xx answers,
+and a log of every request and command). Import it from a test instead of writing
+another ad hoc server; it is not a `*.test.mjs` suite. The cases cover negotiation
+and the `1.0-only` verdict per controller epoch, unchanged 1.0 readers, the strict
+`apiVersion` parameter on the snapshot route, MCP `status` and zero command POSTs.
+No registered controller serves 1.1 yet, so these checks are fake-controller
+evidence only; installed and controller-adoption acceptance stay with
+codex-nanoleaf#158 and divoom-app-upgrade#92.
+
+The moment sender for #335 is covered by `apps/hub/tests/moment-sender.test.mjs`,
+the slot-wait cases in `apps/hub/tests/controllers.test.mjs` and the moment command
+cases in `apps/hub/tests/controller-versions.test.mjs`, which the same hub suites
+already include, so they need no new CI job. The shared fake now admits commands
+through the contract's reference `admit`, and its `answerNext`, `hold` and
+`moments()` script a device's answer, stall a request and list the moment POSTs.
+The cases inject the hub-monotonic clock and cover the bounded slot wait, the
+request built from the snapshot, the not-sent reasons with no POST, ambiguous
+answers with exactly one POST, independent devices and no command after a hub
+restart. They are fake-controller evidence; a live moment needs a controller that
+serves 1.1 and a caller such as #336 or #358.
+
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
@@ -924,6 +951,28 @@ actions, strict inputs, current control/device permissions, typed owner
 rejections, replay and ambiguous results without automatic retries. The existing
 MCP and contracts/state CI jobs run these cases directly and in the offline hub
 archive; they require no new CI job or shared package change.
+
+## Hub automation checks
+
+Hub #358 adds event rules, the interrupt set, event intake, arbitration and the
+automation log. `npm run test:hub:automation` builds and runs
+`apps/hub/tests/automation.test.mjs` on its own. The file also runs in
+`npm run test:hub`, in the CI `test:hub:built` step and in the packaged hub
+tests through the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI
+job. Set `TMPDIR` outside any Git checkout, as for the
+[standalone hub checks](#standalone-hub-checks).
+
+The tests use disposable private stores, synthetic credentials, a fake event
+source, an injected target reader and a fake moment sender with the #335
+single-device shape. They cover restart persistence and one-time seeding,
+route scopes and typed errors, duplicate and replayed events, each arbitration
+block, independent per-target hand-off with no retry, and the lifecycle
+source. The shared fake controller scenarios run the composed reader and the
+real `sendMoment`: blocked targets get no controller command, the capable
+target gets exactly one 1.1 moment, and a typed refusal is logged without a
+resend. No test starts an installed service or contacts a device. Also run the standalone hub, hub MCP and shared
+monitoring setup checks above, plus the shared build, type, contract and
+workflow checks.
 
 ## Bounded cross-device compatibility
 
@@ -1253,6 +1302,12 @@ not qualification. The recorded qualification also retains the actual failing
 held-ack mutation and orphan-adapter regression, so the checks can detect the
 unsafe behavior they protect against.
 
+Hub #649 adds core-written receipt regressions for default runtime labels and
+ordinary shareable proof permissions. These run in the same portable test glob.
+They preserve private runtime/control checks and reject unsafe proof ownership,
+links, write permissions, oversized files and mismatched identity. Lease checks
+use the same bounded receipt snapshot already checked by the reset guard.
+
 The cross-repository check with the real consumers runs locally from this
 worktree after `npm run build`:
 
@@ -1292,6 +1347,14 @@ Use a short disk-backed `TMPDIR` outside Git and
 run through `fnm exec --using=.nvmrc --`. Its JSON record and raw command logs
 must all pass; screenshots alone are not a pass. This driver uses disposable
 runs and the manifest pins, and preserves evidence after cleanup.
+Append `--host-defaults`, with absolute `PYTHON` and `FNM_BIN` environment
+paths, to qualify the documented `verify:host --host` route using the core's
+default runtime and canonical proof roots. This mode requires the same explicit
+host authority as preview launches. It records command-unit cleanup, verifies
+unchanged lease expiries, and copies each frozen proof set into its evidence
+directory. It stops only the recorded composition; it never deletes the shared
+runtime root. This default-storage case is required for receipt compatibility
+changes; a private temporary-root fixture alone does not cover it.
 It requests snapshot 1.2 for the shared session titles, confirms a changed title
 is visible on each page before reset, then checks those titles are absent after
 each reset. A portable real-Hub HTTP test covers that version negotiation;

@@ -119,3 +119,67 @@ test('lifx lighting forwards only strict profile requests and checks what comes 
   } finally {other.close();}
  }
 });
+
+// Hub #335: the opt-in bounded slot wait that only sends use. Reads keep the immediate capacity rejection.
+async function gated(){
+ const seen=[];let open;const gate=new Promise(resolve=>{open=resolve;});
+ const server=await fake(async(req,res)=>{seen.push(req.method+' '+req.url);if(seen.length===1)await gate;res.end(JSON.stringify(value('snapshot')));});
+ const client=new ControllerClient(config(server.endpoint));
+ const reached=async()=>{while(!seen.length)await new Promise(resolve=>setTimeout(resolve,5));};
+ return {seen,client,open,reached,close:async()=>{client.close();await server.close();}};
+}
+
+test('a send waits for the slot a read holds, then runs once while reads never wait',async()=>{
+ const g=await gated();
+ try {
+  const read=g.client.snapshot();await g.reached();
+  const order=[];
+  const send=g.client.hold(2500,async()=>{order.push('send');assert.equal(g.client.status().pending,1);return 'sent';});
+  // A read during the held slot and the waiting send is rejected at once, not queued behind them.
+  await assert.rejects(g.client.snapshot(),error=>error.code==='capacity'&&error.status===429);
+  await assert.rejects(g.client.snapshot('1.1'),error=>error.code==='capacity');
+  await new Promise(resolve=>setTimeout(resolve,50));assert.deepEqual(order,[]);
+  g.open();
+  assert.deepEqual(await read,value('snapshot'));assert.equal(await send,'sent');assert.deepEqual(order,['send']);
+  assert.equal(g.client.status().pending,0);assert.deepEqual(g.seen.length,1);
+  // Waiting sends take the slot in arrival order, each after the previous one releases it.
+  const log=[];let first;
+  const hold1=g.client.hold(0,()=>new Promise(resolve=>{first=resolve;log.push('one');}));
+  const hold2=g.client.hold(2500,async()=>{log.push('two');});
+  const hold3=g.client.hold(2500,async()=>{log.push('three');});
+  await new Promise(resolve=>setTimeout(resolve,20));first();
+  await Promise.all([hold1,hold2,hold3]);assert.deepEqual(log,['one','two','three']);
+ } finally {await g.close();}
+});
+
+test('a send still waiting at its bound fails with capacity and contacts nothing',async()=>{
+ const g=await gated();
+ try {
+  const read=g.client.snapshot();await g.reached();
+  let ran=false;const started=performance.now();
+  await assert.rejects(g.client.hold(120,async()=>{ran=true;}),error=>error.code==='capacity'&&error.status===429);
+  assert.ok(performance.now()-started>=110);assert.equal(ran,false);
+  g.open();await read;assert.equal(g.seen.length,1);
+  // An expired waiter leaves nothing behind: the next send takes the free slot at once.
+  assert.equal(await g.client.hold(0,async()=>'free'),'free');
+  for(const invalid of [-1,2501,1.5,Number.NaN])assert.throws(()=>g.client.hold(invalid,async()=>{}),/invalid-slot-wait/);
+ } finally {await g.close();}
+});
+
+test('closing the client fails waiting sends as unavailable',async()=>{
+ const g=await gated();
+ const read=assert.rejects(g.client.snapshot(),error=>error.code==='controller-unavailable');await g.reached();
+ const waiting=assert.rejects(g.client.hold(2500,async()=>{assert.fail('must not run');}),error=>error.code==='controller-unavailable'&&error.status===503);
+ await g.close();await waiting;await read;
+ await assert.rejects(g.client.hold(2500,async()=>{}),error=>error.code==='controller-unavailable');
+});
+
+test('the held slot gives its reads only while it is held',async()=>{
+ const g=await gated();g.open();
+ try {
+  let kept;
+  const snapshot=await g.client.hold(0,async slot=>{kept=slot;return slot.snapshot('1.1');});
+  assert.deepEqual(snapshot,value('snapshot'));
+  await assert.rejects(kept.snapshot('1.1'),/slot-released/);
+ } finally {await g.close();}
+});
