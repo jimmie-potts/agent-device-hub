@@ -11,9 +11,16 @@ export type ControllerConfig = {id:string; kind:ControllerKind; controllerId:str
 /** What the hub has learned about the contract versions a controller serves. `1.0-only` and `1.1` name the controller epoch of the answer. */
 export type Negotiation = {verdict:'unknown'} | {verdict:'1.0-only'|'1.1'; epoch:string};
 
-/** One bounded slot per device, with no queue shared by different controllers. */
+/** The longest a send waits for a controller's busy slot. Reads never wait. */
+export const MAX_SLOT_WAIT_MS = 2500;
+/** A held controller slot: its calls run inside the hold, and none is accepted after the hold ends. */
+export type ControllerSlot = {snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>};
+
+/** One bounded slot per device, with no queue shared by different controllers. Only sends wait for it, in arrival order and for a bounded time. */
 export class ControllerClient {
   private busy = false;
+  /** Sends waiting for the slot. A release hands the slot straight to the oldest, so a read never slips in between. */
+  private waiters: {grant(): void; fail(error: HttpError): void}[] = [];
   private abort?: AbortController;
   private stopped = false;
   private health: 'unknown'|'ready'|'unavailable' = 'unknown';
@@ -33,12 +40,36 @@ export class ControllerClient {
   private request(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
     return this.exclusive(() => this.send(path,body,integration,optional));
   }
-  /** Holds the controller's one slot for `run`, which may make several reads, so no other caller interleaves. */
-  private async exclusive<T>(run: () => Promise<T>): Promise<T> {
+  /**
+   * Holds the controller's one slot for `run`, which may make several calls, so no other caller interleaves.
+   * With `waitMs` 0, as every read uses, a busy slot is an immediate `capacity`. A send may wait up to `waitMs`.
+   */
+  private async exclusive<T>(run: () => Promise<T>, waitMs = 0): Promise<T> {
     if (this.stopped) throw new HttpError('controller-unavailable',503);
-    if (this.busy) throw new HttpError('capacity',429);
-    this.busy = true;
-    try { return await run(); } finally { this.busy = false; }
+    if (!this.busy) this.busy = true;
+    else if (waitMs <= 0) throw new HttpError('capacity',429);
+    else await new Promise<void>((resolve,reject) => {
+      const waiter = {grant: () => { clearTimeout(timer); resolve(); }, fail: (error: HttpError) => { clearTimeout(timer); reject(error); }};
+      const timer = setTimeout(() => { this.waiters.splice(this.waiters.indexOf(waiter),1); reject(new HttpError('capacity',429)); },waitMs);
+      this.waiters.push(waiter);
+    });
+    try { return await run(); } finally { this.release(); }
+  }
+  private release() {
+    const next = this.waiters.shift();
+    if (next) next.grant(); else this.busy = false;
+  }
+  /**
+   * Holds this controller's one slot for `use`, waiting at most `waitMs` (up to MAX_SLOT_WAIT_MS) for a busy slot.
+   * Only sends call this; a wait that expires is `capacity` with nothing sent to the controller.
+   */
+  hold<T>(waitMs: number, use: (slot: ControllerSlot) => Promise<T>): Promise<T> {
+    if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > MAX_SLOT_WAIT_MS) throw new Error('invalid-slot-wait');
+    return this.exclusive(async () => {
+      let held = true;
+      const within = <R>(call: () => Promise<R>): Promise<R> => held ? call() : Promise.reject(new Error('slot-released'));
+      try { return await use({snapshot: () => within(() => this.negotiatedRead())}); } finally { held = false; }
+    },waitMs);
   }
   /** One bounded call inside a held slot. */
   private async send(path: string, body?: unknown, integration: boolean|'lighting' = false, optional = false): Promise<{status:number;value:unknown}> {
@@ -92,31 +123,30 @@ export class ControllerClient {
    * Reads at 1.1 where the controller serves it, else at 1.0 (contract 1.1, "Moments"). Only an `invalid-request` refusal of the versioned
    * read makes a controller `1.0-only`, for the epoch of the unversioned answer. Later reads in that epoch send no version parameter;
    * a different epoch probes again. Timeouts, 5xx answers and malformed answers never create, change or clear a verdict.
+   * The caller holds the slot, so the probe and its fallback read are one turn.
    */
-  private negotiatedSnapshot(): Promise<Snapshot|SnapshotV1_1> {
-    return this.exclusive(async () => {
-      let plain: Snapshot|undefined;
-      if (this.served?.version === '1.0') {
-        plain = await this.readSnapshot('1.0') as Snapshot;
-        if (plain.identity.controllerEpoch === this.served.epoch) return plain;
-      }
-      let answer: Snapshot|SnapshotV1_1;
-      try { answer = await this.readSnapshot('1.1'); }
-      catch (error) {
-        if (!(error instanceof HttpError) || error.code !== 'invalid-request' || error.status !== 400) throw error;
-        plain ??= await this.readSnapshot('1.0') as Snapshot;
-        this.served = {version:'1.0',epoch:plain.identity.controllerEpoch};
-        return plain;
-      }
-      this.served = {version:answer.apiVersion === '1.1' ? '1.1' : '1.0',epoch:answer.identity.controllerEpoch};
-      return answer;
-    });
+  private async negotiatedRead(): Promise<Snapshot|SnapshotV1_1> {
+    let plain: Snapshot|undefined;
+    if (this.served?.version === '1.0') {
+      plain = await this.readSnapshot('1.0') as Snapshot;
+      if (plain.identity.controllerEpoch === this.served.epoch) return plain;
+    }
+    let answer: Snapshot|SnapshotV1_1;
+    try { answer = await this.readSnapshot('1.1'); }
+    catch (error) {
+      if (!(error instanceof HttpError) || error.code !== 'invalid-request' || error.status !== 400) throw error;
+      plain ??= await this.readSnapshot('1.0') as Snapshot;
+      this.served = {version:'1.0',epoch:plain.identity.controllerEpoch};
+      return plain;
+    }
+    this.served = {version:answer.apiVersion === '1.1' ? '1.1' : '1.0',epoch:answer.identity.controllerEpoch};
+    return answer;
   }
   /** The 1.0 shape by default, with no version parameter sent. `snapshot('1.1')` returns the 1.1 snapshot from a controller that serves it, else the 1.0 snapshot. */
   async snapshot(): Promise<Snapshot>;
   async snapshot(version: '1.1'): Promise<Snapshot|SnapshotV1_1>;
   async snapshot(version: '1.0'|'1.1' = '1.0'): Promise<Snapshot|SnapshotV1_1> {
-    return version === '1.1' ? this.negotiatedSnapshot() : this.exclusive(() => this.readSnapshot('1.0'));
+    return this.exclusive(() => version === '1.1' ? this.negotiatedRead() : this.readSnapshot('1.0'));
   }
   async command(value: unknown): Promise<{status:number;body:Receipt}> {
     if (!validate('request',value)) throw new HttpError('invalid-request',400);
@@ -209,5 +239,8 @@ export class ControllerClient {
     }
     this.health = 'ready'; return {status:response.status,body:receipt};
   }
-  close() { this.stopped = true; this.abort?.abort(); }
+  close() {
+    this.stopped = true; this.abort?.abort();
+    for (const waiter of this.waiters.splice(0)) waiter.fail(new HttpError('controller-unavailable',503));
+  }
 }
