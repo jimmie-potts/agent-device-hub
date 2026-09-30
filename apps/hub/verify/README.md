@@ -75,6 +75,10 @@ filesystem links alone are not a reliable chat handoff. Opening the preview from
 Windows browser is [#497](https://github.com/jimmie-potts/agent-device-hub/issues/497)'s
 qualification.
 
+For Codex coordinators whose sandbox cannot operate or inspect host previews, use
+the explicit [host route](../../../docs/app-verification.md#explicit-host-route-for-codex-development-coordinators).
+It preserves this adapter's operations and runs them with trusted Linux-user authority.
+
 ## Feature map
 
 Scenarios are seeded by [`plugin.mjs`](plugin.mjs) and served by

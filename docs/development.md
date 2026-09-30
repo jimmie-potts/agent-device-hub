@@ -1294,3 +1294,15 @@ composition's runs are delivery receipts; a controls composition's runs are
 not. A composition proves
 simulated cross-service behavior only, not installed or physical
 acceptance.
+
+### Host routing checks
+
+Run `npm run test:verify-host` with Node 24 from the Hub worktree. CI runs this
+in the App verification job. It checks explicit selection, named adapter and
+checkout identity, literal arguments, minimal environment, denied supervisor,
+command-only cleanup, timeout/abort, preserved nonzero adapter results, and
+unknown outcomes without a start retry. The transport test starts only a
+disposable Node subprocess; supervisor fixtures start no systemd units.
+These source checks do not qualify the named host or Windows browser. Keep
+shared build/type, controller-contract and workflow checks for this source
+change; unchanged app lifecycle/consumer behavior keeps its existing CI checks.

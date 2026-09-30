@@ -904,3 +904,111 @@ banner is deferred with the card and `doctor` as the manual alternative;
 revisit it when an adapter owns a page it can render in, or when #497 records
 a person misled by a stale link. A composition has a loss step only for
 Pixoo; add a wall loss step when a change to the wall's pairing needs one.
+
+## Explicit host route for Codex development coordinators
+
+`npm run -s verify:host -- --help` describes the Hub-owned dispatcher from
+[#611](https://github.com/jimmie-potts/agent-device-hub/issues/611). The owner
+accepted this boundary in [#610](https://github.com/jimmie-potts/agent-device-hub/issues/610).
+It is an explicit route for trusted verification commands, executed as the
+Linux user outside the Codex sandbox. Access to the user manager can launch
+arbitrary host processes, and checkout code is mutable. Codex denied-file and
+network rules do not constrain those host processes. The dispatcher is not a
+security sandbox; synthetic-only behavior, secret exclusion and owned cleanup
+remain workflow requirements.
+
+The required qualification targets are Desktop with WSL execution, interactive
+WSL Codex CLI and WSL `codex exec` development coordinators. Each independent
+chat owns its runs. Delegated workers request preview operations through their
+coordinator; reviewers stay read-only. Fresh-client and two-session acceptance
+are [#613](https://github.com/jimmie-potts/agent-device-hub/issues/613), not a
+claim made by this source delivery.
+
+### Prepare and invoke
+
+Use Linux with systemd user services (the diagnosis used systemd 259), Node
+24.5+ in the 24.x line, and the existing application prerequisites. From the
+assigned Hub checkout run `fnm exec --using=.nvmrc -- npm ci` and
+`fnm exec --using=.nvmrc -- npm run build`. Prepare each selected consumer
+checkout using its own guide. Use the Nanoleaf controller-requirements virtual
+environment's absolute Python path and the absolute fnm executable for Pixoo
+composition. No packages, services, permissions or personal settings are
+installed by the dispatcher.
+
+For example, replacing the placeholder paths with prepared assigned checkouts:
+
+```bash
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- start --scenario lifecycle-basic
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- doctor
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app nanoleaf --checkout /absolute/wall-worktree --python /absolute/venv/bin/python -- start
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app pixoo --checkout /absolute/pixoo-worktree -- start
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app compose --checkout /absolute/hub-worktree --python /absolute/venv/bin/python --fnm /absolute/bin/fnm -- start --checkout nanoleaf=/absolute/wall-worktree --checkout pixoo=/absolute/pixoo-worktree
+```
+
+Use the same launcher options with existing `capture`, `handoff`, `extend` and
+`stop` arguments. The selected checkout must have the matching package identity
+and adapter entrypoint. The composition retains its existing source pins; its
+explicit `--unpinned` option still labels development-only evidence. Separate
+concurrent previews use separate worktrees and build outputs, including both
+consumer checkouts for each composition. One coordinator controls each run;
+do not capture, reset or stop another coordinator's run.
+
+The launcher clears the manager environment with `/usr/bin/env -i`, selects
+Node from its own Node-24 process and supplies only the Linux home, a tool PATH,
+locale, user-bus/runtime paths, owned temporary storage, shared npm/Playwright cache paths and explicit
+optional `PYTHON`. It forwards neither the caller's tokens/preload variables nor
+app-verify storage overrides. Proof and runtime therefore retain the adapter's
+canonical roots. The systemd client uses the session bus; it does not silently
+change profiles, grant socket access or retry with broader permissions.
+
+Each command sets `TMPDIR` to a private directory under the launcher's canonical
+Hub checkout, `.local/scratch/vh-<random>`. The checkout must ignore `.local/`
+and its resulting temporary path must be at most 70 bytes to leave room for
+browser socket paths. Use a short canonical checkout when preparation refuses
+this limit. Temporary browser profiles and artifacts stay on disk; finalized
+proof stays in the adapter's canonical proof directory. The host helper creates
+the directory exclusively with an ownership token. systemd's `ExecStopPost`
+removes it after normal exit or forced termination, but refuses a mismatched
+owner. Preview services retain their own runtime `TMPDIR` and leases.
+
+### Readback and recovery
+
+Before launch, stderr announces a unique `app-verify-command-*.service` unit.
+Every invocation has a 900-second default command lifetime, configurable with
+`--timeout-seconds` from 30 to 1800 before `--`. Stop timeout is five seconds;
+client timeout and bounded stop/readback can add up to 30 seconds. An operation
+that needs longer than this bound is unsupported by this route. Command stdout
+and stderr are each limited to 2 MiB; excess output is an uncertain result.
+
+Stdout is one JSON envelope: `hostCommandVersion`, selected `app`, `checkout`,
+`operation`, command `unit`, `temporary`, `temporaryCleanup`, `state`, `cleanup`,
+`adapterExit`, and the original
+adapter object in `result`. A completed result requires exit zero, a parseable
+adapter object, verified removal of the command unit and removed temporary storage. Existing nonzero
+adapter codes and results are preserved. `completed` describes the operation,
+not browser, device or whole-session qualification. Raw process stderr is not
+copied into this result.
+
+Command units and preview units have different lifetimes. A finished command
+does not stop its preview or change the preview's lease. On interruption, lost
+output or unreadable cleanup, the dispatcher returns `uncertain` and never
+retries start. Reconcile through the selected checkout's `doctor`, canonical
+receipts and announced command unit before starting again. An interrupted start
+may already have created a leased preview before its run ID reached the caller.
+Never infer preview cleanup from command cleanup, and never kill by port. If
+command cleanup remains unknown, stop and read back only the announced command
+unit through the accepted host route or a trusted terminal. Stop previews only
+by their verified run IDs. `temporaryCleanup` is `removed`, `retained` or
+`unknown` after launch. A retained or unreadable directory makes the result
+uncertain. After command-unit cleanup, inspect the reported path and its
+`.owner` token: it must equal the UUID in the announced command unit. Use the
+host helper's `cleanup <reported-path> <exact-token>` operation from a trusted
+terminal to retry that owned removal. A manager crash can prevent `ExecStopPost`;
+keep the reported path for this recovery rather than deleting a scratch glob.
+
+Rollback means stopping the exact owned previews and command units, preserving
+frozen proof, and ceasing to select this route. No personal settings need to be
+restored. If a fresh client needs a persistent permission change, prepare its
+exact diff, backup, readback and rollback for owner acceptance under #613.
+The source fixtures do not prove live listener ownership, Windows links or
+survival after an originating Codex chat ends; #613 retains those checks.
