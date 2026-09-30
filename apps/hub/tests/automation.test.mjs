@@ -5,11 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {startHub} from '../dist/server.js';
+import {startFakeController} from './fake-controller.mjs';
 
 // Hub #358: event rules, the interrupt set, intake, arbitration, hand-off and the automation log.
 const token='a'.repeat(43),readToken='b'.repeat(43),wallToken='c'.repeat(43),ingestToken='d'.repeat(43);
 const hash=value=>createHash('sha256').update(value).digest('hex');
-const credentials=[{id:'owner-cli',digest:hash(token),scopes:['read','control'],devices:['wall','panel','cube']},
+const credentials=[{id:'owner-cli',digest:hash(token),scopes:['read','control'],devices:['wall','panel','cube','lamp']},
  {id:'reader',digest:hash(readToken),scopes:['read'],devices:['wall','panel','cube']},
  {id:'wall-only',digest:hash(wallToken),scopes:['read','control'],devices:['wall']},
  {id:'producer',digest:hash(ingestToken),scopes:['ingest'],devices:[]}];
@@ -259,9 +260,14 @@ test('arbitration blocks in order with the stated reason and hands nothing over 
   assert.deepEqual(await reasons(3),['cube:receipt:','panel:blocked:alert','wall:blocked:quiet']);
   assert.equal(sender.calls.length,7);assert.equal(sender.calls.at(-1).target,'cube','an alert over content does not block');
   // Unknown evidence does not block at the hub.
-  states.wall={presentation:'unknown',alert:'unknown'};states.panel={presentation:'status',alert:'unknown'};
+  states.wall={presentation:'unknown',alert:'unknown',moments:'unknown'};states.panel={presentation:'status',alert:'unknown'};
   hub.automation.submit(live('pr-10'));await hub.automation.settled();
   assert.equal(sender.calls.length,10);
+  // A target that cannot play moments is blocked before any other target check.
+  states.wall={presentation:'quiet',alert:'none',moments:'1.0-only'};states.panel={presentation:'content',alert:'none',moments:'unsupported'};states.cube={presentation:'content',alert:'none',moments:'supported'};
+  hub.automation.submit(live('pr-11'));await hub.automation.settled();
+  assert.deepEqual(await reasons(3),['cube:receipt:','panel:blocked:moments-unsupported','wall:blocked:1.0-only']);
+  assert.equal(sender.calls.length,11);
  }finally{await hub.close();await rm(directory,{recursive:true,force:true});}
 });
 
@@ -331,4 +337,96 @@ test('newly applied lifecycle events reach the rules once and never delay ingest
   assert.equal(entry.event.source,'agent-lifecycle');assert.equal(entry.event.kind,'agent.turn.ended');assert.match(entry.event.id,/^[0-9a-f]{64}$/);
   assert.equal(entry.priorityClass,'event');assert.equal(entry.coversStatus,false);
  }finally{await hub.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('against the shared fake controllers, the composed reader blocks 1.0-only, Quiet and alerted status targets with no controller command (AC2 to AC4)',async t=>{
+ // Hub #576 fakes: 1.1 controllers in Work, Quiet and Free, and a 1.0-only controller.
+ const work=await startFakeController({serves:'1.1',controllerId:'c-wall',deviceId:'d-wall'});t.after(work.close);
+ const quiet=await startFakeController({serves:'1.1',controllerId:'c-panel',deviceId:'d-panel',mode:'Quiet'});t.after(quiet.close);
+ const free=await startFakeController({serves:'1.1',controllerId:'c-cube',deviceId:'d-cube',mode:'Free'});t.after(free.close);
+ const legacy=await startFakeController({serves:'1.0',controllerId:'c-lamp',deviceId:'d-lamp'});t.after(legacy.close);
+ const fakes=[work,quiet,free,legacy];
+ const directory=await mkdtemp(join(tmpdir(),'hub-automation-fakes-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ const configs=[work.config({id:'wall'}),quiet.config({id:'panel'}),free.config({id:'cube'}),legacy.config({id:'lamp'})];
+ const start=async sender=>{
+  const hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers:configs},undefined,undefined,sender?{sender:sender.send}:undefined);
+  const call=async(method,path,body,credential=token)=>{const response=await fetch(hub.url+path,{method,headers:{authorization:`Bearer ${credential}`,'x-pixoo-request':'1','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,body:await response.json()};};
+  return {hub,call};
+ };
+ const sender=fakeSender();
+ let {hub,call}=await start(sender);
+ try{
+  await call('POST','/api/automation/v1/rules',rule({action:{...rule().action,targets:['wall','panel','cube','lamp']}}));
+  hub.automation.submit(live('pr-1'));await hub.automation.settled();
+  const latest=async count=>(await log(call)).slice(0,count).map(e=>`${e.target}:${e.outcome}:${e.reason ?? ''}`).sort();
+  assert.deepEqual(await latest(4),['cube:receipt:','lamp:blocked:1.0-only','panel:blocked:quiet','wall:receipt:']);
+  assert.equal(legacy.reads.versioned(),1,'the 1.0-only fake was probed once at 1.1');
+  assert.deepEqual(sender.calls.map(c=>`${c.target}:${c.moment.coversStatus}`).sort(),['cube:true','wall:true']);
+  // Outstanding attention in the hub's agent state is an active alert: it blocks the status target, not the content one.
+  const identity={provider:'claude',client:'code',hostId:'h',sourceId:'s',sessionId:'asks'};
+  const ingest=kind=>call('POST','/api/monitor/v1/events',{apiVersion:'1.0',identity,turn:{status:'known',id:'t'},parent:{status:'unknown'},event:{kind,...(kind.startsWith('attention')?{attention:{status:'known',id:'q1'}}:{})},observedAtMs:Date.now(),ordering:{status:'unknown'}},ingestToken);
+  assert.equal((await ingest('session.started')).status,200);assert.equal((await ingest('attention.input')).body.outcome,'applied');
+  hub.automation.submit(live('pr-2'));await hub.automation.settled();
+  assert.deepEqual(await latest(4),['cube:receipt:','lamp:blocked:1.0-only','panel:blocked:quiet','wall:blocked:alert']);
+  assert.equal(sender.calls.length,3);
+  assert.equal(legacy.reads.versioned(),1,'the 1.0-only verdict holds for its epoch');
+  assert.ok(fakes.every(fake=>fake.reads()>0),'the composed reader read every target');
+  await hub.close();
+  // Without a composed sender every unblocked target is logged and nothing is sent. The stored attention still blocks the wall.
+  ({hub,call}=await start());
+  hub.automation.submit(live('pr-3'));await hub.automation.settled();
+  assert.deepEqual(await latest(4),['cube:blocked:sender-unavailable','lamp:blocked:1.0-only','panel:blocked:quiet','wall:blocked:alert']);
+  assert.deepEqual(fakes.map(fake=>fake.commands.length),[0,0,0,0],'no controller command from any path');
+ }finally{await hub.close();}
+});
+
+test('a staged migration destination refuses automation writes and intake',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-automation-staged-'));
+ const hub=await startHub({directory,ownerId:'owner',consumers:[],credentials,controllers},{staged:true});
+ try{
+  const headers={authorization:`Bearer ${token}`,'x-pixoo-request':'1','content-type':'application/json'};
+  assert.equal((await fetch(hub.url+'/api/automation/v1/rules',{headers})).status,200);
+  const write=await fetch(hub.url+'/api/automation/v1/interrupt-set',{method:'PUT',headers,body:JSON.stringify({kinds:[]})});
+  assert.deepEqual([write.status,await write.json()],[503,{error:{code:'owner-quiesced'}}]);
+  assert.deepEqual(hub.automation.submit(live('pr-1')),{accepted:false,reason:'unavailable'});
+ }finally{await hub.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('a target removed from configuration is logged, and a full evaluation queue logs capacity',async()=>{
+ let release;const held=new Promise(resolve=>{release=resolve;});
+ const sender=fakeSender(async()=>{await held;return {kind:'receipt',receipt:{...validReceipt,outcome:'queued'}};});
+ let opened=await open({sender});const {directory}=opened;
+ try{
+  await opened.call('POST','/api/automation/v1/rules',rule({action:{...rule().action,targets:['wall','cube']}}));
+  await opened.hub.close();
+  // Reconfigured without `cube`: the stored rule still loads, and its moment reaches `wall` only.
+  opened={...opened,hub:await startHub({directory,ownerId:'owner',consumers:[],credentials:credentials.map(c=>({...c,devices:c.devices.filter(d=>d!=='cube')})),controllers:controllers.filter(c=>c.id!=='cube')},undefined,undefined,
+   {sender:sender.send,targets:async()=>({presentation:'content',alert:'none'})})};
+  const call=async path=>(await fetch(opened.hub.url+path,{headers:{authorization:`Bearer ${token}`}})).json();
+  // The first event holds the sender; 32 more fill the queue and the next one is logged as capacity.
+  for(let index=0;index<34;index++)assert.equal(opened.hub.automation.submit(live('burst-'+index)).accepted,true);
+  await new Promise(resolve=>setImmediate(resolve));
+  const blocked=(await call('/api/automation/v1/log')).entries;
+  assert.deepEqual(blocked.filter(e=>e.reason==='capacity').map(e=>`${e.event.id}:${e.target}`).sort(),['burst-33:cube','burst-33:wall']);
+  release();await opened.hub.automation.settled();
+  const entries=(await call('/api/automation/v1/log?limit=500')).entries;
+  assert.equal(entries.filter(e=>e.reason==='unknown-target'&&e.target==='cube').length,33);
+  assert.equal(sender.calls.length,33);assert.ok(sender.calls.every(c=>c.target==='wall'));
+ }finally{release();await opened.hub.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('disabling a rule stops events already waiting in the queue',async()=>{
+ let release;const held=new Promise(resolve=>{release=resolve;});
+ const sender=fakeSender(async()=>{await held;return {kind:'receipt',receipt:{...validReceipt,outcome:'queued'}};});
+ const {hub,directory,call}=await open({sender});
+ try{
+  const created=(await call('POST','/api/automation/v1/rules',rule({action:{...rule().action,targets:['wall']}}))).body;
+  assert.equal(hub.automation.submit(live('first')).accepted,true);
+  assert.equal(hub.automation.submit(live('second')).accepted,true);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal((await call('POST',`/api/automation/v1/rules/${created.id}/disable`,{})).body.enabled,false);
+  release();await hub.automation.settled();
+  assert.deepEqual(sender.calls.map(c=>c.target),['wall'],'only the event already in evaluation is handed over');
+  assert.deepEqual((await log(call)).map(e=>e.event.id),['first']);
+ }finally{release();await hub.close();await rm(directory,{recursive:true,force:true});}
 });

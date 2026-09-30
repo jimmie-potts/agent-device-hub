@@ -31,8 +31,11 @@ export type MomentSendResult =
  * It owns 1.1 negotiation, the controller-clock start, tickets and guards. It applies no policy; this module arbitrates.
  */
 export type MomentSender = (input:{moment:MomentIntent; target:string; startAt?:number}) => Promise<MomentSendResult>;
-/** Device-neutral presentation and alert evidence for one target. Unknown never blocks at the hub. */
-export type TargetState = {presentation:'status'|'content'|'quiet'|'unknown'; alert:'active'|'none'|'unknown'};
+/**
+ * Device-neutral evidence for one target: its presentation, its alert state and whether it can play moments at all
+ * (`1.0-only` for a controller that serves only contract 1.0). Unknown never blocks at the hub; an absent `moments` is unknown.
+ */
+export type TargetState = {presentation:'status'|'content'|'quiet'|'unknown'; alert:'active'|'none'|'unknown'; moments?:'supported'|'unsupported'|'1.0-only'|'unknown'};
 export type TargetReader = (alias:string) => Promise<TargetState>;
 export type IntakeResult = {accepted:true; matched:number} | {accepted:false; reason:'invalid-event'|'duplicate'|'replay'|'unavailable'};
 
@@ -184,7 +187,7 @@ export function createAutomation(options:AutomationOptions) {
   const queue: {event:HubEvent; matched:Rule[]}[] = [];
   let running: Promise<void> | undefined, closed = false;
   const reload = () => { rules = store.rules().map(ruleFromRow); };
-  const matching = (event:HubEvent, enabledOnly:boolean) => rules.filter(rule => (!enabledOnly || rule.enabled) && rule.trigger.source === event.source &&
+  const matching = (event:HubEvent) => rules.filter(rule => rule.trigger.source === event.source &&
     rule.trigger.kind === event.kind && (rule.trigger.alias === undefined || rule.trigger.alias === event.alias));
   const remember = (key:string) => {
     recent.add(key);
@@ -212,6 +215,8 @@ export function createAutomation(options:AutomationOptions) {
     return null;
   }
   function targetBlock(moment:MomentIntent, target:string, state:TargetState, now:number): string|null {
+    if (state.moments === '1.0-only') return '1.0-only';
+    if (state.moments === 'unsupported') return 'moments-unsupported';
     if (moment.priorityClass === 'flourish') {
       const last = store.lastFlourishTo(target);
       if (last !== undefined && now - last < settings.budgets.deviceSpacingMs) return 'device-spacing';
@@ -223,7 +228,9 @@ export function createAutomation(options:AutomationOptions) {
   const readTarget = async (target:string): Promise<TargetState> => {
     try {
       const state = await options.targets(target);
-      if (object(state) && ['status','content','quiet','unknown'].includes(state.presentation) && ['active','none','unknown'].includes(state.alert)) return state;
+      if (object(state) && ['status','content','quiet','unknown'].includes(state.presentation) && ['active','none','unknown'].includes(state.alert) &&
+          (state.moments === undefined || ['supported','unsupported','1.0-only','unknown'].includes(state.moments)))
+        return {presentation:state.presentation,alert:state.alert,moments:state.moments ?? 'unknown'};
     } catch {}
     return {presentation:'unknown',alert:'unknown'};
   };
@@ -265,9 +272,13 @@ export function createAutomation(options:AutomationOptions) {
   async function drain() {
     while (queue.length) {
       const {event,matched} = queue.shift()!;
-      for (const rule of matched) {
+      for (const queued of matched) {
+        // The owner may have disabled, edited or deleted the rule while the event waited: use its current definition.
+        const rule = rules.find(current => current.id === queued.id);
+        if (!rule?.enabled || !matching(event).includes(rule)) continue;
+        // A store released during shutdown ends evaluation. Any other failure drops this rule's moment; nothing is retried.
         try { await evaluate(rule,event); }
-        catch { if (closed) return; } // A released store during shutdown ends evaluation; nothing is retried.
+        catch { if (closed) return; }
       }
     }
   }
@@ -292,7 +303,7 @@ export function createAutomation(options:AutomationOptions) {
       if (closed || !options.active()) return {accepted:false,reason:'unavailable'};
       const key = `${event.source}:${event.id}`;
       if (recent.has(key)) return {accepted:false,reason:'duplicate'};
-      const candidates = matching(event,false);
+      const candidates = matching(event);
       try {
         // Persist before evaluation so a crash or restart never evaluates a matched event twice.
         if (candidates.length ? !store.recordEvent(key) : store.seenEvent(key)) { remember(key); return {accepted:false,reason:'duplicate'}; }

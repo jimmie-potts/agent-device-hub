@@ -149,14 +149,16 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
     if (probe) { const fenced = probe.fenced(); await probe.release(); if (fenced) throw new Error('owner-quiesced'); }
     throw error;
   });
-  // Hub #358: rules and the log share the owner lease. The composed target reader maps the controller's desired mode to a
-  // device-neutral presentation, and takes the alert from this hub's agent state, because controller v1 snapshots carry none.
+  // Hub #358: rules and the log share the owner lease. The composed target reader uses the negotiated 1.1 read (#576): a
+  // 1.0 answer means the controller cannot play moments, and a 1.1 answer declares `moments`. It maps the desired mode to a
+  // device-neutral presentation and takes the alert from this hub's agent state, because controller snapshots carry none.
   const readTarget:TargetReader = async alias => {
     const alert = owner.snapshot().sessions.some(session => session.attention.length > 0) ? 'active' : 'none';
-    const client = clients.get(alias);
-    const mode = client ? await client.snapshot().then(value => value.state.desired.mode,() => undefined) : undefined;
+    const read = await clients.get(alias)?.snapshot('1.1').catch(() => undefined);
+    const mode = read?.state.desired.mode;
     const presentation = mode?.status !== 'known' ? 'unknown' : mode.value === 'Work' || mode.value === 'Monitor' ? 'status' : mode.value === 'Quiet' ? 'quiet' : 'content';
-    return {presentation,alert};
+    const moments = !read ? 'unknown' : read.apiVersion !== '1.1' ? '1.0-only' : read.capabilities.moments.supported ? 'supported' : 'unsupported';
+    return {presentation,alert,moments};
   };
   let automation:Automation;
   try {

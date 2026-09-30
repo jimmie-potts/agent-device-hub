@@ -73,6 +73,9 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `GET /api/playback/v1/snapshot` | `read` | the playback ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
+| `GET /api/automation/v1/rules`, `GET .../rules/:id`, `GET .../interrupt-set`, `GET .../settings`, `GET .../log` | `read` | none |
+| `POST /api/automation/v1/rules`, `PUT .../rules/:id`, `POST .../rules/:id/enable` | `control` | every alias in the rule's `targets` |
+| `POST .../rules/:id/disable`, `DELETE .../rules/:id`, `PUT .../interrupt-set`, `PUT .../settings` | `control` | none |
 
 `GET /api/dashboard/v1/context` lists only the controllers in the caller's `devices`, and adds `"playback": {"sourceId": "..."}` only when those `devices` include the configured playback source. The page and its assets (`/`, `/dashboard.js`, `/dashboard.css`) need no token, and `POST /api/dashboard/v1/launch` takes a one-time launcher code instead. With [`browserAccess`](#open-bunny-from-a-bookmark) set, `POST /api/dashboard/v1/session` signs the page in without a code.
 
@@ -141,7 +144,43 @@ Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `
 - Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
 - A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
 - Every other reader keeps the 1.0 shape and sends no parameter. That includes the dashboard's polls and the route without a parameter.
-- Reads and negotiation never send a command. The hub does not send moment commands yet.
+- Reads and negotiation never send a command. The hub does not send moment commands yet. [Automation rules](#automation-rules) read their targets through this negotiated read.
+
+## Automation rules
+
+The hub stores owner-approved event rules and turns matching events into arbitrated moments, without an open conversation or a model call ([Hub #358](https://github.com/jimmie-potts/agent-device-hub/issues/358), [ADR 0006](../../docs/decisions/0006-hub-moments-and-interludes.md)). Rules, the interrupt set, the settings and the automation log live in the hub's private store under the owner lease. They do not move with a released-state migration.
+
+The hub does not send moments yet. The shared moment sender ([#335](https://github.com/jimmie-potts/agent-device-hub/issues/335)) is not composed, so every moment that passes arbitration is logged as `blocked` with `sender-unavailable`, and no device receives it. No rule exists until the owner creates one.
+
+### Rules
+
+A rule is `{name, kind:"event", enabled?, trigger, action}`:
+
+- `name`: display text of up to 80 characters. Text that looks like a credential is refused.
+- `trigger`: `{source, kind, alias?}`. `source` is a lowercase source name such as `github` or `agent-lifecycle`. `kind` is a lowercase dotted event kind such as `pull-request.merged`. `alias` narrows the rule to one source alias.
+- `action`: `{mood, priorityClass, durationMs, palette?, targets}`. `priorityClass` is `event` or `flourish`. `durationMs` runs from 1,000 to 300,000. `palette` holds 1 to 8 `#rrggbb` colors. `targets` lists 1 to 16 registered controller aliases.
+
+The hub assigns `id` (`rule-<uuid>`) and the `createdAtMs` and `updatedAtMs` times. `enabled` defaults to `false`. `PUT .../rules/:id` replaces the definition and keeps `enabled`; `enable` and `disable` take the body `{}`. The hub holds at most 64 rules and answers 429 `capacity` beyond that. `kind:"routine"` is reserved for [#359](https://github.com/jimmie-potts/agent-device-hub/issues/359). Only these routes store a rule as given; any other creator's rule is stored disabled.
+
+Invalid input answers 400 with `invalid-rule`, `invalid-trigger`, `invalid-action`, `unknown-target`, `invalid-interrupt-set` or `invalid-settings`, and a missing rule answers 404 `unknown-rule`. A staged migration destination answers writes with 503 `owner-quiesced`.
+
+### Interrupt set and settings
+
+`PUT .../interrupt-set` takes `{kinds:[...]}`, up to 64 event kinds. A moment may cover status presentation (`coversStatus:true`) only when its class is `event` and its event kind is in this set. The first start seeds `pull-request.merged`, `ci.failed` and `meeting.reminder`, once. An owner edit, including an empty set, is never re-seeded.
+
+`PUT .../settings` replaces `{noFlourishes, quietHours:{enabled, start, end, timeZone}, budgets:{perAgentTask, perAgentHour, globalHour, deviceSpacingMs}}`. The seeded defaults are flourishes allowed, quiet hours off (`22:00` to `07:00`, host time zone when `timeZone` is `null`), 1 flourish per agent task, 2 per agent per hour, 6 per hour overall and 300,000 ms between flourishes on one device.
+
+### Events and arbitration
+
+Sources inside the hub call one intake with `{id, source, kind, alias?, agent?, task?, delivery}`. `delivery:"replay"` is dropped before any rule. An ID the same source already submitted is dropped. The ID of every event that matches a stored rule is persisted before evaluation, so a restart never evaluates it again. The hub's lifecycle ingest is the first source: each newly applied lifecycle event arrives as source `agent-lifecycle` and kind `agent.<lifecycle kind>`, such as `agent.turn.ended`, with neutral IDs only.
+
+For each enabled matching rule, the hub checks in order: the no-flourish switch (flourishes only), quiet hours (every class), the per-agent task, per-agent hourly and overall hourly budgets (flourishes only), and then for each target whether it can play moments (`1.0-only` or `moments-unsupported`), the device spacing (flourishes only), a Quiet presentation and an active alert on status presentation. The composed target reader uses the negotiated 1.1 read from [Controller contract versions](#controller-contract-versions). A controller that answers only at 1.0 cannot play moments. The reader maps the desired mode (Work and Monitor are status, Free and Media content, Quiet quiet). It treats outstanding attention in the hub's agent state as an active alert. Unknown evidence never blocks at the hub; the device still applies its own precedence. Accepted events are evaluated one at a time from a queue of 32.
+
+An unblocked moment goes to each target once, concurrently, with one shared start instant, and is never retried.
+
+### Automation log
+
+`GET .../log?limit=<1-500>&before=<seq>` returns up to `limit` entries (default 100), newest first, with `next` when more may exist. Each entry has the rule ID, the event's source, ID, kind and alias, the moment ID, class and `coversStatus`, the target and an outcome. The outcome is `blocked` with a reason, `receipt` with the receipt's request ID, outcome, prior effects and any failure code, `not-sent` with the sender's reason, or `uncertain`. The log keeps the newest 5,000 entries and holds no credentials or tokens.
 
 ## Playback
 

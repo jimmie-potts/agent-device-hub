@@ -277,6 +277,12 @@ writer, precedence at execution, returning to its current base, and evidence.
 Every moment is a time-boxed interlude, and only owner-approved event kinds
 may cover status presentation. No moment changes a mode. ADR 0005's explicit
 restoration stays, except that an interlude ends automatically.
+The hub keeps event rules, the interrupt set, arbitration settings and the
+automation log in its private store under the owner lease, and arbitrates each
+moment before it hands it to the shared moment sender, once per device
+([#358](https://github.com/jimmie-potts/agent-device-hub/issues/358),
+[#335](https://github.com/jimmie-potts/agent-device-hub/issues/335)). Moments
+reach a device only through its owning controller's queue and tickets.
 [ADR 0007](decisions/0007-bunny-shell.md) makes the dashboard the one
 B.U.N.N.Y. shell, with a starting page set of home widgets, a page per
 registered controller device and a later group page, drawn with hub-owned
