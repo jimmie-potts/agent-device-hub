@@ -43,9 +43,10 @@ npm install --save-dev file:vendor/jimmie-potts-app-verify-1.1.0.tgz
 Version 1.1 only adds to 1.0: a 1.0 plug-in runs unchanged, and receipts stay
 `app-verification/1`. See [What 1.1 adds](#what-11-adds).
 
-The workspace source is now 1.2.0, with optional frozen-proof HTTP delivery.
+The workspace source is now 1.3.0, with a read-only `prerequisites` diagnostic
+and optional frozen-proof HTTP delivery.
 The release example above remains the published 1.1 adoption path; this source
-change does not publish a 1.2 release or update another repository's pin.
+change does not publish a 1.3 release or update another repository's pin.
 
 Then add a wrapper, for example `scripts/verify.mjs`:
 
@@ -85,6 +86,7 @@ executed one.
 | `checks` | Optional start-time boundary checks, such as "health reports simulator mode"; a failed check fails the start. `doctor: true` also re-runs a check in `doctor`; set it only for read-only checks |
 | `captureSteps` | Named steps. `run(t)` drives `t.page` and records each expected observation with `await t.expect(name, fn)`. `t.screenshot(name)` and `t.attach(name, content)` add files to the capture. `scenario` and `fresh` control the starting state |
 | `browser.modules` | Optional module names that export `chromium`, resolved from `root`. Default `playwright`, then `@playwright/test` |
+| `prerequisites.inspect()` | Optional (1.3), trusted read-only local checks such as build freshness. Return stable check ids, phase (`launch`, `capture`, `handoff`), status (`present`, `missing`, `unknown`, `unsupported`) and fixed non-secret reason/next text. Missing checks require an actionable next step. Core IDs are reserved except the delegated `app-build` slot. Shape validation does not sanitize secrets. The hook must not build, launch, write or probe the app. An absent hook reports `app-build: unsupported` |
 
 What the core guarantees to every plug-in callback:
 
@@ -180,12 +182,13 @@ What the core guarantees to every plug-in callback:
 
 `runCli(plugin, argv)` implements the contract's operations. Each prints one
 JSON result line on stdout and progress, including the preview card, on
-stderr, and returns the exit code: `0` when the outcome was verified, `1` for
-a failed outcome, `2` for a usage error and `3` when the supervisor or browser
-tooling is unavailable.
+stderr, and returns the exit code: `0` when an operation completed (not runtime
+qualification for `prerequisites`), `1` for a failed outcome, `2` for a usage
+error and `3` when required local tooling or a prerequisite is missing.
 
 ```text
 help
+prerequisites
 start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...
 doctor [<run-id>]
 scenario <run-id> <name> [--input <name>=<value>]...
@@ -202,6 +205,7 @@ from 0.05 to 1440. Main result fields:
 | Operation | Result |
 | --- | --- |
 | `help` | `app`, `command`, `coreVersion`, `operations` (with `[--input <name>=<value>]...` on `start` and `scenario` only when the plug-in declares inputs), `inputs` (each with `description` and `required`), `scenarioInputs` (each scenario's `requiredInputs`), `scenarios`, `defaultScenario`, `steps`, `exitCodes` |
+| `prerequisites` (1.3) | `scope: local-read-only`, individual `checks`, and separate `launch`, `capture`, `handoff` phase summaries. Each phase's operation stays `unproven`: no unit, socket, browser, video or Windows handoff is attempted. A missing observed requirement exits 3; unknown and unsupported checks do not turn into a ready claim. Use `prerequisitesSupport(help)` to distinguish an older adapter's absent operation from malformed help |
 | `start`, `restart` | `runId`, `state` (`running` or `failed`), `url`, `port`, `inputs` (when the plug-in declares any), `endpoints` (when the ready line names any), `scenario`, `build`, `expiresAt`, `proofDir`, `card`; on failure `cause`, `detail`, `cleanup`. `restart` adds `restarts` and `continuity` (`same-candidate` or `different-candidate`) |
 | `stop` of a run with an unreadable receipt | `state: stale`, `receipt: unreadable` and `cleanup` by unit names; the file is left as found |
 | `stop` of a run whose handoff was interrupted | Units, timers and the runtime directory go first. Then `proof` reports `committed` (a complete own set), `unwound` (captures returned) or `conflict` (files left for inspection). A `receipt-locked` refusal still reports the `cleanup` already done |

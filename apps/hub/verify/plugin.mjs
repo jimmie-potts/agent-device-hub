@@ -179,7 +179,8 @@ export async function buildCurrent(at = root) {
   if (sources.length === 0) return {outcome: /** @type {const} */ ('failed'), reason: 'no build sources matched; the check cannot vouch for the build'};
   let newest = 0, newestFile = '';
   for (const file of sources) {
-    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs ?? 0;
+    const time = (await stat(join(at, file)).catch(() => undefined))?.mtimeMs;
+    if (time === undefined) return {outcome: /** @type {const} */ ('failed'), reason: `${file} is missing or unreadable; restore the source and run npm run build`};
     if (time > newest) [newest, newestFile] = [time, file];
   }
   let oldest = Infinity;
@@ -189,6 +190,16 @@ export async function buildCurrent(at = root) {
     oldest = Math.min(oldest, time);
   }
   return newest <= oldest ? {outcome: /** @type {const} */ ('passed')} : {outcome: /** @type {const} */ ('failed'), reason: `${newestFile} is newer than the build; run npm run build`};
+}
+
+/** @param {string} [at] checkout root
+ * @returns {Promise<import('@jimmie-potts/app-verify').PrerequisiteCheck[]>}
+ */
+export async function inspectBuildPrerequisite(at = root) {
+  const build = await buildCurrent(at);
+  return [{id: 'app-build', phase: 'launch', status: build.outcome === 'passed' ? 'present' : 'missing',
+    reason: build.outcome === 'passed' ? 'build-current' : 'build-missing-or-stale',
+    ...(build.outcome === 'passed' ? {} : {next: 'Run npm run build from the checkout.'})}];
 }
 
 export default definePlugin({
@@ -211,6 +222,7 @@ export default definePlugin({
   },
   inputs: INPUTS,
   build: {version, artifact: {route: '/dashboard.js'}},
+  prerequisites: {inspect: () => inspectBuildPrerequisite()},
   launch: async ({node, dataDir, port, scenario: name, proofDir, runId}) => {
     await writeFile(join(dataDir, 'proof.json'), JSON.stringify({proofDir, runId}), {mode: 0o600});
     return name === 'integrated' ? launchIntegrated({node, dataDir, port}) : {argv: [node, serve, '--data', dataDir, '--port', String(port)]};

@@ -1141,6 +1141,9 @@ Hub #494 implements the lifecycle once in the private workspace package
 consume through one plug-in each. Use Node 24 from the worktree root and run
 `npm run build`, `npm run typecheck` (which also type-checks the package's
 caller examples), `npm run test:app-verify` and `npm run test:app-verify:package`.
+`npm run -s verify -- prerequisites` is the Hub's read-only local inspection;
+it never qualifies launch, capture or Windows browser handoff. Pinned Nanoleaf
+and Pixoo adapters remain on core 1.1.0 and report the operation unsupported.
 Set `TMPDIR` outside every Git checkout, for example
 `~/.cache/agent-device-hub/<task>-tmp`: the tests' runtime roots live under
 it, and the core refuses runtime state inside a checkout.

@@ -26,7 +26,7 @@ test('help reports the declared inputs and the core version', async () => {
     const help = await box.cli(['help']);
     assert.equal(help.code, 0);
     assert.equal(help.result.coreVersion, VERSION);
-    assert.equal(VERSION, '1.2.0');
+    assert.equal(VERSION, '1.3.0');
     assert.deepEqual(help.result.inputs, {label: {description: 'A label the fixture keeps', required: true}, feed: {description: 'Loopback URL of a peer feed', required: false}});
     assert.ok(help.result.operations.includes('start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...'));
     assert.ok(help.result.operations.includes('scenario <run-id> <name> [--input <name>=<value>]...'));

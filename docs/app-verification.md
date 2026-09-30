@@ -54,14 +54,32 @@ Actual Windows-host qualification belongs to
 
 Every operation prints one JSON result line on stdout and progress on stderr.
 No operation prints a token, a private path outside the receipt's two declared
-roots, or personal data. Exit status 0 means the outcome was verified, not
-merely requested; 1 is a failed outcome, 2 a usage error and 3 an unavailable
-supervisor or browser tooling. `help` lists the operations, the adapter's
+roots, or personal data. For lifecycle operations, exit status 0 means the
+outcome was verified, not merely requested; 1 is a failed outcome, 2 a usage
+error and 3 unavailable required tooling. `help` lists the operations, the adapter's
 scenarios and its capture steps and, since 1.1, its declared inputs, each
 scenario's required inputs and the core version.
 
+Since source version 1.3, `prerequisites` is a separate local, read-only
+diagnostic. It reports platform, user-manager visibility, storage-root
+admissibility and access heuristics, tools, browser files, and any adapter's
+read-only build check. It does not create state, launch a unit or browser,
+bind a socket or contact an app. The launch, capture and handoff operation
+summaries remain `unproven` even when every inspected requirement is present.
+Its exit 0 means inspection completed; a known missing requirement exits 3.
+Older pinned consumers that omit it from `help.operations` are unsupported.
+
+The diagnostic trusts the installed standard Playwright dependency and the
+adapter's read-only hook. Custom browser modules are resolved without executing
+their initialization; their browser-file evidence stays unknown. Video tooling
+is explicitly uninspected because Playwright exposes no public ffmpeg path API.
+Adapter text must be fixed, non-secret metadata; shape validation does not
+sanitize arbitrary private values. A missing adapter check must include a next
+action, and adapter checks cannot replace core evidence.
+
 | Operation | Outcome | Failure it must report |
 | --- | --- | --- |
+| `prerequisites` (1.3) | Local read-only checks with `present`, `missing`, `unknown` or `unsupported` status and separate launch, capture and handoff summaries; writes, host launch, listener ownership, browser execution, video finalization and Windows handoff stay unproven | Known missing local requirements name a next action; unreadable or uninspected evidence stays unknown |
 | `start [--scenario <name>] [--lease <minutes>] [--input <name>=<value>]...` | In this order: writes the proof directory with a `starting` receipt naming the unit, timer and runtime directory it is about to create; runs the adapter's optional build step; creates the runtime directory and seeds the scenario; starts the lease timer; starts the application under its supervisor unit; waits for readiness; runs the adapter's boundary checks; rewrites the receipt with `state: running`. The timer exists before the unit, so no running application is ever without a lease | Occupied or unusable port, dirty or unknown build, readiness timeout, seed failure, supervisor unavailable. A failed start stops its unit and timer, removes its runtime directory and reports `state: failed` with the cause and what was cleaned |
 | `doctor [<run-id>]` | Reads live state without changing it: the unit's active state, main PID and start timestamp, the ports the unit's own processes listen on (from its control group and `ss`) against the recorded port, a loopback health read, the build identity the process reports or the receipt recorded, the lease timer's next elapse, the verified set's checksums, and any boundary check the adapter marks read-only. Without an argument it lists every run of this app discovered from the union of `app-verify-<app>-*` units and timers, runtime directories and receipts, so an orphan of any kind appears. A run whose unit is gone while its receipt says `running` or `starting` is `expired` when `preview.expiresAt` has passed and `stale` otherwise | A receipt that disagrees with the live unit is reported as `stale`, never repaired silently |
 | `scenario <run-id> <name> [--input <name>=<value>]...` | Reseeds this run's disposable state to the named scenario while the run keeps its identity, port and lease: stops the application unit, empties its state, seeds, and relaunches it on the recorded port and endpoint ports. Each `--input` replaces that input's recorded value; the others are kept. Only this run's runtime directory changes | A scenario the fixtures do not define; a run that is not `running`. A reseed that fails after the application stopped ends like a failed reset below: `state: stopped`, `failure.cause: reset-failed` |
@@ -928,6 +946,7 @@ installed by the dispatcher.
 For example, replacing the placeholder paths with prepared assigned checkouts:
 
 ```bash
+fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- prerequisites
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- start --scenario lifecycle-basic
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app hub --checkout /absolute/hub-worktree -- doctor
 fnm exec --using=.nvmrc -- npm run -s verify:host -- --host --app nanoleaf --checkout /absolute/wall-worktree --python /absolute/venv/bin/python -- start
@@ -942,6 +961,14 @@ explicit `--unpinned` option still labels development-only evidence. Separate
 concurrent previews use separate worktrees and build outputs, including both
 consumer checkouts for each composition. One coordinator controls each run;
 do not capture, reset or stop another coordinator's run.
+
+The `prerequisites` adapter operation is read-only. Invoking it through
+`verify:host` still creates the dispatcher's bounded command unit and temporary
+directory, then checks their cleanup. That host routing effect requires the
+same explicit authority as other host commands. Use the direct local command
+for inspection without a host command unit. Composition has no aggregate
+prerequisite command; inspect each selected adapter, checking help support for
+older consumers first.
 
 The launcher clears the manager environment with `/usr/bin/env -i`, selects
 Node from its own Node-24 process and supplies only the Linux home, a tool PATH,

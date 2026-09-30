@@ -336,6 +336,27 @@ export interface BrowserOptions {
   modules?: readonly string[];
 }
 
+/** A local observation, never proof that a preview operation will succeed. */
+export interface PrerequisiteCheck {
+  id: string;
+  phase: 'launch' | 'capture' | 'handoff';
+  status: 'present' | 'missing' | 'unknown' | 'unsupported';
+  /** Stable kebab-case cause, without paths, values or tool output. */
+  reason: string;
+  /** A fixed, non-secret action; required for adapter checks with status missing. */
+  next?: string;
+}
+
+export interface PrerequisiteResult extends Record<string, unknown> {
+  operation: 'prerequisites';
+  app: string;
+  coreVersion: string;
+  scope: 'local-read-only';
+  checks: PrerequisiteCheck[];
+  phases: Record<'launch' | 'capture' | 'handoff', {prerequisites: 'present' | 'missing' | 'unknown'; operation: 'unproven'}>;
+  next: string;
+}
+
 /** Everything the core needs from one application. */
 export interface AppPlugin {
   /** Opt in (1.2) only when launch mounts createProofHandler on the preview listener. */
@@ -372,6 +393,8 @@ export interface AppPlugin {
   /** Named capture steps with assertions. */
   captureSteps: Readonly<Record<string, CaptureStep>>;
   browser?: BrowserOptions;
+  /** Optional app-specific local inspection. It must not write, build, bind, fetch or launch. */
+  prerequisites?: {inspect(): Promise<readonly PrerequisiteCheck[]>};
   /**
    * Ports a run must never serve on, added to the installed services' ports
    * (8788, 8765, 8787, 8791, 41230, 41231). A run whose ready line announces

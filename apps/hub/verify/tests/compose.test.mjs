@@ -61,11 +61,11 @@ async function world({faults = {}, hubRun = [process.execPath, 'scripts/verify.m
   const nanoleaf = await standIn(base, 'nl', {kind: 'nanoleaf', app: `${tag}-nl`, fault: faults.nanoleaf});
   const pixoo = await standIn(base, 'px', {kind: 'pixoo', app: `${tag}-px`, fault: faults.pixoo});
   const manifest = join(base, 'compose.json');
-  const service = (id, app, revision) => ({id, role: 'consumer', app, repository: `stand-in/${id}`, revision, coreVersion: '1.2.0', scenario: 'hub-paired', run: [process.execPath, 'scripts/verify.mjs']});
+  const service = (id, app, revision) => ({id, role: 'consumer', app, repository: `stand-in/${id}`, revision, coreVersion: '1.3.0', scenario: 'hub-paired', run: [process.execPath, 'scripts/verify.mjs']});
   const writeManifest = pins => writeFile(manifest, JSON.stringify({manifestVersion: 'hub-compose/1', services: [
     service('nanoleaf', `${tag}-nl`, pins?.nanoleaf ?? nanoleaf.revision),
     service('pixoo', `${tag}-px`, pins?.pixoo ?? pixoo.revision),
-    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: '1.2.0', scenario: 'integrated', run: hubRun},
+    {id: 'hub', role: 'owner', app: 'hub', repository: 'jimmie-potts/agent-device-hub', revision: 'self', coreVersion: '1.3.0', scenario: 'integrated', run: hubRun},
   ]}));
   await writeManifest();
   const outputs = [];
