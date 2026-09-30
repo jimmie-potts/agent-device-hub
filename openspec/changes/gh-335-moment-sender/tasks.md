@@ -4,7 +4,7 @@
 
 ## 2. Fake controller extensions
 
-- [ ] 2.1 Extend `apps/hub/tests/fake-controller.mjs` with reference-`admit` moment admission, `answerNext`, `hold` and `moments()`, keeping the existing negotiation cases and the 1.0 command answers. Existing controller-version and MCP tests pass unchanged.
+- [x] 2.1 Extend `apps/hub/tests/fake-controller.mjs` with reference-`admit` moment admission, `answerNext`, `hold` and `moments()`, keeping the existing negotiation cases and the 1.0 command answers. Existing controller-version and MCP tests pass unchanged.
 
 ## 3. 1.1 command path
 
