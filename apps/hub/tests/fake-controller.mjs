@@ -46,7 +46,8 @@ export function snapshotV1_1(overrides={}){
 /**
  * Starts a loopback controller for one device.
  * Options: serves, epoch (controller epoch), controllerId, deviceId, token, moment (state.moment for the 1.1 snapshot),
- * moments (the 1.1 `moments` capability, for example {supported:false}), sampleClock ({epoch,sampledAtMs} overrides).
+ * moments (the 1.1 `moments` capability, for example {supported:false}), sampleClock ({epoch,sampledAtMs} overrides),
+ * mode (the desired mode both snapshots report, such as 'Quiet'; the fixture's is 'Work').
  * Returns: endpoint; config(overrides) for a hub controller entry; requests, a log of every request;
  * reads(), snapshot reads, with versioned() and unversioned() counts; commands, every POST body seen; moments(), the
  * moment requests among them; snapshot10() and snapshot11(), the documents it currently serves; restart({epoch,serves})
@@ -75,6 +76,7 @@ export async function startFakeController(options={}){
     const value=snapshotV1_1(overrides);
     if(options.moments)value.capabilities.moments=structuredClone(options.moments);
     if(options.moment)value.state.moment=structuredClone(options.moment);
+    if(options.mode)value.state.desired.mode={status:'known',value:options.mode};
     assert.ok(validate('snapshotV1_1',value),'fake 1.1 snapshot must validate');
     return version==='1.1'?value:downgradeSnapshot(value);
   };
