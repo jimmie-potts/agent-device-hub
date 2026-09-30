@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-export const artifacts = ['README.md', 'guide-views.schema.json', 'catalog.json', 'reference.mjs',
-  'journey.md', 'digest.mjs', 'fixtures/composed.json', 'fixtures/cases.json'];
+export const artifacts = ['README.md', 'records.schema.json', 'records.mjs', 'catalog.json', 'views.schema.json',
+  'views.mjs', 'digest.mjs', 'fixtures/dataset.json', 'fixtures/record-cases.json', 'fixtures/epic-page.json',
+  'fixtures/composed.json', 'fixtures/view-cases.json'];
 export function definitionDigest(specPath) {
   const hash = createHash('sha256');
   for (const path of artifacts) {
@@ -15,9 +16,9 @@ export function definitionDigest(specPath) {
   }
   // OpenSpec promotes ADDED Requirements to Requirements on archive.
   const spec = readFileSync(specPath, 'utf8')
-    .replace(/^# guide-views Specification\n\n/, '')
+    .replace(/^# epic-guide Specification\n\n/, '')
     .replace(/^## ADDED Requirements$/m, '## Requirements').trimEnd() + '\n';
-  hash.update('guide-views/spec.md\0' + spec + '\0');
+  hash.update('epic-guide/spec.md\0' + spec + '\0');
   return hash.digest('hex');
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -1,0 +1,271 @@
+[
+  {
+    "name": "unsupported records version",
+    "set": {
+      "schemaVersion": "guide-records/1.0"
+    },
+    "invalid": "unsupported schemaVersion"
+  },
+  {
+    "name": "retired Guide metadata is not a field",
+    "set": {
+      "issues.9.guide": {
+        "topic": "work-guide"
+      }
+    },
+    "invalid": "additional properties"
+  },
+  {
+    "name": "producer placement that disagrees with native parents",
+    "set": {
+      "issues.4.parent.ids": [
+        "jimmie-potts/agent-device-hub#900100"
+      ]
+    },
+    "recompute": false,
+    "invalid": "placement mismatch"
+  },
+  {
+    "name": "parent cycle leaves placement unresolved",
+    "set": {
+      "issues.3.parent.ids": [
+        "jimmie-potts/divoom-app-upgrade#900104"
+      ],
+      "issues.3.parent.evidence.pagination.itemCount": 1,
+      "issues.3.parent.evidence.pagination.totalCount": 1
+    },
+    "placement": {
+      "jimmie-potts/divoom-app-upgrade#900104": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900103"
+        ],
+        "reason": "parent-cycle"
+      }
+    }
+  },
+  {
+    "name": "missing ancestor leaves placement unresolved",
+    "set": {
+      "issues.3.parent.ids": [
+        "jimmie-potts/agent-device-hub#1"
+      ],
+      "issues.3.parent.evidence.complete": false,
+      "issues.3.parent.evidence.reason": "Ancestor not collected",
+      "issues.3.parent.evidence.pagination": null
+    },
+    "placement": {
+      "jimmie-potts/divoom-app-upgrade#900104": {
+        "state": "unresolved",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900103"
+        ],
+        "reason": "ancestor-missing"
+      }
+    }
+  },
+  {
+    "name": "a parent without the epic label is not an epic",
+    "set": {
+      "issues.0.labels": [
+        "enhancement",
+        "status:in-progress"
+      ]
+    },
+    "placement": {
+      "jimmie-potts/agent-device-hub#900101": {
+        "state": "standalone",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900100"
+        ],
+        "reason": null
+      },
+      "jimmie-potts/divoom-app-upgrade#900104": {
+        "state": "standalone",
+        "epic": null,
+        "path": [
+          "jimmie-potts/agent-device-hub#900100",
+          "jimmie-potts/agent-device-hub#900103"
+        ],
+        "reason": null
+      }
+    }
+  },
+  {
+    "name": "nearest epic wins for a nested epic",
+    "set": {
+      "issues.3.labels": [
+        "epic",
+        "maintenance",
+        "status:backlog"
+      ]
+    },
+    "placement": {
+      "jimmie-potts/agent-device-hub#900103": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900100",
+        "path": [],
+        "reason": null
+      },
+      "jimmie-potts/divoom-app-upgrade#900104": {
+        "state": "epic",
+        "epic": "jimmie-potts/agent-device-hub#900103",
+        "path": [],
+        "reason": null
+      }
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900103": "unassigned",
+      "jimmie-potts/divoom-app-upgrade#900104": "unassigned"
+    }
+  },
+  {
+    "name": "cross-repository child keeps its conflicting recorded Phase visible",
+    "phase": {
+      "jimmie-potts/codex-nanoleaf#900102": "conflict",
+      "jimmie-potts/agent-device-hub#900101": "inherited"
+    }
+  },
+  {
+    "name": "a child Phase under an unassigned epic is a conflict",
+    "set": {
+      "issues.0.project.phase.recorded": null,
+      "issues.1.project.phase.recorded": "Ask the guide"
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900101": "conflict",
+      "jimmie-potts/agent-device-hub#900103": "unassigned"
+    }
+  },
+  {
+    "name": "unresolved ancestry makes Phase unknown",
+    "phase": {
+      "jimmie-potts/agent-device-hub#900108": "unknown"
+    }
+  },
+  {
+    "name": "unknown Phase option",
+    "set": {
+      "issues.0.project.phase.recorded": "Invented phase"
+    },
+    "invalid": "unknown phase option"
+  },
+  {
+    "name": "a private Project is never collected",
+    "set": {
+      "project.public": false
+    },
+    "recompute": false,
+    "invalid": "private project values present"
+  },
+  {
+    "name": "an uncollected private Project leaves every value unknown",
+    "set": {
+      "project.public": false,
+      "project.evidence.state": "unknown",
+      "project.evidence.complete": false,
+      "project.evidence.reason": "Project is private"
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900100": "unknown",
+      "jimmie-potts/agent-device-hub#900101": "unknown"
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900100": "unknown"
+    }
+  },
+  {
+    "name": "a failed Project read cannot clear selections",
+    "set": {
+      "project.evidence.state": "failed",
+      "project.evidence.complete": false,
+      "project.evidence.reason": "Projects API denied"
+    },
+    "phase": {
+      "jimmie-potts/agent-device-hub#900100": "unknown"
+    },
+    "commitment": {
+      "jimmie-potts/agent-device-hub#900100": "unknown",
+      "jimmie-potts/agent-device-hub#900105": "unknown"
+    }
+  },
+  {
+    "name": "missing conditional sections do not withhold readiness",
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        true,
+        null
+      ],
+      "jimmie-potts/agent-device-hub#900105": [
+        true,
+        null
+      ]
+    }
+  },
+  {
+    "name": "an idea is held from ready work",
+    "ready": {
+      "jimmie-potts/divoom-app-upgrade#900104": [
+        false,
+        "idea-hold"
+      ]
+    }
+  },
+  {
+    "name": "placeholder acceptance withholds readiness",
+    "set": {
+      "issues.1.story.acceptance.text": "TBD"
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "story-evidence-incomplete"
+      ]
+    }
+  },
+  {
+    "name": "closed not planned is not ready and keeps its reason",
+    "ready": {
+      "jimmie-potts/agent-device-hub#900107": [
+        false,
+        "issue-closed"
+      ]
+    }
+  },
+  {
+    "name": "incomplete blocker pagination withholds readiness",
+    "set": {
+      "issues.1.blockedBy.evidence.complete": false,
+      "issues.1.blockedBy.evidence.reason": "Page unavailable",
+      "issues.1.blockedBy.evidence.pagination.hasNextPage": true
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900101": [
+        false,
+        "dependency-evidence-unavailable"
+      ]
+    }
+  },
+  {
+    "name": "missing outcome withholds readiness",
+    "set": {
+      "issues.5.story.outcome": {
+        "state": "missing",
+        "heading": null,
+        "text": null,
+        "source": "https://github.com/jimmie-potts/agent-device-hub/issues/900105",
+        "parser": "story-sections/1",
+        "reason": "Section absent"
+      }
+    },
+    "ready": {
+      "jimmie-potts/agent-device-hub#900105": [
+        false,
+        "story-evidence-incomplete"
+      ]
+    }
+  }
+]

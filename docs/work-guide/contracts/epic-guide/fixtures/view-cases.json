@@ -1,0 +1,439 @@
+[
+  {
+    "name": "unsupported view version",
+    "base": "epic-page",
+    "set": {
+      "schemaVersion": "guide-views/2.0"
+    },
+    "invalid": "unsupported-version"
+  },
+  {
+    "name": "unknown component kind",
+    "base": "composed",
+    "set": {
+      "components.1.kind": "chart"
+    },
+    "invalid": "schema"
+  },
+  {
+    "name": "model-supplied URL property",
+    "base": "composed",
+    "set": {
+      "components.2.href": "https://example.com/"
+    },
+    "invalid": "schema"
+  },
+  {
+    "name": "URL in a record reference",
+    "base": "composed",
+    "set": {
+      "components.2.record": "https://example.com/a#1"
+    },
+    "invalid": "schema"
+  },
+  {
+    "name": "model-written heading",
+    "base": "composed",
+    "set": {
+      "components.0.heading": "Everything you need"
+    },
+    "invalid": "schema"
+  },
+  {
+    "name": "unknown reason code",
+    "base": "composed",
+    "set": {
+      "components.2.reasons.0.code": "model-confidence"
+    },
+    "invalid": "schema"
+  },
+  {
+    "name": "catalog mismatch",
+    "base": "composed",
+    "set": {
+      "catalogId": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "invalid": "catalog-mismatch"
+  },
+  {
+    "name": "view bound to replaced record content",
+    "base": "composed",
+    "records": {
+      "issues.1.title": "Changed title"
+    },
+    "keepDatasetId": true,
+    "invalid": "dataset-mismatch"
+  },
+  {
+    "name": "composed content on an ordinary page",
+    "base": "composed",
+    "set": {
+      "page": {
+        "kind": "epic",
+        "record": "jimmie-potts/agent-device-hub#900100"
+      }
+    },
+    "invalid": "page-not-allowed"
+  },
+  {
+    "name": "epic page for an issue that is not an epic",
+    "base": "epic-page",
+    "set": {
+      "page.record": "jimmie-potts/agent-device-hub#900103"
+    },
+    "invalid": "page-not-allowed"
+  },
+  {
+    "name": "section not offered on the page",
+    "base": "composed",
+    "set": {
+      "components.0.group": "up-next"
+    },
+    "invalid": "page-not-allowed"
+  },
+  {
+    "name": "unknown issue record",
+    "base": "composed",
+    "set": {
+      "components.2.record": "jimmie-potts/agent-device-hub#999999"
+    },
+    "invalid": "unknown-record"
+  },
+  {
+    "name": "duplicate instance ID",
+    "base": "composed",
+    "set": {
+      "components.3.id": "next-card"
+    },
+    "invalid": "duplicate-instance"
+  },
+  {
+    "name": "component cycle",
+    "base": "epic-page",
+    "set": {
+      "components.0.children": [
+        "in-progress"
+      ]
+    },
+    "invalid": "cycle"
+  },
+  {
+    "name": "component with two parents",
+    "base": "composed",
+    "set": {
+      "components.4.children": [
+        "next-card"
+      ]
+    },
+    "invalid": "multiple-parents"
+  },
+  {
+    "name": "unknown child instance",
+    "base": "composed",
+    "set": {
+      "components.0.children": [
+        "missing-card"
+      ]
+    },
+    "invalid": "unknown-component"
+  },
+  {
+    "name": "unreachable component",
+    "base": "composed",
+    "set": {
+      "root": [
+        "answer"
+      ]
+    },
+    "invalid": "orphan"
+  },
+  {
+    "name": "card at the root",
+    "base": "composed",
+    "set": {
+      "root": [
+        "next-card",
+        "answer",
+        "graph"
+      ]
+    },
+    "invalid": "nesting-not-allowed"
+  },
+  {
+    "name": "prerequisite list among cards",
+    "base": "epic-page",
+    "set": {
+      "components.0.children": [
+        "wall-titles",
+        "legacy-story",
+        "epic-pages-prerequisites"
+      ],
+      "components.11.children": [
+        "epic-pages"
+      ]
+    },
+    "invalid": "nesting-not-allowed"
+  },
+  {
+    "name": "task brief outside its issue page",
+    "base": "epic-page",
+    "add": [
+      {
+        "id": "brief",
+        "kind": "task-brief",
+        "record": "jimmie-potts/agent-device-hub#900101"
+      }
+    ],
+    "set": {
+      "root": [
+        "in-progress",
+        "up-next",
+        "other-work",
+        "device-group",
+        "done",
+        "graph",
+        "brief"
+      ]
+    },
+    "invalid": "nesting-not-allowed"
+  },
+  {
+    "name": "same record twice under one parent",
+    "base": "composed",
+    "add": [
+      {
+        "id": "again-card",
+        "kind": "issue-card",
+        "record": "jimmie-potts/agent-device-hub#900101",
+        "presentation": "row",
+        "primary": false,
+        "reasons": [
+          {
+            "code": "ready-candidate",
+            "evidence": []
+          }
+        ]
+      }
+    ],
+    "set": {
+      "components.0.children": [
+        "browser-epic",
+        "next-card",
+        "again-card"
+      ]
+    },
+    "invalid": "duplicate-sibling"
+  },
+  {
+    "name": "ready work listed as in progress",
+    "base": "epic-page",
+    "set": {
+      "components.0.children": [
+        "epic-pages",
+        "legacy-story"
+      ],
+      "components.3.children": [
+        "wall-titles"
+      ]
+    },
+    "invalid": "group-requirement"
+  },
+  {
+    "name": "Up next without the ready reason",
+    "base": "epic-page",
+    "set": {
+      "components.4.reasons": [
+        {
+          "code": "epic-member",
+          "evidence": [
+            {
+              "epic": "jimmie-potts/agent-device-hub#900100"
+            }
+          ]
+        }
+      ]
+    },
+    "invalid": "group-requirement"
+  },
+  {
+    "name": "group member outside the parent's subtree",
+    "base": "epic-page",
+    "set": {
+      "components.7.record": "jimmie-potts/agent-device-hub#900109"
+    },
+    "invalid": "group-requirement"
+  },
+  {
+    "name": "epic summary for an issue that is not an epic",
+    "base": "composed",
+    "set": {
+      "components.1.record": "jimmie-potts/agent-device-hub#900101"
+    },
+    "invalid": "group-requirement"
+  },
+  {
+    "name": "placed issue missing from its epic page",
+    "base": "epic-page",
+    "set": {
+      "components.8.primary": false
+    },
+    "invalid": "coverage"
+  },
+  {
+    "name": "primary card for another page's issue",
+    "base": "epic-page",
+    "set": {
+      "components.10.primary": true
+    },
+    "invalid": "coverage"
+  },
+  {
+    "name": "composed view claims a primary placement",
+    "base": "composed",
+    "set": {
+      "components.2.primary": true
+    },
+    "invalid": "coverage"
+  },
+  {
+    "name": "composed card without a reason",
+    "base": "composed",
+    "drop": [
+      "components.3.reasons"
+    ],
+    "invalid": "reason-required"
+  },
+  {
+    "name": "question match on text the model never received",
+    "base": "composed",
+    "set": {
+      "components.2.reasons.0.evidence": [
+        {
+          "field": "story.deferrals.text"
+        }
+      ]
+    },
+    "invalid": "evidence-not-public"
+  },
+  {
+    "name": "membership in the wrong epic",
+    "base": "composed",
+    "set": {
+      "components.2.reasons.1.evidence.0.epic": "jimmie-potts/agent-device-hub#900103"
+    },
+    "invalid": "evidence-unverified"
+  },
+  {
+    "name": "invented relationship direction",
+    "base": "composed",
+    "set": {
+      "components.3.reasons": [
+        {
+          "code": "recorded-relation",
+          "evidence": [
+            {
+              "relation": "blocks",
+              "record": "jimmie-potts/agent-device-hub#900101"
+            }
+          ]
+        }
+      ]
+    },
+    "invalid": "evidence-unverified"
+  },
+  {
+    "name": "reason not supported by the component",
+    "base": "composed",
+    "set": {
+      "components.1.reasons.0": {
+        "code": "epic-member",
+        "evidence": [
+          {
+            "epic": "jimmie-potts/agent-device-hub#900100"
+          }
+        ]
+      }
+    },
+    "invalid": "reason-not-allowed"
+  },
+  {
+    "name": "repeated reason code",
+    "base": "composed",
+    "set": {
+      "components.2.reasons.0": {
+        "code": "ready-candidate",
+        "evidence": []
+      }
+    },
+    "invalid": "duplicate-reason"
+  },
+  {
+    "name": "missing workflow label withholds the ready reason",
+    "base": "composed",
+    "records": {
+      "issues.1.labels": [
+        "enhancement"
+      ]
+    },
+    "node": "next-card",
+    "reason": "ready-candidate",
+    "state": "withheld",
+    "withheld": "explicit-ready-status-required"
+  },
+  {
+    "name": "stale relationship evidence is marked stale",
+    "base": "composed",
+    "set": {
+      "components.3.reasons": [
+        {
+          "code": "question-match",
+          "evidence": [
+            {
+              "field": "title"
+            }
+          ]
+        },
+        {
+          "code": "recorded-relation",
+          "evidence": [
+            {
+              "relation": "child-of",
+              "record": "jimmie-potts/agent-device-hub#900100"
+            }
+          ]
+        }
+      ]
+    },
+    "records": {
+      "issues.2.parent.evidence.state": "stale",
+      "issues.2.parent.evidence.reason": "Refresh failed"
+    },
+    "node": "wall-card",
+    "reason": "recorded-relation",
+    "state": "stale",
+    "withheld": "relation-evidence-stale"
+  },
+  {
+    "name": "expired observations withhold current claims at use",
+    "base": "composed",
+    "policy": {
+      "asOf": "2026-10-01T12:00:00Z"
+    },
+    "node": "next-card",
+    "reason": "ready-candidate",
+    "state": "withheld",
+    "withheld": "issue-evidence-unavailable"
+  },
+  {
+    "name": "incomplete prerequisite pagination is shown as partial",
+    "base": "epic-page",
+    "records": {
+      "issues.1.blockedBy.evidence.complete": false,
+      "issues.1.blockedBy.evidence.reason": "Page unavailable",
+      "issues.1.blockedBy.evidence.pagination.hasNextPage": true
+    },
+    "node": "epic-pages-prerequisites",
+    "complete": false,
+    "withheld": "dependency-evidence-unavailable"
+  }
+]

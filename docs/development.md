@@ -101,13 +101,13 @@ also runs shared build/type/controller/workflow checks and the guide's existing
 build, maintenance and browser checks. See the
 [field dictionary](work-guide/contracts/README.md).
 
-Guide view contract fixtures run the same way:
-`node --test docs/work-guide/contracts/guide-views/views.test.mjs`, as a
-separate step in the same Depot job. They exercise catalog and schema agreement,
-view validation and rejection codes, reason evidence, stale and missing record
-evidence, reduced-motion equivalence and the Full guide baseline against the
-committed generated guide. They do not qualify a renderer, provider adapter or
-view-state store. See the [view dictionary](work-guide/contracts/guide-views/README.md).
+Epic Guide contract fixtures run the same way:
+`node --test docs/work-guide/contracts/epic-guide/contracts.test.mjs`, as a
+separate step in the same Depot job. They exercise `guide-records/2.0` placement,
+Project values, readiness and projection, and `guide-views/1.0` catalog and schema
+agreement, coverage, reasons, boards, briefs and rejection codes, using synthetic
+records. They do not qualify the collector, browser, Project access or a
+provider. See the [epic Guide dictionary](work-guide/contracts/epic-guide/README.md).
 
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
 not report v24, prefix each command with `fnm exec --using=.nvmrc --`, for

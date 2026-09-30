@@ -1,0 +1,144 @@
+{
+  "schemaVersion": "guide-views/1.0",
+  "recordsVersion": "guide-records/2.0",
+  "datasetId": "sha256:4ca494bc399f7c1b068beaf131559b97f5d5f980dd9b0ea345794e5e32ad4dbe",
+  "catalogId": "sha256:d029e2df638f7e6f2ee9e54e85ca84e42ca787a716f5cdc023f8fd091d6563f3",
+  "origin": "ordinary",
+  "page": {
+    "kind": "epic",
+    "record": "jimmie-potts/agent-device-hub#900100"
+  },
+  "layout": "stack",
+  "root": [
+    "in-progress",
+    "up-next",
+    "other-work",
+    "device-group",
+    "done",
+    "graph"
+  ],
+  "components": [
+    {
+      "id": "in-progress",
+      "kind": "section",
+      "group": "in-progress",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "open",
+      "children": [
+        "wall-titles",
+        "legacy-story"
+      ]
+    },
+    {
+      "id": "wall-titles",
+      "kind": "issue-card",
+      "record": "jimmie-potts/codex-nanoleaf#900102",
+      "presentation": "card",
+      "primary": true
+    },
+    {
+      "id": "legacy-story",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900109",
+      "presentation": "card",
+      "primary": true
+    },
+    {
+      "id": "up-next",
+      "kind": "section",
+      "group": "up-next",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "open",
+      "children": [
+        "epic-pages"
+      ]
+    },
+    {
+      "id": "epic-pages",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900101",
+      "presentation": "card",
+      "primary": true,
+      "reasons": [
+        {
+          "code": "ready-candidate",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "other-work",
+      "kind": "section",
+      "group": "backlog",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "open",
+      "children": [
+        "device-follow-ups"
+      ]
+    },
+    {
+      "id": "device-follow-ups",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900103",
+      "presentation": "card",
+      "primary": true
+    },
+    {
+      "id": "device-group",
+      "kind": "section",
+      "group": "parent-group",
+      "record": "jimmie-potts/agent-device-hub#900103",
+      "sequence": "none",
+      "disclosure": "collapsed",
+      "children": [
+        "pixoo-previews"
+      ]
+    },
+    {
+      "id": "pixoo-previews",
+      "kind": "issue-card",
+      "record": "jimmie-potts/divoom-app-upgrade#900104",
+      "presentation": "row",
+      "primary": true
+    },
+    {
+      "id": "done",
+      "kind": "section",
+      "group": "recently-done",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "collapsed",
+      "children": [
+        "retired-layout"
+      ]
+    },
+    {
+      "id": "retired-layout",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900107",
+      "presentation": "row",
+      "primary": false
+    },
+    {
+      "id": "graph",
+      "kind": "section",
+      "group": "relationships",
+      "record": null,
+      "sequence": "none",
+      "disclosure": "collapsed",
+      "children": [
+        "epic-pages-prerequisites"
+      ]
+    },
+    {
+      "id": "epic-pages-prerequisites",
+      "kind": "dependency-list",
+      "record": "jimmie-potts/agent-device-hub#900101",
+      "direction": "prerequisites",
+      "scope": "direct"
+    }
+  ]
+}
