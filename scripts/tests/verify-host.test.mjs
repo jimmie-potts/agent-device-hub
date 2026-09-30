@@ -143,3 +143,73 @@ test('missing adapter and invalid timeout refuse before effects', async t => {
   await rm(join(root, 'scripts/verify.mjs'));
   await assert.rejects(prepare(args(root)));
 });
+
+
+test('host commands keep browser temporary files on owned disk storage', async t => {
+  const plan = await prepare(args(await checkout(t)));
+  assert.ok(plan.hostEnv.TMPDIR, 'host TMPDIR must be explicit');
+  assert.match(plan.hostEnv.TMPDIR, /\/.local\/scratch\/vh-[a-f0-9]{8}$/);
+  assert.ok(Buffer.byteLength(plan.hostEnv.TMPDIR) <= 70);
+  const fixture = supervisor();
+  await runHost(plan, fixture);
+  const launch = fixture.calls.find(c => c.program.endsWith('/systemd-run'));
+  assert.ok(launch.argv.some(a => a.startsWith('--property=ExecStopPost=')));
+});
+
+test('temporary storage cleanup preserves other commands and refuses mismatched ownership', async t => {
+  const {createTemporary, cleanupTemporary, inspectTemporary, runCommand} = await import('../verify-host-command.mjs');
+  const plan = await prepare(args(await checkout(t)));
+  t.after(() => rm(plan.temporary, {recursive: true, force: true}));
+  const sibling = await prepare(args(await checkout(t)));
+  t.after(() => rm(sibling.temporary, {recursive: true, force: true}));
+  await createTemporary(sibling.temporary, sibling.token);
+  const child = join(plan.checkout, 'temporary-test.mjs');
+  await writeFile(child, `import {writeFileSync} from 'node:fs'; import {tmpdir} from 'node:os'; writeFileSync(tmpdir() + '/artifact', 'owned');`);
+  assert.equal(await runCommand(plan.temporary, plan.token, [child]), 0);
+  assert.equal(await inspectTemporary(plan.temporary), 'retained');
+  await assert.rejects(createTemporary(plan.temporary, plan.token), /EEXIST/);
+  await assert.rejects(cleanupTemporary(plan.temporary, plan.token.slice(0,-1) + (plan.token.endsWith('0') ? '1' : '0')), /mismatch/);
+  await cleanupTemporary(plan.temporary, plan.token);
+  assert.equal(await inspectTemporary(plan.temporary), 'removed');
+  assert.equal(await inspectTemporary(sibling.temporary), 'retained');
+  await cleanupTemporary(plan.temporary, plan.token); // idempotent after removal
+  await cleanupTemporary(sibling.temporary, sibling.token);
+});
+
+test('post-stop cleanup removes temporary files after forced process interruption', async t => {
+  const {spawn} = await import('node:child_process');
+  const {once} = await import('node:events');
+  const {execute} = await import('../verify-host.mjs');
+  const {inspectTemporary} = await import('../verify-host-command.mjs');
+  const plan = await prepare(args(await checkout(t)));
+  t.after(() => rm(plan.temporary, {recursive: true, force: true}));
+  const source = "require('fs').writeFileSync(require('os').tmpdir() + '/artifact', 'owned'); console.log('ready'); setInterval(()=>{},1000)";
+  const child = spawn(process.execPath, [plan.helper, 'run', plan.temporary, plan.token, '-e', source], {detached:true, stdio:['ignore','pipe','pipe'], env:plan.hostEnv});
+  t.after(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already exited. */ } });
+  const exited = once(child, 'exit');
+  await Promise.race([once(child.stdout, 'data'), new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(new Error('helper did not start')), 5000); timer.unref();
+  })]);
+  process.kill(-child.pid, 'SIGKILL');
+  await exited;
+  assert.equal(await inspectTemporary(plan.temporary), 'retained');
+  const stopped = await execute(process.execPath, [plan.helper, 'cleanup', plan.temporary, plan.token], {env:{}, timeoutMs:1000});
+  assert.equal(stopped.code, 0);
+  assert.equal(await inspectTemporary(plan.temporary), 'removed');
+});
+
+test('unconfirmed temporary cleanup cannot report success', async t => {
+  const plan = await prepare(args(await checkout(t)));
+  for (const status of ['retained', 'unknown']) {
+    const fixture = supervisor();
+    const outcome = await runHost(plan, {...fixture, inspectTemporary:async () => status});
+    assert.equal(outcome.value.state, 'uncertain');
+    assert.equal(outcome.value.temporaryCleanup, status);
+    assert.equal(fixture.calls.filter(c => c.program.endsWith('/systemd-run')).length, 1);
+  }
+});
+
+test('post-stop argv uses literal systemd words without shell or environment expansion', async () => {
+  const {unitWord} = await import('../verify-host.mjs');
+  assert.equal(unitWord('space $NAME %u "quote" \\path'), '"space $NAME %%u \\"quote\\" \\\\path"');
+});

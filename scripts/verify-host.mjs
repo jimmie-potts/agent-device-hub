@@ -6,7 +6,9 @@ import {access, readFile, realpath} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, isAbsolute, join, delimiter} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {pathToFileURL, fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
+import {inspectTemporary} from './verify-host-command.mjs';
 
 const APPS = {hub: 'agent-device-hub', compose: 'agent-device-hub', nanoleaf: 'codex-nanoleaf', pixoo: 'divoom-app-upgrade'};
 const SINGLE = ['help', 'start', 'doctor', 'scenario', 'capture', 'handoff', 'extend', 'stop', 'restart'];
@@ -56,13 +58,26 @@ export async function prepare(argv) {
   const runtime = `/run/user/${process.getuid()}`;
   const bus = `unix:path=${runtime}/bus`;
   const path = [...new Set([dirname(node), ...(options['--fnm'] ? [dirname(options['--fnm'])] : []), '/usr/bin', '/bin'])].join(delimiter);
+  const helper = fileURLToPath(new URL('./verify-host-command.mjs', import.meta.url));
+  const git = promisify(execFile);
+  const common = await git('/usr/bin/git', ['-C', dirname(helper), 'rev-parse', '--path-format=absolute', '--git-common-dir'], {env: clientGitEnv(home)});
+  const ownerRoot = dirname(await realpath(common.stdout.trim()));
+  await git('/usr/bin/git', ['-C', ownerRoot, 'check-ignore', '-q', '.local/probe'], {env: clientGitEnv(home)});
+  const token = randomUUID();
+  const temporary = join(ownerRoot, '.local/scratch', `vh-${token.slice(0, 8)}`);
+  if (Buffer.byteLength(temporary) > 70) throw new Error('launcher checkout path is too long for browser temporary sockets; use a shorter canonical checkout');
   const hostEnv = {HOME: home, PATH: path, LANG: 'C.UTF-8', XDG_RUNTIME_DIR: runtime, DBUS_SESSION_BUS_ADDRESS: bus,
-    npm_config_cache: join(home, '.npm'), PLAYWRIGHT_BROWSERS_PATH: join(home, '.cache/ms-playwright')};
+    TMPDIR: temporary, npm_config_cache: join(home, '.npm'), PLAYWRIGHT_BROWSERS_PATH: join(home, '.cache/ms-playwright')};
   if (options['--python']) hostEnv.PYTHON = options['--python'];
   const clientEnv = {HOME: home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', DBUS_SESSION_BUS_ADDRESS: bus};
-  return {app, checkout, operation: args[0], unit: `app-verify-command-${randomUUID()}.service`,
+  return {app, checkout, operation: args[0], unit: `app-verify-command-${token}.service`, temporary, token, helper,
     node, adapterArgs: [entrypoint, ...args], hostEnv, clientEnv, timeoutMs: Number(seconds) * 1000};
 }
+
+function clientGitEnv(home) { return {HOME: home, PATH: '/usr/bin:/bin', LANG: 'C.UTF-8'}; }
+// ExecStopPost uses systemd's command grammar: ':' disables environment
+// expansion and doubled '%' preserves literal specifiers. It is never a shell.
+export function unitWord(value) { if (/[\x00-\x1f\x7f]/.test(value)) throw new Error('invalid systemd word'); return '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%') + '"'; }
 
 // execFile never invokes a shell. Killing this directly owned client is not
 // preview cleanup; the exact user unit is stopped and read back separately.
@@ -87,9 +102,9 @@ function adapterResult(text) {
   catch { return null; }
 }
 
-export async function runHost(plan, {execute: run = execute, signal, progress = () => {}} = {}) {
+export async function runHost(plan, {execute: run = execute, inspectTemporary: inspect = inspectTemporary, signal, progress = () => {}} = {}) {
   const value = {hostCommandVersion: '1', app: plan.app, checkout: plan.checkout, operation: plan.operation,
-    unit: plan.unit, state: 'unavailable', cleanup: 'not-started', adapterExit: null, result: null};
+    unit: plan.unit, temporary: plan.temporary, temporaryCleanup: 'not-started', state: 'unavailable', cleanup: 'not-started', adapterExit: null, result: null};
   const client = {env: plan.clientEnv, timeoutMs: 5000};
   let manager;
   try { manager = await run(SYSTEMCTL, ['--user', 'is-system-running'], {...client, signal}); }
@@ -99,9 +114,10 @@ export async function runHost(plan, {execute: run = execute, signal, progress = 
   }
   const launchArgs = ['--user', '--quiet', '--wait', '--pipe', '--collect', '--expand-environment=no', `--unit=${plan.unit}`,
     '--property=KillMode=control-group', '--property=TimeoutStopSec=5s', `--property=RuntimeMaxSec=${plan.timeoutMs / 1000}s`,
+    `--property=ExecStopPost=:/usr/bin/env -i ${[plan.node, plan.helper, 'cleanup', plan.temporary, plan.token].map(unitWord).join(' ')}`,
     `--working-directory=${plan.checkout}`, '--', '/usr/bin/env', '-i',
-    ...Object.entries(plan.hostEnv).map(([key, val]) => `${key}=${val}`), plan.node, ...plan.adapterArgs];
-  progress(`Host command: ${plan.unit}\nTrusted Linux-user execution; preview units retain their own leases.\n`);
+    ...Object.entries(plan.hostEnv).map(([key, val]) => `${key}=${val}`), plan.node, plan.helper, 'run', plan.temporary, plan.token, ...plan.adapterArgs];
+  progress(`Host command: ${plan.unit}\nTemporary storage: ${plan.temporary}\nTrusted Linux-user execution; preview units retain their own leases.\n`);
   let launched;
   try {
     launched = await run(SYSTEMD_RUN, launchArgs, {...client, timeoutMs: plan.timeoutMs + 10000, signal});
@@ -125,9 +141,10 @@ export async function runHost(plan, {execute: run = execute, signal, progress = 
     observed = await show();
   }
   value.cleanup = gone(observed) ? 'verified' : 'unknown';
-  if (launched.interrupted || signal?.aborted || value.result === null || value.cleanup !== 'verified') {
+  try { value.temporaryCleanup = await inspect(plan.temporary); } catch { value.temporaryCleanup = 'unknown'; }
+  if (value.temporaryCleanup !== 'removed' || launched.interrupted || signal?.aborted || value.result === null || value.cleanup !== 'verified') {
     return {code: 1, value: {...value, state: 'uncertain', error: 'host-command-unverified',
-      next: 'Do not retry start. Read doctor and owned receipts from this checkout, identify any created previews, and stop only those runs if needed. Command cleanup is not preview cleanup.'}};
+      next: 'Do not retry start. Read doctor and owned receipts from this checkout, identify any created previews, and stop only those runs if needed. Command cleanup is not preview cleanup. If temporary cleanup is unverified, inspect the reported scratch path and remove it only after matching its .owner token to this command unit.'}};
   }
   // Adapter failure and usage/unavailable codes retain their meaning.
   const code = [0, 1, 2, 3].includes(launched.code) ? launched.code : 1;

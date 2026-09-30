@@ -36,3 +36,14 @@ The setup contract SHALL identify host operations as Linux-user execution outsid
 #### Scenario: Source delivery
 - **WHEN** the source launcher is delivered
 - **THEN** personal configuration, fresh Desktop/CLI/exec sessions, live listener ownership, Windows handoff and parallel acceptance remain separately qualified; delegated workers and reviewers do not gain direct launch authority
+
+### Requirement: Owned disk temporary storage
+Every host command SHALL use a short, unique temporary directory on disk under the launcher's canonical ignored `.local/scratch`. Supervisor post-stop cleanup SHALL remove only a directory with the command's matching ownership token, including after forced command termination. The dispatcher SHALL report uncertainty if removal cannot be confirmed.
+
+#### Scenario: Interrupted capture
+- **WHEN** a command is forcibly terminated while browser temporary files exist
+- **THEN** post-stop cleanup removes its owned temporary directory, leaves other commands' files alone, and preserves finalized proof in its separate canonical location
+
+#### Scenario: Unverified temporary cleanup
+- **WHEN** the scratch directory remains or its absence cannot be read back
+- **THEN** the result is uncertain and identifies the exact path for ownership-checked recovery

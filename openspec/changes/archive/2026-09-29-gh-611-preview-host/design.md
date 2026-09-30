@@ -14,6 +14,8 @@ Connect the systemd client through the current user's explicit session-bus addre
 
 Use random command-unit names, `--wait --pipe --collect`, KillMode=control-group, a default 900-second command bound (explicit 30–1800 seconds), and bounded stop/readback. Announce the unit before starting. Capture bounded output and return one JSON envelope containing the adapter result, command identity, original exit and cleanup status. A malformed/missing result or transport interruption is uncertain, even if the unit later disappears. No automatic start retry. A signal stops the command unit, but app units keep their own lease; reconcile through doctor/receipts and stop only identified runs.
 
+Create a short exclusive scratch directory in the launcher's canonical ignored `.local/scratch` through a host helper. Set TMPDIR explicitly. A matching full command UUID owns the short directory; a collision fails rather than reusing it. ExecStopPost invokes only that helper's ownership-checked cleanup, including after SIGKILL. It uses literal quoted systemd words with expansion disabled. Read back directory absence separately from unit absence; failed or unreadable cleanup stays uncertain. A manager crash may retain scratch and requires exact-token recovery. Finalized proof and preview runtime temporary directories are separate.
+
 Direct sandbox bus fallback was rejected as the complete route because it leaves host listener ownership unproven. Whole-session full access and a permanent broker are outside the accepted decision.
 
 ## Risks / Trade-offs

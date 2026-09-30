@@ -7,3 +7,5 @@
 
 - [x] 2.1 Add package/CI checks and document setup, authority, rollback, operation ownership and fresh-session commands; check documentation against actual argv.
 - [x] 2.2 Run required build/type/contract/workflow and focused checks, preserve source-only versus host limits, and validate/synchronize/archive the specification before final review.
+
+- [x] 2.3 Correct review finding 611-F1: owned disk TMPDIR, supervisor post-stop cleanup and interrupted/mismatched-ownership negative controls.

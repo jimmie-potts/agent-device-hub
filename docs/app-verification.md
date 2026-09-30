@@ -945,11 +945,21 @@ do not capture, reset or stop another coordinator's run.
 
 The launcher clears the manager environment with `/usr/bin/env -i`, selects
 Node from its own Node-24 process and supplies only the Linux home, a tool PATH,
-locale, user-bus/runtime paths, shared npm/Playwright cache paths and explicit
+locale, user-bus/runtime paths, owned temporary storage, shared npm/Playwright cache paths and explicit
 optional `PYTHON`. It forwards neither the caller's tokens/preload variables nor
 app-verify storage overrides. Proof and runtime therefore retain the adapter's
 canonical roots. The systemd client uses the session bus; it does not silently
 change profiles, grant socket access or retry with broader permissions.
+
+Each command sets `TMPDIR` to a private directory under the launcher's canonical
+Hub checkout, `.local/scratch/vh-<random>`. The checkout must ignore `.local/`
+and its resulting temporary path must be at most 70 bytes to leave room for
+browser socket paths. Use a short canonical checkout when preparation refuses
+this limit. Temporary browser profiles and artifacts stay on disk; finalized
+proof stays in the adapter's canonical proof directory. The host helper creates
+the directory exclusively with an ownership token. systemd's `ExecStopPost`
+removes it after normal exit or forced termination, but refuses a mismatched
+owner. Preview services retain their own runtime `TMPDIR` and leases.
 
 ### Readback and recovery
 
@@ -961,9 +971,10 @@ that needs longer than this bound is unsupported by this route. Command stdout
 and stderr are each limited to 2 MiB; excess output is an uncertain result.
 
 Stdout is one JSON envelope: `hostCommandVersion`, selected `app`, `checkout`,
-`operation`, command `unit`, `state`, `cleanup`, `adapterExit`, and the original
+`operation`, command `unit`, `temporary`, `temporaryCleanup`, `state`, `cleanup`,
+`adapterExit`, and the original
 adapter object in `result`. A completed result requires exit zero, a parseable
-adapter object and verified removal of the command unit. Existing nonzero
+adapter object, verified removal of the command unit and removed temporary storage. Existing nonzero
 adapter codes and results are preserved. `completed` describes the operation,
 not browser, device or whole-session qualification. Raw process stderr is not
 copied into this result.
@@ -977,7 +988,13 @@ may already have created a leased preview before its run ID reached the caller.
 Never infer preview cleanup from command cleanup, and never kill by port. If
 command cleanup remains unknown, stop and read back only the announced command
 unit through the accepted host route or a trusted terminal. Stop previews only
-by their verified run IDs.
+by their verified run IDs. `temporaryCleanup` is `removed`, `retained` or
+`unknown` after launch. A retained or unreadable directory makes the result
+uncertain. After command-unit cleanup, inspect the reported path and its
+`.owner` token: it must equal the UUID in the announced command unit. Use the
+host helper's `cleanup <reported-path> <exact-token>` operation from a trusted
+terminal to retry that owned removal. A manager crash can prevent `ExecStopPost`;
+keep the reported path for this recovery rather than deleting a scratch glob.
 
 Rollback means stopping the exact owned previews and command units, preserving
 frozen proof, and ceasing to select this route. No personal settings need to be
