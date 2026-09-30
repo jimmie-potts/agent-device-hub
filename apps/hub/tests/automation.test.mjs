@@ -483,3 +483,17 @@ test('a stored rule that no longer validates stops startup with invalid-state',a
   await assert.rejects(startHub({directory,ownerId:'owner',consumers:[],credentials,controllers}),/invalid-state/);
  }finally{await opened.hub.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('a closing hub sends nothing for rules it has not reached yet',async()=>{
+ let release;const held=new Promise(resolve=>{release=resolve;});
+ const sender=fakeSender(async()=>{await held;return {kind:'receipt',receipt:{...validReceipt,outcome:'queued'}};});
+ const {hub,directory,call}=await open({sender});
+ try{
+  for(const name of ['First','Second','Third'])await call('POST','/api/automation/v1/rules',rule({name,action:{...rule().action,targets:['wall']}}));
+  assert.deepEqual(hub.automation.submit(live('pr-close')),{accepted:true,matched:3});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(sender.calls.length,1,'the first rule is being handed over');
+  const closing=hub.close();release();await closing;
+  assert.equal(sender.calls.length,1,'the other two rules were not evaluated after close began');
+ }finally{release();await hub.close();await rm(directory,{recursive:true,force:true});}
+});

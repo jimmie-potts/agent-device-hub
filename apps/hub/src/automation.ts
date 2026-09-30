@@ -188,6 +188,7 @@ export function createAutomation(options:AutomationOptions) {
   const queue: {event:HubEvent; matched:Rule[]}[] = [];
   let running: Promise<void> | undefined, closed = false;
   const reload = () => { rules = store.rules().map(ruleFromRow); };
+  const stopped = () => closed || !options.active();
   const matching = (event:HubEvent) => rules.filter(rule => rule.trigger.source === event.source &&
     rule.trigger.kind === event.kind && (rule.trigger.alias === undefined || rule.trigger.alias === event.alias));
   const remember = (key:string) => {
@@ -268,7 +269,8 @@ export function createAutomation(options:AutomationOptions) {
       else handed.push(target);
     });
     store.appendLog(rows);
-    if (!handed.length || !options.sender) return;
+    // A hub that began closing or released its state during the target reads sends nothing more.
+    if (!handed.length || !options.sender || stopped()) return;
     // One hub-monotonic start instant for every target; devices are independent, and nothing is retried.
     const startAt = options.monotonic() + START_LEAD_MS, sender = options.sender;
     const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender(target,{...structuredClone(moment),startAtHubMs:startAt}))));
@@ -277,9 +279,10 @@ export function createAutomation(options:AutomationOptions) {
   async function drain() {
     while (queue.length) {
       // After a release or during shutdown, waiting events are dropped rather than evaluated by a retiring owner.
-      if (closed || !options.active()) { queue.length = 0; return; }
+      if (stopped()) { queue.length = 0; return; }
       const {event,matched} = queue.shift()!;
       for (const queued of matched) {
+        if (stopped()) { queue.length = 0; return; }
         // The owner may have disabled, edited or deleted the rule while the event waited: use its current definition.
         const rule = rules.find(current => current.id === queued.id);
         if (!rule?.enabled || !matching(event).includes(rule)) continue;
