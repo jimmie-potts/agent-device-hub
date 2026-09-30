@@ -1,0 +1,267 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:bunny:guide-views:1.0",
+  "oneOf": [
+    { "$ref": "#/$defs/fullGuide" },
+    { "$ref": "#/$defs/composed" }
+  ],
+  "$defs": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "issueRef": {
+      "type": "string",
+      "maxLength": 140,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$"
+    },
+    "subguideRef": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[a-z0-9][a-z0-9/-]*$"
+    },
+    "emphasis": { "enum": ["none", "highlight"] },
+    "disclosure": { "enum": ["open", "collapsed"] },
+    "fullGuide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "layout"],
+      "properties": {
+        "schemaVersion": { "const": "guide-views/1.0" },
+        "layout": { "const": "full-guide" }
+      }
+    },
+    "composed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "recordsVersion", "datasetId", "catalogId", "layout", "transition", "root", "components"],
+      "properties": {
+        "schemaVersion": { "const": "guide-views/1.0" },
+        "recordsVersion": { "const": "guide-records/1.0" },
+        "datasetId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "catalogId": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "layout": { "enum": ["stack", "board"] },
+        "transition": { "enum": ["none", "assemble", "rearrange"] },
+        "root": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/instance" }
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 48,
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/section" },
+              { "$ref": "#/$defs/subguidePanel" },
+              { "$ref": "#/$defs/issueCard" },
+              { "$ref": "#/$defs/dependencyList" }
+            ]
+          }
+        }
+      }
+    },
+    "children": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": { "$ref": "#/$defs/instance" }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "group", "sequence", "disclosure", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/instance" },
+        "kind": { "const": "section" },
+        "group": { "enum": ["matches", "guides", "candidates", "ideas", "relationships"] },
+        "sequence": { "enum": ["none", "suggested"] },
+        "disclosure": { "$ref": "#/$defs/disclosure" },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "subguidePanel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "subguide", "disclosure", "emphasis", "reasons", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/instance" },
+        "kind": { "const": "subguide-panel" },
+        "subguide": { "$ref": "#/$defs/subguideRef" },
+        "disclosure": { "$ref": "#/$defs/disclosure" },
+        "emphasis": { "$ref": "#/$defs/emphasis" },
+        "reasons": { "$ref": "#/$defs/reasons" },
+        "children": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "$ref": "#/$defs/instance" }
+        }
+      }
+    },
+    "issueCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "record", "density", "emphasis", "reasons"],
+      "properties": {
+        "id": { "$ref": "#/$defs/instance" },
+        "kind": { "const": "issue-card" },
+        "record": { "$ref": "#/$defs/issueRef" },
+        "density": { "enum": ["compact", "standard"] },
+        "emphasis": { "$ref": "#/$defs/emphasis" },
+        "reasons": { "$ref": "#/$defs/reasons" }
+      }
+    },
+    "dependencyList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "record", "direction", "scope"],
+      "properties": {
+        "id": { "$ref": "#/$defs/instance" },
+        "kind": { "const": "dependency-list" },
+        "record": { "$ref": "#/$defs/issueRef" },
+        "direction": { "enum": ["prerequisites", "dependents"] },
+        "scope": { "enum": ["direct", "transitive"] }
+      }
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/questionMatch" },
+          { "$ref": "#/$defs/guideMember" },
+          { "$ref": "#/$defs/guideContains" },
+          { "$ref": "#/$defs/recordedRelation" },
+          { "$ref": "#/$defs/ideaExtends" },
+          { "$ref": "#/$defs/readyCandidate" }
+        ]
+      }
+    },
+    "questionMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "question-match" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field"],
+            "properties": {
+              "field": {
+                "enum": ["title", "guide.note", "guide.workaround", "guide.topic", "story.outcome.text",
+                  "story.implementation.text", "story.protections.text", "story.acceptance.text",
+                  "story.deferrals.text", "labels", "state", "stateReason", "outcome", "nextStep"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "guideMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "guide-member" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subguide"],
+            "properties": { "subguide": { "$ref": "#/$defs/subguideRef" } }
+          }
+        }
+      }
+    },
+    "guideContains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "guide-contains" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relation", "record"],
+            "properties": {
+              "relation": { "const": "contains" },
+              "record": { "$ref": "#/$defs/issueRef" }
+            }
+          }
+        }
+      }
+    },
+    "recordedRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "recorded-relation" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relation", "record"],
+            "properties": {
+              "relation": { "enum": ["blocks", "blocked-by", "parent-of", "child-of"] },
+              "record": { "$ref": "#/$defs/issueRef" }
+            }
+          }
+        }
+      }
+    },
+    "ideaExtends": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "idea-extends" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relation", "record"],
+            "properties": {
+              "relation": { "const": "extends" },
+              "record": { "$ref": "#/$defs/issueRef" }
+            }
+          }
+        }
+      }
+    },
+    "readyCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "evidence"],
+      "properties": {
+        "code": { "const": "ready-candidate" },
+        "evidence": { "type": "array", "maxItems": 0 }
+      }
+    }
+  }
+}

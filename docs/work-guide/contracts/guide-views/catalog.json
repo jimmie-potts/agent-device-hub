@@ -1,0 +1,159 @@
+{
+  "catalogVersion": "guide-views/1.0",
+  "recordsVersion": "guide-records/1.0",
+  "bounds": {
+    "maxComponents": 48,
+    "maxRootSections": 6,
+    "maxChildren": 12,
+    "maxDepth": 3,
+    "maxReasons": 3,
+    "maxEvidence": 4
+  },
+  "layouts": {
+    "full-guide": "The ordinary guide in its normal organization; see fullGuide.",
+    "stack": "One reading column at every width, sections in root order.",
+    "board": "Sections side by side where width allows and one column on narrow screens; reading order stays root order."
+  },
+  "components": {
+    "section": {
+      "record": "none",
+      "parents": ["root"],
+      "children": ["issue-card", "subguide-panel", "dependency-list"],
+      "properties": {
+        "group": ["matches", "guides", "candidates", "ideas", "relationships"],
+        "sequence": ["none", "suggested"],
+        "disclosure": ["open", "collapsed"]
+      },
+      "requiredData": []
+    },
+    "subguide-panel": {
+      "record": "subguide",
+      "parents": ["section"],
+      "children": ["issue-card"],
+      "properties": {
+        "disclosure": ["open", "collapsed"],
+        "emphasis": ["none", "highlight"]
+      },
+      "requiredData": ["id", "kind", "title", "outcome", "nextStep", "members", "source", "revision", "asOf", "owner"]
+    },
+    "issue-card": {
+      "record": "issue",
+      "parents": ["section", "subguide-panel"],
+      "children": [],
+      "properties": {
+        "density": ["compact", "standard"],
+        "emphasis": ["none", "highlight"]
+      },
+      "requiredData": ["id", "url", "title", "state", "stateReason", "labels", "facts", "guide", "story", "blockedBy"]
+    },
+    "dependency-list": {
+      "record": "issue",
+      "parents": ["section"],
+      "children": [],
+      "properties": {
+        "direction": ["prerequisites", "dependents"],
+        "scope": ["direct", "transitive"]
+      },
+      "requiredData": ["id", "url", "state", "facts", "blockedBy"]
+    }
+  },
+  "groups": {
+    "matches": {
+      "heading": "Relevant to your question",
+      "children": ["issue-card", "subguide-panel"]
+    },
+    "guides": {
+      "heading": "Related guides",
+      "children": ["subguide-panel"]
+    },
+    "candidates": {
+      "heading": "Candidate work",
+      "children": ["issue-card"],
+      "requiresReason": "ready-candidate"
+    },
+    "ideas": {
+      "heading": "Ideas",
+      "children": ["issue-card"],
+      "requiresHighlight": "idea"
+    },
+    "relationships": {
+      "heading": "Recorded relationships",
+      "children": ["dependency-list"]
+    }
+  },
+  "sequences": {
+    "none": "No order is claimed.",
+    "suggested": "Suggested reading order, not a recorded dependency."
+  },
+  "dependencyHeadings": {
+    "prerequisites": "Recorded prerequisites of {record}",
+    "dependents": "Recorded dependents of {record}"
+  },
+  "reasons": {
+    "question-match": {
+      "template": "Matches your question in {fields}",
+      "evidence": "field",
+      "components": ["issue-card", "subguide-panel"],
+      "claim": "relevance"
+    },
+    "guide-member": {
+      "template": "Listed in {subguide}",
+      "evidence": "subguide",
+      "components": ["issue-card"],
+      "claim": "authored membership"
+    },
+    "guide-contains": {
+      "template": "Contains {record}",
+      "evidence": "contains",
+      "components": ["subguide-panel"],
+      "claim": "authored membership"
+    },
+    "recorded-relation": {
+      "template": "{relation} {record}",
+      "evidence": "native-relation",
+      "components": ["issue-card"],
+      "claim": "native GitHub relationship"
+    },
+    "idea-extends": {
+      "template": "Idea extending {record}; not a prerequisite",
+      "evidence": "extends",
+      "components": ["issue-card"],
+      "claim": "authored idea relationship"
+    },
+    "ready-candidate": {
+      "template": "Ready by current recorded evidence",
+      "evidence": "none",
+      "components": ["issue-card"],
+      "claim": "guide-records ready gate"
+    }
+  },
+  "relations": {
+    "blocks": "Prerequisite of",
+    "blocked-by": "Blocked by",
+    "parent-of": "Parent of",
+    "child-of": "Sub-issue of"
+  },
+  "motion": {
+    "settleMs": 1200,
+    "animatable": ["opacity", "transform"],
+    "presets": {
+      "assemble": { "use": "transition", "maxDurationMs": 700, "iterations": 1 },
+      "rearrange": { "use": "transition", "maxDurationMs": 400, "iterations": 1 },
+      "emphasize": { "use": "emphasis", "maxDurationMs": 600, "iterations": 1 },
+      "acknowledge": { "use": "renderer", "maxDurationMs": 900, "iterations": 1 }
+    },
+    "reducedMotion": "none"
+  },
+  "fullGuide": {
+    "regions": [
+      { "id": "work-overview", "disclosure": "fixed", "nestedCollapsed": ["overview-more"] },
+      { "id": "timeline", "disclosure": "collapsed" },
+      { "id": "direction", "disclosure": "collapsed" },
+      { "id": "ideas", "disclosure": "collapsed" },
+      { "id": "topic-guides", "disclosure": "open", "each": "guide", "order": "guide_paths.TOPICS", "nestedCollapsed": ["guide-evidence", "delivery-evidence"] },
+      { "id": "local-acceptance", "disclosure": "collapsed" },
+      { "id": "architecture", "disclosure": "open", "nestedCollapsed": ["future-scenarios"] }
+    ],
+    "features": ["skip", "navigation", "theme-toggle", "github-status", "search", "clear-search", "empty-state", "expand-all", "collapse-all", "print", "brief"]
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "guide-views/1.0",
+  "recordsVersion": "guide-records/1.0",
+  "datasetId": "sha256:ab7ec68c930c2e8172156c1beb9d8d5da0a2a31a8c49e2e673ee163ec9f16fea",
+  "catalogId": "sha256:69d6e7cb5e750e62f9fd2ff9be1f053da40c46f89c2eec1bc0737723ad11b873",
+  "layout": "stack",
+  "transition": "assemble",
+  "root": [
+    "answer",
+    "context",
+    "graph"
+  ],
+  "components": [
+    {
+      "id": "answer",
+      "kind": "section",
+      "group": "candidates",
+      "sequence": "suggested",
+      "disclosure": "open",
+      "children": [
+        "next-card"
+      ]
+    },
+    {
+      "id": "next-card",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900001",
+      "density": "standard",
+      "emphasis": "highlight",
+      "reasons": [
+        {
+          "code": "question-match",
+          "evidence": [
+            {
+              "field": "title"
+            },
+            {
+              "field": "story.outcome.text"
+            }
+          ]
+        },
+        {
+          "code": "ready-candidate",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "kind": "section",
+      "group": "guides",
+      "sequence": "none",
+      "disclosure": "open",
+      "children": [
+        "guide-panel"
+      ]
+    },
+    {
+      "id": "guide-panel",
+      "kind": "subguide-panel",
+      "subguide": "work-guide",
+      "disclosure": "collapsed",
+      "emphasis": "none",
+      "reasons": [
+        {
+          "code": "guide-contains",
+          "evidence": [
+            {
+              "relation": "contains",
+              "record": "jimmie-potts/agent-device-hub#900001"
+            }
+          ]
+        }
+      ],
+      "children": [
+        "done-card"
+      ]
+    },
+    {
+      "id": "done-card",
+      "kind": "issue-card",
+      "record": "jimmie-potts/agent-device-hub#900002",
+      "density": "compact",
+      "emphasis": "none",
+      "reasons": [
+        {
+          "code": "guide-member",
+          "evidence": [
+            {
+              "subguide": "work-guide"
+            }
+          ]
+        },
+        {
+          "code": "recorded-relation",
+          "evidence": [
+            {
+              "relation": "blocks",
+              "record": "jimmie-potts/agent-device-hub#900001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "kind": "section",
+      "group": "relationships",
+      "sequence": "none",
+      "disclosure": "collapsed",
+      "children": [
+        "prerequisites"
+      ]
+    },
+    {
+      "id": "prerequisites",
+      "kind": "dependency-list",
+      "record": "jimmie-potts/agent-device-hub#900001",
+      "direction": "prerequisites",
+      "scope": "direct"
+    }
+  ]
+}

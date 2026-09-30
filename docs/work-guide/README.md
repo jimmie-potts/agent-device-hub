@@ -86,6 +86,15 @@ dependency reads without claiming readiness. Contract fixture validation is
 change the snapshot builder or establish human approval; its delivery PR owns
 approval evidence for the exact definition.
 
+The [guide views contract](contracts/guide-views/README.md) defines the
+component catalog, composed views and the Full guide default that Ask the guide
+renders from those records. Its Full guide baseline lists the opening lists,
+the collapsed timeline, Direction, Ideas and completed-milestone regions, the
+open topic and architecture sections, and the browsing features. Its fixture
+check compares that baseline with the generated guide, so run it after changing
+guide structure. Removing, reordering or changing the default disclosure of a
+baseline region needs a new version of that contract; adding a region does not.
+
 A story may carry one `## Guide` section: `**Topic:** <topic id>` (required,
 one of the twelve ids `guide_paths.py` defines), `**Note:** ...` (optional,
 one-line reading note), `**Workaround:** ...` (optional; shown only where a
@@ -581,6 +590,7 @@ python3 docs/work-guide/work/build_guide.py
 python3 docs/work-guide/work/test_maintenance.py
 node docs/work-guide/work/check_guide.cjs
 node docs/skins/check_places.cjs
+node --test docs/work-guide/contracts/guide-views/views.test.mjs
 # After committing intended generated output, rebuild and require no drift:
 python3 docs/work-guide/work/build_guide.py
 git diff --exit-code -- docs/work-guide/outputs

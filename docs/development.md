@@ -101,6 +101,14 @@ also runs shared build/type/controller/workflow checks and the guide's existing
 build, maintenance and browser checks. See the
 [field dictionary](work-guide/contracts/README.md).
 
+Guide view contract fixtures run the same way:
+`node --test docs/work-guide/contracts/guide-views/views.test.mjs`, as a
+separate step in the same Depot job. They exercise catalog and schema agreement,
+view validation and rejection codes, reason evidence, stale and missing record
+evidence, reduced-motion equivalence and the Full guide baseline against the
+committed generated guide. They do not qualify a renderer, provider adapter or
+view-state store. See the [view dictionary](work-guide/contracts/guide-views/README.md).
+
 Use Node 24 and npm from the assigned worktree root. If `node --version` does
 not report v24, prefix each command with `fnm exec --using=.nvmrc --`, for
 example `fnm exec --using=.nvmrc -- npm ci`. fnm reads `.nvmrc` from the current
