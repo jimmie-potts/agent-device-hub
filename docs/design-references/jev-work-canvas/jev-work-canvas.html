@@ -1,0 +1,371 @@
+<div id="jev-work-canvas" aria-label="B.U.N.N.Y. work canvas motion prototype">
+  <style>
+    #jev-work-canvas {
+      --j-bg: light-dark(#edf3f7, #0b131e);
+      --j-card: light-dark(#ffffff, #142131);
+      --j-raised: light-dark(#e5edf3, #1b2c3e);
+      --j-ink: light-dark(#182f42, #eaf2f8);
+      --j-muted: light-dark(#52697d, #a5b8cb);
+      --j-line: light-dark(#cad8e2, #2a3c4f);
+      --j-cyan: light-dark(#006b83, #73e1f3);
+      --j-cyan-wash: light-dark(#d8f1f5, #163540);
+      --j-amber: light-dark(#815012, #efc17e);
+      --j-amber-wash: light-dark(#fbefdb, #3c3022);
+      --j-shadow: light-dark(#18354815, #00000038);
+      --j-radius: 16px;
+      color: var(--j-ink); background: var(--j-bg); font: 400 14px/1.5 system-ui, sans-serif;
+      border: 1px solid var(--j-line); border-radius: 20px; isolation: isolate; position:relative;
+    }
+    #jev-work-canvas * { box-sizing: border-box; }
+    #jev-work-canvas button, #jev-work-canvas input { font: inherit; color: inherit; }
+    #jev-work-canvas button { cursor: var(--cursor-interaction, pointer); }
+    #jev-work-canvas button:disabled { cursor: default; }
+    #jev-work-canvas .j-header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; padding:18px 22px; border-bottom:1px solid var(--j-line); }
+    #jev-work-canvas .j-brand { display:flex; gap:11px; align-items:center; }
+    #jev-work-canvas .j-mark { width:34px; height:34px; border:1px solid var(--j-cyan); border-radius:10px; display:grid; place-items:center; color:var(--j-cyan); font-weight:500; }
+    #jev-work-canvas .j-brand-name { font-size:13px; font-weight:500; letter-spacing:1.5px; }
+    #jev-work-canvas .j-small { font-size:12px; color:var(--j-muted); }
+    #jev-work-canvas .j-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+    #jev-work-canvas .j-button { border:1px solid var(--j-line); border-radius:9px; background:var(--j-card); min-height:36px; padding:7px 11px; display:inline-flex; align-items:center; justify-content:center; gap:7px; text-decoration:none; }
+    #jev-work-canvas .j-button:hover { background:var(--j-raised); }
+    #jev-work-canvas .j-button-primary { background:var(--j-cyan); color:var(--j-bg); border-color:var(--j-cyan); font-weight:500; }
+    #jev-work-canvas .j-button-primary:hover { background:var(--j-cyan); filter:brightness(1.08); }
+    #jev-work-canvas .j-button-quiet { background:transparent; }
+    #jev-work-canvas .j-badge { display:inline-flex; width:fit-content; max-width:100%; align-items:center; gap:5px; border-radius:6px; padding:3px 7px; background:var(--j-raised); font-size:11px; color:var(--j-muted); }
+    #jev-work-canvas .j-badge[data-tone="active"] { color:var(--j-cyan); background:var(--j-cyan-wash); }
+    #jev-work-canvas .j-badge[data-tone="waiting"] { color:var(--j-amber); background:var(--j-amber-wash); }
+    #jev-work-canvas .j-main { padding:20px 22px 0; }
+    #jev-work-canvas .j-view-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px; }
+    #jev-work-canvas .j-view-heading h2 { margin:0; font-size:21px; font-weight:500; letter-spacing:-.4px; }
+    #jev-work-canvas .j-view-heading p { margin:4px 0 0; color:var(--j-muted); font-size:12px; }
+    #jev-work-canvas .j-view-count { white-space:nowrap; padding-top:5px; }
+    #jev-work-canvas .j-stage { position:relative; height:330px; min-width:0; perspective:1200px; }
+    #jev-work-canvas .j-grid { position:absolute; inset:0; pointer-events:none; background-image:radial-gradient(var(--j-line) .7px,transparent .7px); background-size:22px 22px; opacity:.48; mask-image:linear-gradient(transparent,black 20%,black 80%,transparent); }
+    #jev-work-canvas .j-empty { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:13px; text-align:center; padding:15px; }
+    #jev-work-canvas .j-empty h3 { margin:0; font-size:26px; font-weight:400; letter-spacing:-.7px; }
+    #jev-work-canvas .j-empty p { margin:0; color:var(--j-muted); max-width:32em; }
+    #jev-work-canvas .j-sigil { display:grid; place-items:center; width:66px; height:66px; border:1px solid var(--j-line); border-radius:50%; position:relative; color:var(--j-cyan); background:var(--j-bg); }
+    #jev-work-canvas .j-sigil:before { content:""; position:absolute; inset:7px; border:1px solid var(--j-cyan); border-radius:50%; clip-path:polygon(0 0,70% 0,70% 50%,100% 50%,100% 100%,30% 100%,30% 50%,0 50%); }
+    #jev-work-canvas .j-panel { position:absolute; top:0; left:0; background:var(--j-card); border:1px solid var(--j-line); border-radius:var(--j-radius); padding:16px; box-shadow:0 8px 20px var(--j-shadow); display:flex; flex-direction:column; min-width:0; transform-origin:top left; }
+    #jev-work-canvas .j-panel[data-featured="true"] { border-color:var(--j-cyan); }
+    #jev-work-canvas .j-panel-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:5px; margin-bottom:10px; }
+    #jev-work-canvas .j-ref { font-size:11px; font-weight:500; letter-spacing:.6px; color:var(--j-muted); }
+    #jev-work-canvas .j-panel h3 { margin:0 0 8px; font-size:16px; font-weight:500; line-height:1.3; letter-spacing:-.25px; }
+    #jev-work-canvas .j-panel p { margin:0; color:var(--j-muted); font-size:12px; line-height:1.55; }
+    #jev-work-canvas .j-panel-footer { margin-top:auto; padding-top:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    #jev-work-canvas .j-card-action { border:0; background:transparent; color:var(--j-cyan); padding:2px 0; display:flex; align-items:center; gap:6px; font-size:12px; min-height:28px; text-align:left; }
+    #jev-work-canvas .j-card-action:hover { text-decoration:underline; }
+    #jev-work-canvas .j-child-list { display:flex; flex-wrap:wrap; gap:7px; margin-top:20px; }
+    #jev-work-canvas .j-child-ref { border:1px solid var(--j-line); background:var(--j-bg); padding:4px 7px; border-radius:6px; font-size:11px; color:var(--j-muted); }
+    #jev-work-canvas .j-epic-title { margin-top:8px!important; font-size:23px!important; }
+    #jev-work-canvas .j-epic-label { color:var(--j-cyan); font-size:11px; letter-spacing:1px; margin-bottom:5px; }
+    #jev-work-canvas .j-panel[data-density="compact"] .j-child-list,
+    #jev-work-canvas .j-panel[data-density="compact"] .j-epic-desc,
+    #jev-work-canvas .j-panel[data-density="compact"] .j-epic-footer { display:none; }
+    #jev-work-canvas .j-panel[data-density="compact"] .j-epic-title { margin-top:0!important; margin-bottom:0; font-size:20px!important; }
+    #jev-work-canvas .j-panel[data-density="compact"] .j-panel-head { margin-bottom:4px; }
+    #jev-work-canvas .j-panel[data-density="compact"] .j-epic-label { display:none; }
+    #jev-work-canvas .j-detail { padding-top:15px; margin-top:16px; border-top:1px solid var(--j-line); }
+    #jev-work-canvas .j-detail-label { font-size:11px; font-weight:500; margin-bottom:6px; color:var(--j-cyan); }
+    #jev-work-canvas .j-detail p { font-size:13px; }
+    #jev-work-canvas .j-detail .j-actions { margin-top:17px; }
+    #jev-work-canvas .j-panel[data-featured="true"]:not([data-kind="epic"]) h3 { font-size:25px; }
+    #jev-work-canvas .j-panel[data-featured="true"]:not([data-kind="epic"]) > p { font-size:14px; }
+    #jev-work-canvas .j-footer { padding:19px 22px 20px; }
+    #jev-work-canvas .j-answer { display:flex; align-items:flex-start; gap:10px; min-height:45px; margin-bottom:12px; }
+    #jev-work-canvas .j-answer-mark { flex:0 0 24px; height:24px; display:grid; place-items:center; border-radius:7px; background:var(--j-cyan-wash); color:var(--j-cyan); font-size:12px; }
+    #jev-work-canvas .j-answer-text { padding-top:2px; font-size:13px; }
+    #jev-work-canvas .j-suggestions { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 12px; }
+    #jev-work-canvas .j-suggestions .j-button { font-size:12px; padding:6px 10px; }
+    #jev-work-canvas .j-composer { display:flex; gap:8px; padding:8px; background:var(--j-card); border:1px solid var(--j-line); border-radius:14px; box-shadow:0 5px 18px var(--j-shadow); }
+    #jev-work-canvas .j-composer:focus-within { border-color:var(--j-cyan); }
+    #jev-work-canvas .j-composer input { background:transparent; border:0; padding:8px; flex:1; min-width:0; font-size:14px; }
+    #jev-work-canvas .j-composer input::placeholder { color:var(--j-muted); }
+    #jev-work-canvas .j-footnote { margin-top:9px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; color:var(--j-muted); font-size:11px; }
+    #jev-work-canvas .j-tour-status { flex-basis:100%; color:var(--j-cyan); font-size:13px; }
+    #jev-work-canvas .j-tour-target { outline:3px solid var(--j-cyan); outline-offset:4px; }
+    #jev-work-canvas .j-demo-cursor { position:absolute; left:0; top:0; width:28px; height:28px; z-index:10; pointer-events:none; color:var(--j-cyan); filter:drop-shadow(0 1px 2px var(--j-bg)); }
+    #jev-work-canvas .j-demo-cursor svg { width:28px; height:28px; fill:var(--j-card); }
+    #jev-work-canvas .j-demo-cursor::before { content:""; position:absolute; width:36px; height:36px; top:-15px; left:-15px; border:3px solid var(--j-cyan); border-radius:50%; background:var(--j-cyan-wash); opacity:0; }
+    #jev-work-canvas .j-demo-cursor[data-clicking="true"]::before { opacity:.85; }
+    @media (prefers-reduced-motion:no-preference) {
+      #jev-work-canvas .j-demo-cursor[data-clicking="true"]::before { animation:j-demo-click 400ms ease-out; }
+      @keyframes j-demo-click { from { transform:scale(.5); opacity:1; } to { transform:scale(1.3); opacity:0; } }
+    }
+    #jev-work-canvas [hidden] { display:none!important; }
+    #jev-work-canvas .j-visually-hidden { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+    @media (max-width:600px) {
+      #jev-work-canvas .j-header { padding:15px; gap:10px; }
+      #jev-work-canvas .j-main { padding:16px 14px 0; }
+      #jev-work-canvas .j-footer { padding:16px 14px; }
+      #jev-work-canvas .j-view-heading h2 { font-size:19px; }
+      #jev-work-canvas .j-empty h3 { font-size:23px; }
+      #jev-work-canvas .j-view-count { display:none; }
+      #jev-work-canvas .j-study-label { display:none; }
+      #jev-work-canvas .j-panel h3 { font-size:17px; }
+      #jev-work-canvas .j-composer input { font-size:16px; }
+    }
+    @media (pointer:coarse) {
+      #jev-work-canvas .j-button, #jev-work-canvas .j-card-action { min-height:44px; }
+    }
+  </style>
+  <header class="j-header">
+    <div class="j-brand"><div class="j-mark" aria-hidden="true">B</div><div><div class="j-brand-name">B.U.N.N.Y.</div><div class="j-small">Work canvas</div></div></div>
+    <div class="j-actions"><span class="j-small j-study-label">Motion study</span><button type="button" class="j-button j-button-primary cursor-interaction" data-action="play"><i data-lucide="play" aria-hidden="true"></i><span>Play walkthrough</span></button><button type="button" class="j-button j-button-quiet cursor-interaction" data-action="clear" aria-label="Clear workspace"><i data-lucide="rotate-ccw" aria-hidden="true"></i><span>Clear</span></button></div>
+    <div class="j-tour-status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+  </header>
+  <div class="j-demo-cursor" aria-hidden="true" hidden><i data-lucide="mouse-pointer-2"></i></div>
+  <main class="j-main">
+    <div class="j-view-heading"><div><h2 data-title>Work, on request.</h2><p data-subtitle>A workspace that follows your attention.</p></div><span class="j-small j-view-count" data-count>Ready</span></div>
+    <div class="j-stage" aria-label="Issue and epic workspace">
+      <div class="j-grid" aria-hidden="true"></div>
+      <div class="j-empty"><div class="j-sigil" aria-hidden="true"><i data-lucide="sparkles"></i></div><h3>Bring the Guide into view.</h3><p>Start with an epic. Bring a task closer.<br>Keep the rest within reach.</p></div>
+    </div>
+  </main>
+  <footer class="j-footer">
+    <div class="j-answer"><span class="j-answer-mark" aria-hidden="true">B</span><div class="j-answer-text" role="status" aria-live="polite" aria-atomic="true">What would you like to work on?</div></div>
+    <div class="j-suggestions" aria-label="Example requests">
+      <button type="button" class="j-button cursor-interaction" data-request="guide">Show the Guide</button>
+      <button type="button" class="j-button cursor-interaction" data-request="focus">Focus on browser</button>
+      <button type="button" class="j-button cursor-interaction" data-request="compare">Compare browser + Project</button>
+      <button type="button" class="j-button cursor-interaction" data-request="blocked">Show blocked work</button>
+    </div>
+    <div class="j-composer" role="group" aria-label="Request a view"><label class="j-visually-hidden" for="jev-work-request">Request a view</label><input id="jev-work-request" autocomplete="off" placeholder="Ask to show, focus, compare, or clear…"><button type="button" data-action="submit" class="j-button j-button-primary cursor-interaction" aria-label="Show requested view"><i data-lucide="arrow-up" aria-hidden="true"></i><span>Show</span></button></div>
+    <div class="j-footnote"><span>Illustrative issue data · scripted responses</span><span data-motion-note>Spatial transitions</span></div>
+  </footer>
+  <script>
+  (() => {
+    const root = document.getElementById('jev-work-canvas');
+    const stage = root.querySelector('.j-stage');
+    const input = root.querySelector('input');
+    const empty = root.querySelector('.j-empty');
+    const answer = root.querySelector('.j-answer-text');
+    const playButton = root.querySelector('[data-action="play"]');
+    const tourStatus = root.querySelector('.j-tour-status');
+    const demoCursor = root.querySelector('.j-demo-cursor');
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    const design = { duration: 660, corners: 16 };
+    const records = {
+      '509': { id:'509', kind:'epic', title:'Rebuild the work Guide', description:'One place to explore the work. Shared cards now; a conversational workspace next.', children:['545','511','540','317'] },
+      '545': { id:'545', kind:'work', title:'Define the shared contract', description:'The records and component inputs every view understands.', status:'In progress', tone:'active', reason:'Shared foundation', related:'511', detail:'Define issue records, epic membership and the component inputs used by the browser and later Jev views.', next:'The browser consumes this contract.' },
+      '511': { id:'511', kind:'work', title:'Build the epic browser', description:'Short epic pages, useful search and reusable issue cards.', status:'Waiting', tone:'waiting', reason:'Needs #545', related:'545', detail:'Browse work through epics, retain the work commands, and reuse these card components across ordinary and requested views.', next:'First prerequisite: the shared contract, #545.' },
+      '540': { id:'540', kind:'work', title:'Connect the GitHub Project', description:'Bring Phase and Commitment into the same workspace.', status:'Waiting', tone:'waiting', reason:'Needs #511', related:'511', detail:'Display the portfolio’s planning choices using the same records, cards and epic components as the browser.', next:'First prerequisite: the epic browser, #511.' },
+      '317': { id:'317', kind:'work', title:'Publish from GitHub', description:'Refresh the Guide without generated-file pull requests.', status:'Waiting', tone:'waiting', reason:'Needs #511 + #540', related:'511', detail:'Build a complete public preview from GitHub and keep the previous working version when a refresh fails.', next:'The browser, Project reader and hosted checks come first.' }
+    };
+    const scenarios = {
+      empty:{ title:'Work, on request.', subtitle:'A workspace that follows your attention.', answer:'What would you like to work on?' },
+      guide:{ title:'The Guide, in view.', subtitle:'An epic and its related work.', answer:'Here’s the Guide epic. Its work is arranged alongside it.' },
+      focus:{ title:'Browser, brought forward.', subtitle:'Focus without losing context.', answer:'I’ve brought the browser forward and kept its prerequisite and epic alongside it.' },
+      compare:{ title:'Browser and Project.', subtitle:'Two pieces of the same experience.', answer:'Here they are side by side. Both use the same issue records and components.' },
+      blocked:{ title:'What is waiting?', subtitle:'Only the work with prerequisites.', answer:'These three items are waiting on earlier work. The cards keep their identities as the view changes.' }
+    };
+    let mode='empty', focused='511', epoch=0, tour=0, tourTimer=null, stateRevision=-1;
+    let tourGeneration=0, tourClick=false, tourTarget=null;
+    const cards = new Map();
+    let lastWidth=0;
+
+    function el(tag, cls, text) { const e=document.createElement(tag); if(cls)e.className=cls; if(text!==undefined)e.textContent=text; return e; }
+    function icons() { if(globalThis.lucide)globalThis.lucide.createIcons({attrs:{width:15,height:15}}); }
+    function motionDuration() { return reduced.matches ? 0 : design.duration; }
+    function save() {
+      const snapshot={modelContent:{prototype:'Jev work canvas',view:mode,focusedIssue:mode==='focus'?focused:null},privateContent:{revision:++stateRevision,mode,focused,design:{...design}}};
+      try { const result=window.openai?.setWidgetState?.(snapshot); result?.catch?.(()=>{}); } catch {}
+    }
+    function clearTourTarget() {
+      tourTarget?.classList.remove('j-tour-target');tourTarget=null;
+      demoCursor.hidden=true;delete demoCursor.dataset.clicking;
+      for(const animation of demoCursor.getAnimations())animation.cancel();
+    }
+    function cancelTour() {
+      tour=0;tourGeneration++;clearTimeout(tourTimer);clearTourTarget();tourStatus.hidden=true;
+      playButton.querySelector('span').textContent='Play walkthrough';playButton.setAttribute('aria-pressed','false');
+    }
+    function pointAt(target, animate=false) {
+      const box=target.getBoundingClientRect(), origin=root.getBoundingClientRect();
+      const previous=demoCursor.style.transform;
+      const next=`translate(${box.left-origin.left-root.clientLeft+box.width/2}px,${box.top-origin.top-root.clientTop+box.height/2}px)`;
+      for(const animation of demoCursor.getAnimations())animation.cancel();
+      demoCursor.style.transform=next;
+      if(animate&&previous&&!reduced.matches)demoCursor.animate([{transform:previous},{transform:next}],{duration:600,easing:'ease-in-out'});
+    }
+    function actionButton(label, fn) { const b=el('button','j-card-action cursor-interaction',label);b.type='button';b.addEventListener('click',fn);return b; }
+
+    function IssueCard(record) {
+      const card=el('article','j-panel'); card.dataset.record=record.id;card.dataset.kind=record.kind;
+      card.setAttribute('aria-label',`Issue ${record.id}: ${record.title}`);
+      const head=el('div','j-panel-head');head.append(el('span','j-ref',`HUB / #${record.id}`));
+      const badge=el('span','j-badge',record.status);badge.dataset.tone=record.tone;head.append(badge);
+      const detail=el('div','j-detail');detail.hidden=true;
+      detail.append(el('div','j-detail-label','OUTCOME'),el('p','',record.detail));
+      const actions=el('div','j-actions');
+      const explain=el('button','j-button cursor-interaction','Explain this');explain.type='button';
+      explain.addEventListener('click',()=>{cancelTour();answer.textContent=record.detail+' '+record.next;save();});
+      const context=el('button','j-button cursor-interaction','Back to epic');context.type='button';
+      context.addEventListener('click',()=>request('guide'));
+      actions.append(explain,context);detail.append(actions);
+      const footer=el('div','j-panel-footer');footer.append(el('span','j-small',record.reason),actionButton('Bring forward ↗',()=>request('focus',record.id)));
+      card.append(head,el('h3','',record.title),el('p','',record.description),detail,footer);
+      return card;
+    }
+    function EpicCard(record) {
+      const card=el('article','j-panel');card.dataset.record=record.id;card.dataset.kind='epic';card.setAttribute('aria-label',`Epic ${record.id}: ${record.title}`);
+      const head=el('div','j-panel-head');head.append(el('span','j-ref',`HUB / #${record.id}`),el('span','j-badge','Epic'));
+      const children=el('div','j-child-list');for(const id of record.children)children.append(el('span','j-child-ref',`#${id}`));
+      const footer=el('div','j-panel-footer j-epic-footer');footer.append(el('span','j-small','4 work items in this study'));
+      card.append(head,el('div','j-epic-label','THE BIGGER PICTURE'),el('h3','j-epic-title',record.title),el('p','j-epic-desc',record.description),children,footer);
+      return card;
+    }
+    function layout(width) {
+      const g=14, mobile=width<560;
+      const out=[];
+      const put=(id,x,y,w,h,density='normal',featured=false)=>out.push({id,x,y,w,h,density,featured});
+      if(mode==='empty')return {items:out,height:310};
+      if(mobile) {
+        let y=0;
+        const ids=mode==='guide'?['509','545','511','540','317']:mode==='compare'?['509','511','540']:mode==='blocked'?['509','511','540','317']:[focused,'509',records[focused].related];
+        for(const id of ids){const hero=mode==='focus'&&id===focused;const h=hero?(width<320?470:390):id==='509'?112:220;put(id,0,y,width,h,id==='509'?'compact':'normal',hero);y+=h+g;}
+        return {items:out,height:y-g};
+      }
+      const c=(width-g*2)/3;
+      if(mode==='guide') {
+        const tile=width<640?260:width<820?216:168, total=tile*2+g;
+        put('509',0,0,c,total);
+        put('545',c+g,0,c,tile);put('511',2*(c+g),0,c,tile);
+        put('540',c+g,tile+g,c,tile);put('317',2*(c+g),tile+g,c,tile);
+        return {items:out,height:total};
+      }
+      if(mode==='focus') {
+        const epicHeight=width<760?126:100, contextHeight=width<680?270:236, total=epicHeight+g+contextHeight;
+        put(focused,0,0,c*2+g,total,'normal',true);
+        put('509',2*(c+g),0,c,epicHeight,'compact');
+        put(records[focused].related,2*(c+g),epicHeight+g,c,contextHeight);
+        return {items:out,height:total};
+      }
+      put('509',0,0,width,100,'compact');
+      if(mode==='compare'){ const half=(width-g)/2;put('511',0,114,half,224);put('540',half+g,114,half,224); }
+      else {['511','540','317'].forEach((id,i)=>put(id,i*(c+g),114,c,width<680?270:224));}
+      return {items:out,height:mode==='blocked'&&width<680?384:338};
+    }
+    function render(animate=true) {
+      const currentEpoch=++epoch;
+      const duration=animate?motionDuration():0;
+      const width=stage.clientWidth;
+      if(width<1)return;
+      lastWidth=width;
+      const frames=new Map();
+      const stageRect=stage.getBoundingClientRect();
+      for(const [id,card] of cards){const r=card.getBoundingClientRect();frames.set(id,{x:r.left-stageRect.left,y:r.top-stageRect.top,w:r.width,h:r.height});for(const a of card.getAnimations())a.cancel();}
+      const next=layout(width), ids=new Set(next.items.map(i=>i.id));
+      stage.style.height=next.height+'px';
+      empty.hidden=mode!=='empty';
+      for(const [id,card] of cards){
+        if(ids.has(id))continue;
+        card.dataset.exiting='true';card.inert=true;
+        if(card.contains(document.activeElement))input.focus({preventScroll:true});
+        if(!duration){card.remove();cards.delete(id);continue;}
+        const a=card.animate([{opacity:1,transform:'translateY(0) scale(1)'},{opacity:0,transform:'translateY(-16px) scale(.96)'}],{duration:duration*.42,fill:'forwards',easing:'ease-in'});
+        a.finished.then(()=>{if(epoch===currentEpoch&&card.dataset.exiting==='true'){card.remove();cards.delete(id);}}).catch(()=>{});
+      }
+      next.items.forEach((item,index)=>{
+        let card=cards.get(item.id);const previous=frames.get(item.id);const fresh=!card;
+        if(!card){card=records[item.id].kind==='epic'?EpicCard(records[item.id]):IssueCard(records[item.id]);cards.set(item.id,card);stage.append(card);}
+        card.inert=false;delete card.dataset.exiting;
+        card.dataset.featured=String(item.featured);card.dataset.density=item.density;
+        const detail=card.querySelector('.j-detail');
+        const footer=card.querySelector('.j-panel-footer:not(.j-epic-footer)');
+        if((!item.featured&&detail?.contains(document.activeElement))||(item.featured&&footer?.contains(document.activeElement)))input.focus({preventScroll:true});
+        if(detail)detail.hidden=!item.featured;
+        if(footer)footer.hidden=item.featured;
+        Object.assign(card.style,{left:item.x+'px',top:item.y+'px',width:item.w+'px',height:item.h+'px',zIndex:item.featured?'3':'1'});
+        if(duration){
+          const from=fresh?{opacity:0,transform:'translate3d(0,65px,0) scale(.91) rotateX(5deg)'}:{opacity:1,transform:`translate(${previous.x-item.x}px,${previous.y-item.y}px) scale(${previous.w/item.w},${previous.h/item.h})`};
+          card.animate([from,{opacity:1,transform:'translate3d(0,0,0) scale(1) rotateX(0deg)'}],{duration,delay:fresh?index*65:0,easing:'cubic-bezier(.2,.85,.22,1)',fill:'backwards'});
+        }
+      });
+      const scene=scenarios[mode];
+      root.querySelector('[data-title]').textContent=mode==='focus'&&focused!=='511'?records[focused].title:scene.title;
+      root.querySelector('[data-subtitle]').textContent=scene.subtitle;
+      root.querySelector('[data-count]').textContent=next.items.length?next.items.length+' items in view':'Ready';
+      answer.textContent=mode==='focus'&&focused!=='511'?`I’ve brought #${focused} forward and kept related work in view.`:scene.answer;
+      root.querySelector('[data-motion-note]').textContent=reduced.matches?'Reduced motion':'Spatial transitions';
+      icons();
+    }
+    function request(next, id='511') { if(!tourClick)cancelTour();mode=Object.hasOwn(scenarios,next)?next:'guide';focused=records[id]?.kind==='work'?id:'511';render();save(); }
+    function play() {
+      if(tour){cancelTour();return;}
+      tour=1;const generation=++tourGeneration;
+      playButton.querySelector('span').textContent='Stop walkthrough';playButton.setAttribute('aria-pressed','true');
+      tourStatus.hidden=false;pointAt(playButton);demoCursor.hidden=false;
+      const sequence=[
+        {selector:'[data-request="guide"]',label:'Show the Guide'},
+        {selector:'[data-record="511"] .j-card-action',label:'Bring forward on browser #511'},
+        {selector:'[data-request="compare"]',label:'Compare browser + Project'},
+        {selector:'[data-request="blocked"]',label:'Show blocked work'},
+        {selector:'[data-request="guide"]',label:'Show the Guide'}
+      ];let step=0;
+      function later(callback,delay){tourTimer=setTimeout(()=>{if(tour&&generation===tourGeneration)callback();},delay);}
+      function advance(){
+        const current=sequence[step],target=root.querySelector(current.selector);
+        if(!target||!target.getClientRects().length){cancelTour();return;}
+        clearTourTarget();tourTarget=target;target.classList.add('j-tour-target');
+        tourStatus.textContent=`Demo · ${step+1} of ${sequence.length} · Click “${current.label}”`;
+        target.scrollIntoView({behavior:'instant',block:'nearest',inline:'nearest'});
+        demoCursor.hidden=false;pointAt(target,true);
+        later(()=>{
+          pointAt(target);demoCursor.dataset.clicking='true';
+          later(()=>{
+            tourClick=true;
+            try { target.click(); } finally { tourClick=false; }
+            tourStatus.textContent=`Demo · ${step+1} of ${sequence.length} · Clicked “${current.label}” → ${root.querySelector('[data-title]').textContent}`;
+            later(()=>{
+              clearTourTarget();
+              root.querySelector('.j-view-heading').scrollIntoView({behavior:'instant',block:'nearest',inline:'nearest'});
+              later(()=>{step++;if(step<sequence.length)advance();else cancelTour();},2200);
+            },250);
+          },180);
+        },1500);
+      }
+      advance();
+    }
+    root.addEventListener('pointerdown',event=>{if(tour&&!playButton.contains(event.target))cancelTour();},true);
+    root.addEventListener('keydown',event=>{if(tour&&(event.key==='Escape'||!playButton.contains(event.target)))cancelTour();},true);
+    root.querySelectorAll('[data-request]').forEach(b=>b.addEventListener('click',()=>request(b.dataset.request)));
+    root.querySelector('[data-action="clear"]').addEventListener('click',()=>request('empty'));
+    playButton.addEventListener('click',play);
+    function submitRequest(){
+      cancelTour();const q=input.value.trim().toLowerCase();if(!q)return;
+      if(/clear|reset|dismiss|put.*away/.test(q))request('empty');
+      else if(/compar|side.by.side|both/.test(q))request('compare');
+      else if(/block|waiting|prerequisite/.test(q))request('blocked');
+      else if(/focus|closer|forward|browser|contract|publish|project/.test(q)){const id=/545|contract/.test(q)?'545':/540|project/.test(q)?'540':/317|publish/.test(q)?'317':'511';request('focus',id);}
+      else if(/guide|epic|overview|everything|all/.test(q))request('guide');
+      else {answer.textContent='This motion study supports showing the Guide, focusing on an issue, comparing browser + Project, and showing blocked work.';return;}
+      input.value='';
+    }
+    root.querySelector('[data-action="submit"]').addEventListener('click',submitRequest);
+    input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();submitRequest();}});
+    function restore(saved) {
+      const s=saved?.privateContent;if(saved?.modelContent?.prototype!=='Jev work canvas'||!s)return false;
+      const incoming=Number.isInteger(s.revision)?s.revision:0;
+      if(incoming<=stateRevision)return false;
+      stateRevision=incoming;
+      if(Object.hasOwn(scenarios,s.mode))mode=s.mode;
+      if(records[s.focused]?.kind==='work')focused=s.focused;
+      if(Number.isFinite(s.design?.duration))design.duration=Math.min(1000,Math.max(180,s.design.duration));
+      if(Number.isFinite(s.design?.corners))design.corners=Math.min(24,Math.max(4,s.design.corners));
+      root.style.setProperty('--j-radius',design.corners+'px');
+      return true;
+    }
+    restore(window.openai?.widgetState);render(false);
+    window.addEventListener('openai:set_globals',e=>{if(e.detail?.globals?.widgetState&&restore(e.detail.globals.widgetState)){cancelTour();render(false);}});
+    new ResizeObserver(()=>{if(Math.abs(stage.clientWidth-lastWidth)>1)render(false);if(tourTarget?.getClientRects().length)pointAt(tourTarget);}).observe(stage);
+    reduced.addEventListener('change',()=>render(false));
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelTour();});
+    if(globalThis.Tweak){
+      const tweak=new Tweak({container:root,onChange:()=>{root.style.setProperty('--j-radius',design.corners+'px');save();}});
+      tweak.addSlider(design,'duration',{label:'Movement duration',min:180,max:1000,step:20,unit:'ms'});
+      tweak.addSlider(design,'corners',{label:'Card corners',min:4,max:24,step:2,unit:'px'});
+    }
+  })();
+  </script>
+</div>

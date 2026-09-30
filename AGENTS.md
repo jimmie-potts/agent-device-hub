@@ -146,6 +146,30 @@ commentary, responses, documentation and authorized GitHub prose. Preserve facts
 commands, contracts, citations and evidence. If unavailable, report it and
 continue without fetching, copying or installing it.
 
+## UI video previews and walkthroughs
+
+When producing a UI video preview, recorded demo or automated interactive
+walkthrough, make the action causing each view change visible:
+
+- Show a cursor or touch indicator moving to the actual control. Highlight the
+  target before activation and show a click or tap pulse when it activates.
+- Label each step with the control or action being demonstrated. Pause briefly
+  before activation and after the resulting change so viewers can connect them.
+- Drive walkthrough transitions through the demonstrated controls. Avoid
+  unexplained timed jumps between views.
+- Label scripted mockup interactions as a demo; do not present them as evidence
+  of live services or recorded user actions.
+
+In interactive walkthroughs, let clicking or typing take over and cancel pending
+demo actions. Honor reduced-motion preferences while retaining target highlights
+and step labels.
+
+Before delivery, watch the full sequence and verify that the indicator matches
+the activated control, the action precedes its result and labels remain readable.
+For an interactive version, also check takeover and reduced motion. Videos that
+do not demonstrate UI interactions do not need a cursor. This guidance does not
+require a preview for every change.
+
 ## Work guide maintenance
 
 Use `plan-work` and `deliver-work` only when explicitly invoked. Their shared
