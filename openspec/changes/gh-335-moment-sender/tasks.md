@@ -12,7 +12,7 @@
 
 ## 4. Moment sender
 
-- [ ] 4.1 Add `apps/hub/tests/moment-sender.test.mjs` covering AC1-AC6 over loopback against the shared fake with an injected monotonic clock, failing first. Implement `apps/hub/src/moment-sender.ts` with exported input and result types.
+- [x] 4.1 Add `apps/hub/tests/moment-sender.test.mjs` covering AC1-AC6 over loopback against the shared fake with an injected monotonic clock, failing first. Implement `apps/hub/src/moment-sender.ts` with exported input and result types.
 
 ## 5. Delivery
 
