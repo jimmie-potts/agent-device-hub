@@ -22,15 +22,19 @@ export type AutomationSettings = {
 export type MomentIntent = {momentId:string; mood:string; palette?:string[]; durationMs:number; priorityClass:'event'|'flourish'; coversStatus:boolean};
 export type MomentStart = {domain:'controller-monotonic'; epoch:string; atMs:number; toleranceMs:number};
 export type MomentNotSentReason = '1.0-only'|'moments-unsupported'|'unsupported-capability'|'capacity'|'unavailable';
-export type MomentSendResult =
+/** One call's moment: the intent plus the #335 sender's optional hub-monotonic start instant and start tolerance. */
+export type MomentInput = MomentIntent & {startAtHubMs?:number; toleranceMs?:number};
+export type MomentResult =
   | {kind:'receipt'; momentId:string; start:MomentStart|null; receipt:ReceiptV1_1}
-  | {kind:'not-sent'; momentId:string; start:MomentStart|null; reason:MomentNotSentReason}
+  | {kind:'not-sent'; momentId:string; start:MomentStart|null; reason:MomentNotSentReason; failure?:{code:string}}
   | {kind:'uncertain'; momentId:string; start:MomentStart|null};
 /**
- * The #335 shared moment sender: one moment, one target device, an optional hub-monotonic start instant, one typed result.
- * It owns 1.1 negotiation, the controller-clock start, tickets and guards. It applies no policy; this module arbitrates.
+ * The #335 shared moment sender, local to this module until #335 merges: one moment, one target device, one typed result.
+ * It owns 1.1 negotiation, the controller-clock start, tickets and guards, and applies no policy; this module arbitrates.
+ * Composition binds #335's `sendMoment(client, moment, options?)` as `(target, moment) => sendMoment(clients.get(target)!, moment)`
+ * and its `hubMonotonicNow` as the `monotonic` clock.
  */
-export type MomentSender = (input:{moment:MomentIntent; target:string; startAt?:number}) => Promise<MomentSendResult>;
+export type MomentSender = (target:string, moment:MomentInput) => Promise<MomentResult>;
 /**
  * Device-neutral evidence for one target: its presentation, its alert state and whether it can play moments at all
  * (`1.0-only` for a controller that serves only contract 1.0). Unknown never blocks at the hub; an absent `moments` is unknown.
@@ -159,13 +163,13 @@ const NOT_SENT: readonly string[] = ['1.0-only','moments-unsupported','unsupport
 
 export type LogEntry = {seq:number; atMs:number; ruleId:string; event:{source:string; id:string; kind:string; alias?:string; agent?:string; task?:string};
   momentId:string; priorityClass:string; coversStatus:boolean; target:string; outcome:LogRow['outcome']; reason?:string;
-  receipt?:ReturnType<typeof receiptProjection>; start?:MomentStart};
+  receipt?:ReturnType<typeof receiptProjection>; failure?:{code:string}; start?:MomentStart};
 function entry(row:LogRow): LogEntry {
-  const detail = row.detail === null ? {} : JSON.parse(row.detail) as {receipt?:LogEntry['receipt']; start?:MomentStart};
+  const detail = row.detail === null ? {} : JSON.parse(row.detail) as {receipt?:LogEntry['receipt']; failure?:{code:string}; start?:MomentStart};
   return {seq:row.seq,atMs:row.atMs,ruleId:row.ruleId,event:{source:row.eventSource,id:row.eventId,kind:row.eventKind,
     ...(row.eventAlias === null ? {} : {alias:row.eventAlias}),...(row.agent === null ? {} : {agent:row.agent}),...(row.task === null ? {} : {task:row.task})},
     momentId:row.momentId,priorityClass:row.priorityClass,coversStatus:row.coversStatus,target:row.target,outcome:row.outcome,
-    ...(row.reason === null ? {} : {reason:row.reason}),...(detail.receipt ? {receipt:detail.receipt} : {}),...(detail.start ? {start:detail.start} : {})};
+    ...(row.reason === null ? {} : {reason:row.reason}),...(detail.receipt ? {receipt:detail.receipt} : {}),...(detail.failure ? {failure:detail.failure} : {}),...(detail.start ? {start:detail.start} : {})};
 }
 
 export type AutomationOptions = {
@@ -250,7 +254,11 @@ export function createAutomation(options:AutomationOptions) {
       const receipt = value.receipt as ReceiptV1_1;
       return logRow(rule,event,moment,target,'receipt',receipt.failure?.code ?? null,{receipt:receiptProjection(receipt),...extra});
     }
-    if (value.kind === 'not-sent' && NOT_SENT.includes(value.reason as string)) return logRow(rule,event,moment,target,'not-sent',value.reason as string,extra);
+    if (value.kind === 'not-sent' && NOT_SENT.includes(value.reason as string)) {
+      // A failure outside the contract's typed codes is not stored; the reason still is.
+      const failure = validate('failureV1_1',value.failure) ? {failure:{code:(value.failure as {code:string}).code}} : null;
+      return logRow(rule,event,moment,target,'not-sent',value.reason as string,extra || failure ? {...extra,...failure} : null);
+    }
     if (value.kind === 'uncertain') return logRow(rule,event,moment,target,'uncertain',null,extra);
     return logRow(rule,event,moment,target,'uncertain','invalid-result',null);
   };
@@ -272,7 +280,7 @@ export function createAutomation(options:AutomationOptions) {
     if (!handed.length || !options.sender) return;
     // One hub-monotonic start instant for every target; devices are independent, and nothing is retried.
     const startAt = options.monotonic() + START_LEAD_MS, sender = options.sender;
-    const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender({moment:structuredClone(moment),target,startAt}))));
+    const results = await Promise.allSettled(handed.map(target => Promise.resolve().then(() => sender(target,{...structuredClone(moment),startAtHubMs:startAt}))));
     store.appendLog(handed.map((target,index) => logged(rule,event,moment,target,results[index])));
   }
   async function drain() {

@@ -25,10 +25,10 @@ const DEFAULT_SETTINGS={noFlourishes:false,quietHours:{enabled:false,start:'22:0
  budgets:{perAgentTask:1,perAgentHour:2,globalHour:6,deviceSpacingMs:300000}};
 const DEFAULT_KINDS=['ci.failed','meeting.reminder','pull-request.merged'];
 
-/** A fake of the #335 single-device sender: one call, one moment, one target, one typed result. */
+/** A fake of the #335 single-device sender, `(target, moment)`: one call, one moment, one target, one typed result. */
 function fakeSender(answer=()=>({kind:'receipt',receipt:{...validReceipt,outcome:'queued'}})){
  const calls=[];
- return {calls,send:async input=>{calls.push(structuredClone(input));const value=await answer(input);return value && typeof value==='object' ? {momentId:input.moment.momentId,start:null,...value} : value;}};
+ return {calls,send:async(target,moment)=>{const input={target,moment};calls.push(structuredClone(input));const value=await answer(input);return value && typeof value==='object' ? {momentId:moment.momentId,start:null,...value} : value;}};
 }
 async function open({sender,targets,clock,monotonic,directory}={}){
  directory??=await mkdtemp(join(tmpdir(),'hub-automation-'));
@@ -148,10 +148,10 @@ test('an event produces one moment per target with the derived coversStatus; dis
   assert.equal(sender.calls.length,2);
   const [first,second]=sender.calls;
   assert.deepEqual(first.moment,second.moment,'the same moment reaches every target');
-  assert.deepEqual(first.moment,{momentId:first.moment.momentId,mood:'celebrate',palette:['#10b981'],durationMs:5000,priorityClass:'event',coversStatus:true});
+  assert.deepEqual(first.moment,{momentId:first.moment.momentId,mood:'celebrate',palette:['#10b981'],durationMs:5000,priorityClass:'event',coversStatus:true,startAtHubMs:6000});
   assert.match(first.moment.momentId,/^m-[0-9a-f]{40}$/);
   assert.deepEqual(sender.calls.map(c=>c.target).sort(),['panel','wall']);
-  assert.equal(first.startAt,6000,'one hub-monotonic start instant with the lead');assert.equal(second.startAt,6000);
+  assert.equal(first.moment.startAtHubMs,6000,'one hub-monotonic start instant with the lead');assert.equal(second.moment.startAtHubMs,6000);
   // A kind outside the interrupt set still produces the moment, without status cover.
   assert.deepEqual(hub.automation.submit(live('rr-1',{kind:'review.requested'})),{accepted:true,matched:1});
   await hub.automation.settled();
@@ -317,12 +317,20 @@ test('each target is handed the moment once; failures are logged per target and 
    assert.deepEqual(entries.find(e=>e.target==='wall').start,start,'a valid controller start is kept');
    assert.equal(entries.find(e=>e.target==='cube').start,undefined);
    // A receipt outside the contract is not stored; its content never reaches the log.
-   answers.wall={kind:'uncertain',start:{...start,extra:'PRIVATE_CANARY'}};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity'};
+   answers.wall={kind:'uncertain',start:{...start,extra:'PRIVATE_CANARY'}};answers.panel={kind:'receipt',receipt:{...validReceipt,outcome:'queued',token:'PRIVATE_CANARY'}};answers.cube={kind:'not-sent',reason:'capacity',failure:{code:'capacity'}};
    reopened.hub.automation.submit(live('pr-3'));await reopened.hub.automation.settled();
    entries=await log(reopened.call);
    assert.deepEqual(entries.slice(0,3).map(e=>`${e.target}:${e.outcome}:${e.reason ?? ''}`).sort(),['cube:not-sent:capacity','panel:uncertain:invalid-result','wall:uncertain:']);
    assert.ok(!JSON.stringify(entries).includes('PRIVATE_CANARY'));
+   assert.deepEqual(entries.find(e=>e.target==='cube').failure,{code:'capacity'},'a not-sent failure code is kept');
+   assert.equal(entries.find(e=>e.target==='cube').start,undefined);
    assert.equal(second.calls.length,6,'one call per target per event, no retries');
+   // A failure outside the contract's codes is not stored.
+   answers.cube={kind:'not-sent',reason:'unavailable',failure:{code:'PRIVATE_CANARY'}};
+   reopened.hub.automation.submit(live('pr-3b'));await reopened.hub.automation.settled();
+   const dropped=(await log(reopened.call)).find(e=>e.target==='cube');
+   assert.deepEqual([dropped.outcome,dropped.reason,dropped.failure],['not-sent','unavailable',undefined]);
+   assert.equal(second.calls.length,9);
    // Paging reads newest first with a cursor.
    const page=(await reopened.call('GET','/api/automation/v1/log?limit=2')).body;
    assert.equal(page.entries.length,2);assert.ok(page.entries[0].seq>page.entries[1].seq);

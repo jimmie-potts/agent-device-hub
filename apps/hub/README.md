@@ -180,7 +180,7 @@ An unblocked moment goes to each target once, concurrently, with one shared star
 
 ### Automation log
 
-`GET .../log?limit=<1-500>&before=<seq>` returns up to `limit` entries (default 100), newest first, with `next` when more may exist. Each entry has the rule ID, the event's source, ID, kind, alias, agent and task, the moment ID, class and `coversStatus`, the target, an outcome and, when the sender computed one, the controller `start`. The outcome is `blocked` with a reason, `receipt` with the receipt's request ID, outcome, prior effects and any failure code, `not-sent` with the sender's reason, or `uncertain`. The log keeps the newest 5,000 entries and holds no credentials or tokens.
+`GET .../log?limit=<1-500>&before=<seq>` returns up to `limit` entries (default 100), newest first, with `next` when more may exist. Each entry has the rule ID, the event's source, ID, kind, alias, agent and task, the moment ID, class and `coversStatus`, the target, an outcome and, when the sender computed one, the controller `start`. The outcome is `blocked` with a reason, `receipt` with the receipt's request ID, outcome, prior effects and any failure code, `not-sent` with the sender's reason and any failure code, or `uncertain`. The log keeps the newest 5,000 entries and holds no credentials or tokens.
 
 ## Playback
 
