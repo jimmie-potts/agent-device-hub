@@ -46,7 +46,7 @@ try {
  const capture=async(page,name)=>{assert.deepEqual(await textOverlaps(page),[],name+': no text overlaps');await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:join(output,name),fullPage:true});};
  const axe=async page=>{const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(result.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target.join(' '))})),[]);};
 
- const none='No general controls: this controller declares no power, brightness, media or scenes.';
+ const none='No general controls or moments: this controller declares no power, brightness, media, scenes or moments.';
  // Tidbyt: status only; one line instead of four disabled forms, and no editor or integration settings.
  const control=await open(token);const {page}=control;
  await page.getByRole('link',{name:'tidbyt tidbyt',exact:true}).click();
@@ -65,7 +65,7 @@ try {
  await powerGroup.getByText(/^Last read: off, .+ ago\./).waitFor();
  assert.equal(await powerGroup.getByRole('button',{name:'Turn on',exact:true}).isDisabled(),false);
  assert.equal(await powerGroup.getByRole('button',{name:'Turn off',exact:true}).count(),0,'a bulb read as off offers only Turn on');
- await section(page).getByText('Not declared by this controller: media and scenes.',{exact:true}).waitFor();
+ await section(page).getByText('Not declared by this controller: media, scenes and moments.',{exact:true}).waitFor();
  assert.equal(await section(page).getByRole('button',{name:/^Start playlist|^Activate scene/}).count(),0,'no dead media or scene form');
  assert.equal(await section(page).getByLabel('Brightness (%)').isDisabled(),false);
  assert.equal(await section(page).getByText(/Advanced editor|Settings unavailable|Rendition selection/).count(),0);

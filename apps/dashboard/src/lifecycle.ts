@@ -2,8 +2,8 @@ import {failureMessage,resultMessage,type ReceiptEvidence,type ResultMessage,typ
 
 /** One explicit command's lifecycle, shared by draft forms and one-click actions. It has no React or device knowledge: callers build requests and decide availability. */
 export type Tone='pending'|Settled;
-/** unreadable names what a failed preparation could not read, for a consumer that is neither a device nor the session monitor. */
-export type ResultOptions={device?:boolean;sameMode?:boolean;unreadable?:string};
+/** unreadable names what a failed preparation could not read, for a consumer that is neither a device nor the session monitor. describe words a later terminal receipt for the watched ticket in the consumer's own terms (the Moments card, Hub #336). */
+export type ResultOptions={device?:boolean;sameMode?:boolean;unreadable?:string;describe?:(receipt:ReceiptEvidence)=>ResultMessage};
 /** A command built from a fresh read, or the reason nothing was sent. */
 export type Prepared<T>=T|{blocked:string};
 export const blocked=<T extends object>(value:Prepared<T>):value is {blocked:string}=>'blocked' in value;
@@ -17,14 +17,16 @@ export function observedResult(source:unknown,ticket:unknown,options:ResultOptio
  const observed=source as {outcomes?:ObservedReceipt[];state?:{lastOutcome?:{status:string;receipt?:ObservedReceipt}}};
  const records=[...(observed.outcomes??[]),...(observed.state?.lastOutcome?.status==='known'&&observed.state.lastOutcome.receipt?[observed.state.lastOutcome.receipt]:[])];
  const result=records.find(r=>JSON.stringify(r.requestId)===JSON.stringify(ticket));
- if(result&&result.outcome!=='queued')return resultMessage(result,options);
+ if(result&&result.outcome!=='queued')return options.describe?options.describe(result):resultMessage(result,options);
 }
 
-/** How a consumer words its status: actions name themselves; a form's control shows the current value again, so a rejection invites another change. */
-export type Wording={prefix:string;blocked:string;result:(result:ResultMessage)=>string};
+/** How a consumer words its status: actions name themselves; a form's control shows the current value again, so a rejection invites another change. sending replaces the pending line. */
+export type Wording={prefix:string;blocked:string;result:(result:ResultMessage)=>string;sending?:string};
 const retryable=['stale-generation','revision-conflict'];
 export const actionWording=(label:string):Wording=>({prefix:`${label}: `,blocked:'',result:r=>r.settled==='rejected'&&r.code&&retryable.includes(r.code)?` Press ${label} to try again with current values.`:''});
 export const formWording:Wording={prefix:'',blocked:'',result:r=>r.settled==='rejected'&&r.code&&retryable.includes(r.code)?' Change it again to try with current values.':''};
+/** A moment press names its mood while sending; its result lines carry their own wording, so nothing is prefixed. */
+export const momentWording=(label:string):Wording=>({prefix:'',blocked:'',sending:`${label}: Sending…`,result:()=>''});
 
 /** watching holds only an accepted ticket: a rejected ticket may be consumed by another client, whose receipt must never be shown as this command's outcome. */
 export type CommandState={status:string;tone?:Tone;busy:boolean;locked:boolean;watching?:{ticket:unknown;prefix:string}};
@@ -40,7 +42,7 @@ export type CommandEvent=
 /** Every state change a command makes. No transition sends anything; an uncertain or partial result, including one observed later, locks until an explicit reload. */
 export function commandTransition(state:CommandState,event:CommandEvent):CommandState{
  switch(event.type){
-  case 'start':return {status:`${event.wording.prefix}Sending…`,tone:'pending',busy:true,locked:false};
+  case 'start':return {status:event.wording.sending??`${event.wording.prefix}Sending…`,tone:'pending',busy:true,locked:false};
   case 'blocked':return {...state,tone:'rejected',status:`${event.wording.prefix}Not sent: ${event.reason}. Nothing changed.${event.wording.blocked}`};
   case 'result':{const {result,wording}=event;return {...state,tone:result.settled,locked:result.locked,status:`${wording.prefix}${result.message}${wording.result(result)}`,watching:result.settled==='accepted'?{ticket:event.ticket,prefix:wording.prefix}:undefined};}
   case 'observed':{
@@ -57,7 +59,10 @@ export type Attempt={
  wording:Wording;options:ResultOptions;
  /** Reads current guards and builds the request, or names why nothing is sent. */
  prepare:()=>Promise<Prepared<{request:unknown}>>;
- send:(request:unknown)=>Promise<ReceiptEvidence|undefined>;
+ /** Resolves with the controller's receipt, or with the answer `interpret` reads. */
+ send:(request:unknown)=>Promise<unknown>;
+ /** Words an answer that is not a receipt, and names the ticket to watch when it was accepted. */
+ interpret?:(response:unknown)=>{result:ResultMessage;ticket?:unknown};
  refresh:()=>Promise<unknown>;
  /** Runs once the refreshed view is back, before the control is released. */
  settled?:(outcome:Settled|'blocked')=>void;
@@ -69,9 +74,12 @@ export async function runCommand(attempt:Attempt,dispatch:(event:CommandEvent)=>
  let prepared:Prepared<{request:unknown}>;
  try{prepared=await attempt.prepare();}catch{prepared={blocked:unprepared(options)};}
  if(blocked(prepared)){dispatch({type:'blocked',wording,reason:prepared.blocked});attempt.settled?.('blocked');return 'blocked';}
- let result:ResultMessage;
- try{result=resultMessage(await attempt.send(prepared.request),options);}catch(error){result=failureMessage(error,options);}
- dispatch({type:'result',wording,result,ticket:(prepared.request as {requestId?:unknown}).requestId});
+ let result:ResultMessage,ticket=(prepared.request as {requestId?:unknown}).requestId;
+ try{
+  const response=await attempt.send(prepared.request);
+  if(attempt.interpret)({result,ticket}=attempt.interpret(response));else result=resultMessage(response as ReceiptEvidence|undefined,options);
+ }catch(error){result=failureMessage(error,options);if(attempt.interpret)ticket=undefined;}
+ dispatch({type:'result',wording,result,ticket});
  await attempt.refresh().catch(()=>{});
  attempt.settled?.(result.settled);
  return result.settled;

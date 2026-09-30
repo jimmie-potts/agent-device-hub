@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {startHub} from '../../hub/dist/server.js';
-import {validate} from '@jimmie-potts/device-contracts';
+import {validate,admit,downgradeSnapshot,evaluate} from '@jimmie-potts/device-contracts';
 import {validateRequest} from '../../hub/dist/vendor/nanoleaf-integration.js';
 import {validatePixooRequest} from '../../hub/dist/pixoo-integration.js';
 const hash=x=>createHash('sha256').update(x).digest('hex');
@@ -28,8 +28,8 @@ export function panelsGeometry(deviceId='panels'){
  const elements=triangles.map((t,i)=>({id:String(4001+i),number:i+1,zones:[4001+i],points:[0,1,2].map(k=>{const a=(90+t.o+120*k)*Math.PI/180;return [round(t.cx+r*Math.cos(a)),round(-(t.cy+r*Math.sin(a)))];})}));
  return {apiVersion:'nanoleaf.integration/1.0',identity:identityOf(deviceId),kind:'panels',elements,connectors:null};
 }
-/** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route, 'undrawable' serves a hub-valid Lines layout with a connector no Line joins, which the renderer rejects, and 'flaky' fails the first geometry read with a transport failure and serves the layout afterwards. `token`, `reader`, `port`, `directory`, `editorLinks`, `placeLinks` and `endpointFor` let a verification run (Hub #494, #495) use run-generated credentials, a recorded port, a short private directory (so the hub's Unix socket path stays under 108 bytes), editor links and Places destinations that never point at an installed service, and a stand-in in front of a fake controller for its fault scenarios; the defaults keep the browser suites unchanged. */
-export async function fixture({empty=false,playback=false,panels=false,geometry='layout',browserAccess,beforeRead,token='d'.repeat(43),reader='r'.repeat(43),port,directory:given,previewProof,editorLinks={wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'},placeLinks,endpointFor=(id,url)=>url}={}){
+/** `geometry`: 'layout' serves the layouts above on the read-only geometry route (codex-nanoleaf#169), 'none' serves an explicit empty result for the wall, 'older' answers like an owner that predates the route, 'undrawable' serves a hub-valid Lines layout with a connector no Line joins, which the renderer rejects, and 'flaky' fails the first geometry read with a transport failure and serves the layout afterwards. `token`, `reader`, `port`, `directory`, `editorLinks`, `placeLinks` and `endpointFor` let a verification run (Hub #494, #495) use run-generated credentials, a recorded port, a short private directory (so the hub's Unix socket path stays under 108 bytes), editor links and Places destinations that never point at an installed service, and a stand-in in front of a fake controller for its fault scenarios; the defaults keep the browser suites unchanged. `moments` (Hub #336), `true` or overrides of the `moments` capability, makes the wall serve controller contract 1.1 with moments; see `wallMoments` below. */
+export async function fixture({empty=false,playback=false,panels=false,geometry='layout',browserAccess,beforeRead,token='d'.repeat(43),reader='r'.repeat(43),port,directory:given,previewProof,editorLinks={wall:'http://127.0.0.1:8765/wall',pixel:'http://127.0.0.1:3000/playlists'},placeLinks,endpointFor=(id,url)=>url,moments}={}){
  const corpus=JSON.parse(await readFile('packages/contracts/fixtures/controller-v1.json','utf8'));
  const template=corpus.schemaCases.find(c=>c.definition==='snapshot'&&c.valid).value;
  const project='project-'+'a'.repeat(64),task='task-'+'b'.repeat(64),sceneA='scene-'+'a'.repeat(64),sceneB='scene-'+'b'.repeat(64);
@@ -54,6 +54,45 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
  const media={playlistId:null,actions:[]},scenes={activated:[]};
  const supports=(c,command)=>command.kind==='mode.set'?!!c.modes?.supported&&c.modes.values.includes(command.mode):command.kind==='power.set'?c.power.supported:command.kind==='brightness.set'?c.brightness.supported:command.kind==='media.start'?c.media.supported&&c.media.playlistIds.includes(command.playlistId):command.kind==='media.control'?c.media.supported&&c.media.actions.includes(command.action):command.kind==='scene.activate'?c.scenes.supported&&c.scenes.sceneIds.includes(command.sceneId):false;
  const writes=[],requests=[];let offline='',uncertain=false,delay=0,queued=false;
+ // Hub #336: with `moments`, the wall serves controller contract 1.1 on versioned reads and admits 1.1 moment requests through the
+ // contract's reference `admit`. Its writer is the contract's `moment` reference operation on a live device clock, so Quiet, status
+ // cover, alerts, supersede, completion and missed starts follow the contract. Unversioned reads get the contract's 1.0 view.
+ // Knobs: `lead` reports the sample clock that far ahead of the writer's clock, so a moment the hub starts now shows as scheduled;
+ // `stallNext(ms)` moves the writer's clock on before it takes the next moment, so that moment misses its window; `advance(ms)`
+ // moves the clock on (a moment ends sooner); `alert(kind)` raises or clears a status alert; `refuseNextVersionedRead()` answers
+ // one versioned read with invalid-request, as a controller that serves only 1.0 does, then restarts with a new controller epoch.
+ const momentsCapability=moments?{supported:true,moods:['celebrate','setback','reminder'],maxDurationMs:30000,coversStatus:true,...(moments===true?{}:moments)}:undefined;
+ const presentationOf=mode=>mode==='Quiet'?'quiet':mode==='Free'?'content':'status';
+ const clockOrigin=performance.now();
+ const wallMoments={offset:0,lead:0,stall:0,refuse:'',restarts:0,cache:[],admitted:new Map(),
+  device:{clockEpoch:'clock-wall',presentation:presentationOf(states.wall.state.desired.mode.value),canCoverStatus:!!momentsCapability?.coversStatus,base:'agent status',alert:'none',recentMomentIds:[],current:{status:'none'},last:{status:'none'}}};
+ const deviceNow=()=>Math.round(performance.now()-clockOrigin)+1000+wallMoments.offset;
+ const sameTicket=(a,b)=>a.epoch===b.epoch&&a.sequence===b.sequence;
+ /** A writer receipt change as the full 1.1 receipt the snapshot's lastOutcome carries. */
+ const fullReceipt=(admitted,change)=>{
+  const {failure:_failure,...base}=admitted;
+  const receipt={...base,outcome:change.outcome,priorEffects:change.outcome==='sent'?'confirmed-transmission':'none',completedOperations:change.outcome==='sent'?['moment']:[],uncertainOperations:[],...(change.failure?{failure:{code:change.failure}}:{})};
+  if(!validate('receiptV1_1',receipt))throw new Error('fixture moment receipt must validate');
+  return receipt;
+ };
+ function writer(event){
+  const {steps,device}=evaluate({operation:'moment',device:wallMoments.device,events:[event]});
+  wallMoments.device=device;
+  for(const change of steps[0].receipts){const admitted=wallMoments.admitted.get(change.requestId.sequence);if(admitted&&sameTicket(admitted.requestId,change.requestId))states.wall.state.lastOutcome={status:'known',receipt:fullReceipt(admitted,change)};}
+  return steps[0];
+ }
+ /** The writer reaches the present: a scheduled start that is due begins, and a playing moment whose time is up completes. */
+ const tick=()=>{for(let i=0;i<3;i++){const before=JSON.stringify(wallMoments.device.current);writer({kind:'tick',nowMs:deviceNow()});if(JSON.stringify(wallMoments.device.current)===before)break;}};
+ const wallV11=()=>{
+  const s=states.wall;
+  const value={...structuredClone(s),apiVersion:'1.1',sampleClock:{domain:'controller-monotonic',epoch:wallMoments.device.clockEpoch,sampledAtMs:deviceNow()+wallMoments.lead},
+   capabilities:{...structuredClone(s.capabilities),moments:structuredClone(momentsCapability)},
+   state:{...structuredClone(s.state),moment:{current:structuredClone(wallMoments.device.current),last:structuredClone(wallMoments.device.last)}}};
+  if(!validate('snapshotV1_1',value))throw new Error('fixture 1.1 wall snapshot must validate');
+  return value;
+ };
+ /** The wall's mode changed, through a command or elsewhere: a current moment is interrupted and precedence follows the new presentation. */
+ const wallMode=mode=>{if(momentsCapability){tick();writer({kind:'mode',nowMs:deviceNow(),presentation:presentationOf(mode),base:'agent status'});}};
  const controllers=[];
  for(const id of ids){
   const server=createServer(async(req,res)=>{
@@ -67,9 +106,38 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
    const integration=req.url.includes('integration');const state=states[id],ext=id==='wall'?nano:id==='panels'?readOnly:pixoo;
    // The read-only geometry route (codex-nanoleaf#169): an older owner answers 404 like any unknown route.
    if(req.method==='GET'&&req.url.startsWith('/controller/integration/v1/geometry')){if(geometry==='older'){send(404,{failure:{code:'invalid-request'}});return;}if(geometry==='flaky'&&geometryReads++===0){send(503,{failure:{code:'transport-failure'}});return;}send(200,geometries[id]);return;}
+   if(req.method==='GET'&&momentsCapability&&id==='wall'&&!integration){
+    tick();
+    const versioned=new URL(req.url,'http://fake.invalid').searchParams.has('apiVersion');
+    if(versioned&&wallMoments.refuse==='armed'){wallMoments.refuse='refused';send(400,{failure:{code:'invalid-request'}});return;}
+    const value=wallV11();send(200,versioned?value:downgradeSnapshot(value));
+    // The unversioned read after the refusal still came from the old epoch; the controller then restarts serving 1.1 again.
+    if(!versioned&&wallMoments.refuse==='refused'){wallMoments.refuse='';state.identity.controllerEpoch=`epoch-${++wallMoments.restarts}`;}
+    return;
+   }
    if(req.method==='GET'){send(200,integration?ext:state);return;}
    const command=JSON.parse(body);writes.push({id,integration,command});
    if(uncertain){req.socket.destroy();return;}
+   if(!integration&&momentsCapability&&id==='wall'&&command?.apiVersion==='1.1'){
+    tick();
+    const snapshot=wallV11();
+    const result=admit({request:command,bodyBytes:Buffer.byteLength(body),auth:{credential:{kind:'machine',status:'active',declared:true,devices:['wall'],scopes:['read','control']},deviceId:'wall',scope:'control',hostAllowed:true,originPresent:false,originAllowed:true,fetchMetadataAllowed:true},
+     state:{controllerId:state.identity.controllerId,deviceId:'wall',epoch:state.nextRequestId.epoch,nextSequence:state.nextRequestId.sequence,configurationRevision:state.configurationRevision,generation:state.generation,capabilities:snapshot.capabilities,
+      apiVersions:['1.0','1.1'],maxBodyBytes:state.limits.maxBodyBytes,maxInFlight:32,maxQueue:32,maxReceipts:256,inFlight:0,queueDepth:0,cache:wallMoments.cache,pending:[]}});
+    const status={'invalid-request':400,'unauthenticated':401,'forbidden':403,'unknown-device':404,'revision-conflict':409,'stale-generation':409,'request-conflict':409,'request-order':409,'request-expired':410,'unsupported-capability':422,'capacity':429};
+    if(!result.receipt){send(status[result.decision]??400,{failure:{code:result.decision}});return;}
+    if(!result.reserved){send(result.receipt.failure?status[result.receipt.failure.code]??200:200,result.receipt);return;}
+    state.nextRequestId.sequence=result.nextSequence;
+    const entry={request:command,receipt:result.receipt};wallMoments.cache.push(entry);
+    if(result.decision!=='queued'){send(status[result.receipt.failure?.code]??200,result.receipt);return;}
+    wallMoments.admitted.set(result.receipt.requestId.sequence,result.receipt);
+    if(wallMoments.stall){wallMoments.offset+=wallMoments.stall;wallMoments.stall=0;}
+    const step=writer({kind:'deliver',nowMs:deviceNow(),requestId:command.requestId,command:command.command});
+    // A moment the writer drops on arrival answers its failed receipt; one it schedules or starts answers the queued admission.
+    const dropped=step.receipts.find(change=>sameTicket(change.requestId,command.requestId)&&change.outcome==='failed');
+    if(dropped){entry.receipt=fullReceipt(result.receipt,dropped);send(200,entry.receipt);return;}
+    send(202,result.receipt);return;
+   }
    if(!integration){if(!validate('request',command)){send(400,{failure:{code:'invalid-request'}});return;}
     // Like the real controllers, a configuration change conflicts and a retired generation is stale; both fail before any effect.
     const conflict=command.expectedConfigurationRevision!==state.configurationRevision?'revision-conflict':JSON.stringify(command.expectedGeneration)!==JSON.stringify(state.generation)?'stale-generation':undefined;
@@ -81,6 +149,8 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
     const overridden=state.state.desired.power.status==='known'||state.state.desired.brightness.status==='known';
     if(!failure&&nanoleaf(id)&&command.command.kind==='mode.set'&&state.state.desired.mode.value===command.command.mode&&!overridden){state.configurationRevision++;state.nextRequestId.sequence++;const cancelled={...receipt,configurationRevision:state.configurationRevision,outcome:'cancelled'};state.state.lastOutcome={status:'known',receipt:cancelled};send(200,cancelled);return;}
     if(!failure){const c=command.command;state.configurationRevision++;state.nextRequestId.sequence++;
+     // Any explicit command interrupts the wall's current moment; a mode change also changes what may cover it.
+     if(momentsCapability&&id==='wall'){if(c.kind==='mode.set')wallMode(c.mode);else{tick();writer({kind:'command',nowMs:deviceNow()});}}
      if(c.kind==='mode.set'){state.state.desired.mode={status:'known',value:c.mode};if(nanoleaf(id)){ext.mode=c.mode;state.state.desired.power={status:'unknown'};state.state.desired.brightness={status:'unknown'};}}
      else {if(c.kind==='power.set')state.state.desired.power={status:'known',value:c.on};if(c.kind==='brightness.set')state.state.desired.brightness={status:'known',value:c.percent};if(c.kind==='media.start')media.playlistId=c.playlistId;if(c.kind==='media.control')media.actions.push(c.action);if(c.kind==='scene.activate')scenes.activated.push(c.sceneId);
       // Like the real controller, general commands are queued first and report a sent outcome on the next snapshot; the mode never changes as a side effect.
@@ -126,5 +196,5 @@ export async function fixture({empty=false,playback=false,panels=false,geometry=
  let seq=0;
  async function event(kind,extra={}){const value={apiVersion:'1.0',identity,turn:{status:'known',id:'turn-one'},parent:{status:'unknown'},event:{kind},observedAtMs:Date.now(),ordering:{status:'known',epoch:'fixture',sequence:seq++},...extra};const r=await fetch(hub.url+'/api/monitor/v1/events',{method:'POST',headers,body:JSON.stringify(value)});if(!r.ok)throw new Error('fixture-event-'+r.status);return r.json();}
  if(!empty)await event('session.started',{label:{origin:'user',value:'Build the integration'}});
- return {hub,token,reader,endpoints:controllers.map(({id,server})=>({id,port:server.address().port})),media,scenes,sceneA,sceneB,sceneC,sceneD,readOnly,geometries,reconnect({scopes=['read','control','ingest'],granted=devices}={}){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes,devices:granted},{id:'reader',digest:hash(reader),scopes:['read'],devices}]);},sony,writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,setOffline:(v,id='pixel')=>offline=v?id:'',setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});if(receiver)await new Promise(r=>{receiver.close(r);receiver.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+ return {hub,token,reader,endpoints:controllers.map(({id,server})=>({id,port:server.address().port})),media,scenes,sceneA,sceneB,sceneC,sceneD,readOnly,geometries,reconnect({scopes=['read','control','ingest'],granted=devices}={}){hub.replaceCredentials([{id:'browser',digest:hash(token),scopes,devices:granted},{id:'reader',digest:hash(reader),scopes:['read'],devices}]);},sony,writes,requests,states,nano,pixoo,identity,headers,event,setQueued:v=>queued=v,wallMoments:{lead:ms=>{wallMoments.lead=ms;},stallNext:ms=>{wallMoments.stall=ms;},advance:ms=>{wallMoments.offset+=ms;},alert:kind=>{tick();writer({kind:'alert',nowMs:deviceNow(),alert:kind});},refuseNextVersionedRead:()=>{wallMoments.refuse='armed';},state:()=>structuredClone(wallMoments.device)},setMode:(id,mode)=>{states[id].state.desired.mode={status:'known',value:mode};if(id==='wall'){nano.mode=mode;wallMode(mode);}},setOffline:(v,id='pixel')=>offline=v?id:'',setUncertain:v=>uncertain=v,setDelay:v=>delay=v,advance:id=>{states[id].generation.sequence++;},async close(){await hub.close();for(const {server} of controllers)await new Promise(r=>{server.close(r);server.closeAllConnections();});if(receiver)await new Promise(r=>{receiver.close(r);receiver.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }
