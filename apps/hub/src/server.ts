@@ -384,9 +384,9 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           if(codexDesktop&&checked.ok&&checked.value.identity.client==='desktop'&&checked.value.identity.hostId===codexDesktop.hostId&&checked.value.identity.sourceId===codexDesktop.sourceId)input=await enrichCodexTitle(checked.value,codexDesktop.home);
           live(principal); // Enrichment may yield while this credential is revoked.
           const result = await owner.ingest(input);
-          // Only a newly applied event reaches the rules. Submission is synchronous and never changes the ingest answer.
-          if (result.ok && result.outcome === 'applied' && checked.ok) try { const event = lifecycleEvent(checked.value);if (event) automation.submit(event); } catch {}
           json(res,result.ok ? 200 : result.code === 'invalid-event' ? 400 : result.code === 'capacity' ? 429 : 503,result);
+          // Only a newly applied event reaches the rules, after the ingest answer is sent, so intake never delays or changes it.
+          if (result.ok && result.outcome === 'applied' && checked.ok) try { const event = lifecycleEvent(checked.value);if (event) automation.submit(event); } catch {}
         } else if (path.startsWith(AUTOMATION_PREFIX)) {
           const response = await automationRoute(automation,{method:req.method ?? '',url,devices:principal.devices,body:admitted,writable:!staged && !exported});
           if (!response) throw new HttpError('not-found',404);

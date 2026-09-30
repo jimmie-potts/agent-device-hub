@@ -108,6 +108,11 @@ test('routes enforce scopes, the write header, device grants and typed errors (A
   await bad({...rule(),action:{...rule().action,mood:'ghp_'+'a'.repeat(36)}},'invalid-action');
   await bad({...rule(),trigger:{source:'github',kind:'ci.failed',alias:'ghp_'+'a'.repeat(36)}},'invalid-trigger');
   assert.deepEqual(hub.automation.submit(live('ghp_'+'a'.repeat(36))),{accepted:false,reason:'invalid-event'});
+  // The screen looks for token prefixes at word starts only: ordinary hyphenated IDs stay valid.
+  const hyphenated=await call('POST','/api/automation/v1/rules',rule({enabled:false,trigger:{source:'github',kind:'ci.failed',alias:'disk-usage-analyzer-tool'},action:{...rule().action,mood:'desk-lamp-glow-effect'}}));
+  assert.equal(hyphenated.status,201);
+  assert.equal((await call('DELETE',`/api/automation/v1/rules/${hyphenated.body.id}`)).status,200);
+  assert.deepEqual(hub.automation.submit(live('task-complete-sparkle-long',{kind:'nothing.matches'})),{accepted:true,matched:0});
   const widest=Array.from({length:64},(_,index)=>'k'+String(index).padStart(2,'0')+'.'+'a'.repeat(60));
   assert.equal((await call('PUT','/api/automation/v1/interrupt-set',{kinds:widest})).status,200,'the largest valid interrupt set fits the body limit');
   assert.deepEqual(await call('PUT','/api/automation/v1/interrupt-set',{kinds:['ci.failed','ci.failed']}),{status:400,body:{error:{code:'invalid-interrupt-set'}}});
@@ -391,7 +396,7 @@ test('against the shared fake controllers, the composed reader blocks 1.0-only, 
   hub.automation.submit(live('pr-3'));await hub.automation.settled();
   assert.deepEqual(await latest(4),['cube:blocked:sender-unavailable','lamp:blocked:1.0-only','panel:blocked:quiet','wall:blocked:alert']);
   assert.deepEqual(fakes.map(fake=>fake.commands.length),[0,0,0,0],'no controller command from any path');
- }finally{await hub.close();}
+ }finally{await hub?.close();}
 });
 
 test('a staged migration destination refuses automation writes and intake',async()=>{

@@ -57,8 +57,12 @@ const sourcePattern = /^[a-z][a-z0-9-]{0,31}$/;
 const eventKind = (value:unknown): value is string => typeof value === 'string' && value.length <= 64 && kindPattern.test(value);
 const source = (value:unknown): value is string => typeof value === 'string' && sourcePattern.test(value);
 const optional = (value:Record<string,unknown>, key:string, check:(item:unknown)=>boolean) => !Object.hasOwn(value,key) || check(value[key]);
-/** An ID that also passes the lifecycle contract's credential screen, for owner- or source-chosen names that are stored. */
-const screenedId = (value:unknown): value is string => id(value) && validDisplayText(value,128);
+/**
+ * An ID that does not look like a credential, for owner- or source-chosen names that are stored. It uses the lifecycle
+ * contract's token prefixes, but only at the start of a word, so IDs such as `desk-lamp-glow-effect` stay valid.
+ */
+const credentialLike = /(?:^|[^A-Za-z0-9])(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}/;
+const screenedId = (value:unknown): value is string => id(value) && !credentialLike.test(value);
 const keysWithin = (value:Record<string,unknown>, required:string[], allowed:string[]) =>
   required.every(key => Object.hasOwn(value,key)) && Object.keys(value).every(key => allowed.includes(key));
 

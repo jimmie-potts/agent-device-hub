@@ -32,7 +32,7 @@ After `owner.ingest` returns `applied`, the ingest route submits `{source:'agent
 
 - [The composed alert is agent-state attention, not the device's own alert] → The device's precedence still pre-empts and blocks. The reader is injectable, so a later contract field can replace it.
 - [Serial evaluation delays a second event behind a slow device] → Each hand-off is bounded by the sender's own caps. The queue is bounded, and overflow is logged, not silently dropped.
-- [Every accepted event adds one small synchronous commit, including each applied lifecycle event] → The insert is tiny next to the agent-state commit the same event already makes, and the hub, not each source, owns removing duplicates (ADR 0006). The 10,000-key bound covers far more than any restart window.
+- [Every accepted event adds one durable commit, including each applied lifecycle event: about one extra fsync, measured near 10 ms on the WSL ext4 host] → The lifecycle ingest route submits after it has sent its answer, so the commit never delays or changes that answer, and the hub, not each source, owns removing duplicates (ADR 0006). The 10,000-key window is shared by every source and still covers far more than a restart; revisit per-source retention if a high-volume source shortens it (review observations S-P3-11, C-P3-9).
 - [Rules do not move with a released-state migration] → The owner recreates them through the routes on the new owner. Revisit if migration is used again with rules installed.
 - [Titles may appear in rule names] → Allowed by the #424 policy. The credential canary in display-text validation rejects recognizable secrets, and events and the log carry no free text beyond rule names.
 

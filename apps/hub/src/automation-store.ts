@@ -26,6 +26,7 @@ export class AutomationStore {
       CREATE TABLE IF NOT EXISTS interrupt_set (kind TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS automation_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS automation_events (key TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS automation_events_seq ON automation_events(seq);
       CREATE TABLE IF NOT EXISTS automation_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, at_ms INTEGER NOT NULL, rule_id TEXT NOT NULL,
         event_source TEXT NOT NULL, event_id TEXT NOT NULL, event_kind TEXT NOT NULL, event_alias TEXT, agent TEXT, task TEXT,
         moment_id TEXT NOT NULL, priority_class TEXT NOT NULL, covers_status INTEGER NOT NULL CHECK(covers_status IN (0,1)), target TEXT NOT NULL,
