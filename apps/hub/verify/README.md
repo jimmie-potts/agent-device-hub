@@ -30,6 +30,13 @@ is newer than the build it would serve. The sources are `apps/hub/src`,
 `scripts/build-dashboard.mjs`. `tests/build.test.mjs` proves that every input
 esbuild bundles into the dashboard is among them.
 
+`npm run -s verify -- prerequisites` inspects local requirements and the Hub
+build without creating a run or contacting the app. It reports actual launch,
+listener, capture and Windows browser behavior as unproven. Exit 0 means the
+diagnostic completed, not that a preview is ready. The composition manifest's
+pinned Nanoleaf and Pixoo cores remain 1.1.0, whose `help` does not advertise
+this operation; treat those adapters as unsupported until they adopt 1.3.
+
 Capture only the reference steps before `handoff`, so the verified set holds
 only passed captures; the #496 delivery preflight rejects any other. CI's
 `steps.test.mjs` already proves that the `control-*` steps fail and that the
@@ -41,6 +48,7 @@ opens it.
 ```bash
 npm run build
 npm run -s verify -- help
+npm run -s verify -- prerequisites
 npm run -s verify -- start --scenario lifecycle-basic
 npm run -s verify -- capture <run-id> task-appears
 npm run -s verify -- capture <run-id> command-reaches-fake

@@ -9,7 +9,7 @@ import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import {build} from 'esbuild';
-import {BUILD_OUTPUTS, BUILD_SOURCES, buildCurrent} from '../plugin.mjs';
+import {BUILD_OUTPUTS, BUILD_SOURCES, buildCurrent, inspectBuildPrerequisite} from '../plugin.mjs';
 
 const root = fileURLToPath(new URL('../../../..', import.meta.url));
 
@@ -31,9 +31,11 @@ test('a newer package source, Places manifest or dashboard build script fails bu
     await age(sources, 0);
     await age(BUILD_OUTPUTS, 10);
     assert.deepEqual(await buildCurrent(repo), {outcome: 'passed'});
+    assert.deepEqual(await inspectBuildPrerequisite(repo), [{id: 'app-build', phase: 'launch', status: 'present', reason: 'build-current'}]);
     for (const newer of ['packages/app-verify/src/proof.ts', 'packages/agent-state/src/index.ts', 'packages/contracts/src/types.ts', 'docs/skins/places.json', 'scripts/build-dashboard.mjs']) {
       await age([newer], 20);
       assert.deepEqual(await buildCurrent(repo), {outcome: 'failed', reason: `${newer} is newer than the build; run npm run build`}, newer);
+      assert.deepEqual(await inspectBuildPrerequisite(repo), [{id: 'app-build', phase: 'launch', status: 'missing', reason: 'build-missing-or-stale', next: 'Run npm run build from the checkout.'}], newer);
       await age([newer], 0);
     }
   } finally {

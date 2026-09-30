@@ -27,7 +27,7 @@
       "app": "hub",
       "repository": "jimmie-potts/agent-device-hub",
       "revision": "self",
-      "coreVersion": "1.2.0",
+      "coreVersion": "1.3.0",
       "scenario": "integrated",
       "run": ["node", "scripts/verify.mjs"]
     }

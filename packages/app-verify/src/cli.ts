@@ -3,12 +3,14 @@ import {handoff} from './handoff.js';
 import {checkDeclarations, checkGiven, declaresInputs, parseInputs, resolveInputs} from './inputs.js';
 import {DEFAULT_LEASE_MINUTES, doctor, EXIT, extend, Failure, has, restart, scenario, start, stop, UsageError, type Io} from './lifecycle.js';
 import {LockedError} from './receipt.js';
+import {inspectPrerequisites} from './prerequisites.js';
 import type {AppPlugin, RunOptions} from './types.js';
 import {APP_PATTERN, errorText} from './util.js';
 import {VERSION} from './version.js';
 
 const OPERATIONS = [
   'help',
+  'prerequisites',
   'start [--scenario <name>] [--lease <minutes>]',
   'doctor [<run-id>]',
   'scenario <run-id> <name>',
@@ -81,13 +83,19 @@ export async function runCli(plugin: AppPlugin, argv: readonly string[], options
           scenarioInputs: Object.fromEntries(Object.entries(plugin.scenarios).filter(([, v]) => v.requiredInputs?.length).map(([k, v]) => [k, [...v.requiredInputs!]])),
           scenarios: Object.fromEntries(Object.entries(plugin.scenarios).map(([k, v]) => [k, v.description])), defaultScenario: plugin.defaultScenario,
           steps: Object.fromEntries(Object.entries(plugin.captureSteps).map(([k, v]) => [k, v.description])),
-          exitCodes: {0: 'verified', 1: 'failed outcome', 2: 'usage error', 3: 'supervisor or browser tooling unavailable'}}};
+          exitCodes: {0: 'operation completed', 1: 'failed outcome', 2: 'usage error', 3: 'required local tooling or prerequisite missing'}}};
         break;
       case 'start': {
         arity(positional, 0, operation);
         const name = flags['--scenario'] ?? plugin.defaultScenario;
         if (!has(plugin.scenarios, name)) throw new UsageError(`the fixtures define no scenario ${name}; see help`);
         outcome = await start(plugin, io, {scenario: name, leaseMinutes: lease(flags['--lease']), inputs: resolveInputs(plugin, given, {}, name)});
+        break;
+      }
+      case 'prerequisites': {
+        arity(positional, 0, operation);
+        const value = await inspectPrerequisites(plugin, io.env);
+        outcome = {code: value.checks.some(check => check.status === 'missing') ? EXIT.unavailable : EXIT.ok, value};
         break;
       }
       case 'doctor':

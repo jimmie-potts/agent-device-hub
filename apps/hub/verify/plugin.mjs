@@ -191,6 +191,16 @@ export async function buildCurrent(at = root) {
   return newest <= oldest ? {outcome: /** @type {const} */ ('passed')} : {outcome: /** @type {const} */ ('failed'), reason: `${newestFile} is newer than the build; run npm run build`};
 }
 
+/** @param {string} [at] checkout root
+ * @returns {Promise<import('@jimmie-potts/app-verify').PrerequisiteCheck[]>}
+ */
+export async function inspectBuildPrerequisite(at = root) {
+  const build = await buildCurrent(at);
+  return [{id: 'app-build', phase: 'launch', status: build.outcome === 'passed' ? 'present' : 'missing',
+    reason: build.outcome === 'passed' ? 'build-current' : 'build-missing-or-stale',
+    ...(build.outcome === 'passed' ? {} : {next: 'Run npm run build from the checkout.'})}];
+}
+
 export default definePlugin({
   app: 'hub',
   servesProof: true,
@@ -211,6 +221,7 @@ export default definePlugin({
   },
   inputs: INPUTS,
   build: {version, artifact: {route: '/dashboard.js'}},
+  prerequisites: {inspect: () => inspectBuildPrerequisite()},
   launch: async ({node, dataDir, port, scenario: name, proofDir, runId}) => {
     await writeFile(join(dataDir, 'proof.json'), JSON.stringify({proofDir, runId}), {mode: 0o600});
     return name === 'integrated' ? launchIntegrated({node, dataDir, port}) : {argv: [node, serve, '--data', dataDir, '--port', String(port)]};
