@@ -1,4 +1,4 @@
-// Hub #494: the Hub capture steps judged without a supervisor, so they also run
+// Hub #494 and #336: the Hub capture steps judged without a supervisor, so they also run
 // on CI hosts without systemd --user. Each step gets its own freshly seeded hub
 // (serve.mjs started directly), because state persists within one process.
 // The reference steps pass on the correct app and fail, at their own
@@ -97,6 +97,30 @@ test('the Hub reference steps pass on the correct app and fail on each known-bro
 
     // No run credential enters any log, reference, fault or control alike.
     for (const {step, result, tokens} of judged) {
+      const log = await readFile(result.log, 'utf8');
+      for (const token of tokens) assert.equal(log.includes(token), false, `${step}: no run credential in the assertion log`);
+    }
+  } finally {
+    await rm(base, {recursive: true, force: true});
+  }
+});
+
+// Hub #336: the moment steps on the moment-capable wall, and the known-broken moment behaviors they must catch.
+test('the Hub moment steps pass on the correct app and fail on known-broken moment behavior, without a supervisor', {timeout: 480000}, async () => {
+  const base = await realpath(await mkdtemp(join(shortTmp(), 'hv-')));
+  const from = judged.length;
+  try {
+    for (const step of ['moment-plays', 'moment-blocked-on-status', 'moment-uncertain-no-replay']) {
+      const result = await judge(base, step, 'moments');
+      assert.equal(result.outcome, 'passed', `${step}: ${result.reason}`);
+      assert.ok(result.assertions.length >= 3, `${step} asserts its observations`);
+      assert.ok(result.video && result.screenshot, `${step} keeps its screenshot and video`);
+    }
+    assertFailedAt(await judge(base, 'moment-plays', 'moments', 'duplicate-forward'), 'the fake received exactly one celebrate moment of 5 s over status, with no palette', 'a moment delivered twice');
+    assertFailedAt(await judge(base, 'moment-blocked-on-status', 'moments', 'duplicate-forward'), 'the fake received exactly the two blocked moments and nothing was resent', 'blocked moments delivered twice');
+    assertFailedAt(await judge(base, 'moment-uncertain-no-replay', 'moments', 'duplicate-forward'), 'the uncertain moment reached the fake once and was not retried', 'an uncertain moment delivered twice');
+    assertFailedAt(await judge(base, 'moment-uncertain-no-replay', 'moments', 'replay-on-recovery'), 'recovery replayed nothing', 'the uncertain moment sent again on recovery');
+    for (const {step, result, tokens} of judged.slice(from)) {
       const log = await readFile(result.log, 'utf8');
       for (const token of tokens) assert.equal(log.includes(token), false, `${step}: no run credential in the assertion log`);
     }

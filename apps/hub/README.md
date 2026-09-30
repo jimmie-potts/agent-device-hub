@@ -69,7 +69,7 @@ A REST request without a valid token gets 401. A valid token without the needed 
 | `POST /api/monitor/v1/commands` to quiesce | `control` and `admin` | none |
 | `GET /api/hub/v1/authority?scope=<scope>` | the named scope: `read`, `control` or `ingest` | none |
 | `GET /api/controllers/v1/:id/snapshot`, `GET .../integration/snapshot`, `GET .../integration/geometry`, `GET .../integration/receipt`, `GET .../lighting/snapshot` | `read` | the controller alias `:id` |
-| `POST /api/controllers/v1/:id/commands`, `POST .../integration/commands`, `POST .../integration/cancel`, `POST .../lighting/commands` | `control` | the controller alias `:id` |
+| `POST /api/controllers/v1/:id/commands`, `POST .../moment`, `POST .../integration/commands`, `POST .../integration/cancel`, `POST .../lighting/commands` | `control` | the controller alias `:id` |
 | `GET /api/playback/v1/snapshot` | `read` | the playback ID |
 | `POST /api/playback/v1/commands` | `control` | the `sourceId` named in the body |
 | `POST /api/dashboard/v1/logout` | `control` | none |
@@ -121,6 +121,7 @@ All routes authenticate before replay. Host must be `127.0.0.1:<port>` or `local
 | `GET /api/hub/v1/health` | Shared collector health and separate controller status, without refreshing device observations |
 | `GET /api/controllers/v1/:id/snapshot` | Validated owner snapshot for an authorized registered alias, in the 1.0 shape. `?apiVersion=1.1` returns the 1.1 snapshot, with `capabilities.moments` and `state.moment`, from an owner that serves controller contract 1.1 and the 1.0 snapshot from one that does not; see [Controller contract versions](#controller-contract-versions). Another value, a repeated `apiVersion` or another parameter answers 400 `invalid-request` |
 | `POST /api/controllers/v1/:id/commands` | Validated controller v1 command and its original receipt/status |
+| `POST /api/controllers/v1/:id/moment` | The owner's explicit moment for this device ([Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336)); see [Owner moment route](#owner-moment-route) |
 | `GET /api/controllers/v1/:id/integration/snapshot` | Validated Nanoleaf or Pixoo settings snapshot |
 | `GET /api/controllers/v1/:id/integration/geometry` | Validated Nanoleaf element geometry for the alias's device: saved elements, their zones and display points, and the Lines' connector graph. `nanoleaf` aliases only; an owner without the route answers 422 `unsupported-capability` |
 | `POST /api/controllers/v1/:id/integration/commands` | Owning versioned settings request |
@@ -139,16 +140,16 @@ Global HTTP admission is 32, streams 16, connections 64, headers 8192 bytes, com
 
 The hub reads each registered controller at controller contract 1.1 where the controller serves it, and at 1.0 where it does not ([Hub #576](https://github.com/jimmie-potts/agent-device-hub/issues/576)).
 
-Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`. The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. A 400 `invalid-request` answer means the controller serves only 1.0, as the Nanoleaf controller and the local controller host do today. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
+Only a read that asks for 1.1 negotiates: the per-device MCP `status` tool and `GET /api/controllers/v1/:id/snapshot?apiVersion=1.1`, which the dashboard's device reads use since [Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336). The hub sends `apiVersion=1.1` and validates the answer against the schema of the version it declares. A 400 `invalid-request` answer means the controller serves only 1.0, as the Nanoleaf controller and the local controller host do today. The hub then reads again without the parameter and remembers a `1.0-only` verdict for the controller epoch of that answer.
 
 - Later reads in the same epoch send no version parameter. A new epoch probes again, and a hub start holds no verdict.
 - A timeout, a 5xx answer or a malformed answer never creates or changes a verdict.
-- Every other reader keeps the 1.0 shape and sends no parameter. That includes the dashboard's polls and the route without a parameter.
+- Every other reader keeps the 1.0 shape and sends no parameter. That includes the route without a parameter.
 - Reads and negotiation never send a command. [Automation rules](#automation-rules) read their targets through this negotiated read.
 
 ### Moment sender
 
-`sendMoment(client, moment)` in `src/moment-sender.ts` sends one contract 1.1 moment to one device ([Hub #335](https://github.com/jimmie-potts/agent-device-hub/issues/335)). It is an internal module with no route, MCP tool, page or stored state, and it applies no policy: rules, routines, agent proposals and the owner's own sends arbitrate before they call it. To reach several devices, a caller computes one start with `hubMonotonicNow()`, passes it as `startAtHubMs` to one call per device and waits for all of them, for example with `Promise.allSettled`.
+`sendMoment(client, moment)` in `src/moment-sender.ts` sends one contract 1.1 moment to one device ([Hub #335](https://github.com/jimmie-potts/agent-device-hub/issues/335)). It is an internal module with no route, MCP tool, page or stored state of its own, and it applies no policy: rules, routines, agent proposals and the owner's own sends arbitrate before they call it. To reach several devices, a caller computes one start with `hubMonotonicNow()`, passes it as `startAtHubMs` to one call per device and waits for all of them, for example with `Promise.allSettled`.
 
 One call:
 
@@ -161,6 +162,14 @@ One call:
 The result is the controller's `receiptV1_1`, a not-sent reason (`1.0-only`, `moments-unsupported`, `unsupported-capability`, `capacity` or `unavailable`) or `uncertain`. Each result carries the `momentId` and the computed start, which is null only when no snapshot was read. A typed controller refusal without a receipt is not sent and keeps the controller's code in `failure`. Invalid input, such as a flourish with `coversStatus:true` or a start more than 60 s ahead, throws `invalid-request` before any read.
 
 Only the POST runs after the start is computed, so the slot wait and the read never use up the device's start window. A call can take about 8.5 s in the worst case (the wait, two 2 s reads and a 2 s POST), which is longer than the hub's 3 s HTTP response bound; a caller behind a route needs its own bound.
+
+### Owner moment route
+
+`POST /api/controllers/v1/:id/moment` lets the owner try a moment on one device from its B.U.N.N.Y. page ([Hub #336](https://github.com/jimmie-potts/agent-device-hub/issues/336)). It needs `control` scope for the alias, the same origin checks as the other controller routes and `X-Pixoo-Request: 1`. The body is exactly `{"mood": "celebrate", "durationMs": 10000, "coversStatus": true}`: a contract mood ID, an integer from 1,000 to 300,000 ms and a boolean. Anything else, a query string or an unknown alias is refused before any controller contact, with 400 `invalid-request` for a bad body.
+
+The hub assigns a fresh `momentId` (`bunny-<uuid>`) and `priorityClass: "event"`, uses the sender's default start and tolerance and calls the sender once. It applies no arbitration, because the owner chose this moment; the device's own precedence still applies. There is no MCP tool for it: agent proposals go through arbitration (#295).
+
+The answer is 200 with the sender's typed result: `{kind:"receipt"}`, `{kind:"not-sent", reason}` (an undeclared mood or a duration above the device limit is `unsupported-capability`) or `{kind:"uncertain"}`, each with the `momentId` and start. One sender call can take about 8.5 s, longer than the hub's 3 s response cap, so the route waits at most 2.5 s from the request's arrival. If the sender has not returned by then, the answer is `{kind:"uncertain", momentId, start:null}`. The one call still finishes on its own, and nothing resends it.
 
 ## Automation rules
 

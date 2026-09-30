@@ -670,6 +670,22 @@ answers with exactly one POST, independent devices and no command after a hub
 restart. They are fake-controller evidence; a live moment needs a controller that
 serves 1.1 and a caller such as #336 or #358.
 
+The owner moment route for #336, `POST /api/controllers/v1/:id/moment`, is covered
+by `apps/hub/tests/moment-route.test.mjs`, which `test:hub:built` and the packaged
+hub tests already include, so it needs no new CI job. It runs against the shared
+fake and covers:
+
+- `forbidden` for `read` scope, another device grant and a missing mutation header;
+- 400 `invalid-request` for a palette, an extra field, a bad mood ID or an
+  out-of-range duration, with no controller request;
+- `not-sent` with no command for an undeclared mood, a duration above the device
+  limit, a 1.0-only controller and a controller without moments;
+- exactly one POST with a fresh `momentId`, `event` and no palette for a valid press;
+- failed receipts, a lost answer and a typed refusal passed through as typed;
+- a controller that stalls past the route's 2.5 s bound, answered `uncertain`
+  inside the 3 s cap with one request;
+- a press that waits for the device slot and still sends once.
+
 Playback for #175 and #233 is covered by `apps/hub/tests/playback.test.mjs`, which
 `test:hub`, `test:hub:built` and the packaged hub tests already include through
 the `apps/hub/tests/*.test.mjs` pattern, so it needs no new CI job. It runs the
@@ -876,6 +892,31 @@ state between the widget and the page, the surviving session draft and the skip
 link, and the lifecycle unit test carries the form wording. The overlap check ignores closed disclosures. Full-page height at
 1,280 px is recorded in the browser receipt. Human UI approval of the candidate
 is required before merge and is recorded in the PR.
+
+Hub #336 adds the Moments card. `apps/dashboard/tests/moments.test.mjs` runs
+under `npm run test:dashboard` and covers the capability, mood, preset and
+undeclared-line rules, every result line, the live line in the controller clock
+and the lifecycle's `interpret` and `describe` hooks. `apps/dashboard/tests/moments.mjs`
+joins `npm run test:dashboard:browser`. It drives the fixture's `moments` option,
+a wall that serves controller contract 1.1 and uses the contract's reference
+`admit` and `moment` operations as its admission and writer on a live device
+clock. The suite covers:
+
+- card presence and the home widget;
+- the menu, presets and switch;
+- one send per press, menu choice and preset, with a keyboard menu step that
+  sends nothing until Enter;
+- blocked, missed and 1.0-only lines;
+- the uncertain lock with focus on the reload;
+- supersede;
+- the live line from scheduled to playing to each ending;
+- the faster refresh stopping within 5 s of the end and never on a hidden page;
+- axe at 1,280 px and 390 px.
+
+The existing matrix and local-controller suites now expect moments in the
+undeclared line. The device page reads `?apiVersion=1.1`, which 1.0 fakes answer
+unchanged. Hub verification adds the three moment steps above. Human UI approval
+of the candidate is required before merge and is recorded in the PR.
 
 Browser suite gotchas, learned in #277:
 
@@ -1251,9 +1292,11 @@ scenarios and expected observations. Run `npm run test:hub:verify` with the
 checks above and the Standalone hub and Dashboard checks, because the adapter
 reuses `apps/dashboard/tests/fixture.mjs`. In the App verification CI job:
 
-- its unsupervised step test judges the four reference steps on the correct
+- its unsupervised step test judges the seven reference steps on the correct
   app and under each seeded fault (`write-on-read`, `duplicate-forward`,
-  `replay-on-recovery`), plus the two `control-*` steps;
+  `replay-on-recovery`), plus the two `control-*` steps. Three of them are
+  the Hub #336 moment steps (`moment-plays`, `moment-blocked-on-status`,
+  `moment-uncertain-no-replay`) on the `moments` scenario;
 - its build test checks the build-freshness sources against esbuild's
   dashboard inputs;
 - its wrapper test checks the unbuilt core's single JSON result and exit 3,

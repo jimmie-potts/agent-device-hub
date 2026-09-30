@@ -530,8 +530,9 @@ Pending host behavior, left explicit rather than inferred:
   terminal open bounds every lease (ADR 0008 trial pending).
 - CI: Depot's Ubuntu runner is not booted with systemd (PR #552). CI runs
   the core's receipt, supervisor-refusal, lock and unsupervised capture tests
-  (through `runCaptureStep`), and the Hub's `steps.test.mjs` and
-  `build.test.mjs`. The lifecycle and Hub run tests skip there with a printed
+  (through `runCaptureStep`), and the Hub's `steps.test.mjs` (its seven
+  fixture reference steps, including the three Hub #336 moment steps, under
+  every seeded fault, and its two `control-*` steps) and `build.test.mjs`. The lifecycle and Hub run tests skip there with a printed
   reason and run on this PC.
 - Codex sandbox: this session ran from Claude Code, where Windows interop and
   `systemd-run` work. Earlier evidence shows Codex's sandbox refusing Windows

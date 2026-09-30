@@ -143,6 +143,35 @@ async function formReady(t) {
   });
 }
 
+/** The Moments card on the current component page (Hub #336). @param {any} t */
+const momentsCard = t => t.page.locator('section:visible div.edit[role=group]').filter({has: t.page.getByRole('heading', {name: 'Moments', exact: true})});
+
+/** @param {any} t */
+async function openWallMoments(t) {
+  await t.page.getByRole('link', {name: 'wall nanoleaf', exact: true}).click();
+  const card = momentsCard(t);
+  await card.waitFor();
+  return card;
+}
+
+/** The moment commands the wall fake parsed, in arrival order. @param {{dataDir: string, signal?: AbortSignal}} t */
+const momentWrites = async t => (await writes(t)).filter(w => w.id === 'wall' && !w.integration && w.command?.command?.kind === 'moment').map(w => w.command.command);
+
+/**
+ * The reference assertion that exactly these moments reached the fakes, and nothing else.
+ * @param {any} t @param {string} name @param {{mood: string, durationMs: number, coversStatus: boolean}[]} expected
+ */
+async function exactlyMoments(t, name, expected) {
+  await t.expect(name, async () => {
+    const count = await settledCommands(t);
+    if (count !== expected.length) throw new Error(`expected ${expected.length} command${expected.length === 1 ? '' : 's'}, saw ${count}`);
+    const seen = await momentWrites(t);
+    const shape = seen.map(m => ({mood: m.mood, durationMs: m.durationMs, coversStatus: m.coversStatus, priorityClass: m.priorityClass, palette: 'palette' in m}));
+    const wanted = expected.map(m => ({...m, priorityClass: 'event', palette: false}));
+    if (JSON.stringify(shape) !== JSON.stringify(wanted)) throw new Error(`unexpected moments ${JSON.stringify(shape)}`);
+  });
+}
+
 /** Scenario seed: the scenario definition plus run-generated credentials, 0600 in the run's private data directory. */
 const scenario = (/** @type {Record<string, unknown>} */ definition, /** @type {string} */ description) => ({
   description,
@@ -212,6 +241,7 @@ export default definePlugin({
   scenarios: {
     'lifecycle-basic': scenario({}, 'One labelled Codex session and two healthy fake controllers (Nanoleaf wall, Pixoo pixel)'),
     'pixel-offline': scenario({offline: 'pixel'}, 'As lifecycle-basic, with the Pixoo fake unavailable until a step restores it'),
+    moments: scenario({moments: {moods: ['celebrate', 'setback', 'reminder', 'cozy'], maxDurationMs: 30000, coversStatus: true}}, 'As lifecycle-basic, with the Nanoleaf wall fake serving controller contract 1.1 with moments: the core moods plus cozy, up to 30 s, able to play over status (Hub #336)'),
     'control-startup-fails': scenario({browserAccess: 'invalid'}, 'Negative control: an invalid browserAccess makes the hub refuse to start'),
     'control-installed-links': scenario({editorLinks: {wall: 'http://127.0.0.1:8765/wall'}, placeLinks: {wall: 'http://127.0.0.1:8765/'}}, 'Negative control: a wall editor link and a Places link to the installed wall port'),
     integrated: {
@@ -353,6 +383,71 @@ export default definePlugin({
         await t.expect('the device recovers without a reload', () => stale.waitFor({state: 'detached', timeout: 20000}));
         await t.page.getByLabel('Brightness (%)').filter({visible: true}).waitFor();
         await commandCount(t, 'recovery sent no command', 0);
+      },
+    },
+    'moment-plays': {
+      description: 'Pressing Celebrate for 5 s sends exactly one moment to the wall fake, and the live line shows it play and complete',
+      scenario: 'moments',
+      fresh: true,
+      timeoutMs: 45000,
+      run: async t => {
+        await open(t);
+        const card = await openWallMoments(t);
+        await commandCount(t, 'opening the wall sent no command', 0);
+        await card.getByRole('combobox', {name: 'Duration'}).selectOption('5000');
+        await card.getByRole('button', {name: 'Celebrate', exact: true}).click();
+        await t.expect('the press is shown as scheduled or sent on wall', () => card.locator(':scope>[role=status]').filter({hasText: /^Celebrate: (Scheduled on wall|Sent to wall)\.$/}).waitFor());
+        await t.expect('the live line shows the moment playing', () => card.locator('.moment-line').filter({hasText: /^Playing Celebrate, \d+ s left$/}).waitFor());
+        await t.screenshot('playing');
+        await t.expect('the live line shows it completed and names the mood this page sent', () => card.locator('.moment-line').filter({hasText: /^Last: Celebrate, completed/}).waitFor({timeout: 15000}));
+        await exactlyMoments(t, 'the fake received exactly one celebrate moment of 5 s over status, with no palette', [{mood: 'celebrate', durationMs: 5000, coversStatus: true}]);
+      },
+    },
+    'moment-blocked-on-status': {
+      description: 'With the status switch off in Work, and then in Quiet, the wall blocks the moment; each press sends one moment and nothing plays',
+      scenario: 'moments',
+      fresh: true,
+      timeoutMs: 45000,
+      run: async t => {
+        await open(t);
+        const card = await openWallMoments(t);
+        const status = card.locator(':scope>[role=status]');
+        const cover = card.getByRole('switch', {name: 'Play over agent status'});
+        await cover.click();
+        await card.getByRole('button', {name: 'Setback', exact: true}).click();
+        await t.expect('with the switch off, Work blocks it', () => status.filter({hasText: 'Not played: wall is in Work.'}).waitFor());
+        await control(t, '/mode', {mode: 'Quiet'});
+        await cover.click();
+        await card.getByRole('button', {name: 'Reminder', exact: true}).click();
+        await t.expect('Quiet blocks it even with the switch on', () => status.filter({hasText: 'Not played: wall is in Quiet.'}).waitFor());
+        await t.expect('the live line shows that no moment played', async () => {
+          const line = await card.locator('.moment-line').textContent();
+          if (line !== 'No moment yet.') throw new Error(`live line says ${line}`);
+        });
+        await exactlyMoments(t, 'the fake received exactly the two blocked moments and nothing was resent', [{mood: 'setback', durationMs: 10000, coversStatus: false}, {mood: 'reminder', durationMs: 10000, coversStatus: true}]);
+      },
+    },
+    'moment-uncertain-no-replay': {
+      description: 'An uncertain moment locks the card, is never retried, and an explicit reload sends nothing',
+      scenario: 'moments',
+      fresh: true,
+      timeoutMs: 45000,
+      run: async t => {
+        await open(t);
+        const card = await openWallMoments(t);
+        const celebrate = card.getByRole('button', {name: 'Celebrate', exact: true});
+        await control(t, '/uncertain', {on: true});
+        await celebrate.click();
+        await t.expect('the result is shown as unknown', () => card.locator(':scope>[role=status]').filter({hasText: 'Result unknown: this may have reached the device (uncertain-result)'}).waitFor());
+        await t.expect('the card stays locked', async () => {
+          if (!(await celebrate.isDisabled())) throw new Error('Celebrate is enabled after an uncertain result');
+        });
+        await pause(5500);
+        await commandCount(t, 'the uncertain moment reached the fake once and was not retried', 1);
+        await control(t, '/uncertain', {on: false});
+        await card.getByRole('button', {name: 'Reload current values', exact: true}).click();
+        await t.expect('reload unlocks the card', () => celebrate.and(t.page.locator(':enabled')).waitFor());
+        await commandCount(t, 'recovery replayed nothing', 1);
       },
     },
     'control-installed-links': {
