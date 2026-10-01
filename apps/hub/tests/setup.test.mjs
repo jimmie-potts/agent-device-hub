@@ -78,3 +78,46 @@ for(const phase of ['producer','receipt'])test('failed '+phase+' persistence lea
  assert.equal(failed,true);assert.equal((await inspectSetup(input.directory)).enabled,false);assert.equal((await inspectSetup(input.directory)).state,'applying');
  await applySetup(input,(await planSetup(input)).digest,access);assert.equal((await inspectSetup(input.directory)).enabled,true);
 });
+
+// #456: a Claude receipt installed before the tool-completion events upgrades in place on re-apply.
+test('re-applying an installed previous-generation Claude receipt adds exactly the two tool events',async t=>{
+ const input=await fixture(t),access=authority();input.source={...source,provider:'claude',client:'code'};
+ await applySetup(input,(await planSetup(input)).digest,access);
+ const added=['PostToolUse','PostToolUseFailure'],receiptPath=join(input.directory,'receipt.json'),producerPath=join(input.directory,'producer.json');
+ const encode=v=>JSON.stringify(v,null,2)+'\n';
+ // Rewrite the installation as the seven-event generation wrote it.
+ const legacy=await read(input.target);for(const event of added)delete legacy.hooks[event];
+ const record=await read(receiptPath);record.entries=record.entries.filter(entry=>!added.includes(entry.event));record.after=encode(legacy);
+ await writeFile(input.target,encode(legacy));await writeFile(receiptPath,encode(record));
+ const producer=await readFile(producerPath,'utf8'),grants=[...access.active];
+ assert.equal((await inspectSetup(input.directory)).state,'installed');
+ assert.deepEqual((await planRemoval(input.directory)).removals.map(entry=>entry.event),record.entries.map(entry=>entry.event));
+ const plan=await planSetup(input);
+ assert.deepEqual(plan.additions.map(entry=>entry.event),added);
+ await applySetup(input,plan.digest,access);
+ const upgraded=await read(receiptPath),settings=await read(input.target);
+ for(const event of added)assert.equal(settings.hooks[event].length,1);
+ assert.deepEqual(upgraded.entries.map(entry=>entry.event).slice(-2),added);assert.equal(upgraded.entries.length,9);
+ assert.equal(upgraded.token,record.token);assert.equal(upgraded.before,record.before);assert.equal(upgraded.after,await readFile(input.target,'utf8'));
+ assert.equal(await readFile(producerPath,'utf8'),producer);assert.deepEqual([...access.active],grants);
+ const again=await planSetup(input);assert.deepEqual(again.additions,[]);assert.equal(again.changed,false);
+ await remove(input.directory,access);const final=await read(input.target);
+ assert.deepEqual(Object.keys(final.hooks),['Stop']);assert.equal(final.hooks.Stop.length,1);
+});
+
+test('an upgrade interrupted after the settings write records the receipt on the next re-apply',async t=>{
+ const input=await fixture(t),access=authority();input.source={...source,provider:'claude',client:'code'};
+ await applySetup(input,(await planSetup(input)).digest,access);
+ const added=['PostToolUse','PostToolUseFailure'],receiptPath=join(input.directory,'receipt.json');
+ const record=await read(receiptPath);record.entries=record.entries.filter(entry=>!added.includes(entry.event));
+ await writeFile(receiptPath,JSON.stringify(record,null,2)+'\n');
+ const plan=await planSetup(input);assert.deepEqual(plan.additions,[]);
+ await applySetup(input,plan.digest,access);
+ assert.equal((await read(receiptPath)).entries.length,9);
+});
+
+test('Codex setup does not generate the Claude tool events',async t=>{
+ const input=await fixture(t);
+ const events=(await planSetup(input)).additions.map(entry=>entry.event);
+ assert.ok(!events.includes('PostToolUse')&&!events.includes('PostToolUseFailure'));assert.ok(events.includes('Interrupt'));
+});

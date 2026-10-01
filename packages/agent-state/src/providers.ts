@@ -29,7 +29,8 @@ function string(record:object,key:string):string|null {
   const value=field(record,key);return value.state==='value'&&typeof value.value==='string'?value.value:null;
 }
 function supported(provider:string,hook:string):boolean {
-  return ['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop'].includes(hook)||(provider==='codex'&&hook==='Interrupt');
+  return ['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop'].includes(hook)||
+    (provider==='codex'&&hook==='Interrupt')||(provider==='claude'&&(hook==='PostToolUse'||hook==='PostToolUseFailure'));
 }
 function parseSource(input:unknown):SourceConfiguration|null {
   const record=plain(input);if(!record)return null;
@@ -68,6 +69,13 @@ export function normalizeHook(raw:unknown,source:SourceConfiguration,nowMs:numbe
       case 'SessionStart':case 'SubagentStart':event={kind:'session.started'};break;
       case 'UserPromptSubmit':event={kind:'turn.started'};break;
       case 'PermissionRequest':event={kind:'attention.approval',attention:Object.freeze({status:'unknown'})};break;
+      case 'PostToolUse':case 'PostToolUseFailure':{
+        // Hooks block, so the tool and its own dialog finished before this event; tool_response is never read.
+        // Only a root dialog on a known turn resolves: child payloads carry no turn.
+        const id=string(record,'tool_use_id');
+        if(turn.status!=='known'||!id||!identifier.test(id))return null;
+        event={kind:'attention.resolved',attention:Object.freeze({status:'known',id})};break;
+      }
       case 'Stop':case 'SubagentStop':event={kind:'turn.ended'};break;
       case 'Interrupt':event={kind:'turn.interrupted'};break;
       case 'SessionEnd':event={kind:'runtime.ended'};break;

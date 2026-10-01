@@ -557,7 +557,7 @@ It does not read transcript bodies or export the home path. Claude title lookup
 and cwd basenames belong to the producer, as described in the
 [agent-state guide](../../packages/agent-state/README.md#shared-titles-and-projects).
 
-Hub 0.4.0 uses agent-state 3.3.0 and lifecycle 1.1.0. Durable 2.1 is not readable
+Hub 0.4.1 uses agent-state 3.4.0 and lifecycle 1.1.0. Durable 2.1 is not readable
 by old owners. Package publication is source delivery, not installation;
 real-client rename observations and physical presentation require separate
 owner-authorized acceptance.

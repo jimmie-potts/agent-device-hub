@@ -18,7 +18,8 @@ try{
  let receiptFile;try{receiptFile=await open(join(dirname(process.argv[2]),'receipt.json'),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);}catch(error){if(error.code!=='ENOENT')finish();}
  if(receiptFile){try{const info=await receiptFile.stat();if(!info.isFile()||info.nlink!==1||info.uid!==process.getuid()||(info.mode&0o077)!==0||info.size>4194304)finish();const receipt=await bounded(receiptFile.createReadStream(),4194304);const equal=(a,b)=>JSON.stringify(a,Object.keys(a).sort())===JSON.stringify(b,Object.keys(b).sort());if(receipt.version!==1||receipt.state!=='installed'||receipt.token!==config.token||receipt.input?.directory!==dirname(process.argv[2])||receipt.input.endpoint!==config.endpoint||receipt.input.qualified!==true||receipt.input.lifecycleVersion!==config.lifecycleVersion||!equal(receipt.input.source,config.source))finish();}finally{await receiptFile.close();}}
  const url=new URL(config.endpoint);if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||url.username||url.password||url.search||url.hash||url.pathname!=='/api/monitor/v1/events')finish();
- const raw=await bounded(process.stdin,65536);
+ // PostToolUse carries the whole tool_response; larger input is dropped and Stop still clears attention.
+ const raw=await bounded(process.stdin,8388608);
  if(!raw||typeof raw.hook_event_name!=='string')finish();
  const {normalizeHook,enrichHook}=await import('@jimmie-potts/agent-state/providers');
  const source={...config.source,hook:raw.hook_event_name};
