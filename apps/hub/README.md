@@ -561,3 +561,25 @@ Hub 0.4.1 uses agent-state 3.4.0 and lifecycle 1.1.0. Durable 2.1 is not readabl
 by old owners. Package publication is source delivery, not installation;
 real-client rename observations and physical presentation require separate
 owner-authorized acceptance.
+
+## Read-only Pixoo catalog
+
+The Hub requests `pixoo-integration/1.1` snapshots with the explicit `apiVersion`
+query and accepts legacy 1.0 responses. An explicit version refusal falls back to
+an unversioned read. Commands remain `pixoo-integration/1.0`.
+
+A caller with `read` scope and the configured controller alias can read:
+
+- `/api/controllers/v1/:id/integration/catalog/renditions` and `catalog/playlists`,
+  with `offset` and `limit` (1–100, default 25).
+- `.../catalog/playlists/:playlistId` for ordered items and playback policies.
+- `.../renditions/:renditionId/preview.json`, `preview.png` and `frames/:index.png`.
+
+These are typed forwards through the controller's existing slot. They never
+reserve a ticket or write the command ledger. Closed validation checks JSON,
+representation hashes, PNG dimensions, strong ETags and cache headers. PNG reads
+are capped at 64 KiB; manifests at 128 KiB and 1000 frames; catalog JSON at 1 MiB.
+The registered controller token stays private. Authorization and upstream
+membership checks precede 304 responses, including for deleted renditions.
+Pixoo owns storage, imports, renditions and playback; preview support does not
+qualify an animation for physical output.

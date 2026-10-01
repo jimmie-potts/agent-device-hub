@@ -1,3 +1,4 @@
+import {catalogOperation} from './pixoo-catalog.js';
 import {validateEvent,validDisplayText,deduplicationKey,type Envelope} from '@jimmie-potts/agent-lifecycle-contracts';
 import {enrichCodexTitle} from '@jimmie-potts/agent-state/providers';
 import {readFile} from 'node:fs/promises';
@@ -361,9 +362,10 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
         }
         const route = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/(snapshot|commands|moment)$/.exec(path);
         const integrationRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/(snapshot|geometry|commands|receipt|cancel)$/.exec(path);
+        const catalogRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/integration\/((?:catalog|renditions)\/.*)$/.exec(path);
         const lightingRoute = /^\/api\/controllers\/v1\/([A-Za-z0-9_.-]{1,128})\/lighting\/(snapshot|commands)$/.exec(path);
         const scope = path === '/api/hub/v1/authority' && ['read','control','ingest'].includes(url.searchParams.get('scope') ?? '') ? url.searchParams.get('scope') as Scope : req.method === 'GET' ? 'read' : path === '/api/monitor/v1/events' ? 'ingest' : 'control';
-        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? lightingRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
+        const principal = authorize(req,scope,route?.[1] ?? integrationRoute?.[1] ?? catalogRoute?.[1] ?? lightingRoute?.[1] ?? (path === '/api/playback/v1/snapshot' ? playback?.sourceId : undefined));
         // Every write reads its body after authorization; a principal retired meanwhile sends nothing.
         const admitted = async (maximum:number) => {const value = await body(req,maximum);live(principal);return value;};
         if(req.method==='POST'&&path==='/api/dashboard/v1/logout'&&!url.search){
@@ -415,6 +417,14 @@ export async function startHub(options: HubOptions, migration?:{staged:true;rele
           // A staged migration destination must not become a second playback writer.
           if (staged) throw new HttpError('owner-quiesced',503);
           const response = await playback.command(await admitted(1024),principal);json(res,response.status,response.body);
+        } else if (catalogRoute) {
+          if(req.method!=='GET')throw new HttpError('invalid-request',400);
+          const client=clients.get(catalogRoute[1]);if(!client)throw new HttpError('unknown-device',404);
+          const op=catalogOperation(catalogRoute[2],url.searchParams);
+          const conditional=req.headers['if-none-match'];
+          if(conditional!==undefined&&(typeof conditional!=='string'||!/^"[a-f0-9]{64}"$/.test(conditional)))throw new HttpError('invalid-request',400);
+          const reply=await client.pixooCatalog(op,conditional);live(principal);
+          res.writeHead(reply.status,reply.headers);res.end(reply.status===304?undefined:reply.body);
         } else if (integrationRoute) {
           const client = clients.get(integrationRoute[1]);if (!client) throw new HttpError('unknown-device',404);
           const operation = integrationRoute[2];

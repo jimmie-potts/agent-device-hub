@@ -512,3 +512,35 @@ and ID. Label fields accept up to 80 Unicode scalar values; the HTML 160-code-un
 ceiling accommodates 80 supplementary characters, while the pattern enforces
 80 scalars. Synthetic desktop/mobile fixtures cover these names, neutral
 fallbacks and owner precedence; their previews require explicit UI approval.
+
+## Pixoo library previews
+
+A Pixoo controller serving `pixoo-integration/1.1` adds three read-only widgets:
+prepared media, saved playlist filmstrips and now showing. They use exact 64×64
+cached PNG frames and effective timing; they do not transcode an animated GIF.
+The media and playlist widgets support medium and large placements, and now
+showing supports small and medium. The component page composes all three; the
+home includes now showing. Owner layout editing remains separate.
+
+Catalog pages contain 25 entries. Playlist filmstrips page through all items.
+Thumbnails and selected animation frames load sequentially through the same
+per-device queue as controls. A complete animation loads before playback starts;
+a failure is shown as incomplete, never as an animation with missing frames.
+The producer's maximum admitted 1000 frames bounds each decoded animation to
+about 16 MiB; the default import allowance remains 500. Hidden widgets and
+changed selections cancel work and release their decoded images. Reduced motion
+starts previews paused. Browser timing is illustrative, not a device timing test.
+
+The Hub retains the controller token, while authenticated browser reads decode
+to canvas under the existing CSP. Every conditional representation read still
+checks authorization and current catalog membership. Catalog revision changes
+are discovered by the existing five-second integration snapshot poll; a feed
+resync coalesces a controller refresh. A mismatched related read shows an error
+and can be reloaded. Prepared rendition identity never changes with catalog names.
+
+Profile compatibility and preview availability are separate. Now showing labels
+reported player selection and intent, retained Monitor-mode selections, stale
+reads and uncertain transmission. It does not claim optically observed output.
+An older Pixoo retains its controls and shows why library previews are unavailable.
+Uploads and playlist editing use **Open Pixoo app**, when its validated editor
+link is configured.
