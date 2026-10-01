@@ -40,10 +40,11 @@ Reading it does not invoke either skill. If it is unavailable, report that and
 apply this section. Codex and Claude follow the same policy. A read-only request
 reports the assessment instead of editing the issue.
 
-Draft stories with the five prompts of the
-[feature form](../.github/ISSUE_TEMPLATE/feature.yml), using the same headings in
-Markdown for maintenance and investigation issues. A small story may answer them
-in a few sentences.
+Draft stories with the five detailed prompts of the
+[story template](../.github/ISSUE_TEMPLATE/feature.md), using the same headings
+for maintenance and investigation issues. New stories also begin with the
+[opening below](#new-story-opening). A small story may answer each detailed
+prompt in a few sentences.
 
 1. Outcome and real setup.
 2. Smallest useful implementation, with dependencies.
@@ -101,6 +102,54 @@ installed trial ([#22](https://github.com/jimmie-potts/agent-device-hub/issues/2
   repeatable observed defect gets a focused follow-up.
 - Limitation: this checks the issue text against the guidance. It does not show
   how an agent will apply it.
+
+### New-story opening
+
+For every new story created after this rule is adopted, keep the normal GitHub
+issue title and start the body with a separate descriptive `##` headline followed
+immediately by exactly five top-level bullets. Put this opening before the five
+detailed sections and any optional origin or planning history. Apply it to new
+feature, maintenance, investigation and child stories written through the GitHub
+template, CLI or an agent, whether or not a shared workflow skill is invoked.
+
+The headline itself explains the planned benefit, for example, "Change my lights
+and display together." Avoid generic headings such as "In plain English,"
+"Summary" or "Overview." Use one short sentence per bullet, with familiar words
+and specific nouns. Choose five distinct details about actions, triggers,
+responding devices, visible results or practical limits; these are writing
+prompts, not mandatory labels. Keep necessary technical detail in the sections
+below. Product names and essential user-facing terms may stay.
+
+Describe planned work without claiming it is already delivered, installed or
+physically verified. An investigation promises findings or a decision, not a
+working feature. Preserve unresolved choices and unknowns; never invent behavior,
+prerequisites or success claims to fill the five bullets. Keep the opening
+visible, outside tables, code fences and collapsed details.
+
+Preserve the five recognized detailed headings in their existing order and the
+strict `## Guide` fields, plus applicable assessment and execution advice. The
+opening summarizes the detailed scope, dependencies, acceptance and evidence;
+it does not replace them or become a new parsed scope or readiness field.
+
+**Future stories only.** Do not backfill, rename, reformat or otherwise edit
+existing issues for this rule. Picking up or editing an existing issue does not
+trigger a retrofit. A new child uses the opening; its existing parent remains
+unchanged. Existing stories remain valid without it.
+
+The GitHub chooser uses a Markdown template so the author's headline can appear
+first at level two. YAML forms add fixed field headings and cannot substitute
+an answer as the headline. The template retains the chooser name, labels,
+detailed prompts and Guide guidance; Markdown does not enforce required inputs.
+Complete every detailed section and replace all opening prompts before filing.
+For CLI or agent-created issues, write the same structure directly without
+frontmatter or template comments. No live test issue or existing-story rewrite
+is needed to demonstrate the format.
+
+Reading check: can the owner read only the headline and five bullets, then
+explain what the story will do without opening another issue? Check that each
+bullet agrees with the detailed scope and preserves uncertainty. Use the
+centrally installed `unslop` skill for the final editorial pass, as required by
+`AGENTS.md`.
 
 ## Scope and implementation
 
