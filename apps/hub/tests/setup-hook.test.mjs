@@ -74,3 +74,14 @@ test('explicit lifecycle 1.1 produces bounded shared names; old configuration ke
  assert.equal(requests.length,2);assert.equal(requests[0].apiVersion,'1.0');assert.equal(requests[0].project,undefined);
  assert.equal(requests[1].apiVersion,'1.1');assert.deepEqual(requests[1].title,{value:'Rewrite café prompts',source:'user'});assert.equal(requests[1].project,'project');assert.ok(!JSON.stringify(requests).includes('CONTENT_CANARY'));assert.ok(!JSON.stringify(requests).includes('/private/'));
 });
+
+test('a PostToolUse payload above 64 KiB still resolves attention',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'hub-hook-large-'));t.after(()=>rm(directory,{recursive:true,force:true}));const requests=[];
+ const server=createServer((req,res)=>{let body='';req.on('data',c=>body+=c);req.on('end',()=>{requests.push(JSON.parse(body));res.end('{}');});});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const path=join(directory,'producer.json');await writeFile(path,JSON.stringify({enabled:true,qualified:true,source:{provider:'claude',client:'code',hostId:'host',sourceId:'source',hook:'SessionStart'},endpoint:`http://127.0.0.1:${server.address().port}/api/monitor/v1/events`,token:'t'.repeat(43)}),{mode:0o600});
+ const payload={hook_event_name:'PostToolUse',session_id:'session',prompt_id:'prompt',tool_use_id:'toolu_01',tool_name:'Read',tool_response:{content:'PRIVATE_CANARY'.repeat(80000)}};
+ assert.ok(JSON.stringify(payload).length>1024*1024);
+ assert.deepEqual(await run(path,payload),{code:0,stdout:'',stderr:''});
+ assert.equal(requests.length,1);assert.deepEqual(requests[0].event,{kind:'attention.resolved',attention:{status:'known',id:'toolu_01'}});
+ assert.ok(!JSON.stringify(requests).includes('PRIVATE_CANARY'));
+});

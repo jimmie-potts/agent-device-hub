@@ -17,6 +17,10 @@ Source adapters SHALL map documented Codex and Claude events using explicit sour
 - **WHEN** Claude interruption, unqualified continuing-input semantics or Desktop read/hook evidence is requested
 - **THEN** the adapter does not invent that evidence or enable an unqualified installed path
 
+#### Scenario: Claude tool completion
+- **WHEN** a root Claude `PostToolUse` or `PostToolUseFailure` supplies `tool_use_id` and `prompt_id`
+- **THEN** the adapter emits `attention.resolved` with that known ID on that turn; without either field, from a child agent or from Codex, it emits nothing
+
 ### Requirement: Silent bounded fail-open delivery
 Emitters SHALL have finite input, output, queue and lifetime bounds derived from the frozen early #30 budget. Failure MUST leave agent permissions unchanged, emit no stdout/stderr/context/wakeup output, avoid retries and device commands, and terminate within the 3,000 ms hard deadline. Disabled emitters MUST perform no delivery.
 

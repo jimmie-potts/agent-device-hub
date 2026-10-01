@@ -1,6 +1,6 @@
 # Shared agent state
 
-`@jimmie-potts/agent-state` 3.3.0 interprets lifecycle metadata once for registered
+`@jimmie-potts/agent-state` 3.4.0 interprets lifecycle metadata once for registered
 consumers. It exports the owner, versioned snapshots, provider normalizers, and
 bounded emitters. It starts no backend and sends no device commands. Pixoo's
 existing backend is the first production host, through
@@ -89,8 +89,15 @@ saved version 1.0 session, while retaining parent/order uncertainty, labels,
 attention, read evidence and unrelated notices. The exception is an approval
 without a request ID on the turn that start retires: a newer turn proves it was
 answered, so the owner forgets it, and a late one for a retired turn is not
-kept. Startup settles such markers left in older stores. Markers on the current
-or a never-selected turn remain for explicit recovery or expiry. Unknown-turn notices remain
+kept. Startup settles such markers left in older stores. A known-ID
+`attention.resolved` or a `turn.ended` on a turn also forgets that turn's
+approvals without a request ID: Claude Code's synchronous `PostToolUse` and
+`PostToolUseFailure` hooks run only after a tool, and its dialog, finished, and a
+manually denied dialog fires no tool hook but still ends the turn. With several
+tool calls in one message, one completed tool can clear the marker a few
+seconds before a remaining dialog is answered. Markers on other turns, and an
+Esc-interrupted dialog that fires no `Stop`, remain for the next turn, explicit
+recovery or expiry. Unknown-turn notices remain
 explicit. Old stores retain only hash keys for some observations, so historical
 turn identities that were never saved cannot be reconstructed or rejected reliably.
 
@@ -220,7 +227,7 @@ permissions. Hub #8 owns authorized installation and real-client qualification.
 
 | Artifact | Supported contract/runtime |
 | --- | --- |
-| Agent state 3.3.0 | Lifecycle envelopes 1.0 and 1.1 from lifecycle package 1.1.0 |
+| Agent state 3.4.0 | Lifecycle envelopes 1.0 and 1.1 from lifecycle package 1.1.0 |
 | Snapshots / durable exports | Closed snapshots 1.0, 1.1 and opt-in 1.2; durable 2.1 with 1.0/2.0 import; unknown fields or versions reject |
 | JavaScript/TypeScript | Node 24, exported ESM declarations |
 | Python snapshot consumer | Python 3.12 or 3.14 with `requirements-contracts.txt` |
@@ -243,6 +250,7 @@ admission without changing those schemas.
 Package 2.0.3 expires sessions after 24 hours without lifecycle evidence, also
 without changing those schemas.
 Package 2.0.4 forgets approvals without a request ID on retired turns without changing those schemas.
+Package 3.4.0 maps Claude Code `PostToolUse` and `PostToolUseFailure` to known-ID resolutions and forgets same-turn approvals without a request ID on a known-ID resolution or turn end, without changing the schemas.
 Package 3.0.0 adds durable 2.0 retirement guards and opt-in snapshot 1.1 generations. The default snapshot remains 1.0. Older owners cannot read a 2.0 store or export; rollback after new writes needs a compatible owner or an explicitly reconciled export.
 Package 3.2.0 retires accepted ends on every supported path and settles stored `ended` records at startup without changing the schemas. Its Claude Code and Codex CLI retirement guards are rejected by the 3.0 and 3.1 validators regardless of age, so those owners fail closed (`invalid-storage`) on a store or export holding one. A guard expires 24 hours after its retirement, but only a running or reopened 3.2.0 owner prunes it; run or reopen 3.2.0 after that point before rolling back, or use an explicitly reconciled export.
 It opens an existing compatible store directly. The frozen pre-change
