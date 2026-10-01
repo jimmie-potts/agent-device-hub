@@ -21,4 +21,4 @@ approval/dependency readback, issue reconciliation and scoped cleanup. These
 post-implementation gates remain required by #545 and docs/sdlc.md; they are not
 pre-archive implementation checkboxes.
 
-Owner approval: [digest-bound receipt](https://github.com/jimmie-potts/agent-device-hub/issues/545#issuecomment-5924430458).
+Owner approval: [first digest-bound receipt](https://github.com/jimmie-potts/agent-device-hub/issues/545#issuecomment-5924430458), superseded after final review round 1 by the [renewed receipt](https://github.com/jimmie-potts/agent-device-hub/issues/545#issuecomment-5934967530) for digest `78b941945fb2782e2033a5773c1ca978b70226d38e9f6969a3055315dd57a09b`.
