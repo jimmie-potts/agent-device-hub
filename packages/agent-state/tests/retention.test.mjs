@@ -118,7 +118,8 @@ test('expiry forgets notices and attention without acknowledging them and keeps 
   const parent={status:'known',identity:identity('parent')};
   await owner.ingest(event('child','session.started',{parent,turn:{status:'unknown'}}));
   const second={turn:{status:'known',id:'turn-2'}};
-  for(const kind of ['turn.started','attention.approval','turn.ended'])await owner.ingest(event('other',kind,second));
+  // An input request, because a turn end forgets that turn's approvals without a request ID (#456).
+  for(const kind of ['turn.started','attention.input','turn.ended'])await owner.ingest(event('other',kind,second));
   await owner.setLabel(identity('other'),'Bystander');
   const other=owner.snapshot().sessions.find(session=>session.identity.sessionId==='other');
   assert.deepEqual([other.label,other.notices.length,other.attention.length],['Bystander',1,1]);

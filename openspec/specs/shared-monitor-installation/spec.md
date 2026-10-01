@@ -18,6 +18,10 @@ Setup SHALL provide inspect, plan, apply and remove operations for explicitly na
 - **WHEN** a target changes after planning or an owned entry is edited
 - **THEN** setup refuses to overwrite the changed configuration
 
+#### Scenario: Installed receipt from the previous event list
+- **WHEN** setup is re-applied on an installed Claude receipt that lacks the two tool-completion events
+- **THEN** it adds exactly those entries and keeps the credential, and the receipt remains inspectable and removable before the re-apply
+
 ### Requirement: One qualified fail-open producer
 
 Setup MUST retain one producer configuration per provider/source and use the selected owner's authenticated event endpoint. Codex and Claude hooks MUST emit only shared allowlisted metadata, silently exit successfully within a bounded deadline and leave unqualified paths disabled. Linux invocation and explicit Windows-to-WSL command construction MUST preserve argument boundaries without permission or trust bypasses.

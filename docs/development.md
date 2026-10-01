@@ -1227,7 +1227,7 @@ checks retain their pinned historical source revisions. Record installed and
 physical acceptance separately; these fixtures establish neither.
 
 The lifecycle 1.1.0 archive is built from the candidate source and bundled in
-agent-state 3.3.0 with archive/manifest hashes. Hub 0.4.0 bundles those artifacts. Its controller-contracts 1.1.0 and Device MCP
+agent-state 3.4.0 with archive/manifest hashes. Hub 0.4.1 bundles those artifacts. Its controller-contracts 1.1.0 and Device MCP
 1.0.1 dependencies come from their published archives in `vendor/`, checked
 against fixed archive and manifest hashes; their original receipts are retained.
 The Hub package check rejects a changed archive or rebuilt manifest, then runs

@@ -29,9 +29,11 @@ function validate(input:SetupInput){
  hookCommand(input.node,input.hook,join(input.directory,'producer.json'),input.windowsDistribution);
 }
 export function producerPrincipal(input:SetupInput){const {hook,...source}=input.source;return 'hub-'+digest(canonical(source)).slice(0,32);}
-function entries(input:SetupInput):Entry[]{
+// `previous` is the Claude entry list installed before the tool-completion events (#456).
+function entries(input:SetupInput,previous=false):Entry[]{
  const command=hookCommand(input.node,input.hook,join(input.directory,'producer.json'),input.windowsDistribution);
- const events=['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop',...(input.source.provider==='codex'?['Interrupt']:[])];
+ const events=['SessionStart','UserPromptSubmit','PermissionRequest','Stop','SessionEnd','SubagentStart','SubagentStop',
+  ...(input.source.provider==='codex'?['Interrupt']:previous?[]:['PostToolUse','PostToolUseFailure'])];
  return events.map(event=>({event,group:{hooks:[{type:'command',...command,timeout:3}]}}));
 }
 function config(text:string){if(Buffer.byteLength(text)>262144)throw new Error('client-configuration-limit');const value=JSON.parse(text);
@@ -41,7 +43,7 @@ async function receipt(directory:string):Promise<Receipt|null>{
  const raw=await readPrivate(join(directory,'receipt.json'),true);if(raw===null)return null;
  const value=JSON.parse(raw) as Receipt;
  if(value.version!==1||!['applying','installed','removing','removed'].includes(value.state)||typeof value.token!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(value.token))throw new Error('invalid-receipt');
- validate(value.input);if(value.input.directory!==directory||producerPrincipal(value.input)!==value.id||canonical(value.entries)!==canonical(entries(value.input)))throw new Error('invalid-receipt');return value;
+ validate(value.input);if(value.input.directory!==directory||producerPrincipal(value.input)!==value.id||![entries(value.input),entries(value.input,true)].some(owned=>canonical(owned)===canonical(value.entries)))throw new Error('invalid-receipt');return value;
 }
 async function save(record:Receipt){const path=join(record.input.directory,'receipt.json');await replacePrivate(path,await readPrivate(path,true),encode(record));}
 function removeEntries(text:string,record:Receipt){
@@ -87,7 +89,13 @@ export async function applySetup(input:SetupInput,expected:string,authority:Setu
  await locked(input.directory,()=>targetLocked(input.target,async()=>{
   const plan=await planSetup(input);if(plan.digest!==expected)throw new Error('configuration-changed');
   let record=await receipt(input.directory);
-  if(record?.state==='installed')return;
+  if(record?.state==='installed'){
+   const desired=entries(input);if(canonical(record.entries)===canonical(desired))return;
+   // Upgrade a previous-generation receipt in place: write the reviewed additions, then record them.
+   // A stop between the writes leaves every entry present; the next re-apply records the receipt.
+   if(plan.changed)await replacePrivate(input.target,plan.before,plan.after);
+   record.entries=desired;record.after=plan.after;await save(record);return;
+  }
   if(record?.state==='removing'||record?.state==='removed')throw new Error('setup-removal-record-retained');
   if(!record){record={version:1,state:'applying',input:structuredClone(input),id:producerPrincipal(input),token:input.credentialFile?(await readPrivate(input.credentialFile))!.trim():randomBytes(32).toString('base64url'),entries:entries(input),before:plan.before,after:plan.after};if(!/^[A-Za-z0-9_-]{43}$/.test(record.token))throw new Error('invalid-producer-token');if(Buffer.byteLength(encode(record))>4194304)throw new Error('receipt-limit');await save(record);}
   const current=(await readPrivate(input.target))!;

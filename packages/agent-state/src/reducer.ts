@@ -29,6 +29,10 @@ export const retiredApproval=(session:Session,item:Attention)=>item.kind==='appr
 export function forgetRetiredApprovals(session:Session) {
   session.attention=session.attention.filter(item=>!retiredApproval(session,item));
 }
+// A completed tool or the end of turn T proves that T's approvals without a request ID were answered.
+function forgetAnsweredApprovals(session:Session,turn:KnownId) {
+  if(turn.status==='known')session.attention=session.attention.filter(item=>!(item.kind==='approval'&&item.id.status==='unknown'&&sameTurn(item.turn,turn)));
+}
 function mergeMetadata(session:Session,event:Envelope):{changed:boolean;ambiguous:boolean} {
   let changed=false,ambiguous=false;
   if(event.parent.status!=='unknown'){
@@ -154,7 +158,7 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     case 'turn.started':
     case 'activity.observed':session.activity='active';break;
     case 'turn.ended':{
-      session.activity='idle';
+      session.activity='idle';forgetAnsweredApprovals(session,event.turn);
       const material=event.turn.status==='known'?[identityKey(event.identity),event.turn.id,'turn-ended']:[identityKey(event.identity),key];
       const noticeId=createHash('sha256').update(JSON.stringify(material)).digest('hex');
       if(!session.notices.some(notice=>notice.id===noticeId))session.notices.push({id:noticeId,kind:'turn-ended',turn:event.turn,acknowledgedBy:[]});
@@ -173,7 +177,10 @@ export function reduceSession(previous:Session|undefined,event:Envelope,now:numb
     }
     case 'attention.resolved':{
       const attention=event.event.attention;
-      if(attention.status==='known'&&event.turn.status==='known')session.attention=session.attention.filter(item=>!(item.id.status==='known'&&item.id.id===attention.id&&sameTurn(item.turn,event.turn)));
+      if(attention.status==='known'&&event.turn.status==='known'){
+        session.attention=session.attention.filter(item=>!(item.id.status==='known'&&item.id.id===attention.id&&sameTurn(item.turn,event.turn)));
+        forgetAnsweredApprovals(session,event.turn);
+      }
       else{unavailable(session,'attention','ambiguous');ambiguous=true;}
       break;
     }

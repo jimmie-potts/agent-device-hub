@@ -15,8 +15,7 @@ test('a no-ID approval clears when a newer turn starts',async()=>{
   const owner=await createAgentState(options(new MemoryStorage()));
   await owner.ingest(hook('UserPromptSubmit','turn-1'));await owner.ingest(hook('PermissionRequest','turn-1'));
   assert.deepEqual(approvals(owner),[['turn-1','no-id']]);
-  await owner.ingest(hook('Stop','turn-1'));
-  assert.deepEqual(approvals(owner),[['turn-1','no-id']]);
+  // No Stop: an interrupted dialog leaves the marker until the next turn.
   await owner.ingest(hook('UserPromptSubmit','turn-2'));
   assert.deepEqual(approvals(owner),[]);
   assert.equal(owner.snapshot().sessions[0].turn.id,'turn-2');
@@ -78,5 +77,104 @@ test('stored no-ID approvals on retired turns clear at startup in one revision',
   await owner.shutdown();
   owner=await createAgentState(options(storage));
   assert.deepEqual(approvals(owner),[['turn-2','no-id']]);
+  await owner.shutdown();
+});
+
+// #456: tool completion or the end of the same turn proves a no-ID approval on that turn was answered.
+const claude={provider:'claude',client:'code',hostId:'host',sourceId:'claude'};
+const claudeHook=(name,prompt,extra={},session='session')=>normalizeHook({session_id:session,...(prompt?{prompt_id:prompt}:{}),...extra},{...claude,hook:name},1000);
+const used=(prompt,id='tool-x',name='PostToolUse',session)=>claudeHook(name,prompt,{tool_use_id:id,tool_name:'Bash',tool_input:{command:'CANARY'},tool_response:{stdout:'CANARY'}},session);
+const markers=owner=>owner.snapshot().sessions.flatMap(session=>session.attention.map(item=>[session.identity.sessionId,item.kind,item.turn.id,item.id.status==='known'?item.id.id:'no-id']));
+
+for(const name of ['PostToolUse','PostToolUseFailure'])test(`${name} on the approval's turn clears the no-ID marker`,async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p0'));await owner.ingest(claudeHook('Stop','p0'));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));await owner.ingest(claudeHook('PermissionRequest','p1'));
+  const before=owner.snapshot().sessions[0];
+  assert.deepEqual(markers(owner),[['session','approval','p1','no-id']]);
+  assert.equal((await owner.ingest(used('p1','tool-x',name))).outcome,'applied');
+  const after=owner.snapshot().sessions[0];
+  assert.deepEqual(markers(owner),[]);
+  assert.equal(after.activity,'active');assert.equal(after.turn.id,'p1');
+  assert.deepEqual(after.notices,before.notices);assert.deepEqual(after.notices[0].acknowledgedBy,['nanoleaf']);
+  assert.doesNotMatch(JSON.stringify(await owner.exportState()),/CANARY|tool-x|Bash/);
+  await owner.shutdown();
+});
+
+test('a tool completion without a marker changes no attention and adds no ambiguity',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));
+  assert.equal((await owner.ingest(used('p1'))).outcome,'applied');
+  const session=owner.snapshot().sessions[0];
+  assert.deepEqual(session.attention,[]);
+  assert.ok(!session.unavailable.some(item=>item.dimension==='attention'));
+  await owner.shutdown();
+});
+
+test('a tool completion on another turn, session or source leaves the marker',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));await owner.ingest(claudeHook('PermissionRequest','p1'));
+  await owner.ingest(used('p2'));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1',{},'other'));await owner.ingest(used('p1','tool-x','PostToolUse','other'));
+  const foreign=used('p1');
+  await owner.ingest({...foreign,identity:{...foreign.identity,sourceId:'elsewhere'}});
+  assert.deepEqual(markers(owner).filter(([session])=>session==='session'),[['session','approval','p1','no-id']]);
+  await owner.shutdown();
+});
+
+test('Stop on the approval turn clears the marker; Stop on an earlier or unknown turn does not',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p0'));await owner.ingest(claudeHook('UserPromptSubmit','p1'));
+  await owner.ingest(claudeHook('PermissionRequest','p1'));
+  await owner.ingest(claudeHook('Stop','p0'));await owner.ingest(claudeHook('Stop',null));
+  assert.deepEqual(markers(owner),[['session','approval','p1','no-id']]);
+  await owner.ingest(claudeHook('Stop','p1'));
+  assert.deepEqual(markers(owner),[]);
+  await owner.shutdown();
+});
+
+test('Codex turn end clears its own turn no-ID approval',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(hook('UserPromptSubmit','turn-1'));await owner.ingest(hook('PermissionRequest','turn-1'));
+  await owner.ingest(hook('Stop','turn-1'));
+  assert.deepEqual(approvals(owner),[]);
+  await owner.shutdown();
+});
+
+test('a new approval after a tool completion on the same turn creates a marker',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));await owner.ingest(claudeHook('PermissionRequest','p1'));
+  await owner.ingest(used('p1'));
+  await owner.ingest(normalizeHook({session_id:'session',prompt_id:'p1'},{...claude,hook:'PermissionRequest'},2000));
+  assert.deepEqual(markers(owner),[['session','approval','p1','no-id']]);
+  await owner.shutdown();
+});
+
+test('the same resolution twice is a duplicate without a new revision',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));await owner.ingest(claudeHook('PermissionRequest','p1'));
+  const first=await owner.ingest(used('p1'));
+  const second=await owner.ingest(used('p1'));
+  assert.equal(second.outcome,'duplicate');assert.equal(second.revision,first.revision);
+  assert.equal(owner.snapshot().revision,first.revision);
+  await owner.shutdown();
+});
+
+test('a resolution for another request ID leaves a known-ID approval',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));
+  await owner.ingest({...claudeHook('PermissionRequest','p1'),event:{kind:'attention.approval',attention:{status:'known',id:'request'}}});
+  await owner.ingest(used('p1','tool-y'));await owner.ingest(claudeHook('Stop','p1'));
+  assert.deepEqual(markers(owner),[['session','approval','p1','request']]);
+  await owner.shutdown();
+});
+
+test('question and input markers survive tool completion and turn end',async()=>{
+  const owner=await createAgentState(options(new MemoryStorage()));
+  await owner.ingest(claudeHook('UserPromptSubmit','p1'));
+  for(const kind of ['attention.input','question.continuing'])
+    await owner.ingest({...claudeHook('PermissionRequest','p1'),event:{kind,attention:{status:'unknown'}}});
+  await owner.ingest(used('p1'));await owner.ingest(claudeHook('Stop','p1'));
+  assert.deepEqual(markers(owner).map(([,kind])=>kind).sort(),['input','question']);
   await owner.shutdown();
 });

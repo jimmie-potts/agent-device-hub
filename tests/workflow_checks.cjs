@@ -168,6 +168,49 @@ test('initialization preserves personal Codex prompts with current integrations 
 // Parse the Depot workflows so formatting changes do not alter scheduling checks.
 const YAML = require('yaml');
 
+const storyHeadings = [
+  'Outcome and real setup',
+  'Smallest useful implementation',
+  'Behavior and protections to preserve',
+  'Observable acceptance and planned evidence',
+  'Meaningful deferrals',
+  'Guide',
+];
+
+function checkStoryOpening(body) {
+  const visible = body.replace(/<!--[\s\S]*?-->/g, '').trim();
+  const headings = [...visible.matchAll(/^## (.+)$/gm)].map(match => match[1]);
+  assert.deepEqual(headings.slice(1), storyHeadings);
+  assert.ok(visible.startsWith(`## ${headings[0]}\n\n`));
+  assert.ok(!['Summary', 'Overview', 'In plain English'].includes(headings[0]));
+  const opening = visible.split(`\n## ${storyHeadings[0]}`)[0].split('\n').slice(2);
+  assert.equal(opening.filter(line => line.startsWith('- ')).length, 5);
+  assert.ok(opening.every(line => !line.trim() || /^- \S/.test(line)), 'opening contains only five top-level bullets');
+}
+
+test('the GitHub Markdown template starts with an editable headline and five bullets', () => {
+  const template = fs.readFileSync(path.join(root, '.github/ISSUE_TEMPLATE/feature.md'), 'utf8');
+  const frontmatter = template.match(/^---\n([\s\S]*?)\n---\n/);
+  assert.ok(frontmatter, 'GitHub chooser metadata is present');
+  assert.deepEqual(YAML.parse(frontmatter[1]), {
+    name: 'Feature or integration',
+    about: 'Define the smallest useful change for the real setup.',
+    labels: ['enhancement', 'status:backlog'],
+  });
+  checkStoryOpening(template.slice(frontmatter[0].length));
+  assert.equal(fs.existsSync(path.join(root, '.github/ISSUE_TEMPLATE/feature.yml')), false,
+    'the fixed-heading form must not remain as a competing authoring path');
+});
+
+for (const name of ['feature', 'investigation']) {
+  test(`the local ${name} story sample keeps the opening before the detailed sections`, () => {
+    const body = fs.readFileSync(path.join(root, `tests/fixtures/story-openings/${name}.md`), 'utf8');
+    checkStoryOpening(body);
+    assert.match(body, /Delivery target: source-only/);
+    assert.match(body, /\*\*Topic:\*\* desktop-controls/);
+  });
+}
+
 const expectedTriggers = {
   push: { branches: ['main'], 'paths-ignore': ['docs/work-guide/**'] },
   pull_request: { 'paths-ignore': ['docs/work-guide/**'] },

@@ -29,8 +29,8 @@ No fresh session evidence for five minutes means uncertain observation, not fail
 | `activity.observed` | Actual session activity, independent of outstanding attention |
 | `question.continuing` | A continuing question; `attention` identifies it or explicitly says unknown |
 | `attention.input` / `attention.approval` | A blocking input/approval request; neither is a permission decision |
-| `attention.resolved` | Only the correlated attention item is resolved; unknown correlation cannot clear all attention |
-| `turn.ended` | Retained turn-ended notice; never proof of successful work or readership |
+| `attention.resolved` | Only the correlated attention item is resolved; unknown correlation cannot clear all attention. A known-ID resolution on a known turn also lets the owner forget that turn's approvals without a request ID, because the resolving tool ran after its dialog closed |
+| `turn.ended` | Retained turn-ended notice; never proof of successful work or readership. The owner forgets that turn's approvals without a request ID |
 | `turn.interrupted` | Interruption evidence, not successful completion |
 | `runtime.ended` | Runtime end; the owner retires the known record and its known descendants on every supported provider/client path |
 | `notice.acknowledged` | Explicit `{consumerId,noticeId}` monitor acknowledgment; no provider-read write |

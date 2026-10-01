@@ -109,3 +109,20 @@ test('configuration uses fixed error codes and never invokes option accessors',(
   let reads=0;const config={source:source(),send:async()=>{}};Object.defineProperty(config,'timeoutMs',{enumerable:true,get(){reads++;throw new Error('PRIVATE_CANARY');}});
   assert.throws(()=>createEmitter(config),/invalid-timeout/);assert.equal(reads,0);
 });
+
+// #456: Claude tool completion is answer evidence for the dialog that preceded it.
+for(const hook of ['PostToolUse','PostToolUseFailure'])test(`claude ${hook} maps to a known-ID resolution on the prompt turn`,()=>{
+  const input={session_id:'session',prompt_id:'prompt',tool_use_id:'toolu_01',tool_name:'Bash',tool_input:{command:'PRIVATE_CANARY'},
+    tool_response:{stdout:'PRIVATE_CANARY'},error:'PRIVATE_CANARY',cwd:'/PRIVATE_CANARY',transcript_path:'/PRIVATE_CANARY'};
+  const value=normalizeHook(input,source(hook,'claude'),1000);
+  assert.equal(validateEvent(value).ok,true);
+  assert.deepEqual(value.event,{kind:'attention.resolved',attention:{status:'known',id:'toolu_01'}});
+  assert.deepEqual(value.turn,{status:'known',id:'prompt'});assert.deepEqual(value.parent,{status:'unknown'});
+  assert.doesNotMatch(JSON.stringify(value),/PRIVATE_CANARY|Bash/);
+  const {prompt_id,...noTurn}=input,{tool_use_id,...noId}=input;
+  for(const missing of [noTurn,noId,{...input,tool_use_id:''},{...input,tool_use_id:'bad id'},{...input,tool_use_id:7},{...input,prompt_id:null}])
+    assert.equal(normalizeHook(missing,source(hook,'claude'),1000),null);
+  // Child payloads carry no turn, so they cannot name the dialog's turn.
+  assert.equal(normalizeHook({...input,agent_id:'child'},source(hook,'claude'),1000),null);
+  assert.equal(normalizeHook({...input,turn_id:'turn'},source(hook,'codex'),1000),null);
+});
